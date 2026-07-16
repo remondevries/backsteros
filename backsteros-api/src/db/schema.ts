@@ -2,7 +2,9 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  jsonb,
   pgTable,
+  serial,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -135,6 +137,26 @@ export const documents = pgTable(
       table.projectId,
       table.path,
     ),
+  ],
+);
+
+export const syncEvents = pgTable(
+  "sync_events",
+  {
+    cursor: serial("cursor").primaryKey(),
+    mutationId: text("mutation_id").notNull().unique(),
+    deviceId: text("device_id"),
+    entity: text("entity").notNull(),
+    entityId: text("entity_id").notNull(),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("sync_events_device_id_idx").on(table.deviceId),
+    index("sync_events_created_at_idx").on(table.createdAt),
   ],
 );
 

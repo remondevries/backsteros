@@ -11,11 +11,41 @@ services:
       POSTGRES_DB: backsteros
     volumes:
       - backsteros_pg_data:/var/lib/postgresql/data
+      - ./deploy/powersync/init-local.sql:/docker-entrypoint-initdb.d/99-powersync.sql:ro
+    command: ["postgres", "-c", "wal_level=logical"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U backsteros -d backsteros"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  mongo:
+    image: mongo:7
+    container_name: backsteros-powersync-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - backsteros_powersync_mongo:/data/db
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    container_name: backsteros-powersync
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    command: ["start", "-r", "unified"]
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+    volumes:
+      - ./deploy/powersync/service.local.yaml:/config/service.yaml:ro
+      - ./deploy/powersync/sync-config.yaml:/config/sync-config.yaml:ro
+    ports:
+      - "8080:8080"
+
 volumes:
   backsteros_pg_data:
+  backsteros_powersync_mongo:

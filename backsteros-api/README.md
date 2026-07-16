@@ -3,7 +3,7 @@
 Backend service for **BacksterOS** — Hono + PostgreSQL + OpenAPI.
 
 **Host:** `https://service.backsteros.com`  
-**Status:** Phase 1 scaffold (local dev working)
+**Status:** Phase 3 — PowerSync sync (local stack + API routes)
 
 ## Quick start (local)
 
@@ -59,6 +59,30 @@ API key management (`/api/v1/api-keys`) requires a **Clerk session**. Task/proje
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm --filter @backsteros/api db:seed` | Create bootstrap API key (dev) |
 | `pnpm --filter @backsteros/api db:generate` | Generate migration from schema changes |
+| `pnpm db:powersync-setup` | Create `powersync` publication (after migrate) |
+| `pnpm powersync:up` | Start PowerSync + Mongo (docker compose) |
+| `pnpm --filter @backsteros/api db:powersync-token owner` | Dev JWT for local PowerSync |
+
+## Phase 3 — PowerSync (local)
+
+```bash
+pnpm db:up
+pnpm db:migrate
+pnpm db:powersync-setup
+pnpm powersync:up
+pnpm dev
+
+# In another terminal — sync demo web client
+cd backsteros-sync-demo
+cp .env.example .env.local
+pnpm --filter @backsteros/api db:powersync-token owner  # paste into VITE_POWERSYNC_TOKEN
+pnpm dev
+```
+
+Sync API (Clerk session): `POST /api/v1/sync/bootstrap`, `GET /api/v1/sync/pull`, `POST /api/v1/sync/push`  
+PowerSync uploads: `POST /api/v1/powersync/write` (Clerk JWT or PowerSync dev token)
+
+Production Neon setup: [`../deploy/powersync/neon-setup.sql`](../deploy/powersync/neon-setup.sql)
 
 ## Production (Neon)
 

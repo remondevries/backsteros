@@ -6,6 +6,7 @@ import { generateOpenApi } from "@ts-rest/open-api";
 import { apiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
+import { registerSyncRoutes } from "./app/sync-routes.js";
 
 export function createApp() {
   const app = new Hono();
@@ -54,6 +55,7 @@ export function createApp() {
 
   const api = new Hono();
   registerApiRoutes(api);
+  registerSyncRoutes(api);
   app.route("/", api);
 
   return app;

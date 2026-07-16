@@ -1,0 +1,26 @@
+# Local PowerSync service — connects to docker-compose Postgres + Mongo bucket storage.
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://powersync_role:powersync@postgres:5432/backsteros
+      sslmode: disable
+
+storage:
+  type: mongodb
+  uri: mongodb://mongo:27017/powersync_storage
+
+sync_config:
+  path: /config/sync-config.yaml
+
+client_auth:
+  allow_temporary_tokens: true
+  audience: ["backsteros-powersync", "http://localhost:8080", "http://127.0.0.1:8080"]
+  jwks:
+    keys:
+      - kty: oct
+        alg: HS256
+        kid: backsteros-powersync-1
+        k: ZGV2LXBvd2Vyc3luYy1zZWNyZXQtY2hhbmdlLW1l
+
+# Set `k` to base64url encoding of your POWERSYNC_JWT_SECRET (same as backsteros-api/.env).
+# Generate: node -e "console.log(Buffer.from('your-secret').toString('base64url'))"

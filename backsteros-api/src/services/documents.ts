@@ -82,7 +82,7 @@ export async function getDocumentById(id: string) {
   return getDocumentRow(id);
 }
 
-export async function createDocument(input: CreateDocumentInput) {
+export async function createDocument(input: CreateDocumentInput, id = newId()) {
   let projectKey: string | undefined;
 
   if (input.type === "project") {
@@ -104,7 +104,6 @@ export async function createDocument(input: CreateDocumentInput) {
 
   const storageKey = buildStorageKey(input.type, input.path, projectKey);
   const content = input.content ?? "";
-  const id = newId();
 
   let byteSize = 0;
   let checksum: string | null = null;

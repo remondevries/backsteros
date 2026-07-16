@@ -1,0 +1,13 @@
+# PowerSync sync streams — Tier A/B metadata for BacksterOS.
+# Replicates projects, tasks, and document indexes (not bodies).
+
+config:
+  edition: 3
+
+streams:
+  global:
+    auto_subscribe: true
+    queries:
+      - SELECT id, key, name, summary, description, status, priority, sort_order, created_at, updated_at, deleted_at FROM projects WHERE deleted_at IS NULL
+      - SELECT id, project_id, number, title, description, status, priority, sort_order, due_date, completed_at, created_at, updated_at, deleted_at FROM tasks WHERE deleted_at IS NULL
+      - SELECT id, type, project_id, path, title, storage_key, content_type, byte_size, checksum, snippet, content_version, content_etag, created_at, updated_at, deleted_at FROM documents WHERE deleted_at IS NULL

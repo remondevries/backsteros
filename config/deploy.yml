@@ -52,8 +52,11 @@ env:
     SPACES_BUCKET: backsteros
     SPACES_REGION: ams3
     SPACES_CDN_URL: https://backsteros.ams3.cdn.digitaloceanspaces.com
+    POWERSYNC_URL: https://sync.backsteros.com
+    POWERSYNC_AUDIENCE: backsteros-powersync
   secret:
     - DATABASE_URL
     - CLERK_SECRET_KEY
     - SPACES_ACCESS_KEY_ID
     - SPACES_SECRET_ACCESS_KEY
+    - POWERSYNC_JWT_SECRET

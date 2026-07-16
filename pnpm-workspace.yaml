@@ -1,6 +1,8 @@
 packages:
   - backsteros-api
+  - backsteros-sync-demo
   - backsteros-packages/*
 allowBuilds:
   '@clerk/shared': set this to true or false
+  '@journeyapps/wa-sqlite': set this to true or false
   esbuild: set this to true or false

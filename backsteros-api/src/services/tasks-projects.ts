@@ -38,13 +38,12 @@ export async function getProjectByKey(key: string) {
   return row ?? null;
 }
 
-export async function createProject(input: CreateProjectInput) {
+export async function createProject(input: CreateProjectInput, id = newId()) {
   const existing = await getProjectByKey(input.key);
   if (existing) {
     throw new Error("PROJECT_KEY_EXISTS");
   }
 
-  const id = newId();
   const [row] = await db
     .insert(projects)
     .values({
@@ -138,7 +137,7 @@ async function nextTaskNumber(projectId: string | null | undefined) {
   return (result?.value ?? 0) + 1;
 }
 
-export async function createTask(input: CreateTaskInput) {
+export async function createTask(input: CreateTaskInput, id = newId()) {
   if (input.projectId) {
     const project = await getProjectById(input.projectId);
     if (!project) {
@@ -146,7 +145,6 @@ export async function createTask(input: CreateTaskInput) {
     }
   }
 
-  const id = newId();
   const number = await nextTaskNumber(input.projectId ?? null);
   const status = input.status ?? "ready_to_start";
 

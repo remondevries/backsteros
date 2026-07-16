@@ -10,6 +10,8 @@
     "build": "pnpm -r build",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:migrate": "pnpm --filter @backsteros/api db:migrate"
+    "db:migrate": "pnpm --filter @backsteros/api db:migrate",
+    "db:powersync-setup": "pnpm --filter @backsteros/api db:powersync-setup",
+    "powersync:up": "docker compose up -d mongo powersync"
   }
 }

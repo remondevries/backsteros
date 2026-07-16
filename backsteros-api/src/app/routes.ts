@@ -32,6 +32,14 @@ function notFound(resource: string) {
 }
 
 async function withAuth(c: Context, next: Next) {
+  if (
+    c.req.path.startsWith("/api/v1/sync") ||
+    c.req.path.startsWith("/api/v1/powersync")
+  ) {
+    await next();
+    return;
+  }
+
   const auth = await resolveAuth(c.req.header("Authorization"));
   if (!auth) {
     return c.json(unauthorized(), 401);

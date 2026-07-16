@@ -118,7 +118,11 @@ export async function resolveAuth(authorization: string | undefined): Promise<Au
     return authenticateApiKey(token);
   }
 
-  return authenticateClerk(token);
+  try {
+    return await authenticateClerk(token);
+  } catch {
+    return null;
+  }
 }
 
 export function requireApiKeyScope(...requiredScopes: ApiKeyScope[]) {
