@@ -10,7 +10,7 @@
     "dev:app": "pnpm --filter @backsteros/app dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "pnpm --filter @backsteros/contracts build && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "test:integration": "pnpm --filter @backsteros/api test:integration",
     "test:e2e": "pnpm --filter @backsteros/app test:e2e",
