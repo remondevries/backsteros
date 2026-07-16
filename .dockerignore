@@ -1,0 +1,17 @@
+.git
+.github
+.cursor
+node_modules
+**/node_modules
+dist
+**/dist
+.env
+.env.*
+!.env.example
+.DS_Store
+docs
+backsteros-app
+backsteros-admin
+backsteros-mobile
+backsteros-desktop
+docker-compose.yml

@@ -18,8 +18,12 @@ servers:
   web:
     - 161.35.86.25
 
+ssh:
+  user: root
+  config: false
+
 proxy:
-  ssl: true
+  ssl: false
   host: service.backsteros.com
   app_port: 8787
   healthcheck:
@@ -47,4 +51,3 @@ env:
   secret:
     - DATABASE_URL
     - CLERK_SECRET_KEY
-    - KAMAL_REGISTRY_PASSWORD
