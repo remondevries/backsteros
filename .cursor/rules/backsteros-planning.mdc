@@ -1,0 +1,12 @@
+---
+description: BacksterOS architecture source of truth — read specs before building
+alwaysApply: true
+---
+
+# BacksterOS workspace (`~/code/backsteros/`)
+
+1. Read [AGENTS.md](../../AGENTS.md) and [STRUCTURE.md](../../STRUCTURE.md)
+2. Specs in `docs/` — code in subfolders (`backsteros-api/`, etc.)
+3. Do not scaffold code without user approval (`docs/09-phased-build-plan.md`)
+4. Do not extend `circle.remondevries.com`
+5. Never bulk-sync Tier C/D content to clients (`docs/03-data-model.md`)

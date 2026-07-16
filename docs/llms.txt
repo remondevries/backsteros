@@ -1,0 +1,51 @@
+# BacksterOS documentation index
+# Workspace: ~/code/backsteros/
+# For AI agents: load AGENTS.md first, then fetch only the docs relevant to your task.
+
+> Code subfolders: backsteros-api/, backsteros-app/, backsteros-admin/, backsteros-mobile/, backsteros-desktop/, backsteros-packages/
+
+## Entry points
+
+- [STRUCTURE.md](../STRUCTURE.md): Folder map under ~/code/
+- [AGENTS.md](../AGENTS.md): Primary agent entry — rules, task→doc map, phase gate
+- [README.md](../README.md): Human overview
+
+## Specifications
+
+- [docs/00-vision.md](00-vision.md): Goals, users, non-goals, success criteria
+- [docs/01-architecture.md](01-architecture.md): System diagram, repos, auth, write pipeline
+- [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Meilisearch, Hono
+- [docs/03-data-model.md](03-data-model.md): Sync tiers A/B/C/D, entities, version fields
+- [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API
+- [docs/05-clients.md](05-clients.md): Product app, ops admin, mobile, desktop
+- [docs/11-urls-and-routing.md](11-urls-and-routing.md): /app vs /admin, reverse proxy
+- [docs/06-storage-and-search.md](06-storage-and-search.md): B2/R2, Meilisearch, PDF/markdown layout
+- [docs/07-performance.md](07-performance.md): iPhone 16, M1 MacBook, lightweight rules
+- [docs/08-legacy-circle.md](08-legacy-circle.md): Circle monolith reference, migration notes
+- [docs/09-phased-build-plan.md](09-phased-build-plan.md): Implementation phases 0–9
+- [docs/10-decisions-log.md](10-decisions-log.md): ADRs — Convex rejected, PowerSync accepted, etc.
+
+## Task routing (quick)
+
+| If you are working on… | Read |
+| --- | --- |
+| Starting implementation | 00-vision, 01-architecture, 09-phased-build-plan |
+| API routes / OpenAPI | 04-api-and-sync, 03-data-model, 02-tech-stack |
+| PowerSync / offline | 03-data-model, 04-api-and-sync, 07-performance |
+| Expo mobile | 05-clients, 07-performance, 04-api-and-sync |
+| Tauri desktop | 05-clients, 07-performance |
+| PDFs / markdown / search | 06-storage-and-search, 03-data-model |
+| Agent + human doc editing | 04-api-and-sync (Live documents section) |
+| Migrating from Circle | 08-legacy-circle, 09-phased-build-plan Phase 8 |
+| Changing stack choices | 10-decisions-log, 02-tech-stack |
+
+## Related codebases (outside workspace)
+
+- ~/code/circle.remondevries.com — legacy monolith (reference only)
+- ~/code/backsteros-agent — agent console (separate product)
+
+## Conventions
+
+- Do not scaffold app code until user approves Phase 1
+- Never bulk-sync Tier C/D content to clients
+- All writes: storage → Postgres version → sync event → Meilisearch → realtime
