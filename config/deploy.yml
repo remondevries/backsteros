@@ -1,0 +1,50 @@
+# Kamal — backsteros-api at service.backsteros.com (161.35.86.25)
+#
+# Prerequisites:
+#   1. DNS A record: service.backsteros.com → 161.35.86.25
+#   2. cp .kamal/secrets.example .kamal/secrets  (fill values; never commit)
+#   3. GHCR image ghcr.io/remondevries/backsteros-api
+#   4. Run migrations once: DATABASE_URL=... pnpm db:migrate
+#
+# Deploy:
+#   kamal deploy -c config/deploy.yml
+
+service: backsteros-api
+image: remondevries/backsteros-api
+
+secrets_path: .kamal/secrets
+
+servers:
+  web:
+    - 161.35.86.25
+
+proxy:
+  ssl: true
+  host: service.backsteros.com
+  app_port: 8787
+  healthcheck:
+    path: /health
+    interval: 5
+    timeout: 10
+
+registry:
+  server: ghcr.io
+  username: remondevries
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+  dockerfile: backsteros-api/Dockerfile
+  context: .
+
+env:
+  clear:
+    NODE_ENV: production
+    PORT: "8787"
+    PUBLIC_API_URL: https://service.backsteros.com
+    CORS_ORIGINS: https://backsteros.com,https://service.backsteros.com
+  secret:
+    - DATABASE_URL
+    - CLERK_SECRET_KEY
+    - KAMAL_REGISTRY_PASSWORD
