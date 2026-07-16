@@ -1,9 +1,9 @@
 # Production PowerSync service — Neon source DB + Mongo bucket storage on 161.35.86.25.
-# Set POWERSYNC_SOURCE_URI and POWERSYNC_JWT_K in .env before deploy.
+# Env vars passed to container must use PS_ prefix: PS_DATA_SOURCE_URI, PS_JWT_K
 replication:
   connections:
     - type: postgresql
-      uri: !env POWERSYNC_SOURCE_URI
+      uri: !env PS_DATA_SOURCE_URI
       sslmode: verify-full
 
 storage:
@@ -20,4 +20,4 @@ client_auth:
       - kty: oct
         alg: HS256
         kid: backsteros-powersync-1
-        k: !env POWERSYNC_JWT_K
+        k: !env PS_JWT_K
