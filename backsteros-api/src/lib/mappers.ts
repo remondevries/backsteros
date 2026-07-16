@@ -1,6 +1,6 @@
-import type { ApiKey, Project, Task } from "@backsteros/contracts";
+import type { ApiKey, Document, Project, SearchResult, Task } from "@backsteros/contracts";
 
-import type { DbApiKey, DbProject, DbTask } from "../db/schema.js";
+import type { DbApiKey, DbDocument, DbProject, DbTask } from "../db/schema.js";
 
 export function toIso(date: Date | null | undefined): string | null {
   if (!date) {
@@ -51,5 +51,37 @@ export function toApiKey(row: DbApiKey): ApiKey {
     scopes: row.scopes as ApiKey["scopes"],
     createdAt: row.createdAt.toISOString(),
     revokedAt: toIso(row.revokedAt),
+  };
+}
+
+export function toDocument(row: DbDocument): Document {
+  return {
+    id: row.id,
+    type: row.type as Document["type"],
+    projectId: row.projectId,
+    path: row.path,
+    title: row.title,
+    storageKey: row.storageKey,
+    contentType: row.contentType,
+    byteSize: row.byteSize,
+    checksum: row.checksum,
+    snippet: row.snippet,
+    contentVersion: row.contentVersion,
+    contentEtag: row.contentEtag,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toSearchResult(row: DbDocument): SearchResult {
+  return {
+    id: row.id,
+    type: row.type as SearchResult["type"],
+    projectId: row.projectId,
+    path: row.path,
+    title: row.title,
+    snippet: row.snippet,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

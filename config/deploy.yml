@@ -48,6 +48,12 @@ env:
     PORT: "8787"
     PUBLIC_API_URL: https://service.backsteros.com
     CORS_ORIGINS: https://backsteros.com,https://service.backsteros.com
+    SPACES_ENDPOINT: https://ams3.digitaloceanspaces.com
+    SPACES_BUCKET: backsteros
+    SPACES_REGION: ams3
+    SPACES_CDN_URL: https://backsteros.ams3.cdn.digitaloceanspaces.com
   secret:
     - DATABASE_URL
     - CLERK_SECRET_KEY
+    - SPACES_ACCESS_KEY_ID
+    - SPACES_SECRET_ACCESS_KEY

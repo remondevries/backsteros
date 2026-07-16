@@ -99,7 +99,47 @@ export const tasks = pgTable(
   ],
 );
 
+export const documents = pgTable(
+  "documents",
+  {
+    id: text("id").primaryKey(),
+    type: text("type").notNull(),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    path: text("path").notNull(),
+    title: text("title").notNull(),
+    storageKey: text("storage_key").notNull(),
+    contentType: text("content_type").notNull().default("text/markdown"),
+    byteSize: integer("byte_size").notNull().default(0),
+    checksum: text("checksum"),
+    snippet: text("snippet"),
+    contentVersion: integer("content_version").notNull().default(1),
+    contentEtag: text("content_etag"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("documents_type_idx").on(table.type),
+    index("documents_project_id_idx").on(table.projectId),
+    index("documents_path_idx").on(table.path),
+    index("documents_deleted_at_idx").on(table.deletedAt),
+    index("documents_type_project_path_idx").on(
+      table.type,
+      table.projectId,
+      table.path,
+    ),
+  ],
+);
+
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
+export type DbDocument = typeof documents.$inferSelect;
