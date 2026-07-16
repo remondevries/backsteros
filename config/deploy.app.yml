@@ -1,0 +1,46 @@
+service: backsteros-app
+image: remondevries/backsteros-app
+
+secrets_path: .kamal/secrets
+
+servers:
+  web:
+    - 161.35.86.25
+
+ssh:
+  user: root
+  config: false
+
+proxy:
+  ssl: false
+  host: app.backsteros.com
+  app_port: 3000
+  healthcheck:
+    path: /api/health
+    interval: 5
+    timeout: 10
+
+registry:
+  server: ghcr.io
+  username: remondevries
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+  dockerfile: backsteros-app/Dockerfile
+  context: .
+  args:
+    NEXT_PUBLIC_API_URL: https://service.backsteros.com
+    NEXT_PUBLIC_APP_URL: https://app.backsteros.com
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: <%= ENV.fetch("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY") %>
+
+env:
+  clear:
+    NODE_ENV: production
+    PORT: "3000"
+    NEXT_PUBLIC_API_URL: https://service.backsteros.com
+    NEXT_PUBLIC_APP_URL: https://app.backsteros.com
+  secret:
+    - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    - CLERK_SECRET_KEY

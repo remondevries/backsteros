@@ -22,6 +22,41 @@
       "when": 1784215000000,
       "tag": "0002_sync_events",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784230000000,
+      "tag": "0003_workspace_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784235000000,
+      "tag": "0004_circle_domain_parity",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784238000000,
+      "tag": "0005_migration_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784240000000,
+      "tag": "0006_widen_circle_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784242000000,
+      "tag": "0007_legacy_task_numbering",
+      "breakpoints": true
     }
   ]
 }

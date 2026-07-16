@@ -8,11 +8,15 @@
     "build": "pnpm --filter @backsteros/contracts build && tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "pnpm test:unit",
+    "test:unit": "tsx --test src/lib/**/*.test.ts src/migration/**/*.test.ts",
+    "test:integration": "tsx --test src/integration/**/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
     "db:powersync-setup": "tsx --env-file=.env src/db/powersync-setup.ts",
     "db:powersync-token": "tsx --env-file=.env src/db/powersync-token.ts",
-    "db:seed": "tsx --env-file=.env src/db/seed.ts"
+    "db:seed": "tsx --env-file=.env src/db/seed.ts",
+    "migration:circle": "tsx --env-file=.env src/migration/cli.ts"
   },
   "dependencies": {
     "@backsteros/contracts": "workspace:*",

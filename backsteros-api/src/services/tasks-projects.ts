@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 
 import type {
   CreateApiKeyInput,
@@ -9,49 +9,123 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { projects, tasks } from "../db/schema.js";
+import {
+  areas,
+  contacts,
+  entityCounters,
+  organizations,
+  projects,
+  tasks,
+} from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 
-export async function listProjects() {
-  return db
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
+
+async function assertWorkspaceReference(
+  workspaceId: string,
+  id: string | null | undefined,
+  table: typeof organizations | typeof areas | typeof contacts,
+  code: string,
+  executor: DbExecutor,
+) {
+  if (!id) return;
+  const [row] = await executor
+    .select({ id: table.id })
+    .from(table)
+    .where(and(eq(table.workspaceId, workspaceId), eq(table.id, id), isNull(table.deletedAt)))
+    .limit(1);
+  if (!row) throw new Error(code);
+}
+
+export async function listProjects(
+  workspaceId: string,
+  filters: { organizationId?: string; area?: string; status?: string } = {},
+  executor: DbExecutor = db,
+) {
+  const conditions = [eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt)];
+  if (filters.organizationId) conditions.push(eq(projects.organizationId, filters.organizationId));
+  if (filters.area) conditions.push(eq(projects.area, filters.area));
+  if (filters.status) conditions.push(eq(projects.status, filters.status));
+  return executor
     .select()
     .from(projects)
-    .where(isNull(projects.deletedAt))
+    .where(and(...conditions))
     .orderBy(projects.sortOrder, desc(projects.updatedAt));
 }
 
-export async function getProjectById(id: string) {
-  const [row] = await db
+export async function getProjectById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), isNull(projects.deletedAt)))
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, id),
+        isNull(projects.deletedAt),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
 
-export async function getProjectByKey(key: string) {
-  const [row] = await db
+export async function getProjectByKey(
+  workspaceId: string,
+  key: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .select()
     .from(projects)
-    .where(and(eq(projects.key, key), isNull(projects.deletedAt)))
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.key, key),
+        isNull(projects.deletedAt),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
 
-export async function createProject(input: CreateProjectInput, id = newId()) {
-  const existing = await getProjectByKey(input.key);
+export async function createProject(
+  workspaceId: string,
+  input: CreateProjectInput,
+  id = newId(),
+  executor: DbExecutor = db,
+) {
+  const existing = await getProjectByKey(workspaceId, input.key, executor);
   if (existing) {
     throw new Error("PROJECT_KEY_EXISTS");
   }
+  await assertWorkspaceReference(
+    workspaceId,
+    input.organizationId,
+    organizations,
+    "ORGANIZATION_NOT_FOUND",
+    executor,
+  );
+  await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
 
-  const [row] = await db
+  const [row] = await executor
     .insert(projects)
     .values({
       id,
+      workspaceId,
       key: input.key,
       name: input.name,
       summary: input.summary ?? null,
       description: input.description ?? null,
+      organizationId: input.organizationId ?? null,
+      areaId: input.areaId ?? null,
+      area: input.area ?? null,
+      startDate: input.startDate ? new Date(input.startDate) : null,
+      dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      icon: input.icon ?? null,
+      color: input.color ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
@@ -61,98 +135,216 @@ export async function createProject(input: CreateProjectInput, id = newId()) {
   return row;
 }
 
-export async function updateProject(id: string, input: UpdateProjectInput) {
-  const existing = await getProjectById(id);
+export async function updateProject(
+  workspaceId: string,
+  id: string,
+  input: UpdateProjectInput,
+  executor: DbExecutor = db,
+) {
+  const existing = await getProjectById(workspaceId, id, executor);
   if (!existing) {
     return null;
   }
 
   if (input.key && input.key !== existing.key) {
-    const conflict = await getProjectByKey(input.key);
+    const conflict = await getProjectByKey(workspaceId, input.key, executor);
     if (conflict) {
       throw new Error("PROJECT_KEY_EXISTS");
     }
   }
+  await assertWorkspaceReference(
+    workspaceId,
+    input.organizationId,
+    organizations,
+    "ORGANIZATION_NOT_FOUND",
+    executor,
+  );
+  await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
 
-  const [row] = await db
+  const [row] = await executor
     .update(projects)
     .set({
       key: input.key,
       name: input.name,
       summary: input.summary,
       description: input.description,
+      organizationId: input.organizationId,
+      areaId: input.areaId,
+      area: input.area,
+      startDate:
+        input.startDate === undefined
+          ? undefined
+          : input.startDate
+            ? new Date(input.startDate)
+            : null,
+      dueDate:
+        input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
+      icon: input.icon,
+      color: input.color,
       status: input.status,
       priority: input.priority,
       sortOrder: input.sortOrder,
       updatedAt: new Date(),
     })
-    .where(eq(projects.id, id))
+    .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
     .returning();
 
   return row ?? null;
 }
 
-export async function deleteProject(id: string) {
-  const [row] = await db
+export async function deleteProject(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .update(projects)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(projects.id, id), isNull(projects.deletedAt)))
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, id),
+        isNull(projects.deletedAt),
+      ),
+    )
     .returning();
   return row ?? null;
 }
 
-export async function listTasks(projectId?: string) {
-  const conditions = [isNull(tasks.deletedAt)];
+export async function listTasks(
+  workspaceId: string,
+  filters: {
+    projectId?: string;
+    contactId?: string;
+    assigneeId?: string;
+    status?: string;
+    inbox?: boolean;
+  } = {},
+  executor: DbExecutor = db,
+) {
+  const conditions = [
+    eq(tasks.workspaceId, workspaceId),
+    isNull(tasks.deletedAt),
+  ];
 
-  if (projectId) {
-    conditions.push(eq(tasks.projectId, projectId));
-  }
+  if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
+  if (filters.contactId) conditions.push(eq(tasks.contactId, filters.contactId));
+  if (filters.assigneeId) conditions.push(eq(tasks.assigneeId, filters.assigneeId));
+  if (filters.status) conditions.push(eq(tasks.status, filters.status));
+  if (filters.inbox !== undefined) conditions.push(eq(tasks.inbox, filters.inbox));
 
-  return db
+  return executor
     .select()
     .from(tasks)
     .where(and(...conditions))
     .orderBy(tasks.sortOrder, desc(tasks.updatedAt));
 }
 
-export async function getTaskById(id: string) {
-  const [row] = await db
+export async function getTaskById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .select()
     .from(tasks)
-    .where(and(eq(tasks.id, id), isNull(tasks.deletedAt)))
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.id, id),
+        isNull(tasks.deletedAt),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
 
-async function nextTaskNumber(projectId: string | null | undefined) {
-  const [result] = await db
-    .select({ value: max(tasks.number) })
-    .from(tasks)
-    .where(
-      projectId
-        ? eq(tasks.projectId, projectId)
-        : sql`${tasks.projectId} IS NULL`,
-    );
+async function nextTaskNumber(
+  workspaceId: string,
+  projectId: string | null | undefined,
+  contactId: string | null | undefined,
+  executor: DbExecutor,
+) {
+  const scopeId = projectId
+    ? `project:${projectId}`
+    : contactId
+      ? `contact:${contactId}`
+      : "__inbox__";
+  const [counter] = await executor
+    .insert(entityCounters)
+    .values({
+      workspaceId,
+      entity: "task",
+      scopeId,
+      nextValue: 2,
+    })
+    .onConflictDoUpdate({
+      target: [
+        entityCounters.workspaceId,
+        entityCounters.entity,
+        entityCounters.scopeId,
+      ],
+      set: {
+        nextValue: sql`${entityCounters.nextValue} + 1`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ nextValue: entityCounters.nextValue });
 
-  return (result?.value ?? 0) + 1;
+  return counter!.nextValue - 1;
 }
 
-export async function createTask(input: CreateTaskInput, id = newId()) {
+function taskScope(projectId?: string | null, contactId?: string | null) {
+  return projectId
+    ? `project:${projectId}`
+    : contactId
+      ? `contact:${contactId}`
+      : "__inbox__";
+}
+
+async function createTaskWithExecutor(
+  workspaceId: string,
+  input: CreateTaskInput,
+  id: string,
+  executor: DbExecutor,
+) {
   if (input.projectId) {
-    const project = await getProjectById(input.projectId);
+    const project = await getProjectById(workspaceId, input.projectId, executor);
     if (!project) {
       throw new Error("PROJECT_NOT_FOUND");
     }
   }
+  await assertWorkspaceReference(
+    workspaceId,
+    input.contactId,
+    contacts,
+    "CONTACT_NOT_FOUND",
+    executor,
+  );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.assigneeId,
+    contacts,
+    "ASSIGNEE_NOT_FOUND",
+    executor,
+  );
 
-  const number = await nextTaskNumber(input.projectId ?? null);
+  const number = await nextTaskNumber(
+    workspaceId,
+    input.projectId ?? null,
+    input.contactId ?? null,
+    executor,
+  );
   const status = input.status ?? "ready_to_start";
 
-  const [row] = await db
+  const [row] = await executor
     .insert(tasks)
     .values({
       id,
+      workspaceId,
       projectId: input.projectId ?? null,
+      contactId: input.contactId ?? null,
+      assigneeId: input.assigneeId ?? null,
       number,
       title: input.title,
       description: input.description ?? null,
@@ -160,6 +352,8 @@ export async function createTask(input: CreateTaskInput, id = newId()) {
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
+      inbox: input.inbox ?? (!input.projectId && !input.contactId),
       completedAt: status === "completed" ? new Date() : null,
     })
     .returning();
@@ -167,20 +361,62 @@ export async function createTask(input: CreateTaskInput, id = newId()) {
   return row;
 }
 
-export async function updateTask(id: string, input: UpdateTaskInput) {
-  const existing = await getTaskById(id);
+export async function createTask(
+  workspaceId: string,
+  input: CreateTaskInput,
+  id = newId(),
+  executor?: DbExecutor,
+) {
+  if (executor) {
+    return createTaskWithExecutor(workspaceId, input, id, executor);
+  }
+  return db.transaction((tx) =>
+    createTaskWithExecutor(workspaceId, input, id, tx),
+  );
+}
+
+export async function updateTask(
+  workspaceId: string,
+  id: string,
+  input: UpdateTaskInput,
+  executor: DbExecutor = db,
+) {
+  const existing = await getTaskById(workspaceId, id, executor);
   if (!existing) {
     return null;
   }
 
   if (input.projectId) {
-    const project = await getProjectById(input.projectId);
+    const project = await getProjectById(workspaceId, input.projectId, executor);
     if (!project) {
       throw new Error("PROJECT_NOT_FOUND");
     }
   }
+  await assertWorkspaceReference(
+    workspaceId,
+    input.contactId,
+    contacts,
+    "CONTACT_NOT_FOUND",
+    executor,
+  );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.assigneeId,
+    contacts,
+    "ASSIGNEE_NOT_FOUND",
+    executor,
+  );
 
   const nextStatus = input.status ?? existing.status;
+  const nextProjectId =
+    input.projectId === undefined ? existing.projectId : input.projectId;
+  const nextContactId =
+    input.contactId === undefined ? existing.contactId : input.contactId;
+  const number =
+    taskScope(nextProjectId, nextContactId) ===
+    taskScope(existing.projectId, existing.contactId)
+      ? existing.number
+      : await nextTaskNumber(workspaceId, nextProjectId, nextContactId, executor);
   const completedAt =
     nextStatus === "completed"
       ? existing.completedAt ?? new Date()
@@ -188,10 +424,13 @@ export async function updateTask(id: string, input: UpdateTaskInput) {
         ? null
         : existing.completedAt;
 
-  const [row] = await db
+  const [row] = await executor
     .update(tasks)
     .set({
       projectId: input.projectId,
+      contactId: input.contactId,
+      assigneeId: input.assigneeId,
+      number,
       title: input.title,
       description: input.description,
       status: input.status,
@@ -203,20 +442,120 @@ export async function updateTask(id: string, input: UpdateTaskInput) {
           : input.dueDate
             ? new Date(input.dueDate)
             : null,
+      triagedAt:
+        input.triagedAt === undefined
+          ? undefined
+          : input.triagedAt
+            ? new Date(input.triagedAt)
+            : null,
+      inbox:
+        input.inbox ??
+        (input.projectId !== undefined || input.contactId !== undefined
+          ? !nextProjectId && !nextContactId
+          : undefined),
       completedAt,
       updatedAt: new Date(),
     })
-    .where(eq(tasks.id, id))
+    .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
     .returning();
 
   return row ?? null;
 }
 
-export async function deleteTask(id: string) {
-  const [row] = await db
+export async function deleteTask(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .update(tasks)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(tasks.id, id), isNull(tasks.deletedAt)))
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        eq(tasks.id, id),
+        isNull(tasks.deletedAt),
+      ),
+    )
     .returning();
   return row ?? null;
+}
+
+export async function listDueTasks(
+  workspaceId: string,
+  before = new Date(),
+  executor: DbExecutor = db,
+) {
+  return executor
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+        isNull(tasks.completedAt),
+        isNotNull(tasks.dueDate),
+        lte(tasks.dueDate, before),
+      ),
+    )
+    .orderBy(asc(tasks.dueDate), asc(tasks.sortOrder));
+}
+
+export async function listInboxTasks(workspaceId: string, executor: DbExecutor = db) {
+  return executor
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+        eq(tasks.inbox, true),
+      ),
+    )
+    .orderBy(asc(tasks.sortOrder), desc(tasks.updatedAt));
+}
+
+export async function batchUpdateTasks(
+  workspaceId: string,
+  ids: string[],
+  input: UpdateTaskInput,
+) {
+  if (ids.length === 0) return [];
+  return db.transaction(async (tx) => {
+    const rows = [];
+    for (const id of ids) {
+      const row = await updateTask(workspaceId, id, input, tx);
+      if (row) rows.push(row);
+    }
+    return rows;
+  });
+}
+
+export async function reorderTasks(
+  workspaceId: string,
+  orderedIds: string[],
+) {
+  return db.transaction(async (tx) => {
+    const owned = await tx
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.workspaceId, workspaceId),
+          inArray(tasks.id, orderedIds),
+          isNull(tasks.deletedAt),
+        ),
+      );
+    if (owned.length !== new Set(orderedIds).size) throw new Error("TASK_NOT_FOUND");
+    const rows = [];
+    for (const [sortOrder, id] of orderedIds.entries()) {
+      const [row] = await tx
+        .update(tasks)
+        .set({ sortOrder, updatedAt: new Date() })
+        .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
+        .returning();
+      if (row) rows.push(row);
+    }
+    return rows;
+  });
 }

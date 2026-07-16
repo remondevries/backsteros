@@ -13,6 +13,7 @@ import {
   hasScope,
   newId,
 } from "../lib/crypto.js";
+import { resolveOrCreateWorkspace } from "../services/workspaces.js";
 
 export type AuthKind = "api_key" | "clerk";
 
@@ -21,6 +22,8 @@ export type AuthContext = {
   userId: string | null;
   clerkUserId: string | null;
   apiKeyId: string | null;
+  workspaceId: string;
+  membershipRole: string | null;
   scopes: ApiKeyScope[];
 };
 
@@ -66,6 +69,8 @@ export async function authenticateApiKey(secret: string): Promise<AuthContext | 
     userId: row.userId,
     clerkUserId: null,
     apiKeyId: row.id,
+    workspaceId: row.workspaceId,
+    membershipRole: null,
     scopes: row.scopes as ApiKeyScope[],
   };
 }
@@ -90,20 +95,37 @@ export async function authenticateClerk(
   let userId = existing?.id ?? null;
 
   if (!userId) {
-    userId = newId();
-    await db.insert(users).values({
-      id: userId,
-      clerkId: clerkUserId,
-      email: typeof verified.email === "string" ? verified.email : null,
-      role: "owner",
-    });
+    const proposedUserId = newId();
+    await db
+      .insert(users)
+      .values({
+        id: proposedUserId,
+        clerkId: clerkUserId,
+        email: typeof verified.email === "string" ? verified.email : null,
+        role: "owner",
+      })
+      .onConflictDoNothing();
+    const [createdOrRaced] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.clerkId, clerkUserId))
+      .limit(1);
+    userId = createdOrRaced?.id ?? null;
   }
+
+  if (!userId) {
+    throw new Error("Failed to resolve Clerk user");
+  }
+
+  const membership = await resolveOrCreateWorkspace(userId);
 
   return {
     kind: "clerk",
     userId,
     clerkUserId,
     apiKeyId: null,
+    workspaceId: membership.workspaceId,
+    membershipRole: membership.role,
     scopes: [],
   };
 }
@@ -158,8 +180,11 @@ export function requireClerkSession() {
 
 export function requireScope(scope: ApiKeyScope) {
   return (auth: AuthContext | undefined): boolean => {
-    if (!auth || auth.kind !== "api_key") {
+    if (!auth) {
       return false;
+    }
+    if (auth.kind === "clerk") {
+      return Boolean(auth.membershipRole);
     }
     return hasScope(auth.scopes, scope);
   };

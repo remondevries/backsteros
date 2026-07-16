@@ -3,7 +3,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { ApiKeyScope, CreateApiKeyInput } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { apiKeys } from "../db/schema.js";
+import { apiKeys, workspaceSettings, workspaces } from "../db/schema.js";
 import {
   apiKeyLookupPrefix,
   generateApiKeySecret,
@@ -11,15 +11,19 @@ import {
   newId,
 } from "../lib/crypto.js";
 
-export async function listApiKeys(userId: string) {
+export async function listApiKeys(workspaceId: string) {
   return db
     .select()
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)))
+    .where(and(eq(apiKeys.workspaceId, workspaceId), isNull(apiKeys.revokedAt)))
     .orderBy(desc(apiKeys.createdAt));
 }
 
-export async function createApiKey(userId: string, input: CreateApiKeyInput) {
+export async function createApiKey(
+  workspaceId: string,
+  userId: string,
+  input: CreateApiKeyInput,
+) {
   const secret = generateApiKeySecret();
   const id = newId();
 
@@ -27,6 +31,7 @@ export async function createApiKey(userId: string, input: CreateApiKeyInput) {
     .insert(apiKeys)
     .values({
       id,
+      workspaceId,
       userId,
       name: input.name,
       prefix: apiKeyLookupPrefix(secret),
@@ -38,12 +43,16 @@ export async function createApiKey(userId: string, input: CreateApiKeyInput) {
   return { row, secret };
 }
 
-export async function revokeApiKey(userId: string, id: string) {
+export async function revokeApiKey(workspaceId: string, id: string) {
   const [row] = await db
     .update(apiKeys)
     .set({ revokedAt: new Date() })
     .where(
-      and(eq(apiKeys.id, id), eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)),
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.workspaceId, workspaceId),
+        isNull(apiKeys.revokedAt),
+      ),
     )
     .returning();
 
@@ -53,21 +62,37 @@ export async function revokeApiKey(userId: string, id: string) {
 export async function createBootstrapApiKey(
   name: string,
   scopes: ApiKeyScope[],
+  workspaceId = "ws_legacy_default",
 ) {
   const secret = generateApiKeySecret();
   const id = newId();
 
-  const [row] = await db
-    .insert(apiKeys)
-    .values({
-      id,
-      userId: null,
-      name,
-      prefix: apiKeyLookupPrefix(secret),
-      keyHash: hashApiKey(secret),
-      scopes,
-    })
-    .returning();
+  const [row] = await db.transaction(async (tx) => {
+    await tx
+      .insert(workspaces)
+      .values({
+        id: workspaceId,
+        name: "BacksterOS",
+        slug: workspaceId === "ws_legacy_default" ? "backsteros" : workspaceId,
+      })
+      .onConflictDoNothing();
+    await tx
+      .insert(workspaceSettings)
+      .values({ workspaceId })
+      .onConflictDoNothing();
+    return tx
+      .insert(apiKeys)
+      .values({
+        id,
+        workspaceId,
+        userId: null,
+        name,
+        prefix: apiKeyLookupPrefix(secret),
+        keyHash: hashApiKey(secret),
+        scopes,
+      })
+      .returning();
+  });
 
   return { row, secret };
 }

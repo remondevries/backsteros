@@ -44,24 +44,52 @@ export function buildStorageKey(
   type: "project" | "knowledge" | "journal",
   path: string,
   projectKey?: string,
+  workspaceId?: string,
 ): string {
   const normalizedPath = path.replace(/^\/+/, "");
+  const prefix = workspaceId ? `workspaces/${workspaceId}/` : "";
 
   switch (type) {
     case "journal":
-      return `markdown/journal/${normalizedPath}`;
+      return `${prefix}markdown/journal/${normalizedPath}`;
     case "knowledge":
-      return `markdown/knowledge/${normalizedPath}`;
+      return `${prefix}markdown/knowledge/${normalizedPath}`;
     case "project":
       if (!projectKey) {
         throw new Error("PROJECT_KEY_REQUIRED");
       }
-      return `markdown/projects/${projectKey}/${normalizedPath}`;
+      return `${prefix}markdown/projects/${projectKey}/${normalizedPath}`;
   }
 }
 
-export function checksumForContent(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
+function safeSegment(value: string): string {
+  const normalized = value.replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!normalized || normalized === "." || normalized === "..") {
+    throw new Error("INVALID_STORAGE_SEGMENT");
+  }
+  return normalized;
+}
+
+export function buildPrivateStorageKey(
+  workspaceId: string,
+  category: "pdfs" | "avatars",
+  entityId: string,
+  fileName: string,
+): string {
+  return `workspaces/${safeSegment(workspaceId)}/private/${category}/${safeSegment(entityId)}/${safeSegment(fileName)}`;
+}
+
+export function assertPrivateStorageKey(workspaceId: string, key: string): void {
+  const prefix = `workspaces/${safeSegment(workspaceId)}/private/`;
+  if (!key.startsWith(prefix)) {
+    throw new Error("STORAGE_KEY_OUTSIDE_WORKSPACE");
+  }
+}
+
+export function checksumForContent(content: string | Uint8Array): string {
+  return createHash("sha256")
+    .update(typeof content === "string" ? Buffer.from(content, "utf8") : content)
+    .digest("hex");
 }
 
 export function snippetForContent(content: string): string {
@@ -74,10 +102,10 @@ export function snippetForContent(content: string): string {
 
 export async function putObject(
   key: string,
-  body: string,
+  body: string | Uint8Array,
   contentType = DEFAULT_CONTENT_TYPE,
 ): Promise<{ etag: string | null; byteSize: number }> {
-  const bytes = Buffer.from(body, "utf8");
+  const bytes = typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body);
   const result = await getStorageClient().send(
     new PutObjectCommand({
       Bucket: getBucketName(),
@@ -95,6 +123,7 @@ export async function putObject(
 
 export async function getObject(key: string): Promise<{
   body: string;
+  bytes: Uint8Array;
   etag: string | null;
   contentType: string;
   byteSize: number;
@@ -114,6 +143,7 @@ export async function getObject(key: string): Promise<{
 
   return {
     body: bytes.toString("utf8"),
+    bytes,
     etag: result.ETag?.replaceAll('"', "") ?? null,
     contentType: result.ContentType ?? DEFAULT_CONTENT_TYPE,
     byteSize: bytes.byteLength,

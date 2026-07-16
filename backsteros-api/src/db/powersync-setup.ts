@@ -33,10 +33,11 @@ async function main() {
   `;
 
   if (!row?.exists) {
-    await sql`CREATE PUBLICATION powersync FOR TABLE projects, tasks, documents`;
+    await sql`CREATE PUBLICATION powersync FOR TABLE projects, tasks, documents, organizations, contacts, areas, letters, avatars, mentions, workspace_settings`;
     console.log("Created publication powersync.");
   } else {
-    console.log("Publication powersync already exists.");
+    await sql`ALTER PUBLICATION powersync SET TABLE projects, tasks, documents, organizations, contacts, areas, letters, avatars, mentions, workspace_settings`;
+    console.log("Updated publication powersync.");
   }
 
   await sql.end();

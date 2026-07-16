@@ -10,11 +10,17 @@ import {
   getPowerSyncUrl,
   signPowerSyncToken,
 } from "../lib/powersync-auth.js";
-import { POWERSYNC_OPS, SYNC_OPERATIONS, SYNC_SCHEMA_VERSION } from "../lib/sync-constants.js";
+import {
+  POWERSYNC_OPS,
+  POWERSYNC_TABLES,
+  SYNC_ENTITIES,
+  SYNC_OPERATIONS,
+  SYNC_SCHEMA_VERSION,
+} from "../lib/sync-constants.js";
 import * as syncService from "../services/sync.js";
 
 const syncChangeSchema = z.object({
-  entity: z.enum(["project", "task", "document"]),
+  entity: z.enum(SYNC_ENTITIES),
   entity_id: z.string(),
   operation: z.enum(SYNC_OPERATIONS),
   payload: z.record(z.unknown()),
@@ -36,11 +42,12 @@ const syncPushSchema = z.object({
 });
 
 const powerSyncWriteSchema = z.object({
-  device_id: z.string().optional(),
+  device_id: z.string().min(1),
+  mutation_id: z.string().min(1),
   batch: z
     .array(
       z.object({
-        table: z.string(),
+        table: z.enum(POWERSYNC_TABLES),
         op: z.enum(POWERSYNC_OPS),
         id: z.string(),
         data: z.record(z.unknown()).optional(),
@@ -80,12 +87,17 @@ async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
       const verified = await jwtVerify(token, new TextEncoder().encode(secret), {
         audience: getPowerSyncAudience(),
       });
-      if (typeof verified.payload.sub === "string") {
+      if (
+        typeof verified.payload.sub === "string" &&
+        typeof verified.payload.workspace_id === "string"
+      ) {
         c.set("auth", {
           kind: "clerk",
           userId: null,
           clerkUserId: verified.payload.sub,
           apiKeyId: null,
+          workspaceId: verified.payload.workspace_id,
+          membershipRole: "member",
           scopes: [],
         } satisfies AuthContext);
         await next();
@@ -116,7 +128,7 @@ export function registerSyncRoutes(app: Hono) {
   app.post("/api/v1/powersync/write", withClerkOrPowerSyncAuth);
 
   app.post("/api/v1/sync/bootstrap", async (c) => {
-    const payload = await syncService.bootstrapSync();
+    const payload = await syncService.bootstrapSync(getAuth(c).workspaceId);
     return c.json(payload);
   });
 
@@ -126,7 +138,7 @@ export function registerSyncRoutes(app: Hono) {
       return c.json({ error: "Invalid cursor", code: "bad_request" }, 400);
     }
 
-    const payload = await syncService.pullSync(cursor);
+    const payload = await syncService.pullSync(getAuth(c).workspaceId, cursor);
     return c.json(payload);
   });
 
@@ -144,6 +156,7 @@ export function registerSyncRoutes(app: Hono) {
 
       try {
         const result = await syncService.pushSyncMutations({
+          workspaceId: getAuth(c).workspaceId,
           deviceId: body.device_id,
           mutations: body.mutations,
         });
@@ -173,7 +186,10 @@ export function registerSyncRoutes(app: Hono) {
       );
     }
 
-    const token = await signPowerSyncToken(auth.clerkUserId!);
+    const token = await signPowerSyncToken(
+      auth.clerkUserId!,
+      auth.workspaceId,
+    );
     return c.json({
       endpoint,
       token,
@@ -189,7 +205,9 @@ export function registerSyncRoutes(app: Hono) {
 
       try {
         await syncService.applyPowerSyncBatch({
+          workspaceId: getAuth(c).workspaceId,
           deviceId: body.device_id,
+          mutationId: body.mutation_id,
           batch: body.batch,
         });
         return c.json({ ok: true });

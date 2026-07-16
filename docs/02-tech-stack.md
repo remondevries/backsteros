@@ -7,8 +7,8 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 | Layer | Choice | Runner-up |
 | --- | --- | --- |
 | Mobile | **Expo (SDK 52+) + Expo Router** | Flutter + PowerSync |
-| Desktop shell | **Tauri 2** | Electron |
-| Web / desktop UI | **Vite + React** | Next.js (only if SSR/marketing site needed) |
+| Desktop client | Separate decision; not the web build | Tauri 2 |
+| Product web UI | **Next.js 16 + React 19 + Tailwind CSS 4** | Vite + React |
 | Markdown editor | **CodeMirror 6** | — |
 | Server metadata DB | **PostgreSQL 17** | — |
 | Blob storage | **Backblaze B2** or **Cloudflare R2** | DO Spaces |
@@ -24,11 +24,17 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 - PowerSync official React Native SDK
 - Avoid: Tauri iOS, WebView-wrapped Next.js
 
-## Desktop — Tauri + Vite
+## Product web — Next.js
 
-- Native window; system WebView (light vs Electron)
-- **No embedded Next.js/Node server** — frontend build only, talks to remote API
-- PowerSync Web SDK for offline SQLite in browser engine
+- Standalone server deployment at `app.backsteros.com`
+- Responsive browser UI; no `/app` base path
+- Clerk Next.js middleware and sign-in
+- Server components only for web concerns; all business rules remain in the API
+
+## Desktop — separate client
+
+The native desktop runtime does not load or package `backsteros-app`. Its stack is
+decided independently while sharing API contracts and product behavior.
 
 ## Backend — PostgreSQL
 

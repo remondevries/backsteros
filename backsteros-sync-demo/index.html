@@ -35,17 +35,23 @@
       .error {
         color: #b00020;
       }
+      #sign-in {
+        margin: 1rem 0;
+      }
     </style>
   </head>
   <body>
     <h1>BacksterOS PowerSync Demo</h1>
     <p>Phase 3 web client — offline task list synced via PowerSync.</p>
     <div id="status" class="status">Starting…</div>
-    <div class="row">
-      <input id="title" placeholder="New task title" style="flex: 1" />
-      <button id="add">Add task</button>
+    <div id="sign-in" hidden></div>
+    <div id="app" hidden>
+      <div class="row">
+        <input id="title" placeholder="New task title" style="flex: 1" />
+        <button id="add">Add task</button>
+      </div>
+      <ul id="tasks"></ul>
     </div>
-    <ul id="tasks"></ul>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

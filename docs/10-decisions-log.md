@@ -46,7 +46,7 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ## ADR-005: Tauri for desktop (no Node sidecar)
 
-**Status:** Accepted  
+**Status:** Superseded for `backsteros-app` by ADR-018; retained as a possible separate desktop-client decision.
 **Context:** User wants native window; M1 memory constraints.  
 **Decision:** Tauri 2 loads Vite static build; remote API only.  
 **Alternatives rejected:** Electron; Tauri + embedded Next server (Circle pattern).
@@ -55,7 +55,7 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ## ADR-006: Vite + React over Next.js for app UI
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-018.
 **Context:** Client-only app; no SSR required for main shell.  
 **Decision:** Vite + React for `backsteros-app` (product at `/app`).  
 **Note:** Ops UI is separate `backsteros-admin` at `/admin` — see ADR-015.
@@ -139,7 +139,7 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 **Status:** Accepted  
 **Context:** User wants `backsteros.com/app` for tasks/content and `backsteros.com/admin` for logs/sync/API observability — not mixed in one SPA.  
 **Decision:** `backsteros-app/` (product) and `backsteros-admin/` (ops); cross-link in nav; shared auth and `api-client`.  
-**Consequences:** Two Vite builds path-routed on one domain; admin Phase 3b after API exposes metrics.
+**Consequences:** Separate app and admin deployments; admin Phase 3b after API exposes metrics. The product app deployment and hostname are governed by ADR-018.
 
 ---
 
@@ -163,8 +163,33 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 **Status:** Accepted  
 **Context:** `api.backsteros.com` subdomain already in use elsewhere.  
-**Decision:** API, sync, and OpenAPI live at **`https://service.backsteros.com`**. Product domain remains **`backsteros.com`** (`/app`, `/admin`).  
+**Decision:** API, sync, and OpenAPI live at **`https://service.backsteros.com`**. The product app hostname is superseded by ADR-018.
 **Consequences:** REST base URL is `https://service.backsteros.com/api/v1`; clients and agents use this host.
+
+---
+
+## ADR-018: Standalone Next.js product web app
+
+**Status:** Accepted
+**Context:** The product shell needs first-class web routing, Clerk middleware,
+responsive behavior, and deployment independent from marketing and admin. Circle
+already provides a proven Next.js shell and interaction model. The earlier Vite
+static build at `/app`, shared with Tauri, created unnecessary path-routing and
+runtime constraints.
+
+**Decision:**
+- Build `backsteros-app` with Next.js 16, React 19, and Tailwind CSS 4.
+- Deploy it as a standalone web service at **`https://app.backsteros.com`**.
+- Use root-relative canonical product routes such as `/projects`, `/tasks`, and
+  `/knowledge`; do not add an `/app` base path.
+- Use Clerk's Next.js middleware and sign-in route for human authentication.
+- Keep it responsive web only. Desktop and mobile native clients are separate
+  decisions and do not load this Next.js build.
+- Keep backend logic, storage, sync services, SQLite, and API routes out of the
+  product app, except deployment-facing web endpoints such as `/api/health`.
+
+**Supersedes:** ADR-005 for this app, ADR-006, and the product-host/path portions
+of ADR-015 and ADR-017.
 
 ---
 

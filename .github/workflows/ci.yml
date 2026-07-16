@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_API_URL: http://127.0.0.1:8787
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+  CLERK_SECRET_KEY: sk_test_ci_placeholder
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: backsteros
+          POSTGRES_PASSWORD: backsteros
+          POSTGRES_DB: backsteros_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U backsteros -d backsteros_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://backsteros:backsteros@127.0.0.1:5432/backsteros_test
+      CORS_ORIGINS: https://app.backsteros.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @backsteros/api exec tsx src/db/migrate.ts
+      - run: pnpm test:integration
+      - run: pnpm build
+      - run: pnpm --filter @backsteros/app exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

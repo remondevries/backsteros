@@ -6,9 +6,9 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                         CLIENTS (UI focus)                       │
 ├──────────────────┬──────────────────┬─────────────────────────────┤
-│ Tauri (desktop)  │ Expo (iOS/Android)│ Browser (same web UI)    │
-│ Vite + React     │ Expo Router       │ Vite + React              │
-│ PowerSync Web    │ PowerSync RN      │ PowerSync Web             │
+│ Desktop client   │ Expo (iOS/Android)│ Browser product app       │
+│ Separate runtime │ Expo Router       │ Next.js 16 + React 19      │
+│ API + sync       │ PowerSync RN      │ API + web sync             │
 └────────┬─────────┴────────┬─────────┴───────────┬─────────────┘
          │                  │                     │
          └──────────────────┼─────────────────────┘
@@ -57,16 +57,16 @@ Single workspace: **`~/code/backsteros/`**
 backsteros/
 ├── docs/                      ← specs (this documentation)
 ├── backsteros-api/            ← backend service
-├── backsteros-app/            ← product UI (/app, Tauri)
-├── backsteros-admin/          ← ops dashboard (/admin)
+├── backsteros-app/            ← Next.js product UI (app.backsteros.com)
+├── backsteros-admin/          ← ops dashboard (admin.backsteros.com)
 ├── backsteros-mobile/         ← Expo
-├── backsteros-desktop/        ← Tauri shell → app
+├── backsteros-desktop/        ← separate desktop client
 └── backsteros-packages/
     ├── api-client/            ← OpenAPI-generated client
     └── contracts/             ← Zod schemas
 ```
 
-Folders exist; no application code until Phase 1. See [STRUCTURE.md](../STRUCTURE.md).
+The product web app is implemented independently from the API and native clients.
 
 ## What does NOT live in clients
 

@@ -10,11 +10,14 @@ import {
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 const POWERSYNC_URL = import.meta.env.VITE_POWERSYNC_URL ?? "http://localhost:8080";
 const POWERSYNC_TOKEN = import.meta.env.VITE_POWERSYNC_TOKEN ?? "";
-const CLERK_TOKEN = import.meta.env.VITE_CLERK_TOKEN ?? "";
+
+export type TokenProvider = () => Promise<string | null>;
 
 const tasks = new Table(
   {
     project_id: column.text,
+    contact_id: column.text,
+    assignee_id: column.text,
     number: column.integer,
     title: column.text,
     description: column.text,
@@ -22,6 +25,8 @@ const tasks = new Table(
     priority: column.integer,
     sort_order: column.integer,
     due_date: column.text,
+    triaged_at: column.text,
+    inbox: column.integer,
     completed_at: column.text,
     created_at: column.text,
     updated_at: column.text,
@@ -34,25 +39,36 @@ const appSchema = new Schema({ tasks });
 type AppDatabase = (typeof appSchema)["types"];
 
 class BacksterConnector implements PowerSyncBackendConnector {
+  constructor(
+    private readonly getAuthToken: TokenProvider,
+    private readonly useClerkTokenFlow: boolean,
+  ) {}
+
   async fetchCredentials() {
-    if (CLERK_TOKEN) {
+    if (this.useClerkTokenFlow) {
+      const clerkToken = await this.getAuthToken();
+      if (!clerkToken) {
+        throw new Error("Sign in with Clerk to connect");
+      }
+
       const response = await fetch(`${API_URL}/api/v1/powersync/token`, {
-        headers: { Authorization: `Bearer ${CLERK_TOKEN}` },
+        headers: { Authorization: `Bearer ${clerkToken}` },
       });
       if (!response.ok) {
-        throw new Error(`Token fetch failed: ${response.status}`);
+        throw new Error(`Token fetch failed: ${response.status} ${await response.text()}`);
       }
       const payload = (await response.json()) as { endpoint: string; token: string };
       return { endpoint: payload.endpoint, token: payload.token };
     }
 
-    if (!POWERSYNC_TOKEN) {
-      throw new Error("Set VITE_POWERSYNC_TOKEN or VITE_CLERK_TOKEN in .env.local");
+    const devToken = POWERSYNC_TOKEN || (await this.getAuthToken());
+    if (!devToken) {
+      throw new Error("Set VITE_POWERSYNC_TOKEN or sign in with Clerk");
     }
 
     return {
       endpoint: POWERSYNC_URL,
-      token: POWERSYNC_TOKEN,
+      token: devToken,
     };
   }
 
@@ -69,17 +85,17 @@ class BacksterConnector implements PowerSyncBackendConnector {
       data: op.opData,
     }));
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    const authToken = CLERK_TOKEN || POWERSYNC_TOKEN;
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
+    const authToken = await this.getAuthToken();
+    if (!authToken) {
+      throw new Error("Missing auth token for upload");
     }
 
     const response = await fetch(`${API_URL}/api/v1/powersync/write`, {
       method: "POST",
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
       body: JSON.stringify({ batch: entries }),
     });
 
@@ -96,8 +112,11 @@ export const db = new PowerSyncDatabase({
   database: { dbFilename: "backsteros-sync-demo.db" },
 });
 
-export async function connectPowerSync() {
-  const connector = new BacksterConnector();
+export async function connectPowerSync(options: {
+  getAuthToken: TokenProvider;
+  useClerkTokenFlow: boolean;
+}) {
+  const connector = new BacksterConnector(options.getAuthToken, options.useClerkTokenFlow);
   await db.connect(connector);
   await db.waitForReady();
 }
@@ -116,9 +135,10 @@ export async function addTask(title: string) {
   const now = new Date().toISOString();
   await db.execute(
     `INSERT INTO tasks (
-      id, project_id, number, title, description, status, priority, sort_order,
-      due_date, completed_at, created_at, updated_at, deleted_at
-    ) VALUES (?, NULL, 1, ?, NULL, 'ready_to_start', 0, 0, NULL, NULL, ?, ?, NULL)`,
+      id, project_id, contact_id, assignee_id, number, title, description, status,
+      priority, sort_order, due_date, triaged_at, inbox, completed_at,
+      created_at, updated_at, deleted_at
+    ) VALUES (?, NULL, NULL, NULL, 1, ?, NULL, 'ready_to_start', 0, 0, NULL, NULL, 1, NULL, ?, ?, NULL)`,
     [id, title, now, now],
   );
 }

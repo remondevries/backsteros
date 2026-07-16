@@ -1,8 +1,15 @@
 packages:
   - backsteros-api
+  - backsteros-app
   - backsteros-sync-demo
   - backsteros-packages/*
 allowBuilds:
-  '@clerk/shared': set this to true or false
-  '@journeyapps/wa-sqlite': set this to true or false
-  esbuild: set this to true or false
+  '@clerk/shared': true
+  '@journeyapps/wa-sqlite': true
+  browser-tabs-lock: true
+  bufferutil: true
+  core-js: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  utf-8-validate: true

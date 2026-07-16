@@ -10,7 +10,6 @@ dist
 !.env.example
 .DS_Store
 docs
-backsteros-app
 backsteros-admin
 backsteros-mobile
 backsteros-desktop

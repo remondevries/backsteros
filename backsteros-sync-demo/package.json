@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:prod": "vite --mode prod",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/clerk-js": "^5.67.0",
     "@powersync/web": "^1.37.2"
   },
   "devDependencies": {

@@ -2,16 +2,18 @@
 
 ## Domains and paths
 
-Single marketing/product domain **`backsteros.com`** with path-based apps. API on **`service.backsteros.com`** (`api.backsteros.com` unavailable).
+Product, admin, and API are independently deployable hosts. The API remains on
+**`service.backsteros.com`** (`api.backsteros.com` unavailable).
 
 | URL | Client folder | Purpose |
 | --- | --- | --- |
-| `https://backsteros.com/` | (optional landing) | Marketing or redirect → `/app` |
-| `https://backsteros.com/app` | `backsteros-app/` | **Product UI** — tasks, projects, markdown, PDFs |
-| `https://backsteros.com/admin` | `backsteros-admin/` | **Ops dashboard** — logs, sync health, API keys, storage — **not** task editing |
+| `https://backsteros.com/` | (optional landing) | Marketing or redirect → `app.backsteros.com` |
+| `https://app.backsteros.com` | `backsteros-app/` | **Product UI** — standalone Next.js web app |
+| `https://admin.backsteros.com` | `backsteros-admin/` | **Ops dashboard** — logs, sync health, API keys, storage — **not** task editing |
 | `https://service.backsteros.com` | `backsteros-api/` | REST, sync, OpenAPI (no HTML product UI) |
 
-Tauri desktop and Expo mobile use the **same product experience as `/app`**, not `/admin`.
+Native desktop and mobile clients may share product concepts and API contracts,
+but they do not load the Next.js web build.
 
 ## Why two front-end codebases
 
@@ -29,29 +31,30 @@ Different UX and dependencies → **separate folders**, shared `backsteros-packa
 
 Both apps may share:
 
-- Same login session (cookie domain `backsteros.com`)
-- Header link: App → “Admin” (owner only); Admin → “Open app”
+- Same Clerk identity (host/session configuration permitting)
+- Header link: App → `admin.backsteros.com` (owner only); Admin → `app.backsteros.com`
 - Design tokens optional in `backsteros-packages/` — not a shared component library requirement
 
 Do **not** merge into one SPA with heavy route guards — keeps bundles small and AI agent context clear.
 
-## Deployment (reverse proxy)
+## Deployment
 
 ```text
-backsteros.com/app/*    → static build from backsteros-app/
-backsteros.com/admin/*  → static build from backsteros-admin/
-service.backsteros.com/*    → backsteros-api (Hono)
+app.backsteros.com/*      → standalone Next.js backsteros-app
+admin.backsteros.com/*    → backsteros-admin
+service.backsteros.com/*  → backsteros-api (Hono)
 ```
 
-Kamal, Caddy, or Cloudflare can path-route two static sites on one domain.
+The product app is a server deployment, not a Vite static export. Its health
+probe is `GET https://app.backsteros.com/api/health`.
 
 ## Desktop and mobile
 
 | Surface | Maps to |
 | --- | --- |
-| **Tauri** (`backsteros-desktop`) | Loads `backsteros-app` build (same as `/app`) |
+| **Desktop** (`backsteros-desktop`) | Separate native client decision; not the Next.js web build |
 | **Expo** (`backsteros-mobile`) | Native product UI — same API/sync, not admin |
-| **Browser** | `/app` and `/admin` as above |
+| **Browser** | `app.backsteros.com` and `admin.backsteros.com` |
 
 Optional: Tauri could open `/admin` in system browser for ops — not embedded in product shell v1.
 
@@ -68,7 +71,7 @@ Not task CRUD. Examples:
 - API keys management (may duplicate Settings in app later — admin is source for ops)
 - Link to OpenAPI `/docs` on API host
 
-## Product app contents (`/app`)
+## Product app contents (`app.backsteros.com`)
 
 - Inbox, tasks, projects, journal, knowledge, letters
 - Markdown editing (CodeMirror), PDF viewing
