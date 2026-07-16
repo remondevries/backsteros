@@ -8,7 +8,7 @@ replication:
 
 storage:
   type: mongodb
-  uri: mongodb://127.0.0.1:27017/powersync_storage
+  uri: mongodb://backsteros-powersync-mongo:27017/powersync_storage
 
 sync_config:
   path: /config/sync-config.yaml

@@ -16,14 +16,16 @@ Config: `service.local.yaml`, `sync-config.yaml`
 
 ## Production (Neon + droplet)
 
-1. **Neon** — enable Logical Replication in console, then run `neon-setup.sql`
+1. **Neon** — enable **Logical Replication** in console (Settings → Logical Replication), then run `neon-setup.sql`. PowerSync will fail replication until `wal_level=logical`.
 2. **Secrets** — add to `.kamal/secrets`:
    - `POWERSYNC_SOURCE_URI` — `postgresql://powersync_role:PASSWORD@...neon.../neondb?sslmode=require`
    - `POWERSYNC_JWT_SECRET` — shared HS256 secret (same as API)
-   - Set `POWERSYNC_JWT_K` in `service.prod.yaml` to base64url of the secret
-3. **Droplet** — run MongoDB for bucket storage, PowerSync service on `:8080`
-4. **DNS** — `sync.backsteros.com` → nginx → `127.0.0.1:8080`
-5. **API** — `kamal deploy` picks up `POWERSYNC_URL` + `POWERSYNC_JWT_SECRET`
+   - Base64url-encode the secret for the container env `PS_JWT_K` (PowerSync v1.23+ only allows `PS_*` substitution vars).
+3. **Droplet** — Docker network `backsteros-powersync`:
+   - **Mongo** — `mongo:7` with `--replSet rs0` (required for bucket storage transactions). Hostname: `backsteros-powersync-mongo`.
+   - **PowerSync** — `journeyapps/powersync-service:latest` on `127.0.0.1:8083`, env `PS_DATA_SOURCE_URI` + `PS_JWT_K`, config from `service.prod.yaml`.
+4. **DNS** — `sync.backsteros.com` A → droplet; nginx site `deploy/nginx/sync.backsteros.com.conf` → `127.0.0.1:8083`, then certbot.
+5. **API** — `kamal deploy` picks up `POWERSYNC_URL` + `POWERSYNC_JWT_SECRET`.
 
 ## Sync rules
 
