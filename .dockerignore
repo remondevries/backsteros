@@ -5,6 +5,8 @@ node_modules
 **/node_modules
 dist
 **/dist
+.next
+**/.next
 .env
 .env.*
 !.env.example
@@ -13,4 +15,7 @@ docs
 backsteros-admin
 backsteros-mobile
 backsteros-desktop
+backsteros-sync-demo
 docker-compose.yml
+deploy
+config

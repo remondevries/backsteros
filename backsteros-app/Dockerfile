@@ -5,6 +5,10 @@ RUN corepack enable
 WORKDIR /app
 
 FROM base AS dependencies
+# GitHub deps (e.g. @briangaoo/totem) need git; force HTTPS so builds need no SSH key.
+RUN apk add --no-cache git \
+ && git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" \
+ && git config --global url."https://github.com/".insteadOf "git@github.com:"
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backsteros-app/package.json backsteros-app/package.json
 COPY backsteros-packages/contracts/package.json backsteros-packages/contracts/package.json
