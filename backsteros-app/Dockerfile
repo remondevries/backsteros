@@ -40,6 +40,8 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/backsteros-app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/backsteros-app/.next/static ./backsteros-app/.next/static
+# Standalone output does not always include public/; PDF.js workers live here.
+COPY --from=builder --chown=nextjs:nodejs /app/backsteros-app/public ./backsteros-app/public
 USER nextjs
 EXPOSE 3000
 CMD ["node", "backsteros-app/server.js"]

@@ -19,7 +19,8 @@ export default isE2eAuthBypassEnabled()
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Skip static assets — include mjs/wasm used by PDF.js workers.
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|mjs|wasm|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
   ],
 };

@@ -1,5 +1,7 @@
 "use client";
 
+import { withBasePath } from "@/lib/base-path";
+
 /**
  * Must run before `react-pdf` / `pdfjs-dist` is imported.
  * - Polyfills Promise.withResolvers for older WebKit (iOS 16–17.3).
@@ -40,6 +42,11 @@ function prefersLegacyPdfJsWorker(): boolean {
 
 ensurePromiseWithResolversPolyfill();
 
-export const pdfJsWorkerSrc = prefersLegacyPdfJsWorker()
-  ? "/pdf.legacy.worker.min.mjs"
-  : "/pdf.worker.min.mjs";
+export const pdfJsWorkerSrc = withBasePath(
+  prefersLegacyPdfJsWorker()
+    ? "/pdf.legacy.worker.min.mjs"
+    : "/pdf.worker.min.mjs",
+);
+
+/** Directory for OpenJPEG / qcms wasm (same public/ folder as the workers). */
+export const pdfJsWasmUrl = withBasePath("/").replace(/\/?$/, "/");

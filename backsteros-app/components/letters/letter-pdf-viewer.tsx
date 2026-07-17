@@ -7,7 +7,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { PdfPreviewLoader } from "@/components/letters/pdf-preview-loader";
 import { DOCUMENT_CONTENT_MAX_WIDTH } from "@/lib/documents/content-layout";
 import "@/lib/pdf/pdfjs-client-setup";
-import { pdfJsWorkerSrc } from "@/lib/pdf/pdfjs-client-setup";
+import { pdfJsWasmUrl, pdfJsWorkerSrc } from "@/lib/pdf/pdfjs-client-setup";
 import {
   LETTER_PDF_ZOOM_IN_SHORTCUT_HINT,
   LETTER_PDF_ZOOM_OUT_SHORTCUT_HINT,
@@ -20,7 +20,11 @@ if (typeof window !== "undefined") {
   pdfjs.GlobalWorkerOptions.workerSrc = pdfJsWorkerSrc;
 }
 
-const PDF_OPTIONS = { isEvalSupported: false, useSystemFonts: true } as const;
+const PDF_OPTIONS = {
+  isEvalSupported: false,
+  useSystemFonts: true,
+  wasmUrl: pdfJsWasmUrl,
+} as const;
 
 /** Match the notes editor column (`DOCUMENT_CONTENT_MAX_WIDTH`) at 100% zoom. */
 const PDF_FIT_MAX_WIDTH_PX = Number.parseInt(DOCUMENT_CONTENT_MAX_WIDTH, 10);
