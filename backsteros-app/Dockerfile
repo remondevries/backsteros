@@ -13,7 +13,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backsteros-app/package.json backsteros-app/package.json
 COPY backsteros-packages/contracts/package.json backsteros-packages/contracts/package.json
 COPY backsteros-packages/api-client/package.json backsteros-packages/api-client/package.json
-RUN pnpm install --frozen-lockfile
+# Ignore scripts until app sources (build-totem) are copied in the builder stage.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM dependencies AS builder
 ARG NEXT_PUBLIC_API_URL
