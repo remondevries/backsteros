@@ -1,5 +1,7 @@
 import { SignJWT } from "jose";
 
+import { assertPowerSyncSecrets } from "./secrets.js";
+
 export function getPowerSyncAudience(): string {
   return process.env.POWERSYNC_AUDIENCE ?? "backsteros-powersync";
 }
@@ -12,6 +14,7 @@ export async function signPowerSyncToken(
   subject: string,
   workspaceId: string,
 ): Promise<string> {
+  assertPowerSyncSecrets();
   const secret = process.env.POWERSYNC_JWT_SECRET;
   if (!secret) {
     throw new Error("POWERSYNC_JWT_SECRET is required");

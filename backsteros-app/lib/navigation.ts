@@ -16,15 +16,28 @@ export type RouteFamily = (typeof routeFamilies)[number];
 export const navigation: Array<{
   href: `/${RouteFamily}`;
   label: string;
-  icon: string;
+  icon:
+    | "inbox"
+    | "journal"
+    | "tasks"
+    | "projects"
+    | "knowledge"
+    | "letters"
+    | "organizations"
+    | "contacts"
+    | "settings";
   section: "primary" | "workspace" | "people" | "system";
 }> = [
   { href: "/inbox", label: "Inbox", icon: "inbox", section: "primary" },
   { href: "/journal", label: "Journal", icon: "journal", section: "primary" },
   { href: "/tasks", label: "Tasks", icon: "tasks", section: "workspace" },
   { href: "/projects", label: "Projects", icon: "projects", section: "workspace" },
-  { href: "/areas", label: "Areas", icon: "projects", section: "workspace" },
-  { href: "/knowledge", label: "Knowledge", icon: "knowledge", section: "workspace" },
+  {
+    href: "/knowledge",
+    label: "Knowledge Base",
+    icon: "knowledge",
+    section: "workspace",
+  },
   { href: "/letters", label: "Letters", icon: "letters", section: "workspace" },
   {
     href: "/organizations",
@@ -77,7 +90,7 @@ export const routeCopy: Record<
     accent: "#d6a85b",
   },
   knowledge: {
-    title: "Knowledge",
+    title: "Knowledge Base",
     description: "Documents and reference material",
     singular: "document",
     accent: "#62b98c",

@@ -7,7 +7,7 @@ replication:
 
 storage:
   type: mongodb
-  uri: mongodb://mongo:27017/powersync_storage
+  uri: mongodb://mongo:27017/powersync_storage?replicaSet=rs0&directConnection=true
 
 sync_config:
   path: /config/sync-config.yaml
@@ -20,7 +20,7 @@ client_auth:
       - kty: oct
         alg: HS256
         kid: backsteros-powersync-1
-        k: ZGV2LXBvd2Vyc3luYy1zZWNyZXQtY2hhbmdlLW1l
+        k: UGh1c1BDX19Yak9OYUR1T0hGSUVjSkY4YktILVBueWJsT2JiZkpPN3l6OA
 
 # Set `k` to base64url encoding of your POWERSYNC_JWT_SECRET (same as backsteros-api/.env).
 # Generate: node -e "console.log(Buffer.from('your-secret').toString('base64url'))"

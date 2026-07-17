@@ -31,17 +31,29 @@ export async function resolveOrCreateWorkspace(
       return membership;
     }
 
-    // A data-only legacy installation has no owner yet. Claim it exactly once.
-    const [legacy] = await tx
-      .update(workspaces)
-      .set({ ownerUserId: userId, updatedAt: new Date() })
-      .where(
-        and(eq(workspaces.id, "ws_legacy_default"), isNull(workspaces.ownerUserId)),
-      )
-      .returning({ workspaceId: workspaces.id });
+    // A data-only legacy installation has no owner yet. Claim it exactly once
+    // when explicitly enabled (local migrate). Off by default in production.
+    const allowLegacyClaim =
+      process.env.ALLOW_LEGACY_WORKSPACE_CLAIM === "1" &&
+      process.env.NODE_ENV !== "production";
 
-    const workspaceId = legacy?.workspaceId ?? newId();
-    if (!legacy) {
+    let legacyWorkspaceId: string | undefined;
+    if (allowLegacyClaim) {
+      const [legacy] = await tx
+        .update(workspaces)
+        .set({ ownerUserId: userId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(workspaces.id, "ws_legacy_default"),
+            isNull(workspaces.ownerUserId),
+          ),
+        )
+        .returning({ workspaceId: workspaces.id });
+      legacyWorkspaceId = legacy?.workspaceId;
+    }
+
+    const workspaceId = legacyWorkspaceId ?? newId();
+    if (!legacyWorkspaceId) {
       await tx.insert(workspaces).values({
         id: workspaceId,
         name: "My Workspace",

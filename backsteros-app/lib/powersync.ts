@@ -50,7 +50,8 @@ const contacts = new Table({
   name: column.text, email: column.text, title: column.text, summary: column.text,
   avatar_storage_key: column.text, avatar_content_type: column.text,
   sort_order: column.integer, phone: column.text, role: column.text, notes: column.text,
-  ...commonDates,
+  address: column.text, city: column.text, postal_code: column.text, country: column.text,
+  social_accounts: column.text, ...commonDates,
 }, { indexes: { organization: ["organization_id"] } });
 const letters = new Table({
   number: column.integer, project_id: column.text, organization_id: column.text,
@@ -58,7 +59,7 @@ const letters = new Table({
   status: column.text, due_date: column.text, received_date: column.text,
   direction: column.text, storage_key: column.text, original_filename: column.text,
   content_type: column.text, byte_size: column.integer, checksum: column.text,
-  content_etag: column.text, extracted_text: column.text, sort_order: column.integer,
+  content_etag: column.text, sort_order: column.integer,
   ...commonDates,
 }, { indexes: { project: ["project_id"], organization: ["organization_id"], contact: ["contact_id"] } });
 const workspace_settings = new Table({
@@ -161,11 +162,15 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   }
 }
 
-export function createPowerSyncDatabase(userId: string) {
+export function createPowerSyncDatabase(
+  userId: string,
+  backendMode: "dev" | "prod" = "dev",
+) {
   const safeUserId = userId.replaceAll(/[^a-zA-Z0-9_-]/g, "_");
+  const safeMode = backendMode === "prod" ? "prod" : "dev";
   return new PowerSyncDatabase({
     schema: appSchema,
-    database: { dbFilename: `backsteros-${safeUserId}.db` },
+    database: { dbFilename: `backsteros-${safeMode}-${safeUserId}.db` },
     flags: { enableMultiTabs: true },
     retryDelayMs: 2_000,
   });

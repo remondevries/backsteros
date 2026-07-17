@@ -143,5 +143,19 @@ export function json(path: string, init?: RequestInit) {
 }
 
 export function apiErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong";
+  if (!(error instanceof Error)) {
+    return "Something went wrong";
+  }
+
+  const message = error.message.trim();
+  if (
+    message === "Failed to fetch" ||
+    message === "NetworkError when attempting to fetch resource." ||
+    message === "Load failed" ||
+    error.name === "NetworkError"
+  ) {
+    return "Could not reach the API. Check that the backend is running.";
+  }
+
+  return message || "Something went wrong";
 }

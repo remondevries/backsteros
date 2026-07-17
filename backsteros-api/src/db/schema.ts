@@ -137,6 +137,14 @@ export const contacts = pgTable(
     phone: text("phone"),
     role: text("role"),
     notes: text("notes"),
+    address: text("address"),
+    city: text("city"),
+    postalCode: text("postal_code"),
+    country: text("country"),
+    socialAccounts: jsonb("social_accounts")
+      .$type<{ platform: string; url: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -388,6 +396,34 @@ export const letters = pgTable(
     index("letters_organization_id_idx").on(table.organizationId),
     index("letters_contact_id_idx").on(table.contactId),
     index("letters_received_date_idx").on(table.workspaceId, table.receivedDate),
+  ],
+);
+
+export const letterAttachments = pgTable(
+  "letter_attachments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    letterId: text("letter_id")
+      .notNull()
+      .references(() => letters.id, { onDelete: "cascade" }),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull().default(""),
+    contentType: text("content_type").notNull().default("application/pdf"),
+    byteSize: integer("byte_size").notNull().default(0),
+    checksum: text("checksum"),
+    contentEtag: text("content_etag"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("letter_attachments_workspace_id_idx").on(table.workspaceId),
+    index("letter_attachments_letter_id_idx").on(table.letterId),
+    index("letter_attachments_letter_sort_idx").on(table.letterId, table.sortOrder),
   ],
 );
 

@@ -26,8 +26,8 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 
 ## Product web — Next.js
 
-- Standalone server deployment at `app.backsteros.com`
-- Responsive browser UI; no `/app` base path
+- Standalone server deployment at `backsteros.com/app`
+- Production `basePath: /app` (`NEXT_PUBLIC_BASE_PATH`); local `next dev` may omit it
 - Clerk Next.js middleware and sign-in
 - Server components only for web concerns; all business rules remain in the API
 

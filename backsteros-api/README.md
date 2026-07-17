@@ -10,20 +10,22 @@ Backend service for **BacksterOS** — Hono + PostgreSQL + OpenAPI.
 From the workspace root:
 
 ```bash
-# 1. Start Postgres
+# 1. Start Postgres (+ PowerSync when needed)
 pnpm db:up
 
-# 2. Configure env
+# 2. Configure env — DATABASE_URL must target Docker Postgres (:5433), not Neon,
+#    so Dev mode stays isolated from production. Keep Neon as DATABASE_URL_NEON if needed.
 cp backsteros-api/.env.example backsteros-api/.env
 # Edit CLERK_SECRET_KEY when you have Clerk set up
 
-# 3. Migrate + bootstrap API key
+# 3. Migrate + PowerSync publication + bootstrap API key
 pnpm db:migrate
+pnpm db:powersync-setup
 pnpm --filter @backsteros/api db:seed
 # Save the sk_live_... secret — shown once
 
 # 4. Run API
-pnpm dev
+pnpm --filter @backsteros/api dev
 ```
 
 - Health: http://localhost:8787/health  

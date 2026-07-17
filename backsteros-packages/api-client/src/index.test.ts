@@ -135,6 +135,19 @@ test("returns blobs for binary responses", async () => {
   assert.deepEqual(new Uint8Array(await result.arrayBuffer()), bytes);
 });
 
+test("returns blobs for image responses even without a Content-Type", async () => {
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const client = createApiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async () => new Response(bytes),
+  });
+
+  const result = await client.downloadAvatar("contact", "contact-1");
+
+  assert.ok(result instanceof Blob);
+  assert.deepEqual(new Uint8Array(await result.arrayBuffer()), bytes);
+});
+
 test("PowerSync writes use JSON and the current token", async () => {
   let observed: { authorization: string | null; contentType: string | null; body: string } | null =
     null;

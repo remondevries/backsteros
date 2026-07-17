@@ -11,12 +11,14 @@ ssh:
   user: root
   config: false
 
+# Internal Kamal Host for the shared proxy on :8082. Public URL is
+# https://backsteros.com/app (nginx location /app → this host).
 proxy:
   ssl: false
   host: app.backsteros.com
   app_port: 3000
   healthcheck:
-    path: /api/health
+    path: /app/api/health
     interval: 5
     timeout: 10
 
@@ -32,7 +34,8 @@ builder:
   context: .
   args:
     NEXT_PUBLIC_API_URL: https://service.backsteros.com
-    NEXT_PUBLIC_APP_URL: https://app.backsteros.com
+    NEXT_PUBLIC_APP_URL: https://backsteros.com/app
+    NEXT_PUBLIC_BASE_PATH: /app
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: <%= ENV.fetch("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY") %>
 
 env:
@@ -40,7 +43,8 @@ env:
     NODE_ENV: production
     PORT: "3000"
     NEXT_PUBLIC_API_URL: https://service.backsteros.com
-    NEXT_PUBLIC_APP_URL: https://app.backsteros.com
+    NEXT_PUBLIC_APP_URL: https://backsteros.com/app
+    NEXT_PUBLIC_BASE_PATH: /app
   secret:
     - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
     - CLERK_SECRET_KEY

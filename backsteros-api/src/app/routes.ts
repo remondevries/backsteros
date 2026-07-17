@@ -1,4 +1,5 @@
 import type { Context, Hono, Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
@@ -7,6 +8,7 @@ import {
   createDocumentSchema,
   createProjectSchema,
   createTaskSchema,
+  updateApiKeySchema,
   updateDocumentContentSchema,
   updateDocumentSchema,
   updateProjectSchema,
@@ -16,6 +18,13 @@ import {
 import { toApiKey, toDocument, toProject, toSearchResult, toTask } from "../lib/mappers.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth } from "../middleware/auth.js";
+import { isSpacesConfigured } from "../lib/storage.js";
+import {
+  normalizeAvatarMimeType,
+  resolveAvatarContentType,
+  sniffAvatarContentType,
+} from "../lib/avatar-content-type.js";
+import { MAX_AVATAR_BYTES } from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import * as circleService from "../services/circle-domain.js";
@@ -38,6 +47,10 @@ const organizationSchema = z.object({
   sortOrder: z.number().int().optional(),
   notes: z.string().max(20_000).nullable().optional(),
 });
+const contactSocialAccountSchema = z.object({
+  platform: z.string().min(1).max(64),
+  url: z.string().min(1).max(500),
+});
 const contactSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
@@ -50,6 +63,11 @@ const contactSchema = z.object({
   phone: z.string().max(64).nullable().optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(20_000).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  city: z.string().max(255).nullable().optional(),
+  postalCode: z.string().max(32).nullable().optional(),
+  country: z.string().max(128).nullable().optional(),
+  socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
 });
 const areaSchema = z.object({
   name: z.string().min(1).max(255),
@@ -860,31 +878,160 @@ export function registerApiRoutes(app: Hono) {
     c.header("Content-Disposition", `inline; filename="${(result.row.originalFilename || "letter.pdf").replaceAll('"', "")}"`);
     return c.body(Uint8Array.from(result.bytes).buffer);
   });
-
-  app.put("/api/v1/avatars/:entityType/:entityId", async (c) => {
+  app.get("/api/v1/letters/:id/attachments", async (c) => {
     const auth = getAuth(c);
-    if (!can(auth, "avatars:write")) return c.json(forbidden(), 403);
-    const contentType = c.req.header("Content-Type") ?? "";
-    const bytes = new Uint8Array(await c.req.arrayBuffer());
-    if (!contentType.startsWith("image/") || bytes.byteLength === 0 || bytes.byteLength > 5_000_000) {
-      return c.json({ error: "Avatar must be an image up to 5 MB", code: "bad_request" }, 400);
-    }
-    return c.json(await circleService.putAvatar(auth.workspaceId, c.req.param("entityType"), c.req.param("entityId"), bytes, contentType));
+    if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
+    const attachments = await circleService.listLetterAttachments(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return attachments
+      ? c.json({ attachments })
+      : c.json(notFound("Letter"), 404);
   });
+  app.post("/api/v1/letters/:id/attachments", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) {
+      return c.json({ error: "PDF must be between 1 byte and 25 MB", code: "bad_request" }, 400);
+    }
+    const result = await circleService.createLetterAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      bytes,
+      c.req.header("X-Filename") ?? "letter.pdf",
+    );
+    return result
+      ? c.json(result.attachment, 201)
+      : c.json(notFound("Letter"), 404);
+  });
+  app.get("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
+    const result = await circleService.getLetterAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+    );
+    if (!result) return c.json(notFound("PDF"), 404);
+    c.header("Content-Type", result.row.contentType);
+    c.header(
+      "Content-Disposition",
+      `inline; filename="${(result.row.originalFilename || "letter.pdf").replaceAll('"', "")}"`,
+    );
+    return c.body(Uint8Array.from(result.bytes).buffer);
+  });
+  app.patch("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+    const body = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({ originalFilename: z.string().trim().min(1).max(255) })
+      .safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "originalFilename is required", code: "bad_request" },
+        400,
+      );
+    }
+    const row = await circleService.updateLetterAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+      parsed.data,
+    );
+    return row ? c.json(row) : c.json(notFound("PDF"), 404);
+  });
+  app.delete("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+    const row = await circleService.deleteLetterAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+    );
+    return row ? c.json(row) : c.json(notFound("PDF"), 404);
+  });
+
+  app.put(
+    "/api/v1/avatars/:entityType/:entityId",
+    bodyLimit({
+      maxSize: MAX_AVATAR_BYTES,
+      onError: (c) =>
+        c.json(
+          { error: "Avatar must be an image up to 5 MB", code: "bad_request" },
+          413,
+        ),
+    }),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "avatars:write")) return c.json(forbidden(), 403);
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      const contentType =
+        sniffAvatarContentType(bytes) ??
+        normalizeAvatarMimeType(c.req.header("Content-Type"));
+      if (
+        !contentType ||
+        bytes.byteLength === 0 ||
+        bytes.byteLength > MAX_AVATAR_BYTES
+      ) {
+        return c.json(
+          {
+            error: "Avatar must be a JPG, PNG, WebP, or GIF up to 5 MB",
+            code: "bad_request",
+          },
+          400,
+        );
+      }
+      return c.json(
+        await circleService.putAvatar(
+          auth.workspaceId,
+          c.req.param("entityType"),
+          c.req.param("entityId"),
+          bytes,
+          contentType,
+        ),
+      );
+    },
+  );
   app.get("/api/v1/avatars/:entityType/:entityId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "avatars:read")) return c.json(forbidden(), 403);
     const result = await circleService.getAvatar(auth.workspaceId, c.req.param("entityType"), c.req.param("entityId"));
     if (!result) return c.json(notFound("Avatar"), 404);
-    c.header("Content-Type", result.row.contentType);
+    const contentType = resolveAvatarContentType(
+      result.row.contentType,
+      result.bytes,
+    );
+    c.header("Content-Type", contentType);
     c.header("Cache-Control", "private, max-age=300");
-    return c.body(Uint8Array.from(result.bytes).buffer);
+    const body = Uint8Array.from(result.bytes);
+    return c.body(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
+  });
+  app.delete("/api/v1/avatars/:entityType/:entityId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "avatars:write")) return c.json(forbidden(), 403);
+    const row = await circleService.deleteAvatar(
+      auth.workspaceId,
+      c.req.param("entityType"),
+      c.req.param("entityId"),
+    );
+    return row ? c.json(row) : c.json(notFound("Avatar"), 404);
   });
 
   app.get("/api/v1/settings", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json({ settings: await circleService.getSettings(auth.workspaceId) });
+  });
+  app.get("/api/v1/settings/storage", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json({
+      configured: isSpacesConfigured(),
+      provider: "digitalocean-spaces",
+    });
   });
   app.patch("/api/v1/settings", async (c) => {
     const auth = getAuth(c);
@@ -924,7 +1071,41 @@ export function registerApiRoutes(app: Hono) {
     const q = c.req.query("q");
     if (!q) return c.json({ error: "Query parameter q is required", code: "bad_request" }, 400);
     const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100);
-    return c.json({ results: await circleService.globalSearch(auth.workspaceId, q, limit) });
+    const modeRaw = c.req.query("mode") ?? "all";
+    const allowedModes = new Set([
+      "all",
+      "projects",
+      "tasks",
+      "documents",
+      "letters",
+      "knowledge",
+      "contacts",
+      "organizations",
+    ]);
+    const mode = allowedModes.has(modeRaw)
+      ? (modeRaw as
+          | "all"
+          | "projects"
+          | "tasks"
+          | "documents"
+          | "letters"
+          | "knowledge"
+          | "contacts"
+          | "organizations")
+      : "all";
+
+    return c.json({
+      results: await circleService.globalSearch(auth.workspaceId, q, limit, {
+        mode,
+        contextKind: c.req.query("contextKind"),
+        projectId: c.req.query("projectId"),
+        projectSection: c.req.query("projectSection"),
+        contactId: c.req.query("contactId"),
+        contactSection: c.req.query("contactSection"),
+        organizationId: c.req.query("organizationId"),
+        organizationSection: c.req.query("organizationSection"),
+      }),
+    });
   });
 
   app.get("/api/v1/search", async (c) => {
@@ -979,6 +1160,28 @@ export function registerApiRoutes(app: Hono) {
       );
 
       return c.json({ apiKey: toApiKey(row), secret }, 201);
+    },
+  );
+
+  app.patch(
+    "/api/v1/api-keys/:id",
+    zValidator("json", updateApiKeySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (auth.kind !== "clerk" || !auth.userId) {
+        return c.json(unauthorized(), 401);
+      }
+
+      const row = await apiKeyService.updateApiKey(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      if (!row) {
+        return c.json(notFound("API key"), 404);
+      }
+
+      return c.json(toApiKey(row));
     },
   );
 

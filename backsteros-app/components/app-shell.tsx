@@ -1,8 +1,7 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -10,21 +9,70 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
 
+import { useCommandPalette } from "@/components/command-palette/command-palette-context";
+import { ContactsSidePanel } from "@/components/contacts/contacts-side-panel";
+import { EntityHeaderActionsShell } from "@/components/entity-actions/entity-header-actions-shell";
+import { ProjectDocumentsSidePanel } from "@/components/documents/project-documents-side-panel";
+import { InboxSidePanel } from "@/components/inbox/inbox-side-panel";
+import { JournalSidePanel } from "@/components/journal/journal-side-panel";
+import { KnowledgeSidePanel } from "@/components/knowledge/knowledge-side-panel";
+import { LettersSidePanel } from "@/components/letters/letters-side-panel";
+import { OrganizationsSidePanel } from "@/components/organizations/organizations-side-panel";
+import {
+  BreadcrumbChromeHost,
+  BreadcrumbChromeProvider,
+} from "@/components/navigation/breadcrumb-chrome";
+import { NavigationHistoryProvider } from "@/components/navigation/navigation-history-provider";
+import { NavigationTrailProvider } from "@/components/navigation/navigation-trail-provider";
+import { ContentHeader } from "@/components/shell/content-header";
+import {
+  ContentSidePanelProvider,
+  useContentSidePanel,
+} from "@/components/shell/content-side-panel-provider";
+import { ContentSidePanelPlaceholder } from "@/components/shell/content-side-panel-placeholder";
+import { SettingsSidePanelNav } from "@/components/settings/settings-side-panel-nav";
+import { ComposeModalGate } from "@/components/shell/compose-modal-gate";
+import { SidebarNavHistoryControls } from "@/components/shell/sidebar-nav-history-controls";
+import { SidebarProfileMenu } from "@/components/shell/sidebar-profile-menu";
+import { TabsProvider } from "@/components/shell/tabs-provider";
+import { useContentSidePanelToggleShortcut } from "@/components/shell/use-content-side-panel-toggle-shortcut";
+import { useComposeShortcut } from "@/components/shortcuts/use-compose-shortcut";
+import { useContentPreviewScrollShortcuts } from "@/components/shortcuts/use-content-preview-scroll-shortcuts";
+import { useDocumentTreeCreateFolderShortcut } from "@/components/shortcuts/use-document-tree-create-folder-shortcut";
+import { useEscapeBackNavigation } from "@/components/shortcuts/use-escape-back-navigation";
+import { useNavigationShortcuts } from "@/components/shortcuts/use-navigation-shortcuts";
+import { useProjectTaskViewShortcuts } from "@/components/shortcuts/use-project-task-view-shortcuts";
+import { useSectionTabShortcuts } from "@/components/shortcuts/use-section-tab-shortcuts";
+import { useSettingsShortcut } from "@/components/shortcuts/use-settings-shortcut";
+import { useBlockBrowserTabFocus } from "@/components/shortcuts/use-block-browser-tab-focus";
+import { useTabShortcuts } from "@/components/shortcuts/use-tab-shortcuts";
+import { useTaskPropertyDropdownShortcuts } from "@/components/shortcuts/use-task-property-dropdown-shortcuts";
+import {
+  getContentSidePanelWidthKey,
+  shouldShowContentSidePanel,
+} from "@/lib/content-side-panel";
+import { isContactSectionPath } from "@/lib/contacts/navigation-path";
+import { isProjectDocumentsSectionPath } from "@/lib/document-navigation-path";
+import { isJournalSectionPath } from "@/lib/journal/navigation-path";
+import { isKnowledgeSectionPath } from "@/lib/knowledge/navigation-path";
+import {
+  isLettersSectionPath,
+  isProjectLettersSectionPath,
+} from "@/lib/letters/navigation-path";
 import {
   isRouteFamily,
   navigation,
   routeCopy,
-  titleForPath,
 } from "@/lib/navigation";
-import { usePowerSync } from "@/lib/powersync-context";
-
+import { parseNavigationTrailPath } from "@/lib/navigation-trail/codec";
+import { isOrganizationSectionPath } from "@/lib/organizations/navigation-path";
+import { isSettingsPath } from "@/lib/settings/tabs";
+import { shouldHandleGlobalShortcut } from "@/lib/shortcuts/should-handle-global-shortcut";
 import { CommandPalette } from "./command-palette";
+import { getNavigationItemIcon } from "./shell/navigation-item-icon";
 import { Icon } from "./ui/icon";
 import { ResizablePanel } from "./ui/resizable-panel";
-
-type OpenTab = { href: string; title: string };
 
 const sections = [
   { id: "primary", label: "" },
@@ -44,6 +92,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             .map((item) => {
               const active =
                 pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const NavIcon = getNavigationItemIcon(item.icon);
+              if (!NavIcon) {
+                return null;
+              }
               return (
                 <Link
                   key={item.href}
@@ -52,8 +104,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                   aria-current={active ? "page" : undefined}
                   onClick={onNavigate}
                 >
-                  <span className="nav-icon"><Icon name={item.icon} /></span>
-                  <span>{item.label}</span>
+                  <span className="nav-icon">
+                    <NavIcon />
+                  </span>
+                  <span className="sidebar-link-label">{item.label}</span>
                 </Link>
               );
             })}
@@ -70,242 +124,162 @@ function Sidebar({
   mobile?: boolean;
   onNavigate?: () => void;
 }) {
-  const router = useRouter();
-  const sync = usePowerSync();
-  const syncLabel = sync.offline
-    ? "Offline"
-    : sync.error
-      ? "Sync error"
-      : sync.connected
-        ? "Synced"
-        : sync.connecting
-          ? "Connecting"
-          : "Local only";
   return (
     <div className={`sidebar-inner${mobile ? " mobile" : ""}`}>
-      <div className="sidebar-history">
-        <button aria-label="Go back" onClick={() => router.back()}>
-          <Icon name="back" />
-        </button>
-        <button aria-label="Go forward" onClick={() => router.forward()}>
-          <Icon name="forward" />
-        </button>
-      </div>
+      <SidebarNavHistoryControls />
       <div className="profile-row">
-        {process.env.NEXT_PUBLIC_E2E_BYPASS_AUTH === "1" ? (
-          <span className="e2e-user">Test workspace</span>
-        ) : (
-          <UserButton
-            showName
-            appearance={{ elements: { userButtonBox: "clerk-user-button" } }}
-          />
-        )}
-        <button
-          className="compose-button"
-          aria-label="Create item"
-          title="Create item"
-          onClick={() =>
-            toast("Composer is ready", {
-              description: "Feature creation is connected in the next build step.",
-            })
-          }
-        >
-          <Icon name="plus" />
-        </button>
+        <SidebarProfileMenu />
       </div>
       <NavLinks onNavigate={onNavigate} />
       <div className="sidebar-footer">
-        <button
-          className={`sync-indicator${sync.error ? " has-error" : ""}`}
-          title={sync.error?.message ?? (sync.lastSyncedAt
-            ? `Last sync ${sync.lastSyncedAt.toLocaleString()}`
-            : "Waiting for first sync")}
-          onClick={() => void sync.retry()}
-        >
-          <span aria-hidden="true">●</span>
-          {syncLabel}
-          {sync.lastSyncedAt ? <small>{sync.lastSyncedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small> : null}
-        </button>
-        <Link href="/settings" onClick={onNavigate}>
-          <Icon name="settings" /> Settings
-        </Link>
-        <button
-          onClick={() =>
-            window.dispatchEvent(
-              new KeyboardEvent("keydown", { key: "k", metaKey: true }),
-            )
-          }
-        >
-          <Icon name="search" /> Search <kbd>⌘K</kbd>
-        </button>
+        <SearchFooterButton />
       </div>
     </div>
   );
 }
 
-function ContentTabs({
-  tabs,
-  pathname,
-  onClose,
-}: {
-  tabs: OpenTab[];
-  pathname: string;
-  onClose: (href: string) => void;
-}) {
+function SearchFooterButton() {
+  const { openSearch } = useCommandPalette();
   return (
-    <header className="desktop-tabs">
-      <div className="tabs-scroll" role="tablist" aria-label="Open views">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            role="tab"
-            aria-selected={tab.href === pathname}
-            className={`content-tab${tab.href === pathname ? " is-active" : ""}`}
-          >
-            <span>{tab.title}</span>
-            {tabs.length > 1 ? (
-              <button
-                aria-label={`Close ${tab.title}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  onClose(tab.href);
-                }}
-              >
-                ×
-              </button>
-            ) : null}
-          </Link>
-        ))}
-        <Link className="new-tab" href="/projects" aria-label="Open a new view">
-          <Icon name="plus" />
-        </Link>
-      </div>
-    </header>
-  );
-}
-
-function Trail({ pathname }: { pathname: string }) {
-  const parts = pathname.split("/").filter(Boolean);
-  return (
-    <div className="navigation-trail" aria-label="Breadcrumb">
-      {parts.map((part, index) => {
-        const href = `/${parts.slice(0, index + 1).join("/")}`;
-        const label = index === 0 && isRouteFamily(part)
-          ? routeCopy[part].title
-          : decodeURIComponent(part).replaceAll("-", " ");
-        return (
-          <span key={href}>
-            {index ? <Icon name="chevron" /> : null}
-            <Link href={href}>{label}</Link>
-          </span>
-        );
-      })}
-    </div>
+    <button type="button" onClick={() => openSearch()}>
+      <Icon name="search" /> Search <kbd>⌘K</kbd>
+    </button>
   );
 }
 
 function ContextPanel({ pathname }: { pathname: string }) {
   const familyName = pathname.split("/").filter(Boolean)[0];
   const family = isRouteFamily(familyName) ? familyName : "projects";
-  const detail = pathname.split("/").filter(Boolean).length > 1;
-  const labels = family === "settings"
-    ? ["General", "Account", "Workspace", "Integrations"]
-    : detail
-      ? ["Overview", "Activity", "Related items"]
-      : ["All", "Active", "Recently viewed"];
+
+  let body: ReactNode;
+  if (pathname === "/inbox" || pathname.startsWith("/inbox/")) {
+    body = <InboxSidePanel pathname={pathname} />;
+  } else if (isContactSectionPath(pathname)) {
+    body = <ContactsSidePanel pathname={pathname} />;
+  } else if (isProjectDocumentsSectionPath(pathname)) {
+    // Before org section: org-scoped project documents keep the project docs panel.
+    body = <ProjectDocumentsSidePanel pathname={pathname} />;
+  } else if (
+    isLettersSectionPath(pathname) ||
+    isProjectLettersSectionPath(pathname)
+  ) {
+    body = <LettersSidePanel pathname={pathname} />;
+  } else if (isOrganizationSectionPath(pathname)) {
+    body = <OrganizationsSidePanel pathname={pathname} />;
+  } else if (isKnowledgeSectionPath(pathname)) {
+    body = <KnowledgeSidePanel pathname={pathname} />;
+  } else if (isJournalSectionPath(pathname)) {
+    body = <JournalSidePanel pathname={pathname} />;
+  } else {
+    body = (
+      <ContentSidePanelPlaceholder
+        title={routeCopy[family]?.singular ?? "Items"}
+        description="Synced workspace views will appear here."
+      />
+    );
+  }
 
   return (
-    <ResizablePanel storageKey={`backsteros:${family}:panel-width`}>
-      <div className="panel-header">
-        <strong>{detail ? routeCopy[family].singular : routeCopy[family].title}</strong>
-        <button aria-label="Hide panel"><Icon name="panel" /></button>
-      </div>
-      <div className="panel-list">
-        {labels.map((label, index) => (
-          <button className={index === 0 ? "is-active" : ""} key={label}>
-            <span>{label}</span>
-            {index === 0 && family !== "settings" ? <small>0</small> : null}
-          </button>
-        ))}
-      </div>
-      <p className="panel-hint">Synced workspace views will appear here.</p>
+    <ResizablePanel storageKey={getContentSidePanelWidthKey(pathname)}>
+      {body}
     </ResizablePanel>
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+function ContentFrame({
+  pathname,
+  children,
+}: {
+  pathname: string;
+  children: ReactNode;
+}) {
+  const navigationTrail = parseNavigationTrailPath(pathname);
+  const effectivePathname = navigationTrail?.sourceHref ?? pathname;
+  const showSidePanel = shouldShowContentSidePanel(effectivePathname);
+  const { visible: sidePanelVisible } = useContentSidePanel();
+  useContentSidePanelToggleShortcut({ enabled: showSidePanel });
+  const showSidePanelSlot = showSidePanel && sidePanelVisible;
+
+  return (
+    <div
+      className={`content-frame${showSidePanelSlot ? " content-frame-with-side" : " content-frame-main-only"}`}
+    >
+      {showSidePanelSlot ? (
+        <ContextPanel pathname={effectivePathname} />
+      ) : null}
+      <main className="main-slot">
+        <BreadcrumbChromeHost />
+        <div className="page-scroll">{children}</div>
+      </main>
+    </div>
+  );
+}
+
+function AppShellInner({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const settingsPage = isSettingsPath(pathname);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [tabs, setTabs] = useState<OpenTab[]>(() => [
-    { href: pathname, title: titleForPath(pathname) },
-  ]);
 
   useEffect(() => {
     const stored = localStorage.getItem("backsteros:sidebar-visible");
     if (stored === null) return;
-    const frame = requestAnimationFrame(() => setSidebarVisible(stored === "true"));
+    const frame = requestAnimationFrame(() =>
+      setSidebarVisible(stored === "true"),
+    );
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setTabs((current) =>
-        current.some((tab) => tab.href === pathname)
-          ? current
-          : [...current, { href: pathname, title: titleForPath(pathname) }],
-      );
+  const toggleSidebar = useCallback(() => {
+    setSidebarVisible((current) => {
+      const next = !current;
+      localStorage.setItem("backsteros:sidebar-visible", String(next));
+      return next;
     });
-    const history = JSON.parse(
-      sessionStorage.getItem("backsteros:navigation-history") ?? "[]",
-    ) as string[];
-    sessionStorage.setItem(
-      "backsteros:navigation-history",
-      JSON.stringify([pathname, ...history.filter((item) => item !== pathname)].slice(0, 20)),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
-        event.preventDefault();
-        setSidebarVisible((current) => {
-          localStorage.setItem("backsteros:sidebar-visible", String(!current));
-          return !current;
-        });
+      if (event.key !== "[") {
+        return;
       }
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (!shouldHandleGlobalShortcut(event)) {
+        return;
+      }
+      event.preventDefault();
+      toggleSidebar();
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, []);
+  }, [toggleSidebar]);
 
-  const closeTab = useCallback(
-    (href: string) => {
-      setTabs((current) => {
-        const index = current.findIndex((tab) => tab.href === href);
-        const next = current.filter((tab) => tab.href !== href);
-        if (href === pathname) {
-          router.push(next[Math.max(0, index - 1)]?.href ?? "/projects");
-        }
-        return next;
-      });
-    },
-    [pathname, router],
-  );
+  useSettingsShortcut();
+  useNavigationShortcuts();
+  useContentPreviewScrollShortcuts();
+  useEscapeBackNavigation();
+  useSectionTabShortcuts();
+  useProjectTaskViewShortcuts();
+  useTaskPropertyDropdownShortcuts();
+  useTabShortcuts();
+  useBlockBrowserTabFocus();
+  useComposeShortcut();
+  useDocumentTreeCreateFolderShortcut();
 
   const mobileItems = useMemo(
-    () => navigation.filter((item) =>
-      ["/inbox", "/tasks", "/projects", "/journal"].includes(item.href),
-    ),
+    () =>
+      navigation.filter((item) =>
+        ["/inbox", "/tasks", "/projects", "/journal"].includes(item.href),
+      ),
     [],
   );
 
   return (
     <div className="app-shell">
       <CommandPalette />
+      <ComposeModalGate />
       <button
         className="mobile-menu-trigger"
         aria-label="Open navigation"
@@ -313,31 +287,36 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <Icon name="menu" />
       </button>
-      <aside className={`desktop-sidebar${sidebarVisible ? "" : " is-collapsed"}`}>
-        <Sidebar />
+      <aside
+        className={`desktop-sidebar${sidebarVisible ? "" : " is-collapsed"}`}
+      >
+        {settingsPage ? <SettingsSidePanelNav /> : <Sidebar />}
       </aside>
       <section className="workspace">
-        <ContentTabs tabs={tabs} pathname={pathname} onClose={closeTab} />
-        <div className="content-frame">
-          <ContextPanel pathname={pathname} />
-          <main className="main-slot">
-            <Trail pathname={pathname} />
-            <div className="page-scroll">{children}</div>
-          </main>
-        </div>
+        <ContentHeader />
+        <ContentFrame pathname={pathname}>{children}</ContentFrame>
       </section>
       <nav className="mobile-tabs" aria-label="Primary navigation">
         {mobileItems.map((item) => {
           const active = pathname.startsWith(item.href);
+          const NavIcon = getNavigationItemIcon(item.icon);
+          if (!NavIcon) {
+            return null;
+          }
           return (
-            <Link key={item.href} href={item.href} className={active ? "is-active" : ""}>
-              <Icon name={item.icon} />
+            <Link
+              key={item.href}
+              href={item.href}
+              className={active ? "is-active" : ""}
+            >
+              <NavIcon />
               <span>{item.label}</span>
             </Link>
           );
         })}
         <button onClick={() => setMobileMenu(true)}>
-          <Icon name="menu" /><span>More</span>
+          <Icon name="menu" />
+          <span>More</span>
         </button>
       </nav>
       {mobileMenu ? (
@@ -355,10 +334,32 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Icon name="close" />
             </button>
-            <Sidebar mobile onNavigate={() => setMobileMenu(false)} />
+            {settingsPage ? (
+              <SettingsSidePanelNav onNavigate={() => setMobileMenu(false)} />
+            ) : (
+              <Sidebar mobile onNavigate={() => setMobileMenu(false)} />
+            )}
           </aside>
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <TabsProvider>
+      <NavigationHistoryProvider>
+        <NavigationTrailProvider>
+          <EntityHeaderActionsShell>
+            <BreadcrumbChromeProvider>
+              <ContentSidePanelProvider>
+                <AppShellInner>{children}</AppShellInner>
+              </ContentSidePanelProvider>
+            </BreadcrumbChromeProvider>
+          </EntityHeaderActionsShell>
+        </NavigationTrailProvider>
+      </NavigationHistoryProvider>
+    </TabsProvider>
   );
 }

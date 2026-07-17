@@ -33,7 +33,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://backsteros:backsteros@127.0.0.1:5432/backsteros_test
-      CORS_ORIGINS: https://app.backsteros.com
+      CORS_ORIGINS: https://backsteros.com
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -59,6 +59,26 @@ export async function revokeApiKey(workspaceId: string, id: string) {
   return row ?? null;
 }
 
+export async function updateApiKey(
+  workspaceId: string,
+  id: string,
+  input: { name: string },
+) {
+  const [row] = await db
+    .update(apiKeys)
+    .set({ name: input.name })
+    .where(
+      and(
+        eq(apiKeys.id, id),
+        eq(apiKeys.workspaceId, workspaceId),
+        isNull(apiKeys.revokedAt),
+      ),
+    )
+    .returning();
+
+  return row ?? null;
+}
+
 export async function createBootstrapApiKey(
   name: string,
   scopes: ApiKeyScope[],

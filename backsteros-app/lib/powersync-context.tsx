@@ -36,6 +36,7 @@ type SyncState = {
   createMetadata: (
     table: SyncedMetadataTable,
     values: Record<string, unknown>,
+    id?: string,
   ) => Promise<string>;
   patchMetadata: (
     table: SyncedMetadataTable,
@@ -83,6 +84,7 @@ export function PowerSyncProvider({
   ...props
 }: {
   apiUrl: string;
+  backendMode?: "dev" | "prod";
   children: ReactNode;
   e2e?: boolean;
 }) {
@@ -94,9 +96,11 @@ export function PowerSyncProvider({
 
 function AuthenticatedPowerSyncProvider({
   apiUrl,
+  backendMode = "dev",
   children,
 }: {
   apiUrl: string;
+  backendMode?: "dev" | "prod";
   children: ReactNode;
 }) {
   const { isLoaded, userId, sessionId, getToken } = useAuth();
@@ -139,7 +143,7 @@ function AuthenticatedPowerSyncProvider({
         return;
       }
 
-      const next = createPowerSyncDatabase(userId);
+      const next = createPowerSyncDatabase(userId, backendMode);
       const connector = new BacksterPowerSyncConnector(
         apiUrl,
         () => getToken().then((token) => token ?? null),
@@ -165,7 +169,7 @@ function AuthenticatedPowerSyncProvider({
     return () => {
       cancelled = true;
     };
-  }, [apiUrl, getToken, isLoaded, sessionId, userId]);
+  }, [apiUrl, backendMode, getToken, isLoaded, sessionId, userId]);
 
   const retry = useCallback(async () => {
     const db = databaseRef.current;
@@ -196,10 +200,11 @@ function AuthenticatedPowerSyncProvider({
   const createMetadata = useCallback(async (
     table: SyncedMetadataTable,
     values: Record<string, unknown>,
+    id?: string,
   ) => {
     const db = databaseRef.current;
     if (!db) throw new Error("Offline database is not ready");
-    const id = crypto.randomUUID().replaceAll("-", "");
+    const rowId = id ?? crypto.randomUUID().replaceAll("-", "");
     const now = new Date().toISOString();
     const complete = { ...values, created_at: now, updated_at: now, deleted_at: null };
     const entries = Object.entries(complete);
@@ -209,9 +214,9 @@ function AuthenticatedPowerSyncProvider({
     });
     await db.execute(
       `INSERT INTO ${table} (id, ${columns.join(", ")}) VALUES (?, ${columns.map(() => "?").join(", ")})`,
-      [id, ...entries.map(([, value]) => value)],
+      [rowId, ...entries.map(([, value]) => value)],
     );
-    return id;
+    return rowId;
   }, []);
 
   const status = database?.currentStatus;

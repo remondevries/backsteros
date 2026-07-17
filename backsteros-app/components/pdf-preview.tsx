@@ -1,23 +1,48 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
+import { PdfPreviewLoader } from "@/components/letters/pdf-preview-loader";
 import { useAppApi } from "@/lib/api-context";
 
-export function PdfPreview({ letterId }: { letterId: string }) {
+const LetterPdfViewer = dynamic(
+  () =>
+    import("@/components/letters/letter-pdf-viewer").then(
+      (module) => module.LetterPdfViewer,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <PdfPreviewLoader label="Loading preview…" className="!h-full min-h-0 flex-1" />
+    ),
+  },
+);
+
+export function PdfPreview({
+  letterId,
+  attachmentId,
+  className,
+}: {
+  letterId: string;
+  attachmentId?: string | null;
+  className?: string;
+}) {
   const { client } = useAppApi();
-  const [url, setUrl] = useState<string | null>(null);
+  const [pdf, setPdf] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let objectUrl: string | null = null;
     const controller = new AbortController();
-    client
-      .downloadLetterPdf(letterId)
+    setPdf(null);
+    setError(null);
+    const load = attachmentId
+      ? client.downloadLetterAttachment(letterId, attachmentId)
+      : client.downloadLetterPdf(letterId);
+    load
       .then((blob) => {
         if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
+        setPdf(blob);
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
@@ -26,11 +51,21 @@ export function PdfPreview({ letterId }: { letterId: string }) {
       });
     return () => {
       controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [client, letterId]);
+  }, [attachmentId, client, letterId]);
 
-  if (error) return <div className="inline-error">{error}</div>;
-  if (!url) return <div className="loading-block">Loading PDF…</div>;
-  return <iframe className="pdf-preview" src={url} title="Letter PDF preview" />;
+  if (error) {
+    return (
+      <div
+        className={["pdf-preview-loader pdf-preview-loader--error", className]
+          .filter(Boolean)
+          .join(" ")}
+        role="alert"
+      >
+        <p className="pdf-preview-loader-label">{error}</p>
+      </div>
+    );
+  }
+  if (!pdf) return <PdfPreviewLoader className={className} />;
+  return <LetterPdfViewer file={pdf} className={className} />;
 }

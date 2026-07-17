@@ -1,6 +1,9 @@
 import { serve } from "@hono/node-server";
 
 import { createApp } from "./app.js";
+import { assertPowerSyncSecrets } from "./lib/secrets.js";
+
+assertPowerSyncSecrets();
 
 const port = Number(process.env.PORT ?? 8787);
 

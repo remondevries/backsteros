@@ -29,6 +29,7 @@ import {
 } from "../db/schema.js";
 import type { PowerSyncOp, SyncEntity, SyncOperation } from "../lib/sync-constants.js";
 import { SYNC_SCHEMA_VERSION } from "../lib/sync-constants.js";
+import { isSpacesConfigured } from "../lib/storage.js";
 import * as documentService from "./documents.js";
 import * as circleService from "./circle-domain.js";
 import * as taskProjectService from "./tasks-projects.js";
@@ -137,6 +138,8 @@ function contactSnapshot(row: typeof contacts.$inferSelect) {
     name: row.name, email: row.email, title: row.title, summary: row.summary,
     avatar_storage_key: row.avatarStorageKey, avatar_content_type: row.avatarContentType,
     sort_order: row.sortOrder, phone: row.phone, role: row.role, notes: row.notes,
+    address: row.address, city: row.city, postal_code: row.postalCode, country: row.country,
+    social_accounts: JSON.stringify(row.socialAccounts ?? []),
     created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
   };
@@ -151,7 +154,7 @@ function letterSnapshot(row: typeof letters.$inferSelect) {
     received_date: row.receivedDate?.toISOString() ?? null, direction: row.direction,
     storage_key: row.storageKey, original_filename: row.originalFilename,
     content_type: row.contentType, byte_size: row.byteSize, checksum: row.checksum,
-    content_etag: row.contentEtag, extracted_text: row.extractedText,
+    content_etag: row.contentEtag,
     sort_order: row.sortOrder, created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(), deleted_at: row.deletedAt?.toISOString() ?? null,
   };
@@ -192,7 +195,7 @@ export async function bootstrapSync(workspaceId: string) {
   return {
     schema_version: SYNC_SCHEMA_VERSION,
     cursor: await maxCursor(workspaceId),
-    spaces_configured: Boolean(process.env.SPACES_BUCKET),
+    spaces_configured: isSpacesConfigured(),
     snapshot: {
       projects: projectRows.map(projectSnapshot),
       tasks: taskRows.map(taskSnapshot),
@@ -295,13 +298,30 @@ const contactKeys = {
   number: "number", key: "key", organization_id: "organizationId", name: "name",
   email: "email", title: "title", summary: "summary", sort_order: "sortOrder",
   phone: "phone", role: "role", notes: "notes",
+  address: "address", city: "city", postal_code: "postalCode", country: "country",
+  social_accounts: "socialAccounts",
 };
+
+function normalizeContactSyncPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...payload };
+  if (typeof next.socialAccounts === "string") {
+    try {
+      next.socialAccounts = JSON.parse(next.socialAccounts);
+    } catch {
+      next.socialAccounts = [];
+    }
+  }
+  return next;
+}
+
 const letterKeys = {
   number: "number", project_id: "projectId", organization_id: "organizationId",
   contact_id: "contactId", title: "title", icon: "icon", context: "context",
   status: "status", due_date: "dueDate", received_date: "receivedDate",
   direction: "direction", original_filename: "originalFilename",
-  extracted_text: "extractedText", sort_order: "sortOrder",
+  sort_order: "sortOrder",
 };
 
 function mapProjectUpsert(
@@ -552,7 +572,9 @@ export async function applySyncChange(
       const existing = await circleService.getContactById(
         workspaceId, change.entity_id, executor,
       );
-      const payload = camelizePayload(change.payload, contactKeys);
+      const payload = normalizeContactSyncPayload(
+        camelizePayload(change.payload, contactKeys),
+      );
       const row = existing
         ? await (async () => {
             const parsed = contactInputSchema.partial().safeParse(payload);

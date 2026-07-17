@@ -7,12 +7,12 @@ Self-hosted PowerSync for BacksterOS offline sync.
 Included in root `docker-compose.yml`:
 
 ```bash
-pnpm db:up          # Postgres (wal_level=logical) + Mongo + PowerSync on :8080
+pnpm db:up          # Postgres (wal_level=logical) + Mongo (replSet rs0) + PowerSync on :8080
 pnpm db:migrate
 pnpm db:powersync-setup
 ```
 
-Config: `service.local.yaml`, `sync-config.yaml`
+Config: `service.local.yaml`, `sync-config.yaml`. Local Mongo runs as a single-node replica set (`--replSet rs0`) — required for PowerSync bucket-storage transactions.
 
 ## Production (Neon + droplet)
 

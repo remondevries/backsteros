@@ -4,8 +4,8 @@
 
 | Surface | Folder | URL / package | Role |
 | --- | --- | --- | --- |
-| **Product app** | `backsteros-app/` | `app.backsteros.com` | Responsive web UI for daily work |
-| **Ops admin** | `backsteros-admin/` | `admin.backsteros.com` | Logs, sync health, API observability — **not** task editing |
+| **Product app** | `backsteros-app/` | `backsteros.com/app` | Responsive web UI for daily work |
+| **Ops admin** | `backsteros-admin/` | `backsteros.com/admin` | Logs, sync health, API observability — **not** task editing |
 | **Mobile** | `backsteros-mobile/` | iOS/Android app | Same product concepts, native UI |
 
 See [11-urls-and-routing.md](11-urls-and-routing.md) for path routing and deployment.
@@ -16,7 +16,7 @@ See [11-urls-and-routing.md](11-urls-and-routing.md) for path routing and deploy
 
 | Platform | How |
 | --- | --- |
-| Browser | Next.js 16 + React 19 at `app.backsteros.com` |
+| Browser | Next.js 16 + React 19 at `backsteros.com/app` |
 | Desktop | Separate client; does not load the web build |
 | Mobile | Separate Expo codebase (shared `api-client`, not same bundle) |
 
@@ -57,8 +57,8 @@ Owner dashboard for **system behavior**, not content editing.
 
 ### Cross-link
 
-- Admin header: “Open app” → `https://app.backsteros.com`
-- App settings (owner): “Admin” → `https://admin.backsteros.com`
+- Admin header: “Open app” → `https://backsteros.com/app`
+- App settings (owner): “Admin” → `https://backsteros.com/admin`
 
 Separate folder so agents and builds stay focused — see [11-urls-and-routing.md](11-urls-and-routing.md).
 

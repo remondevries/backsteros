@@ -1,12 +1,17 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
+import { secureHeaders } from "hono/secure-headers";
 import { generateOpenApi } from "@ts-rest/open-api";
 
 import { apiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
+import { isSpacesConfigured } from "./lib/storage.js";
+import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
 
 export function createApp() {
   const app = new Hono();
@@ -17,6 +22,13 @@ export function createApp() {
     .filter(Boolean);
 
   app.use("*", logger());
+  // cross-origin: Next.js avatar/PDF proxies fetch this API from another origin.
+  app.use(
+    "*",
+    secureHeaders({
+      crossOriginResourcePolicy: "cross-origin",
+    }),
+  );
   app.use(
     "*",
     cors({
@@ -25,12 +37,38 @@ export function createApp() {
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (c) =>
+        c.json(
+          {
+            error: "Request body too large",
+            code: "payload_too_large" as const,
+          },
+          413,
+        ),
+    }),
+  );
+
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) {
+      return error.getResponse();
+    }
+    console.error(error);
+    return c.json(
+      { error: "Internal server error", code: "internal_error" as const },
+      500,
+    );
+  });
 
   app.get("/health", (c) =>
     c.json({
       ok: true as const,
       service: "backsteros-api",
       version: "0.1.0",
+      spacesConfigured: isSpacesConfigured(),
     }),
   );
 

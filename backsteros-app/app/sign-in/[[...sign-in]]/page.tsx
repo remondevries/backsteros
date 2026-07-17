@@ -1,5 +1,7 @@
 import { SignIn } from "@clerk/nextjs";
 
+import { isE2eAuthBypassEnabled } from "@/lib/e2e-bypass-auth";
+
 export default function SignInPage() {
   return (
     <main className="auth-page">
@@ -10,7 +12,7 @@ export default function SignInPage() {
           <span>Your work, connected.</span>
         </div>
       </div>
-      {process.env.NEXT_PUBLIC_E2E_BYPASS_AUTH === "1" ? (
+      {isE2eAuthBypassEnabled() ? (
         <div aria-label="Sign in">Sign in to continue</div>
       ) : (
         <SignIn routing="path" path="/sign-in" />

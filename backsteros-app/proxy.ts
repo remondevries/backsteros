@@ -1,6 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import { isE2eAuthBypassEnabled } from "@/lib/e2e-bypass-auth";
 import { validateServerEnvironment } from "@/lib/env";
 
 const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/api/health"]);
@@ -12,7 +13,7 @@ const authenticatedProxy = clerkMiddleware(async (auth, request) => {
   }
 });
 
-export default process.env.E2E_BYPASS_AUTH === "1"
+export default isE2eAuthBypassEnabled()
   ? () => NextResponse.next()
   : authenticatedProxy;
 

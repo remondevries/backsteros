@@ -85,6 +85,7 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
   const health = await json(app, "/health");
   assert.equal(health.response.status, 200);
   assert.equal(health.body.ok, true);
+  assert.equal(typeof health.body.spacesConfigured, "boolean");
 
   const unauthorized = await json(app, "/api/v1/projects");
   assert.equal(unauthorized.response.status, 401);
@@ -141,11 +142,11 @@ test("API enforces auth, scopes, workspace isolation, and domain contracts", asy
 
 test("CORS admits the production app origin", async () => {
   const previous = process.env.CORS_ORIGINS;
-  process.env.CORS_ORIGINS = "https://app.backsteros.com";
+  process.env.CORS_ORIGINS = "https://backsteros.com";
   const response = await createApp().request("/health", {
-    headers: { origin: "https://app.backsteros.com" },
+    headers: { origin: "https://backsteros.com" },
   });
-  assert.equal(response.headers.get("access-control-allow-origin"), "https://app.backsteros.com");
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://backsteros.com");
   if (previous === undefined) delete process.env.CORS_ORIGINS;
   else process.env.CORS_ORIGINS = previous;
 });

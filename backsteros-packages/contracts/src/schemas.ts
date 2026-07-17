@@ -74,6 +74,7 @@ export const healthSchema = z.object({
   ok: z.literal(true),
   service: z.string(),
   version: z.string(),
+  spacesConfigured: z.boolean(),
 });
 
 export const projectSchema = z.object({
@@ -176,6 +177,10 @@ export const apiKeySchema = z.object({
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(128),
   scopes: z.array(apiKeyScopeSchema).min(1),
+});
+
+export const updateApiKeySchema = z.object({
+  name: z.string().min(1).max(128),
 });
 
 export const createApiKeyResponseSchema = z.object({
@@ -338,6 +343,11 @@ export const organizationSchema = z.object({
   deletedAt: nullableIsoDateSchema,
 });
 
+export const contactSocialAccountSchema = z.object({
+  platform: z.string().min(1).max(64),
+  url: z.string().min(1).max(500),
+});
+
 export const contactInputSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
@@ -350,6 +360,11 @@ export const contactInputSchema = z.object({
   phone: z.string().max(64).nullable().optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(20_000).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  city: z.string().max(255).nullable().optional(),
+  postalCode: z.string().max(32).nullable().optional(),
+  country: z.string().max(128).nullable().optional(),
+  socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
 });
 export const updateContactSchema = contactInputSchema.partial();
 export const contactSchema = z.object({
@@ -368,6 +383,11 @@ export const contactSchema = z.object({
   phone: z.string().nullable(),
   role: z.string().nullable(),
   notes: z.string().nullable(),
+  address: z.string().nullable(),
+  city: z.string().nullable(),
+  postalCode: z.string().nullable(),
+  country: z.string().nullable(),
+  socialAccounts: z.array(contactSocialAccountSchema),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
   deletedAt: nullableIsoDateSchema,
@@ -445,6 +465,32 @@ export const letterSchema = z.object({
   deletedAt: nullableIsoDateSchema,
 });
 
+export const letterAttachmentSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  letterId: z.string(),
+  storageKey: z.string(),
+  originalFilename: z.string(),
+  contentType: z.string(),
+  byteSize: z.number().int().nonnegative(),
+  checksum: z.string().nullable(),
+  contentEtag: z.string().nullable(),
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+export const letterAttachmentParamsSchema = z.object({
+  id: z.string(),
+  attachmentId: z.string(),
+});
+export const letterAttachmentsResponseSchema = z.object({
+  attachments: z.array(letterAttachmentSchema),
+});
+export const updateLetterAttachmentSchema = z.object({
+  originalFilename: z.string().trim().min(1).max(255),
+});
+
 export const avatarParamsSchema = z.object({
   entityType: z.string(),
   entityId: z.string(),
@@ -487,6 +533,12 @@ export const globalSearchResultSchema = z.object({
   title: z.string(),
   snippet: z.string().nullable(),
   updatedAt: isoDateSchema,
+  /** Present for document results: project | knowledge | journal. */
+  documentType: z.enum(["project", "knowledge", "journal"]).nullable().optional(),
+  /** Document relative path for href building. */
+  path: z.string().nullable().optional(),
+  /** Project UUID for project-document href building. */
+  projectId: z.string().nullable().optional(),
 });
 
 export const projectRelationsSchema = z.object({
@@ -602,6 +654,8 @@ export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
+export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
+export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponseSchema>;
 export type ApiKeyScope = z.infer<typeof apiKeyScopeSchema>;
 export type Document = z.infer<typeof documentSchema>;
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
@@ -612,8 +666,10 @@ export type SearchResult = z.infer<typeof searchResultSchema>;
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 export type Organization = z.infer<typeof organizationSchema>;
 export type Contact = z.infer<typeof contactSchema>;
+export type ContactSocialAccount = z.infer<typeof contactSocialAccountSchema>;
 export type Area = z.infer<typeof areaSchema>;
 export type Letter = z.infer<typeof letterSchema>;
+export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
 export type Mention = z.infer<typeof mentionSchema>;
 export type GlobalSearchResult = z.infer<typeof globalSearchResultSchema>;

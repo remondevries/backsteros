@@ -1,0 +1,14 @@
+type Resolver = () => string | null;
+
+let resolver: Resolver | null = null;
+
+export function registerFocusedListKeyboardItemResolver(next: Resolver | null) {
+  resolver = next;
+  return () => {
+    if (resolver === next) resolver = null;
+  };
+}
+
+export function getFocusedListKeyboardItemId() {
+  return resolver?.() ?? null;
+}

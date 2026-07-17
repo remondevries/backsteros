@@ -170,32 +170,37 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ## ADR-018: Standalone Next.js product web app
 
-**Status:** Accepted
+**Status:** Accepted (hostname amended)
 **Context:** The product shell needs first-class web routing, Clerk middleware,
 responsive behavior, and deployment independent from marketing and admin. Circle
-already provides a proven Next.js shell and interaction model. The earlier Vite
-static build at `/app`, shared with Tauri, created unnecessary path-routing and
-runtime constraints.
+already provides a proven Next.js shell and interaction model. An earlier draft
+used a separate `app.backsteros.com` host without a base path; product URLs are
+aligned with ADR-015 (`backsteros.com/app`).
 
 **Decision:**
 - Build `backsteros-app` with Next.js 16, React 19, and Tailwind CSS 4.
-- Deploy it as a standalone web service at **`https://app.backsteros.com`**.
-- Use root-relative canonical product routes such as `/projects`, `/tasks`, and
-  `/knowledge`; do not add an `/app` base path.
-- Use Clerk's Next.js middleware and sign-in route for human authentication.
+- Deploy it as a standalone web service at **`https://backsteros.com/app`**.
+- Set Next.js `basePath` to `/app` in production (`NEXT_PUBLIC_BASE_PATH=/app`).
+  In-app routes stay root-relative (`/projects`, `/tasks`, `/knowledge`); Next
+  prefixes them under `/app`. Local `next dev` may omit the base path.
+- Canonical URL: `NEXT_PUBLIC_APP_URL=https://backsteros.com/app`.
+- Use Clerk's Next.js middleware and sign-in route for human authentication
+  (Clerk origins use apex `https://backsteros.com`).
 - Keep it responsive web only. Desktop and mobile native clients are separate
   decisions and do not load this Next.js build.
 - Keep backend logic, storage, sync services, SQLite, and API routes out of the
-  product app, except deployment-facing web endpoints such as `/api/health`.
+  product app, except deployment-facing web endpoints such as `/api/health`
+  (publicly `GET /app/api/health`).
 
 **Supersedes:** ADR-005 for this app, ADR-006, and the product-host/path portions
-of ADR-015 and ADR-017.
+of ADR-015 and ADR-017. Supersedes the earlier `app.backsteros.com` host choice
+in a prior revision of this ADR.
 
 ---
 
 | ID | Question | Owner |
 | --- | --- | --- |
-| Q-001 | Domains: product + API host | **Resolved:** `backsteros.com` + `service.backsteros.com` (`api.` unavailable) |
+| Q-001 | Domains: product + API host | **Resolved:** product `backsteros.com/app`, API `service.backsteros.com` (`api.` unavailable) |
 | Q-002 | B2 vs R2 after measuring PDF egress | Phase 2 |
 | Q-003 | Clerk vs Supabase Auth | **Resolved:** Clerk |
 | Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/code/backsteros/` with subfolders |

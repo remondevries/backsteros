@@ -16,7 +16,9 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: { default: "Backsteros", template: "%s · Backsteros" },
   description: "Projects, tasks, people, and knowledge in one workspace.",
-  metadataBase: new URL("https://app.backsteros.com"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://backsteros.com/app",
+  ),
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

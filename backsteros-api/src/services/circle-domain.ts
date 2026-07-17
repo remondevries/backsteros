@@ -8,6 +8,7 @@ import {
   documents,
   entityCounters,
   letters,
+  letterAttachments,
   mentions,
   organizations,
   projects,
@@ -19,6 +20,7 @@ import {
   assertPrivateStorageKey,
   buildPrivateStorageKey,
   checksumForContent,
+  deleteObject,
   getObject,
   putObject,
 } from "../lib/storage.js";
@@ -42,6 +44,10 @@ type OrganizationInput = {
   sortOrder?: number;
   notes?: string | null;
 };
+type ContactSocialAccount = {
+  platform: string;
+  url: string;
+};
 type ContactInput = {
   number?: number | null;
   key: string;
@@ -56,6 +62,11 @@ type ContactInput = {
   phone?: string | null;
   role?: string | null;
   notes?: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  socialAccounts?: ContactSocialAccount[];
 };
 type AreaInput = {
   name: string;
@@ -569,37 +580,129 @@ export async function deleteLetter(
   return row ?? null;
 }
 
-export async function putLetterPdf(
+export async function listLetterAttachments(workspaceId: string, letterId: string) {
+  const letter = await getLetterById(workspaceId, letterId);
+  if (!letter) return null;
+  return db
+    .select()
+    .from(letterAttachments)
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.letterId, letterId),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .orderBy(asc(letterAttachments.sortOrder), asc(letterAttachments.createdAt));
+}
+
+async function syncLetterPrimaryAttachment(
   workspaceId: string,
-  id: string,
+  letterId: string,
+  attachment: typeof letterAttachments.$inferSelect | null,
+) {
+  await db
+    .update(letters)
+    .set({
+      storageKey: attachment?.storageKey ?? "",
+      originalFilename: attachment?.originalFilename ?? "",
+      contentType: attachment?.contentType ?? "application/pdf",
+      byteSize: attachment?.byteSize ?? 0,
+      checksum: attachment?.checksum ?? null,
+      contentEtag: attachment?.contentEtag ?? null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, letterId)));
+}
+
+export async function createLetterAttachment(
+  workspaceId: string,
+  letterId: string,
   bytes: Uint8Array,
   fileName: string,
 ) {
-  const [letter] = await db
-    .select()
-    .from(letters)
-    .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, id), isNull(letters.deletedAt)))
-    .limit(1);
+  const letter = await getLetterById(workspaceId, letterId);
   if (!letter) return null;
-  const key = buildPrivateStorageKey(workspaceId, "pdfs", id, fileName || "letter.pdf");
+
+  const attachmentId = newId();
+  const key = buildPrivateStorageKey(
+    workspaceId,
+    "pdfs",
+    attachmentId,
+    fileName || "letter.pdf",
+  );
   const stored = await putObject(key, bytes, "application/pdf");
-  const [row] = await db
-    .update(letters)
-    .set({
+  const [attachment] = await db
+    .insert(letterAttachments)
+    .values({
+      id: attachmentId,
+      workspaceId,
+      letterId,
       storageKey: key,
       originalFilename: fileName || "letter.pdf",
       contentType: "application/pdf",
       byteSize: stored.byteSize,
       checksum: checksumForContent(bytes),
       contentEtag: stored.etag,
-      updatedAt: new Date(),
+      sortOrder: Date.now(),
     })
-    .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, id)))
     .returning();
-  return row ?? null;
+  if (!attachment) return null;
+
+  const attachments = await listLetterAttachments(workspaceId, letterId);
+  // Keep the first (oldest) attachment as the denormalized primary on `letters`.
+  await syncLetterPrimaryAttachment(
+    workspaceId,
+    letterId,
+    attachments?.[0] ?? attachment,
+  );
+  const updatedLetter = await getLetterById(workspaceId, letterId);
+  return { letter: updatedLetter!, attachment };
+}
+
+/** @deprecated Prefer createLetterAttachment — still adds a PDF (no longer replaces). */
+export async function putLetterPdf(
+  workspaceId: string,
+  id: string,
+  bytes: Uint8Array,
+  fileName: string,
+) {
+  const result = await createLetterAttachment(workspaceId, id, bytes, fileName);
+  return result?.letter ?? null;
+}
+
+export async function getLetterAttachment(
+  workspaceId: string,
+  letterId: string,
+  attachmentId: string,
+) {
+  const [row] = await db
+    .select()
+    .from(letterAttachments)
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.letterId, letterId),
+        eq(letterAttachments.id, attachmentId),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row?.storageKey) return null;
+  assertPrivateStorageKey(workspaceId, row.storageKey);
+  const object = await getObject(row.storageKey);
+  return { row, bytes: object.bytes };
 }
 
 export async function getLetterPdf(workspaceId: string, id: string) {
+  const attachments = await listLetterAttachments(workspaceId, id);
+  if (!attachments) return null;
+  const primary = attachments[0];
+  if (primary) {
+    return getLetterAttachment(workspaceId, id, primary.id);
+  }
+
+  // Legacy fallback for letters not yet backfilled.
   const [row] = await db
     .select()
     .from(letters)
@@ -609,6 +712,68 @@ export async function getLetterPdf(workspaceId: string, id: string) {
   assertPrivateStorageKey(workspaceId, row.storageKey);
   const object = await getObject(row.storageKey);
   return { row, bytes: object.bytes };
+}
+
+export async function deleteLetterAttachment(
+  workspaceId: string,
+  letterId: string,
+  attachmentId: string,
+) {
+  const [row] = await db
+    .update(letterAttachments)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.letterId, letterId),
+        eq(letterAttachments.id, attachmentId),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .returning();
+  if (!row) return null;
+
+  const remaining = await listLetterAttachments(workspaceId, letterId);
+  await syncLetterPrimaryAttachment(
+    workspaceId,
+    letterId,
+    remaining?.[0] ?? null,
+  );
+  return row;
+}
+
+export async function updateLetterAttachment(
+  workspaceId: string,
+  letterId: string,
+  attachmentId: string,
+  input: { originalFilename: string },
+) {
+  const filename = input.originalFilename.trim();
+  if (!filename) return null;
+
+  const [row] = await db
+    .update(letterAttachments)
+    .set({
+      originalFilename: filename,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.letterId, letterId),
+        eq(letterAttachments.id, attachmentId),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .returning();
+  if (!row) return null;
+
+  const attachments = await listLetterAttachments(workspaceId, letterId);
+  const primary = attachments?.[0];
+  if (primary?.id === attachmentId) {
+    await syncLetterPrimaryAttachment(workspaceId, letterId, row);
+  }
+  return row;
 }
 
 export async function putAvatar(
@@ -678,6 +843,71 @@ export async function getAvatar(workspaceId: string, entityType: string, entityI
   return { row, bytes: object.bytes };
 }
 
+export async function deleteAvatar(
+  workspaceId: string,
+  entityType: string,
+  entityId: string,
+) {
+  const [row] = await db
+    .select()
+    .from(avatars)
+    .where(
+      and(
+        eq(avatars.workspaceId, workspaceId),
+        eq(avatars.entityType, entityType),
+        eq(avatars.entityId, entityId),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+
+  assertPrivateStorageKey(workspaceId, row.storageKey);
+  try {
+    await deleteObject(row.storageKey);
+  } catch {
+    // Continue clearing DB even if object storage delete fails.
+  }
+
+  await db
+    .delete(avatars)
+    .where(
+      and(
+        eq(avatars.workspaceId, workspaceId),
+        eq(avatars.entityType, entityType),
+        eq(avatars.entityId, entityId),
+      ),
+    );
+
+  if (entityType === "organization") {
+    await db
+      .update(organizations)
+      .set({
+        avatarStorageKey: null,
+        avatarContentType: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(organizations.workspaceId, workspaceId),
+          eq(organizations.id, entityId),
+        ),
+      );
+  } else if (entityType === "contact") {
+    await db
+      .update(contacts)
+      .set({
+        avatarStorageKey: null,
+        avatarContentType: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
+      );
+  }
+
+  return row;
+}
+
 export async function getSettings(workspaceId: string, executor: DbExecutor = db) {
   const [row] = await executor
     .select()
@@ -730,26 +960,448 @@ export async function markMentionRead(workspaceId: string, id: string) {
   return row ?? null;
 }
 
-export async function globalSearch(workspaceId: string, q: string, limit = 20) {
+export type GlobalSearchMode =
+  | "all"
+  | "projects"
+  | "tasks"
+  | "documents"
+  | "letters"
+  | "knowledge"
+  | "contacts"
+  | "organizations";
+
+export type GlobalSearchScope = {
+  taskProjectId?: string;
+  taskContactId?: string;
+  taskInboxOnly?: boolean;
+  documentProjectId?: string;
+  letterProjectId?: string;
+  letterContactId?: string;
+  letterOrganizationId?: string;
+  projectOrganizationId?: string;
+  contactOrganizationId?: string;
+  includeProjects: boolean;
+  includeTasks: boolean;
+  includeDocuments: boolean;
+  includeLetters: boolean;
+  includeKnowledgeDocuments: boolean;
+  includeContacts: boolean;
+  includeOrganizations: boolean;
+};
+
+function scopeForMode(mode: GlobalSearchMode): GlobalSearchScope {
+  const empty = {
+    includeProjects: false,
+    includeTasks: false,
+    includeDocuments: false,
+    includeLetters: false,
+    includeKnowledgeDocuments: false,
+    includeContacts: false,
+    includeOrganizations: false,
+  };
+
+  switch (mode) {
+    case "projects":
+      return { ...empty, includeProjects: true };
+    case "tasks":
+      return { ...empty, includeTasks: true };
+    case "documents":
+      return { ...empty, includeDocuments: true };
+    case "letters":
+      return { ...empty, includeLetters: true };
+    case "knowledge":
+      return { ...empty, includeKnowledgeDocuments: true };
+    case "contacts":
+      return { ...empty, includeContacts: true };
+    case "organizations":
+      return { ...empty, includeOrganizations: true };
+    default:
+      return {
+        includeProjects: true,
+        includeTasks: true,
+        includeDocuments: true,
+        includeLetters: true,
+        includeKnowledgeDocuments: true,
+        includeContacts: true,
+        includeOrganizations: true,
+      };
+  }
+}
+
+function scopeFromContextParams(input: {
+  contextKind: string | null;
+  projectId: string | null;
+  projectSection: string | null;
+  contactId: string | null;
+  contactSection: string | null;
+  organizationId: string | null;
+  organizationSection: string | null;
+}): GlobalSearchScope | null {
+  const empty = {
+    includeProjects: false,
+    includeTasks: false,
+    includeDocuments: false,
+    includeLetters: false,
+    includeKnowledgeDocuments: false,
+    includeContacts: false,
+    includeOrganizations: false,
+  };
+
+  const kind = input.contextKind;
+  if (!kind) return null;
+
+  switch (kind) {
+    case "inbox":
+      return { ...empty, taskInboxOnly: true, includeTasks: true };
+    case "tasks":
+      return { ...empty, includeTasks: true };
+    case "knowledge":
+      return { ...empty, includeKnowledgeDocuments: true };
+    case "letters":
+      return { ...empty, includeLetters: true };
+    case "contacts":
+      return { ...empty, includeContacts: true };
+    case "organizations":
+      return { ...empty, includeOrganizations: true };
+    case "projects":
+      return { ...empty, includeProjects: true };
+    case "project": {
+      const projectId = input.projectId;
+      if (!projectId) return { ...empty, includeProjects: true };
+      const section = input.projectSection ?? "overview";
+      if (section === "documents") {
+        return {
+          ...empty,
+          documentProjectId: projectId,
+          includeDocuments: true,
+        };
+      }
+      if (section === "tasks") {
+        return { ...empty, taskProjectId: projectId, includeTasks: true };
+      }
+      if (section === "letters") {
+        return { ...empty, letterProjectId: projectId, includeLetters: true };
+      }
+      return {
+        ...empty,
+        taskProjectId: projectId,
+        documentProjectId: projectId,
+        letterProjectId: projectId,
+        includeTasks: true,
+        includeDocuments: true,
+        includeLetters: true,
+      };
+    }
+    case "contact": {
+      const contactId = input.contactId;
+      if (!contactId) return { ...empty, includeContacts: true };
+      const section = input.contactSection ?? "overview";
+      if (section === "tasks") {
+        return { ...empty, taskContactId: contactId, includeTasks: true };
+      }
+      if (section === "letters") {
+        return { ...empty, letterContactId: contactId, includeLetters: true };
+      }
+      return {
+        ...empty,
+        taskContactId: contactId,
+        letterContactId: contactId,
+        includeTasks: true,
+        includeLetters: true,
+      };
+    }
+    case "organization": {
+      const organizationId = input.organizationId;
+      if (!organizationId) return { ...empty, includeOrganizations: true };
+      const section = input.organizationSection ?? "overview";
+      if (section === "projects") {
+        return {
+          ...empty,
+          projectOrganizationId: organizationId,
+          includeProjects: true,
+        };
+      }
+      if (section === "contacts") {
+        return {
+          ...empty,
+          contactOrganizationId: organizationId,
+          includeContacts: true,
+        };
+      }
+      if (section === "letters") {
+        return {
+          ...empty,
+          letterOrganizationId: organizationId,
+          includeLetters: true,
+        };
+      }
+      return {
+        ...empty,
+        projectOrganizationId: organizationId,
+        contactOrganizationId: organizationId,
+        letterOrganizationId: organizationId,
+        includeProjects: true,
+        includeContacts: true,
+        includeLetters: true,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+export async function globalSearch(
+  workspaceId: string,
+  q: string,
+  limit = 20,
+  options?: {
+    mode?: GlobalSearchMode;
+    contextKind?: string | null;
+    projectId?: string | null;
+    projectSection?: string | null;
+    contactId?: string | null;
+    contactSection?: string | null;
+    organizationId?: string | null;
+    organizationSection?: string | null;
+  },
+) {
   const pattern = `%${q}%`;
-  const [projectRows, taskRows, documentRows, organizationRows, contactRows, letterRows] =
-    await Promise.all([
-      db.select().from(projects).where(and(eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt), or(ilike(projects.name, pattern), ilike(projects.summary, pattern)))).limit(limit),
-      db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), isNull(tasks.deletedAt), or(ilike(tasks.title, pattern), ilike(tasks.description, pattern)))).limit(limit),
-      db.select().from(documents).where(and(eq(documents.workspaceId, workspaceId), isNull(documents.deletedAt), or(ilike(documents.title, pattern), ilike(documents.path, pattern), ilike(documents.snippet, pattern)))).limit(limit),
-      db.select().from(organizations).where(and(eq(organizations.workspaceId, workspaceId), isNull(organizations.deletedAt), ilike(organizations.name, pattern))).limit(limit),
-      db.select().from(contacts).where(and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt), or(ilike(contacts.name, pattern), ilike(contacts.email, pattern)))).limit(limit),
-      db.select().from(letters).where(and(eq(letters.workspaceId, workspaceId), isNull(letters.deletedAt), ilike(letters.title, pattern))).limit(limit),
-    ]);
+  const mode = options?.mode ?? "all";
+  const contextScope =
+    mode === "all"
+      ? scopeFromContextParams({
+          contextKind: options?.contextKind ?? null,
+          projectId: options?.projectId ?? null,
+          projectSection: options?.projectSection ?? null,
+          contactId: options?.contactId ?? null,
+          contactSection: options?.contactSection ?? null,
+          organizationId: options?.organizationId ?? null,
+          organizationSection: options?.organizationSection ?? null,
+        })
+      : null;
+  const scope = contextScope ?? scopeForMode(mode);
+
+  const projectConditions = [
+    eq(projects.workspaceId, workspaceId),
+    isNull(projects.deletedAt),
+    or(ilike(projects.name, pattern), ilike(projects.summary, pattern)),
+  ];
+  if (scope.projectOrganizationId) {
+    projectConditions.push(eq(projects.organizationId, scope.projectOrganizationId));
+  }
+
+  const taskConditions = [
+    eq(tasks.workspaceId, workspaceId),
+    isNull(tasks.deletedAt),
+    or(ilike(tasks.title, pattern), ilike(tasks.description, pattern)),
+  ];
+  if (scope.taskInboxOnly) {
+    taskConditions.push(eq(tasks.inbox, true));
+  }
+  if (scope.taskProjectId) {
+    taskConditions.push(eq(tasks.projectId, scope.taskProjectId));
+  }
+  if (scope.taskContactId) {
+    taskConditions.push(eq(tasks.contactId, scope.taskContactId));
+  }
+
+  const projectDocConditions = [
+    eq(documents.workspaceId, workspaceId),
+    isNull(documents.deletedAt),
+    eq(documents.type, "project"),
+    or(
+      ilike(documents.title, pattern),
+      ilike(documents.path, pattern),
+      ilike(documents.snippet, pattern),
+    ),
+  ];
+  if (scope.documentProjectId) {
+    projectDocConditions.push(eq(documents.projectId, scope.documentProjectId));
+  }
+
+  const knowledgeDocConditions = [
+    eq(documents.workspaceId, workspaceId),
+    isNull(documents.deletedAt),
+    eq(documents.type, "knowledge"),
+    or(
+      ilike(documents.title, pattern),
+      ilike(documents.path, pattern),
+      ilike(documents.snippet, pattern),
+    ),
+  ];
+
+  const orgConditions = [
+    eq(organizations.workspaceId, workspaceId),
+    isNull(organizations.deletedAt),
+    ilike(organizations.name, pattern),
+  ];
+
+  const contactConditions = [
+    eq(contacts.workspaceId, workspaceId),
+    isNull(contacts.deletedAt),
+    or(ilike(contacts.name, pattern), ilike(contacts.email, pattern)),
+  ];
+  if (scope.contactOrganizationId) {
+    contactConditions.push(eq(contacts.organizationId, scope.contactOrganizationId));
+  }
+
+  const letterConditions = [
+    eq(letters.workspaceId, workspaceId),
+    isNull(letters.deletedAt),
+    ilike(letters.title, pattern),
+  ];
+  if (scope.letterProjectId) {
+    letterConditions.push(eq(letters.projectId, scope.letterProjectId));
+  }
+  if (scope.letterContactId) {
+    letterConditions.push(eq(letters.contactId, scope.letterContactId));
+  }
+  if (scope.letterOrganizationId) {
+    letterConditions.push(eq(letters.organizationId, scope.letterOrganizationId));
+  }
+
+  const [
+    projectRows,
+    taskRows,
+    projectDocumentRows,
+    knowledgeDocumentRows,
+    organizationRows,
+    contactRows,
+    letterRows,
+  ] = await Promise.all([
+    scope.includeProjects
+      ? db
+          .select()
+          .from(projects)
+          .where(and(...projectConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeTasks
+      ? db
+          .select()
+          .from(tasks)
+          .where(and(...taskConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeDocuments
+      ? db
+          .select()
+          .from(documents)
+          .where(and(...projectDocConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeKnowledgeDocuments
+      ? db
+          .select()
+          .from(documents)
+          .where(and(...knowledgeDocConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeOrganizations
+      ? db
+          .select()
+          .from(organizations)
+          .where(and(...orgConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeContacts
+      ? db
+          .select()
+          .from(contacts)
+          .where(and(...contactConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+    scope.includeLetters
+      ? db
+          .select()
+          .from(letters)
+          .where(and(...letterConditions))
+          .limit(limit)
+      : Promise.resolve([]),
+  ]);
+
   return [
-    ...projectRows.map((row) => ({ type: "project", id: row.id, title: row.name, snippet: row.summary, updatedAt: row.updatedAt })),
-    ...taskRows.map((row) => ({ type: "task", id: row.id, title: row.title, snippet: row.description, updatedAt: row.updatedAt })),
-    ...documentRows.map((row) => ({ type: "document", id: row.id, title: row.title, snippet: row.snippet, updatedAt: row.updatedAt })),
-    ...organizationRows.map((row) => ({ type: "organization", id: row.id, title: row.name, snippet: row.summary, updatedAt: row.updatedAt })),
-    ...contactRows.map((row) => ({ type: "contact", id: row.id, title: row.name, snippet: row.email, updatedAt: row.updatedAt })),
-    ...letterRows.map((row) => ({ type: "letter", id: row.id, title: row.title, snippet: row.context, updatedAt: row.updatedAt })),
+    ...projectRows.map((row) => ({
+      type: "project" as const,
+      id: row.id,
+      title: row.name,
+      snippet: row.summary,
+      updatedAt: row.updatedAt,
+      documentType: null as null,
+      path: null as null,
+      projectId: null as null,
+    })),
+    ...taskRows.map((row) => ({
+      type: "task" as const,
+      id: row.id,
+      title: row.title,
+      snippet: row.description,
+      updatedAt: row.updatedAt,
+      documentType: null as null,
+      path: null as null,
+      projectId: null as null,
+    })),
+    ...projectDocumentRows.map((row) => ({
+      type: "document" as const,
+      id: row.id,
+      title: row.title,
+      snippet: row.snippet,
+      updatedAt: row.updatedAt,
+      documentType: "project" as const,
+      path: row.path,
+      projectId: row.projectId,
+    })),
+    ...knowledgeDocumentRows.map((row) => ({
+      type: "document" as const,
+      id: row.id,
+      title: row.title,
+      snippet: row.snippet,
+      updatedAt: row.updatedAt,
+      documentType: "knowledge" as const,
+      path: row.path,
+      projectId: null as null,
+    })),
+    ...organizationRows.map((row) => ({
+      type: "organization" as const,
+      id: row.id,
+      title: row.name,
+      snippet: row.summary,
+      updatedAt: row.updatedAt,
+      documentType: null as null,
+      path: null as null,
+      projectId: null as null,
+    })),
+    ...contactRows.map((row) => ({
+      type: "contact" as const,
+      id: row.id,
+      title: row.name,
+      snippet: row.email,
+      updatedAt: row.updatedAt,
+      documentType: null as null,
+      path: null as null,
+      projectId: null as null,
+    })),
+    ...letterRows.map((row) => ({
+      type: "letter" as const,
+      id: row.id,
+      title: row.title,
+      snippet: row.context,
+      updatedAt: row.updatedAt,
+      documentType: null as null,
+      path: null as null,
+      projectId: null as null,
+    })),
   ]
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
     .slice(0, limit)
-    .map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
+    .map((row) => ({
+      type: row.type,
+      id: row.id,
+      title: row.title,
+      snippet: row.snippet,
+      updatedAt: row.updatedAt.toISOString(),
+      ...(row.documentType ? { documentType: row.documentType } : {}),
+      ...(row.path ? { path: row.path } : {}),
+      ...(row.projectId ? { projectId: row.projectId } : {}),
+    }));
 }

@@ -57,7 +57,7 @@ Single workspace: **`~/code/backsteros/`**
 backsteros/
 ├── docs/                      ← specs (this documentation)
 ├── backsteros-api/            ← backend service
-├── backsteros-app/            ← Next.js product UI (app.backsteros.com)
+├── backsteros-app/            ← Next.js product UI (backsteros.com/app)
 ├── backsteros-admin/          ← ops dashboard (admin.backsteros.com)
 ├── backsteros-mobile/         ← Expo
 ├── backsteros-desktop/        ← separate desktop client

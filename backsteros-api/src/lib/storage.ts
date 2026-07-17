@@ -20,6 +20,16 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/** True when all env vars needed for Spaces put/get are present. */
+export function isSpacesConfigured(): boolean {
+  return Boolean(
+    process.env.SPACES_ENDPOINT &&
+      process.env.SPACES_BUCKET &&
+      process.env.SPACES_ACCESS_KEY_ID &&
+      process.env.SPACES_SECRET_ACCESS_KEY,
+  );
+}
+
 export function getStorageClient(): S3Client {
   if (!client) {
     client = new S3Client({
@@ -40,34 +50,49 @@ export function getBucketName(): string {
   return requireEnv("SPACES_BUCKET");
 }
 
-export function buildStorageKey(
-  type: "project" | "knowledge" | "journal",
-  path: string,
-  projectKey?: string,
-  workspaceId?: string,
-): string {
-  const normalizedPath = path.replace(/^\/+/, "");
-  const prefix = workspaceId ? `workspaces/${workspaceId}/` : "";
-
-  switch (type) {
-    case "journal":
-      return `${prefix}markdown/journal/${normalizedPath}`;
-    case "knowledge":
-      return `${prefix}markdown/knowledge/${normalizedPath}`;
-    case "project":
-      if (!projectKey) {
-        throw new Error("PROJECT_KEY_REQUIRED");
-      }
-      return `${prefix}markdown/projects/${projectKey}/${normalizedPath}`;
-  }
-}
-
 function safeSegment(value: string): string {
   const normalized = value.replace(/[^a-zA-Z0-9._-]/g, "_");
   if (!normalized || normalized === "." || normalized === "..") {
     throw new Error("INVALID_STORAGE_SEGMENT");
   }
   return normalized;
+}
+
+function safePath(path: string): string {
+  return path
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .map(safeSegment)
+    .join("/");
+}
+
+export function buildStorageKey(
+  type: "project" | "knowledge" | "journal",
+  path: string,
+  projectKey?: string,
+  workspaceId?: string,
+): string {
+  const normalizedPath = safePath(path);
+  if (!normalizedPath) {
+    throw new Error("INVALID_STORAGE_SEGMENT");
+  }
+  const prefix = workspaceId
+    ? `workspaces/${safeSegment(workspaceId)}/`
+    : "";
+
+  switch (type) {
+    case "journal":
+      return `${prefix}markdown/journal/${normalizedPath}`;
+    case "knowledge":
+      return `${prefix}markdown/knowledge/${normalizedPath}`;
+    case "project": {
+      if (!projectKey) {
+        throw new Error("PROJECT_KEY_REQUIRED");
+      }
+      return `${prefix}markdown/projects/${safeSegment(projectKey)}/${normalizedPath}`;
+    }
+  }
 }
 
 export function buildPrivateStorageKey(

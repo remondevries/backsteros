@@ -23,10 +23,22 @@ services:
     image: mongo:7
     container_name: backsteros-powersync-mongo
     restart: unless-stopped
+    # PowerSync bucket storage needs transactions → single-node replica set.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:
       - backsteros_powersync_mongo:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"mongo:27017\"}]}).ok }" | grep 1',
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 5s
 
   powersync:
     image: journeyapps/powersync-service:latest
@@ -36,7 +48,7 @@ services:
       postgres:
         condition: service_healthy
       mongo:
-        condition: service_started
+        condition: service_healthy
     command: ["start", "-r", "unified"]
     environment:
       POWERSYNC_CONFIG_PATH: /config/service.yaml

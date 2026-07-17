@@ -47,7 +47,7 @@ env:
     NODE_ENV: production
     PORT: "8787"
     PUBLIC_API_URL: https://service.backsteros.com
-    CORS_ORIGINS: https://backsteros.com,https://app.backsteros.com,https://service.backsteros.com,http://localhost:5173
+    CORS_ORIGINS: https://backsteros.com,https://service.backsteros.com,http://localhost:5173
     SPACES_ENDPOINT: https://ams3.digitaloceanspaces.com
     SPACES_BUCKET: backsteros
     SPACES_REGION: ams3
