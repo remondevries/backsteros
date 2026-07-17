@@ -11,11 +11,11 @@ ssh:
   user: root
   config: false
 
-# Internal Kamal Host for the shared proxy on :8082. Public URL is
-# https://backsteros.com/app (nginx location /app → this host).
+# Kamal routes on Host backsteros.com (shared proxy :8082). Public traffic hits
+# nginx on :443 for backsteros.com and proxies /app → this same Host.
 proxy:
   ssl: false
-  host: app.backsteros.com
+  host: backsteros.com
   app_port: 3000
   healthcheck:
     path: /app/api/health
