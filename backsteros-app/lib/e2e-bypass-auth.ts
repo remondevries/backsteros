@@ -1,6 +1,6 @@
 /**
  * Playwright sets E2E_BYPASS_AUTH / NEXT_PUBLIC_E2E_BYPASS_AUTH for local/CI.
- * Never set those on the Kamal production host — `next start` in CI still uses
+ * Never set those on the Kamal production host — CI/e2e still runs with
  * NODE_ENV=production, so we key only off the explicit flag (and refuse known
  * production app URLs as a belt-and-suspenders guard).
  */

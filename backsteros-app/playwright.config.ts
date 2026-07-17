@@ -17,7 +17,8 @@ export default defineConfig({
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "pnpm build && pnpm start",
+    // output: "standalone" — next start is unsupported; match Dockerfile CMD.
+    command: "pnpm build && pnpm start:standalone",
     port: 3100,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

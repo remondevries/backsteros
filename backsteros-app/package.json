@@ -6,6 +6,7 @@
     "dev": "node scripts/build-totem.mjs && node scripts/copy-pdf-worker.mjs && next dev --port ${PORT:-3000}",
     "build": "node scripts/build-totem.mjs && node scripts/copy-pdf-worker.mjs && next build",
     "start": "next start",
+    "start:standalone": "node scripts/start-standalone.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test lib/**/*.test.ts",
