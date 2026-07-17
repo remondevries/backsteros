@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { withBasePath } from "@/lib/base-path";
 import type { WhoopSnapshotEntity } from "@/lib/whoop/types";
 
 type WhoopDayResponse = {
@@ -61,7 +62,9 @@ export function useWhoopDaySnapshot(
     void (async () => {
       try {
         const response = await fetch(
-          `/api/whoop/day?date=${encodeURIComponent(normalizedDate)}`,
+          withBasePath(
+            `/api/whoop/day?date=${encodeURIComponent(normalizedDate)}`,
+          ),
           { cache: "no-store" },
         );
         const whoop = (await response.json()) as WhoopDayResponse;

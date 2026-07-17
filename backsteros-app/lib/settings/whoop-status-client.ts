@@ -1,9 +1,10 @@
 "use client";
 
+import { withBasePath } from "@/lib/base-path";
 import type { WhoopSettingsStatus } from "@/lib/settings/whoop-status";
 
 export async function fetchWhoopSettingsStatus(): Promise<WhoopSettingsStatus | null> {
-  const response = await fetch("/api/settings/whoop/status", {
+  const response = await fetch(withBasePath("/api/settings/whoop/status"), {
     cache: "no-store",
   });
   if (!response.ok) {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { SettingsContentHeader } from "@/components/settings/settings-content-header";
+import { withBasePath } from "@/lib/base-path";
 
 type StorageStatus = {
   configured: boolean;
@@ -25,7 +26,7 @@ export function StorageSettingsSection({
 
   async function refreshStatus(): Promise<StorageStatus | null> {
     try {
-      const response = await fetch("/api/settings/storage/status", {
+      const response = await fetch(withBasePath("/api/settings/storage/status"), {
         cache: "no-store",
       });
       const next = (await response.json()) as StorageStatus;

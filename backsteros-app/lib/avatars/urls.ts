@@ -1,3 +1,5 @@
+import { withBasePath } from "@/lib/base-path";
+
 function withCacheBuster(href: string, updatedAt: Date | number): string {
   const version =
     updatedAt instanceof Date ? updatedAt.getTime() : Number(updatedAt);
@@ -5,7 +7,7 @@ function withCacheBuster(href: string, updatedAt: Date | number): string {
 }
 
 export function getContactAvatarHref(contactId: string): string {
-  return `/api/contacts/${contactId}/avatar`;
+  return withBasePath(`/api/contacts/${contactId}/avatar`);
 }
 
 export function getContactAvatarSrc(
@@ -16,7 +18,7 @@ export function getContactAvatarSrc(
 }
 
 export function getOrganizationAvatarHref(organizationId: string): string {
-  return `/api/organizations/${organizationId}/avatar`;
+  return withBasePath(`/api/organizations/${organizationId}/avatar`);
 }
 
 export function getOrganizationAvatarSrc(
@@ -27,7 +29,7 @@ export function getOrganizationAvatarSrc(
 }
 
 export function getUserAvatarHref(): string {
-  return "/api/users/me/avatar";
+  return withBasePath("/api/users/me/avatar");
 }
 
 export function getUserAvatarSrc(updatedAt: Date | number): string {

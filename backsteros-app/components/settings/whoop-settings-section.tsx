@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { SettingsContentHeader } from "@/components/settings/settings-content-header";
+import { withBasePath } from "@/lib/base-path";
 import { fetchWhoopSettingsStatus } from "@/lib/settings/whoop-status-client";
 import type { WhoopSettingsStatus } from "@/lib/settings/whoop-status";
 
@@ -47,7 +48,7 @@ export function WhoopSettingsSection({
     try {
       const date = todayIsoDate();
       const response = await fetch(
-        `/api/whoop/day?date=${encodeURIComponent(date)}`,
+        withBasePath(`/api/whoop/day?date=${encodeURIComponent(date)}`),
         { cache: "no-store" },
       );
       const payload = (await response.json().catch(() => null)) as {

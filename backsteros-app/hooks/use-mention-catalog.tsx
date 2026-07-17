@@ -19,6 +19,7 @@ import type {
 import { EMPTY_MENTION_CATALOG } from "@/lib/documents/mentions/empty-catalog";
 import { mergeMentionCatalogs } from "@/lib/documents/mentions/merge-catalog";
 import { getMentionTokenCacheKey } from "@/lib/documents/mentions/tokens";
+import { withBasePath } from "@/lib/base-path";
 
 type MentionCatalogContextValue = {
   catalog: MentionCatalog;
@@ -38,7 +39,7 @@ async function fetchResolvedCatalog(
   }
 
   try {
-    const response = await fetch("/api/mentions/resolve", {
+    const response = await fetch(withBasePath("/api/mentions/resolve"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
@@ -124,7 +125,7 @@ export function MentionCatalogProvider({
   const searchSections = useCallback(async (query: string) => {
     try {
       const response = await fetch(
-        `/api/mentions/search?q=${encodeURIComponent(query)}`,
+        withBasePath(`/api/mentions/search?q=${encodeURIComponent(query)}`),
         { credentials: "same-origin" },
       );
 
