@@ -94,14 +94,19 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 ## Phase 5 — Product app (web + Tauri)
 
-**Create:** `backsteros-app/`, `backsteros-desktop/`
+**Folders:** `backsteros-app/` (Next.js web — largely in progress), `backsteros-desktop/` (Tauri)
+
+Web product stack is **Next.js** at `backsteros.com/app` (ADR-018), not Vite.
+Desktop is a **separate** Tauri 2 + Vite/React client (ADR-019) whose UI should
+match the web app closely — not a Next sidecar and not Expo.
 
 | Task | Output |
 | --- | --- |
-| Vite + React at `/app` | Tasks, projects; uses `api-client` |
-| PowerSync web | Same sync as mobile |
-| Tauri loads app `dist/` | No Node sidecar |
-| CodeMirror document editor | Open + save via API |
+| Next.js product at `/app` | Tasks, projects, letters, etc.; uses `api-client` |
+| PowerSync web (browser + desktop SPA) | Same sync model as mobile metadata |
+| Scaffold `backsteros-desktop` | Tauri 2 + Vite/React; remote API only |
+| Align desktop UI with `backsteros-app` | Shared packages / ports; near-identical UX |
+| CodeMirror document editor | Open + save via API (web first; desktop parity) |
 
 **Exit criteria:** Same task visible on phone, `/app`, and Tauri after sync.
 
@@ -156,4 +161,5 @@ If user wants smallest vertical slice:
 
 **Phase 1 + 2 + 4:** API + one document + Expo task list offline.
 
-Skip Tauri until Phase 5 unless desktop is urgent.
+Skip Tauri until desktop is urgent; when starting desktop, follow ADR-019
+(Tauri 2 + Vite/React, UI aligned with `backsteros-app`, separate from Expo).

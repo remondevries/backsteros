@@ -46,7 +46,7 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ## ADR-005: Tauri for desktop (no Node sidecar)
 
-**Status:** Superseded for `backsteros-app` by ADR-018; retained as a possible separate desktop-client decision.
+**Status:** Superseded by ADR-019.  
 **Context:** User wants native window; M1 memory constraints.  
 **Decision:** Tauri 2 loads Vite static build; remote API only.  
 **Alternatives rejected:** Electron; Tauri + embedded Next server (Circle pattern).
@@ -192,9 +192,52 @@ aligned with ADR-015 (`backsteros.com/app`).
   product app, except deployment-facing web endpoints such as `/api/health`
   (publicly `GET /app/api/health`).
 
-**Supersedes:** ADR-005 for this app, ADR-006, and the product-host/path portions
-of ADR-015 and ADR-017. Supersedes the earlier `app.backsteros.com` host choice
-in a prior revision of this ADR.
+**Supersedes:** ADR-006, and the product-host/path portions of ADR-015 and
+ADR-017. Supersedes the earlier `app.backsteros.com` host choice in a prior
+revision of this ADR. Desktop packaging is governed by ADR-019 (not this ADR).
+
+---
+
+## ADR-019: Desktop = Tauri 2 + Vite/React (near-identical product UI)
+
+**Status:** Accepted  
+**Context:** Web product (`backsteros-app`) is Next.js at `backsteros.com/app`
+(ADR-018). Desktop must feel native, lightweight on M1, and offline-capable
+without Circle’s Tauri + Next Node sidecar. The product UX on desktop should be
+**very close or identical** to the web app users already use. Mobile remains a
+separate Expo client (ADR-004) — not the same framework as desktop.
+
+**Decision:**
+- Build **`backsteros-desktop/`** as **Tauri 2** loading a **Vite + React** SPA
+  (static frontend only).
+- **Do not** embed, package, or run the Next.js server / standalone build inside
+  Tauri. Remote **`https://service.backsteros.com`** only for API, sync upload,
+  and content fetch.
+- **Do not** use Expo or React Native for desktop; do not use Tauri for iOS.
+- Product UI and interaction model should match **`backsteros-app`** as closely
+  as practical (same screens, patterns, keyboard flows). Prefer extracting shared
+  React UI / helpers into `backsteros-packages/` (or deliberate ports from the
+  Next app) so web and desktop stay aligned — without coupling desktop to Next
+  middleware, RSC, or App Router Route Handlers.
+- Auth: Clerk in SPA / Tauri mode (not Next middleware). Same Clerk application
+  as web where possible; configure allowed origins for the Tauri / Vite dev hosts.
+- Offline: PowerSync **web** SDK + partial sync rules (metadata first; Tier C/D
+  on demand). Same performance rules as [07-performance.md](07-performance.md).
+- Optional: menu items open `https://backsteros.com/app` or `/admin` in the
+  system browser — ops admin is not embedded in the desktop shell v1.
+
+**Alternatives rejected:**
+- Second Next.js app or Next sidecar in Tauri (heavy; repeats Circle)
+- WebView that only loads `https://backsteros.com/app` as the long-term product
+  (weak offline; fights thin-client + PowerSync desktop goals)
+- One framework for desktop + mobile (Expo everywhere or Tauri on iOS)
+
+**Consequences:** Three product clients — Next web, Tauri+Vite desktop, Expo
+mobile — sharing `contracts` / `api-client` and intentionally shared UI where it
+pays off. Phase 5 desktop work scaffolds `backsteros-desktop`, not a fork of the
+Next deployment pipeline.
+
+**Supersedes:** ADR-005.
 
 ---
 
@@ -206,3 +249,4 @@ in a prior revision of this ADR.
 | Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/code/backsteros/` with subfolders |
 | Q-005 | Self-host PowerSync vs PowerSync Cloud | Phase 3 |
 | Q-006 | Postgres host (prod) | **Resolved:** Neon (dev: Docker) |
+| Q-007 | Desktop client stack | **Resolved:** Tauri 2 + Vite/React (ADR-019); UI near-identical to web |

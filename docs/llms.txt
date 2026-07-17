@@ -33,7 +33,7 @@
 | API routes / OpenAPI | 04-api-and-sync, 03-data-model, 02-tech-stack |
 | PowerSync / offline | 03-data-model, 04-api-and-sync, 07-performance |
 | Expo mobile | 05-clients, 07-performance, 04-api-and-sync |
-| Tauri desktop | 05-clients, 07-performance |
+| Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019) |
 | PDFs / markdown / search | 06-storage-and-search, 03-data-model |
 | Agent + human doc editing | 04-api-and-sync (Live documents section) |
 | Migrating from Circle | 08-legacy-circle, 09-phased-build-plan Phase 8 |

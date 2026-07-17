@@ -7,7 +7,7 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 | Layer | Choice | Runner-up |
 | --- | --- | --- |
 | Mobile | **Expo (SDK 52+) + Expo Router** | Flutter + PowerSync |
-| Desktop client | Separate decision; not the web build | Tauri 2 |
+| Desktop client | **Tauri 2 + Vite + React** (ADR-019) | Electron; Next sidecar |
 | Product web UI | **Next.js 16 + React 19 + Tailwind CSS 4** | Vite + React |
 | Markdown editor | **CodeMirror 6** | — |
 | Server metadata DB | **PostgreSQL 17** | — |
@@ -31,10 +31,15 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 - Clerk Next.js middleware and sign-in
 - Server components only for web concerns; all business rules remain in the API
 
-## Desktop — separate client
+## Desktop — Tauri 2 + Vite/React
 
-The native desktop runtime does not load or package `backsteros-app`. Its stack is
-decided independently while sharing API contracts and product behavior.
+- Folder: `backsteros-desktop/` (see ADR-019)
+- Tauri 2 loads a **Vite + React** SPA — remote `backsteros-api` only
+- **Does not** package or run the Next.js web build / Node sidecar
+- Product UI should stay **near-identical** to `backsteros-app`; share packages /
+  ports rather than inventing a second design language
+- **Separate from Expo** (`backsteros-mobile`) — different framework, shared API
+- PowerSync web SDK; Clerk SPA auth; M1-friendly memory target
 
 ## Backend — PostgreSQL
 

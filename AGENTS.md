@@ -36,7 +36,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | Choosing or changing tools | `docs/02-tech-stack.md`, `docs/10-decisions-log.md` |
 | Database / entities / sync tiers | `docs/03-data-model.md` |
 | API routes, sync, agent access | `docs/04-api-and-sync.md` |
-| Desktop / mobile / web UI | `docs/05-clients.md`, `docs/11-urls-and-routing.md`, `docs/07-performance.md` |
+| Desktop / mobile / web UI | `docs/05-clients.md`, `docs/11-urls-and-routing.md`, `docs/07-performance.md`, `docs/10-decisions-log.md` (ADR-019 desktop) |
 | PDFs, markdown bodies, search | `docs/06-storage-and-search.md` |
 | Migrating from Circle | `docs/08-legacy-circle.md` |
 | Human + agent co-editing markdown | `docs/04-api-and-sync.md` § Live documents |
@@ -57,9 +57,9 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `backsteros-packages/contracts/` | Phase 1 — done | Zod schemas + ts-rest contract |
 | `backsteros-packages/api-client/` | Empty — Phase 1+ | Generated HTTP client |
 | `backsteros-admin/` | Empty — Phase 3b | Ops UI at `/admin` — logs, sync |
-| `backsteros-mobile/` | Empty — Phase 4 | Expo product app |
-| `backsteros-app/` | Empty — Phase 5 | Product UI at `/app` + Tauri |
-| `backsteros-desktop/` | Empty — Phase 5 | Tauri shell |
+| `backsteros-mobile/` | Empty — Phase 4 | Expo product app (not Tauri) |
+| `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js) |
+| `backsteros-desktop/` | Empty — Phase 5 | Tauri 2 + Vite/React; UI ≈ web (ADR-019) |
 
 Do not put application code in `docs/` or loose at the workspace root — use the subfolder for each layer.
 

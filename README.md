@@ -8,10 +8,10 @@ Everything under **`~/code/backsteros/`**.
 backsteros/
 ├── docs/                  Architecture specs
 ├── backsteros-api/        Backend (service.backsteros.com)
-├── backsteros-app/        Product UI (backsteros.com/app, Tauri)
+├── backsteros-app/        Product web (backsteros.com/app, Next.js)
 ├── backsteros-admin/      Ops dashboard (backsteros.com/admin)
 ├── backsteros-mobile/     Expo — product only
-├── backsteros-desktop/    Tauri → backsteros-app
+├── backsteros-desktop/    Tauri 2 + Vite/React (UI ≈ web app)
 └── backsteros-packages/   Shared contracts + api-client
 ```
 

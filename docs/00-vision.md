@@ -46,7 +46,7 @@ The product should feel **fast** (Linear-like), work **offline** on phone and de
 | Offline mobile | Create/edit tasks with no network; sync on reconnect |
 | Agent read | `GET /api/v1/search` + `GET /api/v1/documents/{id}/content` without repo access |
 | Agent + human edit | Agent PATCH → open editor updates in &lt; 2 s |
-| Desktop | Tauri app without embedded Node/Next server |
+| Desktop | Tauri 2 + Vite/React; UI ≈ web app; no Node/Next sidecar (ADR-019) |
 | Storage cost | 100 GB PDFs in object storage, not Postgres or device |
 
 ## Relationship to Circle

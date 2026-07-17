@@ -33,15 +33,17 @@ Target hardware: **iPhone 16**, **MacBook M1**. Goal: snappy UI, low memory.
 
 Expected: tens to low hundreds MB RAM at idle — normal for React Native.
 
-## MacBook M1 (Tauri)
+## MacBook M1 (Tauri + Vite)
 
 | Do | Avoid |
 | --- | --- |
-| Load `backsteros-app/dist` in WebView | Bundle Node + Next standalone |
+| Load **Vite** product SPA (`backsteros-desktop`) in WebView | Bundle Node + Next standalone |
+| Mirror web product UX; share UI packages where practical | Drift into a second unrelated desktop design |
 | PowerSync web SQLite for offline metadata | Sync entire Spaces bucket locally |
 | Close unused document tabs | Background full-corpus index build |
 
-Legacy Circle desktop (Tauri + Next sidecar) is significantly heavier than target architecture.
+Legacy Circle desktop (Tauri + Next sidecar) is significantly heavier than target
+architecture. See ADR-019.
 
 ## Snappiness = architecture not framework
 

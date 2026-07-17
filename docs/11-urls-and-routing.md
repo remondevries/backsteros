@@ -59,11 +59,12 @@ Local `next dev` omits `NEXT_PUBLIC_BASE_PATH`, so the app runs at the origin ro
 
 | Surface | Maps to |
 | --- | --- |
-| **Desktop** (`backsteros-desktop`) | Separate native client decision; not the Next.js web build |
-| **Expo** (`backsteros-mobile`) | Native product UI — same API/sync, not admin |
+| **Desktop** (`backsteros-desktop`) | Tauri 2 + Vite/React SPA (ADR-019); near-identical product UX to web; **not** the Next.js build |
+| **Expo** (`backsteros-mobile`) | Native product UI — same API/sync, **not** the desktop framework, not admin |
 | **Browser** | `backsteros.com/app` and `backsteros.com/admin` |
 
-Optional: Tauri could open `/admin` in system browser for ops — not embedded in product shell v1.
+Optional: Tauri could open `/admin` (or the web app) in the system browser for
+ops — not embedded in the product shell v1.
 
 ## Admin dashboard contents (planned)
 

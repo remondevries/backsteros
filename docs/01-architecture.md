@@ -60,13 +60,14 @@ backsteros/
 ├── backsteros-app/            ← Next.js product UI (backsteros.com/app)
 ├── backsteros-admin/          ← ops dashboard (admin.backsteros.com)
 ├── backsteros-mobile/         ← Expo
-├── backsteros-desktop/        ← separate desktop client
+├── backsteros-desktop/        ← Tauri 2 + Vite/React (UI ≈ web; ADR-019)
 └── backsteros-packages/
     ├── api-client/            ← OpenAPI-generated client
     └── contracts/             ← Zod schemas
 ```
 
-The product web app is implemented independently from the API and native clients.
+The product web app (Next.js) is separate from the API and from native clients.
+Desktop mirrors the web product UX in a Vite SPA; it does not run the Next build.
 
 ## What does NOT live in clients
 

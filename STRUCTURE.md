@@ -14,10 +14,10 @@ Single workspace: **`~/code/backsteros/`**
 │   ├── contracts/
 │   └── api-client/
 │
-├── backsteros-app/            Phase 5 — product UI (backsteros.com/app + Tauri)
+├── backsteros-app/            Phase 5 — product web (backsteros.com/app, Next.js)
 ├── backsteros-admin/          Phase 3b — ops dashboard (backsteros.com/admin)
 ├── backsteros-mobile/         Phase 4 — Expo (product, not admin)
-└── backsteros-desktop/        Phase 5 — Tauri shell → backsteros-app
+└── backsteros-desktop/        Phase 5 — Tauri 2 + Vite/React (UI ≈ web app)
 ```
 
 ## URLs

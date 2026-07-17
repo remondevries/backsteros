@@ -1,26 +1,29 @@
 # Clients
 
-## Three user-facing surfaces
+## Four user-facing surfaces
 
 | Surface | Folder | URL / package | Role |
 | --- | --- | --- | --- |
-| **Product app** | `backsteros-app/` | `backsteros.com/app` | Responsive web UI for daily work |
+| **Product web** | `backsteros-app/` | `backsteros.com/app` | Responsive web UI for daily work (Next.js) |
+| **Product desktop** | `backsteros-desktop/` | Tauri app | Same product UX as web; Vite/React in Tauri 2 |
 | **Ops admin** | `backsteros-admin/` | `backsteros.com/admin` | Logs, sync health, API observability — **not** task editing |
-| **Mobile** | `backsteros-mobile/` | iOS/Android app | Same product concepts, native UI |
+| **Mobile** | `backsteros-mobile/` | iOS/Android app | Same product concepts; **Expo** (not Tauri) |
 
 See [11-urls-and-routing.md](11-urls-and-routing.md) for path routing and deployment.
+Desktop decision: [10-decisions-log.md](10-decisions-log.md) ADR-019.
 
-## Product app — `backsteros-app`
+## Product web — `backsteros-app`
 
 ### Stacks
 
 | Platform | How |
 | --- | --- |
 | Browser | Next.js 16 + React 19 at `backsteros.com/app` |
-| Desktop | Separate client; does not load the web build |
+| Desktop | **Separate** Tauri + Vite/React client — see below (does **not** load this Next build) |
 | Mobile | Separate Expo codebase (shared `api-client`, not same bundle) |
 
-The web app is responsive web only. Mobile and desktop are parallel clients.
+The web app is the canonical product UI for the browser. Desktop should feel the
+same; mobile is a parallel native UI.
 
 ### Features
 
@@ -28,7 +31,7 @@ The web app is responsive web only. Mobile and desktop are parallel clients.
 - CodeMirror 6 for markdown; PDF viewer on demand
 - PowerSync for offline metadata + sync push
 
-### Repo structure (planned)
+### Repo structure
 
 ```text
 backsteros-app/
@@ -36,6 +39,40 @@ backsteros-app/
   components/       frontend-safe shell and UI
   lib/              navigation, environment, API client integration
 ```
+
+## Product desktop — Tauri (`backsteros-desktop`)
+
+**Stack:** Tauri 2 + Vite + React SPA. Remote API only — **no** Node/Next sidecar.
+
+```text
+backsteros-desktop/
+  src/                 Vite + React product UI
+  src-tauri/           Rust shell
+```
+
+### Relationship to the web app
+
+- Desktop product experience should be **very close or identical** to
+  `backsteros-app` (same screens, flows, and interaction model).
+- Implementation is a **Vite build** loaded by Tauri, not the Next.js standalone
+  deployment. Next-only concerns (middleware, RSC, App Router handlers such as
+  web avatars / settings proxies) stay on the web host; desktop talks to
+  `service.backsteros.com` (and PowerSync) directly via shared clients.
+- Prefer extracting shared React UI into `backsteros-packages/` over drifting two
+  unrelated designs. Ports from `backsteros-app` are expected early on.
+
+### Separate from mobile
+
+Desktop is **not** Expo and **not** shared with `backsteros-mobile`. Mobile uses
+Expo + PowerSync RN (ADR-004). Desktop uses PowerSync web in the Tauri WebView.
+
+### Offline and performance
+
+- Lists/tasks via local SQLite (PowerSync)
+- Document/PDF: fetch on open, discard on leave
+- See [07-performance.md](07-performance.md)
+
+Optional: menu item opens the web app or admin in the default browser.
 
 ## Ops admin — `backsteros-admin`
 
@@ -66,29 +103,20 @@ Separate folder so agents and builds stay focused — see [11-urls-and-routing.m
 
 - Product experience only — **not** admin
 - Expo Router + PowerSync RN
-- See prior mobile section patterns in this doc
+- Separate framework from desktop (ADR-004 / ADR-019)
 
 ### Offline
 
 - Lists/tasks via local SQLite
 - Document/PDF: fetch on open, discard on leave
 
-## Desktop — Tauri (`backsteros-desktop`)
-
-```text
-backsteros-desktop/
-  src-tauri/           Rust shell
-  → separate native product client
-```
-
-Optional: menu item opens the web app or admin in the default browser.
-
 ## Shared packages
 
 ```text
 backsteros-packages/
-  api-client/          Used by app, admin, mobile
+  api-client/          Used by web, desktop, admin, mobile
   contracts/           Zod / OpenAPI types
+  ui/                  Optional — shared product UI extracted from web/desktop
   ui-tokens/           Optional shared colors (optional)
 ```
 
@@ -96,11 +124,12 @@ backsteros-packages/
 
 - Put task/markdown CRUD in `backsteros-admin`
 - Put ops log viewers in `backsteros-app` (except minimal “sync status” for users if needed later)
-- Import server-only modules
+- Import server-only modules into desktop/mobile bundles
 - Store full vault / all PDFs locally
+- Embed Next.js or a Node API server inside Tauri
 
 ## Auth
 
-- Clerk identity shared across product and admin hosts
+- Clerk identity shared across product web, desktop, admin, and mobile
 - Admin: enforce owner role server-side
 - API keys for agents: manageable from admin; not shipped in mobile bundles
