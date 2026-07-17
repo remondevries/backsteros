@@ -72,7 +72,7 @@ importers:
         specifier: workspace:*
         version: link:../backsteros-packages/contracts
       '@briangaoo/totem':
-        specifier: github:briangaoo/totem#v1.4.3
+        specifier: git+https://github.com/briangaoo/totem.git#v1.4.3
         version: git+ssh://git@github.com/briangaoo/totem.git#586ee89d0ec8f8ba4a142c824ecaeea7faaa200b
       '@clerk/nextjs':
         specifier: ^6.31.9

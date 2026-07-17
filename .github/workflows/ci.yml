@@ -36,6 +36,10 @@ jobs:
       CORS_ORIGINS: https://backsteros.com
     steps:
       - uses: actions/checkout@v4
+      - name: Prefer HTTPS for GitHub git dependencies
+        run: |
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: pnpm/action-setup@v4
         with:
           version: 10

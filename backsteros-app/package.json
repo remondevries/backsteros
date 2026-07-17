@@ -15,7 +15,7 @@
   "dependencies": {
     "@backsteros/api-client": "workspace:*",
     "@backsteros/contracts": "workspace:*",
-    "@briangaoo/totem": "github:briangaoo/totem#v1.4.3",
+    "@briangaoo/totem": "git+https://github.com/briangaoo/totem.git#v1.4.3",
     "@clerk/nextjs": "^6.31.9",
     "@codemirror/lang-markdown": "^6.3.4",
     "@codemirror/language": "^6.12.4",
