@@ -79,7 +79,7 @@ test("responsive shell exposes desktop and mobile navigation", async ({ page }, 
     await expect(page.getByRole("dialog", { name: "Navigation" })).toBeVisible();
   } else {
     await expect(page.getByRole("navigation", { name: "Workspace" })).toBeVisible();
-    await expect(page.getByRole("tablist", { name: "Open views" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Open tabs" })).toBeVisible();
   }
 });
 
