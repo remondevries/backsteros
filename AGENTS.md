@@ -59,7 +59,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `backsteros-admin/` | Empty — Phase 3b | Ops UI at `/admin` — logs, sync |
 | `backsteros-mobile/` | Empty — Phase 4 | Expo product app (not Tauri) |
 | `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js) |
-| `backsteros-desktop/` | Empty — Phase 5 | Tauri 2 + Vite/React; UI ≈ web (ADR-019) |
+| `backsteros-desktop/` | Phase 5 — scaffolded | Tauri 2 + Vite/React; UI ≈ web (ADR-019) |
 
 Do not put application code in `docs/` or loose at the workspace root — use the subfolder for each layer.
 

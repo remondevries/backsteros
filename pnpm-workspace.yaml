@@ -1,6 +1,7 @@
 packages:
   - backsteros-api
   - backsteros-app
+  - backsteros-desktop
   - backsteros-sync-demo
   - backsteros-packages/*
 allowBuilds:

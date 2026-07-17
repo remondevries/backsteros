@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "pnpm --filter @backsteros/api dev",
     "dev:app": "pnpm --filter @backsteros/app dev",
+    "dev:desktop": "pnpm --filter @backsteros/desktop tauri:dev",
     "build": "pnpm -r build",
+    "build:desktop": "pnpm --filter @backsteros/desktop tauri:build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm --filter @backsteros/contracts build && pnpm --filter @backsteros/api-client build && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
