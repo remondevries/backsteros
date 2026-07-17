@@ -271,8 +271,28 @@ function asNumber(value: unknown): number | undefined {
 }
 
 function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
+  if (typeof value === "boolean") return value;
+  // PowerSync SQLite stores booleans as 0/1 integers.
+  if (value === 0) return false;
+  if (value === 1) return true;
+  return undefined;
 }
+
+function isSoftDeletePayload(payload: Record<string, unknown>): boolean {
+  const deletedAt = payload.deleted_at ?? payload.deletedAt;
+  return deletedAt != null && deletedAt !== "";
+}
+
+/** Permanent client/data errors — acknowledge with 2xx so the upload queue is not blocked. */
+const POWERSYNC_SKIPPABLE_ERRORS = new Set([
+  "TASK_TITLE_REQUIRED",
+  "PROJECT_FIELDS_REQUIRED",
+  "DOCUMENT_FIELDS_REQUIRED",
+  "INVALID_ORGANIZATION",
+  "INVALID_CONTACT",
+  "INVALID_LETTER",
+  "INVALID_WORKSPACE_SETTINGS",
+]);
 
 function camelizePayload(
   payload: Record<string, unknown>,
@@ -370,7 +390,7 @@ export async function applySyncChange(
 ) {
   switch (change.entity) {
     case "project": {
-      if (change.operation === "delete") {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await taskProjectService.deleteProject(
           workspaceId,
           change.entity_id,
@@ -394,6 +414,10 @@ export async function applySyncChange(
           executor,
         );
         return row ? projectSnapshot(row) : null;
+      }
+
+      if (change.operation === "patch") {
+        return null;
       }
 
       if (!input.key || !input.name) {
@@ -425,7 +449,9 @@ export async function applySyncChange(
     }
 
     case "task": {
-      if (change.operation === "delete") {
+      // Local soft-deletes upload as PATCH { deleted_at } after REST DELETE already
+      // removed the row — treat as idempotent delete, never as create.
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await taskProjectService.deleteTask(
           workspaceId,
           change.entity_id,
@@ -449,6 +475,11 @@ export async function applySyncChange(
           executor,
         );
         return row ? taskSnapshot(row) : null;
+      }
+
+      // PATCH only carries changed columns — cannot invent a row.
+      if (change.operation === "patch") {
+        return null;
       }
 
       if (!input.title) {
@@ -477,7 +508,7 @@ export async function applySyncChange(
     }
 
     case "document": {
-      if (change.operation === "delete") {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await documentService.deleteDocument(
           workspaceId,
           change.entity_id,
@@ -510,6 +541,10 @@ export async function applySyncChange(
         return row ? documentSnapshot(row) : null;
       }
 
+      if (change.operation === "patch") {
+        return null;
+      }
+
       if (!type || !path || !title) {
         throw new Error("DOCUMENT_FIELDS_REQUIRED");
       }
@@ -534,7 +569,7 @@ export async function applySyncChange(
     }
 
     case "organization": {
-      if (change.operation === "delete") {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await circleService.deleteOrganization(
           workspaceId, change.entity_id, executor,
         );
@@ -544,26 +579,25 @@ export async function applySyncChange(
         workspaceId, change.entity_id, executor,
       );
       const payload = camelizePayload(change.payload, organizationKeys);
-      const row = existing
-        ? await (async () => {
-            const parsed = organizationInputSchema.partial().safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_ORGANIZATION");
-            return circleService.updateOrganization(
-              workspaceId, change.entity_id, parsed.data, executor,
-            );
-          })()
-        : await (async () => {
-            const parsed = organizationInputSchema.safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_ORGANIZATION");
-            return circleService.createOrganization(
-              workspaceId, parsed.data, change.entity_id, executor,
-            );
-          })();
-      return row ? organizationSnapshot(row) : null;
+      if (existing) {
+        const parsed = organizationInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_ORGANIZATION");
+        const row = await circleService.updateOrganization(
+          workspaceId, change.entity_id, parsed.data, executor,
+        );
+        return row ? organizationSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = organizationInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_ORGANIZATION");
+      const row = await circleService.createOrganization(
+        workspaceId, parsed.data, change.entity_id, executor,
+      );
+      return organizationSnapshot(row);
     }
 
     case "contact": {
-      if (change.operation === "delete") {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await circleService.deleteContact(
           workspaceId, change.entity_id, executor,
         );
@@ -575,26 +609,25 @@ export async function applySyncChange(
       const payload = normalizeContactSyncPayload(
         camelizePayload(change.payload, contactKeys),
       );
-      const row = existing
-        ? await (async () => {
-            const parsed = contactInputSchema.partial().safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_CONTACT");
-            return circleService.updateContact(
-              workspaceId, change.entity_id, parsed.data, executor,
-            );
-          })()
-        : await (async () => {
-            const parsed = contactInputSchema.safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_CONTACT");
-            return circleService.createContact(
-              workspaceId, parsed.data, change.entity_id, executor,
-            );
-          })();
-      return row ? contactSnapshot(row) : null;
+      if (existing) {
+        const parsed = contactInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_CONTACT");
+        const row = await circleService.updateContact(
+          workspaceId, change.entity_id, parsed.data, executor,
+        );
+        return row ? contactSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = contactInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_CONTACT");
+      const row = await circleService.createContact(
+        workspaceId, parsed.data, change.entity_id, executor,
+      );
+      return contactSnapshot(row);
     }
 
     case "letter": {
-      if (change.operation === "delete") {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await circleService.deleteLetter(
           workspaceId, change.entity_id, executor,
         );
@@ -604,22 +637,21 @@ export async function applySyncChange(
         workspaceId, change.entity_id, executor,
       );
       const payload = camelizePayload(change.payload, letterKeys);
-      const row = existing
-        ? await (async () => {
-            const parsed = letterInputSchema.partial().safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_LETTER");
-            return circleService.updateLetter(
-              workspaceId, change.entity_id, parsed.data, executor,
-            );
-          })()
-        : await (async () => {
-            const parsed = letterInputSchema.safeParse(payload);
-            if (!parsed.success) throw new Error("INVALID_LETTER");
-            return circleService.createLetter(
-              workspaceId, parsed.data, change.entity_id, executor,
-            );
-          })();
-      return row ? letterSnapshot(row) : null;
+      if (existing) {
+        const parsed = letterInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_LETTER");
+        const row = await circleService.updateLetter(
+          workspaceId, change.entity_id, parsed.data, executor,
+        );
+        return row ? letterSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = letterInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_LETTER");
+      const row = await circleService.createLetter(
+        workspaceId, parsed.data, change.entity_id, executor,
+      );
+      return letterSnapshot(row);
     }
 
     case "workspace_setting": {
@@ -720,13 +752,9 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
   }
 }
 
-function mapPowerSyncOp(op: PowerSyncOp): SyncOperation | "patch" {
-  if (op === "DELETE") {
-    return "delete";
-  }
-  if (op === "PUT") {
-    return "upsert";
-  }
+function mapPowerSyncOp(op: PowerSyncOp): SyncOperation {
+  if (op === "DELETE") return "delete";
+  if (op === "PUT") return "upsert";
   return "patch";
 }
 
@@ -760,7 +788,7 @@ export async function applyPowerSyncBatch(input: {
     for (const [index, entry] of input.batch.entries()) {
       const entity = mapPowerSyncTable(entry.table);
       if (!entity) continue;
-      const operation = mapPowerSyncOp(entry.op) === "delete" ? "delete" : "upsert";
+      const operation = mapPowerSyncOp(entry.op);
       const payload = entry.data ?? {};
       const change: SyncChange = {
         entity,
@@ -769,14 +797,28 @@ export async function applyPowerSyncBatch(input: {
         payload: operation === "delete" ? payload : { ...payload, id: entry.id },
         updated_at: Date.now(),
       };
-      await applySyncChange(input.workspaceId, change, tx);
+      try {
+        await applySyncChange(input.workspaceId, change, tx);
+      } catch (error) {
+        // PowerSync retries 4xx/5xx forever — skip permanent validation failures.
+        if (
+          error instanceof Error &&
+          POWERSYNC_SKIPPABLE_ERRORS.has(error.message)
+        ) {
+          console.warn(
+            `[powersync] skipping ${entry.op} ${entry.table}/${entry.id}: ${error.message}`,
+          );
+          continue;
+        }
+        throw error;
+      }
       await recordSyncEvent({
         workspaceId: input.workspaceId,
         mutationId: `${input.mutationId}:${index}`,
         deviceId: input.deviceId,
         entity,
         entityId: entry.id,
-        operation,
+        operation: operation === "patch" ? "upsert" : operation,
         payload: change.payload,
       }, tx);
     }

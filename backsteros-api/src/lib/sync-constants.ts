@@ -11,7 +11,7 @@ export const SYNC_ENTITIES = [
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
-export const SYNC_OPERATIONS = ["upsert", "delete"] as const;
+export const SYNC_OPERATIONS = ["upsert", "patch", "delete"] as const;
 export type SyncOperation = (typeof SYNC_OPERATIONS)[number];
 
 export const POWERSYNC_TABLES = [
