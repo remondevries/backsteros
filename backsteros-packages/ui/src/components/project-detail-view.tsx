@@ -18,6 +18,7 @@ import {
   type ProjectStatus,
 } from "../project-status.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
 import {
   ContentMarkdownPreviewColumn,
@@ -127,15 +128,29 @@ export function ProjectDetailView({
   };
 
   const [name, setName] = useState(project.name);
-  const [summary, setSummary] = useState(project.summary ?? "");
+  const [nameSource, setNameSource] = useState(project.name);
+  const remoteSummary = project.summary ?? "";
+  const [summary, setSummary] = useState(remoteSummary);
+  const [summarySource, setSummarySource] = useState(remoteSummary);
   const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(project.id);
   if (project.id !== prevId) {
     setPrevId(project.id);
     setName(project.name);
-    setSummary(project.summary ?? "");
+    setNameSource(project.name);
+    setSummary(remoteSummary);
+    setSummarySource(remoteSummary);
     setDescriptionExpanded(true);
+  } else {
+    adoptRemoteField(project.name, name, nameSource, setName, setNameSource);
+    adoptRemoteField(
+      remoteSummary,
+      summary,
+      summarySource,
+      setSummary,
+      setSummarySource,
+    );
   }
 
   useTitleRenameShortcut(
@@ -281,10 +296,14 @@ export function ProjectDetailView({
                 onSave={async (next) => {
                   if (!onSaveName) {
                     setName(next);
+                    setNameSource(next);
                     return { ok: true };
                   }
                   const result = await onSaveName(next);
-                  if (result.ok) setName(next);
+                  if (result.ok) {
+                    setName(next);
+                    setNameSource(next);
+                  }
                   return result;
                 }}
               />

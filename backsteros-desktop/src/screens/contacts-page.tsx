@@ -99,23 +99,10 @@ export function ContactsPage({
   const contactsListHref = getScopedContactsListHref(routeScope);
   const workspace = useDesktopWorkspaceData();
   const { client } = useDesktopApi();
-  const [contactOverlay, setContactOverlay] = useState<
-    Record<
-      string,
-      {
-        name?: string;
-        organizationId?: string | null;
-        organizationName?: string | null;
-      }
-    >
-  >({});
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
-  const contacts = workspace.contacts.map((contact) => ({
-    ...contact,
-    ...contactOverlay[contact.id],
-  }));
+  const contacts = workspace.contacts;
   const { organizations, allTasks: tasks, letters } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
 
@@ -433,28 +420,10 @@ export function ContactsPage({
             />
           }
           onSaveName={(name) => {
-            setContactOverlay((current) => ({
-              ...current,
-              [contact.id]: { ...current[contact.id], name },
-            }));
             void workspace.patchContact(contact.id, { name });
             return { ok: true };
           }}
           onSaveDetails={(patch: ContactOverviewDetails) => {
-            if (patch.organizationId !== undefined) {
-              const org =
-                organizations.find(
-                  (entry) => entry.id === patch.organizationId,
-                ) ?? null;
-              setContactOverlay((current) => ({
-                ...current,
-                [contact.id]: {
-                  ...current[contact.id],
-                  organizationId: patch.organizationId,
-                  organizationName: org?.name ?? patch.organizationName,
-                },
-              }));
-            }
             void workspace.patchContact(contact.id, patch);
           }}
         />

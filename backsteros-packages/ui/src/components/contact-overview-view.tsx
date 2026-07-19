@@ -2,6 +2,7 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 
+import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
 import {
   DROPDOWN_NONE_VALUE,
@@ -100,20 +101,44 @@ export function ContactOverviewView({
   onSaveDetails,
   headerAccessory,
 }: ContactOverviewViewProps) {
+  const remoteEmail = contact.email ?? "";
+  const remotePhone = contact.phone ?? "";
+  const remoteTitle = contact.title ?? "";
+  const remoteAddress = contact.address ?? "";
+  const remoteCity = contact.city ?? "";
+  const remotePostalCode = contact.postalCode ?? "";
+  const remoteCountry = contact.country ?? "";
+  const remoteOrganizationId = contact.organizationId ?? "";
+  const remoteSummary = contact.summary ?? "";
+  const remoteSocialAccounts = contact.socialAccounts ?? [];
+
   const [name, setName] = useState(contact.name);
-  const [email, setEmail] = useState(contact.email ?? "");
-  const [phone, setPhone] = useState(contact.phone ?? "");
-  const [title, setTitle] = useState(contact.title ?? "");
-  const [address, setAddress] = useState(contact.address ?? "");
-  const [city, setCity] = useState(contact.city ?? "");
-  const [postalCode, setPostalCode] = useState(contact.postalCode ?? "");
-  const [country, setCountry] = useState(contact.country ?? "");
-  const [organizationId, setOrganizationId] = useState(
-    contact.organizationId ?? "",
+  const [nameSource, setNameSource] = useState(contact.name);
+  const [email, setEmail] = useState(remoteEmail);
+  const [emailSource, setEmailSource] = useState(remoteEmail);
+  const [phone, setPhone] = useState(remotePhone);
+  const [phoneSource, setPhoneSource] = useState(remotePhone);
+  const [title, setTitle] = useState(remoteTitle);
+  const [titleSource, setTitleSource] = useState(remoteTitle);
+  const [address, setAddress] = useState(remoteAddress);
+  const [addressSource, setAddressSource] = useState(remoteAddress);
+  const [city, setCity] = useState(remoteCity);
+  const [citySource, setCitySource] = useState(remoteCity);
+  const [postalCode, setPostalCode] = useState(remotePostalCode);
+  const [postalCodeSource, setPostalCodeSource] = useState(remotePostalCode);
+  const [country, setCountry] = useState(remoteCountry);
+  const [countrySource, setCountrySource] = useState(remoteCountry);
+  const [organizationId, setOrganizationId] = useState(remoteOrganizationId);
+  const [organizationIdSource, setOrganizationIdSource] = useState(
+    remoteOrganizationId,
   );
-  const [summary, setSummary] = useState(contact.summary ?? "");
+  const [summary, setSummary] = useState(remoteSummary);
+  const [summarySource, setSummarySource] = useState(remoteSummary);
   const [socialAccounts, setSocialAccounts] = useState<ContactSocialAccount[]>(
-    contact.socialAccounts ?? [],
+    remoteSocialAccounts,
+  );
+  const [socialAccountsSource, setSocialAccountsSource] = useState(
+    socialAccountsKey(remoteSocialAccounts),
   );
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(contact.id);
@@ -127,16 +152,76 @@ export function ContactOverviewView({
   if (contact.id !== prevId) {
     setPrevId(contact.id);
     setName(contact.name);
-    setEmail(contact.email ?? "");
-    setPhone(contact.phone ?? "");
-    setTitle(contact.title ?? "");
-    setAddress(contact.address ?? "");
-    setCity(contact.city ?? "");
-    setPostalCode(contact.postalCode ?? "");
-    setCountry(contact.country ?? "");
-    setOrganizationId(contact.organizationId ?? "");
-    setSummary(contact.summary ?? "");
-    setSocialAccounts(contact.socialAccounts ?? []);
+    setNameSource(contact.name);
+    setEmail(remoteEmail);
+    setEmailSource(remoteEmail);
+    setPhone(remotePhone);
+    setPhoneSource(remotePhone);
+    setTitle(remoteTitle);
+    setTitleSource(remoteTitle);
+    setAddress(remoteAddress);
+    setAddressSource(remoteAddress);
+    setCity(remoteCity);
+    setCitySource(remoteCity);
+    setPostalCode(remotePostalCode);
+    setPostalCodeSource(remotePostalCode);
+    setCountry(remoteCountry);
+    setCountrySource(remoteCountry);
+    setOrganizationId(remoteOrganizationId);
+    setOrganizationIdSource(remoteOrganizationId);
+    setSummary(remoteSummary);
+    setSummarySource(remoteSummary);
+    setSocialAccounts(remoteSocialAccounts);
+    setSocialAccountsSource(socialAccountsKey(remoteSocialAccounts));
+  } else {
+    adoptRemoteField(contact.name, name, nameSource, setName, setNameSource);
+    adoptRemoteField(remoteEmail, email, emailSource, setEmail, setEmailSource);
+    adoptRemoteField(remotePhone, phone, phoneSource, setPhone, setPhoneSource);
+    adoptRemoteField(remoteTitle, title, titleSource, setTitle, setTitleSource);
+    adoptRemoteField(
+      remoteAddress,
+      address,
+      addressSource,
+      setAddress,
+      setAddressSource,
+    );
+    adoptRemoteField(remoteCity, city, citySource, setCity, setCitySource);
+    adoptRemoteField(
+      remotePostalCode,
+      postalCode,
+      postalCodeSource,
+      setPostalCode,
+      setPostalCodeSource,
+    );
+    adoptRemoteField(
+      remoteCountry,
+      country,
+      countrySource,
+      setCountry,
+      setCountrySource,
+    );
+    adoptRemoteField(
+      remoteOrganizationId,
+      organizationId,
+      organizationIdSource,
+      setOrganizationId,
+      setOrganizationIdSource,
+    );
+    adoptRemoteField(
+      remoteSummary,
+      summary,
+      summarySource,
+      setSummary,
+      setSummarySource,
+    );
+
+    const remoteSocialKey = socialAccountsKey(remoteSocialAccounts);
+    if (remoteSocialKey !== socialAccountsSource) {
+      setSocialAccountsSource(remoteSocialKey);
+      if (socialAccountsKey(socialAccounts) === socialAccountsSource) {
+        setSocialAccounts(remoteSocialAccounts);
+      }
+    }
   }
 
   function persist(patch: ContactOverviewDetails) {
@@ -150,9 +235,11 @@ export function ContactOverviewView({
       socialAccountsKey(contact.socialAccounts ?? [])
     ) {
       setSocialAccounts(normalized);
+      setSocialAccountsSource(socialAccountsKey(normalized));
       return;
     }
     setSocialAccounts(normalized);
+    setSocialAccountsSource(socialAccountsKey(normalized));
     persist({ socialAccounts: normalized });
   }
 
@@ -171,10 +258,14 @@ export function ContactOverviewView({
           onSave={async (next) => {
             if (!onSaveName) {
               setName(next);
+              setNameSource(next);
               return { ok: true };
             }
             const result = await onSaveName(next);
-            if (result.ok) setName(next);
+            if (result.ok) {
+              setName(next);
+              setNameSource(next);
+            }
             return result;
           }}
         />
@@ -230,6 +321,7 @@ export function ContactOverviewView({
             onChange={(next) => {
               const resolved = resolveDropdownNone(next) ?? "";
               setOrganizationId(resolved);
+              setOrganizationIdSource(resolved);
               const org = organizationOptions.find(
                 (entry) => entry.id === resolved,
               );
