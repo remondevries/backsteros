@@ -89,8 +89,11 @@ function writeServerEntry() {
     let block = match[0];
     // Drop type-only export blocks entirely (types come from server.d.ts).
     if (isType) continue;
-    // Strip inline `type Foo` from value export lists — invalid in .js.
-    const stripped = block.replace(/\btype\s+[A-Za-z_][A-Za-z0-9_]*\s*,?\s*/g, "");
+    // Strip inline type re-exports (`type Foo`, `type Foo as Bar`) — invalid in .js.
+    const stripped = block.replace(
+      /\btype\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?\s*,?\s*/g,
+      "",
+    );
     block = stripped
       .replace(/\{\s*,/g, "{ ")
       .replace(/,\s*\}/g, " }")
