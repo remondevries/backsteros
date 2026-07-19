@@ -16,7 +16,10 @@ import { normalizeProject } from "@/lib/entity-normalize";
 import { getProjectRouteScopeFromPathname } from "@/lib/project-route-scope";
 import { projectMatchesRouteParam } from "@/lib/project-sections";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
-import { preferLocalOrApi } from "@/lib/sync/prefer-local-or-api";
+import {
+  mergeLocalAndApiByUpdatedAt,
+  preferLocalOrApi,
+} from "@/lib/sync/prefer-local-or-api";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -78,7 +81,7 @@ export function ProjectDocumentsIndexScreen({
   );
 
   const documents = useMemo(() => {
-    const rows = preferLocalOrApi(
+    const rows = mergeLocalAndApiByUpdatedAt(
       local.data?.map((row) => snakeRow(row) as ApiDocument),
       resource.data?.documents,
     );

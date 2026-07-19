@@ -4,7 +4,12 @@ import type { Document as ApiDocument } from "@backsteros/contracts";
 
 import { isValidEntityIcon } from "@/lib/entity-icon";
 
-import { apiErrorText, getMutationContext, patchDocumentLocal } from "./client";
+import {
+  apiErrorText,
+  getMutationContext,
+  patchDocumentLocal,
+  seedDocumentLocal,
+} from "./client";
 
 export type CreateComposeDocumentResult =
   | { ok: true; documentId: string; relativePath: string }
@@ -27,20 +32,20 @@ function buildDocumentPath(folderPath: string, slug: string): string {
 /**
  * Document content lives in object storage (see `storageKey` on the API
  * row) rather than the local PowerSync `documents` table, which only
- * mirrors metadata columns. Unlike tasks/projects, document creation always
- * goes through the API — matching the existing create flows in
- * `project-documents-side-panel.tsx` and `knowledge-side-panel.tsx`.
+ * mirrors metadata columns. Create via API first (like letters), then seed
+ * local PowerSync so side panels update immediately.
  */
 async function createComposeDocument(
   body: Record<string, unknown>,
 ): Promise<CreateComposeDocumentResult> {
   try {
-    const { client, refresh } = getMutationContext();
+    const { client, sync, refresh } = getMutationContext();
     const document = await client.requestJson<ApiDocument>("/api/v1/documents", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    await seedDocumentLocal(sync, document);
     refresh();
     return { ok: true, documentId: document.id, relativePath: document.path };
   } catch (error) {
@@ -104,12 +109,13 @@ async function createFolder(
   body: Record<string, unknown>,
 ): Promise<CreateFolderResult> {
   try {
-    const { client, refresh } = getMutationContext();
+    const { client, sync, refresh } = getMutationContext();
     const document = await client.requestJson<ApiDocument>("/api/v1/documents", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    await seedDocumentLocal(sync, document);
     refresh();
     return { ok: true, folderId: document.id };
   } catch (error) {

@@ -38,6 +38,7 @@ import {
   parseFolderNavId,
 } from "@/lib/documents/tree";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
+import { mergeLocalAndApiByUpdatedAt } from "@/lib/sync/prefer-local-or-api";
 import { getFocusedListKeyboardItemId } from "@/lib/shortcuts/focused-list-keyboard-item";
 import { registerDocumentTreeDeleteResolver } from "@/lib/shortcuts/document-tree-delete-shortcut";
 import { registerDocumentTreeCreateFolderHandler } from "@/lib/shortcuts/document-tree-create-folder-shortcut";
@@ -97,10 +98,9 @@ export function ProjectDocumentsSidePanel({ pathname }: { pathname: string }) {
   );
 
   const documents = useMemo(() => {
-    return (
-      local.data?.map((row) => snakeRow(row) as ApiDocument) ??
-      resource.data?.documents ??
-      []
+    return mergeLocalAndApiByUpdatedAt(
+      local.data?.map((row) => snakeRow(row) as ApiDocument),
+      resource.data?.documents,
     );
   }, [local.data, resource.data]);
 

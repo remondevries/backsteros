@@ -10,7 +10,9 @@ import { KnowledgeLayoutBreadcrumb } from "@/components/knowledge/knowledge-layo
 import { useApiResource } from "@/lib/api-context";
 import { getKnowledgeDocumentHref } from "@/lib/knowledge/navigation-path";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
-import { preferLocalOrApi } from "@/lib/sync/prefer-local-or-api";
+import {
+  mergeLocalAndApiByUpdatedAt,
+} from "@/lib/sync/prefer-local-or-api";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -32,7 +34,7 @@ export function KnowledgeIndexScreen() {
   );
 
   const documents = useMemo(() => {
-    const rows = preferLocalOrApi(
+    const rows = mergeLocalAndApiByUpdatedAt(
       local.data?.map((row) => snakeRow(row) as ApiDocument),
       resource.data?.documents,
     );

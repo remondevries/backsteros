@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { groupTasksByStatus } from "../group-tasks-by-status.js";
 import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
 import type { TaskStatus } from "../task-status.js";
+import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -53,16 +54,12 @@ export function ContactTasksListView({
     [contactId, tasks],
   );
 
-  const [localTasks, setLocalTasks] = useState(scopedTasks);
+  const { tasks: localTasks, patchTask } = useOptimisticTaskList(scopedTasks);
   const [collapsed, setCollapsed] = useState<Set<TaskStatus>>(() => new Set());
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
-
-  useEffect(() => {
-    setLocalTasks(scopedTasks);
-  }, [scopedTasks]);
 
   const groups = useMemo(() => groupTasksByStatus(localTasks), [localTasks]);
 
@@ -86,9 +83,7 @@ export function ContactTasksListView({
   });
 
   function handleStatusChange(taskId: string, status: TaskStatus) {
-    setLocalTasks((current) =>
-      current.map((task) => (task.id === taskId ? { ...task, status } : task)),
-    );
+    patchTask(taskId, { status });
     setCollapsed((current) => {
       const next = new Set(current);
       next.delete(status);
@@ -98,22 +93,12 @@ export function ContactTasksListView({
   }
 
   function handlePriorityChange(taskId: string, priority: number) {
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId ? { ...task, priority } : task,
-      ),
-    );
+    patchTask(taskId, { priority });
     onPriorityChange?.(taskId, priority);
   }
 
   function handleDueDateChange(taskId: string, dueDate: Date | null) {
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? { ...task, dueDate: dueDate ? dueDate.getTime() : null }
-          : task,
-      ),
-    );
+    patchTask(taskId, { dueDate: dueDate ? dueDate.getTime() : null });
     onDueDateChange?.(taskId, dueDate);
   }
 

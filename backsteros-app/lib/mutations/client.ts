@@ -129,3 +129,55 @@ export async function patchDocumentLocal(
     await sync.patchMetadata("documents", documentId, toLocalFields(values));
   }
 }
+
+/** Seed PowerSync metadata after an API-first document create (storage lives in S3). */
+export async function seedDocumentLocal(
+  sync: MutationSync | null,
+  document: {
+    id: string;
+    type: string;
+    projectId?: string | null;
+    parentId?: string | null;
+    kind?: string | null;
+    icon?: string | null;
+    sortOrder?: number | null;
+    journalDate?: string | null;
+    path: string;
+    title: string;
+    storageKey?: string | null;
+    contentType?: string | null;
+    byteSize?: number | null;
+    checksum?: string | null;
+    snippet?: string | null;
+    contentVersion?: number | null;
+    contentEtag?: string | null;
+  },
+) {
+  if (!sync?.ready) return;
+  try {
+    await sync.createMetadata(
+      "documents",
+      toLocalFields({
+        type: document.type,
+        projectId: document.projectId ?? null,
+        parentId: document.parentId ?? null,
+        kind: document.kind ?? "document",
+        icon: document.icon ?? null,
+        sortOrder: document.sortOrder ?? 0,
+        journalDate: document.journalDate ?? null,
+        path: document.path,
+        title: document.title,
+        storageKey: document.storageKey ?? "",
+        contentType: document.contentType ?? "text/markdown",
+        byteSize: document.byteSize ?? 0,
+        checksum: document.checksum ?? null,
+        snippet: document.snippet ?? null,
+        contentVersion: document.contentVersion ?? 1,
+        contentEtag: document.contentEtag ?? null,
+      }),
+      document.id,
+    );
+  } catch {
+    // Non-fatal: download sync will eventually bring the row in.
+  }
+}

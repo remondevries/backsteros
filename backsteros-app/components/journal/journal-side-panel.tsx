@@ -61,7 +61,7 @@ export function JournalSidePanel({ pathname }: { pathname: string }) {
       resource.data?.documents
         ?.map((document) => document.journalDate)
         .filter((value): value is string => Boolean(value)) ?? [];
-    const unique = [...new Set(fromLocal.length ? fromLocal : fromApi)];
+    const unique = [...new Set([...fromLocal, ...fromApi])];
     return unique.sort((a, b) => b.localeCompare(a));
   }, [local.data, resource.data]);
 

@@ -25,6 +25,7 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
+import { mergeLocalAndApiByUpdatedAt } from "./merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import { getDesktopPublicEnvironment } from "./env";
 
@@ -411,6 +412,27 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     powerSync.ready,
   ]);
 
+  // Soft-revalidate documents from API when sync checkpoints advance so
+  // mergeLocalAndApiByUpdatedAt can surface remote creates if watch misses.
+  const syncEpoch = powerSync.lastSyncedAt?.getTime() ?? 0;
+  useEffect(() => {
+    if (!authenticated || !powerSync.ready || !syncEpoch) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const documentsBody = await client.requestJson<{
+          documents: ApiDocument[];
+        }>("/api/v1/documents");
+        if (!cancelled) setApiDocuments(documentsBody.documents);
+      } catch {
+        // PowerSync remains the primary source.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, client, powerSync.ready, syncEpoch]);
+
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
     const rows =
@@ -455,10 +477,10 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     localOrganizations.data?.map((row) => snakeRow(row) as ApiOrganization) ??
     apiOrganizations ??
     [];
-  const rawDocuments =
-    localDocuments.data?.map((row) => snakeRow(row) as ApiDocument) ??
-    apiDocuments ??
-    [];
+  const rawDocuments = mergeLocalAndApiByUpdatedAt(
+    localDocuments.data?.map((row) => snakeRow(row) as ApiDocument),
+    apiDocuments,
+  );
 
   const source: DesktopWorkspaceData["source"] = localTasks.data
     ? "powersync"
@@ -526,6 +548,39 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     }
     return snake;
   }, []);
+
+  const seedDocumentLocal = useCallback(
+    async (document: ApiDocument) => {
+      if (!powerSync.ready || !powerSync.createMetadata) return;
+      try {
+        await powerSync.createMetadata(
+          "documents",
+          toSnakeFields({
+            type: document.type,
+            projectId: document.projectId ?? null,
+            parentId: document.parentId ?? null,
+            kind: document.kind ?? "document",
+            icon: document.icon ?? null,
+            sortOrder: document.sortOrder ?? 0,
+            journalDate: document.journalDate ?? null,
+            path: document.path,
+            title: document.title,
+            storageKey: document.storageKey ?? "",
+            contentType: document.contentType ?? "text/markdown",
+            byteSize: document.byteSize ?? 0,
+            checksum: document.checksum ?? null,
+            snippet: document.snippet ?? null,
+            contentVersion: document.contentVersion ?? 1,
+            contentEtag: document.contentEtag ?? null,
+          }),
+          document.id,
+        );
+      } catch {
+        // Non-fatal: download sync will eventually bring the row in.
+      }
+    },
+    [powerSync, toSnakeFields],
+  );
 
   const entityPatchPath = useCallback((table: string, id: string) => {
     if (table === "tasks") return `/api/v1/tasks/${encodeURIComponent(id)}`;
@@ -913,7 +968,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
       const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
       const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
       if (!authenticated) throw new Error("Sign in to create documents.");
-      const document = await client.requestJson<{ id: string; path: string }>(
+      const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
           method: "POST",
@@ -927,9 +982,10 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           }),
         },
       );
+      await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client],
+    [authenticated, client, seedDocumentLocal],
   );
 
   const createProjectDocument = useCallback(
@@ -949,7 +1005,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
       const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
       const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
       if (!authenticated) throw new Error("Sign in to create documents.");
-      const document = await client.requestJson<{ id: string; path: string }>(
+      const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
           method: "POST",
@@ -964,9 +1020,10 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           }),
         },
       );
+      await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client],
+    [authenticated, client, seedDocumentLocal],
   );
 
   const createKnowledgeFolder = useCallback(
@@ -981,7 +1038,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           .replace(/^-+|-+$/g, "") || "folder";
       const path = `${slug}-${stamp}`;
       if (!authenticated) throw new Error("Sign in to create folders.");
-      const document = await client.requestJson<{ id: string; path: string }>(
+      const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
           method: "POST",
@@ -995,9 +1052,10 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           }),
         },
       );
+      await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client],
+    [authenticated, client, seedDocumentLocal],
   );
 
   const createProjectFolder = useCallback(
@@ -1016,7 +1074,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           .replace(/^-+|-+$/g, "") || "folder";
       const path = `${slug}-${stamp}`;
       if (!authenticated) throw new Error("Sign in to create folders.");
-      const document = await client.requestJson<{ id: string; path: string }>(
+      const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
           method: "POST",
@@ -1031,9 +1089,10 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
           }),
         },
       );
+      await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client],
+    [authenticated, client, seedDocumentLocal],
   );
 
   const renameDocument = useCallback(

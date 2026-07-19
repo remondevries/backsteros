@@ -53,6 +53,7 @@ import { formatJournalEntryTitle } from "@/lib/journal/dates";
 import { getKnowledgeDocumentHref } from "@/lib/knowledge/navigation-path";
 import { deleteDocumentEntryAction } from "@/lib/mutations/documents";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
+import { mergeLocalAndApiByUpdatedAt } from "@/lib/sync/prefer-local-or-api";
 
 const DocumentMarkdownEditor = dynamic(
   () =>
@@ -162,10 +163,12 @@ function DocumentDetailScreenInner({
   );
   const documentId = useMemo(() => {
     if (!resolveFromList) return routeParam;
-    const rows =
-      localDocuments.data?.map(snakeToCamelRow) ??
-      documentsResource.data?.documents ??
-      [];
+    const rows = mergeLocalAndApiByUpdatedAt(
+      localDocuments.data?.map(snakeToCamelRow) as
+        | Array<{ id: string; path?: string; updatedAt?: string | null }>
+        | undefined,
+      documentsResource.data?.documents,
+    );
     const match = rows.find(
       (document) =>
         document.id === routeParam ||

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { groupTasksByStatus } from "../group-tasks-by-status.js";
 import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
@@ -16,6 +16,7 @@ import {
   TASKS_DUE_FILTERS,
   type TasksDueFilter,
 } from "../tasks-due-filters.js";
+import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { KanbanBoard } from "./kanban-board.js";
 import {
@@ -105,7 +106,7 @@ export function TasksOverviewView({
     }
   };
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [localTasks, setLocalTasks] = useState(tasks);
+  const { tasks: localTasks, patchTask } = useOptimisticTaskList(tasks);
   const [addingToStatus, setAddingToStatus] = useState<TaskStatus | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -114,34 +115,18 @@ export function TasksOverviewView({
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
 
-  useEffect(() => {
-    setLocalTasks(tasks);
-  }, [tasks]);
-
   const handleStatusChange = (taskId: string, status: TaskStatus) => {
-    setLocalTasks((current) =>
-      current.map((task) => (task.id === taskId ? { ...task, status } : task)),
-    );
+    patchTask(taskId, { status });
     onStatusChange?.(taskId, status);
   };
 
   const handlePriorityChange = (taskId: string, priority: number) => {
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId ? { ...task, priority } : task,
-      ),
-    );
+    patchTask(taskId, { priority });
     onPriorityChange?.(taskId, priority);
   };
 
   const handleDueDateChange = (taskId: string, dueDate: Date | null) => {
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? { ...task, dueDate: dueDate ? dueDate.getTime() : null }
-          : task,
-      ),
-    );
+    patchTask(taskId, { dueDate: dueDate ? dueDate.getTime() : null });
     onDueDateChange?.(taskId, dueDate);
   };
 
@@ -149,17 +134,10 @@ export function TasksOverviewView({
     const option = projectKey
       ? projectOptions.find((entry) => entry.value === projectKey)
       : null;
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              projectKey,
-              projectName: option?.label ?? null,
-            }
-          : task,
-      ),
-    );
+    patchTask(taskId, {
+      projectKey,
+      projectName: option?.label ?? null,
+    });
     onProjectChange?.(taskId, projectKey);
   };
 
@@ -170,21 +148,14 @@ export function TasksOverviewView({
     const option = assigneeOptions.find(
       (entry) => entry.value === (assigneeId ?? "__none__"),
     );
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              assigneeId,
-              ownerInitials: option?.label
-                ?.split(/\s+/)
-                .map((part) => part[0])
-                .join("")
-                .slice(0, 2),
-            }
-          : task,
-      ),
-    );
+    patchTask(taskId, {
+      assigneeId,
+      ownerInitials: option?.label
+        ?.split(/\s+/)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2),
+    });
     onAssigneeChange?.(taskId, assigneeId);
   };
 
