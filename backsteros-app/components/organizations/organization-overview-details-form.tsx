@@ -40,7 +40,7 @@ export function OrganizationOverviewDetailsForm({
   const [errors, setErrors] = useState<Partial<Record<DetailField, string>>>(
     {},
   );
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const organizationSyncKey = `${organization.id}|${organization.phone ?? ""}|${organization.email ?? ""}|${organization.website ?? ""}|${organization.address ?? ""}|${organization.city ?? ""}|${organization.postalCode ?? ""}|${organization.country ?? ""}`;
   const [prevOrganizationSyncKey, setPrevOrganizationSyncKey] =
@@ -133,7 +133,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, phone: undefined }));
           }}
           onBlur={() => saveField("phone", phone)}
-          disabled={isPending}
           placeholder="+31 20 123 4567"
           autoComplete="tel"
           className={overviewDetailsInputClassName}
@@ -150,7 +149,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, email: undefined }));
           }}
           onBlur={() => saveField("email", email)}
-          disabled={isPending}
           placeholder="info@company.com"
           autoComplete="email"
           className={overviewDetailsInputClassName}
@@ -171,7 +169,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, website: undefined }));
           }}
           onBlur={() => saveField("website", website)}
-          disabled={isPending}
           placeholder="https://company.com"
           autoComplete="url"
           className={overviewDetailsInputClassName}
@@ -191,7 +188,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, address: undefined }));
           }}
           onBlur={() => saveField("address", address)}
-          disabled={isPending}
           rows={2}
           placeholder="Street and number"
           autoComplete="street-address"
@@ -209,7 +205,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, city: undefined }));
           }}
           onBlur={() => saveField("city", city)}
-          disabled={isPending}
           placeholder="City"
           autoComplete="address-level2"
           className={overviewDetailsInputClassName}
@@ -230,7 +225,6 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, postalCode: undefined }));
           }}
           onBlur={() => saveField("postalCode", postalCode)}
-          disabled={isPending}
           placeholder="1234 AB"
           autoComplete="postal-code"
           className={overviewDetailsInputClassName}
@@ -251,14 +245,13 @@ export function OrganizationOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, country: undefined }));
           }}
           onBlur={() => saveField("country", country)}
-          disabled={isPending}
           placeholder="Netherlands"
           autoComplete="country-name"
           className={overviewDetailsInputClassName}
         />
       </OverviewDetailsField>
 
-      <OverviewDetailsField label="Notes">
+      <OverviewDetailsField label="Notes" htmlFor="organization-notes">
         <OrganizationOverviewSummaryEditor
           organizationId={organization.id}
           value={organization.summary ?? ""}

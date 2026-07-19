@@ -73,7 +73,7 @@ export function ContactOverviewDetailsForm({
   const [organizationError, setOrganizationError] = useState<string | null>(
     null,
   );
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const assignableOrganizations = useMemo(
     () => organizations.map(mapOrganizationToAssignable),
@@ -269,7 +269,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, email: undefined }));
           }}
           onBlur={() => saveField("email", email)}
-          disabled={isPending}
           placeholder="name@company.com"
           autoComplete="email"
           className={overviewDetailsInputClassName}
@@ -286,7 +285,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, phone: undefined }));
           }}
           onBlur={() => saveField("phone", phone)}
-          disabled={isPending}
           placeholder="+31 6 1234 5678"
           autoComplete="tel"
           className={overviewDetailsInputClassName}
@@ -303,7 +301,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, title: undefined }));
           }}
           onBlur={() => saveField("title", title)}
-          disabled={isPending}
           placeholder="Role or job title"
           className={overviewDetailsInputClassName}
         />
@@ -317,7 +314,6 @@ export function ContactOverviewDetailsForm({
           value={organizationDropdownValue}
           options={organizationOptions}
           onChange={saveOrganization}
-          disabled={isPending}
           searchPlaceholder="Search organizations…"
           ariaLabel="Change organization"
           panelAlign="start"
@@ -363,7 +359,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, address: undefined }));
           }}
           onBlur={() => saveField("address", address)}
-          disabled={isPending}
           rows={2}
           placeholder="Street and number"
           autoComplete="street-address"
@@ -381,7 +376,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, city: undefined }));
           }}
           onBlur={() => saveField("city", city)}
-          disabled={isPending}
           placeholder="City"
           autoComplete="address-level2"
           className={overviewDetailsInputClassName}
@@ -402,7 +396,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, postalCode: undefined }));
           }}
           onBlur={() => saveField("postalCode", postalCode)}
-          disabled={isPending}
           placeholder="1234 AB"
           autoComplete="postal-code"
           className={overviewDetailsInputClassName}
@@ -423,7 +416,6 @@ export function ContactOverviewDetailsForm({
             setErrors((previous) => ({ ...previous, country: undefined }));
           }}
           onBlur={() => saveField("country", country)}
-          disabled={isPending}
           placeholder="Country"
           autoComplete="country-name"
           className={overviewDetailsInputClassName}
@@ -433,17 +425,18 @@ export function ContactOverviewDetailsForm({
       <OverviewDetailsField label="Social" error={errors.socialAccounts}>
         <ContactSocialAccountsEditor
           value={socialAccounts}
-          disabled={isPending}
           error={null}
           onChange={setSocialAccounts}
           onSave={saveSocialAccounts}
         />
       </OverviewDetailsField>
 
-      <ContactOverviewSummaryEditor
-        contactId={contact.id}
-        value={contact.summary ?? ""}
-      />
+      <OverviewDetailsField label="Notes" htmlFor="contact-notes">
+        <ContactOverviewSummaryEditor
+          contactId={contact.id}
+          value={contact.summary ?? ""}
+        />
+      </OverviewDetailsField>
     </section>
   );
 }
