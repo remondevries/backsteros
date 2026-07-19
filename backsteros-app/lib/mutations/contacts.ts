@@ -62,7 +62,8 @@ async function patchContact(
 ): Promise<ApiContact> {
   const { client, sync, refresh } = getMutationContext();
   await patchContactLocal(sync, contactId, body);
-  const contact = await client.requestJson<ApiContact>(
+
+  const request = client.requestJson<ApiContact>(
     `/api/v1/contacts/${encodeURIComponent(contactId)}`,
     {
       method: "PATCH",
@@ -70,6 +71,17 @@ async function patchContact(
       body: JSON.stringify(body),
     },
   );
+
+  // Match desktop: when PowerSync is live, don't block the UI on REST or
+  // trigger an app-wide API refetch — local rows already updated.
+  if (sync?.ready) {
+    void request.catch(() => {
+      // Local write + upload queue remain the source of truth if REST fails.
+    });
+    return { id: contactId, ...body } as ApiContact;
+  }
+
+  const contact = await request;
   refresh();
   return contact;
 }
@@ -266,7 +278,9 @@ export async function uploadContactAvatarAction(
       avatarContentType: avatar.contentType,
       updatedAt: avatar.updatedAt,
     });
-    refresh();
+    if (!sync?.ready) {
+      refresh();
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error, "Failed to upload avatar.") };
@@ -286,7 +300,9 @@ export async function removeContactAvatarAction(
       avatarContentType: null,
       updatedAt: new Date().toISOString(),
     });
-    refresh();
+    if (!sync?.ready) {
+      refresh();
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error, "Failed to remove avatar.") };

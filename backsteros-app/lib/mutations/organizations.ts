@@ -58,7 +58,8 @@ async function patchOrganization(
 ): Promise<ApiOrganization> {
   const { client, sync, refresh } = getMutationContext();
   await patchOrganizationLocal(sync, organizationId, body);
-  const organization = await client.requestJson<ApiOrganization>(
+
+  const request = client.requestJson<ApiOrganization>(
     `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
     {
       method: "PATCH",
@@ -66,6 +67,17 @@ async function patchOrganization(
       body: JSON.stringify(body),
     },
   );
+
+  // Match desktop: when PowerSync is live, don't block the UI on REST or
+  // trigger an app-wide API refetch — local rows already updated.
+  if (sync?.ready) {
+    void request.catch(() => {
+      // Local write + upload queue remain the source of truth if REST fails.
+    });
+    return { id: organizationId, ...body } as ApiOrganization;
+  }
+
+  const organization = await request;
   refresh();
   return organization;
 }
@@ -243,7 +255,9 @@ export async function uploadOrganizationAvatarAction(
       avatarContentType: avatar.contentType,
       updatedAt: avatar.updatedAt,
     });
-    refresh();
+    if (!sync?.ready) {
+      refresh();
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error, "Failed to upload avatar.") };
@@ -265,7 +279,9 @@ export async function removeOrganizationAvatarAction(
       avatarContentType: null,
       updatedAt: new Date().toISOString(),
     });
-    refresh();
+    if (!sync?.ready) {
+      refresh();
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error, "Failed to remove avatar.") };

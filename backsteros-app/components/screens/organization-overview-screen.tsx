@@ -100,12 +100,7 @@ export function OrganizationOverviewScreen({
         organizationId={organization.id}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <OrganizationOverviewPanel
-          organization={organization}
-          onSaved={() => {
-            orgsResource.reload();
-          }}
-        />
+        <OrganizationOverviewPanel organization={organization} />
       </div>
     </div>
   );

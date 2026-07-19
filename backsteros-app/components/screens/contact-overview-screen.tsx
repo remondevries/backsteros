@@ -131,9 +131,6 @@ export function ContactOverviewScreen({
         <ContactOverviewPanel
           contact={contact}
           organizations={organizations}
-          onSaved={() => {
-            contactsResource.reload();
-          }}
         />
       </div>
     </div>
