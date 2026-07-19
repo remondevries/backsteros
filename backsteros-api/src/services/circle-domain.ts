@@ -93,12 +93,31 @@ type LetterInput = {
 
 async function nextEntityNumber(
   workspaceId: string,
-  entity: string,
+  entity: "organization" | "contact" | "letter",
   executor: DbExecutor = db,
 ) {
+  const table =
+    entity === "organization"
+      ? organizations
+      : entity === "contact"
+        ? contacts
+        : letters;
+  const [maxRow] = await executor
+    .select({
+      maxNumber: sql<number>`coalesce(max(${table.number}), 0)`,
+    })
+    .from(table)
+    .where(eq(table.workspaceId, workspaceId));
+  const minNext = Number(maxRow?.maxNumber ?? 0) + 1;
+
   const [counter] = await executor
     .insert(entityCounters)
-    .values({ workspaceId, entity, scopeId: "__workspace__", nextValue: 2 })
+    .values({
+      workspaceId,
+      entity,
+      scopeId: "__workspace__",
+      nextValue: minNext + 1,
+    })
     .onConflictDoUpdate({
       target: [
         entityCounters.workspaceId,
@@ -106,7 +125,7 @@ async function nextEntityNumber(
         entityCounters.scopeId,
       ],
       set: {
-        nextValue: sql`${entityCounters.nextValue} + 1`,
+        nextValue: sql`greatest(${entityCounters.nextValue}, ${minNext}) + 1`,
         updatedAt: new Date(),
       },
     })

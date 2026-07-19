@@ -259,24 +259,50 @@ export async function getTaskById(
   return row ?? null;
 }
 
+function taskScope(projectId?: string | null, contactId?: string | null) {
+  return projectId
+    ? `project:${projectId}`
+    : contactId
+      ? `contact:${contactId}`
+      : "__inbox__";
+}
+
+/**
+ * Allocate the next task number for a scope.
+ *
+ * Counters can lag behind imported/legacy rows (Circle migration never seeded
+ * them). Always floor allocation at max(existing number)+1 so display IDs like
+ * CI-2 are never reused — including soft-deleted and legacy rows.
+ */
 async function nextTaskNumber(
   workspaceId: string,
   projectId: string | null | undefined,
   contactId: string | null | undefined,
   executor: DbExecutor,
 ) {
-  const scopeId = projectId
-    ? `project:${projectId}`
+  const scopeId = taskScope(projectId, contactId);
+  const scopeFilter = projectId
+    ? eq(tasks.projectId, projectId)
     : contactId
-      ? `contact:${contactId}`
-      : "__inbox__";
+      ? and(isNull(tasks.projectId), eq(tasks.contactId, contactId))
+      : and(isNull(tasks.projectId), isNull(tasks.contactId));
+
+  const [maxRow] = await executor
+    .select({
+      maxNumber: sql<number>`coalesce(max(${tasks.number}), 0)`,
+    })
+    .from(tasks)
+    .where(and(eq(tasks.workspaceId, workspaceId), scopeFilter));
+
+  const minNext = Number(maxRow?.maxNumber ?? 0) + 1;
+
   const [counter] = await executor
     .insert(entityCounters)
     .values({
       workspaceId,
       entity: "task",
       scopeId,
-      nextValue: 2,
+      nextValue: minNext + 1,
     })
     .onConflictDoUpdate({
       target: [
@@ -285,21 +311,13 @@ async function nextTaskNumber(
         entityCounters.scopeId,
       ],
       set: {
-        nextValue: sql`${entityCounters.nextValue} + 1`,
+        nextValue: sql`greatest(${entityCounters.nextValue}, ${minNext}) + 1`,
         updatedAt: new Date(),
       },
     })
     .returning({ nextValue: entityCounters.nextValue });
 
   return counter!.nextValue - 1;
-}
-
-function taskScope(projectId?: string | null, contactId?: string | null) {
-  return projectId
-    ? `project:${projectId}`
-    : contactId
-      ? `contact:${contactId}`
-      : "__inbox__";
 }
 
 async function createTaskWithExecutor(

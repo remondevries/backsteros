@@ -253,7 +253,9 @@ export function TaskDueDateDropdown({
                   urgency={hasDueDate ? dueDateUrgency : null}
                 />
               ) : null}
-              <span>{displayLabel}</span>
+              <span className="task-due-date-dropdown__list-trigger-label">
+                {displayLabel}
+              </span>
             </button>
           )
         }

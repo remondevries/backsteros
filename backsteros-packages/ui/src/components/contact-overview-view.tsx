@@ -11,6 +11,7 @@ import {
   type OrganizationDropdownItem,
 } from "./dropdown-options.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
+import { OrganizationIcon } from "./organization-icon.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
 import {
   ContactSocialAccountsEditor,
@@ -332,7 +333,53 @@ export function ContactOverviewView({
             }}
             searchPlaceholder="Search organizations…"
             ariaLabel="Organization"
-            className="entity-overview-input"
+            panelAlign="start"
+            panelWidth="trigger"
+            className="entity-overview-dropdown"
+            renderTrigger={({
+              selected,
+              open,
+              disabled,
+              triggerId,
+              onToggle,
+            }) => {
+              const label = selected?.label ?? "No organization";
+              return (
+                <button
+                  type="button"
+                  id={triggerId}
+                  disabled={disabled}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-label={`Organization: ${label}`}
+                  title={label}
+                  onClick={onToggle}
+                  className={[
+                    "entity-overview-input",
+                    "entity-overview-dropdown-trigger",
+                    selected ? null : "is-muted",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <span
+                    className="entity-overview-dropdown-trigger__icon"
+                    aria-hidden="true"
+                  >
+                    {selected?.icon ?? <OrganizationIcon size={14} />}
+                  </span>
+                  <span className="entity-overview-dropdown-trigger__label">
+                    {label}
+                  </span>
+                  <span
+                    className="entity-overview-dropdown-trigger__chevron"
+                    aria-hidden="true"
+                  >
+                    ▾
+                  </span>
+                </button>
+              );
+            }}
           />
         </DetailsField>
         <DetailsField label="Address" htmlFor="contact-address">

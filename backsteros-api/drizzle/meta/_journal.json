@@ -71,6 +71,13 @@
       "when": 1784292000000,
       "tag": "0009_letter_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784480000000,
+      "tag": "0010_repair_entity_counters",
+      "breakpoints": true
     }
   ]
 }
