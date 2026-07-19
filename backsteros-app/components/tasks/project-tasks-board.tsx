@@ -22,6 +22,7 @@ import {
   type TaskStatus,
 } from "@/lib/task-status";
 import { groupTasksByStatus } from "@/lib/tasks/group-tasks-by-status";
+import { mergeServerTasksWithOptimistic } from "@/lib/tasks/merge-optimistic-tasks";
 import { applyOptimisticTaskReorder } from "@/lib/tasks/task-reorder-client";
 import type { TaskReorderRequest } from "@/lib/tasks/task-list-drag-shared";
 
@@ -89,33 +90,6 @@ function compareTasksForBoard(left: Task, right: Task): number {
   );
 }
 
-function mergeServerTasksWithOptimistic(
-  serverTasks: Task[],
-  localTasks: Task[],
-): Task[] {
-  const localById = new Map(localTasks.map((task) => [task.id, task]));
-
-  return serverTasks.map((serverTask) => {
-    const localTask = localById.get(serverTask.id);
-    if (!localTask) return serverTask;
-
-    const localStatus = migrateLegacyTaskStatus(localTask.status);
-    const serverStatus = migrateLegacyTaskStatus(serverTask.status);
-    const statusChanged = localStatus !== serverStatus;
-    const sortOrderChanged = localTask.sortOrder !== serverTask.sortOrder;
-
-    if (statusChanged || sortOrderChanged) {
-      return {
-        ...serverTask,
-        status: localTask.status,
-        sortOrder: localTask.sortOrder,
-      };
-    }
-
-    return serverTask;
-  });
-}
-
 export function ProjectTasksBoard({
   tasks,
   contacts,
@@ -143,8 +117,11 @@ export function ProjectTasksBoard({
 
   const [prevServerTasks, setPrevServerTasks] = useState(tasks);
   if (tasks !== prevServerTasks) {
+    const previousServerTasks = prevServerTasks;
     setPrevServerTasks(tasks);
-    setLocalTasks((current) => mergeServerTasksWithOptimistic(tasks, current));
+    setLocalTasks((current) =>
+      mergeServerTasksWithOptimistic(tasks, current, previousServerTasks),
+    );
   }
 
   const groups = useMemo(() => groupTasksByStatus(localTasks), [localTasks]);

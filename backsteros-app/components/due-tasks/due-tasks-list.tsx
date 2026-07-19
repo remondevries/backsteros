@@ -140,10 +140,11 @@ export function DueTasksList({
     setPrevServerTasks(tasks);
     setLocalTasks(tasks);
   } else if (tasks !== prevServerTasks) {
+    const previousServerTasks = prevServerTasks;
     setPrevServerTasks(tasks);
     setLocalTasks((current) =>
       filterTasksByDueFilter(
-        mergeServerTasksWithOptimistic(tasks, current),
+        mergeServerTasksWithOptimistic(tasks, current, previousServerTasks),
         dueFilter,
         new Date(),
         calendarTimeZone,

@@ -127,8 +127,11 @@ export function ProjectTasksList({
     setCollapsedGroups(new Set());
     setRecentlyMovedTaskIds(new Set());
   } else if (tasks !== prevServerTasks) {
+    const previousServerTasks = prevServerTasks;
     setPrevServerTasks(tasks);
-    setLocalTasks((current) => mergeServerTasksWithOptimistic(tasks, current));
+    setLocalTasks((current) =>
+      mergeServerTasksWithOptimistic(tasks, current, previousServerTasks),
+    );
   }
 
   useEffect(() => {
