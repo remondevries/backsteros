@@ -74,12 +74,44 @@ function hasBlockMarkdown(content: string): boolean {
   );
 }
 
+/**
+ * Split on blank-line runs while keeping empty rows visible in preview.
+ * N consecutive newlines (N >= 2) become N - 1 blank paragraphs — matching
+ * the empty lines the user sees in the editor.
+ */
 function splitParagraphs(body: string): string[] {
   if (!body) {
     return [];
   }
 
-  return body.split(/\n{2,}/);
+  const parts: string[] = [];
+  const blankLineRuns = /\n{2,}/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = blankLineRuns.exec(body)) !== null) {
+    parts.push(body.slice(lastIndex, match.index));
+    const blankLineCount = match[0].length - 1;
+    for (let i = 0; i < blankLineCount; i += 1) {
+      parts.push("");
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  const rest = body.slice(lastIndex);
+  if (rest.length > 0 || parts.length === 0) {
+    parts.push(rest);
+  }
+
+  return parts;
+}
+
+function BlankParagraph() {
+  return (
+    <p className="content-markdown-preview-blank-line" aria-hidden="true">
+      <br />
+    </p>
+  );
 }
 
 function InlineMarkdownText({ content }: { content: string }) {
@@ -345,9 +377,14 @@ function ParagraphPreview({
   catalog: MentionCatalog;
   paragraphIndex: number;
 }) {
+  const keyPrefix = `p-${paragraphIndex}`;
+
+  if (paragraph.trim() === "") {
+    return <BlankParagraph />;
+  }
+
   const segments = segmentMarkdownWithMentions(paragraph);
   const hasMentions = segments.some((segment) => segment.type === "mention");
-  const keyPrefix = `p-${paragraphIndex}`;
 
   if (!hasMentions) {
     if (hasBlockMarkdown(paragraph)) {

@@ -4327,7 +4327,14 @@ body.app-is-dragging * {
 }
 
 .document-markdown p {
-  margin: 0 0 0.85rem;
+  /* Vertical rhythm comes from explicit blank-line paragraphs so preview
+     matches empty rows in the editor. */
+  margin: 0;
+}
+
+.document-markdown-blank-line {
+  margin: 0;
+  padding: 0;
 }
 
 .document-markdown ul,

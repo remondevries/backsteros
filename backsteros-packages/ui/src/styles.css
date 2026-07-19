@@ -3455,6 +3455,12 @@ body[data-keyboard-nav-hover="suppressed"]
   white-space: pre-wrap;
 }
 
+/* Empty rows from `\n\n` runs — keep edit/preview height in sync. */
+.content-markdown-preview-blank-line {
+  margin: 0;
+  padding: 0;
+}
+
 .content-markdown-preview-body--rendered > :first-child {
   margin-top: 0;
 }
@@ -3485,7 +3491,12 @@ body[data-keyboard-nav-hover="suppressed"]
   font-size: 1rem;
 }
 
-.content-markdown-preview-body--rendered p,
+.content-markdown-preview-body--rendered p {
+  /* Vertical rhythm comes from explicit blank-line paragraphs so preview
+     matches empty rows in the editor. */
+  margin: 0;
+}
+
 .content-markdown-preview-body--rendered ul,
 .content-markdown-preview-body--rendered ol {
   margin: 0.65em 0;
