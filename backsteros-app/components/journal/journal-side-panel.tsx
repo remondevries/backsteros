@@ -15,7 +15,6 @@ import {
 } from "@/components/shortcuts/list-keyboard-navigation-provider";
 import { useApiResource, useAppApi } from "@/lib/api-context";
 import {
-  formatJournalSidePanelLabel,
   getTodayJournalDateSlug,
 } from "@/lib/journal/dates";
 import {
@@ -142,7 +141,7 @@ export function JournalSidePanel({ pathname }: { pathname: string }) {
                     {...keyboardNavItemProps(dateSlug)}
                   >
                     <span className="app-side-panel-item-label">
-                      {formatJournalSidePanelLabel(dateSlug)}
+                      {dateSlug}
                       {isToday ? (
                         <span className="ml-1.5 text-[11px] text-foreground/40">
                           Today

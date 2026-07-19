@@ -172,6 +172,12 @@ export async function createDocument(
     }
   }
 
+  const journalDate =
+    input.journalDate ??
+    (input.type === "journal" ? new Date().toISOString().slice(0, 10) : null);
+  // Journal titles are the calendar date — never free-form labels.
+  const title = input.type === "journal" && journalDate ? journalDate : input.title;
+
   const [row] = await executor
     .insert(documents)
     .values({
@@ -183,11 +189,9 @@ export async function createDocument(
       kind: input.kind ?? "document",
       icon: input.icon ?? null,
       sortOrder: input.sortOrder ?? 0,
-      journalDate:
-        input.journalDate ??
-        (input.type === "journal" ? new Date().toISOString().slice(0, 10) : null),
+      journalDate,
       path: input.path,
-      title: input.title,
+      title,
       storageKey,
       contentType: DEFAULT_CONTENT_TYPE,
       byteSize,
@@ -225,10 +229,18 @@ export async function updateDocument(
     }
   }
 
+  const nextJournalDate =
+    input.journalDate !== undefined ? input.journalDate : existing.journalDate;
+  // Journal titles stay locked to the entry date (YYYY-MM-DD).
+  const nextTitle =
+    existing.type === "journal"
+      ? (nextJournalDate ?? existing.title)
+      : input.title;
+
   const [row] = await executor
     .update(documents)
     .set({
-      title: input.title,
+      title: nextTitle,
       path: input.path,
       parentId: input.parentId,
       icon: input.icon,

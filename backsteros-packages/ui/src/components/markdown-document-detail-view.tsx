@@ -37,6 +37,8 @@ export type MarkdownDocumentDetailViewProps = {
   embedded?: boolean;
   /** Next uses a static title in preview and an editor only in edit mode. */
   previewTitleEditable?: boolean;
+  /** When false, title is read-only in both edit and preview (journal date titles). */
+  titleEditable?: boolean;
   onSave?: (
     value: string,
   ) =>
@@ -63,14 +65,20 @@ export function MarkdownDocumentDetailView({
   footer,
   embedded = false,
   previewTitleEditable = true,
+  titleEditable = true,
   onSave,
   onSaveTitle,
 }: MarkdownDocumentDetailViewProps) {
   const [title, setTitle] = useState(initialTitle);
   const [prevKey, setPrevKey] = useState(resetKey ?? initialTitle);
+  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
   const syncKey = resetKey ?? initialTitle;
   if (syncKey !== prevKey) {
     setPrevKey(syncKey);
+    setTitle(initialTitle);
+    setPrevInitialTitle(initialTitle);
+  } else if (initialTitle !== prevInitialTitle) {
+    setPrevInitialTitle(initialTitle);
     setTitle(initialTitle);
   }
 
@@ -114,7 +122,10 @@ export function MarkdownDocumentDetailView({
 
   void sectionLabel;
 
-  const documentTitleEditor = (
+  const canEditTitle = titleEditable;
+  const canEditPreviewTitle = titleEditable && previewTitleEditable;
+
+  const documentTitleEditor = canEditTitle ? (
     <OverviewNameEditor
       value={title}
       entityLabel={sectionLabel.replace(/s$/, "") || "Document"}
@@ -131,6 +142,14 @@ export function MarkdownDocumentDetailView({
         return result;
       }}
     />
+  ) : (
+    <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
+  );
+
+  const previewTitleNode = canEditPreviewTitle ? (
+    documentTitleEditor
+  ) : (
+    <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
   );
 
   // Use the same borderless OverviewNameEditor in preview and edit so title
@@ -139,11 +158,7 @@ export function MarkdownDocumentDetailView({
     ? buildContentIconTitleHeaders({
         icon,
         editTitle: documentTitleEditor,
-        previewTitle: previewTitleEditable ? (
-          documentTitleEditor
-        ) : (
-          <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
-        ),
+        previewTitle: previewTitleNode,
       })
     : {
         editHeader: (
@@ -151,11 +166,7 @@ export function MarkdownDocumentDetailView({
         ),
         previewTitleHeader: (
           <ContentDetailTitleHeader inlinePadding={false}>
-            {previewTitleEditable ? (
-              documentTitleEditor
-            ) : (
-              <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
-            )}
+            {previewTitleNode}
           </ContentDetailTitleHeader>
         ),
       };

@@ -273,30 +273,22 @@ function JournalEntryDetail({
     loading: contentLoading,
   } = useDesktopDocumentContent(documentId);
 
-  const metadataTitle =
-    metadata.data?.title ?? localDoc?.title ?? formatJournalEntryTitle(dateSlug);
   const metadataIcon = metadata.data?.icon ?? localDoc?.icon ?? null;
-  const [displayTitle, setDisplayTitle] = useState(metadataTitle);
-  const [titleSource, setTitleSource] = useState(metadataTitle);
-
-  if (metadataTitle !== titleSource) {
-    setTitleSource(metadataTitle);
-    setDisplayTitle(metadataTitle);
-  }
+  const displayTitle = formatJournalEntryTitle(dateSlug);
+  const storedTitle = dateSlug;
 
   useEffect(() => {
-    if (metadataTitle) onResolvedTitle(metadataTitle);
-  }, [metadataTitle, onResolvedTitle]);
+    onResolvedTitle(displayTitle);
+  }, [displayTitle, onResolvedTitle]);
 
   useEffect(() => {
     if (contentLoading) return;
     onContentReady(dateSlug);
   }, [contentLoading, dateSlug, onContentReady]);
 
-  const resolvedTitle = displayTitle;
   const editorBody = useMemo(
-    () => getDocumentEditorBody(initialBody, resolvedTitle),
-    [initialBody, resolvedTitle],
+    () => getDocumentEditorBody(initialBody, storedTitle),
+    [initialBody, storedTitle],
   );
 
   const handleDeleteJournalDocument = useCallback(async () => {
@@ -350,15 +342,16 @@ function JournalEntryDetail({
       />
       <MarkdownDocumentDetailView
         sectionLabel="Journal"
-        title={resolvedTitle}
+        title={displayTitle}
         resetKey={documentId}
+        titleEditable={false}
         previewTitleEditable={false}
         embedded
         icon={
           <DocumentDetailIcon
             documentId={documentId}
             icon={metadataIcon}
-            title={resolvedTitle}
+            title={displayTitle}
             onSaveIcon={async (icon) => {
               const result = await workspace.updateDocumentIcon(
                 documentId,
@@ -392,37 +385,9 @@ function JournalEntryDetail({
         }
         initialBody={editorBody}
         onSave={async (nextEditorBody) => {
-          const nextContent = mergeJournalContent(
-            resolvedTitle,
-            nextEditorBody,
-          );
+          const nextContent = mergeJournalContent(storedTitle, nextEditorBody);
           if (nextContent === initialBody) return;
           await saveContent(nextContent);
-        }}
-        onSaveTitle={async (title) => {
-          const trimmed = title.trim();
-          if (!trimmed) {
-            return { ok: false as const, error: "Title is required." };
-          }
-          try {
-            await client.requestJson(
-              `/api/v1/documents/${encodeURIComponent(documentId)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ title: trimmed }),
-              },
-            );
-            setDisplayTitle(trimmed);
-            metadata.reload();
-            return { ok: true as const };
-          } catch (error) {
-            return {
-              ok: false as const,
-              error:
-                error instanceof Error ? error.message : "Could not rename.",
-            };
-          }
         }}
         footer={
           <JournalDueTasksFooter

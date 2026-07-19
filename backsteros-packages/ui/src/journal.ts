@@ -49,18 +49,9 @@ export function formatJournalEntryTitle(dateSlug: string): string {
   });
 }
 
+/** Side-panel / file-style label — always the canonical `YYYY-MM-DD` slug. */
 export function formatJournalSidePanelLabel(dateSlug: string): string {
-  const date = parseJournalDateSlug(dateSlug);
-  if (!date) {
-    return dateSlug;
-  }
-
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return dateSlug;
 }
 
 export function getJournalHref(dateSlug?: string): string {

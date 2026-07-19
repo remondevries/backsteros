@@ -49,6 +49,7 @@ import {
 import { parseMarkdownDocument } from "@/lib/documents/frontmatter";
 import { stripDuplicateDocumentTitleHeading } from "@/lib/documents/titles";
 import { isEntityRouteUuid } from "@/lib/entity-slugs";
+import { formatJournalEntryTitle } from "@/lib/journal/dates";
 import { getKnowledgeDocumentHref } from "@/lib/knowledge/navigation-path";
 import { deleteDocumentEntryAction } from "@/lib/mutations/documents";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
@@ -297,20 +298,27 @@ function DocumentDetailScreenInner({
   const isKnowledge = breadcrumbContext === "knowledge";
   const isProject = breadcrumbContext === "project";
 
+  const storedTitle =
+    isJournal && journalDateSlug ? journalDateSlug : displayTitle;
+  const resolvedDisplayTitle =
+    isJournal && journalDateSlug
+      ? formatJournalEntryTitle(journalDateSlug)
+      : displayTitle;
+
   const { body: parsedBody } = parseMarkdownDocument(markdown);
   const previewBody = stripDuplicateDocumentTitleHeading(
     parsedBody || markdown,
-    displayTitle,
+    storedTitle,
   );
   const editorBody = useMemo(
-    () => getDocumentEditorBody(markdown, displayTitle),
-    [displayTitle, markdown],
+    () => getDocumentEditorBody(markdown, storedTitle),
+    [markdown, storedTitle],
   );
 
   function handleContentChange(nextEditorBody: string) {
     handleChange(
       isJournal
-        ? mergeJournalContent(displayTitle, nextEditorBody)
+        ? mergeJournalContent(storedTitle, nextEditorBody)
         : serializeDocumentBody(nextEditorBody),
     );
   }
@@ -446,11 +454,13 @@ function DocumentDetailScreenInner({
     <DocumentDetailIcon
       documentId={documentId}
       icon={metadata.data.icon}
-      title={displayTitle}
+      title={resolvedDisplayTitle}
     />
   );
 
-  const documentTitleEditor = (
+  const documentTitleEditor = isJournal ? (
+    <ContentDetailStaticTitle>{resolvedDisplayTitle}</ContentDetailStaticTitle>
+  ) : (
     <DocumentTitleEditor
       documentId={documentId}
       value={displayTitle}
@@ -467,7 +477,7 @@ function DocumentDetailScreenInner({
     icon: documentDetailIcon,
     editTitle: documentTitleEditor,
     previewTitle: (
-      <ContentDetailStaticTitle>{displayTitle}</ContentDetailStaticTitle>
+      <ContentDetailStaticTitle>{resolvedDisplayTitle}</ContentDetailStaticTitle>
     ),
   });
 
@@ -478,7 +488,7 @@ function DocumentDetailScreenInner({
       data-content-view-mode={mode}
     >
       <RegisterEntityDeleteAction
-        entityLabel={`document "${displayTitle}"`}
+        entityLabel={`document "${resolvedDisplayTitle}"`}
         onDelete={handleDeleteDocument}
       />
       {breadcrumbContext === "project" && projectRouteParam ? (
@@ -488,7 +498,7 @@ function DocumentDetailScreenInner({
       ) : (
         <KnowledgeLayoutBreadcrumb />
       )}
-      <DetailBreadcrumbLeaf label={displayTitle} />
+      <DetailBreadcrumbLeaf label={resolvedDisplayTitle} />
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {breadcrumbContext === "journal" && journalDateSlug ? (
           <div

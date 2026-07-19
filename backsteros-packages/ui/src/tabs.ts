@@ -34,10 +34,7 @@ export function getTabTitleForHref(href: string): string {
   }
   const journalDate = normalized.match(/^\/journal\/([^/]+)$/)?.[1];
   if (journalDate) {
-    return decodeURIComponent(journalDate)
-      .split("-")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
+    return decodeURIComponent(journalDate);
   }
   return titleForPath(normalized);
 }

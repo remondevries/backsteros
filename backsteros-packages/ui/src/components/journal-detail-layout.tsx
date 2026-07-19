@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  formatJournalEntryTitle,
-  formatJournalSidePanelLabel,
-} from "../journal.js";
+import { formatJournalEntryTitle } from "../journal.js";
 import { JournalNavIcon } from "./sidebar-nav-icons.js";
 
 export type JournalDetailLayoutProps = {
@@ -19,7 +16,7 @@ export type JournalDetailLayoutProps = {
  */
 export function JournalDetailLayout({
   dateSlug,
-  title,
+  title: _title,
   body,
   resolving = false,
 }: JournalDetailLayoutProps) {
@@ -52,8 +49,8 @@ export function JournalDetailLayout({
     );
   }
 
-  const heading = title?.trim() || formatJournalEntryTitle(dateSlug);
-  const crumb = formatJournalSidePanelLabel(dateSlug);
+  const heading = formatJournalEntryTitle(dateSlug);
+  const crumb = dateSlug;
 
   return (
     <div className="inbox-detail-layout">

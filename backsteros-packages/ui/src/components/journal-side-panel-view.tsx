@@ -8,7 +8,6 @@ import type {
 } from "react";
 
 import {
-  formatJournalSidePanelLabel,
   getJournalHref,
   getSelectedJournalDateFromPathname,
   getTodayJournalDateSlug,
@@ -113,7 +112,7 @@ export function JournalSidePanelView({
                     {...keyboardNavItemProps(dateSlug)}
                   >
                     <span className="app-side-panel-item-label">
-                      {formatJournalSidePanelLabel(dateSlug)}
+                      {dateSlug}
                       {isToday ? (
                         <span className="journal-side-panel-today">Today</span>
                       ) : null}
