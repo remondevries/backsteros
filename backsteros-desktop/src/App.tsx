@@ -12,6 +12,10 @@ import {
   parseNavigationTrailPath,
 } from "@backsteros/ui";
 
+import {
+  PersistLastLocation,
+  StartupRedirect,
+} from "./components/startup-location";
 import { useDesktopWorkspaceData } from "./lib/workspace-data";
 import { AppShell } from "./shell/app-shell";
 import { DesktopOverlayRouteSync } from "./components/desktop-overlay-route-sync";
@@ -362,6 +366,7 @@ export default function App() {
   return (
     <>
       <DesktopOverlayRouteSync />
+      <PersistLastLocation />
       <Routes>
       <Route
         path="/desktop-overlay/palette"
@@ -372,7 +377,7 @@ export default function App() {
         element={<DesktopOverlayComposePage />}
       />
       <Route element={<ShellLayout />}>
-        <Route index element={<Navigate to="/projects" replace />} />
+        <Route index element={<StartupRedirect />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="inbox/:itemId" element={<InboxPage />} />
         <Route path="journal" element={<JournalPage />} />

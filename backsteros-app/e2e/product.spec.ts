@@ -43,7 +43,7 @@ test("public sign-in route and root routing remain available", async ({
   await expect(page.getByText("Your work, connected.")).toBeVisible();
 
   await page.goto("/");
-  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page).toHaveURL(/\/inbox$/);
   if (testInfo.project.name.startsWith("mobile")) {
     await expect(
       page.getByRole("navigation", { name: "Primary navigation" }),
