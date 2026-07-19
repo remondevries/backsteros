@@ -134,10 +134,18 @@ export function LetterDetailView({
   pdfUploading = false,
 }: LetterDetailViewProps) {
   const [title, setTitle] = useState(letter.title);
+  const [titleSource, setTitleSource] = useState(letter.title);
   const [prevLetterId, setPrevLetterId] = useState(letter.id);
   if (letter.id !== prevLetterId) {
     setPrevLetterId(letter.id);
     setTitle(letter.title);
+    setTitleSource(letter.title);
+  } else if (letter.title !== titleSource) {
+    // Remote/synced title changed — adopt it when the local field is clean.
+    setTitleSource(letter.title);
+    if (title === titleSource) {
+      setTitle(letter.title);
+    }
   }
 
   const {

@@ -51,6 +51,9 @@ import { getLetterDisplayId } from "@/lib/letter-display-id";
 import { LETTER_PROPERTIES_PANEL_WIDTH_KEY } from "@/lib/letter-properties-panel";
 import { resolveLetterDeleteRedirectHref, getLetterDeleteSectionHref } from "@/lib/letters/letter-delete-redirect";
 import { deleteLetterAction, updateLetterContextAction } from "@/lib/mutations/letters";
+import {
+  mergeLocalAndApiByUpdatedAt,
+} from "@/lib/sync/prefer-local-or-api";
 import { mapOrganizationToAssignable } from "@/lib/organizations/assignable-organization";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
 import { mapProjectToAssignable } from "@/lib/projects/assignable-project";
@@ -154,16 +157,13 @@ function LetterDetailScreenInner({
       (row) => snakeRow(row) as ApiLetter,
     );
     const apiRows = lettersResource.data?.letters;
-    // Prefer API for detail so storageKey/PDF fields are present even when
-    // PowerSync has a thinner local row.
-    const match =
-      apiRows?.find((entry) =>
-        letterMatchesRouteSlug(entry, letterRouteParam),
-      ) ??
-      localRows?.find((entry) =>
-        letterMatchesRouteSlug(entry, letterRouteParam),
-      ) ??
-      null;
+    const matchSlug = (entry: ApiLetter) =>
+      letterMatchesRouteSlug(entry, letterRouteParam);
+    const merged = mergeLocalAndApiByUpdatedAt(
+      localRows?.filter(matchSlug) ?? [],
+      apiRows?.filter(matchSlug) ?? [],
+    );
+    const match = merged[0] ?? null;
     return match ? normalizeLetter(match) : null;
   }, [letterRouteParam, lettersResource.data, localLetters.data]);
 
@@ -354,16 +354,7 @@ function LetterDetailScreenInner({
     const apiRows =
       lettersResource.data?.letters.map((entry) => normalizeLetter(entry)) ??
       [];
-    const byId = new Map<string, (typeof localRows)[number]>();
-    for (const entry of apiRows) {
-      byId.set(entry.id, entry);
-    }
-    for (const entry of localRows) {
-      if (!byId.has(entry.id)) {
-        byId.set(entry.id, entry);
-      }
-    }
-    return [...byId.values()];
+    return mergeLocalAndApiByUpdatedAt(localRows, apiRows);
   }, [lettersResource.data, localLetters.data]);
 
   const handleDeleteLetter = useCallback(async () => {
