@@ -123,7 +123,7 @@ export function ProjectsPage({
   const [letterStatusOverride, setLetterStatusOverride] =
     useState<TaskStatus | null>(null);
 
-  const { tasks, letters, organizations, contacts } = workspace;
+  const { allTasks: tasks, letters, organizations, contacts } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",

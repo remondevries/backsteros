@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -14,7 +14,6 @@ import {
   getTaskDisplayId,
   getTasksDueFilterLabel,
   isTasksDueFilter,
-  type TaskStatus,
   type TasksDueFilter,
 } from "@backsteros/ui";
 
@@ -89,10 +88,10 @@ export function TaskDetailPage({
     backHrefProp ??
     (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
   const workspace = useDesktopWorkspaceData();
-  const { tasks, projects, contacts } = workspace;
+  const { allTasks, projects, contacts } = workspace;
 
   const base =
-    tasks.find((entry) => {
+    allTasks.find((entry) => {
       const contact = entry.contactId
         ? contacts.find((c) => c.id === entry.contactId)
         : null;
@@ -104,16 +103,6 @@ export function TaskDetailPage({
         routeParam,
       );
     }) ?? null;
-
-  const [status, setStatus] = useState<TaskStatus | null>(null);
-  const [priority, setPriority] = useState<number | null>(null);
-  const [dueDate, setDueDate] = useState<Date | null | undefined>(undefined);
-  const [assigneeId, setAssigneeId] = useState<string | null | undefined>(
-    undefined,
-  );
-  const [projectKey, setProjectKey] = useState<string | null | undefined>(
-    undefined,
-  );
 
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
 
@@ -139,30 +128,19 @@ export function TaskDetailPage({
 
   const task = useMemo(() => {
     if (!base) return null;
-    const resolvedProjectKey = projectKey ?? base.projectKey ?? null;
+    const resolvedProjectKey = base.projectKey ?? null;
     const project =
       projects.find((entry) => entry.key === resolvedProjectKey) ?? null;
-    const resolvedAssigneeId =
-      assigneeId === undefined ? (base.assigneeId ?? null) : assigneeId;
+    const resolvedAssigneeId = base.assigneeId ?? null;
     const assignee =
       contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
     return {
       ...base,
-      status: status ?? base.status,
-      priority: priority ?? base.priority,
-      dueDate:
-        dueDate === undefined
-          ? base.dueDate
-          : dueDate
-            ? dueDate.getTime()
-            : null,
       assigneeId: resolvedAssigneeId,
       assigneeName: assignee?.name ?? null,
       projectKey: resolvedProjectKey,
       projectName: project?.name ?? base.projectName ?? null,
-      description:
-        workspace.taskDescriptions[base.id] ??
-        "",
+      description: workspace.taskDescriptions[base.id] ?? "",
       displayId: getTaskDisplayId(
         {
           number: base.number,
@@ -171,17 +149,7 @@ export function TaskDetailPage({
         base.projectKey,
       ),
     };
-  }, [
-    assigneeId,
-    base,
-    contacts,
-    dueDate,
-    priority,
-    projectKey,
-    projects,
-    status,
-    workspace.taskDescriptions,
-  ]);
+  }, [base, contacts, projects, workspace.taskDescriptions]);
 
   const taskLabel = task
     ? task.displayId
@@ -262,25 +230,20 @@ export function TaskDetailPage({
       <TaskDetailView
         task={task}
         onStatusChange={(next) => {
-          setStatus(next);
           void workspace.patchTask(task.id, { status: next });
         }}
         onPriorityChange={(next) => {
-          setPriority(next);
           void workspace.patchTask(task.id, { priority: next });
         }}
         onDueDateChange={(next) => {
-          setDueDate(next);
           void workspace.patchTask(task.id, {
             dueDate: next ? next.toISOString() : null,
           });
         }}
         onAssigneeChange={(next) => {
-          setAssigneeId(next);
           void workspace.patchTask(task.id, { assigneeId: next });
         }}
         onProjectChange={(next) => {
-          setProjectKey(next);
           const project = next
             ? projects.find((entry) => entry.key === next) ?? null
             : null;
@@ -312,18 +275,13 @@ export function TaskDetailPage({
         assigneeOptions={assigneeOptions}
         projectOptions={projectOptions}
         assigneeNavigateHref={
-          (assigneeId ?? task.assigneeId)
-            ? `/contacts/${assigneeId ?? task.assigneeId}`
-            : null
+          task.assigneeId ? `/contacts/${task.assigneeId}` : null
         }
         projectNavigateHref={
-          (projectKey ?? task.projectKey)
-            ? `/projects/${projectKey ?? task.projectKey}`
-            : null
+          task.projectKey ? `/projects/${task.projectKey}` : null
         }
         onCreateAssigneeFromQuery={(query) => {
           void workspace.createContact({ name: query }).then((created) => {
-            setAssigneeId(created.id);
             void workspace.patchTask(task.id, { assigneeId: created.id });
           });
         }}

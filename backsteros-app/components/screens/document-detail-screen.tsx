@@ -3,7 +3,7 @@
 import type { Document, DocumentContent } from "@backsteros/contracts";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -192,6 +192,34 @@ function DocumentDetailScreenInner({
       ),
     [documentId],
   );
+
+  const syncedVersionRows = usePowerSyncQuery<Record<string, unknown>>(
+    documentId
+      ? "SELECT content_version FROM documents WHERE id = ?"
+      : null,
+    documentId ? [documentId] : [],
+  );
+  const syncedContentVersion = useMemo(() => {
+    const row = syncedVersionRows.data?.[0];
+    if (!row) return null;
+    const raw = row.content_version ?? row.contentVersion;
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string" && raw.trim()) {
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }, [syncedVersionRows.data]);
+
+  // Remote save bumped content_version in PowerSync — refetch Tier D body.
+  const localContentVersion = content.data?.contentVersion ?? null;
+  useEffect(() => {
+    if (syncedContentVersion == null || localContentVersion == null) return;
+    if (syncedContentVersion <= localContentVersion) return;
+    content.reload();
+    // content.reload identity is unstable; version numbers are the triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncedContentVersion, localContentVersion]);
 
   const initialContent = content.data?.content ?? "";
   const contentVersion = content.data?.contentVersion;

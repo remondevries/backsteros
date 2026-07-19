@@ -7,11 +7,21 @@ import {
   peekDocumentContentCache,
   writeDocumentContentCache,
 } from "./document-content-cache";
+import { usePowerSyncQuery } from "./powersync-context";
 
 export {
   peekDocumentContentCache,
   prefetchDocumentContent,
 } from "./document-content-cache";
+
+function asContentVersion(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 /**
  * Load / save document markdown via `/api/v1/documents/:id/content`.
@@ -20,6 +30,8 @@ export {
  * - `refreshing` — revalidate while showing cached body for the *same* id
  * - session LRU + shared inflight with `prefetchDocumentContent`
  * - discards this document's Tier D body when leaving the detail screen
+ * - when PowerSync `content_version` advances past the local body version,
+ *   refetch Tier D content (live refresh across clients)
  *
  * By default, switching document ids never keeps the previous entry's body
  * (Knowledge). Pass `keepPreviousOnMiss` to keep prior body visible.
@@ -49,6 +61,17 @@ export function useDesktopDocumentContent(
   );
   const [refreshing, setRefreshing] = useState(false);
   const [activeId, setActiveId] = useState(documentId);
+
+  const syncedVersionRows = usePowerSyncQuery<Record<string, unknown>>(
+    documentId
+      ? "SELECT content_version FROM documents WHERE id = ?"
+      : null,
+    documentId ? [documentId] : [],
+  );
+  const syncedContentVersion = asContentVersion(
+    syncedVersionRows.data?.[0]?.content_version ??
+      syncedVersionRows.data?.[0]?.contentVersion,
+  );
 
   if (documentId !== activeId) {
     setActiveId(documentId);
@@ -122,6 +145,30 @@ export function useDesktopDocumentContent(
       discardDocumentContentCache(fetchId);
     };
   }, [client, documentId, keepPreviousOnMiss, skeletonUntilFetched]);
+
+  // Remote save bumped content_version in PowerSync — refetch Tier D body.
+  useEffect(() => {
+    if (!documentId) return;
+    if (syncedContentVersion == null || contentVersion == null) return;
+    if (syncedContentVersion <= contentVersion) return;
+
+    let cancelled = false;
+    const fetchId = documentId;
+    setRefreshing(true);
+    void fetchDocumentContent(client, fetchId, { force: true }).then((data) => {
+      if (cancelled || !data) {
+        if (!cancelled) setRefreshing(false);
+        return;
+      }
+      setInitialBody(data.content);
+      setContentVersion(data.contentVersion);
+      setRefreshing(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, contentVersion, documentId, syncedContentVersion]);
 
   const onSave = useCallback(
     async (content: string) => {

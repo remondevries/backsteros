@@ -76,10 +76,18 @@ export function TaskDetailView({
   onCreateAssigneeFromQuery,
 }: TaskDetailViewProps) {
   const [title, setTitle] = useState(task.title);
+  const [titleSource, setTitleSource] = useState(task.title);
   const [prevTaskId, setPrevTaskId] = useState(task.id);
   if (task.id !== prevTaskId) {
     setPrevTaskId(task.id);
     setTitle(task.title);
+    setTitleSource(task.title);
+  } else if (task.title !== titleSource) {
+    // Remote/synced title changed — adopt it when the local field is clean.
+    setTitleSource(task.title);
+    if (title === titleSource) {
+      setTitle(task.title);
+    }
   }
 
   const {

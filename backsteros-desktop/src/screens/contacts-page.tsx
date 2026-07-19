@@ -116,7 +116,7 @@ export function ContactsPage({
     ...contact,
     ...contactOverlay[contact.id],
   }));
-  const { organizations, tasks, letters } = workspace;
+  const { organizations, allTasks: tasks, letters } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
 
   const selected = routeSlug

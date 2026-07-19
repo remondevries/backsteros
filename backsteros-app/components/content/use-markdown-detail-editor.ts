@@ -48,9 +48,11 @@ export function useMarkdownDetailEditor({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (initialValue !== valueSource) {
-    setValueSource(initialValue);
-    const hasUnsavedDraft = initialValue !== value;
+    // valueSource is still the previous prop value this render — compare
+    // against it to detect a real local draft before adopting the remote body.
+    const hasUnsavedDraft = value !== valueSource;
     const preserveLocalDraft = hasUnsavedDraft && mode === "edit";
+    setValueSource(initialValue);
     if (!preserveLocalDraft) {
       setValue(initialValue);
     }

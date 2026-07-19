@@ -69,12 +69,18 @@ export function prefetchDocumentContent(
 export function fetchDocumentContent(
   client: BacksterosApiClient,
   documentId: string,
+  options?: { force?: boolean },
 ): Promise<CachedDocumentContent | null> {
-  const cached = contentCache.peek(documentId);
-  if (cached) return Promise.resolve(cached);
+  if (options?.force) {
+    contentCache.delete(documentId);
+    inflight.delete(documentId);
+  } else {
+    const cached = contentCache.peek(documentId);
+    if (cached) return Promise.resolve(cached);
 
-  const existing = inflight.get(documentId);
-  if (existing) return existing;
+    const existing = inflight.get(documentId);
+    if (existing) return existing;
+  }
 
   const request = client
     .requestJson<{ content: string; contentVersion: number }>(

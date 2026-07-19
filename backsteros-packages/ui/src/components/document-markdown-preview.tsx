@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 
 import { ClientLink } from "../client-link.js";
@@ -23,6 +23,7 @@ import { resolveMentionHref } from "../mentions/tokens.js";
 import {
   mentionTokenLabel,
   segmentMarkdownWithMentions,
+  type MentionSegment,
   type ParsedMentionToken,
 } from "../mention-tokens.js";
 import { resolveMentionTrailHref } from "../navigation-trail/mention-trail.js";
@@ -56,11 +57,64 @@ const markdownPreviewComponents: Components = {
   },
 };
 
+const inlineMarkdownComponents: Components = {
+  ...markdownPreviewComponents,
+  p: ({ children }) => <>{children}</>,
+};
+
 export type DocumentMarkdownPreviewProps = {
   body: string;
   /** Override catalog; defaults to MentionCatalogProvider. */
   mentionCatalog?: MentionCatalog;
 };
+
+function hasBlockMarkdown(content: string): boolean {
+  return /^(\s*#{1,6}\s|\s*[-*+]\s|\s*\d+\.\s|```|>\s|\|.+\|)/m.test(
+    content,
+  );
+}
+
+function splitParagraphs(body: string): string[] {
+  if (!body) {
+    return [];
+  }
+
+  return body.split(/\n{2,}/);
+}
+
+function InlineMarkdownText({ content }: { content: string }) {
+  if (!content) {
+    return null;
+  }
+
+  return (
+    <ReactMarkdown components={inlineMarkdownComponents}>{content}</ReactMarkdown>
+  );
+}
+
+function InlineMarkdownSegment({ content }: { content: string }) {
+  if (!content) {
+    return null;
+  }
+
+  if (hasBlockMarkdown(content)) {
+    return <InlineMarkdownText content={content} />;
+  }
+
+  return (
+    <span className="content-markdown-preview-prewrap">{content}</span>
+  );
+}
+
+function MarkdownBlockSegment({ content }: { content: string }) {
+  if (!content) {
+    return null;
+  }
+
+  return (
+    <ReactMarkdown components={markdownPreviewComponents}>{content}</ReactMarkdown>
+  );
+}
 
 function resolvePreviewChipLabel(
   token: ParsedMentionToken,
@@ -228,8 +282,99 @@ function MentionChipLite({
   );
 }
 
+function renderInlineSegment(
+  segment: MentionSegment,
+  catalog: MentionCatalog,
+  key: string,
+): ReactNode {
+  if (segment.type === "mention") {
+    return (
+      <MentionChipLite key={key} token={segment.token} catalog={catalog} />
+    );
+  }
+
+  return <InlineMarkdownSegment key={key} content={segment.content} />;
+}
+
+function isWhitespaceOnlyMarkdown(segment: MentionSegment): boolean {
+  return segment.type === "markdown" && segment.content.trim() === "";
+}
+
+function renderParagraphWithMentions(
+  segments: MentionSegment[],
+  catalog: MentionCatalog,
+  keyPrefix: string,
+): ReactNode {
+  const inlineRun: ReactNode[] = [];
+
+  segments.forEach((segment, index) => {
+    if (isWhitespaceOnlyMarkdown(segment)) {
+      // Keep soft newlines between mention chips (Next skips these; we
+      // preserve them so edit→preview line breaks stay visible).
+      if (segment.type === "markdown" && segment.content.includes("\n")) {
+        inlineRun.push(
+          <span
+            key={`${keyPrefix}-ws-${index}`}
+            className="content-markdown-preview-prewrap"
+          >
+            {segment.content}
+          </span>,
+        );
+      }
+      return;
+    }
+
+    inlineRun.push(
+      renderInlineSegment(segment, catalog, `${keyPrefix}-seg-${index}`),
+    );
+  });
+
+  if (inlineRun.length === 0) {
+    return null;
+  }
+
+  return <p key={`${keyPrefix}-inline`}>{inlineRun}</p>;
+}
+
+function ParagraphPreview({
+  paragraph,
+  catalog,
+  paragraphIndex,
+}: {
+  paragraph: string;
+  catalog: MentionCatalog;
+  paragraphIndex: number;
+}) {
+  const segments = segmentMarkdownWithMentions(paragraph);
+  const hasMentions = segments.some((segment) => segment.type === "mention");
+  const keyPrefix = `p-${paragraphIndex}`;
+
+  if (!hasMentions) {
+    if (hasBlockMarkdown(paragraph)) {
+      return <MarkdownBlockSegment content={paragraph} />;
+    }
+
+    return (
+      <p>
+        <span className="content-markdown-preview-prewrap">{paragraph}</span>
+      </p>
+    );
+  }
+
+  if (!hasBlockMarkdown(paragraph)) {
+    return <>{renderParagraphWithMentions(segments, catalog, keyPrefix)}</>;
+  }
+
+  return (
+    <div className="content-markdown-preview-mixed">
+      {renderParagraphWithMentions(segments, catalog, keyPrefix)}
+    </div>
+  );
+}
+
 /**
  * Rendered markdown preview with mention chips and catalog-backed hover cards.
+ * Soft line breaks and blank paragraphs match Next `DocumentMarkdownPreview`.
  */
 export function DocumentMarkdownPreview({
   body,
@@ -260,6 +405,8 @@ export function DocumentMarkdownPreview({
     return null;
   }
 
+  const paragraphs = splitParagraphs(body);
+
   return (
     <div
       ref={containerRef}
@@ -267,30 +414,14 @@ export function DocumentMarkdownPreview({
       tabIndex={-1}
       className="content-markdown-preview-body content-markdown-preview-body--rendered"
     >
-      {segments.map((segment, index) => {
-        if (segment.type === "mention") {
-          return (
-            <MentionChipLite
-              key={`mention-${index}-${segment.raw}`}
-              token={segment.token}
-              catalog={catalog}
-            />
-          );
-        }
-
-        if (!segment.content.trim()) {
-          return null;
-        }
-
-        return (
-          <ReactMarkdown
-            key={`md-${index}`}
-            components={markdownPreviewComponents}
-          >
-            {segment.content}
-          </ReactMarkdown>
-        );
-      })}
+      {paragraphs.map((paragraph, index) => (
+        <ParagraphPreview
+          key={`paragraph-${index}`}
+          paragraph={paragraph}
+          catalog={catalog}
+          paragraphIndex={index}
+        />
+      ))}
     </div>
   );
 }

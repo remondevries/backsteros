@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -10,7 +10,6 @@ import {
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
   getInboxItemDisplayId,
-  type TaskStatus,
 } from "@backsteros/ui";
 
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -24,13 +23,6 @@ export function InboxPage() {
   const navigate = useNavigate();
   const { itemId } = useParams<{ itemId?: string }>();
   const workspace = useDesktopWorkspaceData();
-  const [status, setStatus] = useState<TaskStatus | null>(null);
-  const [priority, setPriority] = useState<number | null>(null);
-  const [dueDate, setDueDate] = useState<Date | null | undefined>(undefined);
-  const [assigneeId, setAssigneeId] = useState<string | null | undefined>(
-    undefined,
-  );
-  const [projectKey, setProjectKey] = useState<string | null>(null);
 
   const selected = itemId
     ? findInboxItemBySlugOrId(workspace.inboxItems, itemId) ?? null
@@ -41,7 +33,7 @@ export function InboxPage() {
 
   // Inbox list items omit assignee; join full task row for detail chrome.
   const selectedTaskRecord = selectedTask
-    ? (workspace.tasks.find((entry) => entry.id === selectedTask.id) ?? null)
+    ? (workspace.allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
     : null;
 
   const displayId = selectedTask ? getInboxItemDisplayId(selectedTask) : null;
@@ -57,14 +49,6 @@ export function InboxPage() {
         ]
       : [{ label: "Inbox" }],
   );
-
-  useEffect(() => {
-    setStatus(null);
-    setPriority(null);
-    setDueDate(undefined);
-    setAssigneeId(undefined);
-    setProjectKey(selectedTask?.projectKey ?? null);
-  }, [selectedTask?.id, selectedTask?.projectKey]);
 
   useEffect(() => {
     if (itemId) {
@@ -136,13 +120,10 @@ export function InboxPage() {
     );
   }
 
-  const resolvedProjectKey = projectKey ?? selectedTask.projectKey ?? null;
+  const resolvedProjectKey = selectedTask.projectKey ?? null;
   const project =
     workspace.projects.find((entry) => entry.key === resolvedProjectKey) ?? null;
-  const resolvedAssigneeId =
-    assigneeId === undefined
-      ? (selectedTaskRecord?.assigneeId ?? null)
-      : assigneeId;
+  const resolvedAssigneeId = selectedTaskRecord?.assigneeId ?? null;
   const assignee =
     workspace.contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
   const deleteEntityLabel = displayId
@@ -160,14 +141,9 @@ export function InboxPage() {
         task={{
           id: selectedTask.id,
           title: selectedTask.title,
-          status: status ?? selectedTask.status,
-          priority: priority ?? selectedTask.priority,
-          dueDate:
-            dueDate === undefined
-              ? selectedTask.dueDate
-              : dueDate
-                ? dueDate.getTime()
-                : null,
+          status: selectedTask.status,
+          priority: selectedTask.priority,
+          dueDate: selectedTask.dueDate,
           assigneeId: resolvedAssigneeId,
           assigneeName: assignee?.name ?? null,
           projectKey: resolvedProjectKey,
@@ -179,25 +155,20 @@ export function InboxPage() {
           displayId: getInboxItemDisplayId(selectedTask),
         }}
         onStatusChange={(next) => {
-          setStatus(next);
           void workspace.patchTask(selectedTask.id, { status: next });
         }}
         onPriorityChange={(next) => {
-          setPriority(next);
           void workspace.patchTask(selectedTask.id, { priority: next });
         }}
         onDueDateChange={(next) => {
-          setDueDate(next);
           void workspace.patchTask(selectedTask.id, {
             dueDate: next ? next.toISOString() : null,
           });
         }}
         onAssigneeChange={(next) => {
-          setAssigneeId(next);
           void workspace.patchTask(selectedTask.id, { assigneeId: next });
         }}
         onProjectChange={(next) => {
-          setProjectKey(next);
           const nextProject = next
             ? workspace.projects.find((entry) => entry.key === next) ?? null
             : null;
@@ -236,7 +207,6 @@ export function InboxPage() {
         }
         onCreateAssigneeFromQuery={(query) => {
           void workspace.createContact({ name: query }).then((created) => {
-            setAssigneeId(created.id);
             void workspace.patchTask(selectedTask.id, {
               assigneeId: created.id,
             });

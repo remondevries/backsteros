@@ -248,9 +248,10 @@ export function usePowerSyncQuery<T>(
   sql: string | null,
   parameters: unknown[] = [],
 ) {
-  const { database, ready } = usePowerSync();
+  const { database, ready, lastSyncedAt } = usePowerSync();
   const parameterKey = JSON.stringify(parameters);
   const queryKey = `${sql ?? ""}\0${parameterKey}`;
+  const syncEpoch = lastSyncedAt?.getTime() ?? 0;
   const [result, setResult] = useState<{
     database: PowerSyncDatabase;
     queryKey: string;
@@ -291,7 +292,7 @@ export function usePowerSyncQuery<T>(
     return () => controller.abort();
     // parameters are keyed by their serialized stable values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database, parameterKey, ready, sql]);
+  }, [database, parameterKey, ready, sql, syncEpoch]);
 
   const data =
     result?.database === database && result.queryKey === queryKey ? result.rows : null;

@@ -3477,6 +3477,11 @@ body[data-keyboard-nav-hover="suppressed"]
   white-space: normal;
 }
 
+/* Soft line breaks inside plain paragraphs (Next `whitespace-pre-wrap` parity). */
+.content-markdown-preview-prewrap {
+  white-space: pre-wrap;
+}
+
 .content-markdown-preview-body--rendered > :first-child {
   margin-top: 0;
 }

@@ -1177,6 +1177,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const mentionCatalog = useMemo(
     () => buildMentionCatalogFromWorkspace(workspace),
     [
+      workspace.allTasks,
       workspace.contacts,
       workspace.inboxItems,
       workspace.knowledgeDocuments,
@@ -1184,7 +1185,6 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       workspace.projectDocuments,
       workspace.projectSummaries,
       workspace.projects,
-      workspace.tasks,
     ],
   );
 

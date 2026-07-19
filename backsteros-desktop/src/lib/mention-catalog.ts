@@ -113,7 +113,7 @@ function mapInboxTask(
 export function buildMentionCatalogFromWorkspace(
   workspace: Pick<
     DesktopWorkspaceData,
-    | "tasks"
+    | "allTasks"
     | "projects"
     | "contacts"
     | "organizations"
@@ -138,16 +138,26 @@ export function buildMentionCatalogFromWorkspace(
 
   const taskById = new Map<string, MentionCatalogTask>();
 
-  for (const task of workspace.tasks) {
+  for (const task of workspace.allTasks) {
     const mapped = mapWorkspaceTask(task, contactsById);
     if (mapped) {
       taskById.set(mapped.id, mapped);
     }
   }
 
+  // Inbox list items may carry description when the overview row does not.
   for (const item of workspace.inboxItems) {
     if (item.kind !== "task") continue;
-    if (taskById.has(item.id)) continue;
+    const existing = taskById.get(item.id);
+    if (existing) {
+      if (!existing.description && item.description) {
+        taskById.set(item.id, {
+          ...existing,
+          description: item.description,
+        });
+      }
+      continue;
+    }
     const mapped = mapInboxTask(item);
     if (mapped) {
       taskById.set(mapped.id, mapped);

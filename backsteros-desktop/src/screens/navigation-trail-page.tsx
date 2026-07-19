@@ -213,7 +213,7 @@ function resolveNodeLabel(
     case "task": {
       const id = resolveTaskRouteParam(ref);
       const task = id
-        ? workspace.tasks.find(
+        ? workspace.allTasks.find(
             (entry) =>
               entry.id === id ||
               entry.id === ref.entityId ||
@@ -508,7 +508,9 @@ function TrailProjectLeaf({
   workspace: ReturnType<typeof useDesktopWorkspaceData>;
 }) {
   useDesktopSectionBreadcrumb(breadcrumbItems);
-  const tasks = workspace.tasks.filter((task) => task.projectId === project.id);
+  const tasks = workspace.allTasks.filter(
+    (task) => task.projectId === project.id,
+  );
   const total = tasks.length;
   const completed = tasks.filter((task) => task.status === "completed").length;
 

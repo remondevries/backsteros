@@ -320,7 +320,7 @@ function JournalEntryDetail({
 
   const handleSelectDueTask = useCallback(
     (taskId: string) => {
-      const task = workspace.tasks.find((entry) => entry.id === taskId);
+      const task = workspace.allTasks.find((entry) => entry.id === taskId);
       if (!task) return;
       const contact = task.contactId
         ? workspace.contacts.find((entry) => entry.id === task.contactId)
@@ -334,7 +334,7 @@ function JournalEntryDetail({
         }),
       );
     },
-    [location.pathname, navigate, workspace.contacts, workspace.tasks],
+    [location.pathname, navigate, workspace.allTasks, workspace.contacts],
   );
 
   if (contentLoading) {
@@ -454,7 +454,7 @@ function JournalDueTasksFooter({
   return (
     <JournalDueTasksSection
       dateSlug={dateSlug}
-      tasks={workspace.tasks}
+      tasks={workspace.allTasks}
       isLoading={!workspace.ready || settings.loading}
       calendarTimeZone={calendarTimeZone}
       onSelectTask={onSelectTask}

@@ -155,7 +155,15 @@ function mapOrganization(org: ApiOrganization): OrganizationListItem {
 export type DesktopWorkspaceData = {
   source: "empty" | "api" | "powersync";
   ready: boolean;
+  /** Non-inbox tasks — use for the Tasks list (`/tasks`). */
   tasks: TaskOverviewRowTask[];
+  /** Inbox tasks with full metadata (assigneeId, etc.) — not in `tasks`. */
+  inboxTasks: TaskOverviewRowTask[];
+  /**
+   * Non-inbox + inbox, deduped by id.
+   * Use for contact/project/journal filters and task id lookups.
+   */
+  allTasks: TaskOverviewRowTask[];
   projects: Array<
     ProjectOverviewRowProject & { organizationId?: string | null }
   >;
@@ -1154,10 +1162,24 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     [softDeleteViaPowerSyncOrApi],
   );
 
+  const mappedTasks = rawTasks.map((task) => mapTask(task, projectsById));
+  const mappedInboxTasks = rawInboxTasks.map((task) =>
+    mapTask(task, projectsById),
+  );
+  // REST `/api/v1/tasks` may already include inbox rows; dedupe by id.
+  const allTasksById = new Map<string, TaskOverviewRowTask>();
+  for (const task of mappedTasks) allTasksById.set(task.id, task);
+  for (const task of mappedInboxTasks) {
+    if (!allTasksById.has(task.id)) allTasksById.set(task.id, task);
+  }
+  const allTasks = [...allTasksById.values()];
+
   return {
     source,
     ready: !authenticated || powerSync.ready || apiLoadDone,
-    tasks: rawTasks.map((task) => mapTask(task, projectsById)),
+    tasks: mappedTasks,
+    inboxTasks: mappedInboxTasks,
+    allTasks,
     projects: rawProjects.map(mapProject),
     letters: rawLetters
       .filter((letter) => letter.number != null)
@@ -1182,7 +1204,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
         .map((project) => [project.id, project.description as string]),
     ),
     taskDescriptions: Object.fromEntries(
-      rawTasks
+      [...rawTasks, ...rawInboxTasks]
         .filter((task) => task.description)
         .map((task) => [task.id, task.description as string]),
     ),
