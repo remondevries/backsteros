@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect } from "react";
 
 import { shouldBlockBrowserTabFocus } from "./should-block-browser-tab-focus.js";

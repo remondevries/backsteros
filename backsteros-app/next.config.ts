@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.resolve(process.cwd(), ".."),
   poweredByHeader: false,
   reactStrictMode: true,
+  transpilePackages: ["@backsteros/ui", "@backsteros/powersync-schema"],
 };
 
 export default nextConfig;
