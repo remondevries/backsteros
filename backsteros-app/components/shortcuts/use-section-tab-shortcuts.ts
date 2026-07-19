@@ -4,8 +4,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
-import { isLetterDetailPath } from "@/lib/letters/navigation-path";
-import { parseLetterPdfAttachmentShortcutIndex } from "@/lib/shortcuts/letter-pdf-attachment-shortcut";
 import {
   getCurrentTabLocation,
   normalizeTabLocation,
@@ -28,14 +26,6 @@ export function useSectionTabShortcuts({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (commandPaletteOpen) {
-        return;
-      }
-
-      // Letter detail reuses 1–5 for PDF attachments.
-      if (
-        isLetterDetailPath(pathname) &&
-        parseLetterPdfAttachmentShortcutIndex(event) != null
-      ) {
         return;
       }
 
@@ -67,7 +57,8 @@ export function useSectionTabShortcuts({
       }
 
       event.preventDefault();
-      event.stopPropagation();
+      // Prefer section tabs over letter PDF attachment 1–5 on the same key.
+      event.stopImmediatePropagation();
       router.push(targetHref);
     }
 

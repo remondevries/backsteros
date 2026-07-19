@@ -728,6 +728,7 @@ export { useDocumentTreeCreateFolderShortcut } from "./use-document-tree-create-
 
 export {
   DocumentsEmptyCreateView,
+  type DocumentsEmptyCreateResult,
   type DocumentsEmptyCreateViewProps,
 } from "./components/documents-empty-create-view.js";
 
@@ -1032,6 +1033,11 @@ export {
   DocumentDetailIcon,
   type DocumentDetailIconProps,
 } from "./components/document-detail-icon.js";
+
+export {
+  LetterDetailIcon,
+  type LetterDetailIconProps,
+} from "./components/letter-detail-icon.js";
 
 export {
   DocumentOcticon,

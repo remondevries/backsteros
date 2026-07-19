@@ -142,7 +142,7 @@ export function normalizeProductPathname(pathname: string): string {
   return pathname;
 }
 
-/** True on letter detail routes where 1–5 select PDF attachments. */
+/** True on letter detail routes (not compose) — used for letter-specific shortcuts. */
 export function isLetterDetailPath(pathname: string): boolean {
   const path = normalizeProductPathname(pathname);
   return (

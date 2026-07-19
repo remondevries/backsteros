@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ContentMarkdownPreviewColumn,
@@ -16,7 +16,7 @@ import {
   type AssigneeDropdownContact,
 } from "./dropdown-options.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
-import { LetterIcon } from "./letter-icon.js";
+import { LetterDetailIcon } from "./letter-detail-icon.js";
 import { LetterPdfDock } from "./letter-pdf-dock.js";
 import {
   LetterPropertiesDisplay,
@@ -27,6 +27,7 @@ import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { LETTER_PROPERTIES_PANEL_WIDTH_KEY } from "../properties-panel.js";
 import type { TaskStatus } from "../task-status.js";
+import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
 
 export type LetterComposeContact = AssigneeDropdownContact & {
   organizationId?: string | null;
@@ -69,12 +70,22 @@ export type LetterComposeViewProps = {
     | Promise<{ id: string } | void>
     | { id: string }
     | void;
-  onSubmit?: (payload: LetterComposeSubmitPayload) => void;
+  /**
+   * Creates the letter when leaving the title for the body (documents empty-create parity).
+   * Host should navigate to the real detail view afterward.
+   */
+  onSubmit?: (payload: LetterComposeSubmitPayload) => void | Promise<void>;
+  /** @deprecated Unused — empty compose has no Cancel (documents empty-create parity). */
   onCancel?: () => void;
   /** Host-controlled PDF pick (optional). When omitted, the dock picks a local file. */
   onPickPdf?: () => void | Promise<void>;
   selectedPdfFile?: File | null;
   pdfUploading?: boolean;
+  /**
+   * Increment to re-focus the title (e.g. after delete → empty-create when a
+   * closing modal steals focus).
+   */
+  titleFocusRequest?: number;
 };
 
 function pickLocalPdfFile(): Promise<File | null> {
@@ -89,8 +100,8 @@ function pickLocalPdfFile(): Promise<File | null> {
 }
 
 /**
- * Presentational letter compose — left notes + PDF dock; right properties.
- * Breadcrumb lives in content chrome (host registers Letters › New).
+ * Letter empty compose — title autofocus, Enter/Tab creates + focuses body
+ * (documents empty-create parity). Properties + PDF dock stay available before create.
  */
 export function LetterComposeView({
   initialTitle = "",
@@ -104,12 +115,14 @@ export function LetterComposeView({
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
   onSubmit,
-  onCancel,
   onPickPdf,
   selectedPdfFile: selectedPdfFileProp,
   pdfUploading = false,
+  titleFocusRequest: titleFocusRequestProp = 0,
 }: LetterComposeViewProps) {
-  const [title, setTitle] = useState(initialTitle || "Untitled letter");
+  const submittedRef = useRef(false);
+  const [title, setTitle] = useState(initialTitle || "New letter");
+  const titleRef = useRef(title);
   const [status, setStatus] = useState<TaskStatus>(initialStatus);
   const [organizationId, setOrganizationId] = useState<string | null>(
     initialOrganizationId,
@@ -122,10 +135,25 @@ export function LetterComposeView({
     null,
   );
 
+  const statusRef = useRef(status);
+  const organizationIdRef = useRef(organizationId);
+  const contactIdRef = useRef(contactId);
+  const projectKeyRef = useRef(projectKey);
+  const dueDateRef = useRef(dueDate);
+  const receivedDateRef = useRef(receivedDate);
+  statusRef.current = status;
+  organizationIdRef.current = organizationId;
+  contactIdRef.current = contactId;
+  projectKeyRef.current = projectKey;
+  dueDateRef.current = dueDate;
+  receivedDateRef.current = receivedDate;
+
   const pdfControlled = selectedPdfFileProp !== undefined;
   const selectedPdfFile = pdfControlled
     ? (selectedPdfFileProp ?? null)
     : uncontrolledPdfFile;
+  const selectedPdfFileRef = useRef(selectedPdfFile);
+  selectedPdfFileRef.current = selectedPdfFile;
 
   const resolvedContactOptions = useMemo(() => {
     if (!contacts) return contactOptions;
@@ -141,13 +169,75 @@ export function LetterComposeView({
     editorActivated,
     editorFocusRequest,
     handleChange,
-    handleBlurSave,
+    requestEditorFocus,
+    activateEditMode,
     setViewMode,
     toggleViewMode,
   } = useMarkdownDetailEditor({
     initialValue: "",
     save: () => ({ ok: true }),
   });
+  const bodyRef = useRef(value);
+  bodyRef.current = value;
+
+  const autoEditTitle = !initialTitle;
+  const [titleFocusRequest, setTitleFocusRequest] = useState(
+    titleFocusRequestProp > 0 ? titleFocusRequestProp : 1,
+  );
+
+  useEffect(() => {
+    if (titleFocusRequestProp > 0) {
+      setTitleFocusRequest(titleFocusRequestProp);
+    }
+  }, [titleFocusRequestProp]);
+
+  useEffect(() => {
+    if (!autoEditTitle) return;
+    const timers = [0, 50, 150, 300].map((ms) =>
+      window.setTimeout(() => {
+        setTitleFocusRequest((count) => count + 1);
+      }, ms),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [autoEditTitle]);
+
+  const { handleLeaveTitleForEditor } = useContentTitleEditorNavigation({
+    mode,
+    activateEditMode,
+    requestEditorFocus,
+  });
+
+  const submitCreate = useCallback(() => {
+    if (pdfUploading || submittedRef.current || !onSubmit) return;
+    submittedRef.current = true;
+    void Promise.resolve(
+      onSubmit({
+        title: titleRef.current.trim() || "Untitled",
+        body: bodyRef.current,
+        status: statusRef.current,
+        organizationId: organizationIdRef.current,
+        contactId: contactIdRef.current,
+        projectKey: projectKeyRef.current,
+        dueDate: dueDateRef.current,
+        receivedDate: receivedDateRef.current,
+        pdfFile: selectedPdfFileRef.current,
+      }),
+    ).catch(() => {
+      submittedRef.current = false;
+    });
+  }, [onSubmit, pdfUploading]);
+
+  const leaveTitleForBody = useCallback(() => {
+    handleLeaveTitleForEditor();
+    submitCreate();
+  }, [handleLeaveTitleForEditor, submitCreate]);
+
+  const enterBody = useCallback(() => {
+    activateEditMode();
+    submitCreate();
+  }, [activateEditMode, submitCreate]);
 
   const letter: LetterPropertiesDisplayLetter = {
     id: "compose",
@@ -181,41 +271,6 @@ export function LetterComposeView({
     }
   }
 
-  const composeActions = (
-    <div className="letter-compose-actions">
-      {onCancel ? (
-        <button
-          type="button"
-          className="letter-compose-actions__button"
-          onClick={onCancel}
-          disabled={pdfUploading}
-        >
-          Cancel
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="letter-compose-actions__button letter-compose-actions__button--primary"
-        disabled={pdfUploading}
-        onClick={() =>
-          onSubmit?.({
-            title,
-            body: value,
-            status,
-            organizationId,
-            contactId,
-            projectKey,
-            dueDate,
-            receivedDate,
-            pdfFile: selectedPdfFile,
-          })
-        }
-      >
-        {pdfUploading ? "Uploading…" : "Create"}
-      </button>
-    </div>
-  );
-
   return (
     <div
       className="letter-detail-split"
@@ -229,33 +284,46 @@ export function LetterComposeView({
           <div className="document-pdf-main">
             <div className="document-pdf-main__notes">
               <div className="inbox-detail-body inbox-detail-body--document">
-                <div className="letter-compose-title-row">
-                  <ContentDetailIconTitleHeader
-                    icon={<LetterIcon size={28} />}
-                    title={
-                      <OverviewNameEditor
-                        value={title}
-                        entityLabel="Letter"
-                        resetKey="compose"
-                        autoEdit={!initialTitle}
-                        onSave={(next) => {
-                          setTitle(next);
-                          return { ok: true };
-                        }}
-                      />
-                    }
-                  />
-                  {composeActions}
-                </div>
+                <ContentDetailIconTitleHeader
+                  icon={
+                    <LetterDetailIcon title={title.trim() || "New letter"} />
+                  }
+                  title={
+                    <OverviewNameEditor
+                      value={title}
+                      entityLabel="Letter"
+                      resetKey="compose"
+                      autoEdit={autoEditTitle}
+                      renameFocusRequest={titleFocusRequest}
+                      onDraftChange={(draft) => {
+                        titleRef.current = draft;
+                      }}
+                      onLeaveTitle={() => {
+                        leaveTitleForBody();
+                      }}
+                      onSave={(next) => {
+                        titleRef.current = next;
+                        setTitle(next);
+                        return { ok: true };
+                      }}
+                    />
+                  }
+                />
                 <ContentMarkdownViewLayout
                   mode={mode}
                   editorActivated={editorActivated}
-                  onToggleMode={toggleViewMode}
+                  onToggleMode={() => {
+                    if (mode === "edit") {
+                      toggleViewMode();
+                      return;
+                    }
+                    enterBody();
+                  }}
                   editor={
                     <DocumentMarkdownEditor
                       value={value}
                       onChange={handleChange}
-                      onBlur={handleBlurSave}
+                      disabled={pdfUploading}
                       focusRequest={editorFocusRequest}
                       ariaLabel="Letter notes"
                     />
@@ -265,7 +333,9 @@ export function LetterComposeView({
                       {value.trim() ? (
                         <DocumentMarkdownPreview body={value} />
                       ) : (
-                        <p className="overview-empty">Add notes…</p>
+                        <p className="content-markdown-empty-hint">
+                          This letter is empty.
+                        </p>
                       )}
                     </ContentMarkdownPreviewColumn>
                   }
@@ -335,7 +405,13 @@ export function LetterComposeView({
                 { value: "preview", label: "Preview" },
                 { value: "edit", label: "Edit" },
               ]}
-              onChange={setViewMode}
+              onChange={(nextMode) => {
+                if (nextMode === "edit") {
+                  enterBody();
+                  return;
+                }
+                setViewMode(nextMode);
+              }}
               ariaLabel="Content view mode"
             />
           </FloatingPillToggleDock>

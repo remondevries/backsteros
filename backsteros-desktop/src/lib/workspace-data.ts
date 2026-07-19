@@ -242,14 +242,14 @@ export type DesktopWorkspaceData = {
     content?: string;
     folderPath?: string;
     parentId?: string | null;
-  }) => Promise<{ id: string; path: string }>;
+  }) => Promise<{ id: string; path: string; contentVersion: number }>;
   createProjectDocument: (input: {
     projectId: string;
     title: string;
     content?: string;
     folderPath?: string;
     parentId?: string | null;
-  }) => Promise<{ id: string; path: string }>;
+  }) => Promise<{ id: string; path: string; contentVersion: number }>;
   createKnowledgeFolder: (input: {
     title: string;
     parentId?: string | null;
@@ -983,7 +983,11 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
         },
       );
       await seedDocumentLocal(document);
-      return { id: document.id, path: document.path };
+      return {
+        id: document.id,
+        path: document.path,
+        contentVersion: document.contentVersion,
+      };
     },
     [authenticated, client, seedDocumentLocal],
   );
@@ -1021,7 +1025,11 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
         },
       );
       await seedDocumentLocal(document);
-      return { id: document.id, path: document.path };
+      return {
+        id: document.id,
+        path: document.path,
+        contentVersion: document.contentVersion,
+      };
     },
     [authenticated, client, seedDocumentLocal],
   );

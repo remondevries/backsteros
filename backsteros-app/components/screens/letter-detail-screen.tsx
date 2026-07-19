@@ -12,12 +12,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ContactRouteBreadcrumb } from "@/components/contacts/contact-route-breadcrumb";
+import { ContentDetailIconTitleHeader } from "@/components/content/content-detail-title-header";
 import {
-  buildContentIconTitleHeaders,
-  ContentDetailStaticTitle,
-} from "@/components/content/content-detail-title-header";
-import {
-  ContentMarkdownPreviewBody,
+  ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
 } from "@/components/content/content-markdown-view-layout";
 import { useContentTitleEditorNavigation } from "@/components/content/use-content-title-editor-navigation";
@@ -434,14 +431,6 @@ function LetterDetailScreenInner({
     />
   );
 
-  const { editHeader, previewTitleHeader } = buildContentIconTitleHeaders({
-    icon: letterDetailIcon,
-    editTitle: letterTitleEditor,
-    previewTitle: (
-      <ContentDetailStaticTitle>{letter.title}</ContentDetailStaticTitle>
-    ),
-  });
-
   const viewModeToggle = (
     <SegmentedPillToggle
       value={mode}
@@ -525,10 +514,15 @@ function LetterDetailScreenInner({
         >
           {!pdfFillsContent ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div className="mx-auto w-full shrink-0">
+                <ContentDetailIconTitleHeader
+                  icon={letterDetailIcon}
+                  title={letterTitleEditor}
+                />
+              </div>
               <ContentMarkdownViewLayout
                 mode={mode}
                 editorActivated={editorActivated}
-                editHeader={editHeader}
                 onToggleMode={toggleViewMode}
                 editor={
                   <DocumentMarkdownEditor
@@ -543,7 +537,7 @@ function LetterDetailScreenInner({
                   />
                 }
                 preview={
-                  <ContentMarkdownPreviewBody titleHeader={previewTitleHeader}>
+                  <ContentMarkdownPreviewColumn includeTopInset={false}>
                     {context.trim() ? (
                       <DocumentMarkdownPreview
                         body={context}
@@ -551,10 +545,10 @@ function LetterDetailScreenInner({
                       />
                     ) : (
                       <p className="text-sm text-foreground/40">
-                        Add notes about this letter…
+                        This letter is empty.
                       </p>
                     )}
-                  </ContentMarkdownPreviewBody>
+                  </ContentMarkdownPreviewColumn>
                 }
               />
 

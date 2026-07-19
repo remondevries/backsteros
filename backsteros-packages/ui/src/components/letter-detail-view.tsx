@@ -7,14 +7,12 @@ import {
   ContentMarkdownViewLayout,
   useMarkdownDetailEditor,
 } from "./content-markdown-view-layout.js";
-import {
-  ContentDetailIconTitleHeader,
-} from "./content-detail-title-header.js";
+import { ContentDetailIconTitleHeader } from "./content-detail-title-header.js";
 import { DetailWithPropertiesLayout } from "./detail-with-properties-layout.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
-import { LetterIcon } from "./letter-icon.js";
+import { LetterDetailIcon } from "./letter-detail-icon.js";
 import {
   LetterPropertiesDisplay,
   type LetterPropertiesDisplayLetter,
@@ -95,7 +93,7 @@ export type LetterDetailViewProps = {
 /**
  * Letter detail — matches web LetterDetailScreen structure:
  * left column = notes + PDF dock; right rail = From / Properties / Project.
- * Breadcrumbs belong in content chrome above page-scroll (not inline).
+ * Title shell matches documents empty-create (header above constrained body).
  */
 export function LetterDetailView({
   letter,
@@ -213,36 +211,33 @@ export function LetterDetailView({
     <div className="document-pdf-main__notes">
       <div className="inbox-detail-body inbox-detail-body--document">
         <ContentDetailIconTitleHeader
-          icon={<LetterIcon size={28} />}
+          icon={<LetterDetailIcon title={title} />}
           title={
-            <OverviewNameEditor
-              value={title}
-              entityLabel="Letter"
-              resetKey={letter.id}
-              renameFocusRequest={titleRenameFocusRequest}
-              onLeaveTitle={() => handleLeaveTitleForEditor()}
-              onSave={async (next) => {
-                if (!onSaveTitle) {
-                  setTitle(next);
-                  return { ok: true };
-                }
-                const result = await onSaveTitle(next);
-                if (result.ok) setTitle(next);
-                return result;
-              }}
-            />
+            <>
+              <OverviewNameEditor
+                value={title}
+                entityLabel="Letter"
+                resetKey={letter.id}
+                renameFocusRequest={titleRenameFocusRequest}
+                onLeaveTitle={() => handleLeaveTitleForEditor()}
+                onSave={async (next) => {
+                  if (!onSaveTitle) {
+                    setTitle(next);
+                    return { ok: true };
+                  }
+                  const result = await onSaveTitle(next);
+                  if (result.ok) setTitle(next);
+                  return result;
+                }}
+              />
+              {headerMeta ? (
+                <div className="inbox-detail-meta content-detail-title-meta">
+                  {headerMeta}
+                </div>
+              ) : null}
+            </>
           }
         />
-        {letter.displayId || headerMeta ? (
-          <div className="inbox-detail-meta content-detail-title-meta">
-            {letter.displayId ? (
-              <span className="content-detail-display-id">
-                {letter.displayId}
-              </span>
-            ) : null}
-            {headerMeta}
-          </div>
-        ) : null}
         <ContentMarkdownViewLayout
           mode={mode}
           editorActivated={editorActivated}
@@ -261,7 +256,9 @@ export function LetterDetailView({
               {value.trim() ? (
                 <DocumentMarkdownPreview body={value} />
               ) : (
-                <p className="overview-empty">Add notes…</p>
+                <p className="content-markdown-empty-hint">
+                  This letter is empty.
+                </p>
               )}
             </ContentMarkdownPreviewColumn>
           }

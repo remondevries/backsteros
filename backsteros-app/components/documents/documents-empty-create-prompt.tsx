@@ -2,19 +2,10 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import {
-  CONTENT_DETAIL_TITLE_CLASS,
-  ContentDetailIconTitleHeader,
-} from "@/components/content/content-detail-title-header";
+import { ContentDetailIconTitleHeader } from "@/components/content/content-detail-title-header";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -22,6 +13,7 @@ import {
 import { useContentTitleEditorNavigation } from "@/components/content/use-content-title-editor-navigation";
 import { DocumentMarkdownPreview } from "@/components/documents/document-markdown-preview";
 import { DocumentOcticon } from "@/components/documents/document-octicon";
+import { OverviewNameEditor } from "@/components/overview/overview-name-editor";
 import { FloatingPillToggleDock } from "@/components/ui/floating-pill-toggle-dock";
 import { SegmentedPillToggle } from "@/components/ui/segmented-pill-toggle";
 import {
@@ -60,45 +52,70 @@ type DocumentsEmptyCreatePromptProps =
     };
 
 /**
- * Empty documents pane matching letter create: icon + title + markdown
- * preview/edit shell (preview by default; CodeMirror activates on demand).
+ * Empty documents pane. Enter/Tab focuses the body, then creates and navigates
+ * to the real document detail (exit this compose shell).
  */
 function DocumentsEmptyCreatePromptInner(
   props: DocumentsEmptyCreatePromptProps,
 ) {
   const router = useRouter();
   const { catalog: mentionCatalog } = useMentionCatalog();
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const submittedRef = useRef(false);
   const [title, setTitle] = useState("New document");
+  const titleRef = useRef(title);
   const [markdown, setMarkdown] = useState("");
+  const markdownRef = useRef(markdown);
+  markdownRef.current = markdown;
   const [mode, setMode] = useState<DocumentViewMode>("preview");
   const modeRef = useRef<DocumentViewMode>(mode);
   modeRef.current = mode;
   const [editorActivated, setEditorActivated] = useState(false);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
+  const [titleFocusRequest, setTitleFocusRequest] = useState(1);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
-  }, []);
-
-  // Warm the editor chunk so Enter → edit does not race a cold dynamic import.
   useEffect(() => {
     void import("@/components/documents/document-markdown-editor");
   }, []);
 
+  useEffect(() => {
+    const timers = [0, 50, 150, 300].map((ms) =>
+      window.setTimeout(() => {
+        setTitleFocusRequest((count) => count + 1);
+      }, ms),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, []);
+
   const activateEditMode = useCallback(
     ({ focusEditor = true }: { focusEditor?: boolean } = {}) => {
-      setEditorActivated(true);
       modeRef.current = "edit";
+      setEditorActivated(true);
       setMode("edit");
       if (focusEditor) {
-        setEditorFocusRequest((value) => value + 1);
+        setEditorFocusRequest((count) => count + 1);
+        requestAnimationFrame(() => {
+          setEditorFocusRequest((count) => count + 1);
+        });
       }
     },
     [],
   );
+
+  const requestEditorFocus = useCallback(() => {
+    setEditorFocusRequest((count) => count + 1);
+    requestAnimationFrame(() => {
+      setEditorFocusRequest((count) => count + 1);
+    });
+  }, []);
+
+  const { handleLeaveTitleForEditor } = useContentTitleEditorNavigation({
+    mode,
+    activateEditMode,
+    requestEditorFocus,
+  });
 
   const switchToPreview = useCallback(() => {
     modeRef.current = "preview";
@@ -106,71 +123,36 @@ function DocumentsEmptyCreatePromptInner(
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-  }, []);
-
-  const requestEditorFocus = useCallback(() => {
-    setEditorFocusRequest((value) => value + 1);
-  }, []);
-
-  const focusTitle = useCallback(() => {
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
-  }, []);
-
-  const { requestTitleFocus, handleLeaveTitleForEditor } =
-    useContentTitleEditorNavigation({
-      mode,
-      activateEditMode,
-      requestEditorFocus,
-      focusTitle,
-    });
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "e") {
-        event.preventDefault();
-        if (modeRef.current === "edit") {
-          switchToPreview();
-        } else {
-          activateEditMode();
-        }
-        return;
-      }
-
-      if (key === "p") {
-        event.preventDefault();
-        switchToPreview();
-      }
+    const focusedCm = document.querySelector(
+      ".cm-editor.cm-focused .cm-content",
+    );
+    if (focusedCm instanceof HTMLElement) {
+      focusedCm.blur();
     }
+  }, []);
 
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activateEditMode, switchToPreview]);
+  const createDocument = useCallback(() => {
+    if (isPending || submittedRef.current) return;
+    submittedRef.current = true;
 
-  function createDocument() {
-    if (isPending) return;
-
-    const nextTitle = title.trim() || "Untitled";
+    const nextTitle = titleRef.current.trim() || "Untitled";
+    const nextMarkdown = markdownRef.current;
 
     startTransition(async () => {
       const result =
         props.variant === "knowledge"
           ? await createKnowledgeDocumentAction({
               title: nextTitle,
-              content: markdown,
+              content: nextMarkdown,
             })
           : await createDocumentAction({
               projectId: props.projectId,
               title: nextTitle,
-              content: markdown,
+              content: nextMarkdown,
             });
 
       if (!result.ok) {
+        submittedRef.current = false;
         toast.error(result.error);
         return;
       }
@@ -184,9 +166,46 @@ function DocumentsEmptyCreatePromptInner(
               props.scope,
             );
 
-      router.push(href);
+      router.replace(href);
     });
-  }
+  }, [isPending, props, router]);
+
+  const leaveTitleForBody = useCallback(() => {
+    handleLeaveTitleForEditor();
+    createDocument();
+  }, [createDocument, handleLeaveTitleForEditor]);
+
+  const enterBody = useCallback(() => {
+    activateEditMode();
+    createDocument();
+  }, [activateEditMode, createDocument]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "e") {
+        event.preventDefault();
+        if (modeRef.current === "edit") {
+          switchToPreview();
+        } else {
+          enterBody();
+        }
+        return;
+      }
+
+      if (key === "p") {
+        event.preventDefault();
+        switchToPreview();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [enterBody, switchToPreview]);
 
   const documentIcon = (
     <span
@@ -195,54 +214,6 @@ function DocumentsEmptyCreatePromptInner(
     >
       <DocumentOcticon icon={null} size={16} className="text-foreground/85" />
     </span>
-  );
-
-  const titleInput = (
-    <h1 className={`${CONTENT_DETAIL_TITLE_CLASS} w-full min-w-0`}>
-      <input
-        ref={titleInputRef}
-        type="text"
-        value={title}
-        disabled={isPending}
-        placeholder="Document title"
-        aria-label="Document title"
-        onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            titleInputRef.current?.blur();
-            return;
-          }
-          if (
-            event.key === "Enter" ||
-            (event.key === "Tab" && !event.shiftKey)
-          ) {
-            event.preventDefault();
-            handleLeaveTitleForEditor();
-          }
-        }}
-        className="w-full border-none bg-transparent p-0 font-[inherit] text-[length:inherit] leading-[inherit] text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-60"
-      />
-    </h1>
-  );
-
-  const viewModeToggle = (
-    <SegmentedPillToggle
-      value={mode}
-      options={[
-        { value: "edit", label: "Edit" },
-        { value: "preview", label: "Preview" },
-      ]}
-      onChange={(nextMode) => {
-        if (nextMode === "edit") {
-          activateEditMode();
-          return;
-        }
-        switchToPreview();
-      }}
-      ariaLabel="Document view mode"
-      className="pointer-events-auto"
-    />
   );
 
   return (
@@ -254,7 +225,26 @@ function DocumentsEmptyCreatePromptInner(
       <div className="mx-auto w-full shrink-0">
         <ContentDetailIconTitleHeader
           icon={documentIcon}
-          title={titleInput}
+          title={
+            <OverviewNameEditor
+              value={title}
+              entityLabel="Document"
+              resetKey="empty-create"
+              autoEdit
+              renameFocusRequest={titleFocusRequest}
+              onDraftChange={(draft) => {
+                titleRef.current = draft;
+              }}
+              onLeaveTitle={() => {
+                leaveTitleForBody();
+              }}
+              onSave={async (next) => {
+                titleRef.current = next;
+                setTitle(next);
+                return { ok: true };
+              }}
+            />
+          }
         />
       </div>
 
@@ -266,17 +256,16 @@ function DocumentsEmptyCreatePromptInner(
             switchToPreview();
             return;
           }
-          activateEditMode();
+          enterBody();
         }}
         editor={
           <DocumentMarkdownEditor
             value={markdown}
             onChange={setMarkdown}
             disabled={isPending}
+            focusRequest={editorFocusRequest}
             ariaLabel="Document content"
             mentionCatalog={mentionCatalog}
-            focusRequest={editorFocusRequest}
-            onShiftTabFocusTitle={requestTitleFocus}
           />
         }
         preview={
@@ -296,17 +285,22 @@ function DocumentsEmptyCreatePromptInner(
       />
 
       <FloatingPillToggleDock>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-1.5 text-sm font-medium text-foreground hover:bg-white/[0.1] disabled:opacity-40"
-            disabled={isPending}
-            onClick={createDocument}
-          >
-            {isPending ? "Creating…" : "Create document"}
-          </button>
-          {viewModeToggle}
-        </div>
+        <SegmentedPillToggle
+          value={mode}
+          options={[
+            { value: "edit", label: "Edit" },
+            { value: "preview", label: "Preview" },
+          ]}
+          onChange={(nextMode) => {
+            if (nextMode === "edit") {
+              enterBody();
+              return;
+            }
+            switchToPreview();
+          }}
+          ariaLabel="Document view mode"
+          className="pointer-events-auto"
+        />
       </FloatingPillToggleDock>
     </div>
   );

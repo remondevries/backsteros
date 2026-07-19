@@ -70,7 +70,8 @@ type LetterComposePropertiesPanelProps = {
   onOrganizationChange: (organizationId: string) => void;
   onContactChange: (contactId: string) => void;
   onFileSelect: (file: File | null) => void;
-  onSave: () => void;
+  /** When set, shows a Create letter button (legacy). Prefer create-on-leave-title. */
+  onSave?: () => void;
 };
 
 export function LetterComposePropertiesPanel({
@@ -447,14 +448,16 @@ export function LetterComposePropertiesPanel({
           </p>
         ) : null}
 
-        <button
-          type="button"
-          className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-medium text-foreground hover:bg-white/[0.1] disabled:opacity-40"
-          disabled={busy}
-          onClick={onSave}
-        >
-          {isPending ? "Creating…" : "Create letter"}
-        </button>
+        {onSave ? (
+          <button
+            type="button"
+            className="rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-medium text-foreground hover:bg-white/[0.1] disabled:opacity-40"
+            disabled={busy}
+            onClick={onSave}
+          >
+            {isPending ? "Creating…" : "Create letter"}
+          </button>
+        ) : null}
       </div>
     </div>
   );

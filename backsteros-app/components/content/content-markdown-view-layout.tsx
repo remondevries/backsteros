@@ -170,6 +170,19 @@ export function ContentMarkdownViewLayout({
     };
   }, [editorActivated, editorSurfaceReady]);
 
+  useEffect(() => {
+    if (mode !== "preview") return;
+    const root = editorShellRef.current;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && root?.contains(active)) {
+      active.blur();
+    }
+    const focusedCm = root?.querySelector(".cm-editor.cm-focused .cm-content");
+    if (focusedCm instanceof HTMLElement) {
+      focusedCm.blur();
+    }
+  }, [mode]);
+
   const handleContentDoubleClick = onToggleMode
     ? createContentViewModeDoubleClickHandler(mode, onToggleMode)
     : undefined;
@@ -191,6 +204,7 @@ export function ContentMarkdownViewLayout({
                 : "hidden"
           }
           aria-hidden={!showEditorSurface}
+          inert={!showEditorSurface ? true : undefined}
           onDoubleClick={handleContentDoubleClick}
         >
           {editHeader}

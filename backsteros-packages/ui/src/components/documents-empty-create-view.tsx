@@ -1,42 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
   useMarkdownDetailEditor,
 } from "./content-markdown-view-layout.js";
-import {
-  CONTENT_DETAIL_TITLE_CLASS,
-  ContentDetailIconTitleHeader,
-} from "./content-detail-title-header.js";
-import { DocumentIcon } from "./document-icon.js";
+import { ContentDetailIconTitleHeader } from "./content-detail-title-header.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
+import { DocumentOcticon } from "./document-octicon.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
+import { OverviewNameEditor } from "./overview-name-editor.js";
+import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+
+export type DocumentsEmptyCreateResult = {
+  id: string;
+  path: string;
+  contentVersion?: number;
+};
 
 export type DocumentsEmptyCreateViewProps = {
-  onCreate: (input: { title: string; content: string }) => void | Promise<void>;
+  /**
+   * Creates the document when leaving the title for the body.
+   * Host should navigate to the real detail view afterward (exit this compose shell).
+   */
+  onCreate: (input: {
+    title: string;
+    content: string;
+  }) => Promise<DocumentsEmptyCreateResult>;
   creating?: boolean;
+  /**
+   * Increment to re-focus the title (e.g. after delete → empty-create when a
+   * closing modal steals focus).
+   */
+  titleFocusRequest?: number;
 };
 
 /**
- * Empty project/knowledge documents pane — mirrors web DocumentsEmptyCreatePrompt
- * (icon + title + markdown shell + Create document).
+ * Empty project/knowledge documents pane.
+ * Title autofocus matches letter compose. Enter/Tab focuses the body, then
+ * creates and hands off to the host — do not keep this view mounted afterward.
  */
 export function DocumentsEmptyCreateView({
   onCreate,
   creating = false,
+  titleFocusRequest = 0,
 }: DocumentsEmptyCreateViewProps) {
+  const submittedRef = useRef(false);
+  // Stable `value` so OverviewNameEditor autoEdit is not reset on every keystroke.
   const [title, setTitle] = useState("New document");
+  const titleRef = useRef(title);
+  const markdownRef = useRef("");
+  const [focusRequest, setFocusRequest] = useState(
+    titleFocusRequest > 0 ? titleFocusRequest : 1,
+  );
+
+  useEffect(() => {
+    if (titleFocusRequest > 0) {
+      setFocusRequest(titleFocusRequest);
+    }
+  }, [titleFocusRequest]);
+
+  useEffect(() => {
+    // Delete-confirm close / route replace often lands after the first focus.
+    const timers = [0, 50, 150, 300].map((ms) =>
+      window.setTimeout(() => {
+        setFocusRequest((count) => count + 1);
+      }, ms),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, []);
+
   const {
     value: markdown,
     mode,
     editorActivated,
     editorFocusRequest,
     handleChange,
+    requestEditorFocus,
     activateEditMode,
     setViewMode,
     toggleViewMode,
@@ -44,6 +90,37 @@ export function DocumentsEmptyCreateView({
     initialValue: "",
     save: () => ({ ok: true }),
   });
+  markdownRef.current = markdown;
+
+  const { handleLeaveTitleForEditor } = useContentTitleEditorNavigation({
+    mode,
+    activateEditMode,
+    requestEditorFocus,
+  });
+
+  const submitCreate = useCallback(() => {
+    if (creating || submittedRef.current) return;
+    submittedRef.current = true;
+    void Promise.resolve(
+      onCreate({
+        title: titleRef.current.trim() || "Untitled",
+        content: markdownRef.current,
+      }),
+    ).catch(() => {
+      submittedRef.current = false;
+    });
+  }, [creating, onCreate]);
+
+  const leaveTitleForBody = useCallback(() => {
+    // Focus the body first so typing continues without waiting on the network.
+    handleLeaveTitleForEditor();
+    submitCreate();
+  }, [handleLeaveTitleForEditor, submitCreate]);
+
+  const enterBody = useCallback(() => {
+    activateEditMode();
+    submitCreate();
+  }, [activateEditMode, submitCreate]);
 
   return (
     <div
@@ -53,35 +130,51 @@ export function DocumentsEmptyCreateView({
     >
       <ContentDetailIconTitleHeader
         icon={
-          <span className="documents-empty-create__icon" aria-hidden="true">
-            <DocumentIcon size={16} />
-          </span>
+          <div className="document-detail-icon">
+            <span
+              className="document-detail-icon__button"
+              aria-hidden="true"
+            >
+              <DocumentOcticon
+                icon={null}
+                size={16}
+                className="document-detail-icon__glyph"
+              />
+            </span>
+          </div>
         }
         title={
-          <h1 className={CONTENT_DETAIL_TITLE_CLASS}>
-            <input
-              type="text"
-              className="documents-empty-create__title-input"
-              value={title}
-              disabled={creating}
-              placeholder="Document title"
-              aria-label="Document title"
-              onChange={(event) => setTitle(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === "Tab") {
-                  event.preventDefault();
-                  activateEditMode();
-                }
-              }}
-            />
-          </h1>
+          <OverviewNameEditor
+            value={title}
+            entityLabel="Document"
+            resetKey="empty-create"
+            autoEdit
+            renameFocusRequest={focusRequest}
+            onDraftChange={(draft) => {
+              titleRef.current = draft;
+            }}
+            onLeaveTitle={() => {
+              leaveTitleForBody();
+            }}
+            onSave={(next) => {
+              titleRef.current = next;
+              setTitle(next);
+              return { ok: true };
+            }}
+          />
         }
       />
 
       <ContentMarkdownViewLayout
         mode={mode}
         editorActivated={editorActivated}
-        onToggleMode={toggleViewMode}
+        onToggleMode={() => {
+          if (mode === "edit") {
+            toggleViewMode();
+            return;
+          }
+          enterBody();
+        }}
         editor={
           <DocumentMarkdownEditor
             value={markdown}
@@ -96,7 +189,7 @@ export function DocumentsEmptyCreateView({
             {markdown.trim() ? (
               <DocumentMarkdownPreview body={markdown} />
             ) : (
-              <p className="documents-empty-create__hint">
+              <p className="content-markdown-empty-hint">
                 This document is empty.
               </p>
             )}
@@ -104,30 +197,21 @@ export function DocumentsEmptyCreateView({
         }
         toggle={
           <FloatingPillToggleDock>
-            <div className="documents-empty-create__dock">
-              <button
-                type="button"
-                className="documents-empty-create__submit"
-                disabled={creating}
-                onClick={() => {
-                  void onCreate({
-                    title: title.trim() || "Untitled",
-                    content: markdown,
-                  });
-                }}
-              >
-                {creating ? "Creating…" : "Create document"}
-              </button>
-              <SegmentedPillToggle
-                value={mode}
-                options={[
-                  { value: "preview", label: "Preview" },
-                  { value: "edit", label: "Edit" },
-                ]}
-                onChange={setViewMode}
-                ariaLabel="Document view mode"
-              />
-            </div>
+            <SegmentedPillToggle
+              value={mode}
+              options={[
+                { value: "preview", label: "Preview" },
+                { value: "edit", label: "Edit" },
+              ]}
+              onChange={(nextMode) => {
+                if (nextMode === "edit") {
+                  enterBody();
+                  return;
+                }
+                setViewMode(nextMode);
+              }}
+              ariaLabel="Document view mode"
+            />
           </FloatingPillToggleDock>
         }
       />

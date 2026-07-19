@@ -12,7 +12,16 @@ export default defineConfig(async () => ({
   plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
 
   optimizeDeps: {
-    exclude: ["@journeyapps/wa-sqlite", "@powersync/web"],
+    // Workspace UI must not be prebundled — otherwise dist rebuilds are ignored
+    // until the Vite cache is cleared.
+    exclude: [
+      "@journeyapps/wa-sqlite",
+      "@powersync/web",
+      "@backsteros/ui",
+      "@backsteros/contracts",
+      "@backsteros/api-client",
+      "@backsteros/powersync-schema",
+    ],
   },
 
   // PowerSync workers code-split; Vite 7 defaults to iife which Rollup rejects.

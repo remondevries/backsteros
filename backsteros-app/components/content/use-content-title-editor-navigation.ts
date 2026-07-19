@@ -49,14 +49,8 @@ export function useContentTitleEditorNavigation({
     deferFocusAfterTitleLeave(requestEditorFocus);
   }, [activateEditMode, mode, requestEditorFocus]);
 
-  useTitleRenameShortcut(
-    useCallback(() => {
-      if (mode === "preview") {
-        activateEditMode({ focusEditor: false });
-      }
-      requestTitleFocus();
-    }, [activateEditMode, mode, requestTitleFocus]),
-  );
+  // Focus the title in the current view mode — do not switch to edit first.
+  useTitleRenameShortcut(requestTitleFocus);
 
   return {
     titleRenameFocusRequest,

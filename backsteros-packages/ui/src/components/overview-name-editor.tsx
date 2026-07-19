@@ -13,6 +13,8 @@ export type OverviewNameEditorProps = {
   renameFocusRequest?: number;
   /** When set, Enter/Tab commit then call this instead of staying on the title. */
   onLeaveTitle?: (reason: "enter" | "escape" | "tab") => void;
+  /** Fires on every keystroke while editing (compose / empty-create flows). */
+  onDraftChange?: (draft: string) => void;
   onSave: (
     name: string,
   ) =>
@@ -29,6 +31,7 @@ export function OverviewNameEditor({
   autoEdit = false,
   renameFocusRequest = 0,
   onLeaveTitle,
+  onDraftChange,
   onSave,
   onSaved,
 }: OverviewNameEditorProps) {
@@ -66,8 +69,30 @@ export function OverviewNameEditor({
 
   useLayoutEffect(() => {
     if (!editing) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    const input = inputRef.current;
+    if (!input) return;
+
+    const focusTitle = () => {
+      // Don't interrupt typing if the title already has focus.
+      if (document.activeElement === input) return;
+      input.focus();
+      input.select();
+    };
+
+    focusTitle();
+    // Side-panel / pathname keyboard nav / delete-modal close can steal focus
+    // after mount — re-assert across frames and short timeouts.
+    const frame = requestAnimationFrame(() => {
+      focusTitle();
+      requestAnimationFrame(focusTitle);
+    });
+    const timers = [50, 150, 300].map((ms) =>
+      window.setTimeout(focusTitle, ms),
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      for (const timer of timers) window.clearTimeout(timer);
+    };
   }, [editing, renameFocusRequest]);
 
   function cancelEditing() {
@@ -145,7 +170,9 @@ export function OverviewNameEditor({
             type="text"
             value={draft}
             onChange={(event) => {
-              setDraft(event.target.value);
+              const next = event.target.value;
+              setDraft(next);
+              onDraftChange?.(next);
               setError(null);
             }}
             onKeyDown={(event) => {

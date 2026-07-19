@@ -10,9 +10,7 @@ import { KnowledgeLayoutBreadcrumb } from "@/components/knowledge/knowledge-layo
 import { useApiResource } from "@/lib/api-context";
 import { getKnowledgeDocumentHref } from "@/lib/knowledge/navigation-path";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
-import {
-  mergeLocalAndApiByUpdatedAt,
-} from "@/lib/sync/prefer-local-or-api";
+import { mergeLocalAndApiByUpdatedAt } from "@/lib/sync/prefer-local-or-api";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -38,11 +36,13 @@ export function KnowledgeIndexScreen() {
       local.data?.map((row) => snakeRow(row) as ApiDocument),
       resource.data?.documents,
     );
-    return [...rows].sort((a, b) =>
-      (a.path || a.title || "").localeCompare(b.path || b.title || "", undefined, {
-        sensitivity: "base",
-      }),
-    );
+    return [...rows]
+      .filter((doc) => doc.kind !== "folder" && !doc.deletedAt)
+      .sort((a, b) =>
+        (a.path || a.title || "").localeCompare(b.path || b.title || "", undefined, {
+          sensitivity: "base",
+        }),
+      );
   }, [local.data, resource.data]);
 
   const first = documents[0] ?? null;

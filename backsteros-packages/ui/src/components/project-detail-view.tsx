@@ -162,6 +162,8 @@ export function ProjectDetailView({
     toggleViewMode,
   } = useMarkdownDetailEditor({
     initialValue: project.description ?? "",
+    // Description shortcuts must not steal ⌘E from documents/tasks/letters.
+    shortcutsEnabled: section === "overview",
     save: (next) => {
       if (!onSaveDescription) {
         console.info("[project-detail] save description", next.slice(0, 80));

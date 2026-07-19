@@ -2,8 +2,6 @@
 
 import { useEffect } from "react";
 
-import { parseLetterPdfAttachmentShortcutIndex } from "./letter-pdf-attachment-shortcut.js";
-import { isLetterDetailPath } from "./letters.js";
 import {
   normalizeTabLocation,
   parseSectionTabIndex,
@@ -13,6 +11,8 @@ import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
 /**
  * Number keys switch list/entity section tabs (Next useSectionTabShortcuts).
+ * On letter detail, 1–5 also select PDF attachments when no section tabs apply
+ * (e.g. global `/letters/…`); project/org/contact letter routes prefer section tabs.
  */
 export function useSectionTabShortcuts({
   enabled = true,
@@ -33,14 +33,6 @@ export function useSectionTabShortcuts({
     function handleKeyDown(event: KeyboardEvent) {
       if (commandPaletteOpen) return;
 
-      // Letter detail reuses 1–5 for PDF attachments.
-      if (
-        isLetterDetailPath(pathname) &&
-        parseLetterPdfAttachmentShortcutIndex(event) != null
-      ) {
-        return;
-      }
-
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }
@@ -59,7 +51,7 @@ export function useSectionTabShortcuts({
       if (normalizeTabLocation(targetHref) === current) return;
 
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       onNavigate(targetHref);
     }
 

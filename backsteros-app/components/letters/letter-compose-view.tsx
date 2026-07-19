@@ -146,7 +146,11 @@ function LetterComposeViewInner({
   })();
 
   const [title, setTitle] = useState("New letter");
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const [context, setContext] = useState("");
+  const contextRef = useRef(context);
+  contextRef.current = context;
   const [mode, setMode] = useState<LetterViewMode>("preview");
   const modeRef = useRef<LetterViewMode>(mode);
   modeRef.current = mode;
@@ -174,10 +178,33 @@ function LetterComposeViewInner({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const submittedRef = useRef(false);
+
+  const statusRef = useRef(status);
+  const dueDateRef = useRef(dueDate);
+  const receivedDateRef = useRef(receivedDate);
+  const projectIdRef = useRef(projectId);
+  const organizationIdRef = useRef(organizationId);
+  const contactIdRef = useRef(contactId);
+  const selectedFileRef = useRef(selectedFile);
+  statusRef.current = status;
+  dueDateRef.current = dueDate;
+  receivedDateRef.current = receivedDate;
+  projectIdRef.current = projectId;
+  organizationIdRef.current = organizationId;
+  contactIdRef.current = contactId;
+  selectedFileRef.current = selectedFile;
 
   useEffect(() => {
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
+    const timers = [0, 50, 150, 300].map((ms) =>
+      window.setTimeout(() => {
+        titleInputRef.current?.focus();
+        titleInputRef.current?.select();
+      }, ms),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
   }, []);
 
   // Warm the editor chunk so Enter → edit does not race a cold dynamic import.
@@ -222,6 +249,112 @@ function LetterComposeViewInner({
       focusTitle,
     });
 
+  const navigateToCreatedLetter = useCallback(
+    (result: { letterId: string; letterNumber: number | null }) => {
+      if (projectNavigate) {
+        if (result.letterNumber != null) {
+          router.replace(
+            getScopedProjectLetterHref(
+              projectNavigate.projectKey,
+              result.letterNumber,
+              projectNavigate.scope,
+            ),
+          );
+          return;
+        }
+        router.replace(
+          `${getScopedProjectLettersHref(projectNavigate.projectKey, projectNavigate.scope)}/${encodeURIComponent(result.letterId)}`,
+        );
+        return;
+      }
+
+      const selectedProject = assignableProjects.find(
+        (project) => project.id === projectIdRef.current,
+      );
+      if (selectedProject && result.letterNumber != null) {
+        router.replace(
+          getProjectLetterHref(selectedProject.key, result.letterNumber),
+        );
+        return;
+      }
+
+      if (result.letterNumber != null) {
+        router.replace(getLettersHref(result.letterNumber));
+        return;
+      }
+
+      router.replace(`/letters/${encodeURIComponent(result.letterId)}`);
+    },
+    [assignableProjects, projectNavigate, router],
+  );
+
+  const createLetter = useCallback(() => {
+    if (isPending || uploadingPdf || submittedRef.current) return;
+    submittedRef.current = true;
+
+    const trimmedTitle = titleRef.current.trim() || "Untitled";
+    const file = selectedFileRef.current;
+
+    if (file) {
+      flushSync(() => {
+        setUploadingPdf(true);
+        setUploadProgress(null);
+      });
+    }
+
+    startTransition(async () => {
+      setError(null);
+      const result = await createLetterAction({
+        title: trimmedTitle,
+        context: contextRef.current,
+        status: statusRef.current,
+        dueDate: dueDateRef.current || null,
+        receivedDate: receivedDateRef.current || null,
+        projectId: projectIdRef.current || null,
+        organizationId: organizationIdRef.current || null,
+        contactId: contactIdRef.current || null,
+      });
+
+      if (!result.ok) {
+        submittedRef.current = false;
+        setUploadingPdf(false);
+        setUploadProgress(null);
+        setError(result.error);
+        return;
+      }
+
+      if (file) {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
+        const upload = await uploadLetterPdfAction({
+          letterId: result.letterId,
+          file,
+          onProgress: setUploadProgress,
+        });
+        setUploadingPdf(false);
+        setUploadProgress(null);
+        if (!upload.ok) {
+          setError(upload.error);
+          navigateToCreatedLetter(result);
+          return;
+        }
+      }
+
+      navigateToCreatedLetter(result);
+    });
+  }, [isPending, navigateToCreatedLetter, uploadingPdf]);
+
+  const leaveTitleForBody = useCallback(() => {
+    handleLeaveTitleForEditor();
+    createLetter();
+  }, [createLetter, handleLeaveTitleForEditor]);
+
+  const enterBody = useCallback(() => {
+    activateEditMode();
+    createLetter();
+  }, [activateEditMode, createLetter]);
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
@@ -234,7 +367,7 @@ function LetterComposeViewInner({
         if (modeRef.current === "edit") {
           switchToPreview();
         } else {
-          activateEditMode();
+          enterBody();
         }
         return;
       }
@@ -247,99 +380,7 @@ function LetterComposeViewInner({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activateEditMode, switchToPreview]);
-
-  function navigateToCreatedLetter(result: {
-    letterId: string;
-    letterNumber: number | null;
-  }) {
-    if (projectNavigate) {
-      if (result.letterNumber != null) {
-        router.push(
-          getScopedProjectLetterHref(
-            projectNavigate.projectKey,
-            result.letterNumber,
-            projectNavigate.scope,
-          ),
-        );
-        return;
-      }
-      router.push(
-        `${getScopedProjectLettersHref(projectNavigate.projectKey, projectNavigate.scope)}/${encodeURIComponent(result.letterId)}`,
-      );
-      return;
-    }
-
-    const selectedProject = assignableProjects.find(
-      (project) => project.id === projectId,
-    );
-    if (selectedProject && result.letterNumber != null) {
-      router.push(getProjectLetterHref(selectedProject.key, result.letterNumber));
-      return;
-    }
-
-    if (result.letterNumber != null) {
-      router.push(getLettersHref(result.letterNumber));
-      return;
-    }
-
-    router.push(`/letters/${encodeURIComponent(result.letterId)}`);
-  }
-
-  function handleSubmit() {
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError("Letter title is required.");
-      return;
-    }
-
-    if (selectedFile) {
-      flushSync(() => {
-        setUploadingPdf(true);
-        setUploadProgress(null);
-      });
-    }
-
-    startTransition(async () => {
-      setError(null);
-      const result = await createLetterAction({
-        title: trimmedTitle,
-        context,
-        status,
-        dueDate: dueDate || null,
-        receivedDate: receivedDate || null,
-        projectId: projectId || null,
-        organizationId: organizationId || null,
-        contactId: contactId || null,
-      });
-
-      if (!result.ok) {
-        setUploadingPdf(false);
-        setUploadProgress(null);
-        setError(result.error);
-        return;
-      }
-
-      if (selectedFile) {
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => resolve());
-        });
-        const upload = await uploadLetterPdfAction({
-          letterId: result.letterId,
-          file: selectedFile,
-          onProgress: setUploadProgress,
-        });
-        setUploadingPdf(false);
-        setUploadProgress(null);
-        if (!upload.ok) {
-          setError(upload.error);
-          return;
-        }
-      }
-
-      navigateToCreatedLetter(result);
-    });
-  }
+  }, [enterBody, switchToPreview]);
 
   const viewModeToggle = (
     <SegmentedPillToggle
@@ -350,7 +391,7 @@ function LetterComposeViewInner({
       ]}
       onChange={(nextMode) => {
         if (nextMode === "edit") {
-          activateEditMode();
+          enterBody();
           return;
         }
         switchToPreview();
@@ -397,7 +438,7 @@ function LetterComposeViewInner({
                       (event.key === "Tab" && !event.shiftKey)
                     ) {
                       event.preventDefault();
-                      handleLeaveTitleForEditor();
+                      leaveTitleForBody();
                     }
                   }}
                   disabled={isPending}
@@ -418,7 +459,7 @@ function LetterComposeViewInner({
               switchToPreview();
               return;
             }
-            activateEditMode();
+            enterBody();
           }}
           editor={
             <DocumentMarkdownEditor
@@ -440,7 +481,7 @@ function LetterComposeViewInner({
                 />
               ) : (
                 <p className="text-sm text-foreground/40">
-                  Add notes about this letter…
+                  This letter is empty.
                 </p>
               )}
             </ContentMarkdownPreviewColumn>
@@ -488,7 +529,6 @@ function LetterComposeViewInner({
             }}
             onContactChange={setContactId}
             onFileSelect={setSelectedFile}
-            onSave={handleSubmit}
           />
           <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
         </div>

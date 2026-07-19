@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
 import {
@@ -24,6 +24,8 @@ export type MarkdownDocumentDetailViewProps = {
   title: string;
   initialBody?: string;
   resetKey?: string;
+  /** Open in edit mode once on mount (e.g. after empty-create handoff). */
+  startInEditMode?: boolean;
   /** Optional content above the title (e.g. journal Whoop rings). */
   leading?: ReactNode;
   /** Optional icon chip above the title (Next document/journal parity). */
@@ -60,6 +62,7 @@ export function MarkdownDocumentDetailView({
   title: initialTitle,
   initialBody = "",
   resetKey,
+  startInEditMode = false,
   leading,
   icon,
   footer,
@@ -72,11 +75,13 @@ export function MarkdownDocumentDetailView({
   const [title, setTitle] = useState(initialTitle);
   const [prevKey, setPrevKey] = useState(resetKey ?? initialTitle);
   const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
+  const startedInEditRef = useRef(false);
   const syncKey = resetKey ?? initialTitle;
   if (syncKey !== prevKey) {
     setPrevKey(syncKey);
     setTitle(initialTitle);
     setPrevInitialTitle(initialTitle);
+    startedInEditRef.current = false;
   } else if (initialTitle !== prevInitialTitle) {
     setPrevInitialTitle(initialTitle);
     setTitle(initialTitle);
@@ -111,6 +116,12 @@ export function MarkdownDocumentDetailView({
     },
   });
 
+  useEffect(() => {
+    if (!startInEditMode || startedInEditRef.current) return;
+    startedInEditRef.current = true;
+    activateEditMode();
+  }, [activateEditMode, startInEditMode]);
+
   const {
     titleRenameFocusRequest,
     handleLeaveTitleForEditor,
@@ -125,48 +136,45 @@ export function MarkdownDocumentDetailView({
   const canEditTitle = titleEditable;
   const canEditPreviewTitle = titleEditable && previewTitleEditable;
 
-  const documentTitleEditor = canEditTitle ? (
-    <OverviewNameEditor
-      value={title}
-      entityLabel={sectionLabel.replace(/s$/, "") || "Document"}
-      resetKey={syncKey}
-      renameFocusRequest={titleRenameFocusRequest}
-      onLeaveTitle={() => handleLeaveTitleForEditor()}
-      onSave={async (next) => {
-        if (!onSaveTitle) {
-          setTitle(next);
-          return { ok: true };
-        }
-        const result = await onSaveTitle(next);
-        if (result.ok) setTitle(next);
-        return result;
-      }}
-    />
-  ) : (
-    <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
-  );
+  const renderTitleEditor = (previewStatic: boolean) =>
+    canEditTitle && !(previewStatic && !canEditPreviewTitle) ? (
+      <OverviewNameEditor
+        value={title}
+        entityLabel={sectionLabel.replace(/s$/, "") || "Document"}
+        resetKey={syncKey}
+        renameFocusRequest={titleRenameFocusRequest}
+        onLeaveTitle={() => handleLeaveTitleForEditor()}
+        onSave={async (next) => {
+          if (!onSaveTitle) {
+            setTitle(next);
+            return { ok: true };
+          }
+          const result = await onSaveTitle(next);
+          if (result.ok) setTitle(next);
+          return result;
+        }}
+      />
+    ) : (
+      <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
+    );
 
-  const previewTitleNode = canEditPreviewTitle ? (
-    documentTitleEditor
-  ) : (
-    <ContentDetailStaticTitle>{title}</ContentDetailStaticTitle>
-  );
-
-  // Use the same borderless OverviewNameEditor in preview and edit so title
-  // chrome never diverges between journal entries (static h1 vs button).
+  // Separate edit/preview title instances — sharing one element remounts on
+  // mode switch and drops ⌘R focus into the body editor.
   const { editHeader, previewTitleHeader } = icon
     ? buildContentIconTitleHeaders({
         icon,
-        editTitle: documentTitleEditor,
-        previewTitle: previewTitleNode,
+        editTitle: renderTitleEditor(false),
+        previewTitle: renderTitleEditor(true),
       })
     : {
         editHeader: (
-          <ContentDetailTitleHeader>{documentTitleEditor}</ContentDetailTitleHeader>
+          <ContentDetailTitleHeader>
+            {renderTitleEditor(false)}
+          </ContentDetailTitleHeader>
         ),
         previewTitleHeader: (
           <ContentDetailTitleHeader inlinePadding={false}>
-            {previewTitleNode}
+            {renderTitleEditor(true)}
           </ContentDetailTitleHeader>
         ),
       };
@@ -196,7 +204,9 @@ export function MarkdownDocumentDetailView({
               {value.trim() ? (
                 <DocumentMarkdownPreview body={value} />
               ) : (
-                <p className="overview-empty">This document is empty.</p>
+                <p className="content-markdown-empty-hint">
+                  This document is empty.
+                </p>
               )}
             </ContentMarkdownPreviewBody>
             {footer}

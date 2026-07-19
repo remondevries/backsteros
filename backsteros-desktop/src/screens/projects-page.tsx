@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   DocumentsEmptyCreateView,
+  DocumentDetailIcon,
   DocumentDetailSkeleton,
   LetterComposeView,
   LetterDetailSkeleton,
@@ -62,6 +63,7 @@ import {
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
+import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
@@ -118,7 +120,13 @@ export function ProjectsPage({
     Record<string, Partial<WorkspaceProject>>
   >({});
   const [localDocuments, setLocalDocuments] = useState<KnowledgeListItem[]>([]);
+  const [omittedDocumentIds, setOmittedDocumentIds] = useState<string[]>([]);
+  const [omittedLetterIds, setOmittedLetterIds] = useState<string[]>([]);
   const [composingDocument, setComposingDocument] = useState(false);
+  const [creatingDocument, setCreatingDocument] = useState(false);
+  const [pendingEditDocumentId, setPendingEditDocumentId] = useState<
+    string | null
+  >(null);
   const [composePdfUploading, setComposePdfUploading] = useState(false);
   const [letterStatusOverride, setLetterStatusOverride] =
     useState<TaskStatus | null>(null);
@@ -133,10 +141,17 @@ export function ProjectsPage({
     ...project,
     ...projectOverlay[project.id],
   }));
-  const documents = useMemo(
-    () => [...workspace.projectDocuments, ...localDocuments],
-    [localDocuments, workspace.projectDocuments],
-  );
+  const documents = useMemo(() => {
+    const omitted = new Set(omittedDocumentIds);
+    const byId = new Map<string, KnowledgeListItem>();
+    for (const doc of workspace.projectDocuments) {
+      if (!omitted.has(doc.id)) byId.set(doc.id, doc);
+    }
+    for (const doc of localDocuments) {
+      if (!omitted.has(doc.id)) byId.set(doc.id, doc);
+    }
+    return [...byId.values()];
+  }, [localDocuments, omittedDocumentIds, workspace.projectDocuments]);
 
   const selected = useMemo(() => {
     if (!routeSlug) return null;
@@ -174,15 +189,30 @@ export function ProjectsPage({
       );
   }, [documents, selected]);
 
+  const readableProjectDocuments = useMemo(
+    () => projectDocuments.filter((document) => document.kind !== "folder"),
+    [projectDocuments],
+  );
+
   const projectLetters = useMemo(() => {
     if (!selected) return [];
     return letters.filter(
       (letter) =>
-        letter.projectId === selected.id ||
-        (letter.projectKey &&
-          letter.projectKey.toLowerCase() === selected.key.toLowerCase()),
+        !omittedLetterIds.includes(letter.id) &&
+        (letter.projectId === selected.id ||
+          (letter.projectKey &&
+            letter.projectKey.toLowerCase() === selected.key.toLowerCase())),
     );
-  }, [letters, selected]);
+  }, [letters, omittedLetterIds, selected]);
+
+  useEffect(() => {
+    if (omittedLetterIds.length === 0) return;
+    const present = new Set(letters.map((letter) => letter.id));
+    setOmittedLetterIds((current) => {
+      const next = current.filter((id) => present.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [letters, omittedLetterIds.length]);
 
   const selectedDocument = useMemo(() => {
     if (!documentPath) return null;
@@ -258,7 +288,7 @@ export function ProjectsPage({
   useEffect(() => {
     if (!selected || activeSection !== "documents" || documentPath) return;
     if (composingDocument) return;
-    const first = projectDocuments[0];
+    const first = readableProjectDocuments[0];
     if (!first) return;
     navigate(
       getScopedProjectDocumentHref(
@@ -273,7 +303,7 @@ export function ProjectsPage({
     composingDocument,
     documentPath,
     navigate,
-    projectDocuments,
+    readableProjectDocuments,
     routeScope,
     selected,
   ]);
@@ -298,8 +328,20 @@ export function ProjectsPage({
 
   useEffect(() => {
     setComposingDocument(false);
+    setPendingEditDocumentId(null);
+    setOmittedDocumentIds([]);
     setLetterStatusOverride(null);
   }, [selected?.id, letterSlug]);
+
+  useEffect(() => {
+    if (!pendingEditDocumentId || !selectedDocument) return;
+    if (pendingEditDocumentId !== selectedDocument.id) return;
+    // Child activates edit on mount; clear so remounts / saves don't re-enter edit.
+    const frame = requestAnimationFrame(() => {
+      setPendingEditDocumentId(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingEditDocumentId, selectedDocument]);
 
   const letterBreadcrumbTitle = composingLetter
     ? "New"
@@ -412,40 +454,96 @@ export function ProjectsPage({
     if (!selectedLetter || !selected) {
       return { ok: false as const, error: "Letter is required." };
     }
+    const deletedId = selectedLetter.id;
+    const remaining = projectLetters.filter((letter) => letter.id !== deletedId);
+    setOmittedLetterIds((current) =>
+      current.includes(deletedId) ? current : [...current, deletedId],
+    );
     try {
-      await workspace.softDeleteLetter(selectedLetter.id);
-      navigate(
-        getScopedProjectSectionHref(selected.key, "letters", routeScope),
-        { replace: true },
-      );
+      await workspace.softDeleteLetter(deletedId);
+      if (remaining.length === 0) {
+        navigate(
+          getScopedProjectSectionHref(selected.key, "letters", routeScope),
+          { replace: true },
+        );
+      } else {
+        const next = remaining[0]!;
+        if (next.number != null) {
+          navigate(
+            getScopedProjectLetterHref(selected.key, next.number, routeScope),
+            { replace: true },
+          );
+        } else {
+          navigate(
+            `${getScopedProjectSectionHref(selected.key, "letters", routeScope)}/${next.id}`,
+            { replace: true },
+          );
+        }
+      }
       return { ok: true as const };
     } catch (error) {
+      setOmittedLetterIds((current) =>
+        current.filter((id) => id !== deletedId),
+      );
       return {
         ok: false as const,
         error:
           error instanceof Error ? error.message : "Failed to delete letter.",
       };
     }
-  }, [navigate, routeScope, selected, selectedLetter, workspace]);
+  }, [
+    navigate,
+    projectLetters,
+    routeScope,
+    selected,
+    selectedLetter,
+    workspace,
+  ]);
 
   const handleDeleteDocument = useCallback(async () => {
     if (!selectedDocument || !selected) {
       return { ok: false as const, error: "Document is required." };
     }
+    const deletedId = selectedDocument.id;
+    const remaining = readableProjectDocuments.filter(
+      (document) => document.id !== deletedId,
+    );
+    setOmittedDocumentIds((current) =>
+      current.includes(deletedId) ? current : [...current, deletedId],
+    );
+    setLocalDocuments((current) =>
+      current.filter((doc) => doc.id !== deletedId),
+    );
     try {
-      const result = await workspace.deleteDocument(selectedDocument.id);
+      const result = await workspace.deleteDocument(deletedId);
       if (!result.ok) {
+        setOmittedDocumentIds((current) =>
+          current.filter((id) => id !== deletedId),
+        );
         return result;
       }
-      setLocalDocuments((current) =>
-        current.filter((doc) => doc.id !== selectedDocument.id),
-      );
-      navigate(
-        getScopedProjectSectionHref(selected.key, "documents", routeScope),
-        { replace: true },
-      );
+      if (remaining.length === 0) {
+        setComposingDocument(true);
+        navigate(
+          getScopedProjectSectionHref(selected.key, "documents", routeScope),
+          { replace: true },
+        );
+      } else {
+        const next = remaining[0]!;
+        navigate(
+          getScopedProjectDocumentHref(
+            selected.key,
+            next.path || next.id,
+            routeScope,
+          ),
+          { replace: true },
+        );
+      }
       return { ok: true as const };
     } catch (error) {
+      setOmittedDocumentIds((current) =>
+        current.filter((id) => id !== deletedId),
+      );
       return {
         ok: false as const,
         error:
@@ -454,7 +552,14 @@ export function ProjectsPage({
             : "Failed to delete document.",
       };
     }
-  }, [navigate, routeScope, selected, selectedDocument, workspace]);
+  }, [
+    navigate,
+    readableProjectDocuments,
+    routeScope,
+    selected,
+    selectedDocument,
+    workspace,
+  ]);
 
   if (!routeSlug) {
     const areaFilter =
@@ -692,15 +797,6 @@ export function ProjectsPage({
                   organizationId,
                 })
               }
-              onCancel={() =>
-                navigate(
-                  getScopedProjectSectionHref(
-                    projectKey,
-                    "overview",
-                    routeScope,
-                  ),
-                )
-              }
               pdfUploading={composePdfUploading}
               onSubmit={(payload) => {
                 const orgId =
@@ -720,6 +816,7 @@ export function ProjectsPage({
                       ? payload.receivedDate.toISOString()
                       : null,
                   });
+                  setOmittedLetterIds([]);
                   if (payload.pdfFile) {
                     setComposePdfUploading(true);
                     const upload = await uploadLetterPdfFile(
@@ -740,11 +837,13 @@ export function ProjectsPage({
                         created.number,
                         routeScope,
                       ),
+                      { replace: true },
                     );
                     return;
                   }
                   navigate(
                     `${getScopedProjectSectionHref(projectKey, "letters", routeScope)}/${created.id}`,
+                    { replace: true },
                   );
                 })();
               }}
@@ -933,37 +1032,52 @@ export function ProjectsPage({
 
     if (sectionId === "documents") {
       const showEmptyCreate =
-        composingDocument || projectDocuments.length === 0;
+        composingDocument || readableProjectDocuments.length === 0;
 
       return (
         <ProjectDocumentsView>
           {showEmptyCreate ? (
             <DocumentsEmptyCreateView
-              onCreate={({ title, content }) => {
-                void workspace
-                  .createProjectDocument({
+              creating={creatingDocument}
+              onCreate={async ({ title, content }) => {
+                setCreatingDocument(true);
+                try {
+                  const created = await workspace.createProjectDocument({
                     projectId: project.id,
                     title,
                     content,
-                  })
-                  .then((created) => {
-                    const item: KnowledgeListItem = {
-                      id: created.id,
-                      title,
-                      path: created.path,
-                      projectId: project.id,
-                      kind: "document",
-                    };
-                    setLocalDocuments((current) => [...current, item]);
-                    setComposingDocument(false);
-                    navigate(
-                      getScopedProjectDocumentHref(
-                        projectKey,
-                        created.path || created.id,
-                        routeScope,
-                      ),
-                    );
                   });
+                  const item: KnowledgeListItem = {
+                    id: created.id,
+                    title,
+                    path: created.path,
+                    projectId: project.id,
+                    kind: "document",
+                  };
+                  setLocalDocuments((current) =>
+                    current.some((entry) => entry.id === created.id)
+                      ? current
+                      : [...current, item],
+                  );
+                  writeDocumentContentCache(created.id, {
+                    content,
+                    contentVersion: created.contentVersion,
+                  });
+                  setPendingEditDocumentId(created.id);
+                  setOmittedDocumentIds([]);
+                  setComposingDocument(false);
+                  navigate(
+                    getScopedProjectDocumentHref(
+                      projectKey,
+                      created.path || created.id,
+                      routeScope,
+                    ),
+                    { replace: true },
+                  );
+                  return created;
+                } finally {
+                  setCreatingDocument(false);
+                }
               }}
             />
           ) : documentPath && !selectedDocument ? (
@@ -987,6 +1101,19 @@ export function ProjectsPage({
                   sectionLabel="Documents"
                   title={selectedDocument.title}
                   resetKey={selectedDocument.id}
+                  startInEditMode={
+                    pendingEditDocumentId === selectedDocument.id
+                  }
+                  icon={
+                    <DocumentDetailIcon
+                      documentId={selectedDocument.id}
+                      icon={selectedDocument.icon ?? null}
+                      title={selectedDocument.title}
+                      onSaveIcon={(icon) =>
+                        workspace.updateDocumentIcon(selectedDocument.id, icon)
+                      }
+                    />
+                  }
                   initialBody={getDocumentEditorBody(
                     documentContent.initialBody,
                     selectedDocument.title,

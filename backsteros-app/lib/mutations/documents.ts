@@ -188,9 +188,12 @@ export async function deleteDocumentEntryAction(input: {
   id: string;
 }): Promise<DocumentMutationResult> {
   try {
-    const { client, refresh } = getMutationContext();
+    const { client, sync, refresh } = getMutationContext();
     await client.requestJson(`/api/v1/documents/${input.id}`, {
       method: "DELETE",
+    });
+    await patchDocumentLocal(sync, input.id, {
+      deletedAt: new Date().toISOString(),
     });
     refresh();
     return { ok: true };

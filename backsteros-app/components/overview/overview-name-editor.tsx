@@ -13,6 +13,8 @@ type OverviewNameEditorProps = {
   renameFocusRequest?: number;
   /** When set, Enter/Tab commit then call this instead of staying on the title. */
   onLeaveTitle?: (reason: "enter" | "escape" | "tab") => void;
+  /** Fires on every keystroke while editing (compose / empty-create flows). */
+  onDraftChange?: (draft: string) => void;
   onSave: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   onSaved?: (name: string) => void;
 };
@@ -26,10 +28,12 @@ export function OverviewNameEditor({
   autoEdit = false,
   renameFocusRequest = 0,
   onLeaveTitle,
+  onDraftChange,
   onSave,
   onSaved,
 }: OverviewNameEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [editing, setEditing] = useState(autoEdit);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
@@ -62,8 +66,29 @@ export function OverviewNameEditor({
 
   useLayoutEffect(() => {
     if (!editing) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    const input = inputRef.current;
+    if (!input) return;
+
+    const focusTitle = () => {
+      if (document.activeElement === input) return;
+      input.focus();
+      input.select();
+    };
+
+    focusTitle();
+    // Side-panel / pathname keyboard nav / delete-modal close can steal focus
+    // after mount — re-assert across frames and short timeouts.
+    const frame = requestAnimationFrame(() => {
+      focusTitle();
+      requestAnimationFrame(focusTitle);
+    });
+    const timers = [50, 150, 300].map((ms) =>
+      window.setTimeout(focusTitle, ms),
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      for (const timer of timers) window.clearTimeout(timer);
+    };
   }, [editing, renameFocusRequest]);
 
   function cancelEditing() {
@@ -141,8 +166,10 @@ export function OverviewNameEditor({
             type="text"
             value={draft}
             onChange={(event) => {
-              setDraft(event.target.value);
+              const next = event.target.value;
+              setDraft(next);
               setError(null);
+              onDraftChange?.(next);
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -186,6 +213,7 @@ export function OverviewNameEditor({
     <div className="flex flex-col gap-1">
       <h1 className={titleClassName}>
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => {
             setEditing(true);

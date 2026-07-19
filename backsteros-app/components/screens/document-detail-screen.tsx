@@ -476,12 +476,25 @@ function DocumentDetailScreenInner({
     />
   );
 
+  const previewTitleEditor = isJournal ? (
+    <ContentDetailStaticTitle>{resolvedDisplayTitle}</ContentDetailStaticTitle>
+  ) : (
+    <DocumentTitleEditor
+      documentId={documentId}
+      value={displayTitle}
+      renameFocusRequest={titleRenameFocusRequest}
+      onLeaveTitle={handleLeaveTitleForEditor}
+      onTitleSaved={(title) => {
+        setDisplayTitle(title);
+        metadata.reload();
+      }}
+    />
+  );
+
   const { editHeader, previewTitleHeader } = buildContentIconTitleHeaders({
     icon: documentDetailIcon,
     editTitle: documentTitleEditor,
-    previewTitle: (
-      <ContentDetailStaticTitle>{resolvedDisplayTitle}</ContentDetailStaticTitle>
-    ),
+    previewTitle: previewTitleEditor,
   });
 
   return (

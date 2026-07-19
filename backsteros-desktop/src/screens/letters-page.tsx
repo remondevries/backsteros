@@ -48,6 +48,7 @@ export function LettersPage({
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const [composePdfUploading, setComposePdfUploading] = useState(false);
+  const [omittedLetterIds, setOmittedLetterIds] = useState<string[]>([]);
   const [statusOverride, setStatusOverride] = useState<TaskStatus | null>(null);
   const [dueDateOverride, setDueDateOverride] = useState<
     Date | null | undefined
@@ -59,7 +60,25 @@ export function LettersPage({
   const [contactId, setContactId] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
 
-  const { letters, organizations, contacts, projects } = workspace;
+  const { letters: workspaceLetters, organizations, contacts, projects } =
+    workspace;
+
+  const letters = useMemo(
+    () =>
+      workspaceLetters.filter(
+        (letter) => !omittedLetterIds.includes(letter.id),
+      ),
+    [omittedLetterIds, workspaceLetters],
+  );
+
+  useEffect(() => {
+    if (omittedLetterIds.length === 0) return;
+    const present = new Set(workspaceLetters.map((letter) => letter.id));
+    setOmittedLetterIds((current) => {
+      const next = current.filter((id) => present.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [omittedLetterIds.length, workspaceLetters]);
 
   const selected = slug
     ? letters.find((letter) => letterMatchesSlug(letter, slug)) ?? null
@@ -245,18 +264,30 @@ export function LettersPage({
     if (!letter) {
       return { ok: false as const, error: "Letter is required." };
     }
+    const deletedId = letter.id;
+    const remaining = letters.filter((entry) => entry.id !== deletedId);
+    setOmittedLetterIds((current) =>
+      current.includes(deletedId) ? current : [...current, deletedId],
+    );
     try {
-      await workspace.softDeleteLetter(letter.id);
-      navigate(backHref, { replace: true });
+      await workspace.softDeleteLetter(deletedId);
+      if (remaining.length === 0) {
+        navigate(backHref, { replace: true });
+      } else {
+        navigate(letterDetailHref(remaining[0]!), { replace: true });
+      }
       return { ok: true as const };
     } catch (error) {
+      setOmittedLetterIds((current) =>
+        current.filter((id) => id !== deletedId),
+      );
       return {
         ok: false as const,
         error:
           error instanceof Error ? error.message : "Failed to delete letter.",
       };
     }
-  }, [backHref, letter, navigate, workspace]);
+  }, [backHref, letter, letterDetailHref, letters, navigate, workspace]);
 
   // Match Next `/letters` index: empty list opens compose instead of a stuck skeleton.
   const showCompose =
@@ -273,18 +304,6 @@ export function LettersPage({
     const composeStatus = composeStatusParam
       ? migrateLegacyTaskStatus(composeStatusParam)
       : undefined;
-    const composeCancelHref =
-      backHref !== "/letters"
-        ? backHref
-        : composeOrganizationId
-          ? `/organizations/${
-              organizations.find((org) => org.id === composeOrganizationId)
-                ?.number ??
-              organizations.find((org) => org.id === composeOrganizationId)
-                ?.key ??
-              composeOrganizationId
-            }/letters`
-          : "/letters";
 
     return (
       <LetterComposeView
@@ -303,7 +322,6 @@ export function LettersPage({
             organizationId,
           })
         }
-        onCancel={() => navigate(composeCancelHref)}
         pdfUploading={composePdfUploading}
         onSubmit={(payload) => {
           const project = payload.projectKey
@@ -324,6 +342,7 @@ export function LettersPage({
                 ? payload.receivedDate.toISOString()
                 : null,
             });
+            setOmittedLetterIds([]);
             if (payload.pdfFile) {
               setComposePdfUploading(true);
               const upload = await uploadLetterPdfFile(
@@ -337,7 +356,7 @@ export function LettersPage({
                 return;
               }
             }
-            navigate(letterDetailHref(created));
+            navigate(letterDetailHref(created), { replace: true });
           })();
         }}
       />

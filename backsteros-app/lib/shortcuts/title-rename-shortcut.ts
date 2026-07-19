@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useLatestRef } from "@/hooks/use-latest-ref";
 import { requestDocumentTreeFolderRename } from "@/lib/shortcuts/document-tree-folder-rename-shortcut";
 import { getFocusedListKeyboardItemId } from "@/lib/shortcuts/focused-list-keyboard-item";
-import { shouldBlockPageShortcuts } from "@/lib/shortcuts/is-blocking-modal-open";
+import { isBlockingModalOpen } from "@/lib/shortcuts/is-blocking-modal-open";
 
 export function isTitleRenameShortcut(event: KeyboardEvent): boolean {
   return (
@@ -56,7 +56,8 @@ export function useTitleRenameShortcut(onRename: () => void): void {
         return;
       }
 
-      if (shouldBlockPageShortcuts()) {
+      // Allow ⌘R while the body editor is open — only block for modals.
+      if (isBlockingModalOpen()) {
         return;
       }
 
@@ -65,6 +66,7 @@ export function useTitleRenameShortcut(onRename: () => void): void {
       }
 
       event.preventDefault();
+      event.stopImmediatePropagation();
       onRenameRef.current();
     }
 

@@ -145,6 +145,24 @@ export function ContentMarkdownViewLayout({
     };
   }, [editorActivated, editorSurfaceReady]);
 
+  // Preview hides the editor with display:none but CodeMirror can keep DOM
+  // focus and swallow keys (e.g. `d` delete). Blur + inert while previewing.
+  useEffect(() => {
+    if (mode !== "preview") return;
+    const root = editorShellRef.current;
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      root?.contains(active)
+    ) {
+      active.blur();
+    }
+    const focusedCm = root?.querySelector(".cm-editor.cm-focused .cm-content");
+    if (focusedCm instanceof HTMLElement) {
+      focusedCm.blur();
+    }
+  }, [mode]);
+
   const handleContentDoubleClick = onToggleMode
     ? createContentViewModeDoubleClickHandler(mode, onToggleMode)
     : undefined;
@@ -169,6 +187,7 @@ export function ContentMarkdownViewLayout({
                 : "content-markdown-view-layout__edit content-markdown-view-layout__edit--hidden"
           }
           aria-hidden={!showEditorSurface}
+          inert={!showEditorSurface ? true : undefined}
           onDoubleClick={handleContentDoubleClick}
         >
           {editHeader}
@@ -213,8 +232,13 @@ type UseMarkdownDetailEditorOptions = {
     | Promise<MarkdownDetailSaveResult>
     | null;
   debounceMs?: number;
-  /** Blur the active element when switching to preview (Next option). */
+  /** Blur the active element when switching to preview (keeps `d` delete etc. working). */
   blurOnPreview?: boolean;
+  /**
+   * When false, skip ⌘/Ctrl+E and ⌘/Ctrl+P (e.g. project description while
+   * another section's document editor is active).
+   */
+  shortcutsEnabled?: boolean;
 };
 
 const DEFAULT_SAVE_DEBOUNCE_MS = 700;
@@ -227,7 +251,8 @@ export function useMarkdownDetailEditor({
   initialValue,
   save,
   debounceMs = DEFAULT_SAVE_DEBOUNCE_MS,
-  blurOnPreview = false,
+  blurOnPreview = true,
+  shortcutsEnabled = true,
 }: UseMarkdownDetailEditorOptions) {
   const [value, setValue] = useState(initialValue);
   const [valueSource, setValueSource] = useState(initialValue);
@@ -340,8 +365,19 @@ export function useMarkdownDetailEditor({
     modeRef.current = "preview";
     setMode("preview");
 
-    if (blurOnPreview && document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
+    if (blurOnPreview) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        active.blur();
+      }
+      // Hidden edit shells use display:none; CodeMirror can keep focus and
+      // swallow shortcuts like `d` (delete) while preview is showing.
+      const focusedCm = document.querySelector(
+        ".cm-editor.cm-focused .cm-content",
+      );
+      if (focusedCm instanceof HTMLElement) {
+        focusedCm.blur();
+      }
     }
 
     flushSave();
@@ -374,6 +410,8 @@ export function useMarkdownDetailEditor({
   }, [clearScheduledSave]);
 
   useEffect(() => {
+    if (!shortcutsEnabled) return;
+
     function handleKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
         return;
@@ -382,6 +420,7 @@ export function useMarkdownDetailEditor({
       const key = event.key.toLowerCase();
       if (key === "e") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         if (modeRef.current === "edit") {
           switchToPreview();
         } else {
@@ -392,13 +431,14 @@ export function useMarkdownDetailEditor({
 
       if (key === "p") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         switchToPreview();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activateEditMode, switchToPreview]);
+  }, [activateEditMode, shortcutsEnabled, switchToPreview]);
 
   return {
     value,

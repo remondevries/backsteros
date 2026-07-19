@@ -1998,38 +1998,11 @@ body[data-keyboard-nav-hover="suppressed"]
   opacity: 0.6;
 }
 
-.documents-empty-create__hint {
+.documents-empty-create__hint,
+.content-markdown-empty-hint {
   margin: 0;
   color: color-mix(in srgb, var(--foreground) 40%, transparent);
   font-size: 0.875rem;
-}
-
-.documents-empty-create__dock {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
-}
-
-.documents-empty-create__submit {
-  padding: 6px 12px;
-  border: 0.5px solid rgb(255 255 255 / 0.1);
-  border-radius: 6px;
-  background: rgb(255 255 255 / 0.06);
-  color: var(--foreground);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.documents-empty-create__submit:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.1);
-}
-
-.documents-empty-create__submit:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .status-group-items {
@@ -4915,8 +4888,23 @@ a.mention-chip-lite:hover,
 .letter-compose-actions {
   display: inline-flex;
   margin-left: auto;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
+  padding-top: 2px;
+}
+
+.letter-compose-title-with-actions {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.letter-compose-title-with-actions .overview-name-editor {
+  flex: 1;
+  min-width: 0;
 }
 
 .letter-compose-actions__button {
@@ -5994,6 +5982,10 @@ body.app-is-dragging * {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* When PDF maximized: notes hide; PDF fills left column; properties stay */
@@ -6495,6 +6487,16 @@ body.app-is-dragging * {
 
 .inbox-detail-body--document .inbox-detail-meta {
   margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+/* Meta inside the title header — don't add a second title→body gap. */
+.content-detail-icon-title__title .inbox-detail-meta {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+.content-detail-icon-title__title .content-detail-display-id {
   margin-bottom: 0;
 }
 
