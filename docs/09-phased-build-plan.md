@@ -65,12 +65,13 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 **Create:** `backsteros-admin/`
 
-| Task | Output |
-| --- | --- |
-| Vite + React at `/admin` | Owner-only shell |
-| Sync health view | Cursor, devices, failed pushes (from API) |
-| API health + log tail | Read-only ops endpoints on `backsteros-api` |
-| Link to `/app` and OpenAPI docs | Cross-nav |
+| Task | Output | Status |
+| --- | --- | --- |
+| Vite + React at `/admin` | Owner-only shell | Done (local) |
+| API health probe | `/health` in admin UI | Done (local) |
+| Sync health view | Cursor, devices (`/api/v1/ops/sync-health`) | Done (local) |
+| API health + log tail | `/api/v1/ops/logs` ring buffer | Done (local) |
+| Link to `/app` and OpenAPI docs | Cross-nav | Done (local) |
 
 **Depends on:** Phase 1 API + Phase 3 sync metrics to display.
 
@@ -82,11 +83,11 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 **Create:** `backsteros-mobile`
 
-| Task | Output |
-| --- | --- |
-| Expo app + Expo Router | Login, inbox, tasks |
-| PowerSync RN integration | Offline task list |
-| Document open on demand | Content API fetch |
+| Task | Output | Status |
+| --- | --- | --- |
+| Expo app + Expo Router | Login, inbox, tasks | Done (local) |
+| PowerSync RN integration | Offline task list + status edits; SQL.js (Expo Go) / Quick SQLite (native builds) | Done (local) |
+| Document open on demand | Content API fetch | Next |
 
 **Exit criteria:** Edit task offline on iPhone; syncs when online.
 
@@ -107,6 +108,7 @@ match the web app closely — not a Next sidecar and not Expo.
 | Scaffold `backsteros-desktop` | Tauri 2 + Vite/React; remote API only |
 | Align desktop UI with `backsteros-app` | Shared packages / ports; near-identical UX |
 | CodeMirror document editor | Open + save via API (web first; desktop parity) |
+| Desktop packaging / CI | Tauri build + optional Apple/Windows signing (`desktop-release.yml`) |
 
 **Exit criteria:** Same task visible on phone, `/app`, and Tauri after sync.
 

@@ -154,7 +154,7 @@ export const createTaskSchema = z.object({
   status: taskStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
-  dueDate: z.string().datetime().optional(),
+  dueDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable().optional(),
   inbox: z.boolean().optional(),
 });
@@ -571,6 +571,36 @@ export const letterRelationsSchema = z.object({
   project: projectSchema.extend({ workspaceId: z.string() }).nullable(),
   organization: organizationSchema.nullable(),
   contact: contactSchema.nullable(),
+});
+
+export const opsSyncDeviceSchema = z.object({
+  deviceId: z.string(),
+  lastSeenAt: z.string(),
+  eventCount: z.number().int(),
+});
+export const opsSyncHealthSchema = z.object({
+  workspaceId: z.string(),
+  cursor: z.number().int(),
+  eventsLastHour: z.number().int(),
+  devices: z.array(opsSyncDeviceSchema),
+  failedPushes: z.array(
+    z.object({
+      id: z.string(),
+      at: z.string(),
+      message: z.string(),
+    }),
+  ),
+  spacesConfigured: z.boolean(),
+});
+export const opsLogEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  level: z.enum(["info", "warn", "error"]),
+  message: z.string(),
+  detail: z.string().optional(),
+});
+export const opsLogsSchema = z.object({
+  logs: z.array(opsLogEntrySchema),
 });
 
 export const syncEntitySchema = z.enum(["project", "task", "document"]);

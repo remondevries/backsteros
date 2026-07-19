@@ -1,4 +1,1 @@
-export type SearchableDropdownMenuApi = {
-  open: () => void;
-  close: () => void;
-};
+export type { SearchableDropdownMenuApi } from "@backsteros/ui";

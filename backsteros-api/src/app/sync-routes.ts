@@ -62,7 +62,14 @@ function unauthorized() {
 }
 
 async function withClerkAuth(c: Context, next: Next) {
-  const auth = await resolveAuth(c.req.header("Authorization"));
+  const authorization = c.req.header("Authorization");
+  if (!authorization) {
+    console.warn(
+      "[powersync/token] missing Authorization header",
+      c.req.header("Origin") ?? "(no origin)",
+    );
+  }
+  const auth = await resolveAuth(authorization);
   if (!auth || auth.kind !== "clerk" || !auth.clerkUserId) {
     return c.json(unauthorized(), 401);
   }

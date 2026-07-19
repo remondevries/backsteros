@@ -95,9 +95,14 @@ export function OrganizationsSidePanel({ pathname }: { pathname: string }) {
     );
   }, [organizations, selectedSlug]);
 
+  const itemIds = useMemo(
+    () => grouped.flatMap(([, entries]) => entries.map((entry) => entry.id)),
+    [grouped],
+  );
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
-    itemIds: organizations.map((organization) => organization.id),
+    itemIds,
     selectedId: selectedOrganizationId,
     onNavigate: (organizationId) => {
       const organization = organizations.find(

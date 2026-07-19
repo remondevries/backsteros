@@ -67,23 +67,38 @@ export function isKeyboardNavHoverSuppressed(): boolean {
 }
 
 /**
- * Anchor for j/k when switching from mouse: prefer the hovered row while the
- * pointer is active; once keyboard mode suppresses hover, keep using highlight.
+ * Anchor for j/k / Enter:
+ * 1. Explicit keyboard highlight always wins (including the race where mouse
+ *    resume clears hover-suppression before React clears highlight state).
+ * 2. While hover is suppressed (keyboard mode), ignore pointer position and
+ *    fall back to the selected row — never the hovered row.
+ * 3. Otherwise (pointer active), start from the hovered row.
  */
 export function resolveListKeyboardAnchorId(
   highlightedId: string | null,
   selectedId: string | null,
   itemIds: readonly string[],
 ): string | null {
+  const highlightedInList =
+    highlightedId != null && itemIds.includes(highlightedId)
+      ? highlightedId
+      : null;
+  if (highlightedInList != null) {
+    return highlightedInList;
+  }
+
+  const selectedInList =
+    selectedId != null && itemIds.includes(selectedId) ? selectedId : null;
+
+  if (isKeyboardNavHoverSuppressed()) {
+    return selectedInList;
+  }
+
   const hoveredId = getLastHoveredKeyboardNavItemId();
   const hoveredInList =
     hoveredId != null && itemIds.includes(hoveredId) ? hoveredId : null;
 
-  if (!isKeyboardNavHoverSuppressed() && hoveredInList != null) {
-    return hoveredInList;
-  }
-
-  return highlightedId ?? hoveredInList ?? selectedId;
+  return hoveredInList ?? selectedInList;
 }
 
 export function suppressKeyboardNavHover(): void {

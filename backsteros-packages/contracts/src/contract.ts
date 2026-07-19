@@ -789,6 +789,29 @@ export const apiContract = c.router(
       responses: { 200: s.okSchema, 400: badRequestSchema, 401: errorSchema, 404: errorSchema },
       summary: "Apply a PowerSync write batch",
     },
+    opsSyncHealth: {
+      method: "GET",
+      path: "/api/v1/ops/sync-health",
+      responses: {
+        200: s.opsSyncHealthSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Owner ops: sync cursor + recent devices",
+    },
+    opsLogs: {
+      method: "GET",
+      path: "/api/v1/ops/logs",
+      query: z.object({
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      }),
+      responses: {
+        200: s.opsLogsSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Owner ops: recent process log tail",
+    },
   },
   {
     pathPrefix: "",

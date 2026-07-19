@@ -1,12 +1,15 @@
 packages:
   - backsteros-api
   - backsteros-app
+  - backsteros-admin
   - backsteros-desktop
+  - backsteros-mobile
   - backsteros-sync-demo
   - backsteros-packages/*
 allowBuilds:
   '@clerk/shared': true
   '@journeyapps/wa-sqlite': true
+  '@swc/core': true
   browser-tabs-lock: true
   bufferutil: true
   core-js: true

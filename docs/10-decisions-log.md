@@ -219,10 +219,13 @@ separate Expo client (ADR-004) — not the same framework as desktop.
   React UI / helpers into `backsteros-packages/` (or deliberate ports from the
   Next app) so web and desktop stay aligned — without coupling desktop to Next
   middleware, RSC, or App Router Route Handlers.
+- **Desktop-first shared UI:** Stabilize `@backsteros/ui` detail/layout views in
+  `backsteros-desktop` first. Do not migrate Next onto those shared views until
+  desktop polish is solid — web keeps local screen trees in the meantime.
 - Auth: Clerk in SPA / Tauri mode (not Next middleware). Same Clerk application
   as web where possible; configure allowed origins for the Tauri / Vite dev hosts.
-- Offline: PowerSync **web** SDK + partial sync rules (metadata first; Tier C/D
-  on demand). Same performance rules as [07-performance.md](07-performance.md).
+- Offline: PowerSync **web** SDK + partial sync rules (metadata first; Tier D
+  bodies/PDFs on demand). Same performance rules as [07-performance.md](07-performance.md).
 - Optional: menu items open `https://backsteros.com/app` or `/admin` in the
   system browser — ops admin is not embedded in the desktop shell v1.
 
@@ -233,9 +236,10 @@ separate Expo client (ADR-004) — not the same framework as desktop.
 - One framework for desktop + mobile (Expo everywhere or Tauri on iOS)
 
 **Consequences:** Three product clients — Next web, Tauri+Vite desktop, Expo
-mobile — sharing `contracts` / `api-client` and intentionally shared UI where it
-pays off. Phase 5 desktop work scaffolds `backsteros-desktop`, not a fork of the
-Next deployment pipeline.
+mobile — sharing `contracts` / `api-client` / `powersync-schema`. Shared UI
+(`@backsteros/ui`) is **desktop-first** until polish lands; Next keeps local
+screens until then. Phase 5 desktop work scaffolds `backsteros-desktop`, not a
+fork of the Next deployment pipeline.
 
 **Supersedes:** ADR-005.
 

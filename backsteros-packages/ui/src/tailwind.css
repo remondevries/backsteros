@@ -1,0 +1,14 @@
+/**
+ * Shared Tailwind sources / theme for BacksterOS apps.
+ *
+ * Apps own Tailwind compilation (`@import "tailwindcss"`), then import this file
+ * so utilities used in `@backsteros/ui` are not purged.
+ *
+ * Do not `@import "tailwindcss"` here — that would duplicate `@layer utilities`
+ * across packages (cascade bugs). See Tailwind v4 monorepo guidance.
+ */
+@source "./components";
+@source "./shortcuts";
+@source "./command-palette";
+@source "./*.ts";
+@source "./*.tsx";

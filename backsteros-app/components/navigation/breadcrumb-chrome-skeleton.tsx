@@ -1,6 +1,7 @@
 "use client";
 
-import { ContentChromeHeader } from "@/components/shell/content-chrome-header";
+import { BreadcrumbChromeSkeleton as SharedBreadcrumbChromeSkeleton } from "@backsteros/ui";
+
 import { isMobileShellBuildActive } from "@/lib/mobile/is-mobile-shell-env";
 
 /**
@@ -12,19 +13,5 @@ export function BreadcrumbChromeSkeleton() {
     return null;
   }
 
-  return (
-    <ContentChromeHeader className="app-breadcrumb-header">
-      <nav
-        aria-busy="true"
-        aria-label="Loading breadcrumb"
-        className="breadcrumb-chrome-skeleton min-w-0"
-      >
-        <span className="breadcrumb-chrome-skeleton-crumb breadcrumb-chrome-skeleton-crumb--short" />
-        <span className="breadcrumb-chrome-skeleton-sep" aria-hidden="true">
-          ›
-        </span>
-        <span className="breadcrumb-chrome-skeleton-crumb breadcrumb-chrome-skeleton-crumb--long" />
-      </nav>
-    </ContentChromeHeader>
-  );
+  return <SharedBreadcrumbChromeSkeleton />;
 }

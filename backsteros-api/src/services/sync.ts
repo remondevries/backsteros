@@ -266,6 +266,17 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Distinguish missing field (`undefined`) from clear (`null`).
+ * PowerSync clients send `assignee_id: null` to unassign; `asString` would drop that.
+ */
+function asNullableString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value === "string") return value;
+  return undefined;
+}
+
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
@@ -352,11 +363,13 @@ function mapProjectUpsert(
     name: asString(payload.name),
     summary: asString(payload.summary),
     description: asString(payload.description),
-    organizationId: asString(payload.organization_id ?? payload.organizationId),
-    areaId: asString(payload.area_id ?? payload.areaId),
+    organizationId: asNullableString(
+      payload.organization_id ?? payload.organizationId,
+    ),
+    areaId: asNullableString(payload.area_id ?? payload.areaId),
     area: asString(payload.area) as Project["area"] | undefined,
-    startDate: asString(payload.start_date ?? payload.startDate),
-    dueDate: asString(payload.due_date ?? payload.dueDate),
+    startDate: asNullableString(payload.start_date ?? payload.startDate),
+    dueDate: asNullableString(payload.due_date ?? payload.dueDate),
     icon: asString(payload.icon),
     color: asString(payload.color),
     status: asString(payload.status) as Project["status"] | undefined,
@@ -369,16 +382,16 @@ function mapTaskUpsert(
   payload: Record<string, unknown>,
 ): CreateTaskInput | UpdateTaskInput {
   return {
-    projectId: asString(payload.project_id ?? payload.projectId),
-    contactId: asString(payload.contact_id ?? payload.contactId),
-    assigneeId: asString(payload.assignee_id ?? payload.assigneeId),
+    projectId: asNullableString(payload.project_id ?? payload.projectId),
+    contactId: asNullableString(payload.contact_id ?? payload.contactId),
+    assigneeId: asNullableString(payload.assignee_id ?? payload.assigneeId),
     title: asString(payload.title),
     description: asString(payload.description),
     status: asString(payload.status) as Task["status"] | undefined,
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
-    dueDate: asString(payload.due_date ?? payload.dueDate),
-    triagedAt: asString(payload.triaged_at ?? payload.triagedAt),
+    dueDate: asNullableString(payload.due_date ?? payload.dueDate),
+    triagedAt: asNullableString(payload.triaged_at ?? payload.triagedAt),
     inbox: asBoolean(payload.inbox),
   };
 }

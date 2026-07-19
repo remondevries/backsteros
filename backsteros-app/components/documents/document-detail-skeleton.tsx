@@ -1,5 +1,6 @@
 "use client";
 
 export {
-  KnowledgeDetailSkeleton as DocumentDetailSkeleton,
-} from "@/components/knowledge/knowledge-detail-skeleton";
+  DocumentDetailSkeleton,
+  type DocumentDetailSkeletonProps,
+} from "@backsteros/ui";

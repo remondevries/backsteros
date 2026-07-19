@@ -8,7 +8,7 @@ Read this file first when working in **`~/code/backsteros/`**. Specs live at the
 ~/code/backsteros/
 ├── docs/                      ← specs
 ├── backsteros-api/            ← backend (service.backsteros.com)
-├── backsteros-app/            ← product UI (backsteros.com/app, Tauri)
+├── backsteros-app/            ← product web UI (backsteros.com/app)
 ├── backsteros-admin/          ← ops dashboard (backsteros.com/admin)
 ├── backsteros-mobile/         ← Expo (product)
 ├── backsteros-desktop/        ← Tauri → app build
@@ -43,29 +43,33 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 
 ## Non-negotiable rules
 
-1. **No Tier C bulk sync** — full markdown bodies and PDF bytes are never bootstrapped to clients by default. See `docs/03-data-model.md`.
+1. **No Tier C/D bulk sync** — full markdown bodies and PDF bytes are never bootstrapped to clients by default. See `docs/03-data-model.md`.
 2. **One source of truth** — Postgres (metadata) + object storage (blobs). Not two parallel sync systems.
 3. **Business logic lives in `backsteros-api/`** — not in UI repos or `docs/`.
 4. **All writes pipeline** — storage → version bump → sync event → realtime push to open editors.
 5. **Do not extend** `circle.remondevries.com` for new platform features.
 
-## Subfolders (code — not started)
+## Subfolders (code)
 
 | Path (under `backsteros/`) | Status | Purpose |
 | --- | --- | --- |
-| `backsteros-api/` | Phase 1 — local dev working | Hono + Postgres + OpenAPI |
+| `backsteros-api/` | Phase 1+ | Hono + Postgres + OpenAPI |
 | `backsteros-packages/contracts/` | Phase 1 — done | Zod schemas + ts-rest contract |
-| `backsteros-packages/api-client/` | Empty — Phase 1+ | Generated HTTP client |
-| `backsteros-admin/` | Empty — Phase 3b | Ops UI at `/admin` — logs, sync |
-| `backsteros-mobile/` | Empty — Phase 4 | Expo product app (not Tauri) |
-| `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js) |
-| `backsteros-desktop/` | Phase 5 — scaffolded | Tauri 2 + Vite/React; UI ≈ web (ADR-019) |
+| `backsteros-packages/api-client/` | Phase 1+ | Typed HTTP client |
+| `backsteros-packages/powersync-schema/` | Phase 5 | Shared PowerSync Tier A/B client schema |
+| `backsteros-packages/ui/` | Phase 5 — desktop-first | Shared product UI; polish on desktop before Next adoption |
+| `backsteros-admin/` | Phase 3b | Ops UI at `/admin` — health, sync cursor, log tail |
+| `backsteros-mobile/` | Phase 4 | Expo — Clerk + PowerSync inbox/tasks (offline edits) |
+| `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js; local screens for now) |
+| `backsteros-desktop/` | Phase 5 — working | Tauri 2 + Vite/React; primary `@backsteros/ui` consumer (ADR-019) |
 
 Do not put application code in `docs/` or loose at the workspace root — use the subfolder for each layer.
 
 ## Phase gate
 
-Phase 1 scaffold is in progress. Do not start Phase 2+ without explicit user approval (`docs/09-phased-build-plan.md`).
+Phases 1–5 are in progress in-repo. Do not skip ahead to later phases without
+explicit user approval (`docs/09-phased-build-plan.md`). Do not deepen Next’s use
+of shared `@backsteros/ui` detail/layout views until desktop polish is ready.
 
 ## Fetching doc content
 

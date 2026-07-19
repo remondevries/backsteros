@@ -1,12 +1,29 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
+
+  optimizeDeps: {
+    exclude: ["@journeyapps/wa-sqlite", "@powersync/web"],
+  },
+
+  // PowerSync workers code-split; Vite 7 defaults to iife which Rollup rejects.
+  worker: {
+    format: "es",
+  },
+
+  // Tauri webviews are modern; avoid downleveling that breaks TLA/wasm transforms.
+  build: {
+    target: "esnext",
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -17,6 +34,8 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // Do not set COEP/COOP here — Clerk loads cross-origin scripts/iframes and
+    // `require-corp` breaks session tokens (PowerSync then gets 401).
     hmr: host
       ? {
           protocol: "ws",

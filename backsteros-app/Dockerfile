@@ -13,6 +13,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backsteros-app/package.json backsteros-app/package.json
 COPY backsteros-packages/contracts/package.json backsteros-packages/contracts/package.json
 COPY backsteros-packages/api-client/package.json backsteros-packages/api-client/package.json
+COPY backsteros-packages/powersync-schema/package.json backsteros-packages/powersync-schema/package.json
+COPY backsteros-packages/ui/package.json backsteros-packages/ui/package.json
 # Ignore scripts until app sources (build-totem) are copied in the builder stage.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
@@ -29,6 +31,8 @@ COPY backsteros-app backsteros-app
 COPY backsteros-packages backsteros-packages
 RUN pnpm --filter @backsteros/contracts build \
  && pnpm --filter @backsteros/api-client build \
+ && pnpm --filter @backsteros/powersync-schema build \
+ && pnpm --filter @backsteros/ui build \
  && CLERK_SECRET_KEY=sk_build_placeholder pnpm --filter @backsteros/app build
 
 FROM node:22-alpine AS runner

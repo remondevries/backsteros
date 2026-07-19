@@ -1,0 +1,23 @@
+{
+  "name": "@backsteros/powersync-schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@powersync/web": "^1.39.0"
+  },
+  "devDependencies": {
+    "@powersync/web": "^1.39.0",
+    "typescript": "^5.8.3"
+  }
+}

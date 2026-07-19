@@ -124,7 +124,7 @@ export function LetterProjectField({
           onChange={handleChange}
           disabled={isPending}
           searchPlaceholder="Change project…"
-          searchShortcutLabel="P"
+          searchShortcutLabel="⇧P"
           ariaLabel="Change project"
           fallbackIcon={
             <ProjectOcticon

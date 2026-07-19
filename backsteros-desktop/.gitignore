@@ -15,6 +15,9 @@ dist-ssr
 .env.*
 !.env.example
 
+# Generated PowerSync worker/WASM assets (copied by scripts/copy-powersync-assets.mjs)
+public/@powersync/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

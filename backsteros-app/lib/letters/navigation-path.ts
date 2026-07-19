@@ -7,31 +7,40 @@ export function isLetterComposePath(pathname: string): boolean {
   return pathname === "/letters/new" || /\/letters\/new$/.test(pathname);
 }
 
+/** Strip Next `basePath` (`/app`) when present. */
+function normalizeProductPathname(pathname: string): string {
+  if (pathname === "/app" || pathname.startsWith("/app/")) {
+    return pathname.slice("/app".length) || "/";
+  }
+  return pathname;
+}
+
 export function getSelectedLetterSlugFromPathname(
   pathname: string,
 ): string | undefined {
-  if (isLetterComposePath(pathname)) {
+  const path = normalizeProductPathname(pathname);
+  if (isLetterComposePath(path)) {
     return undefined;
   }
 
-  const globalMatch = pathname.match(/^\/letters\/([^/]+)$/);
+  const globalMatch = path.match(/^\/letters\/([^/]+)$/);
   if (globalMatch && globalMatch[1] !== "new") {
     return decodeURIComponent(globalMatch[1]!);
   }
 
-  const projectMatch = pathname.match(/^\/projects\/[^/]+\/letters\/([^/]+)$/);
+  const projectMatch = path.match(/^\/projects\/[^/]+\/letters\/([^/]+)$/);
   if (projectMatch) {
     return decodeURIComponent(projectMatch[1]!);
   }
 
-  const orgLetterMatch = pathname.match(
+  const orgLetterMatch = path.match(
     /^\/organizations\/[^/]+\/letters\/([^/]+)$/,
   );
   if (orgLetterMatch) {
     return decodeURIComponent(orgLetterMatch[1]!);
   }
 
-  const contactLetterMatch = pathname.match(
+  const contactLetterMatch = path.match(
     /^\/contacts\/[^/]+\/letters\/([^/]+)$/,
   );
   if (contactLetterMatch) {
@@ -61,28 +70,31 @@ export function getProjectLettersHref(projectKey: string): string {
 }
 
 export function isProjectLettersSectionPath(pathname: string): boolean {
-  return PROJECT_LETTERS_PATH.test(pathname);
+  return PROJECT_LETTERS_PATH.test(normalizeProductPathname(pathname));
 }
 
 export function isProjectLetterDetailPath(pathname: string): boolean {
+  const path = normalizeProductPathname(pathname);
   return (
     /^\/(?:projects\/[^/]+|organizations\/[^/]+\/projects\/[^/]+)\/letters\/[^/]+$/.test(
-      pathname,
-    ) && !isLetterComposePath(pathname)
+      path,
+    ) && !isLetterComposePath(path)
   );
 }
 
 export function isLettersSectionPath(pathname: string): boolean {
-  return pathname === "/letters" || pathname.startsWith("/letters/");
+  const path = normalizeProductPathname(pathname);
+  return path === "/letters" || path.startsWith("/letters/");
 }
 
 export function isLetterDetailPath(pathname: string): boolean {
+  const path = normalizeProductPathname(pathname);
   return (
-    (/^\/letters\/[^/]+$/.test(pathname) && !isLetterComposePath(pathname)) ||
-    /^\/projects\/[^/]+\/letters\/[^/]+$/.test(pathname) ||
-    /^\/organizations\/[^/]+\/letters\/[^/]+$/.test(pathname) ||
-    /^\/contacts\/[^/]+\/letters\/[^/]+$/.test(pathname) ||
-    /^\/organizations\/[^/]+\/contacts\/[^/]+\/letters\/[^/]+$/.test(pathname) ||
-    /^\/organizations\/[^/]+\/projects\/[^/]+\/letters\/[^/]+$/.test(pathname)
+    (/^\/letters\/[^/]+$/.test(path) && !isLetterComposePath(path)) ||
+    /^\/projects\/[^/]+\/letters\/[^/]+$/.test(path) ||
+    /^\/organizations\/[^/]+\/letters\/[^/]+$/.test(path) ||
+    /^\/contacts\/[^/]+\/letters\/[^/]+$/.test(path) ||
+    /^\/organizations\/[^/]+\/contacts\/[^/]+\/letters\/[^/]+$/.test(path) ||
+    /^\/organizations\/[^/]+\/projects\/[^/]+\/letters\/[^/]+$/.test(path)
   );
 }

@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-whoop"
+description = "Allows reading local Whoop status and day snapshots."
+commands.allow = ["whoop_status", "whoop_fetch_day"]
+
+[[permission]]
+identifier = "allow-oauth-windows"
+description = "Allows closing OAuth popup windows after Clerk sign-in."
+commands.allow = ["close_oauth_windows"]

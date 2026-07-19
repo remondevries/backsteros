@@ -209,20 +209,30 @@ function isCanonicalEntityRedirect(fromHref: string, toHref: string): boolean {
   );
 }
 
+/**
+ * Section roots that auto-land on a default child (replace, don't push).
+ *
+ * `/tasks` and `/projects` are intentionally excluded: their roots are real
+ * list screens, so opening a row must push a history entry (Escape returns
+ * to the list). See `getTaskReferrerBackHref`.
+ */
+const AUTO_LANDING_SECTION_ROOTS = [
+  "/",
+  "/inbox",
+  "/journal",
+  "/knowledge",
+  "/letters",
+  "/contacts",
+  "/organizations",
+  "/settings",
+] as const;
+
 function isRedirectContinuation(fromHref: string, toHref: string): boolean {
   const fromPath = normalizeHistoryEntryHref(fromHref);
   const toPath = normalizeHistoryEntryHref(toHref);
 
   if (
-    (fromPath === "/" ||
-      fromPath === "/inbox" ||
-      fromPath === "/journal" ||
-      fromPath === "/knowledge" ||
-      fromPath === "/letters" ||
-      fromPath === "/contacts" ||
-      fromPath === "/organizations" ||
-      fromPath === "/tasks" ||
-      fromPath === "/settings") &&
+    (AUTO_LANDING_SECTION_ROOTS as readonly string[]).includes(fromPath) &&
     toPath.startsWith(`${fromPath}/`)
   ) {
     return true;

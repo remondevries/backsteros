@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-desktop-overlay"
+description = "Allows the web UI to toggle desktop overlay windows."
+commands.allow = [
+  "toggle_desktop_overlay_palette",
+  "toggle_desktop_overlay_compose",
+  "hide_desktop_overlay",
+  "resize_desktop_overlay",
+  "focus_main_window",
+]

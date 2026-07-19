@@ -425,7 +425,7 @@ export function LetterComposePropertiesPanel({
             }
             disabled={busy}
             searchPlaceholder="Change project…"
-            searchShortcutLabel="P"
+            searchShortcutLabel="⇧P"
             ariaLabel="Project"
             fallbackIcon={
               <ProjectOcticon

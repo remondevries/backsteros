@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "BacksterOS",
+    "slug": "backsteros",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "backsteros",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.backsteros.mobile"
+    },
+    "android": {
+      "package": "com.backsteros.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "@journeyapps/react-native-quick-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -22,6 +22,19 @@ Target hardware: **iPhone 16**, **MacBook M1**. Goal: snappy UI, low memory.
 5. **PDF:** stream pages or presigned URL; do not load entire 50 MB into RAM
 6. **CodeMirror:** avoid multi-MB single buffers on mobile v1
 
+### Desktop Tier D session cache (allowed)
+
+Desktop may **warm** Tier D markdown via hover / keyboard highlight into a
+**bounded session LRU** (not PowerSync). That is not a vault replica.
+
+- Metadata stays in PowerSync; bodies use `/api/v1/documents/{id}/content`
+- Discard the open document’s body when leaving its detail screen
+- **Do not** session-cache PDF blobs — hold them in component state for the open
+  letter only; clear on unmount
+- Prefer presigned URL / range requests later; avoid loading multi‑tens‑of‑MB
+  PDFs into RAM when that path exists
+- Never bootstrap the full vault or all PDFs
+
 ## iPhone (Expo)
 
 | Do | Avoid |
@@ -38,7 +51,7 @@ Expected: tens to low hundreds MB RAM at idle — normal for React Native.
 | Do | Avoid |
 | --- | --- |
 | Load **Vite** product SPA (`backsteros-desktop`) in WebView | Bundle Node + Next standalone |
-| Mirror web product UX; share UI packages where practical | Drift into a second unrelated desktop design |
+| Mirror web product UX; polish shared UI on desktop first | Drift into a second unrelated desktop design; premature Next adoption of unfinished shared views |
 | PowerSync web SQLite for offline metadata | Sync entire Spaces bucket locally |
 | Close unused document tabs | Background full-corpus index build |
 

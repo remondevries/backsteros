@@ -7,7 +7,9 @@ export function getPowerSyncAudience(): string {
 }
 
 export function getPowerSyncUrl(): string | null {
-  return process.env.POWERSYNC_URL ?? null;
+  const value = process.env.POWERSYNC_URL?.trim();
+  if (!value) return null;
+  return value.replace(/\/+$/, "");
 }
 
 export async function signPowerSyncToken(

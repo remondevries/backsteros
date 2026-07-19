@@ -58,8 +58,13 @@ backsteros-desktop/
   deployment. Next-only concerns (middleware, RSC, App Router handlers such as
   web avatars / settings proxies) stay on the web host; desktop talks to
   `service.backsteros.com` (and PowerSync) directly via shared clients.
-- Prefer extracting shared React UI into `backsteros-packages/` over drifting two
-  unrelated designs. Ports from `backsteros-app` are expected early on.
+- **Desktop-first shared UI:** polish product chrome and detail views in
+  `@backsteros/ui` for **desktop first**. Do **not** deepen Next’s use of shared
+  layout/detail views until desktop is the robust reference. Web keeps local
+  screens under `backsteros-app/components/` until that gate. Thin helpers /
+  skeletons already shared may stay; new web UI stays local.
+- Shared **non-UI** packages (`api-client`, `contracts`, `powersync-schema`) are
+  fine for both clients immediately.
 
 ### Separate from mobile
 
@@ -116,10 +121,15 @@ Separate folder so agents and builds stay focused — see [11-urls-and-routing.m
 backsteros-packages/
   api-client/          Used by web, desktop, admin, mobile
   contracts/           Zod / OpenAPI types
-  ui/                  Optional — shared product UI extracted from web/desktop
+  powersync-schema/    Shared Tier A/B client schema (web + desktop)
+  ui/                  Shared product UI + helpers — desktop-first; Next later
   ui-tokens/           Optional shared colors (optional)
 ```
 
+`@backsteros/ui` is framework-agnostic React (no `next/*`). Desktop is the
+primary consumer of shared detail/layout views while those stabilize. Next may
+keep thin helper/skeleton re-exports but should not deepen shared view adoption
+until desktop polish lands. Next-only routing/auth stay in the web app shell.
 ## What clients must NOT do
 
 - Put task/markdown CRUD in `backsteros-admin`
@@ -127,6 +137,7 @@ backsteros-packages/
 - Import server-only modules into desktop/mobile bundles
 - Store full vault / all PDFs locally
 - Embed Next.js or a Node API server inside Tauri
+- Deepen Next adoption of `@backsteros/ui` detail/layout views before desktop polish is ready
 
 ## Auth
 

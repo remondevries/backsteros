@@ -1,0 +1,39 @@
+{
+  "name": "@backsteros/mobile",
+  "private": true,
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/core-asynciterator-polyfill": "^1.0.2",
+    "@backsteros/api-client": "workspace:*",
+    "@backsteros/contracts": "workspace:*",
+    "@clerk/clerk-expo": "^2.9.0",
+    "@journeyapps/react-native-quick-sqlite": "^2.5.2",
+    "@powersync/adapter-sql-js": "^0.0.18",
+    "@powersync/react-native": "^1.35.9",
+    "expo": "~53.0.0",
+    "expo-constants": "~17.1.0",
+    "expo-dev-client": "~5.2.4",
+    "expo-linking": "~7.1.0",
+    "expo-router": "~5.0.0",
+    "expo-secure-store": "~14.2.0",
+    "expo-status-bar": "~2.2.0",
+    "react": "19.0.0",
+    "react-native": "0.79.2",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.10.0"
+  },
+  "devDependencies": {
+    "@babel/plugin-transform-async-generator-functions": "^8.0.1",
+    "@types/node": "^22.15.0",
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  }
+}

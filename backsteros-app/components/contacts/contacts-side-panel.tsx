@@ -119,7 +119,7 @@ export function ContactsSidePanel({ pathname }: { pathname: string }) {
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
-    itemIds: contacts.map((contact) => contact.id),
+    itemIds: grouped.flatMap(([, entries]) => entries.map((entry) => entry.id)),
     selectedId: selectedContactId,
     onNavigate: (contactId) => {
       const href = contactHrefs.get(contactId);

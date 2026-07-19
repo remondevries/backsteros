@@ -1,86 +1,299 @@
+@import "tailwindcss";
+@import "@backsteros/ui/tailwind.css";
+
 :root {
-  color: #1c1917;
-  background: #f5f2eb;
-  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  color-scheme: dark;
+  font-family: var(--font-sans, ui-sans-serif), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--background, #0a0a0a);
+  color: var(--foreground, #ededed);
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
   margin: 0;
-  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+/*
+ * Overlay titlebar (macOS): keep native traffic lights, no system title strip.
+ * Inset/height match the 44px content tabs row so lights sit on that baseline.
+ */
+.bos-product-shell .app-side-panel-history-toolbar {
+  min-height: 44px;
+  margin-bottom: 0;
+  padding-left: 72px;
+}
+
+.bos-product-shell .sidebar-inner {
+  padding-top: 0;
+}
+
+.bos-product-shell .content-tabs-bar {
+  cursor: default;
+}
+
+/*
+ * Overlay titlebar + drag regions: keep the workspace content interactive.
+ * Without this, WKWebView can treat large areas as drag and swallow clicks.
+ */
+.bos-product-shell .workspace,
+.bos-product-shell .main-slot,
+.bos-product-shell .page-scroll,
+.bos-product-shell .context-panel,
+.bos-product-shell .desktop-sidebar,
+.bos-product-shell .bos-product-sidebar {
+  -webkit-app-region: no-drag;
+}
+
+/* Interactive controls inside drag regions must stay clickable */
+.bos-product-shell [data-tauri-drag-region] button,
+.bos-product-shell [data-tauri-drag-region] a,
+.bos-product-shell [data-tauri-drag-region] input,
+.bos-product-shell [data-tauri-drag-region] [role="tab"],
+.bos-product-shell [data-tauri-drag-region] [role="menuitem"] {
+  -webkit-app-region: no-drag;
+}
+
+/* Clerk sign-in gate */
+.desktop-sign-in {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
   background:
-    radial-gradient(1200px 600px at 10% -10%, #e7efe6 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #efe6d8 0%, transparent 50%),
-    #f5f2eb;
+    radial-gradient(
+      ellipse 80% 60% at 50% 0%,
+      rgb(255 255 255 / 0.06),
+      transparent 70%
+    ),
+    var(--background, #0a0a0a);
 }
 
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.92em;
+.desktop-sign-in-panel {
+  display: flex;
+  width: 100%;
+  max-width: 420px;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
 }
 
-.shell {
-  max-width: 40rem;
+.desktop-sign-in-brand {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.desktop-sign-in-copy {
+  margin: 0 0 8px;
+  color: rgb(255 255 255 / 0.55);
+  line-height: 1.5;
+}
+
+.desktop-sign-in-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgb(255 255 255 / 0.4);
+}
+
+.desktop-sign-in-code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.08);
+  font-size: 0.9em;
+}
+
+.desktop-sign-in-clerk {
+  width: 100%;
+}
+
+.desktop-sign-in-clerk-card {
   margin: 0 auto;
-  padding: 3.5rem 1.5rem 4rem;
 }
 
-.shell-header h1 {
-  margin: 0.15rem 0 0.75rem;
-  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  font-size: 2.4rem;
-  font-weight: 550;
-  letter-spacing: -0.02em;
+.markdown-document-leading {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 2rem 1rem 0;
 }
 
-.shell-brand {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #57534e;
+.journal-whoop-leading {
+  min-height: 4.75rem;
+  width: 100%;
 }
 
-.shell-lede {
-  margin: 0;
-  line-height: 1.55;
-  color: #44403c;
+.whoop-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
 }
 
-.shell-meta {
-  display: grid;
-  gap: 0.85rem;
-  margin: 2rem 0 1.5rem;
+.whoop-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.whoop-metric-ring {
+  position: relative;
+  display: inline-flex;
+  height: 3rem;
+  width: 3rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.whoop-metric-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.whoop-metric-ring-track {
+  opacity: 0.2;
+}
+
+.whoop-metric-ring-target {
+  opacity: 0.4;
+  transition: stroke-dashoffset 450ms cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+.whoop-metric-ring-value {
+  transition: stroke-dashoffset 450ms cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+.whoop-metric-value {
+  position: relative;
+  z-index: 1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground, #ededed) 70%, transparent);
+}
+
+.whoop-metric-label {
+  text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--foreground, #ededed) 50%, transparent);
+}
+
+/* Spotlight-style overlays (⌘⌥K palette, ⌘⌥C compose) */
+html:has(.desktop-overlay-root),
+html:has(.desktop-overlay-root) body,
+html:has(.desktop-overlay-root) #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+
+html:has(.desktop-overlay-root) body {
+  display: block;
+}
+
+.desktop-overlay-root {
+  box-sizing: border-box;
+  width: 100%;
+  background: transparent;
+}
+
+.desktop-overlay-root--compose,
+.desktop-overlay-root--palette {
   padding: 0;
 }
 
-.shell-meta div {
-  display: grid;
-  gap: 0.2rem;
+html:has(.desktop-overlay-root--compose) .create-task-modal-root {
+  position: fixed;
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: auto;
+  padding: 24px;
 }
 
-.shell-meta dt {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #78716c;
+html:has(.desktop-overlay-root--compose) .create-task-modal-overlay {
+  display: none;
 }
 
-.shell-meta dd {
+html:has(.desktop-overlay-root--compose) .create-task-modal-dialog {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
   margin: 0;
+  transform: none;
 }
 
-.shell-hint {
-  margin: 0;
-  line-height: 1.5;
-  color: #57534e;
-  font-size: 0.95rem;
+html:has(.desktop-overlay-root--compose) .create-task-modal-shell {
+  /* Let the shell grow with the description; native window follows via
+     ResizeObserver. Cap is enforced by OVERLAY_HEIGHT_COMPOSE_MAX in Rust. */
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
 }
+
+html:has(.desktop-overlay-root--palette) .command-overlay {
+  display: none;
+}
+
+html:has(.desktop-overlay-root--palette) .command-dialog {
+  position: fixed;
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 24px;
+  transform: none;
+  overflow: visible;
+}
+
+html:has(.desktop-overlay-root--palette) .command-chrome {
+  width: 100%;
+  height: auto;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+}
+
+/* Override in-app `min(420px, 60vh)` — viewport units are relative to the
+   overlay window itself and would pin auto-resize to a clipped height.
+   Fixed cap matches Circle; ResizeObserver grows the native window as the
+   list fills up to this limit, then the list scrolls. */
+html:has(.desktop-overlay-root--palette) .command-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+

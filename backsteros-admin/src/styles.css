@@ -1,0 +1,234 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --fg: #ededed;
+  --muted: rgb(255 255 255 / 0.55);
+  --border: rgb(255 255 255 / 0.12);
+  --card: rgb(255 255 255 / 0.04);
+  --danger: #f87171;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: inherit;
+}
+
+.admin-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.admin-brand-muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.admin-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.875rem;
+}
+
+.admin-nav a {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.admin-nav a:hover {
+  color: var(--fg);
+}
+
+.admin-main {
+  padding: 24px 20px;
+  max-width: 720px;
+}
+
+.admin-main h1 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+}
+
+.admin-muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.admin-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.admin-card--error {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+  color: var(--danger);
+}
+
+.admin-dl {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.admin-dl div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+}
+
+.admin-dl dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.admin-dl dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.admin-gate {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.admin-gate h1 {
+  margin: 0;
+}
+
+.admin-gate p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.admin-button {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-button:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+code {
+  font-size: 0.9em;
+}
+
+.admin-h2 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.admin-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
+.admin-log header {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.admin-log-level {
+  text-transform: uppercase;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.admin-log--error .admin-log-level {
+  color: var(--danger);
+}
+
+.admin-log--warn .admin-log-level {
+  color: #fbbf24;
+}
+
+.admin-log pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.admin-log-detail {
+  margin-top: 6px;
+  color: var(--muted);
+}

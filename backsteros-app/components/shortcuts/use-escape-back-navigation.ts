@@ -30,7 +30,12 @@ export function useEscapeBackNavigation({
         return;
       }
 
-      if (pathname === "/" || pathname === "/projects") {
+      // List homes: Escape should not leave the section via history.
+      if (
+        pathname === "/" ||
+        pathname === "/projects" ||
+        pathname === "/tasks"
+      ) {
         return;
       }
 

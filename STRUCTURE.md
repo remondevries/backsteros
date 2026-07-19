@@ -12,7 +12,9 @@ Single workspace: **`~/code/backsteros/`**
 ├── backsteros-api/            Phase 1 — backend (service.backsteros.com)
 ├── backsteros-packages/
 │   ├── contracts/
-│   └── api-client/
+│   ├── api-client/
+│   ├── powersync-schema/
+│   └── ui/
 │
 ├── backsteros-app/            Phase 5 — product web (backsteros.com/app, Next.js)
 ├── backsteros-admin/          Phase 3b — ops dashboard (backsteros.com/admin)

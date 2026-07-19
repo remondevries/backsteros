@@ -9,9 +9,13 @@ import { generateOpenApi } from "@ts-rest/open-api";
 import { apiContract } from "@backsteros/contracts";
 
 import { registerApiRoutes } from "./app/routes.js";
+import { registerOpsRoutes } from "./app/ops-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
+import { installOpsLogConsoleCapture } from "./lib/ops-log-buffer.js";
 import { isSpacesConfigured } from "./lib/storage.js";
 import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
+
+installOpsLogConsoleCapture();
 
 export function createApp() {
   const app = new Hono();
@@ -94,6 +98,7 @@ export function createApp() {
   const api = new Hono();
   registerApiRoutes(api);
   registerSyncRoutes(api);
+  registerOpsRoutes(api);
   app.route("/", api);
 
   return app;

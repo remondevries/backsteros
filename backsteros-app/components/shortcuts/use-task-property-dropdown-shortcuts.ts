@@ -24,10 +24,11 @@ export function useTaskPropertyDropdownShortcuts({
         return;
       }
 
-      // Letter detail reuses ⇧P for show/hide PDF; plain P still opens project.
+      const routePath = window.location.pathname;
+      // Letter detail: plain P toggles PDF — do not open priority/project.
       if (
         isLetterPdfToggleShortcut(event) &&
-        isLetterDetailPath(window.location.pathname)
+        isLetterDetailPath(routePath)
       ) {
         return;
       }
