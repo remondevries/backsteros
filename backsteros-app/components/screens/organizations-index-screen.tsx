@@ -1,13 +1,15 @@
 "use client";
 
 import type { Organization as ApiOrganization } from "@backsteros/contracts";
+import { groupItemsByAlphaLetter } from "@backsteros/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
 import { ListLayoutBreadcrumb } from "@/components/navigation/list-layout-breadcrumb";
 import { useApiResource } from "@/lib/api-context";
 import { normalizeOrganization } from "@/lib/entity-normalize";
-import { getOrganizationsHref } from "@/lib/organizations/navigation-path";
+import { getUniqueOrganizationRouteParam } from "@/lib/entity-route-hrefs";
+import { getOrganizationBasePath } from "@/lib/organization-sections";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
 import { preferLocalOrApi } from "@/lib/sync/prefer-local-or-api";
 
@@ -36,7 +38,7 @@ export function OrganizationsIndexScreen() {
       resource.data?.organizations,
     );
     return rows
-      .map(normalizeOrganization)
+      .map((organization) => normalizeOrganization(organization))
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", undefined, {
           sensitivity: "base",
@@ -44,12 +46,17 @@ export function OrganizationsIndexScreen() {
       );
   }, [local.data, resource.data]);
 
-  const first = organizations[0] ?? null;
+  // Match side-panel alpha order (not raw API order).
+  const first =
+    groupItemsByAlphaLetter(organizations).flatMap(
+      ([, entries]) => entries,
+    )[0] ?? null;
 
   useEffect(() => {
     if (!first) return;
-    router.replace(getOrganizationsHref(first));
-  }, [first, router]);
+    const routeParam = getUniqueOrganizationRouteParam(first, organizations);
+    router.replace(getOrganizationBasePath(routeParam));
+  }, [first, organizations, router]);
 
   if (resource.loading && !local.data) {
     return (

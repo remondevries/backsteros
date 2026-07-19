@@ -3,6 +3,8 @@ import {
   getContactHref,
   getContactHrefFromKey,
   getContactTaskHrefFromKey,
+  getUniqueContactRouteParam,
+  type ListItemRouteIdentity,
 } from "@/lib/entity-route-hrefs";
 import { normalizeEntityRouteParam } from "@/lib/entity-slugs";
 import type { Contact } from "@/lib/db/schema";
@@ -10,7 +12,10 @@ import {
   getActiveContactSection,
   getContactSectionHref,
 } from "@/lib/contact-sections";
-import { getOrganizationContactHrefFromKey } from "@/lib/contact-route-scope";
+import {
+  getOrganizationContactHrefFromKey,
+  getScopedContactBasePath,
+} from "@/lib/contact-route-scope";
 import { getRememberedContactSection } from "@/lib/entity-section-memory";
 import { isMobileShellBuildActive } from "@/lib/mobile/is-mobile-shell-env";
 
@@ -32,11 +37,15 @@ export function getContactsHref(
 
 export function getOrganizationContactHref(
   organizationRouteParam: string,
-  contact: Pick<Contact, "number" | "key">,
+  contact: Pick<Contact, "number" | "key" | "id">,
+  siblings?: readonly ListItemRouteIdentity[],
 ): string {
+  const contactRouteParam = siblings?.length
+    ? getUniqueContactRouteParam(contact, siblings)
+    : getCanonicalContactRouteParam(contact);
   return getOrganizationContactHrefFromKey(
     organizationRouteParam,
-    getCanonicalContactRouteParam(contact),
+    contactRouteParam,
   );
 }
 
@@ -98,20 +107,23 @@ export function isContactTaskDetailPath(pathname: string): boolean {
 
 /** Side panel: keep the active contact section (e.g. Tasks) but never carry detail routes. */
 export function getContactSidePanelHref(
-  contact: Pick<Contact, "number" | "key">,
+  contact: Pick<Contact, "number" | "key" | "id">,
   currentPathname: string,
+  siblings?: readonly ListItemRouteIdentity[],
 ): string {
+  const targetRouteParam = siblings?.length
+    ? getUniqueContactRouteParam(contact, siblings)
+    : getCanonicalContactRouteParam(contact);
+
   if (isMobileShellBuildActive()) {
-    return getContactsHref(contact);
+    return getScopedContactBasePath(targetRouteParam);
   }
 
-  const targetRouteParam = getCanonicalContactRouteParam(contact);
   const sourceRouteParam = getSelectedContactSlugFromPathname(currentPathname);
 
   if (sourceRouteParam) {
     const section = getActiveContactSection(currentPathname, sourceRouteParam);
-    const href = getContactSectionHref(targetRouteParam, section, currentPathname);
-    return href;
+    return getContactSectionHref(targetRouteParam, section, currentPathname);
   }
 
   const remembered = getRememberedContactSection();
@@ -119,5 +131,5 @@ export function getContactSidePanelHref(
     return getContactSectionHref(targetRouteParam, remembered);
   }
 
-  return getContactsHref(contact);
+  return getScopedContactBasePath(targetRouteParam);
 }

@@ -1,3 +1,5 @@
+import { getUniqueListItemRouteParam as getUniqueListItemRouteParamShared } from "@backsteros/ui";
+
 import {
   encodeContactKeySlug,
   encodeContactSlug,
@@ -14,9 +16,27 @@ import {
 import { INBOX_TASK_KEY } from "@/lib/task-display-id";
 import type { TasksDueFilter } from "@/lib/tasks-due-filters";
 
+export type ListItemRouteIdentity = {
+  id: string;
+  number?: number | null;
+  key?: string | null;
+};
+
+/**
+ * Prefer number, then key, then id — but skip number/key when another sibling
+ * shares them so list hrefs stay unique (avoids selecting the wrong row on j/k).
+ * Same logic as desktop `@backsteros/ui` `getUniqueListItemRouteParam`.
+ */
+export function getUniqueListItemRouteParam(
+  item: ListItemRouteIdentity,
+  siblings: readonly ListItemRouteIdentity[],
+): string {
+  return getUniqueListItemRouteParamShared(item, siblings);
+}
+
 export function getCanonicalContactRouteParam(contact: {
   number?: number | null;
-  key?: string;
+  key?: string | null;
   id?: string;
 }) {
   if (contact.number != null) return encodeContactSlug(contact.number);
@@ -26,7 +46,7 @@ export function getCanonicalContactRouteParam(contact: {
 
 export function getCanonicalOrganizationRouteParam(organization: {
   number?: number | null;
-  key?: string;
+  key?: string | null;
   id?: string;
 }) {
   if (organization.number != null) {
@@ -34,6 +54,40 @@ export function getCanonicalOrganizationRouteParam(organization: {
   }
   if (organization.key) return encodeOrganizationKeySlug(organization.key);
   return organization.id ?? "";
+}
+
+/** Canonical when unique among siblings; otherwise a disambiguated route param. */
+export function getUniqueContactRouteParam(
+  contact: ListItemRouteIdentity,
+  siblings: readonly ListItemRouteIdentity[],
+): string {
+  const unique = getUniqueListItemRouteParam(contact, siblings);
+  if (unique === contact.id) return contact.id;
+  if (contact.number != null && unique === String(contact.number)) {
+    return encodeContactSlug(contact.number);
+  }
+  if (contact.key && unique === contact.key) {
+    return encodeContactKeySlug(contact.key);
+  }
+  return unique;
+}
+
+export function getUniqueOrganizationRouteParam(
+  organization: ListItemRouteIdentity,
+  siblings: readonly ListItemRouteIdentity[],
+): string {
+  const unique = getUniqueListItemRouteParam(organization, siblings);
+  if (unique === organization.id) return organization.id;
+  if (
+    organization.number != null &&
+    unique === String(organization.number)
+  ) {
+    return encodeOrganizationSlug(organization.number);
+  }
+  if (organization.key && unique === organization.key) {
+    return encodeOrganizationKeySlug(organization.key);
+  }
+  return unique;
 }
 
 export function getProjectHref(project: { key: string; id?: string }) {

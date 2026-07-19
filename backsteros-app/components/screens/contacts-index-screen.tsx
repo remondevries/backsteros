@@ -1,6 +1,7 @@
 "use client";
 
 import type { Contact as ApiContact } from "@backsteros/contracts";
+import { groupItemsByAlphaLetter } from "@backsteros/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
@@ -35,7 +36,7 @@ export function ContactsIndexScreen() {
       resource.data?.contacts,
     );
     return rows
-      .map(normalizeContact)
+      .map((contact) => normalizeContact(contact))
       .sort((a, b) =>
         (a.name || "").localeCompare(b.name || "", undefined, {
           sensitivity: "base",
@@ -43,13 +44,16 @@ export function ContactsIndexScreen() {
       );
   }, [local.data, resource.data]);
 
-  const first = contacts[0] ?? null;
+  // Match side-panel alpha order (not raw API order).
+  const first =
+    groupItemsByAlphaLetter(contacts).flatMap(([, entries]) => entries)[0] ??
+    null;
 
   useEffect(() => {
     if (!first) return;
-    // Match side-panel ordering/href (including remembered section).
-    router.replace(getContactSidePanelHref(first, "/contacts"));
-  }, [first, router]);
+    // Match side-panel ordering/href (including remembered section + unique slug).
+    router.replace(getContactSidePanelHref(first, "/contacts", contacts));
+  }, [contacts, first, router]);
 
   if (resource.loading && !local.data) {
     return (

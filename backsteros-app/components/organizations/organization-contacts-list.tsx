@@ -43,14 +43,25 @@ export function OrganizationContactsList({
     );
   }, [contacts, pathname]);
 
+  const itemIds = useMemo(
+    () => contacts.map((contact) => contact.id),
+    [contacts],
+  );
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
-    itemIds: contacts.map((contact) => contact.id),
+    itemIds,
     selectedId: selectedContactId,
     onNavigate: (contactId) => {
       const contact = contacts.find((entry) => entry.id === contactId);
       if (contact) {
-        router.push(getOrganizationContactHref(organizationRouteParam, contact));
+        router.push(
+          getOrganizationContactHref(
+            organizationRouteParam,
+            contact,
+            contacts,
+          ),
+        );
       }
     },
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
@@ -66,7 +77,11 @@ export function OrganizationContactsList({
       {contacts.map((contact) => (
         <Link
           key={contact.id}
-          href={getOrganizationContactHref(organizationRouteParam, contact)}
+          href={getOrganizationContactHref(
+            organizationRouteParam,
+            contact,
+            contacts,
+          )}
           className={`flex items-center gap-2.5 rounded-md px-2 py-2 hover:bg-white/[0.04] ${keyboardNavListItemClass(highlightedId === contact.id)}`}
           {...keyboardNavItemProps(contact.id)}
         >

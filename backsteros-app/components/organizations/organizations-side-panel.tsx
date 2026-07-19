@@ -109,7 +109,11 @@ export function OrganizationsSidePanel({ pathname }: { pathname: string }) {
         (entry) => entry.id === organizationId,
       );
       if (!organization) return;
-      const href = getOrganizationSidePanelHref(organization, pathname);
+      const href = getOrganizationSidePanelHref(
+        organization,
+        pathname,
+        organizations,
+      );
       if (href !== pathname) {
         router.push(href);
       }
@@ -179,6 +183,7 @@ export function OrganizationsSidePanel({ pathname }: { pathname: string }) {
                 const href = getOrganizationSidePanelHref(
                   organization,
                   pathname,
+                  organizations,
                 );
 
                 return (

@@ -2,12 +2,15 @@ import {
   getCanonicalOrganizationRouteParam,
   getOrganizationHref,
   getOrganizationHrefFromKey,
+  getUniqueOrganizationRouteParam,
+  type ListItemRouteIdentity,
 } from "@/lib/entity-route-hrefs";
 import { normalizeEntityRouteParam } from "@/lib/entity-slugs";
 import { getRememberedOrganizationSection } from "@/lib/entity-section-memory";
 import { isMobileShellBuildActive } from "@/lib/mobile/is-mobile-shell-env";
 import {
   getActiveOrganizationSection,
+  getOrganizationBasePath,
   getOrganizationSectionHref,
 } from "@/lib/organization-sections";
 import type { Organization } from "@/lib/db/schema";
@@ -57,13 +60,16 @@ export function isOrganizationSectionPath(pathname: string): boolean {
 
 /** Side panel: keep the active org section (e.g. Projects) but never carry detail routes. */
 export function getOrganizationSidePanelHref(
-  organization: Pick<Organization, "number" | "key">,
+  organization: Pick<Organization, "number" | "key" | "id">,
   currentPathname: string,
+  siblings?: readonly ListItemRouteIdentity[],
 ): string {
-  const targetRouteParam = getCanonicalOrganizationRouteParam(organization);
+  const targetRouteParam = siblings?.length
+    ? getUniqueOrganizationRouteParam(organization, siblings)
+    : getCanonicalOrganizationRouteParam(organization);
 
   if (isMobileShellBuildActive()) {
-    return getOrganizationsHref(organization);
+    return getOrganizationBasePath(targetRouteParam);
   }
 
   const sourceRouteParam =
@@ -82,5 +88,5 @@ export function getOrganizationSidePanelHref(
     return getOrganizationSectionHref(targetRouteParam, remembered);
   }
 
-  return getOrganizationsHref(organization);
+  return getOrganizationBasePath(targetRouteParam);
 }

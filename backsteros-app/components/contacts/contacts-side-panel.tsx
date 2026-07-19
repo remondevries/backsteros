@@ -112,7 +112,10 @@ export function ContactsSidePanel({ pathname }: { pathname: string }) {
   const contactHrefs = useMemo(() => {
     const hrefs = new Map<string, string>();
     for (const contact of contacts) {
-      hrefs.set(contact.id, getContactSidePanelHref(contact, pathname));
+      hrefs.set(
+        contact.id,
+        getContactSidePanelHref(contact, pathname, contacts),
+      );
     }
     return hrefs;
   }, [contacts, pathname]);
@@ -191,7 +194,7 @@ export function ContactsSidePanel({ pathname }: { pathname: string }) {
                 const isActive = contactMatchesRouteSlug(contact, selectedSlug);
                 const href =
                   contactHrefs.get(contact.id) ??
-                  getContactSidePanelHref(contact, pathname);
+                  getContactSidePanelHref(contact, pathname, contacts);
 
                 return (
                   <li key={contact.id}>
