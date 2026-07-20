@@ -644,6 +644,20 @@ export const apiContract = c.router(
       },
       summary: "Add a letter PDF attachment",
     },
+    reorderLetterAttachments: {
+      method: "POST",
+      path: "/api/v1/letters/:id/attachments/reorder",
+      pathParams: s.idParamsSchema,
+      body: s.reorderLetterAttachmentsSchema,
+      responses: {
+        200: s.letterAttachmentsResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Reorder letter PDF attachments",
+    },
     getLetterAttachment: {
       method: "GET",
       path: "/api/v1/letters/:id/attachments/:attachmentId",

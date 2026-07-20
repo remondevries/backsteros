@@ -364,6 +364,10 @@ export type BacksterosApiClient = {
     filename?: string,
     options?: UploadRequestOptions,
   ): Promise<LetterAttachment>;
+  reorderLetterAttachments(
+    id: string,
+    orderedIds: string[],
+  ): Promise<{ attachments: LetterAttachment[] }>;
   downloadLetterAttachment(id: string, attachmentId: string): Promise<Blob>;
   updateLetterAttachment(
     id: string,
@@ -443,6 +447,15 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
         },
         uploadOptions,
       ) as Promise<LetterAttachment>,
+    reorderLetterAttachments: (id, orderedIds) =>
+      requestJson<{ attachments: LetterAttachment[] }>(
+        `/api/v1/letters/${encodeURIComponent(id)}/attachments/reorder`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ orderedIds }),
+        },
+      ),
     downloadLetterAttachment: (id, attachmentId) =>
       requestBinary(
         `/api/v1/letters/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`,

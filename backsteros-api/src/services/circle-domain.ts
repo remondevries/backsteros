@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
@@ -752,6 +752,21 @@ export async function deleteLetterAttachment(
     .returning();
   if (!row) return null;
 
+  // Soft-delete keeps Tier B sync tombstones; still drop the blob so storage
+  // does not retain PDFs the user removed from the letter.
+  if (row.storageKey) {
+    try {
+      assertPrivateStorageKey(workspaceId, row.storageKey);
+      await deleteObject(row.storageKey);
+    } catch (error) {
+      console.error(
+        "[api] failed to delete letter attachment object",
+        row.storageKey,
+        error,
+      );
+    }
+  }
+
   const remaining = await listLetterAttachments(workspaceId, letterId);
   await syncLetterPrimaryAttachment(
     workspaceId,
@@ -793,6 +808,70 @@ export async function updateLetterAttachment(
     await syncLetterPrimaryAttachment(workspaceId, letterId, row);
   }
   return row;
+}
+
+export async function reorderLetterAttachments(
+  workspaceId: string,
+  letterId: string,
+  orderedIds: string[],
+) {
+  const letter = await getLetterById(workspaceId, letterId);
+  if (!letter) return null;
+
+  const uniqueIds = [...new Set(orderedIds)];
+  if (uniqueIds.length !== orderedIds.length) {
+    throw new Error("ATTACHMENT_IDS_INVALID");
+  }
+
+  return db.transaction(async (tx) => {
+    const owned = await tx
+      .select({ id: letterAttachments.id })
+      .from(letterAttachments)
+      .where(
+        and(
+          eq(letterAttachments.workspaceId, workspaceId),
+          eq(letterAttachments.letterId, letterId),
+          inArray(letterAttachments.id, orderedIds),
+          isNull(letterAttachments.deletedAt),
+        ),
+      );
+    if (owned.length !== orderedIds.length) {
+      throw new Error("ATTACHMENT_NOT_FOUND");
+    }
+
+    const rows = [];
+    for (const [index, id] of orderedIds.entries()) {
+      const [row] = await tx
+        .update(letterAttachments)
+        .set({ sortOrder: index + 1, updatedAt: new Date() })
+        .where(
+          and(
+            eq(letterAttachments.workspaceId, workspaceId),
+            eq(letterAttachments.letterId, letterId),
+            eq(letterAttachments.id, id),
+            isNull(letterAttachments.deletedAt),
+          ),
+        )
+        .returning();
+      if (row) rows.push(row);
+    }
+
+    const primary = rows[0] ?? null;
+    await tx
+      .update(letters)
+      .set({
+        storageKey: primary?.storageKey ?? "",
+        originalFilename: primary?.originalFilename ?? "",
+        contentType: primary?.contentType ?? "application/pdf",
+        byteSize: primary?.byteSize ?? 0,
+        checksum: primary?.checksum ?? null,
+        contentEtag: primary?.contentEtag ?? null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, letterId)));
+
+    return rows;
+  });
 }
 
 export async function putAvatar(

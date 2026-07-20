@@ -8,6 +8,7 @@ import {
   createDocumentSchema,
   createProjectSchema,
   createTaskSchema,
+  reorderLetterAttachmentsSchema,
   updateApiKeySchema,
   updateDocumentContentSchema,
   updateDocumentSchema,
@@ -906,6 +907,35 @@ export function registerApiRoutes(app: Hono) {
       ? c.json(result.attachment, 201)
       : c.json(notFound("Letter"), 404);
   });
+  app.post(
+    "/api/v1/letters/:id/attachments/reorder",
+    zValidator("json", reorderLetterAttachmentsSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+      try {
+        const rows = await circleService.reorderLetterAttachments(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json").orderedIds,
+        );
+        if (!rows) return c.json(notFound("Letter"), 404);
+        return c.json({ attachments: rows });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "ATTACHMENT_NOT_FOUND" ||
+            error.message === "ATTACHMENT_IDS_INVALID")
+        ) {
+          return c.json(
+            { error: "Invalid attachment order", code: "bad_request" },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
   app.get("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);

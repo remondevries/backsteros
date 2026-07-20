@@ -490,6 +490,9 @@ export const letterAttachmentsResponseSchema = z.object({
 export const updateLetterAttachmentSchema = z.object({
   originalFilename: z.string().trim().min(1).max(255),
 });
+export const reorderLetterAttachmentsSchema = z.object({
+  orderedIds: z.array(z.string()).min(1).max(100),
+});
 
 export const avatarParamsSchema = z.object({
   entityType: z.string(),
