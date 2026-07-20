@@ -2,6 +2,7 @@ import type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
   MentionCatalogTask,
@@ -82,6 +83,22 @@ export function resolveMentionCatalogDocument(
       (entry) =>
         entry.projectKey.toLowerCase() === parsed.projectKey.toLowerCase() &&
         entry.relativePath.toLowerCase() === parsed.relativePath.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogLetter(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogLetter | null {
+  if (parsed.kind !== "letter") {
+    return null;
+  }
+
+  return (
+    catalog.letters.find(
+      (entry) =>
+        entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
     ) ?? null
   );
 }

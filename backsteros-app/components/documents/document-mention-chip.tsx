@@ -6,6 +6,7 @@ import { useMemo } from "react";
 
 import { AssigneeContactIcon } from "@/components/contacts/assignee-contact-icon";
 import { OrganizationIcon } from "@/components/icons/organization-icon";
+import { LetterIcon } from "@/components/letters/letter-icon";
 import {
   getDisplayProjectIcon,
   ProjectOcticon,
@@ -23,6 +24,7 @@ import type {
 import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogLetter,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogProject,
   resolveMentionCatalogTask,
@@ -120,6 +122,53 @@ function TaskMentionChipTrigger({
   );
 }
 
+function LetterMentionChipTrigger({
+  href,
+  displayId,
+  title,
+  status,
+  layout,
+  projectName,
+  dueDate,
+}: {
+  href: string;
+  displayId: string;
+  title: string;
+  status: TaskStatus;
+  layout: MentionChipLayout;
+  projectName: string | null;
+  dueDate: number | null;
+}) {
+  const dueDateLabel =
+    layout === "block" && dueDate != null
+      ? formatTaskDueMetaLabel(dueDate)
+      : null;
+
+  return (
+    <Link href={href} className={getMentionChipLinkClass(layout)}>
+      <LetterIcon size={14} className={MENTION_CHIP_ICON_CLASS} />
+      <span className={MENTION_CHIP_IDENTIFIER_CLASS}>{displayId}</span>
+      <span className={getMentionChipTitleClass(layout)}>{title}</span>
+      {dueDateLabel ? (
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-white/10 bg-transparent px-2 py-0.5 text-xs leading-none text-foreground/60">
+          <TaskDueDateIcon
+            active
+            urgency={getTaskDueDateUrgency(dueDate, new Date(), { status })}
+            size={12}
+            className="shrink-0 text-foreground/50"
+          />
+          <span>{dueDateLabel}</span>
+        </span>
+      ) : null}
+      {layout === "block" && projectName ? (
+        <span className="inline-flex max-w-[8rem] shrink-0 items-center gap-1 text-xs leading-none text-foreground/50">
+          <span className="truncate">{projectName}</span>
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
 function ProjectMentionChipTrigger({
   href,
   name,
@@ -191,7 +240,11 @@ function DeletedMentionChipTrigger({
 }) {
   const display = getDeletedMentionDisplay(parsed);
   const chipLayout =
-    parsed.kind === "task" || parsed.kind === "project" ? layout : "inline";
+    parsed.kind === "task" ||
+    parsed.kind === "project" ||
+    parsed.kind === "letter"
+      ? layout
+      : "inline";
 
   if (parsed.kind === "project" && chipLayout === "block") {
     return (
@@ -341,6 +394,27 @@ export function DocumentMentionChip({
           />
         );
       }
+      case "letter": {
+        const letter = resolveMentionCatalogLetter(parsed, catalog);
+        if (!letter) {
+          return <DeletedMentionChipTrigger parsed={parsed} layout={layout} />;
+        }
+        if (!href) {
+          return null;
+        }
+
+        return (
+          <LetterMentionChipTrigger
+            href={href}
+            displayId={letter.displayId}
+            title={letter.title}
+            status={letter.status}
+            layout={layout}
+            projectName={letter.projectName}
+            dueDate={letter.dueDate}
+          />
+        );
+      }
       case "project": {
         const project = resolveMentionCatalogProject(parsed, catalog);
         if (!project) {
@@ -428,7 +502,11 @@ export function DocumentMentionChip({
   }
 
   const chipLayout =
-    parsed.kind === "task" || parsed.kind === "project" ? layout : "inline";
+    parsed.kind === "task" ||
+    parsed.kind === "project" ||
+    parsed.kind === "letter"
+      ? layout
+      : "inline";
 
   return (
     <MentionChipHoverShell
@@ -448,7 +526,7 @@ export function MentionLeadingIcon({
   documentIcon,
   contact,
 }: {
-  kind: "task" | "project" | "contact" | "organization" | "document";
+  kind: "task" | "project" | "contact" | "organization" | "document" | "letter";
   status?: TaskStatus | null;
   projectIcon?: string | null;
   documentIcon?: string | null;
@@ -460,6 +538,12 @@ export function MentionLeadingIcon({
 }) {
   if (kind === "task" && status) {
     return <TaskStatusIcon status={status} className="size-4 shrink-0" />;
+  }
+
+  if (kind === "letter") {
+    return (
+      <LetterIcon size={16} className="size-4 shrink-0 text-foreground/60" />
+    );
   }
 
   if (kind === "project") {

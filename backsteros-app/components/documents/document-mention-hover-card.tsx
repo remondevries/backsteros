@@ -4,6 +4,7 @@ import { TrashIcon } from "@primer/octicons-react";
 
 import { AssigneeContactIcon } from "@/components/contacts/assignee-contact-icon";
 import { OrganizationIcon } from "@/components/icons/organization-icon";
+import { LetterIcon } from "@/components/letters/letter-icon";
 import {
   getDisplayProjectIcon,
   ProjectOcticon,
@@ -14,6 +15,7 @@ import type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
   MentionCatalogTask,
@@ -22,6 +24,7 @@ import type {
 import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogLetter,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogProject,
   resolveMentionCatalogTask,
@@ -67,13 +70,15 @@ function MentionHoverDeletedPanel({ parsed }: { parsed: ParsedMentionToken }) {
   const kindLabel =
     parsed.kind === "task"
       ? "Task"
-      : parsed.kind === "project"
-        ? "Project"
-        : parsed.kind === "contact"
-          ? "Contact"
-          : parsed.kind === "organization"
-            ? "Organization"
-            : "Document";
+      : parsed.kind === "letter"
+        ? "Letter"
+        : parsed.kind === "project"
+          ? "Project"
+          : parsed.kind === "contact"
+            ? "Contact"
+            : parsed.kind === "organization"
+              ? "Organization"
+              : "Document";
 
   return (
     <MentionHoverPanel>
@@ -131,6 +136,36 @@ function TaskMentionHoverDetails({ task }: { task: MentionCatalogTask }) {
           <TaskPriorityIcon priority={task.priority} size={14} />
           <span>{priorityLabel}</span>
         </span>
+        <span>{dueLabel ? `Due ${dueLabel}` : "No due date"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function LetterMentionHoverDetails({ letter }: { letter: MentionCatalogLetter }) {
+  const dueLabel = formatTaskDueMetaLabel(letter.dueDate);
+  const statusLabel = getTaskStatusLabel(letter.status);
+
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <LetterIcon size={14} className="size-3.5 shrink-0 text-foreground/60" />
+        <span className="font-mono font-medium text-foreground/70">
+          {letter.displayId}
+        </span>
+        {letter.projectName ? (
+          <>
+            <span className="text-foreground/30">·</span>
+            <span className="truncate">{letter.projectName}</span>
+          </>
+        ) : null}
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{letter.title}</MentionHoverTitle>
+      <div className="mt-1 flex items-center gap-2 text-xs">
+        <TaskStatusIcon status={letter.status} className="size-3.5 shrink-0" />
+        <span className="text-foreground">{statusLabel}</span>
+      </div>
+      <MentionHoverFooterRow>
         <span>{dueLabel ? `Due ${dueLabel}` : "No due date"}</span>
       </MentionHoverFooterRow>
     </MentionHoverPanel>
@@ -294,6 +329,13 @@ export function DocumentMentionHoverCard({
         return <MentionHoverDeletedPanel parsed={parsed} />;
       }
       return <TaskMentionHoverDetails task={task} />;
+    }
+    case "letter": {
+      const letter = resolveMentionCatalogLetter(parsed, catalog);
+      if (!letter) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <LetterMentionHoverDetails letter={letter} />;
     }
     case "project": {
       const project = resolveMentionCatalogProject(parsed, catalog);

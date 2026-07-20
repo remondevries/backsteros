@@ -63,7 +63,7 @@ export function resolveMentionLayout(
     return "inline";
   }
 
-  if (segment.token.kind !== "task" && segment.token.kind !== "project") {
+  if (segment.token.kind !== "task" && segment.token.kind !== "project" && segment.token.kind !== "letter") {
     return "inline";
   }
 

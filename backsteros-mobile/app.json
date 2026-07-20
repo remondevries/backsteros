@@ -5,19 +5,44 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "backsteros",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.backsteros.mobile"
+      "bundleIdentifier": "com.backsteros.mobile",
+      "backgroundColor": "#000000",
+      "icon": "./assets/icon.png"
     },
     "android": {
-      "package": "com.backsteros.mobile"
+      "package": "com.backsteros.mobile",
+      "backgroundColor": "#000000",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1425"
+      }
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#000000",
+      "barStyle": "light-content",
+      "translucent": true
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#000000",
+      "barStyle": "light-content"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "@journeyapps/react-native-quick-sqlite"
+      "./plugins/with-fmt-xcode-format.js",
+      "expo-web-browser",
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": true

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { LETTER_PDF_ATTACHMENT_SHORTCUT_MAX } from "../letter-pdf-attachment-shortcut.js";
 import { stripPdfExtension } from "../letter-pdf-filename.js";
 import { LETTER_PDF_MAXIMIZE_SHORTCUT_HINT } from "../letter-pdf-maximize-shortcut.js";
 import { LETTER_PDF_TOGGLE_SHORTCUT_HINT } from "../letter-pdf-toggle-shortcut.js";
+import { useLetterPdfTabReorder } from "../use-letter-pdf-tab-reorder.js";
 import { LetterIcon } from "./letter-icon.js";
+import { LetterPdfDropzone } from "./letter-pdf-dropzone.js";
 import {
   LetterPdfTab,
   type LetterPdfDeleteResult,
@@ -86,7 +88,12 @@ export type LetterPdfDockProps = {
   hasDocument?: boolean;
   /** Optional host-owned PDF preview (bytes stay outside shared UI). */
   children?: ReactNode;
+  /**
+   * Legacy: immediate pick/upload. Prefer `onUploadFile` so + opens a dropzone.
+   */
   onUploadClick?: () => void;
+  /** When set, + replaces the viewer with a drag/drop zone and calls this. */
+  onUploadFile?: (file: File) => void;
   onToggleMaximize?: () => void;
   maximized?: boolean;
   /** Controlled open state (matches Next LetterPdfSection). */
@@ -103,9 +110,14 @@ export type LetterPdfDockProps = {
   onDeleteAttachment?: (
     attachmentId: string,
   ) => Promise<LetterPdfDeleteResult> | LetterPdfDeleteResult;
+  /** Persist a new tab order after drag-and-drop. */
+  onReorderAttachments?: (
+    orderedIds: string[],
+  ) => void | Promise<void>;
   hasLegacyPdf?: boolean;
   legacyTitle?: string;
   uploading?: boolean;
+  uploadProgress?: number | null;
 };
 
 /**
@@ -118,6 +130,7 @@ export function LetterPdfDock({
   hasDocument = true,
   children,
   onUploadClick,
+  onUploadFile,
   onToggleMaximize,
   maximized = false,
   pdfOpen: pdfOpenProp,
@@ -128,13 +141,45 @@ export function LetterPdfDock({
   onRenameAttachment,
   onAttachmentRenamed,
   onDeleteAttachment,
+  onReorderAttachments,
   hasLegacyPdf = false,
   legacyTitle,
   uploading = false,
+  uploadProgress = null,
 }: LetterPdfDockProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(true);
+  const [addingPdf, setAddingPdf] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const wasUploadingRef = useRef(false);
   const isControlled = pdfOpenProp !== undefined;
   const pdfOpen = isControlled ? Boolean(pdfOpenProp) : uncontrolledOpen;
+  const canUseDropzone = Boolean(onUploadFile);
+  const canReorder =
+    Boolean(onReorderAttachments) && attachments.length > 1 && !uploading;
+  const {
+    displayAttachments,
+    draggingId,
+    insertBeforeId,
+    isDragging,
+    bindTab,
+    consumeClickSuppression,
+  } = useLetterPdfTabReorder({
+    attachments,
+    enabled: canReorder,
+    onReorder: onReorderAttachments,
+  });
+
+  useEffect(() => {
+    if (uploading) {
+      wasUploadingRef.current = true;
+      return;
+    }
+    if (wasUploadingRef.current) {
+      wasUploadingRef.current = false;
+      setPendingFile(null);
+      setAddingPdf(false);
+    }
+  }, [uploading]);
 
   function togglePdf() {
     if (onTogglePdf) {
@@ -146,7 +191,20 @@ export function LetterPdfDock({
     }
   }
 
+  function openPdfPanel() {
+    if (onTogglePdf && !pdfOpen) {
+      onTogglePdf();
+      return;
+    }
+    if (!isControlled) {
+      setUncontrolledOpen(true);
+    }
+  }
+
   function selectAttachment(attachmentId: string) {
+    if (consumeClickSuppression()) return;
+    setAddingPdf(false);
+    setPendingFile(null);
     if (onSelectAttachment) {
       onSelectAttachment(attachmentId);
       return;
@@ -156,22 +214,56 @@ export function LetterPdfDock({
     }
   }
 
+  function startAddPdf() {
+    if (uploading) return;
+    if (canUseDropzone) {
+      setPendingFile(null);
+      setAddingPdf(true);
+      openPdfPanel();
+      return;
+    }
+    onUploadClick?.();
+  }
+
+  function handleDropzoneFile(file: File | null) {
+    if (!file) {
+      setPendingFile(null);
+      return;
+    }
+    setPendingFile(file);
+    onUploadFile?.(file);
+  }
+
   const legacyName = stripPdfExtension(
     (legacyTitle ?? title).trim() || "Document.pdf",
   );
   const showLegacyTab = attachments.length === 0 && hasLegacyPdf;
   const multiMode = attachments.length > 0 || hasLegacyPdf;
+  const showUploadControl = Boolean(onUploadFile || onUploadClick);
+  const showDropzone =
+    canUseDropzone && (addingPdf || uploading || !hasDocument);
 
-  const previewBody = children ? (
+  const dropzone = (
+    <LetterPdfDropzone
+      file={pendingFile}
+      uploading={uploading}
+      uploadProgress={uploadProgress}
+      onFileSelect={handleDropzoneFile}
+    />
+  );
+
+  const previewBody = showDropzone ? (
+    dropzone
+  ) : children ? (
     <div className="letter-pdf-section-preview">{children}</div>
   ) : (
     <div className="letter-pdf-section-empty letter-pdf-section-empty--preview">
       <p>{emptyMessage}</p>
-      {onUploadClick ? (
+      {showUploadControl ? (
         <button
           type="button"
           className="letter-pdf-tab letter-pdf-tab--upload"
-          onClick={onUploadClick}
+          onClick={startAddPdf}
         >
           Upload PDF
         </button>
@@ -179,7 +271,7 @@ export function LetterPdfDock({
     </div>
   );
 
-  if (!hasDocument) {
+  if (!hasDocument && !multiMode) {
     return (
       <ResizableBottomPanel
         storageKey={LETTER_PDF_PANEL_HEIGHT_KEY}
@@ -187,18 +279,22 @@ export function LetterPdfDock({
         minHeight={140}
         className="letter-pdf-section letter-pdf-section--empty"
       >
-        <div className="letter-pdf-section-empty">
-          <p>{emptyMessage}</p>
-          {onUploadClick ? (
-            <button
-              type="button"
-              className="letter-pdf-tab letter-pdf-tab--upload"
-              onClick={onUploadClick}
-            >
-              Upload PDF
-            </button>
-          ) : null}
-        </div>
+        {canUseDropzone ? (
+          dropzone
+        ) : (
+          <div className="letter-pdf-section-empty">
+            <p>{emptyMessage}</p>
+            {showUploadControl ? (
+              <button
+                type="button"
+                className="letter-pdf-tab letter-pdf-tab--upload"
+                onClick={startAddPdf}
+              >
+                Upload PDF
+              </button>
+            ) : null}
+          </div>
+        )}
       </ResizableBottomPanel>
     );
   }
@@ -241,14 +337,25 @@ export function LetterPdfDock({
           onClick={togglePdf}
         />
 
-        <div className="letter-pdf-tabs-start">
-          {attachments.map((attachment, index) => {
+        <div
+          className={[
+            "letter-pdf-tabs-start",
+            isDragging ? "letter-pdf-tabs-start--reordering" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {displayAttachments.map((attachment, index) => {
             const active =
-              pdfOpen && selectedAttachmentId === attachment.id;
+              pdfOpen &&
+              !addingPdf &&
+              !uploading &&
+              selectedAttachmentId === attachment.id;
             const shortcutHint =
               index < LETTER_PDF_ATTACHMENT_SHORTCUT_MAX
                 ? String(index + 1)
                 : null;
+            const isLast = index === displayAttachments.length - 1;
             return (
               <LetterPdfTab
                 key={attachment.id}
@@ -256,6 +363,20 @@ export function LetterPdfDock({
                 active={active}
                 disabled={uploading}
                 shortcutHint={shortcutHint}
+                draggableTab={canReorder}
+                dragging={draggingId === attachment.id}
+                insertBefore={
+                  Boolean(draggingId) &&
+                  insertBeforeId === attachment.id &&
+                  draggingId !== attachment.id
+                }
+                insertAfter={
+                  Boolean(draggingId) &&
+                  insertBeforeId === null &&
+                  isLast &&
+                  draggingId !== attachment.id
+                }
+                reorderBind={bindTab(attachment.id)}
                 onSelect={() => selectAttachment(attachment.id)}
                 onRename={onRenameAttachment}
                 onRenamed={onAttachmentRenamed}
@@ -268,13 +389,15 @@ export function LetterPdfDock({
             <button
               type="button"
               role="tab"
-              aria-selected={pdfOpen}
+              aria-selected={pdfOpen && !addingPdf && !uploading}
               aria-controls="letter-pdf-preview-panel"
               id="letter-pdf-tab-legacy"
               className={[
                 "letter-pdf-tab",
                 "letter-pdf-tab--legacy",
-                pdfOpen ? "letter-pdf-tab--active" : null,
+                pdfOpen && !addingPdf && !uploading
+                  ? "letter-pdf-tab--active"
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -296,11 +419,13 @@ export function LetterPdfDock({
             <button
               type="button"
               role="tab"
-              aria-selected={pdfOpen}
+              aria-selected={pdfOpen && !addingPdf && !uploading}
               className={[
                 "letter-pdf-tab",
                 "letter-pdf-tab--legacy",
-                pdfOpen ? "letter-pdf-tab--active" : null,
+                pdfOpen && !addingPdf && !uploading
+                  ? "letter-pdf-tab--active"
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -317,16 +442,27 @@ export function LetterPdfDock({
             </button>
           ) : null}
 
-          {onUploadClick ? (
+          {showUploadControl ? (
             <button
               type="button"
-              className="letter-pdf-tab letter-pdf-tab--upload-icon"
+              data-letter-pdf-tab-end-zone=""
+              className={[
+                "letter-pdf-tab",
+                "letter-pdf-tab--upload-icon",
+                addingPdf || uploading ? "letter-pdf-tab--active" : null,
+                draggingId && insertBeforeId === null
+                  ? "letter-pdf-tab--insert-before"
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               title="Upload PDF"
               aria-label="Upload PDF"
+              aria-pressed={addingPdf || uploading}
               disabled={uploading}
               onClick={(event) => {
                 event.stopPropagation();
-                onUploadClick();
+                startAddPdf();
               }}
             >
               <PlusIcon size={14} />
@@ -372,7 +508,9 @@ export function LetterPdfDock({
       </div>
 
       {pdfOpen ? (
-        <div id="letter-pdf-preview-panel">{previewBody}</div>
+        <div id="letter-pdf-preview-panel" className="letter-pdf-preview-panel">
+          {previewBody}
+        </div>
       ) : null}
     </ResizableBottomPanel>
   );

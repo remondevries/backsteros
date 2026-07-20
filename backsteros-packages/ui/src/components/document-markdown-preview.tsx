@@ -14,6 +14,7 @@ import { EMPTY_MENTION_CATALOG } from "../mentions/empty-catalog.js";
 import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogLetter,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogProject,
   resolveMentionCatalogTask,
@@ -160,6 +161,13 @@ function resolvePreviewChipLabel(
       }
       return { label: task.title || task.displayId, deleted: false };
     }
+    case "letter": {
+      const letter = resolveMentionCatalogLetter(token, catalog);
+      if (!letter) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: letter.title || letter.displayId, deleted: false };
+    }
     case "project": {
       const project = resolveMentionCatalogProject(token, catalog);
       if (!project) {
@@ -206,6 +214,14 @@ function resolvePreviewChipIconProps(
         contact: null,
       };
     }
+    case "letter":
+      return {
+        kind: "letter" as const,
+        status: null,
+        projectIcon: null,
+        documentIcon: null,
+        contact: null,
+      };
     case "project": {
       const project = resolveMentionCatalogProject(token, catalog);
       return {

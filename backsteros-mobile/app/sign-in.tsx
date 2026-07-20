@@ -10,6 +10,9 @@ import {
   View,
 } from "react-native";
 
+import { colors } from "../lib/theme";
+import { ui } from "../lib/ui";
+
 export default function SignInScreen() {
   const { isSignedIn } = useAuth();
   const { signIn, setActive, isLoaded } = useSignIn();
@@ -61,66 +64,71 @@ export default function SignInScreen() {
   }
 
   return (
-    <View style={{ flex: 1, padding: 24, gap: 12, justifyContent: "center" }}>
-      <Text style={{ fontSize: 24, fontWeight: "600" }}>Sign in</Text>
-      <Text style={{ color: "#666", marginBottom: 8 }}>
+    <View
+      style={[
+        ui.screen,
+        {
+          padding: 24,
+          gap: 12,
+          justifyContent: "center",
+        },
+      ]}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 280,
+          backgroundColor: "rgba(255,255,255,0.04)",
+        }}
+      />
+      <Text style={ui.title}>Sign in</Text>
+      <Text style={[ui.body, { marginBottom: 8 }]}>
         Sync your workspace on this device. No offline demo data.
       </Text>
       <TextInput
         autoCapitalize="none"
+        autoCorrect={false}
         keyboardType="email-address"
         placeholder="Email"
+        placeholderTextColor={colors.muted}
         value={email}
         onChangeText={setEmail}
-        style={inputStyle}
+        style={ui.input}
       />
       <TextInput
         secureTextEntry
         placeholder="Password"
+        placeholderTextColor={colors.muted}
         value={password}
         onChangeText={setPassword}
-        style={inputStyle}
+        style={ui.input}
       />
-      {error ? <Text style={{ color: "#b91c1c" }}>{error}</Text> : null}
+      {error ? <Text style={ui.error}>{error}</Text> : null}
       <Pressable
         onPress={() => void onEmailSignIn()}
         disabled={busy}
-        style={buttonStyle}
+        style={ui.button}
       >
         {busy ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.buttonText} />
         ) : (
-          <Text style={{ color: "#fff", fontWeight: "600" }}>Sign in</Text>
+          <Text style={ui.buttonLabel}>Sign in</Text>
         )}
       </Pressable>
       <Pressable
         onPress={() => void onGithub()}
         disabled={busy}
-        style={[buttonStyle, { backgroundColor: "#24292f" }]}
+        style={ui.buttonSecondary}
       >
-        <Text style={{ color: "#fff", fontWeight: "600" }}>
-          Continue with GitHub
-        </Text>
+        <Text style={ui.buttonSecondaryLabel}>Continue with GitHub</Text>
       </Pressable>
-      <Link href="/" style={{ marginTop: 8, color: "#666" }}>
+      <Link href="/" style={{ marginTop: 8, color: colors.muted }}>
         Back
       </Link>
     </View>
   );
 }
-
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: "#ddd",
-  borderRadius: 10,
-  paddingHorizontal: 12,
-  paddingVertical: 10,
-  fontSize: 16,
-} as const;
-
-const buttonStyle = {
-  backgroundColor: "#111",
-  borderRadius: 10,
-  paddingVertical: 12,
-  alignItems: "center" as const,
-};

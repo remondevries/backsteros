@@ -84,6 +84,8 @@ function primaryLabel(item: MentionItem): string {
   switch (item.kind) {
     case "task":
       return item.title;
+    case "letter":
+      return item.title;
     case "project":
       return item.name;
     case "contact":
@@ -99,6 +101,8 @@ function secondaryLabel(item: MentionItem): string | null {
   switch (item.kind) {
     case "task":
       return item.projectName;
+    case "letter":
+      return item.projectName;
     case "project":
       return null;
     case "contact":
@@ -111,7 +115,7 @@ function secondaryLabel(item: MentionItem): string | null {
 }
 
 function trailingHint(item: MentionItem): string | null {
-  if (item.kind === "task") {
+  if (item.kind === "task" || item.kind === "letter") {
     return item.displayId;
   }
   if (

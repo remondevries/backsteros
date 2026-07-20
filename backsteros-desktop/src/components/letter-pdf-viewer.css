@@ -13,15 +13,18 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  align-items: safe center;
+  /* flex-start + margin auto: centers short pages without breaking overflow scroll */
+  align-items: flex-start;
   overflow: auto;
 }
 
 .document-pdf-viewer .react-pdf__Document {
   display: flex;
   width: max-content;
+  max-width: 100%;
   flex-direction: column;
   align-items: center;
+  margin-inline: auto;
 }
 
 .document-pdf-viewer-page-slot {

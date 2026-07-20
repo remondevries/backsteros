@@ -1,6 +1,9 @@
 "use client";
 
-import type { Letter as ApiLetter } from "@backsteros/contracts";
+import type {
+  Letter as ApiLetter,
+  LetterAttachment,
+} from "@backsteros/contracts";
 
 import { dueDateToIso } from "@/lib/entity-normalize";
 import { isTaskStatus, type TaskStatus } from "@/lib/task-status";
@@ -376,6 +379,32 @@ export async function renameLetterAttachmentAction(input: {
     });
     refresh();
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: apiErrorText(error) };
+  }
+}
+
+export type ReorderLetterAttachmentsResult =
+  | { ok: true; attachments: LetterAttachment[] }
+  | { ok: false; error: string };
+
+export async function reorderLetterAttachmentsAction(input: {
+  letterId: string;
+  orderedIds: string[];
+}): Promise<ReorderLetterAttachmentsResult> {
+  if (!input.letterId.trim()) return { ok: false, error: "Letter is required." };
+  if (input.orderedIds.length === 0) {
+    return { ok: false, error: "Attachment order is required." };
+  }
+
+  try {
+    const { client, refresh } = getMutationContext();
+    const result = await client.reorderLetterAttachments(
+      input.letterId,
+      input.orderedIds,
+    );
+    refresh();
+    return { ok: true, attachments: result.attachments };
   } catch (error) {
     return { ok: false, error: apiErrorText(error) };
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { LetterAttachment } from "@backsteros/contracts";
+import type { LetterPdfTabReorderBind } from "@backsteros/ui";
 import { PencilIcon } from "@primer/octicons-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -26,6 +27,11 @@ type LetterPdfTabProps = {
   active: boolean;
   disabled?: boolean;
   shortcutHint?: string | null;
+  draggableTab?: boolean;
+  dragging?: boolean;
+  insertBefore?: boolean;
+  insertAfter?: boolean;
+  reorderBind?: LetterPdfTabReorderBind;
   onSelect: () => void;
   onRenamed?: () => void;
 };
@@ -36,6 +42,11 @@ export function LetterPdfTab({
   active,
   disabled = false,
   shortcutHint = null,
+  draggableTab = false,
+  dragging = false,
+  insertBefore = false,
+  insertAfter = false,
+  reorderBind,
   onSelect,
   onRenamed,
 }: LetterPdfTabProps) {
@@ -48,6 +59,7 @@ export function LetterPdfTab({
   const [saving, setSaving] = useState(false);
   const displayName = stripPdfExtension(attachment.originalFilename);
   const fullName = attachment.originalFilename?.trim() || "Document.pdf";
+  const canDrag = draggableTab && !disabled && !saving && !editing;
 
   useEffect(() => {
     if (!editing) {
@@ -138,6 +150,10 @@ export function LetterPdfTab({
       className={[
         "letter-pdf-tab",
         active ? "letter-pdf-tab--active" : null,
+        dragging ? "letter-pdf-tab--dragging" : null,
+        insertBefore ? "letter-pdf-tab--insert-before" : null,
+        insertAfter ? "letter-pdf-tab--insert-after" : null,
+        canDrag ? "letter-pdf-tab--draggable" : null,
       ]
         .filter(Boolean)
         .join(" ")}
@@ -145,25 +161,44 @@ export function LetterPdfTab({
       aria-selected={active}
       aria-controls="letter-pdf-preview-panel"
       id={`letter-pdf-tab-${attachment.id}`}
+      title={
+        canDrag
+          ? `${fullName} — drag to reorder`
+          : shortcutHint
+            ? `${fullName} (${shortcutHint})`
+            : fullName
+      }
+      {...(canDrag && reorderBind ? reorderBind : {})}
     >
-      <button
-        type="button"
+      <div
         className="letter-pdf-tab-main"
+        role="button"
+        tabIndex={disabled || saving ? -1 : 0}
         title={shortcutHint ? `${fullName} (${shortcutHint})` : fullName}
-        disabled={disabled || saving}
+        aria-disabled={disabled || saving ? true : undefined}
         onClick={(event) => {
           event.stopPropagation();
+          if (disabled || saving) return;
           onSelect();
+        }}
+        onKeyDown={(event) => {
+          if (disabled || saving) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            onSelect();
+          }
         }}
       >
         <span className="letter-pdf-tab-icon" aria-hidden="true">
           <LetterPdfIcon size={14} />
         </span>
         <span className="letter-pdf-tab-label">{displayName}</span>
-      </button>
+      </div>
       <button
         type="button"
         className="letter-pdf-tab-rename"
+        data-letter-pdf-tab-no-drag=""
         aria-label={`Rename ${displayName}`}
         title="Rename"
         disabled={disabled || saving}

@@ -42,9 +42,8 @@ function taskMatchesRouteParam(
   routeParam: string | undefined,
 ): boolean {
   if (!routeParam) return false;
-  if (entry.id === routeParam || String(entry.number) === routeParam) {
-    return true;
-  }
+  if (entry.id === routeParam) return true;
+
   const normalized = decodeURIComponent(routeParam).toLowerCase();
   const displayId = getTaskDisplayId(
     {
@@ -52,22 +51,32 @@ function taskMatchesRouteParam(
       projectId: entry.projectId,
       contactId: entry.contactId,
     },
-    entry.projectKey,
+    entry.projectKey ?? entry.contactKey,
   );
   if (displayId?.toLowerCase() === normalized) return true;
+
   const slug = getInboxTaskRouteSlugForTask({
     number: entry.number,
     projectKey: entry.projectKey,
     contactKey: entry.contactKey,
   });
   if (slug === normalized) return true;
+
   if (
     entry.projectKey &&
     encodeTaskSlug(entry.projectKey, entry.number) === normalized
   ) {
     return true;
   }
-  return normalized.endsWith(`-${entry.number}`);
+
+  if (
+    entry.contactKey &&
+    encodeTaskSlug(entry.contactKey, entry.number) === normalized
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function TaskDetailPage({

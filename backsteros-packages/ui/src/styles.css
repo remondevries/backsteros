@@ -5014,7 +5014,17 @@ a.mention-chip-lite:hover,
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow: auto;
+  /* Viewer scrolls inside; avoid a second overflow parent that grows with content. */
+  overflow: hidden;
+}
+
+#letter-pdf-preview-panel,
+.letter-pdf-preview-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .inbox-detail-breadcrumb {
@@ -6175,6 +6185,114 @@ body.app-is-dragging * {
   min-height: 140px;
 }
 
+.letter-pdf-dropzone {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0.75rem;
+}
+
+.letter-pdf-dropzone__surface {
+  position: relative;
+  display: flex;
+  min-height: 88px;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 1rem 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.letter-pdf-dropzone__surface:hover {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.letter-pdf-dropzone__surface--dragging {
+  border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.letter-pdf-dropzone__surface--disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.letter-pdf-dropzone__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.letter-pdf-dropzone__title {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.letter-pdf-dropzone__meta,
+.letter-pdf-dropzone__hint {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.letter-pdf-dropzone__remove {
+  align-self: flex-start;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.letter-pdf-dropzone__remove:hover {
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.letter-pdf-dropzone__remove:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.letter-pdf-dropzone__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .letter-pdf-tabs {
   display: flex;
   flex-direction: column;
@@ -6183,6 +6301,7 @@ body.app-is-dragging * {
 
 .letter-pdf-tabs--row {
   position: relative;
+  flex-shrink: 0;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
@@ -6244,6 +6363,59 @@ body.app-is-dragging * {
   border: 0;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.letter-pdf-tab--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.letter-pdf-tab--draggable:active {
+  cursor: grabbing;
+}
+
+.letter-pdf-tabs-start--reordering {
+  cursor: grabbing;
+}
+
+.letter-pdf-tab--dragging {
+  opacity: 0.55;
+  transform: scale(1.03);
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--foreground) 18%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 55%, transparent);
+  z-index: 2;
+}
+
+.letter-pdf-tab--insert-before,
+.letter-pdf-tab--insert-after {
+  position: relative;
+}
+
+.letter-pdf-tab--insert-before::before,
+.letter-pdf-tab--insert-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 35%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.letter-pdf-tab--insert-before::before {
+  left: -5px;
+}
+
+.letter-pdf-tab--insert-after::after {
+  right: -5px;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--upload-icon.letter-pdf-tab--insert-before::before {
+  left: -2px;
 }
 
 .letter-pdf-tabs--row .letter-pdf-tab--collapse {
@@ -6337,6 +6509,11 @@ body.app-is-dragging * {
 }
 
 .letter-pdf-tab-main:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.letter-pdf-tab-main[aria-disabled="true"] {
   cursor: default;
   opacity: 0.7;
 }

@@ -69,14 +69,17 @@ body {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  align-items: safe center;
+  /* flex-start + margin auto: centers short pages without breaking overflow scroll */
+  align-items: flex-start;
   overflow: auto;
 }
 .document-pdf-viewer .react-pdf__Document {
   display: flex;
   width: max-content;
+  max-width: 100%;
   flex-direction: column;
   align-items: center;
+  margin-inline: auto;
 }
 .document-pdf-viewer-page-slot {
   display: flex;
@@ -4887,6 +4890,7 @@ a.mention-resource-chip *,
 
 .letter-pdf-tabs--row {
   position: relative;
+  flex-shrink: 0;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
@@ -4928,6 +4932,60 @@ a.mention-resource-chip *,
   width: auto;
   max-width: min(240px, 100%);
   min-height: 30px;
+}
+
+.letter-pdf-tab--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.letter-pdf-tab--draggable:active {
+  cursor: grabbing;
+}
+
+.letter-pdf-tabs-start--reordering {
+  cursor: grabbing;
+}
+
+.letter-pdf-tab--dragging {
+  opacity: 0.55;
+  transform: scale(1.03);
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--foreground) 18%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 55%, transparent);
+  z-index: 2;
+}
+
+.letter-pdf-tab--insert-before,
+.letter-pdf-tab--insert-after {
+  position: relative;
+}
+
+.letter-pdf-tab--insert-before::before,
+.letter-pdf-tab--insert-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 35%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.letter-pdf-tab--insert-before::before {
+  left: -5px;
+}
+
+.letter-pdf-tab--insert-after::after {
+  right: -5px;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--upload-icon.letter-pdf-tab--insert-before::before {
+  left: -2px;
 }
 
 .letter-pdf-tabs--row .letter-pdf-tab--upload-icon {

@@ -1,6 +1,7 @@
 import type {
   Contact,
   Document,
+  Letter,
   Organization,
   Project,
   Task,
@@ -8,18 +9,20 @@ import type {
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { getContactDisplayId } from "@/lib/contact-display-id";
+import { formatLetterDisplayId } from "@/lib/letter-display-id";
 import { getOrganizationDisplayId } from "@/lib/organization-display-id";
 import { isProjectArea } from "@/lib/project-areas";
 import { isProjectStatus } from "@/lib/project-status";
 import { isTaskPriority, type TaskPriority } from "@/lib/task-priority";
 import { formatTaskDisplayId, INBOX_TASK_KEY } from "@/lib/task-display-id";
-import { isTaskStatus } from "@/lib/task-status";
+import { isTaskStatus, migrateLegacyTaskStatus } from "@/lib/task-status";
 import { toTimestampMs } from "@/lib/sync/timestamps";
 
 import { EMPTY_MENTION_CATALOG } from "./empty-catalog";
 import type {
   MentionCatalog,
   MentionCatalogDocument,
+  MentionCatalogLetter,
   MentionCatalogTask,
   ParsedMentionToken,
 } from "./mention-menu-types";
@@ -149,24 +152,58 @@ function mapDocument(
   };
 }
 
+function mapLetter(
+  letter: Letter,
+  projectsById: Map<string, Project>,
+): MentionCatalogLetter | null {
+  if (letter.number == null) {
+    return null;
+  }
+
+  const project = letter.projectId
+    ? (projectsById.get(letter.projectId) ?? null)
+    : null;
+
+  return {
+    id: letter.id,
+    displayId: formatLetterDisplayId(letter.number),
+    title: letter.title,
+    status: isTaskStatus(letter.status)
+      ? letter.status
+      : migrateLegacyTaskStatus(letter.status),
+    dueDate: letter.dueDate ? toTimestampMs(letter.dueDate) : null,
+    projectId: letter.projectId,
+    projectKey: project?.key ?? null,
+    projectName: project?.name ?? null,
+  };
+}
+
 export async function fetchMentionCatalog(
   client: BacksterosApiClient,
 ): Promise<MentionCatalog> {
-  const [projectsRes, tasksRes, contactsRes, organizationsRes, projectDocsRes, knowledgeDocsRes] =
-    await Promise.all([
-      client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-      client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
-      client.requestJson<{ contacts: Contact[] }>("/api/v1/contacts"),
-      client.requestJson<{ organizations: Organization[] }>(
-        "/api/v1/organizations",
-      ),
-      client.requestJson<{ documents: Document[] }>(
-        "/api/v1/documents?type=project",
-      ),
-      client.requestJson<{ documents: Document[] }>(
-        "/api/v1/documents?type=knowledge",
-      ),
-    ]);
+  const [
+    projectsRes,
+    tasksRes,
+    contactsRes,
+    organizationsRes,
+    projectDocsRes,
+    knowledgeDocsRes,
+    lettersRes,
+  ] = await Promise.all([
+    client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
+    client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
+    client.requestJson<{ contacts: Contact[] }>("/api/v1/contacts"),
+    client.requestJson<{ organizations: Organization[] }>(
+      "/api/v1/organizations",
+    ),
+    client.requestJson<{ documents: Document[] }>(
+      "/api/v1/documents?type=project",
+    ),
+    client.requestJson<{ documents: Document[] }>(
+      "/api/v1/documents?type=knowledge",
+    ),
+    client.requestJson<{ letters: Letter[] }>("/api/v1/letters"),
+  ]);
 
   const projects = projectsRes.projects ?? [];
   const tasks = tasksRes.tasks ?? [];
@@ -176,6 +213,7 @@ export async function fetchMentionCatalog(
     ...(projectDocsRes.documents ?? []),
     ...(knowledgeDocsRes.documents ?? []),
   ];
+  const letters = lettersRes.letters ?? [];
 
   const projectsById = new Map(projects.map((project) => [project.id, project]));
   const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -234,6 +272,9 @@ export async function fetchMentionCatalog(
       .filter(
         (document): document is MentionCatalogDocument => document !== null,
       ),
+    letters: letters
+      .map((letter) => mapLetter(letter, projectsById))
+      .filter((letter): letter is MentionCatalogLetter => letter !== null),
   };
 }
 
@@ -273,6 +314,11 @@ export function filterCatalogForTokens(
           `${token.projectKey.toLowerCase()}/${token.relativePath.toLowerCase()}`,
       ),
   );
+  const letterIds = new Set(
+    tokens
+      .filter((token) => token.kind === "letter")
+      .map((token) => token.displayId.toLowerCase()),
+  );
 
   return {
     tasks: catalog.tasks.filter((task) =>
@@ -291,6 +337,9 @@ export function filterCatalogForTokens(
       documentKeys.has(
         `${document.projectKey.toLowerCase()}/${document.relativePath.toLowerCase()}`,
       ),
+    ),
+    letters: catalog.letters.filter((letter) =>
+      letterIds.has(letter.displayId.toLowerCase()),
     ),
   };
 }

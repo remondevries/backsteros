@@ -13,6 +13,7 @@ const SECTION_HEADINGS: Record<MentionKind, string> = {
   contact: "Contacts",
   organization: "Organizations",
   document: "Documents",
+  letter: "Letters",
 };
 
 function normalizeQuery(query: string): string {
@@ -146,6 +147,28 @@ function filterDocuments(
     );
 }
 
+function filterLetters(catalog: MentionCatalog, query: string): MentionItem[] {
+  const normalized = normalizeQuery(query);
+
+  return catalog.letters
+    .filter(
+      (letter) =>
+        matchesQuery(letter.title, normalized) ||
+        matchesQuery(letter.displayId, normalized),
+    )
+    .slice(0, MAX_ITEMS_PER_SECTION)
+    .map(
+      (letter): MentionItem => ({
+        kind: "letter",
+        id: letter.id,
+        displayId: letter.displayId,
+        title: letter.title,
+        status: letter.status,
+        projectName: letter.projectName,
+      }),
+    );
+}
+
 export function buildMentionSections(
   catalog: MentionCatalog,
   query: string,
@@ -155,6 +178,11 @@ export function buildMentionSections(
       kind: "task",
       heading: SECTION_HEADINGS.task,
       items: filterTasks(catalog, query),
+    },
+    {
+      kind: "letter",
+      heading: SECTION_HEADINGS.letter,
+      items: filterLetters(catalog, query),
     },
     {
       kind: "project",

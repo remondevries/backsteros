@@ -1181,6 +1181,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       workspace.contacts,
       workspace.inboxItems,
       workspace.knowledgeDocuments,
+      workspace.letters,
       workspace.organizations,
       workspace.projectDocuments,
       workspace.projectSummaries,

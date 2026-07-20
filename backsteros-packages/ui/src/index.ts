@@ -891,6 +891,7 @@ export type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
   MentionCatalogTask,
@@ -1076,6 +1077,7 @@ export {
   resolveMentionCatalogContact,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogLetter,
 } from "./mentions/resolve-catalog-entry.js";
 
 export {
@@ -1325,11 +1327,33 @@ export {
 } from "./components/resizable-bottom-panel.js";
 
 export {
+  useLetterPdfTabReorder,
+  type LetterPdfTabReorderItem,
+  type LetterPdfTabReorderBind,
+} from "./use-letter-pdf-tab-reorder.js";
+
+export {
+  LETTER_PDF_TAB_DRAG_TYPE,
+  LETTER_PDF_TAB_DRAG_FALLBACK_TYPE,
+  createLetterPdfTabDragPayload,
+  parseLetterPdfTabDragPayload,
+  readLetterPdfTabDragPayload,
+  writeLetterPdfTabDragPayload,
+  isLetterPdfTabDragActive,
+  reorderAttachmentIds,
+} from "./letter-pdf-tab-drag.js";
+
+export {
   LetterPdfDock,
   LETTER_PDF_PANEL_HEIGHT_KEY,
   LETTER_PDF_VISIBLE_KEY,
   type LetterPdfDockProps,
 } from "./components/letter-pdf-dock.js";
+
+export {
+  LetterPdfDropzone,
+  type LetterPdfDropzoneProps,
+} from "./components/letter-pdf-dropzone.js";
 
 export {
   LetterPdfTab,

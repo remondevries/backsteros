@@ -3,11 +3,13 @@ import {
   getContactHref,
   getContactTaskHrefFromKey,
   getInboxTaskHref,
+  getLettersHref,
   getOrganizationHref,
   getProjectHref,
+  getProjectLetterHref,
   getProjectTaskHref,
 } from "@/lib/entity-route-hrefs";
-import { parseTaskSlug } from "@/lib/entity-slugs";
+import { parseLetterSlug, parseTaskSlug } from "@/lib/entity-slugs";
 import { getKnowledgeDocumentHref } from "@/lib/knowledge/navigation-path";
 import { INBOX_TASK_KEY } from "@/lib/task-display-id";
 
@@ -21,15 +23,17 @@ import type {
 export const KNOWLEDGE_MENTION_PROJECT_KEY = "_knowledge";
 
 export const MENTION_TOKEN_RE =
-  /\[@(task|project|contact|organization|document):([^\]]+)\]/g;
+  /\[@(task|project|contact|organization|document|letter):([^\]]+)\]/g;
 
 const MENTION_TOKEN_SINGLE_RE =
-  /^\[@(task|project|contact|organization|document):([^\]]+)\]$/;
+  /^\[@(task|project|contact|organization|document|letter):([^\]]+)\]$/;
 
 export function buildMentionToken(item: MentionItem): string {
   switch (item.kind) {
     case "task":
       return `[@task:${item.displayId}]`;
+    case "letter":
+      return `[@letter:${item.displayId}]`;
     case "project":
       return `[@project:${item.key}]`;
     case "contact":
@@ -52,6 +56,10 @@ export function parseMentionToken(raw: string): ParsedMentionToken | null {
 
   if (kind === "task") {
     return { kind: "task", displayId: value, raw };
+  }
+
+  if (kind === "letter") {
+    return { kind: "letter", displayId: value, raw };
   }
 
   if (kind === "project") {
@@ -84,7 +92,7 @@ export function getMentionTokenCacheKey(token: ParsedMentionToken): string {
   if (token.kind === "document") {
     return `${token.kind}:${token.projectKey}/${token.relativePath}`;
   }
-  if (token.kind === "task") {
+  if (token.kind === "task" || token.kind === "letter") {
     return `${token.kind}:${token.displayId}`;
   }
   return `${token.kind}:${token.key}`;
@@ -117,6 +125,23 @@ export function resolveMentionHref(
         return getInboxTaskHref(slug.number);
       }
       return getInboxTaskHref(slug.number);
+    }
+    case "letter": {
+      const letter = catalog.letters.find(
+        (entry) =>
+          entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+      );
+      if (!letter) {
+        return null;
+      }
+      const letterNumber = parseLetterSlug(letter.displayId);
+      if (letterNumber == null) {
+        return null;
+      }
+      if (letter.projectKey) {
+        return getProjectLetterHref(letter.projectKey, letterNumber);
+      }
+      return getLettersHref(letterNumber);
     }
     case "project": {
       const project = catalog.projects.find(

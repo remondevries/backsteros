@@ -51,12 +51,18 @@ export function prefetchLetterAttachments(
 export async function fetchLetterAttachments(
   client: BacksterosApiClient,
   letterId: string,
+  options?: { force?: boolean },
 ): Promise<LetterAttachment[]> {
-  const cached = attachmentListCache.peek(letterId);
-  if (cached) return cached;
+  if (!options?.force) {
+    const cached = attachmentListCache.peek(letterId);
+    if (cached) return cached;
 
-  const existing = inflight.get(letterId);
-  if (existing) return existing;
+    const existing = inflight.get(letterId);
+    if (existing) return existing;
+  } else {
+    attachmentListCache.delete(letterId);
+    inflight.delete(letterId);
+  }
 
   const request = client
     .listLetterAttachments(letterId)

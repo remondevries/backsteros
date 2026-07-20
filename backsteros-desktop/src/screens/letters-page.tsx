@@ -402,6 +402,14 @@ export function LettersPage({
         onRenameAttachment={pdfPanel.renameAttachment}
         onAttachmentRenamed={pdfPanel.reloadAttachments}
         onDeleteAttachment={pdfPanel.deleteAttachment}
+        onReorderAttachments={async (orderedIds) => {
+          const result = await pdfPanel.reorderAttachments(orderedIds);
+          if (!result.ok) {
+            window.alert(
+              `Could not save PDF order.\n${result.error}\n\nIf you are on Prod, switch Settings → Backend to Dev (local API), or deploy the API with the reorder route.`,
+            );
+          }
+        }}
         pdfOpen={pdfPanel.pdfOpen}
         onTogglePdf={pdfPanel.togglePdfOpen}
         pdfMaximized={pdfPanel.pdfMaximized}
@@ -417,6 +425,9 @@ export function LettersPage({
             />
           ) : null
         }
+        onUploadPdfFile={(file) => {
+          void pdfPanel.uploadPdfFile(file);
+        }}
         onUploadPdf={() => {
           void pdfPanel.uploadPdf();
         }}

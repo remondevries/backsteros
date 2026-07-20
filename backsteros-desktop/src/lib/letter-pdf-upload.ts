@@ -58,8 +58,14 @@ export async function pickAndUploadLetterPdf(
   input.accept = "application/pdf,.pdf";
 
   const file = await new Promise<File | null>((resolve) => {
-    input.onchange = () => resolve(input.files?.[0] ?? null);
-    input.oncancel = () => resolve(null);
+    let settled = false;
+    const finish = (value: File | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    input.onchange = () => finish(input.files?.[0] ?? null);
+    input.oncancel = () => finish(null);
     input.click();
   });
 

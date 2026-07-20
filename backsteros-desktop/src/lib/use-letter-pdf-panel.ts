@@ -13,7 +13,7 @@ import {
   peekLetterAttachmentCache,
   writeLetterAttachmentCache,
 } from "./letter-attachment-cache";
-import { pickAndUploadLetterPdf } from "./letter-pdf-upload";
+import { pickAndUploadLetterPdf, uploadLetterPdfFile } from "./letter-pdf-upload";
 
 function readStoredPdfOpen(): boolean {
   if (typeof window === "undefined") return true;
@@ -74,7 +74,9 @@ export function useLetterPdfPanel(
       return;
     }
     try {
-      const next = await fetchLetterAttachments(client, letterId);
+      const next = await fetchLetterAttachments(client, letterId, {
+        force: true,
+      });
       setAttachments(next);
     } catch (error) {
       console.error("[desktop] list letter attachments", error);
@@ -202,6 +204,32 @@ export function useLetterPdfPanel(
     }
   }, [client, letterId, openPdfPanel]);
 
+  const uploadPdfFile = useCallback(
+    async (file: File) => {
+      if (!letterId) return;
+      setUploading(true);
+      try {
+        const result = await uploadLetterPdfFile(client, letterId, file);
+        if (!result.ok) {
+          console.error("[desktop] letter pdf upload", result.error);
+          return;
+        }
+        if (result.attachmentId) {
+          pendingAttachmentIdRef.current = result.attachmentId;
+          setSelectedAttachmentId(result.attachmentId);
+        } else {
+          pendingAttachmentIdRef.current = null;
+          setSelectedAttachmentId(null);
+        }
+        openPdfPanel();
+        setRevision((value) => value + 1);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [client, letterId, openPdfPanel],
+  );
+
   const renameAttachment = useCallback(
     async (attachmentId: string, originalFilename: string) => {
       if (!letterId) {
@@ -255,6 +283,48 @@ export function useLetterPdfPanel(
     [attachments, client, letterId, selectedAttachmentId],
   );
 
+  const reorderAttachments = useCallback(
+    async (orderedIds: string[]) => {
+      if (!letterId) {
+        return { ok: false as const, error: "Letter is required." };
+      }
+      const previous = attachments;
+      const byId = new Map(attachments.map((entry) => [entry.id, entry]));
+      const optimistic = orderedIds
+        .map((id) => byId.get(id))
+        .filter((entry): entry is LetterAttachment => Boolean(entry));
+      if (optimistic.length !== attachments.length) {
+        return { ok: false as const, error: "Invalid attachment order." };
+      }
+
+      setAttachments(optimistic);
+      writeLetterAttachmentCache(letterId, optimistic);
+
+      try {
+        const result = await client.reorderLetterAttachments(
+          letterId,
+          orderedIds,
+        );
+        setAttachments(result.attachments);
+        writeLetterAttachmentCache(letterId, result.attachments);
+        setRevision((value) => value + 1);
+        return { ok: true as const };
+      } catch (error) {
+        console.error("[desktop] reorder letter attachments", error);
+        setAttachments(previous);
+        writeLetterAttachmentCache(letterId, previous);
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not save PDF order.",
+        };
+      }
+    },
+    [attachments, client, letterId],
+  );
+
   return {
     attachments,
     selectedAttachmentId,
@@ -268,8 +338,10 @@ export function useLetterPdfPanel(
     togglePdfOpen,
     togglePdfMaximized,
     uploadPdf,
+    uploadPdfFile,
     renameAttachment,
     deleteAttachment,
+    reorderAttachments,
     reloadAttachments: () => setRevision((value) => value + 1),
   };
 }

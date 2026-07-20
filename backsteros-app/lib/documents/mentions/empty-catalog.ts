@@ -6,4 +6,5 @@ export const EMPTY_MENTION_CATALOG: MentionCatalog = {
   contacts: [],
   organizations: [],
   documents: [],
+  letters: [],
 };

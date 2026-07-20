@@ -13,14 +13,17 @@ export function getMobileEnvironment() {
     globalThis as { process?: { env?: Record<string, string> } }
   ).process?.env?.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-  const apiUrl = (apiFromPublic || extra.EXPO_PUBLIC_API_URL || "http://127.0.0.1:8787").replace(
-    /\/+$/,
-    "",
-  );
+  const apiUrl = (
+    apiFromPublic ||
+    extra.EXPO_PUBLIC_API_URL ||
+    "http://127.0.0.1:8787"
+  ).replace(/\/+$/, "");
+
+  const clerkPublishableKey =
+    clerkFromPublic || extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "";
 
   return {
     apiUrl,
-    clerkPublishableKey:
-      clerkFromPublic || extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "",
+    clerkPublishableKey,
   };
 }

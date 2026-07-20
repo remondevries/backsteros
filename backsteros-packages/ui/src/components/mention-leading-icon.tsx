@@ -6,6 +6,7 @@ import {
 } from "./project-octicon.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { DocumentIcon } from "./document-icon.js";
+import { LetterIcon } from "./letter-icon.js";
 import { OrganizationIcon } from "./organization-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import type { TaskStatus } from "../task-status.js";
@@ -31,6 +32,15 @@ export function MentionLeadingIcon({
       <TaskStatusIcon
         status={status ?? "backlog"}
         className="mention-menu__icon"
+      />
+    );
+  }
+
+  if (kind === "letter") {
+    return (
+      <LetterIcon
+        size={16}
+        className="mention-menu__icon mention-menu__icon--muted"
       />
     );
   }

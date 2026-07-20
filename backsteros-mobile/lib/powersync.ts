@@ -7,6 +7,7 @@ import {
   Table,
 } from "@powersync/react-native";
 import { SQLJSOpenFactory } from "@powersync/adapter-sql-js";
+import { OPSqliteOpenFactory } from "@powersync/op-sqlite";
 import Constants from "expo-constants";
 
 export type TokenProvider = () => Promise<string | null>;
@@ -319,7 +320,11 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   }
 }
 
-/** SQL.js in Expo Go; native Quick SQLite for dev-client / production builds. */
+/**
+ * SQL.js in Expo Go; OP-SQLite for dev-client / production (New Architecture).
+ * Quick SQLite's JSI install fails under RN New Arch — OP-SQLite is the
+ * PowerSync-recommended native adapter for Expo 53+.
+ */
 export function createPowerSyncDatabase(userId: string) {
   const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 12);
   const dbFilename = `bos-mobile-${safeUserId}.db`;
@@ -329,9 +334,7 @@ export function createPowerSyncDatabase(userId: string) {
     schema: appSchema,
     database: isExpoGo
       ? new SQLJSOpenFactory({ dbFilename })
-      : {
-          dbFilename,
-        },
+      : new OPSqliteOpenFactory({ dbFilename }),
     retryDelayMs: 2_000,
   });
 }

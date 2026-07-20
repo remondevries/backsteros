@@ -41,6 +41,11 @@ export function filterCatalogForTokens(
           `${token.projectKey.toLowerCase()}/${token.relativePath.toLowerCase()}`,
       ),
   );
+  const letterIds = new Set(
+    tokens
+      .filter((token) => token.kind === "letter")
+      .map((token) => token.displayId.toLowerCase()),
+  );
 
   return {
     tasks: catalog.tasks.filter((task) =>
@@ -59,6 +64,9 @@ export function filterCatalogForTokens(
       documentKeys.has(
         `${document.projectKey.toLowerCase()}/${document.relativePath.toLowerCase()}`,
       ),
+    ),
+    letters: catalog.letters.filter((letter) =>
+      letterIds.has(letter.displayId.toLowerCase()),
     ),
   };
 }

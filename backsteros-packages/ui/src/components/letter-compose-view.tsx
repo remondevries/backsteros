@@ -347,8 +347,10 @@ export function LetterComposeView({
               hasLegacyPdf={Boolean(selectedPdfFile)}
               legacyTitle={selectedPdfFile?.name ?? "Document.pdf"}
               emptyMessage="Drop a PDF here or upload an attachment."
-              onUploadClick={() => {
-                void handlePickPdf();
+              onUploadFile={(file) => {
+                if (!pdfControlled) {
+                  setUncontrolledPdfFile(file);
+                }
               }}
               uploading={pdfUploading}
             />

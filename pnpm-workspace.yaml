@@ -17,3 +17,8 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   utf-8-validate: true
+# Single React for Expo mobile (SDK 54) — clerk can otherwise pull a second React.
+overrides:
+  react: 19.1.0
+  react-dom: 19.1.0
+  '@types/react': 19.1.10

@@ -74,12 +74,24 @@ export type MentionCatalogOrganization = {
   avatarUpdatedAt: number;
 };
 
+export type MentionCatalogLetter = {
+  id: string;
+  displayId: string;
+  title: string;
+  status: TaskStatus;
+  dueDate: number | null;
+  projectId: string | null;
+  projectKey: string | null;
+  projectName: string | null;
+};
+
 export type MentionCatalog = {
   tasks: MentionCatalogTask[];
   projects: MentionCatalogProject[];
   contacts: MentionCatalogContact[];
   organizations: MentionCatalogOrganization[];
   documents: MentionCatalogDocument[];
+  letters: MentionCatalogLetter[];
 };
 
 export type MentionMenuTriggerState = {
@@ -132,6 +144,14 @@ export type MentionItem =
       relativePath: string;
       title: string;
       icon: string | null;
+    }
+  | {
+      kind: "letter";
+      id: string;
+      displayId: string;
+      title: string;
+      status: TaskStatus;
+      projectName: string | null;
     };
 
 export type MentionSection = {

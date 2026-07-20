@@ -70,6 +70,8 @@ export type LetterDetailViewProps = {
   hasPdfDocument?: boolean;
   pdfChildren?: ReactNode;
   onUploadPdf?: () => void;
+  /** Preferred: + opens a dropzone; host uploads the chosen file. */
+  onUploadPdfFile?: (file: File) => void;
   onTogglePdfMaximize?: () => void;
   pdfMaximized?: boolean;
   pdfOpen?: boolean;
@@ -85,6 +87,7 @@ export type LetterDetailViewProps = {
   onDeleteAttachment?: (
     attachmentId: string,
   ) => Promise<LetterPdfDeleteResult> | LetterPdfDeleteResult;
+  onReorderAttachments?: (orderedIds: string[]) => void | Promise<void>;
   hasLegacyPdf?: boolean;
   legacyPdfTitle?: string;
   pdfUploading?: boolean;
@@ -119,6 +122,7 @@ export function LetterDetailView({
   hasPdfDocument = false,
   pdfChildren,
   onUploadPdf,
+  onUploadPdfFile,
   onTogglePdfMaximize,
   pdfMaximized = false,
   pdfOpen,
@@ -129,6 +133,7 @@ export function LetterDetailView({
   onRenameAttachment,
   onAttachmentRenamed,
   onDeleteAttachment,
+  onReorderAttachments,
   hasLegacyPdf = false,
   legacyPdfTitle,
   pdfUploading = false,
@@ -200,6 +205,7 @@ export function LetterDetailView({
     legacyTitle: legacyPdfTitle ?? "Document.pdf",
     hasDocument: hasPdfDocument || Boolean(pdfChildren),
     onUploadClick: onUploadPdf,
+    onUploadFile: onUploadPdfFile,
     onToggleMaximize: onTogglePdfMaximize,
     maximized: pdfMaximized,
     pdfOpen,
@@ -210,6 +216,7 @@ export function LetterDetailView({
     onRenameAttachment,
     onAttachmentRenamed,
     onDeleteAttachment,
+    onReorderAttachments,
     hasLegacyPdf,
     uploading: pdfUploading,
     children: pdfChildren,

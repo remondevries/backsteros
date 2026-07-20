@@ -50,13 +50,13 @@ export const navigation: NavigationItem[] = [
     section: "workspace",
   },
   { href: "/letters", label: "Letters", icon: "letters", section: "workspace" },
+  { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   {
     href: "/organizations",
     label: "Organizations",
     icon: "organizations",
     section: "people",
   },
-  { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   { href: "/settings", label: "Settings", icon: "settings", section: "system" },
 ];
 

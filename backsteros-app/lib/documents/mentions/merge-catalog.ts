@@ -31,13 +31,15 @@ export function mergeMentionCatalogs(
   const contacts = mergeUniqueById(base.contacts, patch.contacts);
   const organizations = mergeUniqueById(base.organizations, patch.organizations);
   const documents = mergeUniqueById(base.documents, patch.documents);
+  const letters = mergeUniqueById(base.letters, patch.letters);
 
   if (
     tasks === base.tasks &&
     projects === base.projects &&
     contacts === base.contacts &&
     organizations === base.organizations &&
-    documents === base.documents
+    documents === base.documents &&
+    letters === base.letters
   ) {
     return base;
   }
@@ -48,5 +50,6 @@ export function mergeMentionCatalogs(
     contacts,
     organizations,
     documents,
+    letters,
   };
 }

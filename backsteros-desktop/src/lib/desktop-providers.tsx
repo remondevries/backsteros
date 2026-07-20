@@ -1,4 +1,4 @@
-import { ClerkProvider, useAuth } from "@clerk/clerk-react";
+import { ClerkProvider, useAuth, useClerk } from "@clerk/clerk-react";
 import { createClerkTokenProvider } from "@backsteros/api-client";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, type ReactNode } from "react";
@@ -17,11 +17,66 @@ import {
   SignInScreen,
 } from "../screens/sign-in-screen";
 
+/** How often to poll Clerk for a session created in the OAuth popup. */
+const OAUTH_SESSION_POLL_MS = 1000;
+/** Stop polling after this many attempts (~45s). */
+const OAUTH_SESSION_POLL_MAX_ATTEMPTS = 45;
+
 function closeOauthWindows() {
   if (!isTauriRuntime()) return;
   void invoke("close_oauth_windows").catch(() => {
     /* window may already be gone */
   });
+}
+
+/**
+ * When Clerk's popup `postMessage` handoff fails in Tauri (no opener after
+ * GitHub), the session cookie may still exist on the shared WebView store.
+ * Reload the client and activate any session we find.
+ */
+function useOauthSessionRecovery(
+  isLoaded: boolean,
+  isSignedIn: boolean,
+  enabled: boolean,
+) {
+  const clerk = useClerk();
+
+  useEffect(() => {
+    if (!enabled || !isLoaded || isSignedIn || !isTauriRuntime()) return;
+
+    let attempts = 0;
+    let cancelled = false;
+
+    const tryRecover = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        await clerk.client?.reload();
+        const sessionId =
+          clerk.client?.signedInSessions?.[0]?.id ??
+          clerk.client?.sessions?.[0]?.id;
+        if (sessionId) {
+          await clerk.setActive({ session: sessionId });
+        }
+      } catch {
+        /* Clerk may not be ready yet; keep polling */
+      }
+    };
+
+    void tryRecover();
+    const id = window.setInterval(() => {
+      if (cancelled || attempts >= OAUTH_SESSION_POLL_MAX_ATTEMPTS) {
+        window.clearInterval(id);
+        return;
+      }
+      void tryRecover();
+    }, OAUTH_SESSION_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [clerk, enabled, isLoaded, isSignedIn]);
 }
 
 function AuthenticatedProviders({
@@ -39,6 +94,8 @@ function AuthenticatedProviders({
     () => createClerkTokenProvider(getToken),
     [getToken],
   );
+
+  useOauthSessionRecovery(isLoaded, Boolean(isSignedIn), !isOverlay);
 
   useEffect(() => {
     if (isSignedIn) {

@@ -5,7 +5,8 @@ import {
   getProjectsHref,
 } from "../entity-routes.js";
 import { encodeTaskSlug, getInboxTaskRouteHref } from "../inbox-items.js";
-import { getScopedProjectTaskHref } from "../project-route-scope.js";
+import { getLettersHref, parseLetterSlug } from "../letters.js";
+import { getScopedProjectLetterHref, getScopedProjectTaskHref } from "../project-route-scope.js";
 import { getProjectDocumentHref } from "../project-sections.js";
 import { parseTaskSlug } from "../resolve-history-entry-display.js";
 import { INBOX_TASK_KEY } from "../task-display-id.js";
@@ -22,6 +23,8 @@ export function buildMentionToken(item: MentionItem): string {
   switch (item.kind) {
     case "task":
       return `[@task:${item.displayId}]`;
+    case "letter":
+      return `[@letter:${item.displayId}]`;
     case "project":
       return `[@project:${item.key}]`;
     case "contact":
@@ -38,7 +41,7 @@ export function getMentionTokenCacheKey(token: ParsedMentionToken): string {
   if (token.kind === "document") {
     return `${token.kind}:${token.projectKey}/${token.relativePath}`;
   }
-  if (token.kind === "task") {
+  if (token.kind === "task" || token.kind === "letter") {
     return `${token.kind}:${token.displayId}`;
   }
   return `${token.kind}:${token.key}`;
@@ -124,6 +127,23 @@ export function resolveMentionHref(
         return getKnowledgeHref(document.relativePath);
       }
       return getProjectDocumentHref(document.projectKey, document.relativePath);
+    }
+    case "letter": {
+      const letter = catalog.letters.find(
+        (entry) =>
+          entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+      );
+      if (!letter) {
+        return null;
+      }
+      const letterNumber = parseLetterSlug(letter.displayId);
+      if (letterNumber == null) {
+        return null;
+      }
+      if (letter.projectKey) {
+        return getScopedProjectLetterHref(letter.projectKey, letterNumber);
+      }
+      return getLettersHref(letterNumber);
     }
   }
 }

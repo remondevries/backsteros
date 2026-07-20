@@ -53,5 +53,12 @@ export function getDeletedMentionDisplay(
         subtitle: path,
       };
     }
+    case "letter":
+      return {
+        ariaLabel: parsed.displayId,
+        identifier: parsed.displayId,
+        title: parsed.displayId,
+        subtitle: null,
+      };
   }
 }

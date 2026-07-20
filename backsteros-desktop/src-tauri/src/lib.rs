@@ -47,12 +47,11 @@ fn host_is_oauth_provider(host: &str) -> bool {
 
 /// Clerk finishes popup OAuth on an accounts `popup-callback` page (postMessage
 /// then `window.close()`). WKWebView often ignores `window.close()`, so we close
-/// the Tauri window ourselves once that page (or the app origin) loads.
+/// the Tauri window ourselves once that page loads.
+///
+/// App-origin loads are handled separately: relay the URL into the main shell
+/// first (SSO / hash callbacks), then close — do not discard them here.
 fn should_close_oauth_window(url: &tauri::Url) -> bool {
-    if is_app_origin(url) {
-        return true;
-    }
-
     let path = url.path().to_ascii_lowercase();
     path.contains("popup-callback")
         || path.contains("popup_callback")
@@ -66,6 +65,24 @@ fn close_oauth_window_soon(window: tauri::WebviewWindow) {
         std::thread::sleep(Duration::from_millis(450));
         let _ = window.close();
     });
+}
+
+/// When Clerk finishes OAuth by navigating the popup to the app origin (e.g.
+/// `https://tauri.localhost/#/sso-callback`), hand that URL to the main shell
+/// so hash/SSO callbacks are not lost, then close the popup.
+fn relay_oauth_callback_to_main(app: &AppHandle, url: &tauri::Url) {
+    if let Some(main) = app.get_webview_window("main") {
+        if let Err(error) = main.navigate(url.clone()) {
+            eprintln!("[desktop] failed to relay OAuth callback to main: {error}");
+            let href = url.as_str();
+            let script = format!(
+                "window.location.replace({})",
+                serde_json::to_string(href).unwrap_or_else(|_| "\"/\"".into())
+            );
+            let _ = main.eval(&script);
+        }
+        let _ = main.set_focus();
+    }
 }
 
 /// Keep the main shell on the app origin. Clerk OAuth should use window.open
@@ -222,7 +239,13 @@ pub fn run() {
                         if payload.event() != PageLoadEvent::Finished {
                             return;
                         }
-                        if should_close_oauth_window(payload.url()) {
+                        let url = payload.url();
+                        if is_app_origin(url) {
+                            relay_oauth_callback_to_main(&window.app_handle(), url);
+                            close_oauth_window_soon(window);
+                            return;
+                        }
+                        if should_close_oauth_window(url) {
                             close_oauth_window_soon(window);
                         }
                     })

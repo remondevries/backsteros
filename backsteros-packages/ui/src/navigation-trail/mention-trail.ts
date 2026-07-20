@@ -3,6 +3,7 @@ import {
   isProjectDocumentDetailPath,
 } from "../compose-task.js";
 import { encodeTaskSlug } from "../inbox-items.js";
+import { parseLetterSlug } from "../letters.js";
 import type {
   MentionCatalog,
   ParsedMentionToken,
@@ -113,6 +114,20 @@ function mentionTrailRef(
         entityId: document.id,
         projectRouteParam: isKnowledge ? "" : document.projectKey,
         relativePath: document.relativePath,
+      };
+    }
+    case "letter": {
+      const letter = catalog.letters.find(
+        (entry) =>
+          entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+      );
+      if (!letter) return null;
+      const letterNumber = parseLetterSlug(letter.displayId);
+      if (letterNumber == null) return null;
+      return {
+        kind: "letter",
+        entityId: letter.id,
+        routeParam: `l-${letterNumber}`,
       };
     }
   }

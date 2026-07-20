@@ -3,14 +3,17 @@ import {
   INBOX_TASK_KEY,
   KNOWLEDGE_MENTION_PROJECT_KEY,
   PROJECT_AREAS,
+  formatLetterDisplayId,
   formatTaskDisplayId,
   isProjectStatus,
   isTaskPriority,
   isTaskStatus,
   migrateLegacyProjectStatus,
+  migrateLegacyTaskStatus,
   type MentionCatalog,
   type MentionCatalogContact,
   type MentionCatalogDocument,
+  type MentionCatalogLetter,
   type MentionCatalogOrganization,
   type MentionCatalogProject,
   type MentionCatalogTask,
@@ -34,6 +37,23 @@ function dueDateMs(value: number | Date | null | undefined): number | null {
   if (value == null) return null;
   if (value instanceof Date) return value.getTime();
   return value;
+}
+
+function mapWorkspaceLetter(
+  letter: DesktopWorkspaceData["letters"][number],
+): MentionCatalogLetter {
+  return {
+    id: letter.id,
+    displayId: formatLetterDisplayId(letter.number),
+    title: letter.title,
+    status: isTaskStatus(letter.status)
+      ? letter.status
+      : migrateLegacyTaskStatus(letter.status),
+    dueDate: dueDateMs(letter.dueDate),
+    projectId: letter.projectId ?? null,
+    projectKey: letter.projectKey ?? null,
+    projectName: null,
+  };
 }
 
 function mapWorkspaceTask(
@@ -121,6 +141,7 @@ export function buildMentionCatalogFromWorkspace(
     | "projectDocuments"
     | "inboxItems"
     | "projectSummaries"
+    | "letters"
   >,
 ): MentionCatalog {
   const contactsById = new Map(
@@ -259,12 +280,25 @@ export function buildMentionCatalogFromWorkspace(
     });
   }
 
+  const letters: MentionCatalogLetter[] = workspace.letters.map((letter) => {
+    const mapped = mapWorkspaceLetter(letter);
+    const project = letter.projectId
+      ? projectsById.get(letter.projectId)
+      : null;
+    return {
+      ...mapped,
+      projectName: project?.name ?? null,
+      projectKey: mapped.projectKey ?? project?.key ?? null,
+    };
+  });
+
   if (
     taskById.size === 0 &&
     projects.length === 0 &&
     contacts.length === 0 &&
     organizations.length === 0 &&
-    documents.length === 0
+    documents.length === 0 &&
+    letters.length === 0
   ) {
     return EMPTY_MENTION_CATALOG;
   }
@@ -275,5 +309,6 @@ export function buildMentionCatalogFromWorkspace(
     contacts,
     organizations,
     documents,
+    letters,
   };
 }

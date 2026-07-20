@@ -1,11 +1,13 @@
 "use client";
 
 import type { LetterAttachment } from "@backsteros/contracts";
+import { useLetterPdfTabReorder } from "@backsteros/ui";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
   PlusIcon,
 } from "@primer/octicons-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import type { Letter } from "@/lib/db/schema";
@@ -14,6 +16,7 @@ import { PdfPreview } from "@/components/pdf-preview";
 import { LETTER_PDF_ATTACHMENT_SHORTCUT_MAX } from "@/lib/shortcuts/letter-pdf-attachment-shortcut";
 import { LETTER_PDF_MAXIMIZE_SHORTCUT_HINT } from "@/lib/shortcuts/letter-pdf-maximize-shortcut";
 import { LETTER_PDF_TOGGLE_SHORTCUT_HINT } from "@/lib/shortcuts/letter-pdf-toggle-shortcut";
+import { reorderLetterAttachmentsAction } from "@/lib/mutations/letters";
 
 import { LetterPdfDropzone } from "./letter-pdf-dropzone";
 import { LetterPdfIcon } from "./letter-pdf-icon";
@@ -35,7 +38,7 @@ type LetterPdfSectionProps = {
 
 export function LetterPdfSection({
   letter,
-  attachments,
+  attachments: attachmentsProp,
   selectedAttachmentId,
   pdfOpen,
   pdfMaximized = false,
@@ -45,12 +48,50 @@ export function LetterPdfSection({
   onSaved,
 }: LetterPdfSectionProps) {
   const pdfUpload = useLetterPdfUpload();
+  const [attachments, setAttachments] = useState(attachmentsProp);
   const hasPdf = attachments.length > 0 || Boolean(letter.storageKey);
   const hasRatio = pdfUpload.progress != null && pdfUpload.progress > 0;
   const percent = hasRatio ? Math.round((pdfUpload.progress ?? 0) * 100) : null;
   const legacyName = stripPdfExtension(
     letter.originalFilename?.trim() || "Document.pdf",
   );
+  const canReorder = attachments.length > 1 && !pdfUpload.uploading;
+
+  useEffect(() => {
+    setAttachments(attachmentsProp);
+  }, [attachmentsProp]);
+
+  const {
+    displayAttachments,
+    draggingId,
+    insertBeforeId,
+    isDragging,
+    bindTab,
+    consumeClickSuppression,
+  } = useLetterPdfTabReorder({
+    attachments,
+    enabled: canReorder,
+    onReorder: async (orderedIds) => {
+      const byId = new Map(attachments.map((entry) => [entry.id, entry]));
+      const optimistic = orderedIds
+        .map((id) => byId.get(id))
+        .filter((entry): entry is LetterAttachment => Boolean(entry));
+      const previous = attachments;
+      setAttachments(optimistic);
+
+      const result = await reorderLetterAttachmentsAction({
+        letterId: letter.id,
+        orderedIds,
+      });
+      if (!result.ok) {
+        setAttachments(previous);
+        toast.error(result.error);
+        return;
+      }
+      setAttachments(result.attachments);
+      onSaved?.();
+    },
+  });
 
   async function uploadPdf(file: File) {
     const result = await pdfUpload.upload(letter.id, file);
@@ -114,13 +155,21 @@ export function LetterPdfSection({
           onClick={onTogglePdf}
         />
 
-        <div className="letter-pdf-tabs-start">
-          {attachments.map((attachment, index) => {
+        <div
+          className={[
+            "letter-pdf-tabs-start",
+            isDragging ? "letter-pdf-tabs-start--reordering" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {displayAttachments.map((attachment, index) => {
             const active = pdfOpen && selectedAttachmentId === attachment.id;
             const shortcutHint =
               index < LETTER_PDF_ATTACHMENT_SHORTCUT_MAX
                 ? String(index + 1)
                 : null;
+            const isLast = index === displayAttachments.length - 1;
             return (
               <LetterPdfTab
                 key={attachment.id}
@@ -129,7 +178,24 @@ export function LetterPdfSection({
                 active={active}
                 disabled={pdfUpload.uploading}
                 shortcutHint={shortcutHint}
-                onSelect={() => onSelectAttachment(attachment.id)}
+                draggableTab={canReorder}
+                dragging={draggingId === attachment.id}
+                insertBefore={
+                  Boolean(draggingId) &&
+                  insertBeforeId === attachment.id &&
+                  draggingId !== attachment.id
+                }
+                insertAfter={
+                  Boolean(draggingId) &&
+                  insertBeforeId === null &&
+                  isLast &&
+                  draggingId !== attachment.id
+                }
+                reorderBind={bindTab(attachment.id)}
+                onSelect={() => {
+                  if (consumeClickSuppression()) return;
+                  onSelectAttachment(attachment.id);
+                }}
                 onRenamed={onSaved}
               />
             );
@@ -180,7 +246,16 @@ export function LetterPdfSection({
             </div>
           ) : (
             <label
-              className="letter-pdf-tab letter-pdf-tab--upload-icon"
+              data-letter-pdf-tab-end-zone=""
+              className={[
+                "letter-pdf-tab",
+                "letter-pdf-tab--upload-icon",
+                draggingId && insertBeforeId === null
+                  ? "letter-pdf-tab--insert-before"
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               title="Upload PDF"
               onClick={(event) => event.stopPropagation()}
             >
