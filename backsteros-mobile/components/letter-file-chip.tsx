@@ -9,7 +9,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
   type LayoutRectangle,
 } from "react-native";
@@ -23,6 +22,7 @@ import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
 import { LetterIcon } from "./letter-icon";
 import { MoreHorizontalIcon } from "./more-horizontal-icon";
+import { TextInput, type TextInputRef } from "./app-text-input";
 
 export type LetterFileRenameResult =
   | { ok: true }
@@ -59,7 +59,7 @@ export function LetterFileChip({
   active = false,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputRef>(null);
   const moreRef = useRef<View>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);

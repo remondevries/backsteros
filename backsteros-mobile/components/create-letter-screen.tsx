@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -28,6 +27,7 @@ import {
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
 import { PlusIcon } from "./plus-icon";
+import { TextInput } from "./app-text-input";
 
 /** Compose a new letter — optional project / contact / organization from route params. */
 export function CreateLetterScreen() {

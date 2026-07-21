@@ -6,13 +6,13 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { KeyboardAwareScrollView } from "../components/keyboard-aware-scroll-view";
+import { TextInput } from "../components/app-text-input";
 
 export default function SignInScreen() {
   const { isSignedIn } = useAuth();

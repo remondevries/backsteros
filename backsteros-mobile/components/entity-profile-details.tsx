@@ -4,13 +4,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
   type KeyboardTypeOptions,
 } from "react-native";
 
 import { colors, spacing } from "../lib/theme";
 import { ChevronRightIcon } from "./chevron-right-icon";
+import { TextInput } from "./app-text-input";
 
 export type ProfileDetailField = {
   key: string;

@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -76,6 +75,7 @@ import {
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskStatusIcon } from "./task-status-icon";
 import { PlusIcon } from "./plus-icon";
+import { TextInput } from "./app-text-input";
 
 type Props = {
   letterId: string | undefined;
@@ -327,7 +327,6 @@ export function LetterDetailScreen({ letterId }: Props) {
     setPicker(null);
     setEditing(true);
   }, [letter]);
-
 
   async function saveEditing() {
     if (!letter || saving) return;

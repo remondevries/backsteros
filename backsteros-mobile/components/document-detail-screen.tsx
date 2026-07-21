@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -21,6 +20,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { JournalMarkdownBody } from "./journal-markdown-body";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
+import { TextInput } from "./app-text-input";
 
 type DocMetaRow = {
   id: string;
@@ -170,7 +170,6 @@ export function DocumentDetailScreen({ documentId }: Props) {
     setSaveError(null);
     setEditing(true);
   }, [displayBody, documentId, resolvedTitle]);
-
 
   async function saveEditing() {
     if (!documentId || saving) return;

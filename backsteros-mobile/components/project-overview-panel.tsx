@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import {
@@ -56,6 +55,7 @@ import {
 import { PropertyTextSheet } from "./property-text-sheet";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
+import { TextInput } from "./app-text-input";
 
 type ProjectOverviewRow = {
   id: string;

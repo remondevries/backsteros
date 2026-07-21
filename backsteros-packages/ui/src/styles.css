@@ -76,6 +76,11 @@
   --keyboard-nav-highlight-color: #ee7a47;
   --keyboard-nav-highlight-bg: rgb(255 255 255 / 0.02);
   --keyboard-nav-highlight-width: 1px;
+  --selection-background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 42%,
+    transparent
+  );
   --tab-bg: color-mix(in srgb, var(--background) 95%, white);
   --tab-bg-active: color-mix(in srgb, var(--background) 90%, white);
   --tab-border: color-mix(in srgb, var(--background) 92%, white);
@@ -90,6 +95,11 @@
 .bos-product-shell {
   color: var(--foreground);
   background: var(--background);
+}
+
+::selection {
+  background: var(--selection-background);
+  color: var(--foreground);
 }
 
 .bos-product-shell.app-shell,

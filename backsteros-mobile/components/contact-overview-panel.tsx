@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -25,6 +24,7 @@ import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
+import { TextInput } from "./app-text-input";
 import {
   PropertyOptionSheet,
   type PropertyOption,

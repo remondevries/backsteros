@@ -17,6 +17,11 @@
   --keyboard-nav-highlight-color: #ee7a47;
   --keyboard-nav-highlight-width: 1px;
   --keyboard-nav-highlight-bg: rgb(255 255 255 / 0.02);
+  --selection-background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 42%,
+    transparent
+  );
   --content-chrome-header-height: 36px;
   --task-kanban-column-bg: #0e0e0f;
   --searchable-dropdown-panel-bg: #141414;
@@ -46,6 +51,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  background: var(--selection-background);
+  color: var(--foreground);
 }
 
 html,

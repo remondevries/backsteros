@@ -7,13 +7,13 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../lib/theme";
 import { useKeyboardBottomInset } from "../lib/use-keyboard-bottom-inset";
+import { TextInput } from "./app-text-input";
 
 type Props = {
   visible: boolean;
@@ -75,10 +75,13 @@ function TextEditorBody({
       style={[
         styles.sheet,
         embedded ? styles.sheetEmbedded : styles.sheetModal,
+        // Lift standalone modals above the keyboard. Embedded sheets ride the
+        // parent properties card, which already lifts.
+        !embedded && keyboardHeight > 0
+          ? { marginBottom: keyboardHeight }
+          : null,
         {
-          paddingBottom:
-            Math.max(bottomInset, 16) +
-            (keyboardHeight > 0 ? keyboardHeight : 0),
+          paddingBottom: Math.max(bottomInset, 16),
         },
         style,
       ]}
@@ -101,11 +104,13 @@ function TextEditorBody({
 
         <TextInput
           value={draft}
-          onChangeText={(next) =>
+          onChangeText={(next: string) =>
             setDraft(normalize ? normalize(next) : next)
           }
           placeholder={placeholder}
           placeholderTextColor={colors.muted}
+          selectionColor={colors.accent}
+          cursorColor={colors.accent}
           autoFocus
           autoCorrect={false}
           autoCapitalize={autoCapitalize ?? "none"}

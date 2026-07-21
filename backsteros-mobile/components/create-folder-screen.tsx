@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -14,6 +13,7 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
+import { TextInput } from "./app-text-input";
 
 function folderPathFromTitle(title: string): string {
   const slug =

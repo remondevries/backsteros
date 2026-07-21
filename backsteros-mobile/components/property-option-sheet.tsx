@@ -8,13 +8,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../lib/theme";
 import { useKeyboardBottomInset } from "../lib/use-keyboard-bottom-inset";
+import { TextInput } from "./app-text-input";
 
 export type PropertyOption<T extends string | number | null> = {
   value: T;
@@ -48,6 +48,19 @@ type Props<T extends string | number | null> = {
 const SLIDE_MS = 280;
 const FADE_MS = 220;
 
+/** Height for a ~50% bottom sheet that still fits above the keyboard. */
+function sheetHeightAboveKeyboard(
+  windowHeight: number,
+  keyboardHeight: number,
+): number {
+  const base = windowHeight * 0.5;
+  if (keyboardHeight <= 0) return base;
+  return Math.min(
+    base,
+    Math.max(windowHeight - keyboardHeight - 12, windowHeight * 0.32),
+  );
+}
+
 function OptionList<T extends string | number | null>({
   title,
   options,
@@ -75,6 +88,7 @@ function OptionList<T extends string | number | null>({
 }) {
   const [query, setQuery] = useState("");
   const keyboardHeight = useKeyboardBottomInset();
+  const windowHeight = Dimensions.get("window").height;
 
   useEffect(() => {
     setQuery("");
@@ -107,11 +121,16 @@ function OptionList<T extends string | number | null>({
       style={[
         styles.sheet,
         embedded ? styles.sheetEmbedded : styles.sheetModal,
+        !embedded && keyboardHeight > 0
+          ? {
+              height: sheetHeightAboveKeyboard(windowHeight, keyboardHeight),
+              maxHeight: undefined,
+              marginBottom: keyboardHeight,
+            }
+          : null,
         {
-          paddingBottom: Math.max(
-            bottomInset,
-            16,
-          ) + (keyboardHeight > 0 ? keyboardHeight : 0),
+          // Safe-area only — keyboard lift uses marginBottom (modal) or parent sheet (embedded).
+          paddingBottom: Math.max(bottomInset, 16),
         },
         style,
       ]}

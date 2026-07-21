@@ -12,7 +12,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -44,6 +43,7 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { PillNav } from "./pill-nav";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { PropertyOptionSheet } from "./property-option-sheet";
+import { TextInput } from "./app-text-input";
 
 const CONTACTS_SQL = `SELECT id, name FROM contacts
   WHERE deleted_at IS NULL

@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -47,6 +46,7 @@ import { SegmentedPillToggle } from "./segmented-pill-toggle";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
+import { TextInput } from "./app-text-input";
 
 type PickerKind =
   | "status"

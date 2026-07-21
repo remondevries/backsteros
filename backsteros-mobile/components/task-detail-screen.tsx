@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -47,6 +46,7 @@ import {
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
+import { TextInput } from "./app-text-input";
 
 type Props = {
   taskId: string | undefined;
@@ -173,7 +173,6 @@ export function TaskDetailScreen({ taskId }: Props) {
     setSaveError(null);
     setEditing(true);
   }, [displayDescription, displayTitle, task]);
-
 
   async function saveEditing() {
     if (!task || saving) return;

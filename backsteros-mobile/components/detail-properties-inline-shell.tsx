@@ -2,6 +2,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHideTabBar } from "../lib/tab-bar-visibility";
+import { useKeyboardBottomInset } from "../lib/use-keyboard-bottom-inset";
 import { colors, spacing } from "../lib/theme";
 import { DetailPropertiesCirclePlusIcon } from "./detail-properties-circle-plus-icon";
 import { PropertiesSheetCloseProvider } from "./detail-property-editor-rows";
@@ -50,6 +52,8 @@ export function DetailPropertiesInlineShell({
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const keyboardHeight = useKeyboardBottomInset();
+  const windowHeight = Dimensions.get("window").height;
 
   useHideTabBar(open);
 
@@ -71,6 +75,16 @@ export function DetailPropertiesInlineShell({
   function closeSheet() {
     setOpen(false);
   }
+
+  // Keep the card above the keyboard; shrink if 50% would overflow the remaining space.
+  const baseSheetHeight = windowHeight * 0.5;
+  const sheetHeight =
+    keyboardHeight > 0
+      ? Math.min(
+          baseSheetHeight,
+          Math.max(windowHeight - keyboardHeight - 12, windowHeight * 0.32),
+        )
+      : baseSheetHeight;
 
   return (
     <>
@@ -135,8 +149,9 @@ export function DetailPropertiesInlineShell({
               {
                 paddingTop: Math.max(insets.top, 12),
                 paddingBottom: Math.max(insets.bottom, 16),
-                height: "50%",
-                maxHeight: "50%",
+                height: sheetHeight,
+                maxHeight: sheetHeight,
+                marginBottom: keyboardHeight,
               },
             ]}
           >
@@ -158,6 +173,7 @@ export function DetailPropertiesInlineShell({
             <ScrollView
               style={styles.sheetBody}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
               bounces
             >
               <PropertiesSheetCloseProvider closeSheet={closeSheet}>

@@ -1,7 +1,8 @@
 import { forwardRef } from "react";
-import { StyleSheet, TextInput, View, type TextInputProps } from "react-native";
+import { StyleSheet, View, type TextInputProps } from "react-native";
 
 import { colors, spacing } from "../lib/theme";
+import { TextInput, type TextInputRef } from "./app-text-input";
 
 const SEARCH_FIELD_HEIGHT = 44;
 
@@ -17,7 +18,7 @@ type Props = {
  * Inline list search — sits under the screen header (title / tabs), above rows.
  * Revealed via pull-down ({@link usePullToRevealSearch}).
  */
-export const ListSearchField = forwardRef<TextInput, Props>(
+export const ListSearchField = forwardRef<TextInputRef, Props>(
   function ListSearchField(
     {
       value,

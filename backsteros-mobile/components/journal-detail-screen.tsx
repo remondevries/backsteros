@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -33,6 +32,7 @@ import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 import { JournalMarkdownBody } from "./journal-markdown-body";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TasksNavIcon } from "./nav-icons";
+import { TextInput } from "./app-text-input";
 
 type SyncedTaskRow = GroupedTaskRow & {
   number?: number | null;
@@ -286,7 +286,6 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     setSaveError(null);
     setEditing(true);
   }
-
 
   async function saveEditing() {
     if (!documentId || saving) return;

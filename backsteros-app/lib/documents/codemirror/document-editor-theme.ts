@@ -53,7 +53,8 @@ export const documentEditorTheme = EditorView.theme(
     },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
       {
-        backgroundColor: "rgb(255 255 255 / 0.12) !important",
+        backgroundColor:
+          "color-mix(in srgb, var(--keyboard-nav-highlight-color) 42%, transparent) !important",
       },
     ".cm-activeLine": {
       backgroundColor: "transparent",

@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -44,6 +43,7 @@ import {
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
+import { TextInput } from "./app-text-input";
 
 type PickerKind =
   | "status"
@@ -96,7 +96,6 @@ export function InboxCreateTaskScreen() {
     return getDefaultDueDateIsoForTasksDueFilter(dueFilterParam);
   }, [dueFilterParam]);
   const openedFromTasks = (segments as string[]).includes("tasks");
-
 
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();

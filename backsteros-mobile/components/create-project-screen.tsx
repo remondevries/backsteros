@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -29,6 +28,7 @@ import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { ProjectIcon } from "./project-icon";
 import { ProjectStatusIcon } from "./project-status-icon";
+import { TextInput } from "./app-text-input";
 import {
   PropertyOptionSheet,
   type PropertyOption,

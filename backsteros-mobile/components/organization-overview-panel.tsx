@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -23,6 +22,7 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
+import { TextInput } from "./app-text-input";
 
 type OrganizationOverviewRow = {
   id: string;
