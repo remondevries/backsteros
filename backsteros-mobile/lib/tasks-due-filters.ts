@@ -16,7 +16,7 @@ export const TASKS_DUE_FILTERS = [
 
 export type TasksDueFilter = (typeof TASKS_DUE_FILTERS)[number];
 
-export const DEFAULT_TASKS_DUE_FILTER: TasksDueFilter = "all";
+export const DEFAULT_TASKS_DUE_FILTER: TasksDueFilter = "today";
 
 export const TASKS_DUE_FILTER_LABELS: Record<TasksDueFilter, string> = {
   today: "Today",
