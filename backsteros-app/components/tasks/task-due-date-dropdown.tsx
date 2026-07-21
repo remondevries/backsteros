@@ -177,7 +177,7 @@ export function TaskDueDateDropdown({
           options={options}
           onChange={handleChange}
           disabled={disabled || isPending}
-          searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
+          searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
           searchShortcutLabel="⇧D"
           ariaLabel="Change due date"
           taskPropertyDropdownId="dueDate"
@@ -206,7 +206,7 @@ export function TaskDueDateDropdown({
         options={options}
         onChange={handleChange}
         disabled={disabled || isPending}
-        searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
+        searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
         searchShortcutLabel="⇧D"
         ariaLabel={`Change due date: ${displayLabel}`}
         taskPropertyDropdownId="dueDate"

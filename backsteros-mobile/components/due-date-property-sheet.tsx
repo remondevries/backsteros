@@ -12,9 +12,14 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 
 import {
+  naturalLanguageDueDatePreview,
+  parseNaturalLanguageDueDate,
+} from "../lib/parse-natural-language-due-date";
+import {
   endOfLocalDayIso,
   formatLocalYmd,
   formatTaskDueMetaLabel,
+  parseYmdLocal,
 } from "../lib/task-due-date";
 import { colors } from "../lib/theme";
 import {
@@ -187,6 +192,29 @@ export function DueDatePropertySheet({
     onClose();
   }, [onClose]);
 
+  const handleQuerySubmit = useCallback(
+    (query: string) => {
+      const result = parseNaturalLanguageDueDate(query);
+      if (result.kind === "clear") {
+        onSelect(null);
+        return true;
+      }
+      if (result.kind === "date") {
+        const date = parseYmdLocal(result.ymd);
+        if (!date) return false;
+        onSelect(endOfLocalDayIso(date));
+        return true;
+      }
+      return false;
+    },
+    [onSelect],
+  );
+
+  const handleQueryPreview = useCallback(
+    (query: string) => naturalLanguageDueDatePreview(query),
+    [],
+  );
+
   return (
     <>
       <PropertyOptionSheet
@@ -197,6 +225,9 @@ export function DueDatePropertySheet({
         selected={selected}
         onSelect={handleSelect}
         onClose={handleSheetClose}
+        searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
+        onQuerySubmit={handleQuerySubmit}
+        queryPreviewLabel={handleQueryPreview}
       />
 
       {nativeOpen && Platform.OS === "android" ? (

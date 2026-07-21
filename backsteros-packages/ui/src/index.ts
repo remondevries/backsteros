@@ -656,6 +656,18 @@ export {
 } from "./components/project-detail-view.js";
 
 export {
+  ProjectKeyEditor,
+  type ProjectKeyEditorProps,
+} from "./components/project-key-editor.js";
+
+export {
+  buildProjectKeyRenameRedirectPath,
+  encodeProjectSlug,
+  isValidProjectKey,
+  normalizeProjectKey,
+} from "./project-key.js";
+
+export {
   ProjectLettersSectionView,
   type ProjectLettersSectionViewProps,
 } from "./components/project-letters-section-view.js";

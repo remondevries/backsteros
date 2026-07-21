@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import {
   ContactOverviewView,
@@ -12,6 +12,7 @@ import {
   ProjectOverviewSkeleton,
   TaskDetailSkeleton,
   buildOrganizationDropdownOptions,
+  buildProjectKeyRenameRedirectPath,
   formatJournalEntryTitle,
   getContactsHref,
   getDocumentEditorBody,
@@ -508,6 +509,8 @@ function TrailProjectLeaf({
   workspace: ReturnType<typeof useDesktopWorkspaceData>;
 }) {
   useDesktopSectionBreadcrumb(breadcrumbItems);
+  const navigate = useNavigate();
+  const location = useLocation();
   const tasks = workspace.allTasks.filter(
     (task) => task.projectId === project.id,
   );
@@ -532,6 +535,37 @@ function TrailProjectLeaf({
       onSaveName={(name) => {
         void workspace.patchProject(project.id, { name });
         return { ok: true as const };
+      }}
+      onSaveKey={async (key) => {
+        const conflict = workspace.projects.some(
+          (entry) =>
+            entry.id !== project.id &&
+            entry.key.toLowerCase() === key.toLowerCase(),
+        );
+        if (conflict) {
+          return { ok: false, error: "Project key already exists." };
+        }
+        const previousKey = project.key;
+        try {
+          await workspace.patchProject(project.id, { key });
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not update project ID.",
+          };
+        }
+        const nextPath = buildProjectKeyRenameRedirectPath(
+          location.pathname,
+          previousKey,
+          key,
+        );
+        if (nextPath !== location.pathname) {
+          navigate(nextPath, { replace: true });
+        }
+        return { ok: true as const, key };
       }}
       onStatusChange={(status) => {
         void workspace.patchProject(project.id, { status });

@@ -144,7 +144,7 @@ export function ProjectStartDateDropdown({
         options={options}
         onChange={handleChange}
         disabled={isPending}
-        searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
+        searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
         searchShortcutLabel="⇧S"
         ariaLabel={`Change start date: ${displayLabel}`}
         taskPropertyDropdownId="startDate"

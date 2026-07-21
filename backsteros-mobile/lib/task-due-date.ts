@@ -9,6 +9,16 @@ export function formatLocalYmd(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+export function parseYmdLocal(ymd: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return new Date(year, month - 1, day);
+}
+
 /**
  * Calendar day for a due value — mirrors `@backsteros/ui` `getTaskDueDateYmd`.
  * Pass workspace `timeZone` for journal/desktop parity (UTC-offset due timestamps).

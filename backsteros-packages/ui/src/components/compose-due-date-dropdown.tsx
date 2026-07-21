@@ -46,7 +46,7 @@ export function ComposeDueDateDropdown({
   triggerVariant = "default",
   emptyLabel = "No due date",
   ariaLabel = "Due date",
-  searchPlaceholder = "tomorrow, next Friday, 2 weeks ago…",
+  searchPlaceholder = "tomorrow, yesterday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
   showUrgency = true,
 }: ComposeDueDateDropdownProps) {

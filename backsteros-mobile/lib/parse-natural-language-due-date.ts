@@ -1,6 +1,6 @@
 import * as chrono from "chrono-node";
 
-import { formatTaskDueMetaLabel, parseYmdLocal } from "./task-due-date.js";
+import { formatTaskDueMetaLabel, parseYmdLocal } from "./task-due-date";
 
 export type NaturalLanguageDueDateParseResult =
   | { kind: "date"; ymd: string; label: string }
@@ -74,7 +74,6 @@ function normalizePastDueDateInput(input: string): string {
   let next = input.trim();
   next = next.replace(/\bin the past\b/gi, "ago");
   next = next.replace(/\bprevious\b/gi, "last");
-  // Bare quantity-less relatives
   next = next.replace(/^(an?\s+)?weeks?\s+ago$/i, "1 week ago");
   next = next.replace(/^(an?\s+)?days?\s+ago$/i, "1 day ago");
   return next.replace(/\s+/g, " ").trim();
@@ -120,8 +119,6 @@ function matchesClearIntent(input: string): boolean {
   );
   if (clearMatches.length === 0) return false;
 
-  // Don't treat as clear if a date phrase also uniquely/ambiguously shares the prefix
-  // (e.g. avoid colliding with future completable phrases).
   const dateMatches = COMPLETABLE_DATE_PHRASES.filter((phrase) =>
     phrase.startsWith(needle),
   );
@@ -177,7 +174,7 @@ export function parseNaturalLanguageDueDate(
   return resultForYmd(dateToLocalYmd(parsed));
 }
 
-/** Short preview label for the dropdown while the user types. */
+/** Short preview label for the due-date sheet while the user types. */
 export function naturalLanguageDueDatePreview(
   input: string,
   ref: Date = new Date(),

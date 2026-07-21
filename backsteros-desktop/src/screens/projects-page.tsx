@@ -25,6 +25,7 @@ import {
   buildContactDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  buildProjectKeyRenameRedirectPath,
   formatLetterDisplayId,
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
@@ -1209,6 +1210,39 @@ export function ProjectsPage({
           patchSelected({ name });
           void workspace.patchProject(project.id, { name });
           return { ok: true };
+        }}
+        onSaveKey={async (key) => {
+          const conflict = projectList.some(
+            (entry) =>
+              entry.id !== project.id &&
+              entry.key.toLowerCase() === key.toLowerCase(),
+          );
+          if (conflict) {
+            return { ok: false, error: "Project key already exists." };
+          }
+          const previousKey = project.key;
+          patchSelected({ key });
+          try {
+            await workspace.patchProject(project.id, { key });
+          } catch (error) {
+            patchSelected({ key: previousKey });
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Could not update project ID.",
+            };
+          }
+          const nextPath = buildProjectKeyRenameRedirectPath(
+            location.pathname,
+            previousKey,
+            key,
+          );
+          if (nextPath !== location.pathname) {
+            navigate(nextPath, { replace: true });
+          }
+          return { ok: true, key };
         }}
         onSaveSummary={(summary) => {
           void workspace.patchProject(project.id, { summary });

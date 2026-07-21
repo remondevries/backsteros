@@ -34,6 +34,15 @@ type Props<T extends string | number | null> = {
    * Nested RN Modals do not stack reliably on iOS.
    */
   embedded?: boolean;
+  /** Override the search field placeholder. */
+  searchPlaceholder?: string;
+  /**
+   * Optional free-text submit (e.g. natural-language due dates).
+   * Return true when the query was applied (sheet closes).
+   */
+  onQuerySubmit?: (query: string) => boolean;
+  /** Live preview label while typing a free-text query. */
+  queryPreviewLabel?: (query: string) => string | null;
 };
 
 const SLIDE_MS = 280;
@@ -48,6 +57,9 @@ function OptionList<T extends string | number | null>({
   bottomInset,
   embedded,
   style,
+  searchPlaceholder,
+  onQuerySubmit,
+  queryPreviewLabel,
 }: {
   title: string;
   options: readonly PropertyOption<T>[];
@@ -57,6 +69,9 @@ function OptionList<T extends string | number | null>({
   bottomInset: number;
   embedded?: boolean;
   style?: object;
+  searchPlaceholder?: string;
+  onQuerySubmit?: (query: string) => boolean;
+  queryPreviewLabel?: (query: string) => string | null;
 }) {
   const [query, setQuery] = useState("");
   const keyboardHeight = useKeyboardBottomInset();
@@ -72,6 +87,20 @@ function OptionList<T extends string | number | null>({
       option.label.toLowerCase().includes(needle),
     );
   }, [options, query]);
+
+  const queryPreview = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed || !queryPreviewLabel) return null;
+    return queryPreviewLabel(trimmed);
+  }, [query, queryPreviewLabel]);
+
+  const applyQuery = () => {
+    const trimmed = query.trim();
+    if (!trimmed || !onQuerySubmit) return;
+    if (onQuerySubmit(trimmed)) {
+      onClose();
+    }
+  };
 
   return (
     <Animated.View
@@ -107,15 +136,36 @@ function OptionList<T extends string | number | null>({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder={`Search ${title.toLowerCase()}…`}
+            placeholder={
+              searchPlaceholder ?? `Search ${title.toLowerCase()}…`
+            }
             placeholderTextColor={colors.muted}
             autoCorrect={false}
             autoCapitalize="none"
             clearButtonMode="while-editing"
+            returnKeyType="done"
+            onSubmitEditing={applyQuery}
             style={styles.searchInput}
             accessibilityLabel={`Search ${title}`}
           />
         </View>
+
+        {queryPreview ? (
+          <Pressable
+            onPress={applyQuery}
+            style={({ pressed }) => [
+              styles.previewRow,
+              pressed ? styles.rowPressed : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={queryPreview}
+          >
+            <Text style={styles.previewLabel} numberOfLines={1}>
+              {queryPreview}
+            </Text>
+            <Text style={styles.previewHint}>Tap to apply</Text>
+          </Pressable>
+        ) : null}
 
         <ScrollView
           style={styles.list}
@@ -123,7 +173,9 @@ function OptionList<T extends string | number | null>({
           keyboardDismissMode="on-drag"
         >
           {filtered.length === 0 ? (
-            <Text style={styles.empty}>No matches.</Text>
+            queryPreview ? null : (
+              <Text style={styles.empty}>No matches.</Text>
+            )
           ) : (
             filtered.map((option) => {
               const isSelected = option.value === selected;
@@ -174,6 +226,9 @@ export function PropertyOptionSheet<T extends string | number | null>({
   onSelect,
   onClose,
   embedded = false,
+  searchPlaceholder,
+  onQuerySubmit,
+  queryPreviewLabel,
 }: Props<T>) {
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -235,6 +290,19 @@ export function PropertyOptionSheet<T extends string | number | null>({
     ],
   };
 
+  const listProps = {
+    title,
+    options,
+    selected,
+    onSelect,
+    onClose,
+    bottomInset: insets.bottom,
+    searchPlaceholder,
+    onQuerySubmit,
+    queryPreviewLabel,
+    style: sheetMotion,
+  };
+
   if (embedded) {
     return (
       <View style={styles.embeddedRoot} pointerEvents="box-none">
@@ -249,16 +317,7 @@ export function PropertyOptionSheet<T extends string | number | null>({
             accessibilityLabel="Close"
           />
         </Animated.View>
-        <OptionList
-          title={title}
-          options={options}
-          selected={selected}
-          onSelect={onSelect}
-          onClose={onClose}
-          bottomInset={insets.bottom}
-          embedded
-          style={sheetMotion}
-        />
+        <OptionList {...listProps} embedded />
       </View>
     );
   }
@@ -282,15 +341,7 @@ export function PropertyOptionSheet<T extends string | number | null>({
             accessibilityLabel="Close"
           />
         </Animated.View>
-        <OptionList
-          title={title}
-          options={options}
-          selected={selected}
-          onSelect={onSelect}
-          onClose={onClose}
-          bottomInset={insets.bottom}
-          style={sheetMotion}
-        />
+        <OptionList {...listProps} />
       </View>
     </Modal>
   );
@@ -369,6 +420,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     color: colors.foreground,
+  },
+  previewRow: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  previewLabel: {
+    flex: 1,
+    color: colors.foreground,
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  previewHint: {
+    color: colors.muted,
+    fontSize: 12,
   },
   list: {
     flexGrow: 1,

@@ -33,6 +33,7 @@ import { OrganizationIcon } from "./organization-icon.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
 import { PillNav } from "./pill-nav.js";
 import { ProjectAreaBadge } from "./project-area-badge.js";
+import { ProjectKeyEditor } from "./project-key-editor.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import {
   formatProjectTaskProgressPercent,
@@ -71,6 +72,12 @@ export type ProjectDetailViewProps = {
     | Promise<{ ok: true } | { ok: false; error: string }>
     | { ok: true }
     | { ok: false; error: string };
+  onSaveKey?: (
+    key: string,
+  ) =>
+    | Promise<{ ok: true; key?: string } | { ok: false; error: string }>
+    | { ok: true; key?: string }
+    | { ok: false; error: string };
   onSaveSummary?: (summary: string) => void | Promise<void>;
   onSaveDescription?: (description: string) => void | Promise<void>;
   onStatusChange?: (status: ProjectStatus) => void;
@@ -100,6 +107,7 @@ function toDate(value: number | Date | null | undefined): Date | null {
 export function ProjectDetailView({
   project,
   onSaveName,
+  onSaveKey,
   onSaveSummary,
   onSaveDescription,
   onStatusChange,
@@ -327,7 +335,16 @@ export function ProjectDetailView({
               <div className="project-detail__meta-row">
                 <span className="project-detail__meta-label">Properties</span>
                 <div className="project-detail__meta-fields">
-                  <span className="project-detail__key">{project.key}</span>
+                  {onSaveKey ? (
+                    <ProjectKeyEditor value={project.key} onSave={onSaveKey} />
+                  ) : (
+                    <span className="project-detail__key">
+                      <span className="project-detail__key-label">ID</span>
+                      <span className="project-detail__key-value">
+                        {project.key}
+                      </span>
+                    </span>
+                  )}
                   <PropertyDropdown
                     value={status}
                     options={statusOptions}
@@ -398,7 +415,7 @@ export function ProjectDetailView({
                       dueDate={start}
                       variant="property"
                       noDueDateLabel="No start date"
-                      searchPlaceholder="tomorrow, next Friday…"
+                      searchPlaceholder="tomorrow, yesterday…"
                       searchShortcutLabel="⇧S"
                       taskPropertyDropdownId="startDate"
                       showIcon={false}

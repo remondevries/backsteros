@@ -159,7 +159,7 @@ export function LetterDueDateDropdown({
           options={options}
           onChange={handleChange}
           disabled={isPending}
-          searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
+          searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
           searchShortcutLabel="D"
           ariaLabel="Change due date"
           fallbackIcon={
@@ -188,7 +188,7 @@ export function LetterDueDateDropdown({
         options={options}
         onChange={handleChange}
         disabled={isPending}
-        searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
+        searchPlaceholder="tomorrow, yesterday, 2 weeks ago…"
         searchShortcutLabel="D"
         ariaLabel={`Change due date: ${displayLabel}`}
         taskPropertyDropdownId="dueDate"

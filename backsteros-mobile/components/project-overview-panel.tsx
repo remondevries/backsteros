@@ -23,6 +23,10 @@ import {
   PROJECT_STATUSES,
   type ProjectStatus,
 } from "../lib/project-status";
+import {
+  isValidProjectKey,
+  normalizeProjectKey,
+} from "../lib/project-key";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import {
   endOfLocalDayIso,
@@ -49,6 +53,7 @@ import {
   PropertyOptionSheet,
   type PropertyOption,
 } from "./property-option-sheet";
+import { PropertyTextSheet } from "./property-text-sheet";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 
@@ -93,6 +98,7 @@ type PropertyRow = {
 };
 
 type PickerKind =
+  | "key"
   | "status"
   | "priority"
   | "organization"
@@ -182,6 +188,7 @@ export function ProjectOverviewPanel({
 
   const [status, setStatus] = useState<ProjectStatus>("backlog");
   const [priority, setPriority] = useState(0);
+  const [projectKey, setProjectKey] = useState("");
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState<string | null>(null);
@@ -305,14 +312,15 @@ export function ProjectOverviewPanel({
     if (!project) return;
     setStatus(migrateLegacyProjectStatus(project.status));
     setPriority(project.priority ?? 0);
+    setProjectKey(project.key?.trim() ?? "");
     setOrganizationId(project.organization_id);
     setStartDate(project.start_date);
     setDueDate(project.due_date);
     setArea(asProjectArea(project.area));
   }, [project]);
 
-  async function patchProperty(values: Record<string, unknown>) {
-    if (!project) return;
+  async function patchProperty(values: Record<string, unknown>): Promise<boolean> {
+    if (!project) return false;
     setPropertyError(null);
     const sqliteValues: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
@@ -349,6 +357,9 @@ export function ProjectOverviewPanel({
           prev
             ? {
                 ...prev,
+                ...(sqliteValues.key !== undefined
+                  ? { key: String(sqliteValues.key) }
+                  : {}),
                 ...(sqliteValues.status !== undefined
                   ? { status: String(sqliteValues.status) }
                   : {}),
@@ -382,12 +393,14 @@ export function ProjectOverviewPanel({
             : prev,
         );
       }
+      return true;
     } catch (reason) {
       setPropertyError(
         reason instanceof Error
           ? reason.message
           : "Could not update property.",
       );
+      return false;
     }
   }
 
@@ -555,9 +568,8 @@ export function ProjectOverviewPanel({
     {
       key: "key",
       label: "Key",
-      value: project.key?.trim() || "—",
+      value: projectKey.trim() || "—",
       icon: <ProjectIcon size={14} />,
-      editable: false,
     },
     {
       key: "status",
@@ -610,11 +622,11 @@ export function ProjectOverviewPanel({
       label: getProjectStatusLabel(status),
       icon: <ProjectStatusIcon status={status} size={12} />,
     },
-    ...(project.key?.trim()
+    ...(projectKey.trim()
       ? [
           {
             key: "key",
-            label: project.key.trim(),
+            label: projectKey.trim(),
             icon: <ProjectIcon size={12} />,
           },
         ]
@@ -650,6 +662,29 @@ export function ProjectOverviewPanel({
 
   const propertySheets = (
     <>
+      <PropertyTextSheet
+        embedded
+        visible={picker === "key"}
+        title="Project ID"
+        value={projectKey}
+        placeholder="e.g. ACME"
+        maxLength={6}
+        autoCapitalize="characters"
+        normalize={normalizeProjectKey}
+        validate={(next) =>
+          isValidProjectKey(next) ? null : "Use 2–6 letters or numbers."
+        }
+        onSave={async (next) => {
+          const previous = projectKey;
+          setProjectKey(next);
+          const ok = await patchProperty({ key: next });
+          if (!ok) {
+            setProjectKey(previous);
+            throw new Error("Could not update project ID.");
+          }
+        }}
+        onClose={() => setPicker(null)}
+      />
       <PropertyOptionSheet
         embedded
         visible={picker === "status"}

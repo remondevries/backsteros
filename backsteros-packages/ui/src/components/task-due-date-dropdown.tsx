@@ -60,7 +60,7 @@ export function TaskDueDateDropdown({
   disabled = false,
   onDueDateChange,
   noDueDateLabel = "No due date",
-  searchPlaceholder = "tomorrow, next Friday, 2 weeks ago…",
+  searchPlaceholder = "tomorrow, yesterday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId = "dueDate",
   showIcon = true,
