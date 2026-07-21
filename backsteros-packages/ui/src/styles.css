@@ -4137,6 +4137,26 @@ a.mention-chip-lite--deleted:hover {
   width: 100%;
 }
 
+.mention-structured-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+  width: 100%;
+}
+
+.mention-structured-list > .mention-task-block {
+  margin-block: 0;
+  width: 100%;
+}
+
+.mention-task-block--quote {
+  margin: 0 0 0.85rem;
+  border-left: 2px solid rgb(255 255 255 / 0.15);
+  padding-left: 0.85rem;
+}
+
 .content-markdown-preview-body--rendered .mention-task-stack {
   margin-bottom: 0.85rem;
 }

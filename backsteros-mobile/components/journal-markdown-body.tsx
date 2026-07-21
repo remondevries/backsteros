@@ -12,6 +12,7 @@ import {
 } from "../lib/mention-catalog";
 import {
   resolveMentionLayout,
+  splitTrailingStructuralPrefix,
   type MentionChipLayout,
 } from "../lib/mention-layout";
 import {
@@ -88,6 +89,59 @@ function isWhitespaceOnlyMarkdown(segment: MentionSegment): boolean {
   return segment.type === "markdown" && segment.content.trim() === "";
 }
 
+function BlockMentionRow({
+  prefix,
+  children,
+}: {
+  prefix: string | null;
+  children: ReactNode;
+}) {
+  const isUnordered = prefix != null && /^[ \t]*[-*+][ \t]+$/.test(prefix);
+  const isOrdered = prefix != null && /^[ \t]*\d+\.[ \t]+$/.test(prefix);
+  const isQuote = prefix != null && /^[ \t]*>[ \t]?$/.test(prefix);
+  const orderedLabel = isOrdered ? prefix.trim() : null;
+
+  return (
+    <View
+      style={{
+        width: "100%",
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 8,
+        paddingLeft: isQuote ? 10 : 0,
+        borderLeftWidth: isQuote ? 2 : 0,
+        borderLeftColor: isQuote ? "rgba(255,255,255,0.15)" : "transparent",
+      }}
+    >
+      {isUnordered ? (
+        <Text
+          style={{
+            color: colors.muted,
+            fontSize: BODY_FONT_SIZE,
+            lineHeight: 34,
+            width: 12,
+          }}
+        >
+          •
+        </Text>
+      ) : null}
+      {orderedLabel ? (
+        <Text
+          style={{
+            color: colors.muted,
+            fontSize: BODY_FONT_SIZE,
+            lineHeight: 34,
+            minWidth: 16,
+          }}
+        >
+          {orderedLabel}
+        </Text>
+      ) : null}
+      <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
+    </View>
+  );
+}
+
 function ParagraphWithMentions({
   paragraph,
   catalog,
@@ -117,6 +171,7 @@ function ParagraphWithMentions({
   let inlineRunKey = 0;
   let blockGroup: ReactNode[] = [];
   let blockGroupKey = 0;
+  let pendingStructuralPrefix: string | null = null;
 
   function flushBlockGroup() {
     if (blockGroup.length === 0) {
@@ -161,43 +216,108 @@ function ParagraphWithMentions({
     inlineRunKey += 1;
   }
 
-  segments.forEach((segment, index) => {
-    if (isWhitespaceOnlyMarkdown(segment)) {
-      if (segment.type === "markdown" && segment.content.includes("\n")) {
+  function pushMarkdownContent(content: string, index: number) {
+    if (!content) {
+      return;
+    }
+    if (content.trim() === "") {
+      if (content.includes("\n")) {
         inlineRun.push(
           <Text
-            key={`ws-${index}`}
+            key={`ws-head-${index}`}
             style={{
               color: colors.foreground,
               fontSize: BODY_FONT_SIZE,
               lineHeight: BODY_LINE_HEIGHT,
             }}
           >
-            {segment.content}
+            {content}
           </Text>,
         );
       }
       return;
     }
+    flushBlockGroup();
+    inlineRun.push(
+      <Text
+        key={`md-head-${index}`}
+        style={{
+          color: colors.foreground,
+          fontSize: BODY_FONT_SIZE,
+          lineHeight: BODY_LINE_HEIGHT,
+        }}
+      >
+        {content}
+      </Text>,
+    );
+  }
 
-    if (
-      segment.type === "mention" &&
-      resolveMentionLayout(segments, index) === "block"
-    ) {
+  segments.forEach((segment, index) => {
+    if (segment.type === "markdown") {
+      const next = segments[index + 1];
+      const nextIsBlockMention =
+        next?.type === "mention" &&
+        resolveMentionLayout(segments, index + 1) === "block";
+
+      if (nextIsBlockMention) {
+        const split = splitTrailingStructuralPrefix(segment.content);
+        if (split) {
+          pushMarkdownContent(split.head, index);
+          pendingStructuralPrefix = split.prefix;
+          return;
+        }
+      }
+
+      if (isWhitespaceOnlyMarkdown(segment)) {
+        if (segment.content.includes("\n")) {
+          inlineRun.push(
+            <Text
+              key={`ws-${index}`}
+              style={{
+                color: colors.foreground,
+                fontSize: BODY_FONT_SIZE,
+                lineHeight: BODY_LINE_HEIGHT,
+              }}
+            >
+              {segment.content}
+            </Text>,
+          );
+        }
+        return;
+      }
+
+      flushBlockGroup();
+      pendingStructuralPrefix = null;
+      inlineRun.push(
+        <SegmentView
+          key={`${segment.type}-${index}`}
+          segment={segment}
+          segments={segments}
+          segmentIndex={index}
+          catalog={catalog}
+        />,
+      );
+      return;
+    }
+
+    if (resolveMentionLayout(segments, index) === "block") {
       flushInlineRun();
+      const prefix = pendingStructuralPrefix;
+      pendingStructuralPrefix = null;
       blockGroup.push(
-        <View key={`block-${index}`} style={{ width: "100%" }}>
+        <BlockMentionRow key={`block-${index}`} prefix={prefix}>
           <MentionSegmentView
             token={segment.token}
             catalog={catalog}
             layout="block"
           />
-        </View>,
+        </BlockMentionRow>,
       );
       return;
     }
 
     flushBlockGroup();
+    pendingStructuralPrefix = null;
     inlineRun.push(
       <SegmentView
         key={`${segment.type}-${index}`}

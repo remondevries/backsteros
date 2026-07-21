@@ -19,15 +19,29 @@ describe("resolveMentionLayout", () => {
     assert.equal(layoutFor("Hello\n[@task:IN-1]\nWorld"), "block");
   });
 
+  it("uses block when alone after a list/heading/quote marker", () => {
+    assert.equal(layoutFor("- [@task:IN-1]"), "block");
+    assert.equal(layoutFor("* [@task:IN-1]"), "block");
+    assert.equal(layoutFor("1. [@task:IN-1]"), "block");
+    assert.equal(layoutFor("> [@task:IN-1]"), "block");
+    assert.equal(layoutFor("# [@task:IN-1]"), "block");
+    assert.equal(layoutFor("## [@project:alpha]"), "block");
+    assert.equal(layoutFor("Intro\n- [@task:IN-1]"), "block");
+  });
+
   it("uses inline when the mention is part of a sentence", () => {
     assert.equal(layoutFor("See [@task:IN-1] today"), "inline");
     assert.equal(layoutFor("Hello [@task:IN-1]\n"), "inline");
     assert.equal(layoutFor("note [@letter:L-1] end"), "inline");
+    assert.equal(layoutFor("- Check [@task:IN-1] later"), "inline");
+    assert.equal(layoutFor("> See [@task:IN-1] please"), "inline");
+    assert.equal(layoutFor("# Title with [@task:IN-1]"), "inline");
   });
 
   it("keeps contact/document/organization mentions inline", () => {
     assert.equal(layoutFor("[@contact:jane]"), "inline");
     assert.equal(layoutFor("[@organization:acme]"), "inline");
     assert.equal(layoutFor("[@document:proj/readme]"), "inline");
+    assert.equal(layoutFor("- [@contact:jane]"), "inline");
   });
 });
