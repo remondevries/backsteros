@@ -29,6 +29,10 @@ import {
 } from "../lib/backend-mode";
 import { useBackendMode } from "../lib/backend-mode-context";
 import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "../lib/avatar-src";
+import {
   DEFAULT_ASSIGNEE_SETTINGS_KEY,
   getDefaultAssigneeId,
   parseDefaultAssigneeIdFromSettings,
@@ -82,6 +86,7 @@ function SettingsAccountTab({
   const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const [assigneeId, setAssigneeId] = useState<string | null>(() =>
     getDefaultAssigneeId(),
   );
@@ -107,8 +112,9 @@ function SettingsAccountTab({
   }, [clerkKey, client, onSettingsSaved, settings]);
 
   const options = useMemo(
-    () => buildAssigneeDropdownOptions(contacts),
-    [contacts],
+    () =>
+      buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts],
   );
 
   const assigneeField =
