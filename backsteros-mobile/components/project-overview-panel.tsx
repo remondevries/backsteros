@@ -2,12 +2,10 @@ import type { Organization, Project, Task } from "@backsteros/contracts";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
-
 import {
   getProjectAreaFilterLabel,
   PROJECT_AREA_LABELS,
@@ -26,7 +24,6 @@ import {
   type ProjectStatus,
 } from "../lib/project-status";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import {
   endOfLocalDayIso,
   formatTaskDueMetaLabel,
@@ -41,12 +38,13 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
+import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { JournalMarkdownBody } from "./journal-markdown-body";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
 import { ProjectProgressRing } from "./project-progress-ring";
 import { ProjectStatusIcon } from "./project-status-icon";
-import { DueDatePropertySheet } from "./due-date-property-sheet";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -492,12 +490,9 @@ export function ProjectOverviewPanel({
 
   if (editing) {
     return (
-      <ScrollView
+      <KeyboardAwareScrollView
         style={ui.screen}
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-        }}
-        keyboardShouldPersistTaps="handled"
+        keepEndVisibleWhileTyping
       >
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
           <TextInput
@@ -521,6 +516,7 @@ export function ProjectOverviewPanel({
             placeholder="Add a description…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             textAlignVertical="top"
             style={{
               color: colors.foreground,
@@ -534,7 +530,7 @@ export function ProjectOverviewPanel({
         {saveError ? (
           <Text style={[ui.error, { paddingHorizontal: 16 }]}>{saveError}</Text>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     );
   }
 
@@ -735,10 +731,7 @@ export function ProjectOverviewPanel({
   );
 
   return (
-    <ScrollView
-      style={ui.screen}
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-    >
+    <KeyboardAwareScrollView style={ui.screen}>
       {summary ? (
         <Text style={[ui.detailDescription, { color: colors.muted }]}>
           {summary}
@@ -767,6 +760,6 @@ export function ProjectOverviewPanel({
           <Text style={ui.rowMeta}>No description yet.</Text>
         )}
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }

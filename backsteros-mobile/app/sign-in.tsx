@@ -12,6 +12,7 @@ import {
 
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { KeyboardAwareScrollView } from "../components/keyboard-aware-scroll-view";
 
 export default function SignInScreen() {
   const { isSignedIn } = useAuth();
@@ -64,15 +65,15 @@ export default function SignInScreen() {
   }
 
   return (
-    <View
-      style={[
-        ui.screen,
-        {
-          padding: 24,
-          gap: 12,
-          justifyContent: "center",
-        },
-      ]}
+    <KeyboardAwareScrollView
+      style={ui.screen}
+      bottomClearance={24}
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 24,
+        gap: 12,
+        justifyContent: "center",
+      }}
     >
       <View
         pointerEvents="none"
@@ -129,6 +130,6 @@ export default function SignInScreen() {
       <Link href="/" style={{ marginTop: 8, color: colors.muted }}>
         Back
       </Link>
-    </View>
+    </KeyboardAwareScrollView>
   );
 }

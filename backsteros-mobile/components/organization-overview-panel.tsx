@@ -2,7 +2,6 @@ import type { Organization } from "@backsteros/contracts";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -15,7 +14,6 @@ import {
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
 import { formatAddress } from "../lib/format-address";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -24,6 +22,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 
 type OrganizationOverviewRow = {
   id: string;
@@ -370,14 +369,13 @@ export function OrganizationOverviewPanel({
       ];
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={ui.screen}
       contentContainerStyle={{
-        paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
         gap: 28,
         paddingTop: 8,
       }}
-      keyboardShouldPersistTaps="handled"
+      keepEndVisibleWhileTyping
     >
       <View style={profileStyles.header}>
         <EntityProfileAvatar
@@ -428,6 +426,7 @@ export function OrganizationOverviewPanel({
             placeholder="Add a note…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             style={profileStyles.summaryInput}
           />
         ) : summary ? (
@@ -439,6 +438,6 @@ export function OrganizationOverviewPanel({
 
       {avatarError ? <Text style={ui.error}>{avatarError}</Text> : null}
       {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }

@@ -501,7 +501,10 @@ export function TaskDetailScreen({ taskId }: Props) {
             ),
           }}
         />
-        <KeyboardAwareScrollView style={ui.screen}>
+        <KeyboardAwareScrollView
+          style={ui.screen}
+          keepEndVisibleWhileTyping
+        >
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             {task.display_id ? (
               <Text style={ui.detailId}>{task.display_id}</Text>
@@ -527,6 +530,7 @@ export function TaskDetailScreen({ taskId }: Props) {
               placeholder="Add a description…"
               placeholderTextColor={colors.muted}
               multiline
+              scrollEnabled={false}
               textAlignVertical="top"
               style={{
                 color: colors.foreground,

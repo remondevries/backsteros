@@ -83,6 +83,7 @@ export function EntityProfileDetails({
                   placeholder={field.placeholder ?? field.label}
                   placeholderTextColor={colors.muted}
                   multiline={field.multiline}
+                  scrollEnabled={field.multiline ? false : undefined}
                   keyboardType={field.keyboardType}
                   autoCapitalize={field.autoCapitalize}
                   style={[

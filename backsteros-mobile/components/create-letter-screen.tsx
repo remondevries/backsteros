@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -26,6 +25,7 @@ import {
   FLOATING_PDF_DOCK_CLEARANCE,
   FloatingComposeActionPill,
 } from "./floating-compose-action-pill";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
 import { PlusIcon } from "./plus-icon";
 
@@ -175,12 +175,12 @@ export function CreateLetterScreen() {
         }}
       />
       <View style={ui.screen}>
-        <ScrollView
+        <KeyboardAwareScrollView
           style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom: FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE,
-          }}
-          keyboardShouldPersistTaps="handled"
+          bottomClearance={
+            FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE
+          }
+          keepEndVisibleWhileTyping
         >
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             <TextInput
@@ -204,6 +204,7 @@ export function CreateLetterScreen() {
               placeholder="Add notes…"
               placeholderTextColor={colors.muted}
               multiline
+              scrollEnabled={false}
               textAlignVertical="top"
               style={{
                 color: colors.foreground,
@@ -219,7 +220,7 @@ export function CreateLetterScreen() {
               {error}
             </Text>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {!picking ? (
           <FloatingComposeActionPill

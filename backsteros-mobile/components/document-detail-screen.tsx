@@ -242,7 +242,10 @@ export function DocumentDetailScreen({ documentId }: Props) {
             ),
           }}
         />
-        <KeyboardAwareScrollView style={ui.screen}>
+        <KeyboardAwareScrollView
+          style={ui.screen}
+          keepEndVisibleWhileTyping
+        >
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             <TextInput
               value={draftTitle}
@@ -265,6 +268,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
               placeholder="Write something…"
               placeholderTextColor={colors.muted}
               multiline
+              scrollEnabled={false}
               textAlignVertical="top"
               style={{
                 color: colors.foreground,

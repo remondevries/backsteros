@@ -4,17 +4,16 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
 
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 
 function folderPathFromTitle(title: string): string {
   const slug =
@@ -129,13 +128,7 @@ export function CreateFolderScreen() {
           ),
         }}
       />
-      <ScrollView
-        style={ui.screen}
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-        }}
-        keyboardShouldPersistTaps="handled"
-      >
+      <KeyboardAwareScrollView style={ui.screen}>
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
           <TextInput
             value={title}
@@ -161,7 +154,7 @@ export function CreateFolderScreen() {
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

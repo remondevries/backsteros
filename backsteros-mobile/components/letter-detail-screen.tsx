@@ -63,6 +63,7 @@ import {
   FloatingComposeActionPill,
 } from "./floating-compose-action-pill";
 import { JournalMarkdownBody } from "./journal-markdown-body";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
 import { LetterPdfViewerModal } from "./letter-pdf-viewer-modal";
 import { OrganizationIcon } from "./organization-icon";
@@ -967,13 +968,12 @@ export function LetterDetailScreen({ letterId }: Props) {
         }}
       />
       {editing ? (
-        <ScrollView
+        <KeyboardAwareScrollView
           style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom:
-              FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE,
-          }}
-          keyboardShouldPersistTaps="handled"
+          bottomClearance={
+            FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE
+          }
+          keepEndVisibleWhileTyping
         >
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             {displayId ? (
@@ -1000,6 +1000,7 @@ export function LetterDetailScreen({ letterId }: Props) {
               placeholder="Add notes…"
               placeholderTextColor={colors.muted}
               multiline
+              scrollEnabled={false}
               textAlignVertical="top"
               style={{
                 color: colors.foreground,
@@ -1015,7 +1016,7 @@ export function LetterDetailScreen({ letterId }: Props) {
               {saveError}
             </Text>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       ) : (
         <ScrollView
           style={ui.screen}

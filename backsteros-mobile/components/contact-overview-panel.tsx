@@ -2,7 +2,6 @@ import type { Contact, Organization } from "@backsteros/contracts";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -16,7 +15,6 @@ import { organizationDetailHref } from "../lib/detail-href";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
 import { formatAddress } from "../lib/format-address";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -25,6 +23,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
 import {
   PropertyOptionSheet,
@@ -499,14 +498,13 @@ export function ContactOverviewPanel({
 
   return (
     <>
-      <ScrollView
+      <KeyboardAwareScrollView
         style={ui.screen}
         contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
           gap: 28,
           paddingTop: 8,
         }}
-        keyboardShouldPersistTaps="handled"
+        keepEndVisibleWhileTyping
       >
         <View style={profileStyles.header}>
           <EntityProfileAvatar
@@ -555,6 +553,7 @@ export function ContactOverviewPanel({
               placeholder="Add a note…"
               placeholderTextColor={colors.muted}
               multiline
+              scrollEnabled={false}
               style={profileStyles.summaryInput}
             />
           ) : summary ? (
@@ -567,7 +566,7 @@ export function ContactOverviewPanel({
         {avatarError ? <Text style={ui.error}>{avatarError}</Text> : null}
         {propertyError ? <Text style={ui.error}>{propertyError}</Text> : null}
         {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <PropertyOptionSheet
         visible={pickerOpen}

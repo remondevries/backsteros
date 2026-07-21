@@ -131,7 +131,10 @@ export function CreateDocumentScreen() {
           ),
         }}
       />
-      <KeyboardAwareScrollView style={ui.screen}>
+      <KeyboardAwareScrollView
+        style={ui.screen}
+        keepEndVisibleWhileTyping
+      >
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
           <TextInput
             value={title}
@@ -154,6 +157,7 @@ export function CreateDocumentScreen() {
             placeholder="Write something…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             textAlignVertical="top"
             style={{
               color: colors.foreground,

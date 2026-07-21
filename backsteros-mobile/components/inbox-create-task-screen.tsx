@@ -404,7 +404,10 @@ export function InboxCreateTaskScreen() {
         }}
       />
 
-      <KeyboardAwareScrollView style={ui.screen}>
+      <KeyboardAwareScrollView
+        style={ui.screen}
+        keepEndVisibleWhileTyping
+      >
         <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
           <TextInput
             value={title}
@@ -492,6 +495,7 @@ export function InboxCreateTaskScreen() {
             placeholder="Add a description…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             textAlignVertical="top"
             style={{
               color: colors.foreground,

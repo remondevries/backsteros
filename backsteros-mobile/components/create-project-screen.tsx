@@ -4,7 +4,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -21,13 +20,13 @@ import {
   PROJECT_STATUSES,
   type ProjectStatus,
 } from "../lib/project-status";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { ProjectIcon } from "./project-icon";
 import { ProjectStatusIcon } from "./project-status-icon";
 import {
@@ -208,12 +207,9 @@ export function CreateProjectScreen() {
         }}
       />
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={ui.screen}
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-        }}
-        keyboardShouldPersistTaps="handled"
+        keepEndVisibleWhileTyping
       >
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
           <TextInput
@@ -237,6 +233,7 @@ export function CreateProjectScreen() {
             placeholder="Add a description…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             textAlignVertical="top"
             style={{
               color: colors.foreground,
@@ -291,7 +288,7 @@ export function CreateProjectScreen() {
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

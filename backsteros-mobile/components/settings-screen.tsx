@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,6 +42,7 @@ import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { PillNav } from "./pill-nav";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { PropertyOptionSheet } from "./property-option-sheet";
 
 const CONTACTS_SQL = `SELECT id, name FROM contacts
@@ -758,10 +758,10 @@ export function SettingsScreen() {
             onChange={setTab}
           />
         </View>
-        <ScrollView
+        <KeyboardAwareScrollView
           style={ui.screen}
           contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
+          bottomClearance={40}
         >
           <Text style={styles.sectionTitle}>{meta.label}</Text>
           <Text style={styles.sectionDescription}>{meta.description}</Text>
@@ -807,7 +807,7 @@ export function SettingsScreen() {
           ) : null}
           {tab === "whoop" ? <WhoopTab /> : null}
           {tab === "storage" ? <StorageTab /> : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </View>
     </>
   );

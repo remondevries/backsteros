@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../lib/theme";
+import { useKeyboardBottomInset } from "../lib/use-keyboard-bottom-inset";
 
 export type PropertyOption<T extends string | number | null> = {
   value: T;
@@ -58,6 +59,7 @@ function OptionList<T extends string | number | null>({
   style?: object;
 }) {
   const [query, setQuery] = useState("");
+  const keyboardHeight = useKeyboardBottomInset();
 
   useEffect(() => {
     setQuery("");
@@ -76,7 +78,12 @@ function OptionList<T extends string | number | null>({
       style={[
         styles.sheet,
         embedded ? styles.sheetEmbedded : styles.sheetModal,
-        { paddingBottom: Math.max(bottomInset, 16) },
+        {
+          paddingBottom: Math.max(
+            bottomInset,
+            16,
+          ) + (keyboardHeight > 0 ? keyboardHeight : 0),
+        },
         style,
       ]}
     >

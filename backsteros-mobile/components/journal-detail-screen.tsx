@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -20,7 +19,6 @@ import {
 } from "../lib/journal-content";
 import { mapApiTaskToRow, withDisplayId } from "../lib/map-task-row";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import {
   filterTasksDueOnJournalDate,
@@ -33,6 +31,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 import { JournalMarkdownBody } from "./journal-markdown-body";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TasksNavIcon } from "./nav-icons";
 
 type SyncedTaskRow = GroupedTaskRow & {
@@ -390,12 +389,9 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             ),
           }}
         />
-        <ScrollView
+        <KeyboardAwareScrollView
           style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-          }}
-          keyboardShouldPersistTaps="handled"
+          keepEndVisibleWhileTyping
         >
           <View
             style={{
@@ -412,6 +408,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             placeholder="Write your journal entry…"
             placeholderTextColor={colors.muted}
             multiline
+            scrollEnabled={false}
             textAlignVertical="top"
             autoFocus
             style={{
@@ -423,7 +420,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             }}
           />
           {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </>
     );
   }
