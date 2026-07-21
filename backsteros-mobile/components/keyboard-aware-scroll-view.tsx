@@ -30,8 +30,15 @@ export function KeyboardAwareScrollView({
   ...rest
 }: Props) {
   const keyboardHeight = useKeyboardBottomInset();
+  // iOS: KeyboardAvoidingView shrinks the frame; keep keyboard-sized scroll
+  // padding so the caret can move into the visible area. Android: window
+  // resize already shrinks the frame — only a small gutter is needed.
   const paddingBottom =
-    keyboardHeight > 0 ? keyboardHeight + KEYBOARD_GUTTER : bottomClearance;
+    keyboardHeight > 0
+      ? Platform.OS === "android"
+        ? KEYBOARD_GUTTER
+        : keyboardHeight + KEYBOARD_GUTTER
+      : bottomClearance;
 
   return (
     <KeyboardAvoidingView
