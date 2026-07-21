@@ -4432,18 +4432,23 @@ a.mention-resource-chip *,
   margin-block: 0.15rem;
 }
 
+.document-markdown ul.mention-structured-list,
+.document-markdown ol.mention-structured-list,
 .document-markdown-with-mentions .mention-structured-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: block;
   margin: 0 0 0.85rem;
   padding-left: 1.25rem;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
 }
 
-.document-markdown-with-mentions .mention-structured-list > .mention-task-block {
-  margin-block: 0;
-  width: 100%;
+.document-markdown-with-mentions .mention-structured-list--inline > li {
+  margin: 0.25rem 0;
+  line-height: 1.75;
+}
+
+.document-markdown-with-mentions .mention-structured-list--inline > li > * {
+  vertical-align: baseline;
 }
 
 .document-markdown-with-mentions .mention-task-block--quote {

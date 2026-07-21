@@ -3977,13 +3977,13 @@ body[data-keyboard-nav-hover="suppressed"]
 .mention-chip-lite {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin: 0 1px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: 2px 6px;
+  border-radius: 6px;
   background: rgb(255 255 255 / 0.08);
-  color: color-mix(in srgb, var(--foreground) 88%, transparent);
-  font-size: 0.8125rem;
+  color: var(--foreground);
+  font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.4;
   vertical-align: baseline;
@@ -4137,18 +4137,24 @@ a.mention-chip-lite--deleted:hover {
   width: 100%;
 }
 
+.content-markdown-preview-body--rendered .mention-structured-list,
 .mention-structured-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: block;
   margin: 0 0 0.85rem;
   padding-left: 1.25rem;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
 }
 
-.mention-structured-list > .mention-task-block {
-  margin-block: 0;
-  width: 100%;
+.content-markdown-preview-body--rendered .mention-structured-list--inline > li,
+.mention-structured-list--inline > li {
+  margin: 0.25rem 0;
+  line-height: 1.75;
+}
+
+.content-markdown-preview-body--rendered .mention-structured-list--inline > li > *,
+.mention-structured-list--inline > li > * {
+  vertical-align: baseline;
 }
 
 .mention-task-block--quote {

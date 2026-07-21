@@ -1107,6 +1107,7 @@ export {
   resolveMentionLayout,
   splitTrailingStructuralPrefix,
   stripStructuralLinePrefix,
+  matchListItemOpener,
   type MentionChipLayout,
 } from "./mentions/mention-layout.js";
 

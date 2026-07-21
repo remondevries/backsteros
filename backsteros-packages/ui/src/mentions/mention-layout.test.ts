@@ -12,21 +12,21 @@ function layoutFor(markdown: string) {
 }
 
 describe("resolveMentionLayout", () => {
-  it("uses block when a task/project/letter is alone on its line", () => {
+  it("uses block when a task/project/letter is alone on a bare line", () => {
     assert.equal(layoutFor("[@task:IN-1]"), "block");
     assert.equal(layoutFor("[@project:alpha]"), "block");
     assert.equal(layoutFor("[@letter:L-1]"), "block");
     assert.equal(layoutFor("Hello\n[@task:IN-1]\nWorld"), "block");
   });
 
-  it("uses block when alone after a list/heading/quote marker", () => {
-    assert.equal(layoutFor("- [@task:IN-1]"), "block");
-    assert.equal(layoutFor("* [@task:IN-1]"), "block");
-    assert.equal(layoutFor("1. [@task:IN-1]"), "block");
-    assert.equal(layoutFor("> [@task:IN-1]"), "block");
-    assert.equal(layoutFor("# [@task:IN-1]"), "block");
-    assert.equal(layoutFor("## [@project:alpha]"), "block");
-    assert.equal(layoutFor("Intro\n- [@task:IN-1]"), "block");
+  it("keeps list/heading/quote mentions inline next to the marker", () => {
+    assert.equal(layoutFor("- [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("* [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("1. [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("> [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("# [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("## [@project:alpha]"), "inline");
+    assert.equal(layoutFor("Intro\n- [@task:IN-1]"), "inline");
   });
 
   it("uses inline when the mention is part of a sentence", () => {

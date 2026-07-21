@@ -2,7 +2,7 @@ import type { MentionSegment } from "./mention-tokens";
 
 export type MentionChipLayout = "inline" | "block";
 
-/** List / heading / quote markers that open a line without being "sentence" text. */
+/** List / heading / quote markers that open a markdown line. */
 const STRUCTURAL_LINE_PREFIX_RE =
   /^(?:\s*)(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s?)/;
 
@@ -26,13 +26,9 @@ export function stripStructuralLinePrefix(line: string): string {
   return line.replace(STRUCTURAL_LINE_PREFIX_RE, "");
 }
 
-function isBlankOrStructuralPrefixLine(line: string): boolean {
-  return stripStructuralLinePrefix(line).trim() === "";
-}
-
 /**
  * If `content` ends with a structural line prefix (optionally after a newline),
- * split it so renderers can wrap the following block mention in a list/quote.
+ * split it so renderers can keep list/quote markers with the following mention.
  */
 export function splitTrailingStructuralPrefix(content: string): {
   head: string;
@@ -56,6 +52,30 @@ export function splitTrailingStructuralPrefix(content: string): {
   };
 }
 
+/**
+ * Parse a list-item opener at the start of a markdown segment.
+ * Leading newlines are returned separately so callers can flush them first.
+ */
+export function matchListItemOpener(content: string): {
+  leadingNewlines: string;
+  ordered: boolean;
+  /** Text after the list marker on the same line (may be empty). */
+  textAfterMarker: string;
+} | null {
+  const match = content.match(
+    /^(\n*)([ \t]*)([-*+]|\d+\.)([ \t]+)([^\n]*)$/,
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    leadingNewlines: match[1] ?? "",
+    ordered: /^\d+\.$/.test(match[3] ?? ""),
+    textAfterMarker: match[5] ?? "",
+  };
+}
+
 function isMentionOnOwnLine(
   segments: MentionSegment[],
   mentionIndex: number,
@@ -63,12 +83,10 @@ function isMentionOnOwnLine(
   const before = segments[mentionIndex - 1];
   const after = segments[mentionIndex + 1];
 
-  // List markers / headings / quotes before the mention do not count as
-  // "sentence text" — `- [@task:…]` is still alone on its line.
-  if (
-    isMarkdownSegment(before) &&
-    !isBlankOrStructuralPrefixLine(lastLine(before.content))
-  ) {
+  // List/heading/quote markers count as same-line structure, so
+  // `- [@task:…]` stays compact/inline next to the bullet — only a bare
+  // own-line mention (no marker) uses the full-width block card.
+  if (isMarkdownSegment(before) && lastLine(before.content).trim() !== "") {
     return false;
   }
 
@@ -78,9 +96,7 @@ function isMentionOnOwnLine(
 
   const beforeOk =
     !before ||
-    (isMarkdownSegment(before) &&
-      (/(?:^|\n)\s*$/.test(before.content) ||
-        isBlankOrStructuralPrefixLine(lastLine(before.content))));
+    (isMarkdownSegment(before) && /(?:^|\n)\s*$/.test(before.content));
   const afterOk =
     !after || (isMarkdownSegment(after) && /^\s*(?:\n|$)/.test(after.content));
 
@@ -101,9 +117,8 @@ function isParagraphOnlyMention(
 }
 
 /**
- * Task / project / letter mentions on their own line use full-width block
- * chips; mentions embedded in a sentence stay compact/inline.
- * Structural prefixes (`- `, `1. `, `# `, `> `) still count as own-line.
+ * Task / project / letter mentions on their own bare line use full-width
+ * block chips; mentions in sentences or list/heading/quote lines stay inline.
  * Mirrors `@backsteros/ui` `resolveMentionLayout`.
  */
 export function resolveMentionLayout(

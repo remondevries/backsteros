@@ -12,8 +12,8 @@ import {
 import { useMentionNavigationPathname } from "../mentions/mention-navigation-context.js";
 import { EMPTY_MENTION_CATALOG } from "../mentions/empty-catalog.js";
 import {
+  matchListItemOpener,
   resolveMentionLayout,
-  splitTrailingStructuralPrefix,
   type MentionChipLayout,
 } from "../mentions/mention-layout.js";
 import {
@@ -565,44 +565,90 @@ function isWhitespaceOnlyMarkdown(segment: MentionSegment): boolean {
   return segment.type === "markdown" && segment.content.trim() === "";
 }
 
-function wrapBlockMention(
-  chip: ReactNode,
-  prefix: string | null,
-  key: string,
-): ReactNode {
-  if (prefix && /^[ \t]*[-*+][ \t]+$/.test(prefix)) {
-    return (
-      <ul key={key} className="mention-structured-list">
-        <li className="mention-task-block">{chip}</li>
-      </ul>
-    );
+/**
+ * Consume one markdown list item (marker + same-line text/mentions) so chips
+ * stay inline inside the `<li>` instead of breaking out after a ReactMarkdown list.
+ */
+function consumeListItem(
+  segments: MentionSegment[],
+  startIndex: number,
+  catalog: MentionCatalog,
+  keyPrefix: string,
+): {
+  leadingNewlines: string;
+  ordered: boolean;
+  item: ReactNode;
+  nextIndex: number;
+} | null {
+  const start = segments[startIndex];
+  if (start?.type !== "markdown") {
+    return null;
   }
 
-  if (prefix && /^[ \t]*\d+\.[ \t]+$/.test(prefix)) {
-    return (
-      <ol key={key} className="mention-structured-list">
-        <li className="mention-task-block">{chip}</li>
-      </ol>
-    );
+  const opener = matchListItemOpener(start.content);
+  if (!opener) {
+    return null;
   }
 
-  if (prefix && /^[ \t]*>[ \t]?$/.test(prefix)) {
-    return (
-      <blockquote
-        key={key}
-        className="mention-task-block mention-task-block--quote"
+  const children: ReactNode[] = [];
+  if (opener.textAfterMarker) {
+    children.push(
+      <span
+        key={`${keyPrefix}-li-text-${startIndex}`}
+        className="content-markdown-preview-prewrap"
       >
-        {chip}
-      </blockquote>
+        {opener.textAfterMarker}
+      </span>,
     );
   }
 
-  // Bare line, or heading marker (`# `): full-width chip without <h*> wrap.
-  return (
-    <div key={key} className="mention-task-block">
-      {chip}
-    </div>
-  );
+  let index = startIndex + 1;
+  while (index < segments.length) {
+    const segment = segments[index];
+    if (!segment) {
+      break;
+    }
+
+    if (segment.type === "mention") {
+      children.push(
+        <MentionChipLite
+          key={`${keyPrefix}-li-mention-${index}`}
+          token={segment.token}
+          catalog={catalog}
+          layout="inline"
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (segment.content.startsWith("\n")) {
+      break;
+    }
+
+    if (segment.content) {
+      children.push(
+        <span
+          key={`${keyPrefix}-li-md-${index}`}
+          className="content-markdown-preview-prewrap"
+        >
+          {segment.content}
+        </span>,
+      );
+    }
+    index += 1;
+  }
+
+  if (children.length === 0) {
+    return null;
+  }
+
+  return {
+    leadingNewlines: opener.leadingNewlines,
+    ordered: opener.ordered,
+    item: <li key={`${keyPrefix}-li-${startIndex}`}>{children}</li>,
+    nextIndex: index,
+  };
 }
 
 function renderParagraphWithMentions(
@@ -615,7 +661,7 @@ function renderParagraphWithMentions(
   let inlineRunKey = 0;
   let blockGroup: ReactNode[] = [];
   let blockGroupKey = 0;
-  let pendingStructuralPrefix: string | null = null;
+  let index = 0;
 
   function flushBlockGroup() {
     if (blockGroup.length === 0) {
@@ -646,102 +692,100 @@ function renderParagraphWithMentions(
     inlineRunKey += 1;
   }
 
-  function pushMarkdownContent(content: string, index: number) {
-    if (!content) {
-      return;
-    }
+  while (index < segments.length) {
+    const listItems: ReactNode[] = [];
+    let listOrdered: boolean | null = null;
+    let listStart = index;
 
-    if (content.trim() === "") {
-      if (content.includes("\n")) {
+    while (index < segments.length) {
+      const consumed = consumeListItem(segments, index, catalog, keyPrefix);
+      if (!consumed) {
+        break;
+      }
+
+      if (consumed.leadingNewlines) {
+        if (listItems.length > 0) {
+          break;
+        }
+        flushBlockGroup();
         inlineRun.push(
           <span
-            key={`${keyPrefix}-ws-head-${index}`}
+            key={`${keyPrefix}-ws-list-${index}`}
             className="content-markdown-preview-prewrap"
           >
-            {content}
+            {consumed.leadingNewlines}
           </span>,
         );
       }
-      return;
-    }
 
-    flushBlockGroup();
-    inlineRun.push(
-      <InlineMarkdownSegment
-        key={`${keyPrefix}-md-head-${index}`}
-        content={content}
-      />,
-    );
-  }
-
-  segments.forEach((segment, index) => {
-    if (segment.type === "markdown") {
-      const next = segments[index + 1];
-      const nextIsBlockMention =
-        next?.type === "mention" &&
-        resolveMentionLayout(segments, index + 1) === "block";
-
-      if (nextIsBlockMention) {
-        const split = splitTrailingStructuralPrefix(segment.content);
-        if (split) {
-          pushMarkdownContent(split.head, index);
-          pendingStructuralPrefix = split.prefix;
-          return;
-        }
+      if (listOrdered == null) {
+        listOrdered = consumed.ordered;
+      } else if (listOrdered !== consumed.ordered) {
+        break;
       }
 
-      if (isWhitespaceOnlyMarkdown(segment)) {
-        // Keep soft newlines between mention chips so edit→preview line
-        // breaks stay visible.
-        if (segment.content.includes("\n")) {
-          inlineRun.push(
-            <span
-              key={`${keyPrefix}-ws-${index}`}
-              className="content-markdown-preview-prewrap"
-            >
-              {segment.content}
-            </span>,
-          );
-        }
-        return;
-      }
-
-      flushBlockGroup();
-      pendingStructuralPrefix = null;
-      inlineRun.push(
-        renderInlineSegment(
-          segment,
-          segments,
-          index,
-          catalog,
-          `${keyPrefix}-seg-${index}`,
-        ),
-      );
-      return;
+      listItems.push(consumed.item);
+      index = consumed.nextIndex;
     }
 
-    if (resolveMentionLayout(segments, index) === "block") {
+    if (listItems.length > 0) {
       flushInlineRun();
-      const prefix = pendingStructuralPrefix;
-      pendingStructuralPrefix = null;
-      blockGroup.push(
-        wrapBlockMention(
-          renderMentionChip(
-            segment,
-            segments,
-            index,
-            catalog,
-            `${keyPrefix}-block-mention-${index}`,
-          ),
-          prefix,
-          `${keyPrefix}-block-${index}`,
-        ),
+      flushBlockGroup();
+      const ListTag = listOrdered ? "ol" : "ul";
+      elements.push(
+        <ListTag
+          key={`${keyPrefix}-list-${listStart}`}
+          className="mention-structured-list mention-structured-list--inline"
+        >
+          {listItems}
+        </ListTag>,
       );
-      return;
+      continue;
+    }
+
+    const segment = segments[index];
+    if (!segment) {
+      break;
+    }
+
+    if (isWhitespaceOnlyMarkdown(segment)) {
+      if (segment.type === "markdown" && segment.content.includes("\n")) {
+        inlineRun.push(
+          <span
+            key={`${keyPrefix}-ws-${index}`}
+            className="content-markdown-preview-prewrap"
+          >
+            {segment.content}
+          </span>,
+        );
+      }
+      index += 1;
+      continue;
+    }
+
+    if (
+      segment.type === "mention" &&
+      resolveMentionLayout(segments, index) === "block"
+    ) {
+      flushInlineRun();
+      blockGroup.push(
+        <div
+          key={`${keyPrefix}-block-${index}`}
+          className="mention-task-block"
+        >
+          <MentionChipLite
+            key={`${keyPrefix}-block-mention-${index}`}
+            token={segment.token}
+            catalog={catalog}
+            layout="block"
+          />
+        </div>,
+      );
+      index += 1;
+      continue;
     }
 
     flushBlockGroup();
-    pendingStructuralPrefix = null;
     inlineRun.push(
       renderInlineSegment(
         segment,
@@ -751,7 +795,8 @@ function renderParagraphWithMentions(
         `${keyPrefix}-seg-${index}`,
       ),
     );
-  });
+    index += 1;
+  }
 
   flushBlockGroup();
   flushInlineRun();
