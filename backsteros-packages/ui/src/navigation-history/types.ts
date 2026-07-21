@@ -9,3 +9,8 @@ export type NavigationHistoryState = {
   entries: NavigationHistoryEntry[];
   index: number;
 };
+
+export type NavigationHistoryStore = {
+  version: 2;
+  stacksByTabId: Record<string, NavigationHistoryState>;
+};

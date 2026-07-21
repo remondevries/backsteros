@@ -17,22 +17,30 @@ import {
   NAVIGATION_HISTORY_STORAGE_KEY,
 } from "@/lib/navigation-history/constants";
 import {
-  applyPathnameChange,
-  areHistoryStatesEqual,
-  createInitialHistoryState,
-  getRecentHistoryPages,
+  applyPathnameChangeForTab,
+  areHistoryStoresEqual,
+  createEmptyHistoryStore,
+  createInitialHistoryStore,
+  getActiveStack,
+  getRecentHistoryPagesFromStore,
   historyEntryHrefsMatch,
+  migrateLegacyStore,
+  pruneStacks,
   resolveHistoryEntryTitle,
+  setActiveStack,
+  syncTabStackToHref,
 } from "@/lib/navigation-history/history-engine";
 import type {
   NavigationHistoryEntry,
   NavigationHistoryState,
+  NavigationHistoryStore,
 } from "@/lib/navigation-history/types";
 import type { TaskStatus } from "@/lib/task-status";
 import { isMobileShellBuildActive } from "@/lib/mobile/is-mobile-shell-env";
 import { buildCurrentLocationHref } from "@/lib/navigation-trail/path-utils";
 import { stripReturnToParam } from "@/lib/navigation-trail/return-to";
 import { normalizeTabHref } from "@/lib/tabs/get-tab-title";
+import { useTabs } from "@/components/shell/tabs-provider";
 
 type NavigationHistoryContextValue = {
   canGoBack: boolean;
@@ -79,7 +87,9 @@ function clearLegacyNavigationStorageKeys() {
   }
 }
 
-function loadStoredHistoryState(): NavigationHistoryState | null {
+function loadStoredHistoryStore(
+  activeTabId: string,
+): NavigationHistoryStore | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -90,31 +100,47 @@ function loadStoredHistoryState(): NavigationHistoryState | null {
       return null;
     }
 
-    const parsed = JSON.parse(raw) as NavigationHistoryState;
-    if (!Array.isArray(parsed.entries) || parsed.entries.length === 0) {
-      return null;
-    }
-
-    const index =
-      typeof parsed.index === "number"
-        ? Math.min(Math.max(parsed.index, 0), parsed.entries.length - 1)
-        : parsed.entries.length - 1;
-
-    return { entries: parsed.entries, index };
+    return migrateLegacyStore(JSON.parse(raw), activeTabId);
   } catch {
     return null;
   }
 }
 
-function persistHistoryState(state: NavigationHistoryState) {
+function persistHistoryStore(store: NavigationHistoryStore) {
   if (typeof window === "undefined") {
     return;
   }
 
   window.sessionStorage.setItem(
     NAVIGATION_HISTORY_STORAGE_KEY,
-    JSON.stringify(state),
+    JSON.stringify(store),
   );
+}
+
+function updateEntriesMatchingHref(
+  stack: NavigationHistoryState,
+  href: string,
+  update: (
+    entry: NavigationHistoryState["entries"][number],
+  ) => NavigationHistoryState["entries"][number],
+): NavigationHistoryState | null {
+  let changed = false;
+  const nextEntries = stack.entries.map((entry) => {
+    if (!historyEntryHrefsMatch(entry.href, href)) {
+      return entry;
+    }
+    const next = update(entry);
+    if (next !== entry) {
+      changed = true;
+    }
+    return next;
+  });
+
+  if (!changed) {
+    return null;
+  }
+
+  return { ...stack, entries: nextEntries };
 }
 
 type NavigationHistoryProviderProps = {
@@ -126,43 +152,102 @@ export function NavigationHistoryProvider({
 }: NavigationHistoryProviderProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [state, setState] = useState<NavigationHistoryState>(() =>
-    createInitialHistoryState(pathname, resolveHistoryEntryTitle(pathname, new Map())),
+  const { activeTabId, activeTab, tabs, hydrated: tabsHydrated } = useTabs();
+  const activeTabHref = activeTab?.href ?? pathname;
+  const tabIdsKey = tabs.map((tab) => tab.id).join("\0");
+
+  const [store, setStore] = useState<NavigationHistoryStore>(() =>
+    createEmptyHistoryStore(),
   );
   const [historyReady, setHistoryReady] = useState(false);
   const pageTitlesRef = useRef(new Map<string, string>());
   const pendingIndexRef = useRef<number | null>(null);
+  const pendingTabSwitchRef = useRef(false);
   const hydratedRef = useRef(false);
-  const initialPathnameRef = useRef(pathname);
-  const stateRef = useRef(state);
+  const activeTabIdRef = useRef(activeTabId);
+  const storeRef = useRef(store);
+  const prevActiveTabIdRef = useRef(activeTabId);
 
   useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+    storeRef.current = store;
+  }, [store]);
 
   useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  // Wait for tabs to restore from localStorage so stacks key under real tab ids.
+  useEffect(() => {
+    if (!tabsHydrated || hydratedRef.current) {
+      return;
+    }
+
     clearLegacyNavigationStorageKeys();
 
-    const initialPathname = initialPathnameRef.current;
+    if (!activeTabId) {
+      hydratedRef.current = true;
+      setHistoryReady(true);
+      return;
+    }
+
     const searchParams = readCurrentSearchParams();
     const currentHref = buildCurrentLocationHref(
-      initialPathname,
+      pathname,
       stripReturnToParam(searchParams),
     );
     const title = resolveHistoryEntryTitle(currentHref, pageTitlesRef.current);
-    const stored = loadStoredHistoryState();
-    const next = stored
-      ? applyPathnameChange(stored, currentHref, title, null)
-      : createInitialHistoryState(currentHref, title);
+    const stored = loadStoredHistoryStore(activeTabId);
+    let next =
+      stored ?? createInitialHistoryStore(activeTabId, currentHref, title);
+    next = applyPathnameChangeForTab(
+      next,
+      activeTabId,
+      currentHref,
+      title,
+      null,
+    );
+    next = pruneStacks(
+      next,
+      tabs.length > 0 ? tabs.map((tab) => tab.id) : [activeTabId],
+    );
 
-    setState(next);
-    persistHistoryState(next);
+    setStore(next);
+    persistHistoryStore(next);
+    prevActiveTabIdRef.current = activeTabId;
     hydratedRef.current = true;
     setHistoryReady(true);
-  }, []);
+  }, [tabsHydrated, activeTabId, pathname, tabs]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || !activeTabId) {
+      return;
+    }
+
+    if (prevActiveTabIdRef.current !== activeTabId) {
+      prevActiveTabIdRef.current = activeTabId;
+      pendingTabSwitchRef.current = true;
+    }
+  }, [activeTabId]);
 
   useEffect(() => {
     if (!hydratedRef.current) {
+      return;
+    }
+
+    const ids = tabIdsKey.length > 0 ? tabIdsKey.split("\0") : [];
+
+    setStore((current) => {
+      const next = pruneStacks(current, ids);
+      if (areHistoryStoresEqual(current, next)) {
+        return current;
+      }
+      persistHistoryStore(next);
+      return next;
+    });
+  }, [tabIdsKey]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || !activeTabId) {
       return;
     }
 
@@ -175,94 +260,119 @@ export function NavigationHistoryProvider({
     const pendingIndex = pendingIndexRef.current;
     pendingIndexRef.current = null;
 
-    setState((current) => {
-      const next = applyPathnameChange(
-        current,
-        currentHref,
-        title,
-        pendingIndex,
-      );
+    const locationMatchesTab =
+      normalizeTabHref(currentHref) === normalizeTabHref(activeTabHref);
+    const isTabSwitch = pendingTabSwitchRef.current;
 
-      if (areHistoryStatesEqual(current, next)) {
+    if (isTabSwitch && !locationMatchesTab) {
+      return;
+    }
+
+    if (isTabSwitch) {
+      pendingTabSwitchRef.current = false;
+    }
+
+    setStore((current) => {
+      const next = isTabSwitch
+        ? syncTabStackToHref(current, activeTabId, currentHref, title)
+        : applyPathnameChangeForTab(
+            current,
+            activeTabId,
+            currentHref,
+            title,
+            pendingIndex,
+          );
+
+      if (areHistoryStoresEqual(current, next)) {
         return current;
       }
 
-      persistHistoryState(next);
+      persistHistoryStore(next);
       return next;
     });
-  }, [pathname]);
+  }, [pathname, activeTabId, activeTabHref]);
 
   const registerPageTitle = useCallback((href: string, title: string) => {
     const normalized = normalizeTabHref(href);
     pageTitlesRef.current.set(normalized, title);
 
-    setState((current) => {
-      const index = current.entries.findIndex((entry) => {
-        const [path] = entry.href.split(/[?#]/);
-        return normalizeTabHref(path ?? "/") === normalized;
-      });
-
-      if (index === -1) {
-        return current;
-      }
-
-      const nextEntries = current.entries.map((entry, entryIndex) =>
-        entryIndex === index ? { ...entry, title } : entry,
-      );
-
-      const next = { ...current, entries: nextEntries };
-      persistHistoryState(next);
-      return next;
-    });
-  }, []);
-
-  const registerPageIcon = useCallback((href: string, icon: string | null) => {
-    setState((current) => {
+    setStore((current) => {
+      let next = current;
       let changed = false;
 
-      const nextEntries = current.entries.map((entry) => {
-        if (!historyEntryHrefsMatch(entry.href, href)) {
-          return entry;
+      for (const [tabId, stack] of Object.entries(current.stacksByTabId)) {
+        const updated = updateEntriesMatchingHref(stack, href, (entry) => {
+          if (entry.title === title) {
+            return entry;
+          }
+          return { ...entry, title };
+        });
+        if (updated) {
+          changed = true;
+          next = setActiveStack(next, tabId, updated);
         }
-
-        if (entry.icon === icon) {
-          return entry;
-        }
-
-        changed = true;
-        return { ...entry, icon };
-      });
+      }
 
       if (!changed) {
         return current;
       }
 
-      const next = { ...current, entries: nextEntries };
-      persistHistoryState(next);
+      persistHistoryStore(next);
+      return next;
+    });
+  }, []);
+
+  const registerPageIcon = useCallback((href: string, icon: string | null) => {
+    setStore((current) => {
+      let next = current;
+      let changed = false;
+
+      for (const [tabId, stack] of Object.entries(current.stacksByTabId)) {
+        const updated = updateEntriesMatchingHref(stack, href, (entry) => {
+          if (entry.icon === icon) {
+            return entry;
+          }
+          return { ...entry, icon };
+        });
+        if (updated) {
+          changed = true;
+          next = setActiveStack(next, tabId, updated);
+        }
+      }
+
+      if (!changed) {
+        return current;
+      }
+
+      persistHistoryStore(next);
       return next;
     });
   }, []);
 
   const registerPageTaskStatus = useCallback(
     (href: string, taskStatus: TaskStatus) => {
-      const normalized = normalizeTabHref(href);
+      setStore((current) => {
+        let next = current;
+        let changed = false;
 
-      setState((current) => {
-        const index = current.entries.findIndex((entry) => {
-          const [path] = entry.href.split(/[?#]/);
-          return normalizeTabHref(path ?? "/") === normalized;
-        });
+        for (const [tabId, stack] of Object.entries(current.stacksByTabId)) {
+          const updated = updateEntriesMatchingHref(stack, href, (entry) => {
+            if (entry.taskStatus === taskStatus) {
+              return entry;
+            }
+            return { ...entry, taskStatus };
+          });
+          if (updated) {
+            changed = true;
+            next = setActiveStack(next, tabId, updated);
+          }
+        }
 
-        if (index === -1) {
+        if (!changed) {
           return current;
         }
 
-        const nextEntries = current.entries.map((entry, entryIndex) =>
-          entryIndex === index ? { ...entry, taskStatus } : entry,
-        );
-
-        const next = { ...current, entries: nextEntries };
-        persistHistoryState(next);
+        persistHistoryStore(next);
         return next;
       });
     },
@@ -271,7 +381,8 @@ export function NavigationHistoryProvider({
 
   const goToIndex = useCallback(
     (index: number) => {
-      const entry = stateRef.current.entries[index];
+      const stack = getActiveStack(storeRef.current, activeTabIdRef.current);
+      const entry = stack?.entries[index];
       if (!entry) {
         return;
       }
@@ -283,45 +394,46 @@ export function NavigationHistoryProvider({
   );
 
   const goBack = useCallback(() => {
-    if (stateRef.current.index <= 0) {
+    const stack = getActiveStack(storeRef.current, activeTabIdRef.current);
+    if (!stack || stack.index <= 0) {
       return;
     }
 
-    goToIndex(stateRef.current.index - 1);
+    goToIndex(stack.index - 1);
   }, [goToIndex]);
 
   const goForward = useCallback(() => {
-    if (stateRef.current.index >= stateRef.current.entries.length - 1) {
+    const stack = getActiveStack(storeRef.current, activeTabIdRef.current);
+    if (!stack || stack.index >= stack.entries.length - 1) {
       return;
     }
 
-    goToIndex(stateRef.current.index + 1);
+    goToIndex(stack.index + 1);
   }, [goToIndex]);
 
   const navigateToHistoryEntry = useCallback(
     (href: string) => {
-      const index = stateRef.current.entries.findIndex(
-        (entry) => entry.href === href,
-      );
-      if (index === -1) {
-        router.push(href);
-        return;
-      }
-
-      goToIndex(index);
+      // Recent pages are global; always push into the active tab.
+      router.push(href);
     },
-    [goToIndex, router],
+    [router],
   );
+
+  const activeStack = activeTabId
+    ? getActiveStack(store, activeTabId)
+    : null;
+  const currentHref = activeStack?.entries[activeStack.index]?.href;
 
   const value = useMemo(
     () => ({
-      // Gate on historyReady only (set in useEffect). Do not also gate on
-      // useMounted — that snapshot can differ across SSR/hydration and flip
-      // `disabled` on the back/forward buttons.
-      canGoBack: historyReady && state.index > 0,
+      canGoBack: historyReady && (activeStack?.index ?? 0) > 0,
       canGoForward:
-        historyReady && state.index < state.entries.length - 1,
-      recentPages: historyReady ? getRecentHistoryPages(state) : [],
+        historyReady &&
+        activeStack !== null &&
+        activeStack.index < activeStack.entries.length - 1,
+      recentPages: historyReady
+        ? getRecentHistoryPagesFromStore(store, currentHref)
+        : [],
       goBack,
       goForward,
       navigateToHistoryEntry,
@@ -330,6 +442,8 @@ export function NavigationHistoryProvider({
       registerPageTaskStatus,
     }),
     [
+      activeStack,
+      currentHref,
       goBack,
       goForward,
       navigateToHistoryEntry,
@@ -337,7 +451,7 @@ export function NavigationHistoryProvider({
       registerPageIcon,
       registerPageTaskStatus,
       historyReady,
-      state,
+      store,
     ],
   );
 

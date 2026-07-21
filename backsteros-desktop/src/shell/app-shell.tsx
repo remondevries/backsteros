@@ -973,10 +973,20 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     [navigate],
   );
 
+  const activeTab = tabsState.tabs.find(
+    (tab) => tab.id === tabsState.activeTabId,
+  );
+  const tabIds = useMemo(
+    () => tabsState.tabs.map((tab) => tab.id),
+    [tabsState.tabs],
+  );
   const history = useNavigationHistory({
     pathname: location.pathname,
     search: location.search,
     onNavigate: navigateTo,
+    activeTabId: tabsState.activeTabId,
+    activeTabHref: activeTab?.href ?? location.pathname,
+    tabIds,
   });
 
   const updateActiveTabTitle = useCallback((title: string) => {

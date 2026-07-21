@@ -25,6 +25,8 @@ type TabsContextValue = {
   tabs: AppTab[];
   activeTabId: string;
   activeTab: AppTab | undefined;
+  /** True after session tabs have been restored from localStorage. */
+  hydrated: boolean;
   closeTab: (tabId: string) => void;
   activateTab: (tabId: string) => void;
   activatePreviousTab: () => void;
@@ -40,6 +42,7 @@ const mobileTabsFallback: TabsContextValue = {
   tabs: [],
   activeTabId: "",
   activeTab: undefined,
+  hydrated: true,
   closeTab: () => {},
   activateTab: () => {},
   activatePreviousTab: () => {},
@@ -264,6 +267,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
       tabs: state.tabs,
       activeTabId: state.activeTabId,
       activeTab,
+      hydrated,
       closeTab,
       activateTab,
       activatePreviousTab,
@@ -276,6 +280,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
       state.tabs,
       state.activeTabId,
       activeTab,
+      hydrated,
       closeTab,
       activateTab,
       activatePreviousTab,

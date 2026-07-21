@@ -5,13 +5,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeTabHref } from "../tabs.js";
 import { NAVIGATION_HISTORY_STORAGE_KEY } from "./constants.js";
 import {
-  applyPathnameChange,
-  areHistoryStatesEqual,
-  createInitialHistoryState,
-  getRecentHistoryPages,
+  applyPathnameChangeForTab,
+  areHistoryStoresEqual,
+  createEmptyHistoryStore,
+  createInitialHistoryStore,
+  getActiveStack,
+  getRecentHistoryPagesFromStore,
+  migrateLegacyStore,
+  pruneStacks,
   resolveHistoryEntryTitle,
+  setActiveStack,
+  syncTabStackToHref,
 } from "./history-engine.js";
-import type { NavigationHistoryState } from "./types.js";
+import type {
+  NavigationHistoryState,
+  NavigationHistoryStore,
+} from "./types.js";
 
 export type NavigationHistoryRecentPage = {
   href: string;
@@ -39,7 +48,14 @@ function buildHref(pathname: string, search: string): string {
   return `${pathname}${prefixed}`;
 }
 
-function loadStoredHistoryState(): NavigationHistoryState | null {
+function pathOnly(href: string): string {
+  const [path] = href.split(/[?#]/);
+  return normalizeTabHref(path ?? "/");
+}
+
+function loadStoredHistoryStore(
+  activeTabId: string,
+): NavigationHistoryStore | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -50,86 +66,158 @@ function loadStoredHistoryState(): NavigationHistoryState | null {
       return null;
     }
 
-    const parsed = JSON.parse(raw) as NavigationHistoryState;
-    if (!Array.isArray(parsed.entries) || parsed.entries.length === 0) {
-      return null;
-    }
-
-    const index =
-      typeof parsed.index === "number"
-        ? Math.min(Math.max(parsed.index, 0), parsed.entries.length - 1)
-        : parsed.entries.length - 1;
-
-    return { entries: parsed.entries, index };
+    return migrateLegacyStore(JSON.parse(raw), activeTabId);
   } catch {
     return null;
   }
 }
 
-function persistHistoryState(state: NavigationHistoryState) {
+function persistHistoryStore(store: NavigationHistoryStore) {
   if (typeof window === "undefined") {
     return;
   }
 
   window.sessionStorage.setItem(
     NAVIGATION_HISTORY_STORAGE_KEY,
-    JSON.stringify(state),
+    JSON.stringify(store),
   );
 }
 
+function updateEntriesMatchingHref(
+  stack: NavigationHistoryState,
+  href: string,
+  update: (
+    entry: NavigationHistoryState["entries"][number],
+  ) => NavigationHistoryState["entries"][number],
+): NavigationHistoryState | null {
+  const normalized = normalizeTabHref(href);
+  let changed = false;
+  const nextEntries = stack.entries.map((entry) => {
+    const [path] = entry.href.split(/[?#]/);
+    if (normalizeTabHref(path ?? "/") !== normalized) {
+      return entry;
+    }
+    changed = true;
+    return update(entry);
+  });
+
+  if (!changed) {
+    return null;
+  }
+
+  return { ...stack, entries: nextEntries };
+}
+
 /**
- * Framework-agnostic in-app navigation history. Mirrors the Next.js
- * NavigationHistoryProvider: it observes `pathname`/`search` changes, keeps a
- * back/forward stack in sessionStorage, and drives navigation through the host
- * `onNavigate` callback (e.g. react-router `navigate`).
+ * Framework-agnostic in-app navigation history. Keeps a back/forward stack
+ * per product tab in sessionStorage, with a global recently-viewed list.
  */
 export function useNavigationHistory({
   pathname,
   search = "",
   onNavigate,
+  activeTabId,
+  activeTabHref,
+  tabIds,
 }: {
   pathname: string;
   search?: string;
   onNavigate: (href: string) => void;
+  activeTabId: string;
+  /** Path the active product tab expects (from tabs state). */
+  activeTabHref: string;
+  tabIds: readonly string[];
 }): UseNavigationHistoryResult {
-  const [state, setState] = useState<NavigationHistoryState>(() =>
-    createInitialHistoryState(
-      pathname,
-      resolveHistoryEntryTitle(pathname, new Map()),
-    ),
+  const [store, setStore] = useState<NavigationHistoryStore>(() =>
+    activeTabId
+      ? createInitialHistoryStore(
+          activeTabId,
+          pathname,
+          resolveHistoryEntryTitle(pathname, new Map()),
+        )
+      : createEmptyHistoryStore(),
   );
   const [historyReady, setHistoryReady] = useState(false);
   const pageTitlesRef = useRef(new Map<string, string>());
   const pendingIndexRef = useRef<number | null>(null);
+  const pendingTabSwitchRef = useRef(false);
   const hydratedRef = useRef(false);
   const initialHrefRef = useRef(buildHref(pathname, search));
-  const stateRef = useRef(state);
+  const activeTabIdRef = useRef(activeTabId);
+  const storeRef = useRef(store);
   const onNavigateRef = useRef(onNavigate);
+  const prevActiveTabIdRef = useRef(activeTabId);
+  const tabIdsKey = tabIds.join("\0");
 
   useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+    storeRef.current = store;
+  }, [store]);
 
   useEffect(() => {
     onNavigateRef.current = onNavigate;
   }, [onNavigate]);
 
   useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  useEffect(() => {
+    if (!activeTabId) {
+      return;
+    }
+
     const currentHref = initialHrefRef.current;
     const title = resolveHistoryEntryTitle(currentHref, pageTitlesRef.current);
-    const stored = loadStoredHistoryState();
-    const next = stored
-      ? applyPathnameChange(stored, currentHref, title, null)
-      : createInitialHistoryState(currentHref, title);
+    const stored = loadStoredHistoryStore(activeTabId);
+    let next =
+      stored ?? createInitialHistoryStore(activeTabId, currentHref, title);
+    next = applyPathnameChangeForTab(
+      next,
+      activeTabId,
+      currentHref,
+      title,
+      null,
+    );
+    next = pruneStacks(next, tabIds.length > 0 ? tabIds : [activeTabId]);
 
-    setState(next);
-    persistHistoryState(next);
+    setStore(next);
+    persistHistoryStore(next);
     hydratedRef.current = true;
     setHistoryReady(true);
+    // Hydrate once on mount; tabIds pruning continues in a separate effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!hydratedRef.current || !activeTabId) {
+      return;
+    }
+
+    if (prevActiveTabIdRef.current !== activeTabId) {
+      prevActiveTabIdRef.current = activeTabId;
+      pendingTabSwitchRef.current = true;
+    }
+  }, [activeTabId]);
+
+  useEffect(() => {
     if (!hydratedRef.current) {
+      return;
+    }
+
+    const ids = tabIdsKey.length > 0 ? tabIdsKey.split("\0") : [];
+
+    setStore((current) => {
+      const next = pruneStacks(current, ids);
+      if (areHistoryStoresEqual(current, next)) {
+        return current;
+      }
+      persistHistoryStore(next);
+      return next;
+    });
+  }, [tabIdsKey]);
+
+  useEffect(() => {
+    if (!hydratedRef.current || !activeTabId) {
       return;
     }
 
@@ -138,67 +226,95 @@ export function useNavigationHistory({
     const pendingIndex = pendingIndexRef.current;
     pendingIndexRef.current = null;
 
-    setState((current) => {
-      const next = applyPathnameChange(
-        current,
-        currentHref,
-        title,
-        pendingIndex,
-      );
+    const locationMatchesTab =
+      pathOnly(currentHref) === pathOnly(activeTabHref);
+    const isTabSwitch = pendingTabSwitchRef.current;
 
-      if (areHistoryStatesEqual(current, next)) {
+    if (isTabSwitch && !locationMatchesTab) {
+      // Wait until the router catches up to the tab's href so we don't
+      // sync the previous tab's pathname onto the new tab's stack.
+      return;
+    }
+
+    if (isTabSwitch) {
+      pendingTabSwitchRef.current = false;
+    }
+
+    setStore((current) => {
+      const next = isTabSwitch
+        ? syncTabStackToHref(current, activeTabId, currentHref, title)
+        : applyPathnameChangeForTab(
+            current,
+            activeTabId,
+            currentHref,
+            title,
+            pendingIndex,
+          );
+
+      if (areHistoryStoresEqual(current, next)) {
         return current;
       }
 
-      persistHistoryState(next);
+      persistHistoryStore(next);
       return next;
     });
-  }, [pathname, search]);
+  }, [pathname, search, activeTabId, activeTabHref]);
 
   const registerPageTitle = useCallback((href: string, title: string) => {
     const normalized = normalizeTabHref(href);
     pageTitlesRef.current.set(normalized, title);
 
-    setState((current) => {
-      const index = current.entries.findIndex((entry) => {
-        const [path] = entry.href.split(/[?#]/);
-        return normalizeTabHref(path ?? "/") === normalized;
-      });
+    setStore((current) => {
+      let next = current;
+      let changed = false;
 
-      if (index === -1) {
+      for (const [tabId, stack] of Object.entries(current.stacksByTabId)) {
+        const updated = updateEntriesMatchingHref(stack, href, (entry) =>
+          entry.title === title ? entry : { ...entry, title },
+        );
+        if (updated) {
+          changed = true;
+          next = setActiveStack(next, tabId, updated);
+        }
+      }
+
+      if (!changed) {
         return current;
       }
 
-      const nextEntries = current.entries.map((entry, entryIndex) =>
-        entryIndex === index ? { ...entry, title } : entry,
-      );
-
-      const next = { ...current, entries: nextEntries };
-      persistHistoryState(next);
+      persistHistoryStore(next);
       return next;
     });
   }, []);
 
-  const registerPageIcon = useCallback(
-    (href: string, icon: string | null) => {
-      const normalized = normalizeTabHref(href);
-      setState((current) => {
-        const nextEntries = current.entries.map((entry) => {
-          const [path] = entry.href.split(/[?#]/);
-          return normalizeTabHref(path ?? "/") === normalized
-            ? { ...entry, icon }
-            : entry;
-        });
-        const next = { ...current, entries: nextEntries };
-        persistHistoryState(next);
-        return next;
-      });
-    },
-    [],
-  );
+  const registerPageIcon = useCallback((href: string, icon: string | null) => {
+    setStore((current) => {
+      let next = current;
+      let changed = false;
+
+      for (const [tabId, stack] of Object.entries(current.stacksByTabId)) {
+        const updated = updateEntriesMatchingHref(stack, href, (entry) =>
+          entry.icon === icon ? entry : { ...entry, icon },
+        );
+        if (updated) {
+          changed = true;
+          next = setActiveStack(next, tabId, updated);
+        }
+      }
+
+      if (!changed) {
+        return current;
+      }
+
+      persistHistoryStore(next);
+      return next;
+    });
+  }, []);
 
   const goToIndex = useCallback((index: number) => {
-    const entry = stateRef.current.entries[index];
+    const tabId = activeTabIdRef.current;
+    const stack = getActiveStack(storeRef.current, tabId);
+    const entry = stack?.entries[index];
     if (!entry) {
       return;
     }
@@ -208,41 +324,43 @@ export function useNavigationHistory({
   }, []);
 
   const goBack = useCallback(() => {
-    if (stateRef.current.index <= 0) {
+    const stack = getActiveStack(storeRef.current, activeTabIdRef.current);
+    if (!stack || stack.index <= 0) {
       return;
     }
 
-    goToIndex(stateRef.current.index - 1);
+    goToIndex(stack.index - 1);
   }, [goToIndex]);
 
   const goForward = useCallback(() => {
-    if (stateRef.current.index >= stateRef.current.entries.length - 1) {
+    const stack = getActiveStack(storeRef.current, activeTabIdRef.current);
+    if (!stack || stack.index >= stack.entries.length - 1) {
       return;
     }
 
-    goToIndex(stateRef.current.index + 1);
+    goToIndex(stack.index + 1);
   }, [goToIndex]);
 
-  const navigateToHistoryEntry = useCallback(
-    (href: string) => {
-      const index = stateRef.current.entries.findIndex(
-        (entry) => entry.href === href,
-      );
-      if (index === -1) {
-        onNavigateRef.current(href);
-        return;
-      }
+  const navigateToHistoryEntry = useCallback((href: string) => {
+    // Recent pages are global; always push into the active tab.
+    onNavigateRef.current(href);
+  }, []);
 
-      goToIndex(index);
-    },
-    [goToIndex],
-  );
+  const activeStack = activeTabId
+    ? getActiveStack(store, activeTabId)
+    : null;
+  const currentHref = activeStack?.entries[activeStack.index]?.href;
 
   return useMemo(
     () => ({
-      canGoBack: historyReady && state.index > 0,
-      canGoForward: historyReady && state.index < state.entries.length - 1,
-      recentPages: historyReady ? getRecentHistoryPages(state) : [],
+      canGoBack: historyReady && (activeStack?.index ?? 0) > 0,
+      canGoForward:
+        historyReady &&
+        activeStack !== null &&
+        activeStack.index < activeStack.entries.length - 1,
+      recentPages: historyReady
+        ? getRecentHistoryPagesFromStore(store, currentHref)
+        : [],
       goBack,
       goForward,
       navigateToHistoryEntry,
@@ -250,13 +368,15 @@ export function useNavigationHistory({
       registerPageTitle,
     }),
     [
+      activeStack,
+      currentHref,
       goBack,
       goForward,
       historyReady,
       navigateToHistoryEntry,
       registerPageIcon,
       registerPageTitle,
-      state,
+      store,
     ],
   );
 }

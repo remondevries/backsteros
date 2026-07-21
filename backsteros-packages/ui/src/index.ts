@@ -1672,15 +1672,26 @@ export {
 export type {
   NavigationHistoryEntry,
   NavigationHistoryState,
+  NavigationHistoryStore,
 } from "./navigation-history/types.js";
 export {
   applyPathnameChange,
+  applyPathnameChangeForTab,
   areHistoryStatesEqual,
+  areHistoryStoresEqual,
+  createEmptyHistoryStore,
   createInitialHistoryState,
+  createInitialHistoryStore,
+  getActiveStack,
   getRecentHistoryPages,
+  getRecentHistoryPagesFromStore,
   historyEntryHrefsMatch,
+  migrateLegacyStore,
   normalizeHistoryEntryHref,
+  pruneStacks,
   resolveHistoryEntryTitle,
+  setActiveStack,
+  syncTabStackToHref,
 } from "./navigation-history/history-engine.js";
 export {
   useNavigationHistory,

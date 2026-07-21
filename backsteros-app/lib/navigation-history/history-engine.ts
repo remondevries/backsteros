@@ -5,7 +5,11 @@ import {
   NAVIGATION_HISTORY_MAX_ENTRIES,
   NAVIGATION_HISTORY_RECENT_LIMIT,
 } from "./constants";
-import type { NavigationHistoryEntry, NavigationHistoryState } from "./types";
+import type {
+  NavigationHistoryEntry,
+  NavigationHistoryState,
+  NavigationHistoryStore,
+} from "./types";
 
 export function normalizeHistoryEntryHref(href: string): string {
   const [path] = href.split(/[?#]/);
@@ -321,4 +325,243 @@ export function areHistoryStatesEqual(
       entry.href === right.entries[index]?.href &&
       entry.title === right.entries[index]?.title,
   );
+}
+
+export function createEmptyHistoryStore(): NavigationHistoryStore {
+  return { version: 2, stacksByTabId: {} };
+}
+
+export function createInitialHistoryStore(
+  tabId: string,
+  href: string,
+  title: string,
+): NavigationHistoryStore {
+  return {
+    version: 2,
+    stacksByTabId: {
+      [tabId]: createInitialHistoryState(href, title),
+    },
+  };
+}
+
+export function getActiveStack(
+  store: NavigationHistoryStore,
+  tabId: string,
+): NavigationHistoryState | null {
+  return store.stacksByTabId[tabId] ?? null;
+}
+
+export function setActiveStack(
+  store: NavigationHistoryStore,
+  tabId: string,
+  stack: NavigationHistoryState,
+): NavigationHistoryStore {
+  const current = store.stacksByTabId[tabId];
+  if (current && areHistoryStatesEqual(current, stack)) {
+    return store;
+  }
+
+  return {
+    ...store,
+    stacksByTabId: {
+      ...store.stacksByTabId,
+      [tabId]: stack,
+    },
+  };
+}
+
+export function applyPathnameChangeForTab(
+  store: NavigationHistoryStore,
+  tabId: string,
+  currentHref: string,
+  title: string,
+  pendingIndex: number | null,
+): NavigationHistoryStore {
+  const currentStack =
+    store.stacksByTabId[tabId] ??
+    createInitialHistoryState(currentHref, title);
+  const nextStack = applyPathnameChange(
+    currentStack,
+    currentHref,
+    title,
+    pendingIndex,
+  );
+  return setActiveStack(store, tabId, nextStack);
+}
+
+/**
+ * Sync the active tab tip without pushing (used after product-tab switches).
+ */
+export function syncTabStackToHref(
+  store: NavigationHistoryStore,
+  tabId: string,
+  currentHref: string,
+  title: string,
+): NavigationHistoryStore {
+  const currentStack = store.stacksByTabId[tabId];
+  if (!currentStack) {
+    return setActiveStack(
+      store,
+      tabId,
+      createInitialHistoryState(currentHref, title),
+    );
+  }
+
+  return setActiveStack(
+    store,
+    tabId,
+    syncToIndex(currentStack, currentStack.index, currentHref, title),
+  );
+}
+
+export function getRecentHistoryPagesFromStore(
+  store: NavigationHistoryStore,
+  currentHref: string | undefined,
+): NavigationHistoryEntry[] {
+  const allEntries: NavigationHistoryEntry[] = [];
+  for (const stack of Object.values(store.stacksByTabId)) {
+    for (const entry of stack.entries) {
+      allEntries.push(withResolvedPageIcon(entry, stack.entries));
+    }
+  }
+
+  allEntries.sort((left, right) => right.visitedAt - left.visitedAt);
+
+  const seen = new Set<string>();
+  const recent: NavigationHistoryEntry[] = [];
+
+  for (const entry of allEntries) {
+    if (
+      (currentHref !== undefined && entry.href === currentHref) ||
+      seen.has(entry.href)
+    ) {
+      continue;
+    }
+
+    seen.add(entry.href);
+    recent.push(entry);
+
+    if (recent.length >= NAVIGATION_HISTORY_RECENT_LIMIT) {
+      break;
+    }
+  }
+
+  return recent;
+}
+
+export function pruneStacks(
+  store: NavigationHistoryStore,
+  tabIds: readonly string[],
+): NavigationHistoryStore {
+  const allowed = new Set(tabIds);
+  let changed = false;
+  const nextStacks: Record<string, NavigationHistoryState> = {};
+
+  for (const [tabId, stack] of Object.entries(store.stacksByTabId)) {
+    if (allowed.has(tabId)) {
+      nextStacks[tabId] = stack;
+    } else {
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return store;
+  }
+
+  return { ...store, stacksByTabId: nextStacks };
+}
+
+export function areHistoryStoresEqual(
+  left: NavigationHistoryStore,
+  right: NavigationHistoryStore,
+): boolean {
+  const leftIds = Object.keys(left.stacksByTabId);
+  const rightIds = Object.keys(right.stacksByTabId);
+  if (leftIds.length !== rightIds.length) {
+    return false;
+  }
+
+  return leftIds.every((tabId) => {
+    const leftStack = left.stacksByTabId[tabId];
+    const rightStack = right.stacksByTabId[tabId];
+    if (!leftStack || !rightStack) {
+      return false;
+    }
+    return areHistoryStatesEqual(leftStack, rightStack);
+  });
+}
+
+function isLegacyHistoryState(
+  value: unknown,
+): value is NavigationHistoryState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<NavigationHistoryState>;
+  return Array.isArray(candidate.entries) && typeof candidate.index === "number";
+}
+
+function isHistoryStoreV2(value: unknown): value is NavigationHistoryStore {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<NavigationHistoryStore>;
+  return (
+    candidate.version === 2 &&
+    candidate.stacksByTabId !== undefined &&
+    typeof candidate.stacksByTabId === "object"
+  );
+}
+
+/**
+ * Accepts v2 store or legacy `{ entries, index }` and returns a v2 store.
+ * Legacy stacks are attached under `activeTabId` when provided.
+ */
+export function migrateLegacyStore(
+  parsed: unknown,
+  activeTabId?: string | null,
+): NavigationHistoryStore | null {
+  if (isHistoryStoreV2(parsed)) {
+    const stacksByTabId: Record<string, NavigationHistoryState> = {};
+    for (const [tabId, stack] of Object.entries(parsed.stacksByTabId)) {
+      if (
+        stack &&
+        Array.isArray(stack.entries) &&
+        stack.entries.length > 0 &&
+        typeof stack.index === "number"
+      ) {
+        stacksByTabId[tabId] = {
+          entries: stack.entries,
+          index: Math.min(
+            Math.max(stack.index, 0),
+            stack.entries.length - 1,
+          ),
+        };
+      }
+    }
+    return { version: 2, stacksByTabId };
+  }
+
+  if (!isLegacyHistoryState(parsed) || parsed.entries.length === 0) {
+    return null;
+  }
+
+  if (!activeTabId) {
+    return null;
+  }
+
+  const index = Math.min(
+    Math.max(parsed.index, 0),
+    parsed.entries.length - 1,
+  );
+
+  return {
+    version: 2,
+    stacksByTabId: {
+      [activeTabId]: { entries: parsed.entries, index },
+    },
+  };
 }
