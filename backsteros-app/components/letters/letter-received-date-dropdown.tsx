@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 
+import { DueDateCalendarPopover } from "@backsteros/ui";
 import { updateLetterReceivedDateAction } from "@/lib/mutations/letters";
 import { updateLocalLetterReceivedDate } from "@/lib/sync/local-letter-mutations";
 import { runEntityPersist } from "@/lib/sync/run-entity-persist";
@@ -19,7 +20,6 @@ import {
 import {
   formatDueDateInputValue,
   formatTaskDueMetaLabel } from "@/lib/task-due-date";
-import { openNativeDatePicker } from "@/lib/native-date-picker";
 
 type LetterReceivedDateDropdownProps = {
   letterId: string;
@@ -38,8 +38,9 @@ export function LetterReceivedDateDropdown({
   );
   const [error, setError] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   const [prevInitialReceivedDate, setPrevInitialReceivedDate] = useState(initialReceivedDate);
   if (initialReceivedDate !== prevInitialReceivedDate) {
@@ -92,7 +93,7 @@ export function LetterReceivedDateDropdown({
 
   function handleChange(value: string) {
     if (isPickDueDateValue(value)) {
-      openNativeDatePicker(dateInputRef.current);
+      setCalendarOpen(true);
       return;
     }
 
@@ -124,9 +125,24 @@ export function LetterReceivedDateDropdown({
     [],
   );
 
+  const calendarPopover = (
+    <DueDateCalendarPopover
+      open={calendarOpen}
+      onClose={() => setCalendarOpen(false)}
+      value={ymdValue || null}
+      disabled={isPending}
+      anchorRef={anchorRef}
+      align={variant === "property" ? "start" : "end"}
+      onSelect={(ymd) => {
+        setYmdValue(ymd);
+        persist(ymd);
+      }}
+    />
+  );
+
   if (variant === "property") {
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" ref={anchorRef}>
         <PropertyDropdown
           value={selectedValue}
           options={options}
@@ -142,19 +158,7 @@ export function LetterReceivedDateDropdown({
           queryPreviewLabel={handleQueryPreview}
           taskPropertyDropdownId="receivedDate"
         />
-        <input
-          ref={dateInputRef}
-          type="date"
-          value={ymdValue}
-          onChange={(event) => {
-            const next = event.target.value.trim();
-            setYmdValue(next);
-            persist(next ? next : null);
-          }}
-          className="fixed left-[-9999px] h-px w-px opacity-0"
-          tabIndex={-1}
-          aria-hidden="true"
-        />
+        {calendarPopover}
         {error ? (
           <p className="px-1 text-[11px] text-red-400" role="alert">
             {error}
@@ -165,7 +169,7 @@ export function LetterReceivedDateDropdown({
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col" ref={anchorRef}>
       <SearchableDropdown
         value={selectedValue}
         options={options}
@@ -217,19 +221,7 @@ export function LetterReceivedDateDropdown({
           </button>
         )}
       />
-      <input
-        ref={dateInputRef}
-        type="date"
-        value={ymdValue}
-        onChange={(event) => {
-          const next = event.target.value.trim();
-          setYmdValue(next);
-          persist(next ? next : null);
-        }}
-        className="fixed left-[-9999px] h-px w-px opacity-0"
-        tabIndex={-1}
-        aria-hidden="true"
-      />
+      {calendarPopover}
       {error ? (
         <p className="text-[11px] text-red-400" role="alert">
           {error}

@@ -690,7 +690,7 @@ export function SearchableDropdown<T extends string>({
                     className="px-3 py-2.5 text-xs leading-snug text-foreground/50"
                     role="presentation"
                   >
-                    No matches
+                    {queryPreview ? "Press Enter to apply" : "No matches"}
                   </li>
                 ) : (
                   filteredOptions.map((option, index) => {

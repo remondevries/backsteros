@@ -165,5 +165,9 @@ export function formatTaskDueMetaLabel(
   tomorrow.setDate(tomorrow.getDate() + 1);
   if (ymd === formatLocalYmd(tomorrow)) return "Tomorrow";
 
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (ymd === formatLocalYmd(yesterday)) return "Yesterday";
+
   return `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
 }

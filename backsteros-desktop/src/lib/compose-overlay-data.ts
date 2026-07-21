@@ -18,21 +18,31 @@ import {
   type ComposeModalProject,
 } from "@backsteros/ui";
 
+import {
+  getDefaultAssigneeId,
+  syncDefaultAssigneeIdFromSettings,
+} from "./default-assignee";
+
 export type ComposeOverlayContext = {
   projects: ComposeModalProject[];
   contacts: AssigneeDropdownContact[];
   documentFoldersByTarget: ComposeDocumentFoldersByTarget;
   projectsById: Map<string, { id: string; key: string; name: string }>;
+  defaultAssigneeId: string | null;
 };
 
 export async function loadComposeOverlayContext(
   client: BacksterosApiClient,
 ): Promise<ComposeOverlayContext> {
-  const [projectsBody, contactsBody, documentsBody] = await Promise.all([
-    client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
-    client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
-    client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
-  ]);
+  const [projectsBody, contactsBody, documentsBody, settingsBody] =
+    await Promise.all([
+      client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
+      client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
+      client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
+      client
+        .requestJson<{ settings: Record<string, unknown> }>("/api/v1/settings")
+        .catch(() => null),
+    ]);
 
   const projects = projectsBody.projects.map((project) => ({
     id: project.id,
@@ -72,11 +82,16 @@ export async function loadComposeOverlayContext(
     ]),
   );
 
+  const defaultAssigneeId = settingsBody
+    ? syncDefaultAssigneeIdFromSettings(settingsBody.settings)
+    : getDefaultAssigneeId();
+
   return {
     projects,
     contacts,
     documentFoldersByTarget,
     projectsById,
+    defaultAssigneeId,
   };
 }
 

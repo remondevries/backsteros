@@ -124,7 +124,10 @@ import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
 import { useCommandPaletteSearchFn } from "../lib/command-palette-search";
-import { getDefaultAssigneeId } from "../lib/default-assignee";
+import {
+  getDefaultAssigneeId,
+  syncDefaultAssigneeIdFromSettings,
+} from "../lib/default-assignee";
 import { getDesktopPublicEnvironment } from "../lib/env";
 import {
   useDesktopAvatarSrcMap,
@@ -884,6 +887,9 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [defaultAssigneeId, setDefaultAssigneeIdState] = useState<string | null>(
+    () => getDefaultAssigneeId(),
+  );
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
     workspace.contacts,
@@ -905,6 +911,24 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       documentId: todayJournalDocumentId,
     });
   }, [client, todayJournalDocumentId, todayJournalSlug, workspace.ready]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void client
+      .requestJson<{ settings: Record<string, unknown> }>("/api/v1/settings")
+      .then((body) => {
+        if (cancelled) return;
+        setDefaultAssigneeIdState(
+          syncDefaultAssigneeIdFromSettings(body.settings),
+        );
+      })
+      .catch(() => {
+        // keep local cache
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   useEffect(() => {
     const stored = localStorage.getItem("backsteros:sidebar-visible");
@@ -1747,7 +1771,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         pathname={`${location.pathname}${location.search}`}
         projects={composeProjects}
         contacts={composeContacts}
-        defaultAssigneeId={getDefaultAssigneeId()}
+        defaultAssigneeId={defaultAssigneeId}
         documentFoldersByTarget={documentFoldersByTarget}
         projectsHref="/projects"
         onNavigate={(href) => navigate(href)}

@@ -18,6 +18,7 @@
     "android": {
       "package": "com.backsteros.mobile",
       "backgroundColor": "#000000",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1425"
@@ -42,7 +43,8 @@
       "expo-secure-store",
       "./plugins/with-fmt-xcode-format.js",
       "expo-web-browser",
-      "expo-document-picker"
+      "expo-document-picker",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

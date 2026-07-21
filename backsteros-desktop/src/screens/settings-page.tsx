@@ -29,8 +29,11 @@ import {
 } from "../lib/backend-mode";
 import { useBackendMode } from "../lib/backend-mode-context";
 import {
+  DEFAULT_ASSIGNEE_SETTINGS_KEY,
   getDefaultAssigneeId,
+  parseDefaultAssigneeIdFromSettings,
   setDefaultAssigneeId,
+  syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
 import { getDesktopPublicEnvironment } from "../lib/env";
 import { useDesktopPowerSync } from "../lib/powersync-context";
@@ -68,13 +71,40 @@ function ClerkAccountEmailCard() {
   );
 }
 
-function SettingsAccountTab() {
+function SettingsAccountTab({
+  settings,
+  onSettingsSaved,
+}: {
+  settings: Record<string, unknown> | undefined;
+  onSettingsSaved?: () => void;
+}) {
+  const { client } = useDesktopApi();
   const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
   const [assigneeId, setAssigneeId] = useState<string | null>(() =>
     getDefaultAssigneeId(),
   );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!settings) return;
+    const synced = syncDefaultAssigneeIdFromSettings(settings);
+    setAssigneeId(synced);
+
+    const fromServer = parseDefaultAssigneeIdFromSettings(settings);
+    if (fromServer !== undefined || !synced || !clerkKey) return;
+    void client
+      .requestJson("/api/v1/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [DEFAULT_ASSIGNEE_SETTINGS_KEY]: synced }),
+      })
+      .then(() => onSettingsSaved?.())
+      .catch(() => {
+        // keep local value if migrate fails
+      });
+  }, [clerkKey, client, onSettingsSaved, settings]);
 
   const options = useMemo(
     () => buildAssigneeDropdownOptions(contacts),
@@ -94,7 +124,23 @@ function SettingsAccountTab() {
             const value = next === "__none__" ? null : next;
             setAssigneeId(value);
             setDefaultAssigneeId(value);
+            if (!clerkKey) return;
+            setSaving(true);
+            void client
+              .requestJson("/api/v1/settings", {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  [DEFAULT_ASSIGNEE_SETTINGS_KEY]: value,
+                }),
+              })
+              .then(() => onSettingsSaved?.())
+              .catch(() => {
+                // keep optimistic local value offline
+              })
+              .finally(() => setSaving(false));
           }}
+          disabled={saving}
           searchPlaceholder="Set default assignee…"
           ariaLabel="Default assignee"
         />
@@ -571,32 +617,39 @@ export function SettingsPage() {
     normalizeAppTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
   const [savingTimezone, setSavingTimezone] = useState(false);
+  const [workspaceSettings, setWorkspaceSettings] = useState<
+    Record<string, unknown> | undefined
+  >(undefined);
 
   useDesktopSectionBreadcrumb([
     { label: "Settings", href: "/settings/general" },
     { label: meta.label },
   ]);
 
-  useEffect(() => {
+  const reloadSettings = useCallback(async () => {
     if (!clerkKey) return;
-    void (async () => {
-      try {
-        const body = await client.requestJson<{
-          settings: Record<string, unknown>;
-        }>("/api/v1/settings");
-        setTimezone(
-          normalizeAppTimezone(
-            String(
-              body.settings.timezone ??
-                Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ),
+    try {
+      const body = await client.requestJson<{
+        settings: Record<string, unknown>;
+      }>("/api/v1/settings");
+      setWorkspaceSettings(body.settings);
+      setTimezone(
+        normalizeAppTimezone(
+          String(
+            body.settings.timezone ??
+              Intl.DateTimeFormat().resolvedOptions().timeZone,
           ),
-        );
-      } catch {
-        // keep local default
-      }
-    })();
+        ),
+      );
+      syncDefaultAssigneeIdFromSettings(body.settings);
+    } catch {
+      // keep local defaults
+    }
   }, [client, clerkKey]);
+
+  useEffect(() => {
+    void reloadSettings();
+  }, [reloadSettings]);
 
   if (!tab) {
     return <Navigate to="/settings/general" replace />;
@@ -632,6 +685,7 @@ export function SettingsPage() {
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ timezone: next }),
                   });
+                  await reloadSettings();
                 } catch {
                   // keep optimistic value offline
                 } finally {
@@ -640,7 +694,12 @@ export function SettingsPage() {
               }}
             />
           ) : null}
-          {activeTab === "account" ? <SettingsAccountTab /> : null}
+          {activeTab === "account" ? (
+            <SettingsAccountTab
+              settings={workspaceSettings}
+              onSettingsSaved={() => void reloadSettings()}
+            />
+          ) : null}
           {activeTab === "sync" ? <SettingsSyncTab /> : null}
           {activeTab === "api" ? <SettingsApiTab /> : null}
           {activeTab === "cursor" ? (

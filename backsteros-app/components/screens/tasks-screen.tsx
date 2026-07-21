@@ -23,6 +23,7 @@ import { parseProjectTaskView } from "@/lib/project-task-view";
 import { mapProjectToAssignable } from "@/lib/projects/assignable-project";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
 import { DEFAULT_APP_TIMEZONE } from "@/lib/settings/app-timezone";
+import { getDefaultAssigneeId } from "@/lib/settings/default-assignee";
 import {
   buildTasksDueHref,
   parseTasksDueFilter,
@@ -155,7 +156,7 @@ function TasksScreenInner({ dueSegment }: { dueSegment?: string }) {
           tasks={tasks}
           assignableProjects={assignableProjects}
           contacts={contacts}
-          defaultAssigneeId={null}
+          defaultAssigneeId={getDefaultAssigneeId()}
         />
       )}
     </div>

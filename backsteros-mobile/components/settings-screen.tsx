@@ -23,8 +23,11 @@ import {
   normalizeAppTimezone,
 } from "../lib/app-timezone";
 import {
+  DEFAULT_ASSIGNEE_SETTINGS_KEY,
   getDefaultAssigneeId,
+  parseDefaultAssigneeIdFromSettings,
   setDefaultAssigneeId,
+  syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
 import { getMobileEnvironment } from "../lib/env";
 import { formatLastSyncedAt } from "../lib/format-last-synced";
@@ -149,12 +152,18 @@ function GeneralTab({
   );
 }
 
-function AccountTab() {
+function AccountTab({
+  settings,
+  onSettingsSaved,
+}: {
+  settings: Record<string, unknown> | undefined;
+  onSettingsSaved?: () => void;
+}) {
   const { signOut } = useAuth();
   const { user } = useUser();
   const router = useRouter();
   const powerSync = useMobilePowerSync();
-  const { apiUrl, clerkPublishableKey } = getMobileEnvironment();
+  const { clerkPublishableKey } = getMobileEnvironment();
   const client = useMobileApiClient();
 
   const { data: syncedContacts } = useLocalQuery<ContactRow>(CONTACTS_SQL);
@@ -165,6 +174,32 @@ function AccountTab() {
   useEffect(() => {
     void getDefaultAssigneeId().then(setAssigneeId);
   }, []);
+
+  useEffect(() => {
+    if (!settings) return;
+    let cancelled = false;
+    void (async () => {
+      const synced = await syncDefaultAssigneeIdFromSettings(settings);
+      if (cancelled) return;
+      setAssigneeId(synced);
+
+      const fromServer = parseDefaultAssigneeIdFromSettings(settings);
+      if (fromServer !== undefined || !synced || !clerkPublishableKey) return;
+      try {
+        await client.requestJson("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ [DEFAULT_ASSIGNEE_SETTINGS_KEY]: synced }),
+        });
+        onSettingsSaved?.();
+      } catch {
+        // keep local value if migrate fails
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clerkPublishableKey, client, onSettingsSaved, settings]);
 
   useEffect(() => {
     if (powerSync.ready) return;
@@ -247,6 +282,19 @@ function AccountTab() {
         onSelect={(value) => {
           setAssigneeId(value);
           void setDefaultAssigneeId(value);
+          if (!clerkPublishableKey) return;
+          void client
+            .requestJson("/api/v1/settings", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                [DEFAULT_ASSIGNEE_SETTINGS_KEY]: value,
+              }),
+            })
+            .then(() => onSettingsSaved?.())
+            .catch(() => {
+              // keep optimistic local value offline
+            });
         }}
         onClose={() => setPickerOpen(false)}
       />
@@ -657,27 +705,34 @@ export function SettingsScreen() {
     normalizeAppTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone),
   );
   const [savingTimezone, setSavingTimezone] = useState(false);
+  const [workspaceSettings, setWorkspaceSettings] = useState<
+    Record<string, unknown> | undefined
+  >(undefined);
+
+  const reloadSettings = useCallback(async () => {
+    if (!clerkPublishableKey) return;
+    try {
+      const body = await client.requestJson<{
+        settings: Record<string, unknown>;
+      }>("/api/v1/settings");
+      setWorkspaceSettings(body.settings);
+      setTimezone(
+        normalizeAppTimezone(
+          String(
+            body.settings.timezone ??
+              Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ),
+        ),
+      );
+      await syncDefaultAssigneeIdFromSettings(body.settings);
+    } catch {
+      // keep local defaults
+    }
+  }, [client, clerkPublishableKey]);
 
   useEffect(() => {
-    if (!clerkPublishableKey) return;
-    void (async () => {
-      try {
-        const body = await client.requestJson<{
-          settings: Record<string, unknown>;
-        }>("/api/v1/settings");
-        setTimezone(
-          normalizeAppTimezone(
-            String(
-              body.settings.timezone ??
-                Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ),
-          ),
-        );
-      } catch {
-        // keep local default
-      }
-    })();
-  }, [client, clerkPublishableKey]);
+    void reloadSettings();
+  }, [reloadSettings]);
 
   return (
     <>
@@ -726,6 +781,7 @@ export function SettingsScreen() {
                       headers: { "content-type": "application/json" },
                       body: JSON.stringify({ timezone: next }),
                     });
+                    await reloadSettings();
                   } catch {
                     // keep optimistic value offline
                   } finally {
@@ -735,7 +791,12 @@ export function SettingsScreen() {
               }}
             />
           ) : null}
-          {tab === "account" ? <AccountTab /> : null}
+          {tab === "account" ? (
+            <AccountTab
+              settings={workspaceSettings}
+              onSettingsSaved={() => void reloadSettings()}
+            />
+          ) : null}
           {tab === "sync" ? <SyncTab /> : null}
           {tab === "api" ? <ApiTab /> : null}
           {tab === "cursor" ? (

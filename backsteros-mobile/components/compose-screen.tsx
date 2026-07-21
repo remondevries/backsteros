@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -16,14 +15,10 @@ import {
   isComposeKnowledgeBaseValue,
   type ComposeKind,
 } from "../lib/compose";
-import { getDefaultAssigneeId } from "../lib/default-assignee";
+import { getDefaultAssigneeId, syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
 import { documentDetailHref, taskDetailHref } from "../lib/detail-href";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
-import {
-  endOfLocalDayIso,
-  formatTaskDueMetaLabel,
-} from "../lib/task-due-date";
+import { formatTaskDueMetaLabel } from "../lib/task-due-date";
 import {
   getTaskPriorityLabel,
   isTaskPriorityNone,
@@ -41,6 +36,8 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
+import { DueDatePropertySheet } from "./due-date-property-sheet";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyOptionSheet,
@@ -80,12 +77,6 @@ const CONTACTS_SQL = `SELECT id, name FROM contacts
  WHERE deleted_at IS NULL
  ORDER BY sort_order ASC, name ASC`;
 
-function dueIsoForOffset(daysFromToday: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromToday);
-  return endOfLocalDayIso(date);
-}
-
 /** Global compose tab — Task / Document toggle (desktop create modal parity). */
 export function ComposeScreen() {
   const router = useRouter();
@@ -115,8 +106,23 @@ export function ComposeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getDefaultAssigneeId().then(setAssigneeId);
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const body = await client.requestJson<{
+          settings: Record<string, unknown>;
+        }>("/api/v1/settings");
+        if (cancelled) return;
+        setAssigneeId(await syncDefaultAssigneeIdFromSettings(body.settings));
+      } catch {
+        if (cancelled) return;
+        setAssigneeId(await getDefaultAssigneeId());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   useEffect(() => {
     if (powerSync.ready) return;
@@ -174,32 +180,6 @@ export function ComposeScreen() {
         label,
         icon: <TaskPriorityIcon priority={Number(value)} size={14} />,
       })),
-    [],
-  );
-
-  const dueOptions = useMemo<PropertyOption<string | null>[]>(
-    () => [
-      {
-        value: null,
-        label: "No due date",
-        icon: <TaskDueDateIcon active={false} size={14} />,
-      },
-      {
-        value: dueIsoForOffset(0),
-        label: "Today",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-      {
-        value: dueIsoForOffset(1),
-        label: "Tomorrow",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-      {
-        value: dueIsoForOffset(7),
-        label: "In 7 days",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-    ],
     [],
   );
 
@@ -480,13 +460,7 @@ export function ComposeScreen() {
         }}
       />
 
-      <ScrollView
-        style={ui.screen}
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-        }}
-        keyboardShouldPersistTaps="handled"
-      >
+      <KeyboardAwareScrollView style={ui.screen}>
         <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
           <TextInput
             value={title}
@@ -534,11 +508,10 @@ export function ComposeScreen() {
                 }}
                 onClose={() => setPicker(null)}
               />
-              <PropertyOptionSheet
+              <DueDatePropertySheet
                 embedded
                 visible={picker === "due"}
                 title="Due date"
-                options={dueOptions}
                 selected={dueDate}
                 onSelect={(value) => {
                   setDueDate(value);
@@ -640,7 +613,7 @@ export function ComposeScreen() {
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

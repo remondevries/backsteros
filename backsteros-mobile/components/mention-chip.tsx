@@ -1,6 +1,7 @@
 import { useRouter, type Href } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import type { MentionChipLayout } from "../lib/mention-layout";
 import type { ParsedMentionToken } from "../lib/mention-tokens";
 import { colors } from "../lib/theme";
 import { LetterIcon } from "./letter-icon";
@@ -12,7 +13,9 @@ type Props = {
   label: string;
   deleted?: boolean;
   status?: string | null;
+  displayId?: string | null;
   href?: Href;
+  layout?: MentionChipLayout;
 };
 
 /** Compact mention chip — same role as desktop `.mention-chip-lite`. */
@@ -21,10 +24,19 @@ export function MentionChip({
   label,
   deleted = false,
   status,
+  displayId,
   href,
+  layout = "inline",
 }: Props) {
   const router = useRouter();
   const pressable = Boolean(href) && !deleted;
+  const chipLayout =
+    token.kind === "task" ||
+    token.kind === "project" ||
+    token.kind === "letter"
+      ? layout
+      : "inline";
+  const isBlock = chipLayout === "block";
 
   const content = (
     <>
@@ -39,18 +51,29 @@ export function MentionChip({
           <Text style={styles.kindMark}>@</Text>
         )}
       </View>
-      <Text style={styles.label} numberOfLines={1}>
+      {isBlock && displayId ? (
+        <Text style={styles.displayId} numberOfLines={1}>
+          {displayId}
+        </Text>
+      ) : null}
+      <Text
+        style={[styles.label, isBlock ? styles.labelBlock : null]}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </>
   );
 
+  const chipStyle = [
+    styles.chip,
+    isBlock ? styles.chipBlock : null,
+    deleted ? styles.chipDeleted : null,
+  ];
+
   if (!pressable) {
     return (
-      <View
-        style={[styles.chip, deleted ? styles.chipDeleted : null]}
-        accessibilityLabel={label}
-      >
+      <View style={chipStyle} accessibilityLabel={label}>
         {content}
       </View>
     );
@@ -60,13 +83,13 @@ export function MentionChip({
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={label}
-      hitSlop={8}
+      hitSlop={isBlock ? 4 : 8}
       onPress={() => {
         router.push(href!);
       }}
       style={({ pressed }) => [
-        styles.chip,
-        pressed ? styles.chipPressed : null,
+        ...chipStyle,
+        pressed ? (isBlock ? styles.chipBlockPressed : styles.chipPressed) : null,
       ]}
     >
       {content}
@@ -86,8 +109,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     maxWidth: "100%",
   },
+  chipBlock: {
+    width: "100%",
+    gap: 8,
+    marginHorizontal: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "transparent",
+  },
   chipPressed: {
     backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
+  chipBlockPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
   chipDeleted: {
     opacity: 0.6,
@@ -103,11 +140,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
+  displayId: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    fontWeight: "500",
+    flexShrink: 0,
+  },
   label: {
     color: colors.foreground,
     fontSize: 13,
     fontWeight: "500",
     lineHeight: 18,
+    flexShrink: 1,
+  },
+  labelBlock: {
+    flex: 1,
     flexShrink: 1,
   },
 });

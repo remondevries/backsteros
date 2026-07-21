@@ -45,10 +45,7 @@ import {
   TabStackHeaderTextButton,
   tabDetailScreenOptions,
 } from "../lib/tab-stack-options";
-import {
-  endOfLocalDayIso,
-  formatTaskDueMetaLabel,
-} from "../lib/task-due-date";
+import { formatTaskDueMetaLabel } from "../lib/task-due-date";
 import {
   getTaskStatusLabel,
   TASK_STATUS_ORDER,
@@ -70,6 +67,7 @@ import { LetterFileChip } from "./letter-file-chip";
 import { LetterPdfViewerModal } from "./letter-pdf-viewer-modal";
 import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
+import { DueDatePropertySheet } from "./due-date-property-sheet";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -916,11 +914,10 @@ export function LetterDetailScreen({ letterId }: Props) {
         }}
         onClose={() => setPicker(null)}
       />
-      <PropertyOptionSheet
+      <DueDatePropertySheet
         embedded
         visible={picker === "due"}
         title="Due date"
-        options={dateOptions}
         selected={dueDate}
         onSelect={(value) => {
           setDueDate(value);

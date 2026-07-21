@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 
+import { DueDateCalendarPopover } from "@backsteros/ui";
 import { updateProjectDueDateAction } from "@/lib/mutations/projects";
 import { SearchableDropdown } from "@/components/ui/searchable-dropdown";
 import { updateLocalProjectDueDate } from "@/lib/sync/local-project-mutations";
@@ -19,7 +20,6 @@ import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
   parseDueDateInputValue } from "@/lib/task-due-date";
-import { openNativeDatePicker } from "@/lib/native-date-picker";
 
 import { TaskDueDateIcon } from "@/components/tasks/task-due-date-icon";
 
@@ -42,8 +42,9 @@ export function ProjectDueDateDropdown({
   );
   const [error, setError] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   const [prevInitialDueDate, setPrevInitialDueDate] = useState(initialDueDate);
   if (initialDueDate !== prevInitialDueDate) {
@@ -106,7 +107,7 @@ export function ProjectDueDateDropdown({
 
   function handleChange(value: string) {
     if (isPickDueDateValue(value)) {
-      openNativeDatePicker(dateInputRef.current);
+      setCalendarOpen(true);
       return;
     }
 
@@ -139,13 +140,13 @@ export function ProjectDueDateDropdown({
   );
 
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="flex min-w-0 flex-col" ref={anchorRef}>
       <SearchableDropdown
         value={selectedValue}
         options={options}
         onChange={handleChange}
         disabled={isPending}
-        searchPlaceholder="tomorrow, next Friday…"
+        searchPlaceholder="tomorrow, next Friday, 2 weeks ago…"
         searchShortcutLabel="D"
         ariaLabel={`Change due date: ${displayLabel}`}
         taskPropertyDropdownId="dueDate"
@@ -196,18 +197,17 @@ export function ProjectDueDateDropdown({
           </button>
         )}
       />
-      <input
-        ref={dateInputRef}
-        type="date"
-        value={ymdValue}
-        onChange={(event) => {
-          const next = event.target.value.trim();
-          setYmdValue(next);
-          persist(next ? next : null);
+      <DueDateCalendarPopover
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        value={ymdValue || null}
+        disabled={isPending}
+        anchorRef={anchorRef}
+        align="end"
+        onSelect={(ymd) => {
+          setYmdValue(ymd);
+          persist(ymd);
         }}
-        className="fixed left-[-9999px] h-px w-px opacity-0"
-        tabIndex={-1}
-        aria-hidden="true"
       />
       {error ? (
         <p className="text-[11px] text-red-400" role="alert">

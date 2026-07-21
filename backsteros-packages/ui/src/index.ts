@@ -265,6 +265,24 @@ export {
 } from "./parse-natural-language-due-date.js";
 
 export {
+  buildDueDateCalendarGrid,
+  DUE_DATE_CALENDAR_WEEKDAY_LABELS,
+  formatCalendarMonthTitle,
+  shiftCalendarMonth,
+  type DueDateCalendarCell,
+} from "./due-date-calendar.js";
+
+export {
+  DueDateCalendar,
+  type DueDateCalendarProps,
+} from "./components/due-date-calendar.js";
+
+export {
+  DueDateCalendarPopover,
+  type DueDateCalendarPopoverProps,
+} from "./components/due-date-calendar-popover.js";
+
+export {
   TaskDueDateDropdown,
   type TaskDueDateDropdownProps,
 } from "./components/task-due-date-dropdown.js";
@@ -1084,6 +1102,11 @@ export {
   getDeletedMentionDisplay,
   type DeletedMentionDisplay,
 } from "./mentions/deleted-mention-display.js";
+
+export {
+  resolveMentionLayout,
+  type MentionChipLayout,
+} from "./mentions/mention-layout.js";
 
 export {
   parseMentionToken,

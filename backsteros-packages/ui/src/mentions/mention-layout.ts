@@ -1,4 +1,4 @@
-import type { MentionSegment } from "./tokens";
+import type { MentionSegment } from "../mention-tokens.js";
 
 export type MentionChipLayout = "inline" | "block";
 
@@ -57,7 +57,6 @@ function isParagraphOnlyMention(
 /**
  * Task / project / letter mentions on their own line use full-width block
  * chips; mentions embedded in a sentence stay compact/inline.
- * Keep in sync with `@backsteros/ui` `mentions/mention-layout.ts`.
  */
 export function resolveMentionLayout(
   segments: MentionSegment[],

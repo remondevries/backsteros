@@ -20,6 +20,10 @@ export function openNativeDatePicker(
 }
 
 export function isNativeDatePickerOpen(): boolean {
+  if (document.querySelector("[data-due-date-calendar-popover]")) {
+    return true;
+  }
+
   if (
     document.querySelector(
       `input[type="date"][${NATIVE_DATE_PICKER_OPEN_ATTRIBUTE}]`,

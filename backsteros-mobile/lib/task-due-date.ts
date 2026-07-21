@@ -119,6 +119,10 @@ export function formatTaskDueMetaLabel(
   tomorrow.setDate(tomorrow.getDate() + 1);
   if (ymd === formatLocalYmd(tomorrow)) return "Tomorrow";
 
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (ymd === formatLocalYmd(yesterday)) return "Yesterday";
+
   const [, month, day] = ymd.split("-").map(Number);
   if (!month || !day) return ymd;
   return `${MONTH_NAMES[month - 1]} ${day}`;

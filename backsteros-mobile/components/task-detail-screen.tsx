@@ -17,7 +17,6 @@ import {
   tabDetailScreenOptions,
 } from "../lib/tab-stack-options";
 import {
-  endOfLocalDayIso,
   formatTaskDueMetaLabel,
 } from "../lib/task-due-date";
 import {
@@ -33,11 +32,13 @@ import {
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
-import { useTaskDetail } from "../lib/use-task-detail";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { useTaskDetail } from "../lib/use-task-detail";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
+import { DueDatePropertySheet } from "./due-date-property-sheet";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyOptionSheet,
@@ -68,12 +69,6 @@ const PROJECTS_SQL = `SELECT id, name FROM projects
 const CONTACTS_SQL = `SELECT id, name FROM contacts
   WHERE deleted_at IS NULL
   ORDER BY name COLLATE NOCASE ASC`;
-
-function dueIsoForOffset(daysFromToday: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromToday);
-  return endOfLocalDayIso(date);
-}
 
 function asTaskStatus(value: string | null | undefined): TaskStatus {
   if (value && (TASK_STATUS_ORDER as readonly string[]).includes(value)) {
@@ -271,32 +266,6 @@ export function TaskDetailScreen({ taskId }: Props) {
     [],
   );
 
-  const dueOptions = useMemo<PropertyOption<string | null>[]>(
-    () => [
-      {
-        value: null,
-        label: "No due date",
-        icon: <TaskDueDateIcon active={false} size={14} />,
-      },
-      {
-        value: dueIsoForOffset(0),
-        label: "Today",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-      {
-        value: dueIsoForOffset(1),
-        label: "Tomorrow",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-      {
-        value: dueIsoForOffset(7),
-        label: "In 7 days",
-        icon: <TaskDueDateIcon active size={14} />,
-      },
-    ],
-    [],
-  );
-
   const assigneeOptions = useMemo<PropertyOption<string | null>[]>(
     () => [
       {
@@ -467,11 +436,10 @@ export function TaskDetailScreen({ taskId }: Props) {
         }}
         onClose={() => setPicker(null)}
       />
-      <PropertyOptionSheet
+      <DueDatePropertySheet
         embedded
         visible={picker === "due"}
         title="Due date"
-        options={dueOptions}
         selected={dueDate}
         onSelect={(value) => {
           setDueDate(value);
@@ -533,13 +501,7 @@ export function TaskDetailScreen({ taskId }: Props) {
             ),
           }}
         />
-        <ScrollView
-          style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-          }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <KeyboardAwareScrollView style={ui.screen}>
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             {task.display_id ? (
               <Text style={ui.detailId}>{task.display_id}</Text>
@@ -580,7 +542,7 @@ export function TaskDetailScreen({ taskId }: Props) {
               {saveError}
             </Text>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </>
     );
   }

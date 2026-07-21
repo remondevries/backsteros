@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, type SyntheticEvent } from "react";
 
-import { openNativeDatePicker } from "../native-date-picker.js";
+import { DueDateCalendarPopover } from "./due-date-calendar-popover.js";
 import {
   naturalLanguageDueDatePreview,
   parseNaturalLanguageDueDate,
@@ -60,7 +60,7 @@ export function TaskDueDateDropdown({
   disabled = false,
   onDueDateChange,
   noDueDateLabel = "No due date",
-  searchPlaceholder = "tomorrow, next Friday…",
+  searchPlaceholder = "tomorrow, next Friday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId = "dueDate",
   showIcon = true,
@@ -69,7 +69,8 @@ export function TaskDueDateDropdown({
     formatDueDateInputValue(dueDate),
   );
   const [isHovered, setIsHovered] = useState(false);
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   const [prevDueDate, setPrevDueDate] = useState(dueDate);
   if (dueDate !== prevDueDate) {
@@ -113,7 +114,7 @@ export function TaskDueDateDropdown({
   function handleChange(value: string) {
     if (disabled) return;
     if (isPickDueDateValue(value)) {
-      openNativeDatePicker(dateInputRef.current);
+      setCalendarOpen(true);
       return;
     }
     applyYmd(taskDueDateFromDropdownValue(value));
@@ -140,25 +141,21 @@ export function TaskDueDateDropdown({
     [],
   );
 
-  const hiddenDateInput = (
-    <input
-      ref={dateInputRef}
-      type="date"
-      value={ymdValue}
-      onChange={(event) => {
-        const next = event.target.value.trim();
-        applyYmd(next ? next : null);
-      }}
-      className="task-due-date-native-input"
-      tabIndex={-1}
-      aria-hidden="true"
+  const calendarPopover = (
+    <DueDateCalendarPopover
+      open={calendarOpen}
+      onClose={() => setCalendarOpen(false)}
+      value={ymdValue || null}
       disabled={disabled}
+      anchorRef={anchorRef}
+      align={variant === "property" ? "start" : "end"}
+      onSelect={(ymd) => applyYmd(ymd)}
     />
   );
 
   if (variant === "property") {
     return (
-      <div className="task-due-date-dropdown">
+      <div className="task-due-date-dropdown" ref={anchorRef}>
         <PropertyDropdown
           value={selectedValue}
           options={options}
@@ -178,13 +175,13 @@ export function TaskDueDateDropdown({
           onQuerySubmit={handleQuerySubmit}
           queryPreviewLabel={handleQueryPreview}
         />
-        {hiddenDateInput}
+        {calendarPopover}
       </div>
     );
   }
 
   return (
-    <div className="task-due-date-dropdown">
+    <div className="task-due-date-dropdown" ref={anchorRef}>
       <SearchableDropdown
         value={selectedValue}
         options={options}
@@ -260,7 +257,7 @@ export function TaskDueDateDropdown({
           )
         }
       />
-      {hiddenDateInput}
+      {calendarPopover}
     </div>
   );
 }

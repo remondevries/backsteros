@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
+import { DueDateCalendarPopover } from "@backsteros/ui";
 import { PropertyDropdown } from "@/components/ui/property-dropdown";
 import type { SearchableDropdownMenuApi } from "@/components/ui/searchable-dropdown-menu-api";
 import {
@@ -18,7 +19,6 @@ import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
 } from "@/lib/task-due-date";
-import { openNativeDatePicker } from "@/lib/native-date-picker";
 
 import { TaskDueDateIcon } from "./task-due-date-icon";
 
@@ -48,11 +48,12 @@ export function ComposeDueDateDropdown({
   triggerVariant = "default",
   emptyLabel = "No due date",
   ariaLabel = "Due date",
-  searchPlaceholder = "tomorrow, next Friday…",
+  searchPlaceholder = "tomorrow, next Friday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
   showUrgency = true,
 }: ComposeDueDateDropdownProps) {
-  const dateInputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const ymdValue = value ?? "";
   const options = useMemo(
     () => buildTaskDueDateDropdownOptions(ymdValue || null),
@@ -64,15 +65,14 @@ export function ComposeDueDateDropdown({
     : emptyLabel;
   const hasDueDate = Boolean(ymdValue);
   const dueDateUrgency = useMemo(
-    () =>
-      showUrgency ? getTaskDueDateUrgency(ymdValue || null) : null,
+    () => (showUrgency ? getTaskDueDateUrgency(ymdValue || null) : null),
     [showUrgency, ymdValue],
   );
 
   const handleChange = useCallback(
     (nextValue: string) => {
       if (isPickDueDateValue(nextValue)) {
-        openNativeDatePicker(dateInputRef.current);
+        setCalendarOpen(true);
         return;
       }
 
@@ -103,7 +103,7 @@ export function ComposeDueDateDropdown({
   );
 
   return (
-    <>
+    <div ref={anchorRef}>
       <PropertyDropdown
         value={selectedValue}
         options={options}
@@ -124,18 +124,15 @@ export function ComposeDueDateDropdown({
         taskPropertyDropdownId={taskPropertyDropdownId}
         triggerVariant={triggerVariant}
       />
-      <input
-        ref={dateInputRef}
-        type="date"
-        value={ymdValue}
-        onChange={(event) => {
-          const next = event.target.value.trim();
-          onChange(next ? next : null);
-        }}
-        className="fixed left-[-9999px] h-px w-px opacity-0"
-        tabIndex={-1}
-        aria-hidden="true"
+      <DueDateCalendarPopover
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        value={ymdValue || null}
+        disabled={disabled}
+        anchorRef={anchorRef}
+        align="start"
+        onSelect={(ymd) => onChange(ymd)}
       />
-    </>
+    </div>
   );
 }

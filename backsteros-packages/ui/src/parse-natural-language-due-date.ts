@@ -12,6 +12,28 @@ const CLEAR_DUE_DATE_PATTERN =
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Phrases that should resolve to the past (disable chrono `forwardDate`). */
+const PAST_INTENT_PATTERN =
+  /\b(ago|yesterday|yesterdays|previous|overdue)\b|\bin the past\b|\blast\b/i;
+
+/**
+ * Normalize casual past phrasing chrono mishandles (esp. with `forwardDate`).
+ * e.g. "two weeks in the past" → "two weeks ago", "week ago" → "1 week ago".
+ */
+function normalizePastDueDateInput(input: string): string {
+  let next = input.trim();
+  next = next.replace(/\bin the past\b/gi, "ago");
+  next = next.replace(/\bprevious\b/gi, "last");
+  // Bare quantity-less relatives
+  next = next.replace(/^(an?\s+)?weeks?\s+ago$/i, "1 week ago");
+  next = next.replace(/^(an?\s+)?days?\s+ago$/i, "1 day ago");
+  return next.replace(/\s+/g, " ").trim();
+}
+
+function hasPastIntent(input: string): boolean {
+  return PAST_INTENT_PATTERN.test(input);
+}
+
 function dateToLocalYmd(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -32,7 +54,7 @@ function resultForYmd(ymd: string): NaturalLanguageDueDateParseResult {
   };
 }
 
-/** Parse free-text due date input (e.g. "next Friday", "in 2 weeks") into YYYY-MM-DD. */
+/** Parse free-text due date input (e.g. "next Friday", "2 weeks ago") into YYYY-MM-DD. */
 export function parseNaturalLanguageDueDate(
   input: string,
   ref: Date = new Date(),
@@ -46,7 +68,9 @@ export function parseNaturalLanguageDueDate(
     return resultForYmd(trimmed);
   }
 
-  const parsed = chrono.en.casual.parseDate(trimmed, ref, { forwardDate: true });
+  const normalized = normalizePastDueDateInput(trimmed);
+  const forwardDate = !hasPastIntent(normalized) && !hasPastIntent(trimmed);
+  const parsed = chrono.en.casual.parseDate(normalized, ref, { forwardDate });
   if (!parsed || Number.isNaN(parsed.getTime())) {
     return { kind: "invalid" };
   }

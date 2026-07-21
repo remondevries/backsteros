@@ -11,7 +11,7 @@ import type {
 } from "@backsteros/contracts";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, useEffect, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { apiErrorMessage, useApiResource, useAppApi } from "@/lib/api-context";
@@ -94,6 +94,7 @@ import {
   SETTINGS_NAV_TABS,
   type SettingsTabId,
 } from "@/lib/settings/tabs";
+import { syncDefaultAssigneeIdFromSettings } from "@/lib/settings/default-assignee";
 
 function isSettingsTabId(value: string | undefined): value is SettingsTabId {
   return SETTINGS_NAV_TABS.some((tab) => tab.id === value);
@@ -793,6 +794,11 @@ function SettingsScreen({ tab }: { tab?: string }) {
       Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
 
+  useEffect(() => {
+    if (!settings.data?.settings) return;
+    syncDefaultAssigneeIdFromSettings(settings.data.settings);
+  }, [settings.data?.settings]);
+
   return (
     <div className="settings-panel">
       <div className="settings-panel-body">
@@ -824,7 +830,12 @@ function SettingsScreen({ tab }: { tab?: string }) {
                   onSaved={() => settings.reload()}
                 />
               ) : null}
-              {activeTab === "account" ? <AccountSettingsSection /> : null}
+              {activeTab === "account" ? (
+                <AccountSettingsSection
+                  settings={settings.data?.settings}
+                  onSettingsSaved={() => settings.reload()}
+                />
+              ) : null}
               {activeTab === "sync" ? <SyncSettingsSection /> : null}
               {activeTab === "api" ? <ApiKeysSettingsSection /> : null}
               {activeTab === "cursor" ? (

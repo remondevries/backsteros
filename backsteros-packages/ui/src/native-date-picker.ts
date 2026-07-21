@@ -1,9 +1,10 @@
 export const NATIVE_DATE_PICKER_OPEN_ATTRIBUTE = "data-native-date-picker-open";
 
 export function isNativeDatePickerOpen(): boolean {
+  if (typeof document === "undefined") return false;
   return (
-    typeof document !== "undefined" &&
-    document.querySelector(`[${NATIVE_DATE_PICKER_OPEN_ATTRIBUTE}]`) !== null
+    document.querySelector(`[${NATIVE_DATE_PICKER_OPEN_ATTRIBUTE}]`) !== null ||
+    document.querySelector("[data-due-date-calendar-popover]") !== null
   );
 }
 

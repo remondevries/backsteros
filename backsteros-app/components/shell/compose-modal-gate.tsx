@@ -19,7 +19,10 @@ import {
 } from "@/lib/documents/compose-document-folders.shared";
 import { getComposeFolderPathChain } from "@/lib/documents/compose-document-folder-cascade";
 import { normalizeContact } from "@/lib/entity-normalize";
-import { getDefaultAssigneeId } from "@/lib/settings/default-assignee";
+import {
+  getDefaultAssigneeId,
+  syncDefaultAssigneeIdFromSettings,
+} from "@/lib/settings/default-assignee";
 
 type ComposeModalGateProps = {
   open?: boolean;
@@ -141,8 +144,17 @@ export function ComposeModalGate({
       client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
       client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
       client.requestJson<{ documents: ApiDocument[] }>("/api/v1/documents"),
+      client
+        .requestJson<{ settings: Record<string, unknown> }>("/api/v1/settings")
+        .catch(() => null),
     ])
-      .then(([projectsResult, contactsResult, documentsResult]) => {
+      .then(
+        ([
+          projectsResult,
+          contactsResult,
+          documentsResult,
+          settingsResult,
+        ]) => {
         const projects = projectsResult.projects.map((project) => ({
           id: project.id,
           key: project.key,
@@ -161,11 +173,14 @@ export function ComposeModalGate({
           documentsResult.documents,
           projects,
         );
+        const defaultAssigneeId = settingsResult
+          ? syncDefaultAssigneeIdFromSettings(settingsResult.settings)
+          : getDefaultAssigneeId();
 
         setContext({
           projects,
           contacts,
-          defaultAssigneeId: getDefaultAssigneeId(),
+          defaultAssigneeId,
           documentFoldersByTarget,
         });
       })

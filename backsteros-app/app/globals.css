@@ -5591,3 +5591,173 @@ a.mention-resource-chip *,
 }
 
 
+
+/* Due date calendar popover (mirrors @backsteros/ui; Next does not load UI styles.css yet) */
+.searchable-dropdown-panel {
+  --searchable-dropdown-panel-bg: #141414;
+  --searchable-dropdown-panel-border: rgb(255 255 255 / 0.1);
+  --searchable-dropdown-panel-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+}
+
+.due-date-calendar-popover {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid var(--searchable-dropdown-panel-border, rgb(255 255 255 / 0.1));
+  border-radius: 12px;
+  background: var(--searchable-dropdown-panel-bg, #141414);
+  box-shadow: var(--searchable-dropdown-panel-shadow, 0 16px 40px rgba(0, 0, 0, 0.42));
+  color: var(--foreground);
+  padding: 0;
+}
+
+.due-date-calendar-popover__heading {
+  padding: 10px 12px 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.due-date-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.due-date-calendar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.due-date-calendar__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.due-date-calendar__nav {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.due-date-calendar__nav:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--faint);
+  color: var(--foreground);
+}
+
+.due-date-calendar__nav:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.due-date-calendar__weekdays,
+.due-date-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.due-date-calendar__weekday {
+  display: flex;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.due-date-calendar__day {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.due-date-calendar__day:hover:not(:disabled):not(.is-selected) {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.due-date-calendar__day.is-outside {
+  color: color-mix(in srgb, var(--foreground) 32%, transparent);
+}
+
+.due-date-calendar__day.is-today:not(.is-selected) {
+  border-color: rgb(255 255 255 / 0.18);
+}
+
+.due-date-calendar__day.is-selected {
+  background: color-mix(in srgb, var(--foreground) 88%, transparent);
+  color: #111;
+  font-weight: 600;
+}
+
+.due-date-calendar__day:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.due-date-calendar__footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.due-date-calendar__today {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--faint);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.due-date-calendar__today:hover:not(:disabled) {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, var(--faint));
+}
+
+.due-date-calendar__today:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}

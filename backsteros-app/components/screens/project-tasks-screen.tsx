@@ -23,6 +23,7 @@ import {
 import { parseProjectTaskView } from "@/lib/project-task-view";
 import { projectMatchesRouteParam } from "@/lib/project-sections";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
+import { getDefaultAssigneeId } from "@/lib/settings/default-assignee";
 import { findLocalOrApi } from "@/lib/sync/prefer-local-or-api";
 
 function snakeRow(row: Record<string, unknown>) {
@@ -152,7 +153,7 @@ function ProjectTasksScreenInner({
           initialView={initialView}
           tasks={tasks}
           contacts={contacts}
-          defaultAssigneeId={null}
+          defaultAssigneeId={getDefaultAssigneeId()}
         />
       ) : null}
     </ProjectSectionChrome>

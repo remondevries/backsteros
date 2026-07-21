@@ -28,6 +28,7 @@ import {
 } from "@/lib/inbox/inbox-items";
 import { mapProjectToAssignable } from "@/lib/projects/assignable-project";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
+import { getDefaultAssigneeId } from "@/lib/settings/default-assignee";
 import { LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL } from "@/lib/shortcuts/list-keyboard-nav-zone";
 import { getSelectedTaskSlugFromPathname } from "@/lib/task-navigation-path";
 import { primeTabTitle } from "@/lib/tabs/primed-tab-title";
@@ -178,7 +179,7 @@ export function InboxSidePanel({ pathname }: { pathname: string }) {
           <div className="app-content-side-panel-inline">
             <AddInboxTaskInline
               contacts={[]}
-              defaultAssigneeId={null}
+              defaultAssigneeId={getDefaultAssigneeId()}
               onCancel={() => setComposing(false)}
               onCreated={async () => {
                 tasksResource.reload();

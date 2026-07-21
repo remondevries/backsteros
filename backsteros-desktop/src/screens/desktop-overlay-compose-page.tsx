@@ -134,6 +134,7 @@ function ComposeOverlayController() {
     contacts: [],
     documentFoldersByTarget: {},
     projectsById: new Map(),
+    defaultAssigneeId: getDefaultAssigneeId(),
   };
   const active = context ?? emptyContext;
 
@@ -144,7 +145,7 @@ function ComposeOverlayController() {
       pathname={pathname}
       projects={active.projects}
       contacts={active.contacts}
-      defaultAssigneeId={getDefaultAssigneeId()}
+      defaultAssigneeId={active.defaultAssigneeId}
       documentFoldersByTarget={active.documentFoldersByTarget}
       contextLoading={contextLoading && !context}
       contextError={contextError}

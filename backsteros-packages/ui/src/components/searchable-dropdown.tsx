@@ -713,7 +713,7 @@ export function SearchableDropdown<T extends string>({
                     className="searchable-dropdown-panel__empty"
                     role="presentation"
                   >
-                    No matches
+                    {queryPreview ? "Press Enter to apply" : "No matches"}
                   </li>
                 ) : (
                   filteredOptions.map((option, index) => {

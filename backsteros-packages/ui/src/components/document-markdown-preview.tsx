@@ -12,6 +12,10 @@ import {
 import { useMentionNavigationPathname } from "../mentions/mention-navigation-context.js";
 import { EMPTY_MENTION_CATALOG } from "../mentions/empty-catalog.js";
 import {
+  resolveMentionLayout,
+  type MentionChipLayout,
+} from "../mentions/mention-layout.js";
+import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
   resolveMentionCatalogLetter,
@@ -28,10 +32,23 @@ import {
   type ParsedMentionToken,
 } from "../mention-tokens.js";
 import { resolveMentionTrailHref } from "../navigation-trail/mention-trail.js";
+import { PROJECT_AREA_LABELS } from "../project-areas.js";
+import {
+  formatTaskDueMetaLabel,
+  getTaskDueDateUrgency,
+} from "../task-due-date.js";
 import { useContentPreviewLinkNavigation } from "../use-content-preview-link-navigation.js";
 import { DocumentMentionHoverCard } from "./document-mention-hover-card.js";
+import { LetterIcon } from "./letter-icon.js";
 import { MentionChipHoverShell } from "./mention-chip-hover-shell.js";
 import { MentionLeadingIcon } from "./mention-leading-icon.js";
+import {
+  getDisplayProjectIcon,
+  ProjectOcticon,
+} from "./project-octicon.js";
+import { ProjectStatusIcon } from "./project-status-icon.js";
+import { TaskDueDateIcon } from "./task-due-date-icon.js";
+import { TaskPriorityIcon } from "./task-priority-icon.js";
 
 const markdownPreviewComponents: Components = {
   a({ href, children }) {
@@ -269,32 +286,169 @@ function resolvePreviewChipIconProps(
   }
 }
 
-function MentionChipLite({
-  token,
-  catalog,
-}: {
-  token: ParsedMentionToken;
-  catalog: MentionCatalog;
-}) {
-  const { label, deleted } = resolvePreviewChipLabel(token, catalog);
+function renderMentionChipBody(
+  token: ParsedMentionToken,
+  catalog: MentionCatalog,
+  layout: MentionChipLayout,
+  label: string,
+  deleted: boolean,
+) {
   const iconProps = resolvePreviewChipIconProps(token, catalog);
-  const trailSourceHref = useMentionNavigationPathname();
-  const href = deleted
-    ? null
-    : (trailSourceHref
-        ? resolveMentionTrailHref(token, catalog, trailSourceHref)
-        : null) ?? resolveMentionHref(token, catalog);
 
-  const chipClassName = [
-    "mention-chip-lite",
-    `mention-chip-lite--${token.kind}`,
-    deleted ? "mention-chip-lite--deleted" : "",
-    href ? "mention-chip-lite--link" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  if (layout === "inline" || deleted) {
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon
+            kind={iconProps.kind}
+            status={iconProps.status}
+            projectIcon={iconProps.projectIcon}
+            documentIcon={iconProps.documentIcon}
+            contact={iconProps.contact}
+          />
+        </span>
+        <span className="mention-chip-lite__label">{label}</span>
+      </>
+    );
+  }
 
-  const chipBody = (
+  if (token.kind === "task") {
+    const task = resolveMentionCatalogTask(token, catalog);
+    if (!task) {
+      return (
+        <>
+          <span className="mention-chip-lite__icon" aria-hidden="true">
+            <MentionLeadingIcon kind="task" status={null} />
+          </span>
+          <span className="mention-chip-lite__label">{label}</span>
+        </>
+      );
+    }
+
+    const dueDateLabel =
+      task.dueDate != null ? formatTaskDueMetaLabel(task.dueDate) : null;
+
+    return (
+      <>
+        <TaskPriorityIcon
+          priority={task.priority}
+          size={14}
+          className="mention-chip-lite__meta-icon"
+        />
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <MentionLeadingIcon kind="task" status={task.status} />
+        </span>
+        <span className="mention-chip-lite__id">{task.displayId}</span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {task.title || task.displayId}
+        </span>
+        {dueDateLabel ? (
+          <span className="mention-chip-lite__due">
+            <TaskDueDateIcon
+              active
+              urgency={getTaskDueDateUrgency(task.dueDate, new Date(), {
+                status: task.status,
+              })}
+              size={12}
+            />
+            <span>{dueDateLabel}</span>
+          </span>
+        ) : null}
+        {task.projectName ? (
+          <span className="mention-chip-lite__project">
+            <ProjectOcticon
+              icon={getDisplayProjectIcon(task.projectIcon)}
+              size={12}
+            />
+            <span>{task.projectName}</span>
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "letter") {
+    const letter = resolveMentionCatalogLetter(token, catalog);
+    if (!letter) {
+      return (
+        <>
+          <span className="mention-chip-lite__icon" aria-hidden="true">
+            <LetterIcon size={14} />
+          </span>
+          <span className="mention-chip-lite__label">{label}</span>
+        </>
+      );
+    }
+
+    const dueDateLabel =
+      letter.dueDate != null ? formatTaskDueMetaLabel(letter.dueDate) : null;
+
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <LetterIcon size={14} />
+        </span>
+        <span className="mention-chip-lite__id">{letter.displayId}</span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {letter.title || letter.displayId}
+        </span>
+        {dueDateLabel ? (
+          <span className="mention-chip-lite__due">
+            <TaskDueDateIcon
+              active
+              urgency={getTaskDueDateUrgency(letter.dueDate, new Date(), {
+                status: letter.status,
+              })}
+              size={12}
+            />
+            <span>{dueDateLabel}</span>
+          </span>
+        ) : null}
+        {letter.projectName ? (
+          <span className="mention-chip-lite__project">
+            <span>{letter.projectName}</span>
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
+  if (token.kind === "project") {
+    const project = resolveMentionCatalogProject(token, catalog);
+    if (!project) {
+      return (
+        <>
+          <span className="mention-chip-lite__icon" aria-hidden="true">
+            <MentionLeadingIcon kind="project" projectIcon={null} />
+          </span>
+          <span className="mention-chip-lite__label">{label}</span>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <ProjectOcticon
+            icon={getDisplayProjectIcon(project.icon)}
+            size={14}
+          />
+        </span>
+        <span className="mention-chip-lite__id">{project.key}</span>
+        <ProjectStatusIcon status={project.status} size={14} />
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {project.name}
+        </span>
+        {project.area ? (
+          <span className="mention-chip-lite__area">
+            {PROJECT_AREA_LABELS[project.area]}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
     <>
       <span className="mention-chip-lite__icon" aria-hidden="true">
         <MentionLeadingIcon
@@ -307,6 +461,48 @@ function MentionChipLite({
       </span>
       <span className="mention-chip-lite__label">{label}</span>
     </>
+  );
+}
+
+function MentionChipLite({
+  token,
+  catalog,
+  layout = "inline",
+}: {
+  token: ParsedMentionToken;
+  catalog: MentionCatalog;
+  layout?: MentionChipLayout;
+}) {
+  const { label, deleted } = resolvePreviewChipLabel(token, catalog);
+  const chipLayout =
+    token.kind === "task" ||
+    token.kind === "project" ||
+    token.kind === "letter"
+      ? layout
+      : "inline";
+  const trailSourceHref = useMentionNavigationPathname();
+  const href = deleted
+    ? null
+    : (trailSourceHref
+        ? resolveMentionTrailHref(token, catalog, trailSourceHref)
+        : null) ?? resolveMentionHref(token, catalog);
+
+  const chipClassName = [
+    "mention-chip-lite",
+    `mention-chip-lite--${token.kind}`,
+    chipLayout === "block" ? "mention-chip-lite--block" : "",
+    deleted ? "mention-chip-lite--deleted" : "",
+    href ? "mention-chip-lite--link" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const chipBody = renderMentionChipBody(
+    token,
+    catalog,
+    chipLayout,
+    label,
+    deleted,
   );
 
   const trigger = href ? (
@@ -322,6 +518,7 @@ function MentionChipLite({
   return (
     <MentionChipHoverShell
       trigger={trigger}
+      layout={chipLayout}
       asChild={Boolean(href)}
       hoverContent={
         <DocumentMentionHoverCard parsed={token} catalog={catalog} />
@@ -330,15 +527,34 @@ function MentionChipLite({
   );
 }
 
+function renderMentionChip(
+  segment: Extract<MentionSegment, { type: "mention" }>,
+  segments: MentionSegment[],
+  segmentIndex: number,
+  catalog: MentionCatalog,
+  key: string,
+) {
+  const layout = resolveMentionLayout(segments, segmentIndex);
+
+  return (
+    <MentionChipLite
+      key={key}
+      token={segment.token}
+      catalog={catalog}
+      layout={layout}
+    />
+  );
+}
+
 function renderInlineSegment(
   segment: MentionSegment,
+  segments: MentionSegment[],
+  segmentIndex: number,
   catalog: MentionCatalog,
   key: string,
 ): ReactNode {
   if (segment.type === "mention") {
-    return (
-      <MentionChipLite key={key} token={segment.token} catalog={catalog} />
-    );
+    return renderMentionChip(segment, segments, segmentIndex, catalog, key);
   }
 
   return <InlineMarkdownSegment key={key} content={segment.content} />;
@@ -352,13 +568,46 @@ function renderParagraphWithMentions(
   segments: MentionSegment[],
   catalog: MentionCatalog,
   keyPrefix: string,
-): ReactNode {
-  const inlineRun: ReactNode[] = [];
+): ReactNode[] {
+  const elements: ReactNode[] = [];
+  let inlineRun: ReactNode[] = [];
+  let inlineRunKey = 0;
+  let blockGroup: ReactNode[] = [];
+  let blockGroupKey = 0;
+
+  function flushBlockGroup() {
+    if (blockGroup.length === 0) {
+      return;
+    }
+
+    elements.push(
+      <div
+        key={`${keyPrefix}-block-group-${blockGroupKey}`}
+        className="mention-task-stack"
+      >
+        {blockGroup}
+      </div>,
+    );
+    blockGroup = [];
+    blockGroupKey += 1;
+  }
+
+  function flushInlineRun() {
+    if (inlineRun.length === 0) {
+      return;
+    }
+
+    elements.push(
+      <p key={`${keyPrefix}-inline-${inlineRunKey}`}>{inlineRun}</p>,
+    );
+    inlineRun = [];
+    inlineRunKey += 1;
+  }
 
   segments.forEach((segment, index) => {
     if (isWhitespaceOnlyMarkdown(segment)) {
-      // Keep soft newlines between mention chips (Next skips these; we
-      // preserve them so edit→preview line breaks stay visible).
+      // Keep soft newlines between mention chips so edit→preview line
+      // breaks stay visible.
       if (segment.type === "markdown" && segment.content.includes("\n")) {
         inlineRun.push(
           <span
@@ -372,16 +621,43 @@ function renderParagraphWithMentions(
       return;
     }
 
+    if (
+      segment.type === "mention" &&
+      resolveMentionLayout(segments, index) === "block"
+    ) {
+      flushInlineRun();
+      blockGroup.push(
+        <div
+          key={`${keyPrefix}-block-${index}`}
+          className="mention-task-block"
+        >
+          {renderMentionChip(
+            segment,
+            segments,
+            index,
+            catalog,
+            `${keyPrefix}-block-mention-${index}`,
+          )}
+        </div>,
+      );
+      return;
+    }
+
+    flushBlockGroup();
     inlineRun.push(
-      renderInlineSegment(segment, catalog, `${keyPrefix}-seg-${index}`),
+      renderInlineSegment(
+        segment,
+        segments,
+        index,
+        catalog,
+        `${keyPrefix}-seg-${index}`,
+      ),
     );
   });
 
-  if (inlineRun.length === 0) {
-    return null;
-  }
-
-  return <p key={`${keyPrefix}-inline`}>{inlineRun}</p>;
+  flushBlockGroup();
+  flushInlineRun();
+  return elements;
 }
 
 function ParagraphPreview({

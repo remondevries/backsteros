@@ -20,6 +20,7 @@ import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { JournalMarkdownBody } from "./journal-markdown-body";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 
 type DocMetaRow = {
   id: string;
@@ -241,13 +242,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
             ),
           }}
         />
-        <ScrollView
-          style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-          }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <KeyboardAwareScrollView style={ui.screen}>
           <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
             <TextInput
               value={draftTitle}
@@ -285,7 +280,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
               {saveError}
             </Text>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </>
     );
   }

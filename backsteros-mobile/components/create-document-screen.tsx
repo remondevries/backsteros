@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -12,11 +11,11 @@ import {
 
 import { documentPathFromTitle } from "../lib/compose";
 import { documentDetailHref } from "../lib/detail-href";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 
 /** Compose a new project or knowledge document. */
 export function CreateDocumentScreen() {
@@ -132,13 +131,7 @@ export function CreateDocumentScreen() {
           ),
         }}
       />
-      <ScrollView
-        style={ui.screen}
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-        }}
-        keyboardShouldPersistTaps="handled"
-      >
+      <KeyboardAwareScrollView style={ui.screen}>
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
           <TextInput
             value={title}
@@ -176,7 +169,7 @@ export function CreateDocumentScreen() {
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </>
   );
 }

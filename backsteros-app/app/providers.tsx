@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import { CommandPaletteProvider } from "@/components/command-palette/command-palette-context";
 import { ListKeyboardNavigationProvider } from "@/components/shortcuts/list-keyboard-navigation-provider";
 import { AppTimezoneProvider } from "@/components/settings/app-timezone-provider";
+import { DefaultAssigneeHydrator } from "@/components/settings/default-assignee-hydrator";
 import { AppApiProvider } from "@/lib/api-context";
 import {
   BackendModeProvider,
@@ -27,6 +28,7 @@ function ProvidersWithBackend({ children }: { children: ReactNode }) {
       <PowerSyncProvider apiUrl={apiUrl} backendMode={mode} e2e={e2e}>
         <MutationProvider>
           <AppTimezoneProvider>
+            <DefaultAssigneeHydrator />
             <CommandPaletteProvider>
               <ListKeyboardNavigationProvider>
                 {children}

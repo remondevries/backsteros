@@ -22,6 +22,7 @@
     "@powersync/adapter-sql-js": "^0.0.18",
     "@powersync/op-sqlite": "0.9.15",
     "@powersync/react-native": "^1.35.9",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@react-navigation/native": "^7.3.11",
     "expo": "~54.0.0",
     "expo-application": "~7.0.0",

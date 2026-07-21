@@ -46,6 +46,7 @@ import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
 import { ProjectProgressRing } from "./project-progress-ring";
 import { ProjectStatusIcon } from "./project-status-icon";
+import { DueDatePropertySheet } from "./due-date-property-sheet";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -705,11 +706,10 @@ export function ProjectOverviewPanel({
         }}
         onClose={() => setPicker(null)}
       />
-      <PropertyOptionSheet
+      <DueDatePropertySheet
         embedded
         visible={picker === "due"}
         title="Due date"
-        options={dateOptions}
         selected={dueDate}
         onSelect={(value) => {
           setDueDate(value);
