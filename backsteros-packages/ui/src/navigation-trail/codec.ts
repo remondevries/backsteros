@@ -1,4 +1,4 @@
-import { isEntityRouteUuid } from "./entity-route-uuid.js";
+import { isEntityRouteId } from "./entity-route-uuid.js";
 import { isValidInternalPath } from "./path-utils.js";
 import {
   NAVIGATION_TRAIL_KINDS,
@@ -44,7 +44,7 @@ function parseIdentityPayload(value: string): {
     return { displayValue: value };
   }
   const possibleId = value.slice(separatorIndex + 1);
-  return isEntityRouteUuid(possibleId)
+  return isEntityRouteId(possibleId)
     ? {
         displayValue: value.slice(0, separatorIndex),
         entityId: possibleId,

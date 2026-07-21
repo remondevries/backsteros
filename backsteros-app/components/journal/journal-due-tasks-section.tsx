@@ -33,7 +33,6 @@ function getJournalTaskHref(
 ): string {
   return appendNavigationTrailNode(pathname, {
     kind: "task",
-    entityId: task.id,
     routeParam: encodeTaskSlug(
       task.project?.key ?? task.contact?.key ?? INBOX_TASK_KEY,
       task.number,

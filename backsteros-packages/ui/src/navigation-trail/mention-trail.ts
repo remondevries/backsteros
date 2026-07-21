@@ -58,7 +58,6 @@ function mentionTrailRef(
       if (!slug) return null;
       return {
         kind: "task",
-        entityId: task.id,
         routeParam: encodeTaskSlug(
           task.projectKey || task.contactKey || INBOX_TASK_KEY,
           slug.number,

@@ -98,6 +98,34 @@ describe("navigation trail codec", () => {
     });
   });
 
+  it("builds and parses nanoid entity ids in trail payloads", () => {
+    const nanoidTaskId = "V1StGXR8_Z5jdHi6B-myT";
+    const href = appendNavigationTrailNode("/journal/2026-07-11", {
+      kind: "task",
+      routeParam: "ld-1",
+      entityId: nanoidTaskId,
+    });
+    assert.equal(href, `/journal/2026-07-11/~task/ld-1~${nanoidTaskId}`);
+    assert.deepEqual(parseNavigationTrailPath(href), {
+      sourceHref: "/journal/2026-07-11",
+      nodes: [
+        { kind: "task", routeParam: "ld-1", entityId: nanoidTaskId },
+      ],
+    });
+  });
+
+  it("builds journal task trails with slug only when entityId is omitted", () => {
+    const href = appendNavigationTrailNode("/journal/2026-07-11", {
+      kind: "task",
+      routeParam: "ld-1",
+    });
+    assert.equal(href, "/journal/2026-07-11/~task/ld-1");
+    assert.deepEqual(parseNavigationTrailPath(href), {
+      sourceHref: "/journal/2026-07-11",
+      nodes: [{ kind: "task", routeParam: "ld-1" }],
+    });
+  });
+
   it("encodes unicode source paths", () => {
     assert.equal(
       appendNavigationTrailNode("/knowledge/résumé", {

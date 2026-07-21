@@ -5,7 +5,7 @@ import {
   type NavigationTrailKind,
 } from "./types";
 import { isValidInternalPath } from "./path-utils";
-import { isEntityRouteUuid } from "@/lib/entity-slugs";
+import { isEntityRouteId } from "@/lib/entity-slugs";
 
 const TRAIL_MARKER_PREFIX = "~";
 
@@ -44,7 +44,7 @@ function parseIdentityPayload(value: string): {
     return { displayValue: value };
   }
   const possibleId = value.slice(separatorIndex + 1);
-  return isEntityRouteUuid(possibleId)
+  return isEntityRouteId(possibleId)
     ? {
         displayValue: value.slice(0, separatorIndex),
         entityId: possibleId,

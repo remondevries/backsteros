@@ -21,9 +21,11 @@ import {
   getNavigationTrailAncestorHref,
   getOrganizationsHref,
   getProjectsHref,
-  isEntityRouteUuid,
+  INBOX_TASK_KEY,
+  isEntityRouteId,
   isValidJournalDateSlug,
   parseNavigationTrailPath,
+  parseTaskSlug,
   serializeDocumentBody,
   type NavigationTrail,
   type NavigationTrailEntityRef,
@@ -39,7 +41,7 @@ function resolveTaskRouteParam(ref: {
   routeParam?: string;
   entityId?: string;
 }): string | null {
-  if (ref.entityId && isEntityRouteUuid(ref.entityId)) {
+  if (ref.entityId && isEntityRouteId(ref.entityId)) {
     return ref.entityId;
   }
   if (!ref.routeParam) return null;
@@ -47,9 +49,33 @@ function resolveTaskRouteParam(ref: {
   const sep = decoded.lastIndexOf("~");
   if (sep > 0) {
     const id = decoded.slice(sep + 1);
-    if (isEntityRouteUuid(id)) return id;
+    if (isEntityRouteId(id)) return id;
   }
   return decoded;
+}
+
+function findTrailTask(
+  ref: Extract<NavigationTrailEntityRef, { kind: "task" }>,
+  workspace: ReturnType<typeof useDesktopWorkspaceData>,
+) {
+  const id = resolveTaskRouteParam(ref);
+  const parsed = parseTaskSlug(ref.routeParam);
+  return (
+    workspace.allTasks.find((entry) => {
+      if (id && entry.id === id) return true;
+      if (ref.entityId && entry.id === ref.entityId) return true;
+      if (!parsed || entry.number !== parsed.number) return false;
+      const contact = entry.contactId
+        ? workspace.contacts.find((c) => c.id === entry.contactId)
+        : null;
+      const contextKey = (
+        entry.projectKey ||
+        contact?.key ||
+        INBOX_TASK_KEY
+      ).toUpperCase();
+      return contextKey === parsed.contextKey;
+    }) ?? null
+  );
 }
 
 function resolveSourceBreadcrumbs(
@@ -212,15 +238,7 @@ function resolveNodeLabel(
 ): string {
   switch (ref.kind) {
     case "task": {
-      const id = resolveTaskRouteParam(ref);
-      const task = id
-        ? workspace.allTasks.find(
-            (entry) =>
-              entry.id === id ||
-              entry.id === ref.entityId ||
-              String(entry.number) === ref.routeParam,
-          )
-        : null;
+      const task = findTrailTask(ref, workspace);
       return task?.title ?? ref.routeParam;
     }
     case "letter": {
@@ -381,11 +399,12 @@ export function NavigationTrailPage({
     if (!routeParam) {
       return <Navigate to={trail.sourceHref} replace />;
     }
+    // Ancestor crumbs only — TaskDetailPage appends the task leaf label.
     return (
       <TaskDetailPage
         taskRouteParam={routeParam}
         backHref={backHref}
-        breadcrumbItems={breadcrumbItems}
+        breadcrumbItems={breadcrumbItems.slice(0, -1)}
       />
     );
   }

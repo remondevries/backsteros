@@ -1269,8 +1269,10 @@ export {
 } from "./components/dot-scroll-loader.js";
 
 export {
+  isEntityRouteId,
   isEntityRouteUuid,
   ENTITY_ROUTE_UUID_PATTERN,
+  ENTITY_ROUTE_NANOID_PATTERN,
 } from "./navigation-trail/entity-route-uuid.js";
 
 export {
