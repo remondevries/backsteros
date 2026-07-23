@@ -372,6 +372,7 @@ function mapProjectUpsert(
     dueDate: asNullableString(payload.due_date ?? payload.dueDate),
     icon: asString(payload.icon),
     color: asString(payload.color),
+    type: asString(payload.type) as Project["type"] | undefined,
     status: asString(payload.status) as Project["status"] | undefined,
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),

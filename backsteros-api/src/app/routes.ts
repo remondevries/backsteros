@@ -8,15 +8,26 @@ import {
   createDocumentSchema,
   createProjectSchema,
   createTaskSchema,
+  createTaskCommentSchema,
+  createTaskActivitySchema,
   reorderLetterAttachmentsSchema,
   updateApiKeySchema,
   updateDocumentContentSchema,
   updateDocumentSchema,
   updateProjectSchema,
   updateTaskSchema,
+  updateTaskCommentSchema,
 } from "@backsteros/contracts";
 
-import { toApiKey, toDocument, toProject, toSearchResult, toTask } from "../lib/mappers.js";
+import {
+  toApiKey,
+  toDocument,
+  toProject,
+  toSearchResult,
+  toTask,
+  toTaskActivity,
+  toTaskComment,
+} from "../lib/mappers.js";
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope, resolveAuth } from "../middleware/auth.js";
 import { isSpacesConfigured } from "../lib/storage.js";
@@ -29,6 +40,9 @@ import { MAX_AVATAR_BYTES } from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import * as circleService from "../services/circle-domain.js";
+import * as githubService from "../services/github.js";
+import * as taskActivityService from "../services/task-activities.js";
+import * as taskCommentService from "../services/task-comments.js";
 import * as taskProjectService from "../services/tasks-projects.js";
 
 const idListSchema = z.object({ ids: z.array(z.string()).min(1).max(500) });
@@ -143,6 +157,7 @@ export function registerApiRoutes(app: Hono) {
       organizationId: c.req.query("organizationId"),
       area: c.req.query("area"),
       status: c.req.query("status"),
+      type: c.req.query("type"),
     });
     return c.json({ projects: rows.map(toProject) });
   });
@@ -193,6 +208,18 @@ export function registerApiRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "GITHUB_REPO_REQUIRES_CODEBASE"
+        ) {
+          return c.json(
+            {
+              error: "GitHub repository can only be set on codebase projects",
+              code: "github_repo_requires_codebase",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -224,6 +251,18 @@ export function registerApiRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "GITHUB_REPO_REQUIRES_CODEBASE"
+        ) {
+          return c.json(
+            {
+              error: "GitHub repository can only be set on codebase projects",
+              code: "github_repo_requires_codebase",
+            },
+            400,
+          );
+        }
         throw error;
       }
     },
@@ -244,6 +283,197 @@ export function registerApiRoutes(app: Hono) {
     }
 
     return c.body(null, 204);
+  });
+
+  app.get("/api/v1/github/repositories", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const repositories = await githubService.listUserRepositories(token);
+      return c.json({ repositories });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/branches", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const [repository, branches] = await Promise.all([
+        githubService.getRepository(token, owner, repo),
+        githubService.listRepositoryBranches(token, owner, repo),
+      ]);
+      return c.json({
+        repository: project.githubRepository,
+        defaultBranch: repository.defaultBranch,
+        branches,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/commits", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const branch = c.req.query("branch")?.trim();
+    if (!branch) {
+      return c.json(
+        { error: "branch query parameter is required", code: "bad_request" },
+        400,
+      );
+    }
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Number(pageRaw) : 1;
+    if (!Number.isInteger(page) || page < 1) {
+      return c.json(
+        { error: "Invalid page", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const result = await githubService.listRepositoryCommits(
+        token,
+        owner,
+        repo,
+        { sha: branch, page },
+      );
+      return c.json({
+        repository: project.githubRepository,
+        branch,
+        page: result.page,
+        hasMore: result.hasMore,
+        commits: result.commits,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
   });
 
   app.get("/api/v1/tasks", async (c) => {
@@ -309,6 +539,104 @@ export function registerApiRoutes(app: Hono) {
     return result ? c.json(result) : c.json(notFound("Task"), 404);
   });
 
+  app.get("/api/v1/tasks/:id/comments", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const rows = await taskCommentService.listTaskComments(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!rows) return c.json(notFound("Task"), 404);
+    return c.json({ comments: rows.map(toTaskComment) });
+  });
+
+  app.get("/api/v1/tasks/:id/activities", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const rows = await taskActivityService.listTaskActivities(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!rows) return c.json(notFound("Task"), 404);
+    return c.json({ activities: rows.map(toTaskActivity) });
+  });
+
+  app.post(
+    "/api/v1/tasks/:id/activities",
+    zValidator("json", createTaskActivitySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const body = c.req.valid("json");
+      const row = await taskActivityService.createClientTaskActivity(
+        auth.workspaceId,
+        c.req.param("id"),
+        body.type,
+        body.data,
+      );
+      if (!row) return c.json(notFound("Task"), 404);
+      return c.json(toTaskActivity(row), 201);
+    },
+  );
+
+  app.post(
+    "/api/v1/tasks/:id/comments",
+    zValidator("json", createTaskCommentSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const row = await taskCommentService.createTaskComment(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+        { userId: auth.userId },
+      );
+      if (!row) return c.json(notFound("Task"), 404);
+      return c.json(toTaskComment(row), 201);
+    },
+  );
+
+  app.patch(
+    "/api/v1/tasks/:taskId/comments/:id",
+    zValidator("json", updateTaskCommentSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const row = await taskCommentService.updateTaskComment(
+        auth.workspaceId,
+        c.req.param("taskId"),
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      if (!row) return c.json(notFound("Comment"), 404);
+      return c.json(toTaskComment(row));
+    },
+  );
+
+  app.delete("/api/v1/tasks/:taskId/comments/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const ok = await taskCommentService.deleteTaskComment(
+      auth.workspaceId,
+      c.req.param("taskId"),
+      c.req.param("id"),
+    );
+    if (!ok) return c.json(notFound("Comment"), 404);
+    return c.body(null, 204);
+  });
+
   app.post(
     "/api/v1/tasks",
     zValidator("json", createTaskSchema),
@@ -322,6 +650,9 @@ export function registerApiRoutes(app: Hono) {
         const row = await taskProjectService.createTask(
           auth.workspaceId,
           c.req.valid("json"),
+          undefined,
+          undefined,
+          { userId: auth.userId },
         );
         return c.json(toTask(row), 201);
       } catch (error) {
@@ -343,10 +674,17 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
+        const body = c.req.valid("json");
+        const { activityActor, ...patch } = body;
         const row = await taskProjectService.updateTask(
           auth.workspaceId,
           c.req.param("id"),
-          c.req.valid("json"),
+          patch,
+          undefined,
+          {
+            userId: auth.userId,
+            kind: activityActor === "agent" ? "agent" : "user",
+          },
         );
         if (!row) {
           return c.json(notFound("Task"), 404);
@@ -604,6 +942,7 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       ids.data.ids,
       patch.data,
+      { userId: auth.userId },
     );
     return c.json({ tasks: rows.map(toTask) });
   });
@@ -631,6 +970,8 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
       { projectId: parsed.data.projectId, inbox: parsed.data.projectId === null },
+      undefined,
+      { userId: auth.userId },
     );
     if (!row) return c.json(notFound("Task"), 404);
     return c.json(toTask(row));
@@ -643,12 +984,18 @@ export function registerApiRoutes(app: Hono) {
       .object({ projectId: z.string().nullable().optional(), status: z.string().optional() })
       .safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid triage data", code: "bad_request" }, 400);
-    const row = await taskProjectService.updateTask(auth.workspaceId, c.req.param("id"), {
-      projectId: parsed.data.projectId,
-      status: parsed.data.status as never,
-      triagedAt: new Date().toISOString(),
-      inbox: false,
-    });
+    const row = await taskProjectService.updateTask(
+      auth.workspaceId,
+      c.req.param("id"),
+      {
+        projectId: parsed.data.projectId,
+        status: parsed.data.status as never,
+        triagedAt: new Date().toISOString(),
+        inbox: false,
+      },
+      undefined,
+      { userId: auth.userId },
+    );
     if (!row) return c.json(notFound("Task"), 404);
     return c.json(toTask(row));
   });

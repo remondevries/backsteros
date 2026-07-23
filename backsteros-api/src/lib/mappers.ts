@@ -1,6 +1,26 @@
-import type { ApiKey, Document, Project, SearchResult, Task } from "@backsteros/contracts";
+import type {
+  ApiKey,
+  Document,
+  Project,
+  SearchResult,
+  Task,
+  TaskActivity,
+  TaskComment,
+} from "@backsteros/contracts";
 
-import type { DbApiKey, DbDocument, DbProject, DbTask } from "../db/schema.js";
+import type {
+  DbApiKey,
+  DbDocument,
+  DbProject,
+  DbTask,
+  DbTaskActivity,
+  DbTaskComment,
+} from "../db/schema.js";
+import {
+  activityActorName,
+  authorDisplayName,
+} from "../services/task-comments.js";
+import type { TaskActivityListRow } from "../services/task-activities.js";
 
 export function toIso(date: Date | null | undefined): string | null {
   if (!date) {
@@ -23,6 +43,8 @@ export function toProject(row: DbProject): Project {
     dueDate: toIso(row.dueDate),
     icon: row.icon,
     color: row.color,
+    type: row.type as Project["type"],
+    githubRepository: row.githubRepository ?? null,
     status: row.status as Project["status"],
     priority: row.priority,
     sortOrder: row.sortOrder,
@@ -51,6 +73,45 @@ export function toTask(row: DbTask): Task {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toTaskComment(row: DbTaskComment): TaskComment {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    authorUserId: row.authorUserId,
+    authorEmail: row.authorEmail,
+    authorName: authorDisplayName(row.authorEmail),
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toTaskActivity(
+  row: DbTaskActivity | TaskActivityListRow,
+): TaskActivity {
+  const data =
+    row.data && typeof row.data === "object" && !Array.isArray(row.data)
+      ? (row.data as Record<string, unknown>)
+      : {};
+  const listRow = row as TaskActivityListRow;
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    type: row.type as TaskActivity["type"],
+    actorUserId: row.actorUserId,
+    actorEmail: row.actorEmail,
+    actorName: activityActorName({
+      actorUserId: row.actorUserId,
+      actorEmail: row.actorEmail ?? listRow.userEmail ?? null,
+      actorName: row.actorName,
+      userDisplayName: listRow.userDisplayName ?? null,
+    }),
+    data,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 

@@ -20,6 +20,8 @@ export const users = pgTable(
     id: text("id").primaryKey(),
     clerkId: text("clerk_id").notNull().unique(),
     email: text("email"),
+    /** Preferred display name from Clerk (full name / first+last). */
+    displayName: text("display_name"),
     role: text("role").notNull().default("owner"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -220,6 +222,9 @@ export const projects = pgTable(
     dueDate: timestamp("due_date", { withTimezone: true }),
     icon: text("icon"),
     color: text("color"),
+    type: text("type").notNull().default("general"),
+    /** `owner/repo` when linked; only meaningful for `type = codebase`. */
+    githubRepository: text("github_repository"),
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -237,6 +242,7 @@ export const projects = pgTable(
     index("projects_workspace_id_idx").on(table.workspaceId),
     index("projects_organization_id_idx").on(table.organizationId),
     index("projects_area_id_idx").on(table.areaId),
+    index("projects_type_idx").on(table.type),
     index("projects_deleted_at_idx").on(table.deletedAt),
   ],
 );
@@ -295,6 +301,78 @@ export const tasks = pgTable(
       sql`coalesce('project:' || ${table.projectId}, 'contact:' || ${table.contactId}, '__inbox__')`,
       table.number,
     ),
+  ],
+);
+
+/** Human (and later agent) comments on a task — Multica/Linear-style activity. */
+export const taskComments = pgTable(
+  "task_comments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    authorUserId: text("author_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Denormalized for display without joining users. */
+    authorEmail: text("author_email"),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("task_comments_task_id_idx").on(table.taskId),
+    index("task_comments_workspace_id_idx").on(table.workspaceId),
+    index("task_comments_created_at_idx").on(table.createdAt),
+    index("task_comments_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+/**
+ * System activity on a task (status changes, assignment, creation).
+ * Shared across apps via GET /api/v1/tasks/:id/activities.
+ */
+export const taskActivities = pgTable(
+  "task_activities",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    /** created | status_changed | assignee_changed */
+    type: text("type").notNull(),
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    actorEmail: text("actor_email"),
+    /** Denormalized Clerk/user display name at write time. */
+    actorName: text("actor_name"),
+    data: jsonb("data")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_activities_task_id_idx").on(table.taskId),
+    index("task_activities_workspace_id_idx").on(table.workspaceId),
+    index("task_activities_created_at_idx").on(table.createdAt),
+    index("task_activities_type_idx").on(table.type),
   ],
 );
 
@@ -607,6 +685,8 @@ export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
+export type DbTaskComment = typeof taskComments.$inferSelect;
+export type DbTaskActivity = typeof taskActivities.$inferSelect;
 export type DbDocument = typeof documents.$inferSelect;
 export type DbWorkspace = typeof workspaces.$inferSelect;
 export type DbOrganization = typeof organizations.$inferSelect;

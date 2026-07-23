@@ -20,6 +20,9 @@ export const PROJECT_STATUSES = [
   "canceled",
 ] as const;
 
+/** Extensible project kinds — development console filters on `codebase`. */
+export const PROJECT_TYPES = ["general", "codebase"] as const;
+
 export const DOCUMENT_TYPES = ["project", "knowledge", "journal"] as const;
 
 export const API_KEY_SCOPES = [
@@ -44,8 +47,14 @@ export const API_KEY_SCOPES = [
 
 export const taskStatusSchema = z.enum(TASK_STATUSES);
 export const projectStatusSchema = z.enum(PROJECT_STATUSES);
+export const projectTypeSchema = z.enum(PROJECT_TYPES);
 export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
 export const apiKeyScopeSchema = z.enum(API_KEY_SCOPES);
+
+/** GitHub `owner/repo` full name bound to a codebase project. */
+export const githubRepositoryNameSchema = z
+  .string()
+  .regex(/^[^/\s]+\/[^/\s]+$/, "Use owner/repo");
 
 export const errorSchema = z.object({
   error: z.string(),
@@ -90,6 +99,8 @@ export const projectSchema = z.object({
   dueDate: z.string().datetime().nullable(),
   icon: z.string().nullable(),
   color: z.string().nullable(),
+  type: projectTypeSchema,
+  githubRepository: githubRepositoryNameSchema.nullable(),
   status: projectStatusSchema,
   priority: z.number().int().min(0).max(4),
   sortOrder: z.number().int(),
@@ -114,9 +125,38 @@ export const createProjectSchema = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   icon: z.string().max(128).nullable().optional(),
   color: z.string().max(64).nullable().optional(),
+  type: projectTypeSchema.optional(),
+  githubRepository: githubRepositoryNameSchema.nullable().optional(),
   status: projectStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
+});
+
+export const githubRepositorySchema = z.object({
+  id: z.number().int(),
+  fullName: z.string(),
+  name: z.string(),
+  ownerLogin: z.string(),
+  private: z.boolean(),
+  defaultBranch: z.string(),
+  htmlUrl: z.string(),
+  description: z.string().nullable(),
+});
+
+export const githubBranchSchema = z.object({
+  name: z.string(),
+  protected: z.boolean(),
+  commitSha: z.string().nullable(),
+});
+
+export const githubCommitSchema = z.object({
+  sha: z.string(),
+  shortSha: z.string(),
+  message: z.string(),
+  authorName: z.string().nullable(),
+  authorLogin: z.string().nullable(),
+  authoredAt: z.string().datetime().nullable(),
+  htmlUrl: z.string(),
 });
 
 export const updateProjectSchema = createProjectSchema
@@ -161,9 +201,82 @@ export const createTaskSchema = z.object({
 
 export const updateTaskSchema = createTaskSchema
   .partial()
+  .extend({
+    /**
+     * Who should be attributed on activity rows for this write.
+     * `agent` records a system/agent actor even when the request is authenticated.
+     */
+    activityActor: z.enum(["user", "agent"]).optional(),
+  })
+  .refine(
+    (value) =>
+      Object.keys(value).filter((key) => key !== "activityActor").length > 0,
+    {
+      message: "At least one field is required",
+    },
+  );
+
+export const taskCommentSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  authorUserId: z.string().nullable(),
+  authorEmail: z.string().nullable(),
+  /** Display name derived from email when no profile name is stored. */
+  authorName: z.string(),
+  body: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  deletedAt: z.string().datetime().nullable(),
+});
+
+export const createTaskCommentSchema = z.object({
+  body: z.string().min(1).max(20_000),
+});
+
+export const updateTaskCommentSchema = z
+  .object({
+    body: z.string().min(1).max(20_000),
+  })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
   });
+
+export const taskActivityTypeSchema = z.enum([
+  "created",
+  "status_changed",
+  "assignee_changed",
+  "priority_changed",
+  "due_date_changed",
+  "project_changed",
+  "agent_worked",
+]);
+
+export const agentWorkedActivityDataSchema = z.object({
+  durationMs: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative().nullable().optional(),
+  outputTokens: z.number().int().nonnegative().nullable().optional(),
+  cacheReadTokens: z.number().int().nonnegative().nullable().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().nullable().optional(),
+  totalTokens: z.number().int().nonnegative().nullable().optional(),
+  chatId: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+});
+
+export const createTaskActivitySchema = z.object({
+  type: z.literal("agent_worked"),
+  data: agentWorkedActivityDataSchema,
+});
+
+export const taskActivitySchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  type: taskActivityTypeSchema,
+  actorUserId: z.string().nullable(),
+  actorEmail: z.string().nullable(),
+  actorName: z.string(),
+  data: z.record(z.unknown()),
+  createdAt: z.string().datetime(),
+});
 
 export const apiKeySchema = z.object({
   id: z.string(),
@@ -681,11 +794,23 @@ export const okSchema = z.object({ ok: z.literal(true) });
 
 export type Project = z.infer<typeof projectSchema>;
 export type Task = z.infer<typeof taskSchema>;
+export type TaskComment = z.infer<typeof taskCommentSchema>;
+export type TaskActivity = z.infer<typeof taskActivitySchema>;
+export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
+export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;
+export type AgentWorkedActivityData = z.infer<
+  typeof agentWorkedActivityDataSchema
+>;
 export type ApiKey = z.infer<typeof apiKeySchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
+export type GithubRepository = z.infer<typeof githubRepositorySchema>;
+export type GithubBranch = z.infer<typeof githubBranchSchema>;
+export type GithubCommit = z.infer<typeof githubCommitSchema>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+export type CreateTaskCommentInput = z.infer<typeof createTaskCommentSchema>;
+export type UpdateTaskCommentInput = z.infer<typeof updateTaskCommentSchema>;
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
 export type CreateApiKeyResponse = z.infer<typeof createApiKeyResponseSchema>;

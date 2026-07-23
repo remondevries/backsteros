@@ -18,6 +18,8 @@ import {
   tasks,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import * as taskActivityService from "./task-activities.js";
+import type { TaskWriteActor } from "./task-activities.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -37,15 +39,74 @@ async function assertWorkspaceReference(
   if (!row) throw new Error(code);
 }
 
+async function contactDisplayName(
+  workspaceId: string,
+  contactId: string | null | undefined,
+  executor: DbExecutor,
+): Promise<string | null> {
+  if (!contactId) return null;
+  const [row] = await executor
+    .select({ name: contacts.name, email: contacts.email })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.workspaceId, workspaceId),
+        eq(contacts.id, contactId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const name = row.name?.trim();
+  if (name) return name;
+  const email = row.email?.trim();
+  return email || null;
+}
+
+async function projectDisplayName(
+  workspaceId: string,
+  projectId: string | null | undefined,
+  executor: DbExecutor,
+): Promise<string | null> {
+  if (!projectId) return null;
+  const [row] = await executor
+    .select({ name: projects.name, key: projects.key })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.workspaceId, workspaceId),
+        eq(projects.id, projectId),
+        isNull(projects.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const name = row.name?.trim();
+  if (name) return name;
+  const key = row.key?.trim();
+  return key || null;
+}
+
+function dueDateIso(value: Date | null | undefined): string | null {
+  if (!value) return null;
+  return value.toISOString();
+}
+
 export async function listProjects(
   workspaceId: string,
-  filters: { organizationId?: string; area?: string; status?: string } = {},
+  filters: {
+    organizationId?: string;
+    area?: string;
+    status?: string;
+    type?: string;
+  } = {},
   executor: DbExecutor = db,
 ) {
   const conditions = [eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt)];
   if (filters.organizationId) conditions.push(eq(projects.organizationId, filters.organizationId));
   if (filters.area) conditions.push(eq(projects.area, filters.area));
   if (filters.status) conditions.push(eq(projects.status, filters.status));
+  if (filters.type) conditions.push(eq(projects.type, filters.type));
   return executor
     .select()
     .from(projects)
@@ -110,6 +171,11 @@ export async function createProject(
   );
   await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
 
+  const type = input.type ?? "general";
+  if (input.githubRepository && type !== "codebase") {
+    throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
+  }
+
   const [row] = await executor
     .insert(projects)
     .values({
@@ -126,6 +192,8 @@ export async function createProject(
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       icon: input.icon ?? null,
       color: input.color ?? null,
+      type,
+      githubRepository: input.githubRepository ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
@@ -161,6 +229,21 @@ export async function updateProject(
   );
   await assertWorkspaceReference(workspaceId, input.areaId, areas, "AREA_NOT_FOUND", executor);
 
+  const nextType = input.type ?? existing.type;
+  if (
+    input.githubRepository !== undefined &&
+    input.githubRepository !== null &&
+    nextType !== "codebase"
+  ) {
+    throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
+  }
+
+  // Dropping codebase type clears any linked repository.
+  const githubRepository =
+    input.type !== undefined && input.type !== "codebase"
+      ? null
+      : input.githubRepository;
+
   const [row] = await executor
     .update(projects)
     .set({
@@ -181,6 +264,8 @@ export async function updateProject(
         input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
       icon: input.icon,
       color: input.color,
+      type: input.type,
+      githubRepository,
       status: input.status,
       priority: input.priority,
       sortOrder: input.sortOrder,
@@ -325,6 +410,7 @@ async function createTaskWithExecutor(
   input: CreateTaskInput,
   id: string,
   executor: DbExecutor,
+  actor?: TaskWriteActor | null,
 ) {
   if (input.projectId) {
     const project = await getProjectById(workspaceId, input.projectId, executor);
@@ -376,6 +462,32 @@ async function createTaskWithExecutor(
     })
     .returning();
 
+  if (row) {
+    await taskActivityService.recordTaskActivity(
+      workspaceId,
+      row.id,
+      "created",
+      { status: row.status },
+      actor,
+      executor,
+    );
+    if (row.assigneeId) {
+      const toName = await contactDisplayName(
+        workspaceId,
+        row.assigneeId,
+        executor,
+      );
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        row.id,
+        "assignee_changed",
+        { from: null, to: row.assigneeId, fromName: null, toName },
+        actor,
+        executor,
+      );
+    }
+  }
+
   return row;
 }
 
@@ -384,12 +496,13 @@ export async function createTask(
   input: CreateTaskInput,
   id = newId(),
   executor?: DbExecutor,
+  actor?: TaskWriteActor | null,
 ) {
   if (executor) {
-    return createTaskWithExecutor(workspaceId, input, id, executor);
+    return createTaskWithExecutor(workspaceId, input, id, executor, actor);
   }
   return db.transaction((tx) =>
-    createTaskWithExecutor(workspaceId, input, id, tx),
+    createTaskWithExecutor(workspaceId, input, id, tx, actor),
   );
 }
 
@@ -398,6 +511,7 @@ export async function updateTask(
   id: string,
   input: UpdateTaskInput,
   executor: DbExecutor = db,
+  actor?: TaskWriteActor | null,
 ) {
   const existing = await getTaskById(workspaceId, id, executor);
   if (!existing) {
@@ -477,6 +591,89 @@ export async function updateTask(
     .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
     .returning();
 
+  if (row) {
+    if (input.status !== undefined && input.status !== existing.status) {
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        id,
+        "status_changed",
+        { from: existing.status, to: input.status },
+        actor,
+        executor,
+      );
+    }
+    if (
+      input.assigneeId !== undefined &&
+      input.assigneeId !== existing.assigneeId
+    ) {
+      const [fromName, toName] = await Promise.all([
+        contactDisplayName(workspaceId, existing.assigneeId, executor),
+        contactDisplayName(workspaceId, input.assigneeId, executor),
+      ]);
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        id,
+        "assignee_changed",
+        {
+          from: existing.assigneeId,
+          to: input.assigneeId,
+          fromName,
+          toName,
+        },
+        actor,
+        executor,
+      );
+    }
+    if (input.priority !== undefined && input.priority !== existing.priority) {
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        id,
+        "priority_changed",
+        { from: existing.priority, to: input.priority },
+        actor,
+        executor,
+      );
+    }
+    if (input.dueDate !== undefined) {
+      const fromDue = dueDateIso(existing.dueDate);
+      const toDue = dueDateIso(
+        input.dueDate ? new Date(input.dueDate) : null,
+      );
+      if (fromDue !== toDue) {
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "due_date_changed",
+          { from: fromDue, to: toDue },
+          actor,
+          executor,
+        );
+      }
+    }
+    if (
+      input.projectId !== undefined &&
+      input.projectId !== existing.projectId
+    ) {
+      const [fromName, toName] = await Promise.all([
+        projectDisplayName(workspaceId, existing.projectId, executor),
+        projectDisplayName(workspaceId, input.projectId, executor),
+      ]);
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        id,
+        "project_changed",
+        {
+          from: existing.projectId,
+          to: input.projectId,
+          fromName,
+          toName,
+        },
+        actor,
+        executor,
+      );
+    }
+  }
+
   return row ?? null;
 }
 
@@ -537,12 +734,13 @@ export async function batchUpdateTasks(
   workspaceId: string,
   ids: string[],
   input: UpdateTaskInput,
+  actor?: TaskWriteActor | null,
 ) {
   if (ids.length === 0) return [];
   return db.transaction(async (tx) => {
     const rows = [];
     for (const id of ids) {
-      const row = await updateTask(workspaceId, id, input, tx);
+      const row = await updateTask(workspaceId, id, input, tx, actor);
       if (row) rows.push(row);
     }
     return rows;

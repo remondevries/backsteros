@@ -44,6 +44,22 @@ function getBearerToken(authorization: string | undefined): string | null {
   return authorization.slice("Bearer ".length).trim();
 }
 
+function clerkDisplayName(input: {
+  fullName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  username?: string | null;
+}): string | null {
+  const full = input.fullName?.trim();
+  if (full) return full;
+  const parts = [input.firstName, input.lastName]
+    .map((part) => part?.trim())
+    .filter(Boolean);
+  if (parts.length > 0) return parts.join(" ");
+  const username = input.username?.trim();
+  return username || null;
+}
+
 export async function authenticateApiKey(secret: string): Promise<AuthContext | null> {
   const prefix = apiKeyLookupPrefix(secret);
   const keyHash = hashApiKey(secret);
@@ -93,6 +109,34 @@ export async function authenticateClerk(
     .limit(1);
 
   let userId = existing?.id ?? null;
+  const verifiedRecord = verified as Record<string, unknown>;
+  let email =
+    (typeof verifiedRecord.email === "string" && verifiedRecord.email) ||
+    (typeof verifiedRecord.email_address === "string" &&
+      verifiedRecord.email_address) ||
+    existing?.email ||
+    null;
+  let displayName = existing?.displayName ?? null;
+
+  try {
+    const clerk = createClerkClient({ secretKey });
+    const clerkUser = await clerk.users.getUser(clerkUserId);
+    email =
+      clerkUser.emailAddresses.find(
+        (entry) => entry.id === clerkUser.primaryEmailAddressId,
+      )?.emailAddress ??
+      clerkUser.emailAddresses[0]?.emailAddress ??
+      email;
+    displayName =
+      clerkDisplayName({
+        fullName: clerkUser.fullName,
+        firstName: clerkUser.firstName,
+        lastName: clerkUser.lastName,
+        username: clerkUser.username,
+      }) ?? displayName;
+  } catch {
+    /* keep whatever we already resolved */
+  }
 
   if (!userId) {
     const proposedUserId = newId();
@@ -101,16 +145,34 @@ export async function authenticateClerk(
       .values({
         id: proposedUserId,
         clerkId: clerkUserId,
-        email: typeof verified.email === "string" ? verified.email : null,
+        email,
+        displayName,
         role: "owner",
       })
       .onConflictDoNothing();
     const [createdOrRaced] = await db
-      .select({ id: users.id })
+      .select({
+        id: users.id,
+        email: users.email,
+        displayName: users.displayName,
+      })
       .from(users)
       .where(eq(users.clerkId, clerkUserId))
       .limit(1);
     userId = createdOrRaced?.id ?? null;
+    email = createdOrRaced?.email ?? email;
+    displayName = createdOrRaced?.displayName ?? displayName;
+  } else if (
+    (email && email !== existing?.email) ||
+    (displayName && displayName !== existing?.displayName)
+  ) {
+    await db
+      .update(users)
+      .set({
+        email: email ?? existing?.email ?? null,
+        displayName: displayName ?? existing?.displayName ?? null,
+      })
+      .where(eq(users.id, userId));
   }
 
   if (!userId) {
