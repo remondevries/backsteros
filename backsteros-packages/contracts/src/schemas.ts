@@ -116,8 +116,8 @@ export const createProjectSchema = z.object({
     .max(64)
     .regex(/^[a-z0-9][a-z0-9-_]*$/i, "Use letters, numbers, hyphens, underscores"),
   name: z.string().min(1).max(255),
-  summary: z.string().max(2000).optional(),
-  description: z.string().max(10000).optional(),
+  summary: z.string().max(2000).nullable().optional(),
+  description: z.string().max(10000).nullable().optional(),
   organizationId: z.string().nullable().optional(),
   areaId: z.string().nullable().optional(),
   area: z.enum(["personal", "business", "clients"]).nullable().optional(),
