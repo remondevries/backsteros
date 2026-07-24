@@ -52,6 +52,7 @@ import {
 } from "@/lib/mutations/tasks";
 import { usePowerSyncQuery } from "@/lib/powersync-context";
 import { projectMatchesRouteParam } from "@/lib/project-sections";
+import { findLocalOrApi } from "@/lib/sync/prefer-local-or-api";
 import { getTaskDisplayId, INBOX_TASK_KEY } from "@/lib/task-display-id";
 import type { TaskPriority } from "@/lib/task-priority";
 import type { TaskStatus } from "@/lib/task-status";
@@ -189,11 +190,10 @@ export function TaskDetailScreen({
   }, [projectRouteParam, projects]);
 
   const baseTask = useMemo(() => {
-    const rows =
-      localTasks.data?.map((row) => snakeRow(row) as ApiTask) ??
-      tasksResource.data?.tasks ??
-      [];
-    const match = rows.find((row) =>
+    const localRows =
+      localTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? null;
+    const apiRows = tasksResource.data?.tasks ?? null;
+    const match = findLocalOrApi(localRows, apiRows, (row) =>
       taskMatchesParam(
         normalizeTask(row),
         taskRouteParam,

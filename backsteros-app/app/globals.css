@@ -4625,7 +4625,9 @@ a.mention-resource-chip *,
 .document-codemirror--document-scroll {
   height: auto;
   flex: none;
-  min-height: 50vh;
+  /* Content-sized (task descriptions): don't force a tall empty pane.
+     Document surfaces that need a minimum can opt in with --min. */
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -4633,10 +4635,14 @@ a.mention-resource-chip *,
   overflow-x: hidden;
 }
 
+.document-codemirror--document-scroll.document-codemirror--document-scroll-min {
+  min-height: 50vh;
+}
+
 .document-codemirror--document-scroll .cm-editor {
   height: auto;
   flex: none;
-  min-height: inherit;
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -4647,7 +4653,7 @@ a.mention-resource-chip *,
   overflow-x: hidden !important;
   overflow-y: visible !important;
   height: auto !important;
-  min-height: inherit;
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -5958,8 +5964,54 @@ a.mention-resource-chip *,
   width: 100%;
   max-width: 800px;
   margin: 24px auto 0;
-  padding-top: 20px;
+  /* Match title / description / attachments inset (1rem). */
+  padding: 0 1rem;
+  border-top: none;
+}
+
+.task-detail-below-description::before {
+  content: "";
+  display: block;
+  margin: 0 0 20px;
   border-top: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+}
+
+/* Task detail: keep edit description content-sized (globals CM fill rules
+   otherwise stretch the editor and leave a large gap above the paperclip). */
+.inbox-detail-body--document:has(.task-detail-attachments),
+.inbox-detail-body--document:has(.task-detail-below-description) {
+  display: block;
+  overflow: auto;
+}
+
+.inbox-detail-body--document:has(.task-detail-attachments) .document-codemirror,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-editor,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-scroller,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-editor,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-scroller {
+  height: auto !important;
+  flex: none !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-content,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-content {
+  padding-bottom: 0 !important;
 }
 
 /* Task activity / comments panel */

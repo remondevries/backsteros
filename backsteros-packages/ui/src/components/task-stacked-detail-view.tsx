@@ -185,6 +185,7 @@ export function TaskStackedDetailView({
                 onChange={handleChange}
                 onBlur={handleBlurSave}
                 focusRequest={editorFocusRequest}
+                scrollWithContent
                 ariaLabel="Task description"
               />
             }

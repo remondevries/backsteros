@@ -87,7 +87,12 @@ async function patchTask(
   body: Record<string, unknown>,
 ): Promise<ApiTask> {
   const { client, sync, refresh } = getMutationContext();
-  await patchTaskLocal(sync, taskId, body);
+  try {
+    await patchTaskLocal(sync, taskId, body);
+  } catch (error) {
+    // Local SQLite may lag schema (e.g. new columns). Still persist via API.
+    console.warn("[mutations] local task patch failed", error);
+  }
   const task = await client.requestJson<ApiTask>(
     `/api/v1/tasks/${encodeURIComponent(taskId)}`,
     {
@@ -410,6 +415,7 @@ export async function updateTaskLinksAction(input: {
     await patchTask(input.taskId, { links: input.links });
     return { ok: true };
   } catch (error) {
+    console.error("[mutations] updateTaskLinksAction failed", error);
     return { ok: false, error: apiErrorText(error) };
   }
 }

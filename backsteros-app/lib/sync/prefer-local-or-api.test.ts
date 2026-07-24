@@ -88,3 +88,29 @@ test("findLocalOrApi fills missing local type from API", () => {
   );
   assert.equal(match?.type, "codebase");
 });
+
+test("findLocalOrApi fills missing local links from API", () => {
+  const local = [
+    {
+      id: "t1",
+      links: [] as Array<{ id: string; url: string; createdAt: string }>,
+      updatedAt: "2026-07-19T12:00:00.000Z",
+    },
+  ];
+  const api = [
+    {
+      id: "t1",
+      links: [
+        {
+          id: "l1",
+          url: "https://example.com",
+          createdAt: "2026-07-19T11:00:00.000Z",
+        },
+      ],
+      updatedAt: "2026-07-19T11:00:00.000Z",
+    },
+  ];
+  const match = findLocalOrApi(local, api, (row) => row.id === "t1");
+  assert.equal(match?.links.length, 1);
+  assert.equal(match?.links[0]?.url, "https://example.com");
+});

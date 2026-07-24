@@ -1078,7 +1078,9 @@ export {
 export {
   TaskLinkAttachments,
   TaskLinkIcon,
+  coerceSparkEmailUrl,
   isGithubTaskLinkUrl,
+  isSparkEmailTaskLinkUrl,
   normalizeTaskLinkUrl,
   taskLinkDisplayLabel,
   type TaskLinkAttachmentsProps,

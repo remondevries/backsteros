@@ -632,17 +632,22 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
       // Match Next.js: optimistic local SQLite + REST so other clients see
       // changes even when the PowerSync upload queue is slow or stalled.
       if (powerSync.ready && powerSync.patchMetadata) {
-        await powerSync.patchMetadata(
-          table as
-            | "tasks"
-            | "projects"
-            | "letters"
-            | "contacts"
-            | "organizations"
-            | "documents",
-          id,
-          toSnakeFields(values),
-        );
+        try {
+          await powerSync.patchMetadata(
+            table as
+              | "tasks"
+              | "projects"
+              | "letters"
+              | "contacts"
+              | "organizations"
+              | "documents",
+            id,
+            toSnakeFields(values),
+          );
+        } catch (error) {
+          // Local SQLite may lag schema (e.g. new columns). Still hit REST.
+          console.warn("[desktop] local metadata patch failed", error);
+        }
         if (!authenticated) return;
         try {
           await client.requestJson(path, {

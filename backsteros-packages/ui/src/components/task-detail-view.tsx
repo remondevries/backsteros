@@ -194,6 +194,7 @@ export function TaskDetailView({
                   onChange={handleChange}
                   onBlur={handleBlurSave}
                   focusRequest={editorFocusRequest}
+                  scrollWithContent
                   ariaLabel="Task description"
                 />
               }

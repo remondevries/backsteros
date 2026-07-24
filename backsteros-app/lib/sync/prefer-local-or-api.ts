@@ -38,6 +38,21 @@ export function findLocalOrApi<T>(
     return { ...local, type: apiType };
   }
 
+  const localLinks = (local as { links?: unknown }).links;
+  const apiLinks = (api as { links?: unknown }).links;
+  const localLinksMissing =
+    localLinks == null ||
+    localLinks === "" ||
+    (Array.isArray(localLinks) && localLinks.length === 0);
+  const apiHasLinks =
+    (Array.isArray(apiLinks) && apiLinks.length > 0) ||
+    (typeof apiLinks === "string" &&
+      apiLinks.trim() !== "" &&
+      apiLinks.trim() !== "[]");
+  if (localLinksMissing && apiHasLinks) {
+    return { ...local, links: apiLinks };
+  }
+
   return local;
 }
 

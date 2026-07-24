@@ -16,6 +16,7 @@ import type { TaskLink } from "@backsteros/contracts";
 import { ProjectOcticon } from "./project-octicon.js";
 
 const MAX_TASK_LINKS = 20;
+const MAX_TASK_LINK_URL_LENGTH = 2000;
 
 export type TaskLinkAttachmentsProps = {
   links?: TaskLink[] | null;
@@ -23,11 +24,61 @@ export type TaskLinkAttachmentsProps = {
   readOnly?: boolean;
 };
 
+/**
+ * Coerce pasted / stored Spark deep links into a canonical `readdle-spark://…`
+ * form. Also recovers URLs that were wrongly prefixed with https://.
+ */
+export function coerceSparkEmailUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_TASK_LINK_URL_LENGTH) {
+    return null;
+  }
+
+  // https://readdle-spark//bl=…  (https prepend + URL parser collapse)
+  const httpsCollapsed = trimmed.match(
+    /^https?:\/\/readdle-spark\/+(.*)$/i,
+  );
+  if (httpsCollapsed) {
+    return `readdle-spark://${httpsCollapsed[1]}`;
+  }
+
+  // https://readdle-spark://bl=… (https prepend before collapse)
+  const httpsWrapped = trimmed.match(/^https?:\/\/(readdle-spark:\/.*)$/i);
+  if (httpsWrapped) {
+    return httpsWrapped[1].replace(/^readdle-spark:\/(?!\/)/i, "readdle-spark://");
+  }
+
+  if (/^readdle-spark:/i.test(trimmed)) {
+    return trimmed.replace(/^readdle-spark:\/?\/?/i, "readdle-spark://");
+  }
+
+  return null;
+}
+
 export function normalizeTaskLinkUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) {
     return null;
   }
+
+  const spark = coerceSparkEmailUrl(trimmed);
+  if (spark) {
+    try {
+      const url = new URL(spark);
+      if (url.protocol.toLowerCase() !== "readdle-spark:") {
+        return null;
+      }
+      return spark;
+    } catch {
+      return null;
+    }
+  }
+
+  // Don't prepend https:// to other custom schemes (mailto:, etc.).
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^https?:/i.test(trimmed)) {
+    return null;
+  }
+
   const withProtocol = /^https?:\/\//i.test(trimmed)
     ? trimmed
     : `https://${trimmed}`;
@@ -51,7 +102,14 @@ export function isGithubTaskLinkUrl(url: string): boolean {
   }
 }
 
+export function isSparkEmailTaskLinkUrl(url: string): boolean {
+  return coerceSparkEmailUrl(url) != null;
+}
+
 export function taskLinkDisplayLabel(url: string): string {
+  if (isSparkEmailTaskLinkUrl(url)) {
+    return "E-mail";
+  }
   try {
     const parsed = new URL(url);
     const path = parsed.pathname === "/" ? "" : parsed.pathname;
@@ -94,6 +152,9 @@ function TaskLinkFavicon({ url }: { url: string }) {
 }
 
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
+  if (isSparkEmailTaskLinkUrl(url)) {
+    return <ProjectOcticon icon="mail" size={16} />;
+  }
   if (isGithubTaskLinkUrl(url)) {
     return <ProjectOcticon icon="mark-github" size={16} />;
   }
@@ -105,14 +166,32 @@ function PaperclipIcon() {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 16 16"
-      width={16}
-      height={16}
+      width={13}
+      height={13}
       aria-hidden="true"
       focusable="false"
     >
       <path
         fill="currentColor"
         d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"
+      />
+    </svg>
+  );
+}
+
+function RemoveIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 12 12"
+      width={12}
+      height={12}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="currentColor"
+        d="M2.22 2.22a.749.749 0 0 1 1.06 0L6 4.939 8.72 2.22a.749.749 0 1 1 1.06 1.06L7.061 6 9.78 8.72a.749.749 0 1 1-1.06 1.06L6 7.061 3.28 9.78a.749.749 0 1 1-1.06-1.06L4.939 6 2.22 3.28a.749.749 0 0 1 0-1.06Z"
       />
     </svg>
   );
@@ -210,37 +289,6 @@ export function TaskLinkAttachments({
 
   return (
     <div className="task-detail-attachments task-link-attachments">
-      {items.length > 0 ? (
-        <ul className="task-link-attachments__list">
-          {items.map((item) => (
-            <li key={item.id} className="task-link-attachments__row">
-              <span className="task-link-attachments__icon" aria-hidden="true">
-                <TaskLinkIcon url={item.url} />
-              </span>
-              <a
-                className="task-link-attachments__label"
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                title={item.url}
-              >
-                {taskLinkDisplayLabel(item.url)}
-              </a>
-              {canEdit ? (
-                <button
-                  type="button"
-                  className="task-link-attachments__remove"
-                  aria-label="Remove link"
-                  onClick={() => handleRemove(item.id)}
-                >
-                  <ProjectOcticon icon="x" size={14} />
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
       {canEdit ? (
         <div className="task-link-attachments__toolbar">
           <button
@@ -257,6 +305,49 @@ export function TaskLinkAttachments({
             <PaperclipIcon />
           </button>
         </div>
+      ) : null}
+
+      {items.length > 0 ? (
+        <ul className="task-link-attachments__list">
+          {items.map((item) => {
+            const href = coerceSparkEmailUrl(item.url) ?? item.url;
+            return (
+            <li key={item.id} className="task-link-attachments__row">
+              <a
+                className="task-link-attachments__link"
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                title={href}
+              >
+                <span
+                  className="task-link-attachments__icon"
+                  aria-hidden="true"
+                >
+                  <TaskLinkIcon url={href} />
+                </span>
+                <span className="task-link-attachments__label">
+                  {taskLinkDisplayLabel(href)}
+                </span>
+              </a>
+              {canEdit ? (
+                <button
+                  type="button"
+                  className="task-link-attachments__remove"
+                  aria-label="Remove link"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleRemove(item.id);
+                  }}
+                >
+                  <RemoveIcon />
+                </button>
+              ) : null}
+            </li>
+            );
+          })}
+        </ul>
       ) : null}
 
       {modalOpen && typeof document !== "undefined"

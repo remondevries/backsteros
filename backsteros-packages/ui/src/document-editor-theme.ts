@@ -70,9 +70,23 @@ export const documentEditorTheme = EditorView.theme(
   { dark: true },
 );
 
-/** Parent supplies max width + horizontal padding (same shell as preview). */
-export function createDocumentEditorContentLayoutTheme() {
+/**
+ * Parent supplies max width + horizontal padding (same shell as preview).
+ * `scrollWithContent` sizes the editor to its text (task detail with
+ * attachments/activity below) instead of filling the pane.
+ */
+export function createDocumentEditorContentLayoutTheme(
+  scrollWithContent = false,
+) {
   return EditorView.theme({
+    ...(scrollWithContent
+      ? {
+          ".cm-scroller": {
+            overflowX: "hidden",
+            overflowY: "visible",
+          },
+        }
+      : {}),
     ".cm-content": {
       boxSizing: "border-box",
       // Empty docs otherwise shrink to width 0, which clips the vim fat cursor.
@@ -80,7 +94,9 @@ export function createDocumentEditorContentLayoutTheme() {
       minWidth: "100%",
       maxWidth: "100%",
       marginInline: "0",
-      padding: "0 0 3.5rem",
+      // Fill-height editors reserve space for the floating Edit/Preview dock.
+      // Content-sized editors match preview padding (dock lives elsewhere).
+      padding: scrollWithContent ? "0" : "0 0 3.5rem",
     },
     ".cm-line": {
       padding: "0",

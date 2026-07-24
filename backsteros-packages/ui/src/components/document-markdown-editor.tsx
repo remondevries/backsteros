@@ -38,6 +38,11 @@ export type DocumentMarkdownEditorProps = {
    * pass false for mobile/touch-only surfaces.
    */
   vimEnabled?: boolean;
+  /**
+   * Size the editor to its content (matches preview). Use on task detail
+   * where attachments / activity sit below the description.
+   */
+  scrollWithContent?: boolean;
 };
 
 type EmptyCaretBox = {
@@ -192,6 +197,7 @@ export function DocumentMarkdownEditor({
   searchMentionSections,
   focusRequest = 0,
   vimEnabled = true,
+  scrollWithContent = false,
 }: DocumentMarkdownEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -211,12 +217,12 @@ export function DocumentMarkdownEditor({
       ...(vimEnabled ? [vim({ status: false })] : []),
       markdown(),
       documentEditorTheme,
-      createDocumentEditorContentLayoutTheme(),
+      createDocumentEditorContentLayoutTheme(scrollWithContent),
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
       ...(mentionsEnabled ? createMentionExtensions(mentionController) : []),
     ],
-    [disabled, mentionController, mentionsEnabled, vimEnabled],
+    [disabled, mentionController, mentionsEnabled, scrollWithContent, vimEnabled],
   );
 
   useLayoutEffect(() => {
@@ -318,7 +324,11 @@ export function DocumentMarkdownEditor({
     <>
       <div
         ref={rootRef}
-        className="document-codemirror"
+        className={
+          scrollWithContent
+            ? "document-codemirror document-codemirror--document-scroll"
+            : "document-codemirror"
+        }
         data-document-editor-root="codemirror"
         data-empty-doc={isEmptyDoc ? "true" : "false"}
         onBlur={(event) => {
@@ -333,7 +343,7 @@ export function DocumentMarkdownEditor({
         <CodeMirror
           ref={editorRef}
           value={value}
-          height="100%"
+          height={scrollWithContent ? "auto" : "100%"}
           theme="none"
           basicSetup={{
             lineNumbers: false,
