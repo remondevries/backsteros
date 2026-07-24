@@ -70,6 +70,7 @@ export function toTask(row: DbTask): Task {
     dueDate: toIso(row.dueDate),
     triagedAt: toIso(row.triagedAt),
     inbox: row.inbox,
+    links: row.links ?? [],
     completedAt: toIso(row.completedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

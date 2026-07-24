@@ -50,6 +50,7 @@ const tasks = new Table(
     due_date: column.text,
     triaged_at: column.text,
     inbox: column.integer,
+    links: column.text,
     completed_at: column.text,
     ...commonDates,
   },

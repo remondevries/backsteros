@@ -43,7 +43,14 @@ export function toLocalFields(values: Record<string, unknown>) {
   return Object.fromEntries(
     Object.entries(values).map(([key, value]) => [
       key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
-      value === true ? 1 : value === false ? 0 : value,
+      value === true
+        ? 1
+        : value === false
+          ? 0
+          : value !== null && typeof value === "object"
+            ? // PowerSync text columns (e.g. social_accounts, links) store JSON as text.
+              JSON.stringify(value)
+            : value,
     ]),
   );
 }

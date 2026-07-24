@@ -719,6 +719,9 @@ export function InboxAttentionDetail({
             onSaveDescription={(description) => {
               void patchAndInvalidate(selectedRaw.id, { description });
             }}
+            onChangeLinks={(links) => {
+              void patchAndInvalidate(selectedRaw.id, { links });
+            }}
             onSaveTitle={async (title) => {
               const trimmed = title.trim();
               if (!trimmed) {

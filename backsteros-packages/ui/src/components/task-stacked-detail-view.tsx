@@ -1,5 +1,6 @@
 "use client";
 
+import type { TaskLink } from "@backsteros/contracts";
 import { useState, type ReactNode } from "react";
 
 import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
@@ -19,6 +20,7 @@ import {
   TaskPropertiesInlineChips,
 } from "./task-properties-inline-chips.js";
 import type { TaskDetailViewTask } from "./task-detail-view.js";
+import { TaskLinkAttachments } from "./task-link-attachments.js";
 
 export type TaskStackedDetailViewProps = {
   task: TaskDetailViewTask;
@@ -32,6 +34,7 @@ export type TaskStackedDetailViewProps = {
    */
   belowDescription?: ReactNode;
   onSaveDescription?: (value: string) => void | Promise<void>;
+  onChangeLinks?: (links: TaskLink[]) => void;
   onSaveTitle?: (
     title: string,
   ) =>
@@ -60,6 +63,7 @@ export function TaskStackedDetailView({
   showDisplayId = true,
   belowDescription,
   onSaveDescription,
+  onChangeLinks,
   onSaveTitle,
   onFieldActivate,
   onStatusChange,
@@ -196,6 +200,10 @@ export function TaskStackedDetailView({
             toggle={
               <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
             }
+          />
+          <TaskLinkAttachments
+            links={task.links}
+            onChangeLinks={onChangeLinks}
           />
           {belowDescription ? (
             <div className="task-detail-below-description">

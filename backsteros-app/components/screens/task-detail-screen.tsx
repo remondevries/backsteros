@@ -45,6 +45,7 @@ import {
   updateTaskAssigneeAction,
   updateTaskDescriptionAction,
   updateTaskDueDateAction,
+  updateTaskLinksAction,
   updateTaskPriorityAction,
   updateTaskStatusAction,
   updateTaskTitleAction,
@@ -228,6 +229,7 @@ export function TaskDetailScreen({
       id: baseTask.id,
       title: baseTask.title,
       description: baseTask.description ?? "",
+      links: baseTask.links ?? [],
       status: baseTask.status,
       priority: baseTask.priority,
       dueDate: baseTask.dueDate,
@@ -370,6 +372,13 @@ export function TaskDetailScreen({
               taskId: baseTask.id,
               projectId: baseTask.projectId,
               description,
+            });
+          }}
+          onChangeLinks={(links) => {
+            void updateTaskLinksAction({
+              taskId: baseTask.id,
+              projectId: baseTask.projectId,
+              links,
             });
           }}
           onSaveTitle={async (title) => {

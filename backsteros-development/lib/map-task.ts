@@ -46,6 +46,7 @@ export function mapApiTaskDetail(
     id: task.id,
     title: task.title,
     description: task.description,
+    links: task.links ?? [],
     displayId:
       projectKey && task.number
         ? formatTaskDisplayId(projectKey, task.number)

@@ -91,6 +91,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     due_date: row.dueDate?.toISOString() ?? null,
     triaged_at: row.triagedAt?.toISOString() ?? null,
     inbox: row.inbox,
+    links: JSON.stringify(row.links ?? []),
     completed_at: row.completedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -388,6 +389,33 @@ function mapProjectUpsert(
   };
 }
 
+function parseTaskLinks(
+  value: unknown,
+): CreateTaskInput["links"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter(
+    (item): item is { id: string; url: string; createdAt: string } =>
+      item != null &&
+      typeof item === "object" &&
+      typeof (item as { id?: unknown }).id === "string" &&
+      typeof (item as { url?: unknown }).url === "string" &&
+      typeof (item as { createdAt?: unknown }).createdAt === "string",
+  );
+}
+
 function mapTaskUpsert(
   payload: Record<string, unknown>,
 ): CreateTaskInput | UpdateTaskInput {
@@ -403,6 +431,7 @@ function mapTaskUpsert(
     dueDate: asNullableString(payload.due_date ?? payload.dueDate),
     triagedAt: asNullableString(payload.triaged_at ?? payload.triagedAt),
     inbox: asBoolean(payload.inbox),
+    links: parseTaskLinks(payload.links),
   };
 }
 
@@ -523,6 +552,7 @@ export async function applySyncChange(
           dueDate: input.dueDate,
           triagedAt: input.triagedAt,
           inbox: input.inbox,
+          links: input.links,
         },
         change.entity_id,
         executor,

@@ -30,8 +30,22 @@ function asRequiredDate(value: string): Date {
 }
 
 export function normalizeTask(task: ApiTask): Task {
+  let links = task.links ?? [];
+  const rawLinks = (task as ApiTask & { links?: unknown }).links;
+  if (typeof rawLinks === "string") {
+    try {
+      const parsed = JSON.parse(rawLinks) as unknown;
+      links = Array.isArray(parsed) ? (parsed as Task["links"]) : [];
+    } catch {
+      links = [];
+    }
+  } else if (Array.isArray(rawLinks)) {
+    links = rawLinks as Task["links"];
+  }
+
   return {
     ...task,
+    links,
     status: task.status as TaskStatus,
     priority: task.priority as TaskPriority,
     dueDate: asDate(task.dueDate),

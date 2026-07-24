@@ -66,6 +66,7 @@ function buildOptimisticProjectTask(
     dueDate: snapshot.dueDate != null ? new Date(snapshot.dueDate) : null,
     triagedAt: null,
     inbox: false,
+    links: [],
     completedAt: null,
     createdAt: updatedAt,
     updatedAt,

@@ -239,6 +239,13 @@ export const updateProjectSchema = createProjectSchema
     message: "At least one field is required",
   });
 
+/** Link attachment on a task (URL metadata; not blob storage). */
+export const taskLinkSchema = z.object({
+  id: z.string().min(1).max(64),
+  url: z.string().min(1).max(2000),
+  createdAt: z.string().datetime(),
+});
+
 export const taskSchema = z.object({
   id: z.string(),
   projectId: z.string().nullable(),
@@ -253,6 +260,7 @@ export const taskSchema = z.object({
   dueDate: z.string().datetime().nullable(),
   triagedAt: z.string().datetime().nullable(),
   inbox: z.boolean(),
+  links: z.array(taskLinkSchema),
   completedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -271,6 +279,7 @@ export const createTaskSchema = z.object({
   dueDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable().optional(),
   inbox: z.boolean().optional(),
+  links: z.array(taskLinkSchema).max(20).optional(),
 });
 
 export const updateTaskSchema = createTaskSchema
@@ -879,6 +888,7 @@ export const okSchema = z.object({ ok: z.literal(true) });
 
 export type Project = z.infer<typeof projectSchema>;
 export type Task = z.infer<typeof taskSchema>;
+export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;
 export type TaskActivity = z.infer<typeof taskActivitySchema>;
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;

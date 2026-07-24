@@ -30,7 +30,7 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 
 | Entity | Tier (metadata) | Tier (content) | Notes |
 | --- | --- | --- | --- |
-| Task | A | — | Bulk update target |
+| Task | A | — | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task — distinct from future blob Attachment entities. |
 | Project | A | — | |
 | Contact / Organization | A | — | |
 | Document (project/knowledge) | B | D (body in object storage) | |

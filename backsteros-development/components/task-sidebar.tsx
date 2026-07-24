@@ -894,6 +894,9 @@ export function TaskSidebar({
                   onSaveDescription={(description) => {
                     void patchTask(renderedDetailTask.id, { description });
                   }}
+                  onChangeLinks={(links) => {
+                    void patchTask(renderedDetailTask.id, { links });
+                  }}
                   onSaveTitle={async (title) => {
                     const trimmed = title.trim();
                     if (!trimmed) {

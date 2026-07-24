@@ -25,6 +25,7 @@ export function buildOptimisticTaskWithContextSummary(
     dueDate: snapshot.dueDate != null ? new Date(snapshot.dueDate) : null,
     triagedAt: null,
     inbox: snapshot.projectId == null && snapshot.contactId == null,
+    links: [],
     completedAt: null,
     createdAt: updatedAt,
     updatedAt,

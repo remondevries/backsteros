@@ -36,6 +36,10 @@ export type UpdateTaskDescriptionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+export type UpdateTaskLinksResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 export type UpdateTaskDueDateResult =
   | { ok: true }
   | { ok: false; error: string };
@@ -386,6 +390,24 @@ export async function updateTaskDescriptionAction(input: {
     await patchTask(input.taskId, {
       description: input.description.trim() || null,
     });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: apiErrorText(error) };
+  }
+}
+
+export async function updateTaskLinksAction(input: {
+  taskId: string;
+  projectId: string | null;
+  links: Array<{ id: string; url: string; createdAt: string }>;
+}): Promise<UpdateTaskLinksResult> {
+  void input.projectId;
+  if (!input.taskId.trim()) return { ok: false, error: "Task is required." };
+  if (input.links.length > 20) {
+    return { ok: false, error: "Too many attachments." };
+  }
+  try {
+    await patchTask(input.taskId, { links: input.links });
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error) };

@@ -151,6 +151,7 @@ export function TaskDetailPage({
       projectKey: resolvedProjectKey,
       projectName: project?.name ?? base.projectName ?? null,
       description: workspace.taskDescriptions[base.id] ?? "",
+      links: workspace.taskLinks[base.id] ?? [],
       displayId: getTaskDisplayId(
         {
           number: base.number,
@@ -159,7 +160,7 @@ export function TaskDetailPage({
         base.projectKey,
       ),
     };
-  }, [base, contacts, projects, workspace.taskDescriptions]);
+  }, [base, contacts, projects, workspace.taskDescriptions, workspace.taskLinks]);
 
   const taskLabel = task
     ? task.displayId
@@ -263,6 +264,9 @@ export function TaskDetailPage({
         }}
         onSaveDescription={(description) => {
           void workspace.patchTask(task.id, { description });
+        }}
+        onChangeLinks={(links) => {
+          void workspace.patchTask(task.id, { links });
         }}
         onSaveTitle={async (title) => {
           const trimmed = title.trim();

@@ -11,6 +11,7 @@ import type {
   Organization as ApiOrganization,
   Project as ApiProject,
   Task as ApiTask,
+  TaskLink,
 } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
@@ -43,6 +44,28 @@ function asEpoch(value: string | null | undefined): number | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function parseTaskLinks(value: unknown): TaskLink[] {
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter(
+    (item): item is TaskLink =>
+      item != null &&
+      typeof item === "object" &&
+      typeof (item as { id?: unknown }).id === "string" &&
+      typeof (item as { url?: unknown }).url === "string" &&
+      typeof (item as { createdAt?: unknown }).createdAt === "string",
+  );
 }
 
 function mapTask(
@@ -186,6 +209,7 @@ export type DesktopWorkspaceData = {
   projectSummaries: Record<string, string>;
   projectDescriptions: Record<string, string>;
   taskDescriptions: Record<string, string>;
+  taskLinks: Record<string, TaskLink[]>;
   letterBodies: Record<string, string>;
   /** journalDate → document id for content load/save. */
   journalDocumentIdsByDate: Record<string, string>;
@@ -1285,6 +1309,12 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
       [...rawTasks, ...rawInboxTasks]
         .filter((task) => task.description)
         .map((task) => [task.id, task.description as string]),
+    ),
+    taskLinks: Object.fromEntries(
+      [...rawTasks, ...rawInboxTasks].map((task) => [
+        task.id,
+        parseTaskLinks(task.links),
+      ]),
     ),
     letterBodies: Object.fromEntries(
       rawLetters

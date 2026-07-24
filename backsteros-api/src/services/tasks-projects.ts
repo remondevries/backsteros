@@ -463,6 +463,7 @@ async function createTaskWithExecutor(
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
       inbox: input.inbox ?? (!input.projectId && !input.contactId),
+      links: input.links ?? [],
       completedAt: status === "completed" ? new Date() : null,
     })
     .returning();
@@ -590,6 +591,7 @@ export async function updateTask(
         (input.projectId !== undefined || input.contactId !== undefined
           ? !nextProjectId && !nextContactId
           : undefined),
+      links: input.links,
       completedAt,
       updatedAt: new Date(),
     })

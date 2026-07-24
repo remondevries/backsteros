@@ -153,6 +153,7 @@ export function InboxPage() {
             workspace.taskDescriptions[selectedTask.id] ??
             selectedTask.description ??
             "",
+          links: workspace.taskLinks[selectedTask.id] ?? [],
           displayId: getInboxItemDisplayId(selectedTask),
         }}
         onStatusChange={(next) => {
@@ -179,6 +180,9 @@ export function InboxPage() {
         }}
         onSaveDescription={(description) => {
           void workspace.patchTask(selectedTask.id, { description });
+        }}
+        onChangeLinks={(links) => {
+          void workspace.patchTask(selectedTask.id, { links });
         }}
         onSaveTitle={async (title) => {
           const trimmed = title.trim();

@@ -1,5 +1,6 @@
 "use client";
 
+import type { TaskLink } from "@backsteros/contracts";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -24,11 +25,13 @@ import {
   type TaskPropertiesDisplayTask,
 } from "./task-properties-display.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
+import { TaskLinkAttachments } from "./task-link-attachments.js";
 
 export type TaskDetailViewTask = TaskPropertiesDisplayTask & {
   title: string;
   description?: string | null;
   displayId?: string | null;
+  links?: TaskLink[] | null;
 };
 
 export type TaskDetailViewProps = {
@@ -40,6 +43,7 @@ export type TaskDetailViewProps = {
    */
   belowDescription?: ReactNode;
   onSaveDescription?: (value: string) => void | Promise<void>;
+  onChangeLinks?: (links: TaskLink[]) => void;
   onSaveTitle?: (
     title: string,
   ) =>
@@ -67,6 +71,7 @@ export function TaskDetailView({
   headerMeta,
   belowDescription,
   onSaveDescription,
+  onChangeLinks,
   onSaveTitle,
   onFieldActivate,
   onStatusChange,
@@ -201,6 +206,10 @@ export function TaskDetailView({
                   )}
                 </ContentMarkdownPreviewColumn>
               }
+            />
+            <TaskLinkAttachments
+              links={task.links}
+              onChangeLinks={onChangeLinks}
             />
             {belowDescription ? (
               <div className="task-detail-below-description">

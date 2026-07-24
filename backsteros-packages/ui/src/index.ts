@@ -338,6 +338,7 @@ export { DocumentIcon } from "./components/document-icon.js";
 export { ContactPersonIcon } from "./components/contact-person-icon.js";
 export { OrganizationIcon } from "./components/organization-icon.js";
 export { DefaultProjectIcon } from "./components/default-project-icon.js";
+export { TerminalConsoleIcon } from "./components/terminal-console-icon.js";
 export {
   ProjectOcticon,
   getDisplayProjectIcon,
@@ -1073,6 +1074,15 @@ export {
   type TaskDetailViewProps,
   type TaskDetailViewTask,
 } from "./components/task-detail-view.js";
+
+export {
+  TaskLinkAttachments,
+  TaskLinkIcon,
+  isGithubTaskLinkUrl,
+  normalizeTaskLinkUrl,
+  taskLinkDisplayLabel,
+  type TaskLinkAttachmentsProps,
+} from "./components/task-link-attachments.js";
 
 export {
   TaskStackedDetailView,

@@ -278,6 +278,10 @@ export const tasks = pgTable(
     dueDate: timestamp("due_date", { withTimezone: true }),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
     inbox: boolean("inbox").notNull().default(false),
+    links: jsonb("links")
+      .$type<{ id: string; url: string; createdAt: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     legacySource: text("legacy_source"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
