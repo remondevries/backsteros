@@ -1,0 +1,6 @@
+.next/
+tsconfig.tsbuildinfo
+.env
+.env.local
+.console-app/
+src-tauri/target/

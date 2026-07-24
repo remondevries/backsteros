@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -225,6 +226,11 @@ export const projects = pgTable(
     type: text("type").notNull().default("general"),
     /** `owner/repo` when linked; only meaningful for `type = codebase`. */
     githubRepository: text("github_repository"),
+    /**
+     * Absolute path on the developer's machine for agent/PTY cwd.
+     * Not multi-device; stored so the Development console persists across reloads.
+     */
+    localWorkingDirectory: text("local_working_directory"),
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -315,12 +321,16 @@ export const taskComments = pgTable(
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
+    /** When set, this row is a reply to another comment on the same task. */
+    parentCommentId: text("parent_comment_id"),
     authorUserId: text("author_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
     /** Denormalized for display without joining users. */
     authorEmail: text("author_email"),
     body: text("body").notNull(),
+    /** When set on a root comment, the thread is resolved. */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -335,6 +345,13 @@ export const taskComments = pgTable(
     index("task_comments_workspace_id_idx").on(table.workspaceId),
     index("task_comments_created_at_idx").on(table.createdAt),
     index("task_comments_deleted_at_idx").on(table.deletedAt),
+    index("task_comments_parent_comment_id_idx").on(table.parentCommentId),
+    index("task_comments_resolved_at_idx").on(table.resolvedAt),
+    foreignKey({
+      columns: [table.parentCommentId],
+      foreignColumns: [table.id],
+      name: "task_comments_parent_comment_id_fk",
+    }).onDelete("cascade"),
   ],
 );
 

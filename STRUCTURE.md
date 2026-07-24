@@ -19,7 +19,8 @@ Single workspace: **`~/code/backsteros/`**
 ├── backsteros-app/            Phase 5 — product web (backsteros.com/app, Next.js)
 ├── backsteros-admin/          Phase 3b — ops dashboard (backsteros.com/admin)
 ├── backsteros-mobile/         Phase 4 — Expo (product, not admin)
-└── backsteros-desktop/        Phase 5 — Tauri 2 + Vite/React scaffold (UI ≈ web)
+├── backsteros-desktop/        Phase 5 — Tauri 2 + Vite/React scaffold (UI ≈ web)
+└── backsteros-development/    Experiment — agent console (Next.js + thin Tauri window)
 ```
 
 ## URLs
@@ -40,3 +41,4 @@ Details: [docs/11-urls-and-routing.md](docs/11-urls-and-routing.md)
 | 3b | `backsteros-admin/` (after sync metrics exist) |
 | 4 | `backsteros-mobile/` |
 | 5 | `backsteros-app/`, `backsteros-desktop/` |
+| — | `backsteros-development/` (agent console; not a product phase) |

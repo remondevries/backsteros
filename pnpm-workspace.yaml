@@ -3,6 +3,7 @@ packages:
   - backsteros-app
   - backsteros-admin
   - backsteros-desktop
+  - backsteros-development
   - backsteros-mobile
   - backsteros-sync-demo
   - backsteros-packages/*
@@ -14,6 +15,7 @@ allowBuilds:
   bufferutil: true
   core-js: true
   esbuild: true
+  node-pty: true
   sharp: true
   unrs-resolver: true
   utf-8-validate: true
@@ -22,3 +24,10 @@ overrides:
   react: 19.1.0
   react-dom: 19.1.0
   '@types/react': 19.1.10
+# Worklets Babel plugin requires these at runtime but only declares @babel/core.
+packageExtensions:
+  react-native-worklets:
+    dependencies:
+      '@babel/generator': ^7.27.0
+      '@babel/traverse': ^7.27.0
+      '@babel/types': ^7.27.0

@@ -12,6 +12,7 @@ Read this file first when working in **`~/code/backsteros/`**. Specs live at the
 ├── backsteros-admin/          ← ops dashboard (backsteros.com/admin)
 ├── backsteros-mobile/         ← Expo (product)
 ├── backsteros-desktop/        ← Tauri → app build
+├── backsteros-development/    ← agent console (Orca-style; Next.js)
 └── backsteros-packages/
 ```
 
@@ -62,6 +63,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `backsteros-mobile/` | Phase 4 | Expo — Clerk + PowerSync inbox/tasks (offline edits) |
 | `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js; local screens for now) |
 | `backsteros-desktop/` | Phase 5 — working | Tauri 2 + Vite/React; primary `@backsteros/ui` consumer (ADR-019) |
+| `backsteros-development/` | Experiment | Agent console (projects \| terminals \| tasks). Next.js + `@backsteros/ui`; not product `/app`. |
 
 Do not put application code in `docs/` or loose at the workspace root — use the subfolder for each layer.
 

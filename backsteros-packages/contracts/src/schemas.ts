@@ -86,6 +86,11 @@ export const healthSchema = z.object({
   spacesConfigured: z.boolean(),
 });
 
+/** Project short ID — 2–3 alphanumeric characters (any case; stored uppercase). */
+export const projectKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9]{2,3}$/, "Use 2–3 letters or numbers");
+
 export const projectSchema = z.object({
   id: z.string(),
   key: z.string(),
@@ -101,6 +106,8 @@ export const projectSchema = z.object({
   color: z.string().nullable(),
   type: projectTypeSchema,
   githubRepository: githubRepositoryNameSchema.nullable(),
+  /** Absolute local folder for agent/PTY (machine-specific; Development console). */
+  localWorkingDirectory: z.string().max(4096).nullable(),
   status: projectStatusSchema,
   priority: z.number().int().min(0).max(4),
   sortOrder: z.number().int(),
@@ -110,11 +117,7 @@ export const projectSchema = z.object({
 });
 
 export const createProjectSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9][a-z0-9-_]*$/i, "Use letters, numbers, hyphens, underscores"),
+  key: projectKeySchema,
   name: z.string().min(1).max(255),
   summary: z.string().max(2000).nullable().optional(),
   description: z.string().max(10000).nullable().optional(),
@@ -127,6 +130,7 @@ export const createProjectSchema = z.object({
   color: z.string().max(64).nullable().optional(),
   type: projectTypeSchema.optional(),
   githubRepository: githubRepositoryNameSchema.nullable().optional(),
+  localWorkingDirectory: z.string().max(4096).nullable().optional(),
   status: projectStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
@@ -157,6 +161,76 @@ export const githubCommitSchema = z.object({
   authorLogin: z.string().nullable(),
   authoredAt: z.string().datetime().nullable(),
   htmlUrl: z.string(),
+});
+
+/** Derived from GitHub `state` + `merged_at` (merged PRs arrive as `closed`). */
+export const githubPullRequestStateSchema = z.enum([
+  "open",
+  "closed",
+  "merged",
+]);
+
+export const githubPullRequestSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  state: githubPullRequestStateSchema,
+  draft: z.boolean(),
+  body: z.string().nullable(),
+  authorLogin: z.string().nullable(),
+  createdAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  mergedAt: z.string().datetime().nullable(),
+  htmlUrl: z.string(),
+  headRef: z.string().nullable(),
+  baseRef: z.string().nullable(),
+  commitsCount: z.number().int().nonnegative().nullable(),
+  commentsCount: z.number().int().nonnegative().nullable(),
+  changedFilesCount: z.number().int().nonnegative().nullable(),
+  additions: z.number().int().nonnegative().nullable(),
+  deletions: z.number().int().nonnegative().nullable(),
+});
+
+export const githubPullRequestFileStatusSchema = z.enum([
+  "added",
+  "removed",
+  "modified",
+  "renamed",
+  "copied",
+  "changed",
+  "unchanged",
+]);
+
+export const githubPullRequestFileSchema = z.object({
+  filename: z.string(),
+  previousFilename: z.string().nullable(),
+  status: githubPullRequestFileStatusSchema,
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  changes: z.number().int().nonnegative(),
+  patch: z.string().nullable(),
+  blobUrl: z.string().nullable(),
+  rawUrl: z.string().nullable(),
+});
+
+/** OAuth scopes required for personal + organization repository access. */
+export const GITHUB_INTEGRATION_SCOPES = ["repo", "read:org"] as const;
+
+export const githubOrganizationSchema = z.object({
+  id: z.number().int(),
+  login: z.string(),
+  avatarUrl: z.string().nullable(),
+});
+
+export const githubConnectionStatusSchema = z.object({
+  connected: z.boolean(),
+  login: z.string().nullable(),
+  scopes: z.array(z.string()),
+  requiredScopes: z.array(z.string()),
+  missingScopes: z.array(z.string()),
+  organizations: z.array(githubOrganizationSchema),
+  repositoryCount: z.number().int().nonnegative().nullable(),
+  reason: z.string().nullable(),
 });
 
 export const updateProjectSchema = createProjectSchema
@@ -219,11 +293,14 @@ export const updateTaskSchema = createTaskSchema
 export const taskCommentSchema = z.object({
   id: z.string(),
   taskId: z.string(),
+  parentCommentId: z.string().nullable(),
   authorUserId: z.string().nullable(),
   authorEmail: z.string().nullable(),
-  /** Display name derived from email when no profile name is stored. */
+  /** Display name: user profile name when available, else email local-part. */
   authorName: z.string(),
   body: z.string(),
+  /** Set when a root comment thread is resolved. */
+  resolvedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -231,11 +308,19 @@ export const taskCommentSchema = z.object({
 
 export const createTaskCommentSchema = z.object({
   body: z.string().min(1).max(20_000),
+  parentCommentId: z.string().nullable().optional(),
+  /**
+   * Who should be attributed as the comment author.
+   * `agent` stores a null author user so the UI shows "Agent".
+   */
+  activityActor: z.enum(["user", "agent"]).optional(),
 });
 
 export const updateTaskCommentSchema = z
   .object({
-    body: z.string().min(1).max(20_000),
+    body: z.string().min(1).max(20_000).optional(),
+    /** Pass an ISO timestamp to resolve, or null to unresolve. Only for root comments. */
+    resolvedAt: z.string().datetime().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
@@ -807,6 +892,18 @@ export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type GithubRepository = z.infer<typeof githubRepositorySchema>;
 export type GithubBranch = z.infer<typeof githubBranchSchema>;
 export type GithubCommit = z.infer<typeof githubCommitSchema>;
+export type GithubPullRequest = z.infer<typeof githubPullRequestSchema>;
+export type GithubPullRequestFile = z.infer<typeof githubPullRequestFileSchema>;
+export type GithubPullRequestFileStatus = z.infer<
+  typeof githubPullRequestFileStatusSchema
+>;
+export type GithubPullRequestState = z.infer<
+  typeof githubPullRequestStateSchema
+>;
+export type GithubOrganization = z.infer<typeof githubOrganizationSchema>;
+export type GithubConnectionStatus = z.infer<
+  typeof githubConnectionStatusSchema
+>;
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 export type CreateTaskCommentInput = z.infer<typeof createTaskCommentSchema>;

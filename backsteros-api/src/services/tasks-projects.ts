@@ -158,7 +158,8 @@ export async function createProject(
   id = newId(),
   executor: DbExecutor = db,
 ) {
-  const existing = await getProjectByKey(workspaceId, input.key, executor);
+  const key = input.key.toUpperCase();
+  const existing = await getProjectByKey(workspaceId, key, executor);
   if (existing) {
     throw new Error("PROJECT_KEY_EXISTS");
   }
@@ -181,7 +182,7 @@ export async function createProject(
     .values({
       id,
       workspaceId,
-      key: input.key,
+      key,
       name: input.name,
       summary: input.summary ?? null,
       description: input.description ?? null,
@@ -194,6 +195,7 @@ export async function createProject(
       color: input.color ?? null,
       type,
       githubRepository: input.githubRepository ?? null,
+      localWorkingDirectory: input.localWorkingDirectory ?? null,
       status: input.status ?? "backlog",
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
@@ -214,8 +216,10 @@ export async function updateProject(
     return null;
   }
 
-  if (input.key && input.key !== existing.key) {
-    const conflict = await getProjectByKey(workspaceId, input.key, executor);
+  const key =
+    input.key !== undefined ? input.key.toUpperCase() : undefined;
+  if (key && key !== existing.key) {
+    const conflict = await getProjectByKey(workspaceId, key, executor);
     if (conflict) {
       throw new Error("PROJECT_KEY_EXISTS");
     }
@@ -238,7 +242,7 @@ export async function updateProject(
     throw new Error("GITHUB_REPO_REQUIRES_CODEBASE");
   }
 
-  // Dropping codebase type clears any linked repository.
+  // Droping codebase type clears any linked repository.
   const githubRepository =
     input.type !== undefined && input.type !== "codebase"
       ? null
@@ -247,7 +251,7 @@ export async function updateProject(
   const [row] = await executor
     .update(projects)
     .set({
-      key: input.key,
+      key,
       name: input.name,
       summary: input.summary,
       description: input.description,
@@ -266,6 +270,7 @@ export async function updateProject(
       color: input.color,
       type: input.type,
       githubRepository,
+      localWorkingDirectory: input.localWorkingDirectory,
       status: input.status,
       priority: input.priority,
       sortOrder: input.sortOrder,

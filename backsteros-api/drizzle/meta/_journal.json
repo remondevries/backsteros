@@ -113,6 +113,27 @@
       "when": 1785040000000,
       "tag": "0015_project_github_repository",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785120000000,
+      "tag": "0016_task_comment_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0017_task_comment_resolved",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785280000000,
+      "tag": "0018_project_local_working_directory",
+      "breakpoints": true
     }
   ]
 }

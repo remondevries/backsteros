@@ -18,6 +18,9 @@ import {
   errorSchema,
   githubBranchSchema,
   githubCommitSchema,
+  githubConnectionStatusSchema,
+  githubPullRequestFileSchema,
+  githubPullRequestSchema,
   githubRepositorySchema,
   healthSchema,
   projectSchema,
@@ -112,6 +115,17 @@ export const apiContract = c.router(
       },
       summary: "Soft-delete project",
     },
+    getGithubConnectionStatus: {
+      method: "GET",
+      path: "/api/v1/github/status",
+      responses: {
+        200: githubConnectionStatusSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary:
+        "GitHub OAuth connection status, scopes, and organizations for the signed-in Clerk user",
+    },
     listGithubRepositories: {
       method: "GET",
       path: "/api/v1/github/repositories",
@@ -120,7 +134,8 @@ export const apiContract = c.router(
         401: errorSchema,
         403: errorSchema,
       },
-      summary: "List GitHub repositories for the signed-in Clerk user",
+      summary:
+        "List GitHub repositories (personal + organization) for the signed-in Clerk user",
     },
     listProjectGithubBranches: {
       method: "GET",
@@ -161,6 +176,120 @@ export const apiContract = c.router(
         404: errorSchema,
       },
       summary: "List commits for a branch on the project's linked GitHub repository",
+    },
+    getProjectGithubCommit: {
+      method: "GET",
+      path: "/api/v1/projects/:id/github/commits/:sha",
+      pathParams: z.object({
+        id: z.string(),
+        sha: z.string().min(1),
+      }),
+      responses: {
+        200: z.object({
+          repository: z.string(),
+          commit: githubCommitSchema,
+          files: z.array(githubPullRequestFileSchema),
+        }),
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Get a single commit including changed files and patches for the project's linked repository",
+    },
+    listProjectGithubPullRequests: {
+      method: "GET",
+      path: "/api/v1/projects/:id/github/pulls",
+      pathParams: z.object({ id: z.string() }),
+      query: z.object({
+        page: z.coerce.number().int().positive().optional(),
+      }),
+      responses: {
+        200: z.object({
+          repository: z.string(),
+          page: z.number().int().positive(),
+          hasMore: z.boolean(),
+          pullRequests: z.array(githubPullRequestSchema),
+        }),
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "List open and closed pull requests for the project's linked GitHub repository",
+    },
+    getProjectGithubPullRequest: {
+      method: "GET",
+      path: "/api/v1/projects/:id/github/pulls/:number",
+      pathParams: z.object({
+        id: z.string(),
+        number: z.coerce.number().int().positive(),
+      }),
+      responses: {
+        200: z.object({
+          repository: z.string(),
+          pullRequest: githubPullRequestSchema,
+        }),
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Get a single pull request (including description and change stats)",
+    },
+    listProjectGithubPullRequestCommits: {
+      method: "GET",
+      path: "/api/v1/projects/:id/github/pulls/:number/commits",
+      pathParams: z.object({
+        id: z.string(),
+        number: z.coerce.number().int().positive(),
+      }),
+      query: z.object({
+        page: z.coerce.number().int().positive().optional(),
+      }),
+      responses: {
+        200: z.object({
+          repository: z.string(),
+          number: z.number().int().positive(),
+          page: z.number().int().positive(),
+          hasMore: z.boolean(),
+          commits: z.array(githubCommitSchema),
+        }),
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "List commits on a pull request for the project's linked repository",
+    },
+    listProjectGithubPullRequestFiles: {
+      method: "GET",
+      path: "/api/v1/projects/:id/github/pulls/:number/files",
+      pathParams: z.object({
+        id: z.string(),
+        number: z.coerce.number().int().positive(),
+      }),
+      query: z.object({
+        page: z.coerce.number().int().positive().optional(),
+      }),
+      responses: {
+        200: z.object({
+          repository: z.string(),
+          number: z.number().int().positive(),
+          page: z.number().int().positive(),
+          hasMore: z.boolean(),
+          files: z.array(githubPullRequestFileSchema),
+        }),
+        400: errorSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "List changed files (with patches) on a pull request for the project's linked repository",
     },
     listTasks: {
       method: "GET",

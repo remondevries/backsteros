@@ -285,6 +285,45 @@ export function registerApiRoutes(app: Hono) {
     return c.body(null, 204);
   });
 
+  app.get("/api/v1/github/status", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const status = await githubService.getGithubConnectionStatus(token);
+      return c.json(status);
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        if (
+          error.code === "github_oauth_missing" ||
+          error.code === "github_oauth_unavailable"
+        ) {
+          return c.json(githubService.disconnectedGithubStatus(error.message));
+        }
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/github/repositories", async (c) => {
     const auth = getAuth(c);
     if (!auth) {
@@ -476,6 +515,424 @@ export function registerApiRoutes(app: Hono) {
     }
   });
 
+  app.get("/api/v1/projects/:id/github/commits/:sha", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const sha = c.req.param("sha")?.trim();
+    if (!sha) {
+      return c.json(
+        { error: "Invalid commit sha", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const result = await githubService.getRepositoryCommit(
+        token,
+        owner,
+        repo,
+        sha,
+      );
+      return c.json({
+        repository: project.githubRepository,
+        commit: result.commit,
+        files: result.files,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/pulls", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Number(pageRaw) : 1;
+    if (!Number.isInteger(page) || page < 1) {
+      return c.json(
+        { error: "Invalid page", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const result = await githubService.listRepositoryPullRequests(
+        token,
+        owner,
+        repo,
+        { page },
+      );
+      return c.json({
+        repository: project.githubRepository,
+        page: result.page,
+        hasMore: result.hasMore,
+        pullRequests: result.pullRequests,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/pulls/:number", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const number = Number(c.req.param("number"));
+    if (!Number.isInteger(number) || number < 1) {
+      return c.json(
+        { error: "Invalid pull request number", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const pullRequest = await githubService.getRepositoryPullRequest(
+        token,
+        owner,
+        repo,
+        number,
+      );
+      return c.json({
+        repository: project.githubRepository,
+        pullRequest,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/pulls/:number/commits", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const number = Number(c.req.param("number"));
+    if (!Number.isInteger(number) || number < 1) {
+      return c.json(
+        { error: "Invalid pull request number", code: "bad_request" },
+        400,
+      );
+    }
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Number(pageRaw) : 1;
+    if (!Number.isInteger(page) || page < 1) {
+      return c.json(
+        { error: "Invalid page", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const result = await githubService.listRepositoryPullRequestCommits(
+        token,
+        owner,
+        repo,
+        number,
+        { page },
+      );
+      return c.json({
+        repository: project.githubRepository,
+        number,
+        page: result.page,
+        hasMore: result.hasMore,
+        commits: result.commits,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/v1/projects/:id/github/pulls/:number/files", async (c) => {
+    const auth = getAuth(c);
+    if (!auth) {
+      return c.json(unauthorized(), 401);
+    }
+    if (auth.kind !== "clerk" || !auth.clerkUserId) {
+      return c.json(
+        {
+          error: "GitHub integration requires signing in with Clerk",
+          code: "clerk_required",
+        },
+        403,
+      );
+    }
+    if (!requireScope("projects:read")(auth)) {
+      return c.json(forbidden(), 403);
+    }
+
+    const number = Number(c.req.param("number"));
+    if (!Number.isInteger(number) || number < 1) {
+      return c.json(
+        { error: "Invalid pull request number", code: "bad_request" },
+        400,
+      );
+    }
+    const pageRaw = c.req.query("page");
+    const page = pageRaw ? Number(pageRaw) : 1;
+    if (!Number.isInteger(page) || page < 1) {
+      return c.json(
+        { error: "Invalid page", code: "bad_request" },
+        400,
+      );
+    }
+
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+    if (project.type !== "codebase") {
+      return c.json(
+        {
+          error: "GitHub is only available for codebase projects",
+          code: "github_requires_codebase",
+        },
+        400,
+      );
+    }
+    if (!project.githubRepository) {
+      return c.json(
+        {
+          error: "No GitHub repository linked to this project",
+          code: "github_repository_missing",
+        },
+        400,
+      );
+    }
+
+    try {
+      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const { owner, repo } = githubService.parseGithubRepositoryFullName(
+        project.githubRepository,
+      );
+      const result = await githubService.listRepositoryPullRequestFiles(
+        token,
+        owner,
+        repo,
+        number,
+        { page },
+      );
+      return c.json({
+        repository: project.githubRepository,
+        number,
+        page: result.page,
+        hasMore: result.hasMore,
+        files: result.files,
+      });
+    } catch (error) {
+      if (error instanceof githubService.GithubServiceError) {
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status,
+        );
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/v1/tasks", async (c) => {
     const auth = getAuth(c);
     if (!requireScope("tasks:read")(auth)) {
@@ -593,11 +1050,16 @@ export function registerApiRoutes(app: Hono) {
       if (!requireScope("tasks:write")(auth)) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
+      const body = c.req.valid("json");
+      const isAgent = body.activityActor === "agent";
       const row = await taskCommentService.createTaskComment(
         auth.workspaceId,
         c.req.param("id"),
-        c.req.valid("json"),
-        { userId: auth.userId },
+        body,
+        {
+          userId: isAgent ? null : auth.userId,
+          kind: isAgent ? "agent" : "user",
+        },
       );
       if (!row) return c.json(notFound("Task"), 404);
       return c.json(toTaskComment(row), 201);

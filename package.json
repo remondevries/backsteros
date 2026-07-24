@@ -10,6 +10,7 @@
     "dev:app": "pnpm --filter @backsteros/app dev",
     "dev:admin": "pnpm --filter @backsteros/admin dev",
     "dev:desktop": "pnpm --filter @backsteros/desktop tauri:dev",
+    "dev:development": "pnpm --filter @backsteros/development dev",
     "dev:mobile": "pnpm --filter @backsteros/mobile start",
     "build": "pnpm -r build",
     "build:admin": "pnpm --filter @backsteros/admin build",

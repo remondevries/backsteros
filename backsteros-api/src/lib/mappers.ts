@@ -18,7 +18,7 @@ import type {
 } from "../db/schema.js";
 import {
   activityActorName,
-  authorDisplayName,
+  type TaskCommentListRow,
 } from "../services/task-comments.js";
 import type { TaskActivityListRow } from "../services/task-activities.js";
 
@@ -45,6 +45,7 @@ export function toProject(row: DbProject): Project {
     color: row.color,
     type: row.type as Project["type"],
     githubRepository: row.githubRepository ?? null,
+    localWorkingDirectory: row.localWorkingDirectory ?? null,
     status: row.status as Project["status"],
     priority: row.priority,
     sortOrder: row.sortOrder,
@@ -76,14 +77,26 @@ export function toTask(row: DbTask): Task {
   };
 }
 
-export function toTaskComment(row: DbTaskComment): TaskComment {
+export function toTaskComment(
+  row: DbTaskComment | TaskCommentListRow,
+): TaskComment {
+  const listRow = row as TaskCommentListRow;
+  const isAgent = row.authorUserId == null;
   return {
     id: row.id,
     taskId: row.taskId,
+    parentCommentId: row.parentCommentId ?? null,
     authorUserId: row.authorUserId,
     authorEmail: row.authorEmail,
-    authorName: authorDisplayName(row.authorEmail),
+    authorName: isAgent
+      ? "Agent"
+      : activityActorName({
+          actorUserId: row.authorUserId,
+          actorEmail: row.authorEmail ?? listRow.userEmail ?? null,
+          userDisplayName: listRow.userDisplayName ?? null,
+        }),
     body: row.body,
+    resolvedAt: toIso(row.resolvedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: toIso(row.deletedAt),
