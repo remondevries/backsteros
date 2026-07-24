@@ -1,5 +1,6 @@
 "use client";
 
+import { CodeIcon, ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -17,6 +18,12 @@ import {
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
 } from "../project-status.js";
+import {
+  getProjectTypeLabel,
+  migrateLegacyProjectType,
+  PROJECT_TYPE_ORDER,
+  type ProjectType,
+} from "../project-type.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
@@ -55,6 +62,7 @@ export type ProjectDetailViewProject = {
   status: string;
   priority: number;
   area: ProjectArea | null;
+  type?: string | null;
   icon?: string | null;
   organizationId?: string | null;
   summary?: string | null;
@@ -82,6 +90,7 @@ export type ProjectDetailViewProps = {
   onSaveDescription?: (description: string) => void | Promise<void>;
   onStatusChange?: (status: ProjectStatus) => void;
   onPriorityChange?: (priority: number) => void;
+  onTypeChange?: (type: ProjectType) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
   onStartDateChange?: (startDate: Date | null) => void;
@@ -112,6 +121,7 @@ export function ProjectDetailView({
   onSaveDescription,
   onStatusChange,
   onPriorityChange,
+  onTypeChange,
   onAreaChange,
   onOrganizationChange,
   onStartDateChange,
@@ -169,6 +179,7 @@ export function ProjectDetailView({
   );
 
   const status = migrateLegacyProjectStatus(project.status);
+  const projectType = migrateLegacyProjectType(project.type);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
   const start = toDate(project.startDate);
   const due = toDate(project.dueDate);
@@ -214,6 +225,22 @@ export function ProjectDetailView({
         value: String(value),
         label: getTaskPriorityLabel(value),
         icon: <TaskPriorityIcon priority={value} size={14} />,
+      })),
+    [],
+  );
+
+  const typeOptions = useMemo(
+    () =>
+      PROJECT_TYPE_ORDER.map((value) => ({
+        value,
+        label: getProjectTypeLabel(value),
+        searchTerms: `${value} ${getProjectTypeLabel(value)}`,
+        icon:
+          value === "codebase" ? (
+            <CodeIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          ),
       })),
     [],
   );
@@ -369,6 +396,22 @@ export function ProjectDetailView({
                       <TaskPriorityIcon priority={project.priority} size={14} />
                     }
                     fallbackLabel={getTaskPriorityLabel(project.priority)}
+                  />
+                  <PropertyDropdown
+                    value={projectType}
+                    options={typeOptions}
+                    onChange={(next) => onTypeChange?.(next as ProjectType)}
+                    searchPlaceholder="Change type…"
+                    searchShortcutLabel="Y"
+                    ariaLabel="Type"
+                    fallbackIcon={
+                      projectType === "codebase" ? (
+                        <CodeIcon size={14} />
+                      ) : (
+                        <ProjectIcon size={14} />
+                      )
+                    }
+                    fallbackLabel={getProjectTypeLabel(projectType)}
                   />
                   {organizationOptions.length > 0 || onOrganizationChange ? (
                     <PropertyDropdownNavigateRow

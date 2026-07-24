@@ -14,6 +14,7 @@ import {
   applyOptimisticTaskReorder,
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
+  formatTaskDisplayId,
   getListBoardViewForShortcutKey,
   hasListBoardViewShortcutModifiers,
   isBlockingModalOpen,
@@ -116,6 +117,8 @@ export function TaskSidebar({
   agentStatusHandlersRef,
   onAttachAgentSession,
   onEndAgentSession,
+  showChromeHeader = true,
+  showListHeader = true,
 }: {
   project: ApiProject | null;
   projectsById: Map<string, ApiProject>;
@@ -130,8 +133,17 @@ export function TaskSidebar({
   terminalCollapsed?: boolean;
   onToggleTerminal?: () => void;
   onSelectedTaskChange?: (
-    task: { id: string; title: string } | null,
+    task: {
+      id: string;
+      title: string;
+      projectId?: string | null;
+      displayId?: string | null;
+    } | null,
   ) => void;
+  /** When false, host chrome owns the side pane header (stable breadcrumb). */
+  showChromeHeader?: boolean;
+  /** When false, omit the tasks list pane header. */
+  showListHeader?: boolean;
   /** Task ids whose agent session is currently working. */
   workingTaskIds?: readonly string[];
   /** Task ids whose terminal currently has the Cursor Agent TUI open. */
@@ -239,11 +251,19 @@ export function TaskSidebar({
       return;
     }
     if (!selectedRawTask) return;
+    const taskProject = selectedRawTask.projectId
+      ? (projectsById.get(selectedRawTask.projectId) ?? null)
+      : project;
     onSelectedTaskChange({
       id: selectedRawTask.id,
       title: selectedRawTask.title,
+      projectId: selectedRawTask.projectId,
+      displayId:
+        taskProject?.key && selectedRawTask.number
+          ? formatTaskDisplayId(taskProject.key, selectedRawTask.number)
+          : null,
     });
-  }, [onSelectedTaskChange, selectedRawTask, selectedTaskId]);
+  }, [onSelectedTaskChange, project, projectsById, selectedRawTask, selectedTaskId]);
 
   const detailOpen = Boolean(selectedDetailTask);
   const showingTasksList =
@@ -661,11 +681,13 @@ export function TaskSidebar({
 
   const listPane = (
     <aside className="console-pane console-pane--tasks-main">
-      <div className="console-pane-header">
-        <div className="console-pane-header-title">
-          <span>Tasks</span>
+      {showListHeader ? (
+        <div className="console-pane-header">
+          <div className="console-pane-header-title">
+            <span>Tasks</span>
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="console-pane-body">
         {!project ? (
           <div className="console-empty">Select a project to load tasks.</div>
@@ -760,44 +782,46 @@ export function TaskSidebar({
 
   const sidePane = (
     <aside className="console-pane">
-      <div className="console-pane-header">
-        <div className="console-pane-header-title">
-          {showBack ? (
-            <button
-              type="button"
-              className="console-icon-btn"
-              onClick={closeOverlay}
-              title="Back to project"
-              aria-label="Back to project"
-            >
-              <ChevronLeftIcon />
-            </button>
-          ) : null}
-          <span>{headerTitle}</span>
+      {showChromeHeader ? (
+        <div className="console-pane-header">
+          <div className="console-pane-header-title">
+            {showBack ? (
+              <button
+                type="button"
+                className="console-icon-btn"
+                onClick={closeOverlay}
+                title="Back to project"
+                aria-label="Back to project"
+              >
+                <ChevronLeftIcon />
+              </button>
+            ) : null}
+            <span>{headerTitle}</span>
+          </div>
+          <div className="console-pane-header-actions">
+            {onToggleTerminal && workspaceStage === "task" ? (
+              <button
+                type="button"
+                className="console-icon-btn"
+                onClick={onToggleTerminal}
+                title={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal — expand task"
+                }
+                aria-label={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal and expand task"
+                }
+                aria-pressed={terminalCollapsed}
+              >
+                <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="console-pane-header-actions">
-          {onToggleTerminal && workspaceStage === "task" ? (
-            <button
-              type="button"
-              className="console-icon-btn"
-              onClick={onToggleTerminal}
-              title={
-                terminalCollapsed
-                  ? "Show terminal"
-                  : "Hide terminal — expand task"
-              }
-              aria-label={
-                terminalCollapsed
-                  ? "Show terminal"
-                  : "Hide terminal and expand task"
-              }
-              aria-pressed={terminalCollapsed}
-            >
-              <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
-            </button>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
       <div className="console-pane-body">
         {project &&
         selectedTaskId &&

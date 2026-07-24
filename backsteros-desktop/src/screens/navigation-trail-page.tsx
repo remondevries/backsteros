@@ -545,6 +545,7 @@ function TrailProjectLeaf({
         status: project.status ?? "planned",
         priority: project.priority ?? 0,
         area: project.area ?? null,
+        type: project.type ?? "general",
         icon: project.icon ?? null,
         organizationId: project.organizationId ?? null,
         startDate: project.startDate ?? null,
@@ -591,6 +592,9 @@ function TrailProjectLeaf({
       }}
       onPriorityChange={(priority) => {
         void workspace.patchProject(project.id, { priority });
+      }}
+      onTypeChange={(type) => {
+        void workspace.patchProject(project.id, { type });
       }}
       organizationOptions={buildOrganizationDropdownOptions(
         workspace.organizations,

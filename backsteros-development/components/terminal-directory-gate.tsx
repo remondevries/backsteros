@@ -13,8 +13,10 @@ import { apiErrorMessage } from "@/lib/api-context";
  */
 export function TerminalDirectoryGate({
   onSelectDirectory,
+  showHeader = true,
 }: {
   onSelectDirectory: (directory: string) => void | Promise<void>;
+  showHeader?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,11 +24,13 @@ export function TerminalDirectoryGate({
 
   return (
     <section className="console-pane console-pane--terminal">
-      <div className="console-pane-header console-pane-header--terminal">
-        <div className="console-pane-header-title">
-          <span>Terminal</span>
+      {showHeader ? (
+        <div className="console-pane-header console-pane-header--terminal">
+          <div className="console-pane-header-title">
+            <span>Terminal</span>
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="terminal-frame">
         <div className="terminal-stage terminal-directory-gate">
           <p className="terminal-directory-gate__copy">

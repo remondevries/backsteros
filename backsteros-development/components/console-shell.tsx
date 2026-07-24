@@ -22,6 +22,7 @@ import {
   useListKeyboardNavigationZone,
   useSettingsShortcut,
   useTaskPropertyDropdownShortcuts,
+  ProjectOcticon,
   type ComposeModalCreateTaskInput,
   type ComposeModalProject,
   type InboxListItemLinkComponent,
@@ -40,6 +41,8 @@ import {
 
 import { AppTabsProvider } from "@/components/app-tabs-provider";
 import { CommitDetailPane } from "@/components/commit-detail-pane";
+import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
+import { ConsoleRunApplicationButton } from "@/components/console-run-application-button";
 import { PullRequestDetailPane } from "@/components/pull-request-detail-pane";
 import { ConsoleAppTabs } from "@/components/console-app-tabs";
 import {
@@ -54,6 +57,7 @@ import { StatusBarAgents } from "@/components/status-bar-agents";
 import { StatusBarMetrics } from "@/components/status-bar-metrics";
 import { TaskSidebar } from "@/components/task-sidebar";
 import { TerminalWorkspace } from "@/components/terminal-workspace";
+import { ProjectsSidePanelIcon } from "@/components/panel-icons";
 import {
   CONSOLE_LIST_PANEL_MAX_WIDTH,
   CONSOLE_LIST_PANEL_MIN_WIDTH,
@@ -209,6 +213,11 @@ function stubPullRequest(number: number, repository: string): GithubPullRequest 
     additions: null,
     deletions: null,
   };
+}
+
+function githubCommitSubject(message: string): string {
+  const line = message.split("\n")[0]?.trim() ?? "";
+  return line || "(no message)";
 }
 
 function stubCommit(sha: string, repository: string): GithubCommit {
@@ -405,6 +414,7 @@ export function ConsoleShell() {
     id: string;
     title: string;
     projectId?: string | null;
+    displayId?: string | null;
   } | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<{
     commit: GithubCommit;
@@ -425,6 +435,12 @@ export function ConsoleShell() {
   const [terminalCollapsed, setTerminalCollapsed] = useState(() => false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
+  const [applicationFullscreen, setApplicationFullscreen] = useState(false);
+  const applicationFullscreenRestoreRef = useRef<{
+    projectsCollapsed: boolean;
+    tasksCollapsed: boolean;
+    terminalCollapsed: boolean;
+  } | null>(null);
   /** Keep TerminalWorkspace mounted after first task focus so parked PTYs live. */
   const [terminalEverOpened, setTerminalEverOpened] = useState(
     () => Boolean(route.taskId),
@@ -508,6 +524,58 @@ export function ConsoleShell() {
       return next;
     });
   }, []);
+
+  const enterApplicationFullscreen = useCallback(() => {
+    setApplicationFullscreen((current) => {
+      if (current) return true;
+      applicationFullscreenRestoreRef.current = {
+        projectsCollapsed,
+        tasksCollapsed,
+        terminalCollapsed,
+      };
+      setProjectsCollapsed(true);
+      writeFlag(PROJECTS_COLLAPSED_KEY, true);
+      setTasksCollapsed(true);
+      writeFlag(TASKS_COLLAPSED_KEY, true);
+      setTerminalCollapsed(false);
+      writeFlag(TERMINAL_COLLAPSED_KEY, false);
+      return true;
+    });
+  }, [projectsCollapsed, tasksCollapsed, terminalCollapsed]);
+
+  const exitApplicationFullscreen = useCallback(() => {
+    setApplicationFullscreen((current) => {
+      if (!current) return false;
+      const restore = applicationFullscreenRestoreRef.current;
+      applicationFullscreenRestoreRef.current = null;
+      if (restore) {
+        setProjectsCollapsed(restore.projectsCollapsed);
+        writeFlag(PROJECTS_COLLAPSED_KEY, restore.projectsCollapsed);
+        setTasksCollapsed(restore.tasksCollapsed);
+        writeFlag(TASKS_COLLAPSED_KEY, restore.tasksCollapsed);
+        setTerminalCollapsed(restore.terminalCollapsed);
+        writeFlag(TERMINAL_COLLAPSED_KEY, restore.terminalCollapsed);
+      } else {
+        setProjectsCollapsed(false);
+        writeFlag(PROJECTS_COLLAPSED_KEY, false);
+        setTasksCollapsed(false);
+        writeFlag(TASKS_COLLAPSED_KEY, false);
+      }
+      return false;
+    });
+  }, []);
+
+  const toggleApplicationFullscreen = useCallback(() => {
+    if (applicationFullscreen) {
+      exitApplicationFullscreen();
+    } else {
+      enterApplicationFullscreen();
+    }
+  }, [
+    applicationFullscreen,
+    enterApplicationFullscreen,
+    exitApplicationFullscreen,
+  ]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -856,11 +924,19 @@ export function ConsoleShell() {
 
   const onProjectUpdated = useCallback(
     (updated: ApiProject) => {
-      setProjects((current) =>
-        (current ?? []).map((entry) =>
+      setProjects((current) => {
+        const rows = current ?? [];
+        if (updated.type !== "codebase") {
+          return rows.filter((entry) => entry.id !== updated.id);
+        }
+        const index = rows.findIndex((entry) => entry.id === updated.id);
+        if (index === -1) {
+          return [...rows, updated];
+        }
+        return rows.map((entry) =>
           entry.id === updated.id ? updated : entry,
-        ),
-      );
+        );
+      });
     },
     [setProjects],
   );
@@ -879,6 +955,45 @@ export function ConsoleShell() {
       return updated;
     },
     [client, onProjectUpdated],
+  );
+
+  const patchSelectedProject = useCallback(
+    async (patch: Record<string, unknown>) => {
+      if (!selectedProjectId) {
+        throw new Error("No project selected");
+      }
+      const updated = await client.requestJson<ApiProject>(
+        `/api/v1/projects/${encodeURIComponent(selectedProjectId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+      onProjectUpdated(updated);
+      return updated;
+    },
+    [client, onProjectUpdated, selectedProjectId],
+  );
+
+  const saveSelectedProjectName = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) {
+        return { ok: false as const, error: "Project name is required." };
+      }
+      try {
+        await patchSelectedProject({ name: trimmed });
+        return { ok: true as const };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error ? error.message : "Failed to save name.",
+        };
+      }
+    },
+    [patchSelectedProject],
   );
 
   const selectProject = useCallback((projectId: string) => {
@@ -1514,6 +1629,23 @@ export function ConsoleShell() {
         .filter(Boolean)
         .join(" ");
 
+  const chromeSegment = selectedCommit
+    ? githubCommitSubject(selectedCommit.commit.message)
+    : selectedPullRequest
+      ? selectedPullRequest.pullRequest.title
+      : sideDetailOpen &&
+          selectedTaskMeta &&
+          selectedTaskMeta.id === selectedTaskId
+        ? (selectedTaskMeta.displayId ?? null)
+        : null;
+
+  const chromeHasDetail = Boolean(chromeSegment);
+  const chromeGithubUrl = selectedCommit
+    ? selectedCommit.commit.htmlUrl
+    : selectedPullRequest
+      ? selectedPullRequest.pullRequest.htmlUrl
+      : null;
+
   return (
     <CommandPaletteProvider>
       <ConsoleSettingsShortcut
@@ -1736,6 +1868,113 @@ export function ConsoleShell() {
                     </AttentionInboxProvider>
                   ) : (
                     <>
+                      {selectedProject ? (
+                        <ConsoleProjectBreadcrumbHeader
+                          className="console-content-chrome"
+                          projectId={selectedProject.id}
+                          projectIcon={selectedProject.icon}
+                          projectName={selectedProject.name}
+                          segment={chromeSegment}
+                          leading={
+                            selectedCommit || selectedPullRequest ? (
+                              <button
+                                type="button"
+                                className="console-commit-detail-back"
+                                aria-label={
+                                  selectedCommit && selectedPullRequest
+                                    ? "Back to pull request"
+                                    : "Back to project"
+                                }
+                                onClick={() => {
+                                  if (selectedCommit) {
+                                    if (selectedPullRequest) {
+                                      navigateToParentPull();
+                                    } else {
+                                      clearSelectedCommit();
+                                    }
+                                    return;
+                                  }
+                                  clearSelectedPullRequest();
+                                }}
+                              >
+                                <ProjectOcticon icon="chevron-left" size={14} />
+                              </button>
+                            ) : null
+                          }
+                          onNavigateToProject={
+                            chromeHasDetail
+                              ? () => {
+                                  if (selectedCommit || selectedPullRequest) {
+                                    clearSelectedCommit();
+                                    clearSelectedPullRequest();
+                                    return;
+                                  }
+                                  selectTaskId(null);
+                                }
+                              : undefined
+                          }
+                          onSaveProjectName={
+                            chromeHasDetail
+                              ? undefined
+                              : saveSelectedProjectName
+                          }
+                          onIconChange={(icon) => {
+                            void patchSelectedProject({ icon });
+                          }}
+                          actions={
+                            <>
+                              {chromeGithubUrl ? (
+                                <a
+                                  className="console-commit-detail-open-github"
+                                  href={chromeGithubUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open on GitHub
+                                </a>
+                              ) : null}
+                              <ConsoleRunApplicationButton
+                                projectId={selectedProject.id}
+                                cwd={normalizeWorkingDirectory(
+                                  selectedProject.localWorkingDirectory,
+                                )}
+                                applicationFullscreen={applicationFullscreen}
+                                onToggleFullscreen={toggleApplicationFullscreen}
+                                onEnterFullscreen={enterApplicationFullscreen}
+                              />
+                              <button
+                                type="button"
+                                className="console-icon-btn"
+                                onClick={toggleTerminalCollapsed}
+                                title={
+                                  terminalCollapsed
+                                    ? sideDetailOpen
+                                      ? "Show terminal"
+                                      : "Show tasks panel"
+                                    : sideDetailOpen
+                                      ? "Hide terminal — expand task"
+                                      : "Hide tasks panel — expand overview"
+                                }
+                                aria-label={
+                                  terminalCollapsed
+                                    ? sideDetailOpen
+                                      ? "Show terminal"
+                                      : "Show tasks panel"
+                                    : sideDetailOpen
+                                      ? "Hide terminal and expand task"
+                                      : "Hide tasks panel and expand overview"
+                                }
+                                aria-pressed={terminalCollapsed}
+                              >
+                                <ProjectsSidePanelIcon
+                                  collapsed={terminalCollapsed}
+                                />
+                              </button>
+                            </>
+                          }
+                        />
+                      ) : null}
+                      <div className="console-content-columns">
                   {listPresence.mounted && !tasksCollapsed ? (
                     <div
                       className={`console-content-list${
@@ -1743,43 +1982,44 @@ export function ConsoleShell() {
                       }${terminalCollapsed ? " is-expanded" : ""}`}
                     >
                       {selectedProject ? (
-                        <div className="console-side-layers">
-                          <div
-                            className={`console-side-layer console-side-layer--overview${
-                              overviewPresence.shown ? " is-shown" : ""
-                            }`}
-                            aria-hidden={!overviewPresence.shown}
-                          >
-                            {overviewPresence.mounted ? (
-                              <div className="console-pane console-pane--overview">
-                                <ProjectOverviewPane
-                                  project={selectedProject}
-                                  projects={projectList}
-                                  onProjectUpdated={onProjectUpdated}
-                                  githubListTab={githubListTab}
-                                  onGithubListTabChange={selectGithubListTab}
-                                  selectedCommitSha={
-                                    selectedCommit?.commit.sha ?? null
-                                  }
-                                  onSelectCommit={selectCommit}
-                                  selectedPullNumber={
-                                    selectedPullRequest?.pullRequest.number ??
-                                    null
-                                  }
-                                  onSelectPullRequest={selectPullRequest}
-                                  tasksPanelCollapsed={terminalCollapsed}
-                                  onToggleTasksPanel={toggleTerminalCollapsed}
-                                />
-                              </div>
-                            ) : null}
+                        <div className="console-side-stack">
+                          <div className="console-side-bodies">
+                            <div
+                              className={`console-side-layer console-side-layer--overview${
+                                overviewPresence.shown ? " is-shown" : ""
+                              }`}
+                              aria-hidden={!overviewPresence.shown}
+                            >
+                              {overviewPresence.mounted ? (
+                                <div className="console-pane console-pane--overview">
+                                  <ProjectOverviewPane
+                                    project={selectedProject}
+                                    projects={projectList}
+                                    onProjectUpdated={onProjectUpdated}
+                                    githubListTab={githubListTab}
+                                    onGithubListTabChange={selectGithubListTab}
+                                    selectedCommitSha={
+                                      selectedCommit?.commit.sha ?? null
+                                    }
+                                    onSelectCommit={selectCommit}
+                                    selectedPullNumber={
+                                      selectedPullRequest?.pullRequest
+                                        .number ?? null
+                                    }
+                                    onSelectPullRequest={selectPullRequest}
+                                    showHeader={false}
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                            <div
+                              className={`console-side-layer console-side-layer--detail${
+                                sideDetailPresence.shown ? " is-shown" : ""
+                              }`}
+                              aria-hidden={!sideDetailPresence.shown}
+                              ref={setSideSlotEl}
+                            />
                           </div>
-                          <div
-                            className={`console-side-layer console-side-layer--detail${
-                              sideDetailPresence.shown ? " is-shown" : ""
-                            }`}
-                            aria-hidden={!sideDetailPresence.shown}
-                            ref={setSideSlotEl}
-                          />
                         </div>
                       ) : null}
                       {listResizeEnabled ? (
@@ -1821,12 +2061,19 @@ export function ConsoleShell() {
                             >
                               <CommitDetailPane
                                 projectId={selectedProject.id}
+                                projectIcon={selectedProject.icon}
+                                projectName={selectedProject.name}
                                 commit={selectedCommit.commit}
                                 repository={selectedCommit.repository}
                                 parentPullRequest={
                                   selectedPullRequest?.pullRequest ?? null
                                 }
+                                showChromeHeader={false}
                                 onClose={clearSelectedCommit}
+                                onNavigateToProject={() => {
+                                  clearSelectedCommit();
+                                  clearSelectedPullRequest();
+                                }}
                                 onNavigateToPull={navigateToParentPull}
                               />
                             </div>
@@ -1840,11 +2087,15 @@ export function ConsoleShell() {
                             >
                               <PullRequestDetailPane
                                 projectId={selectedProject.id}
+                                projectIcon={selectedProject.icon}
+                                projectName={selectedProject.name}
                                 pullRequest={selectedPullRequest.pullRequest}
                                 repository={selectedPullRequest.repository}
                                 tab={pullDetailTab}
                                 onTabChange={selectPullDetailTab}
+                                showChromeHeader={false}
                                 onClose={clearSelectedPullRequest}
+                                onNavigateToProject={clearSelectedPullRequest}
                                 onSelectCommit={(commit, repository) => {
                                   selectCommit(commit, repository, {
                                     fromPullRequest:
@@ -1898,6 +2149,7 @@ export function ConsoleShell() {
                                     handleAgentOpenTaskIdsChange
                                   }
                                   cwd={workspaceCwd}
+                                  showHeader={false}
                                   collapsed={
                                     terminalCollapsed || !terminalTaskId
                                   }
@@ -1909,6 +2161,7 @@ export function ConsoleShell() {
                                 />
                               ) : (
                                 <TerminalDirectoryGate
+                                  showHeader={false}
                                   onSelectDirectory={async (directory) => {
                                     await saveProjectWorkingDirectory(
                                       selectedProject.id,
@@ -1923,6 +2176,7 @@ export function ConsoleShell() {
                       ) : null}
                     </div>
                   ) : null}
+                      </div>
                     </>
                   )}
                 </div>
@@ -1937,6 +2191,8 @@ export function ConsoleShell() {
                     mainTarget={mainSlotEl}
                     terminalCollapsed={terminalCollapsed}
                     onToggleTerminal={toggleTerminalCollapsed}
+                    showChromeHeader={false}
+                    showListHeader={false}
                     onSelectedTaskChange={setSelectedTaskMeta}
                     workingTaskIds={workingTaskIds}
                     agentOpenTaskIds={agentOpenTaskIds}

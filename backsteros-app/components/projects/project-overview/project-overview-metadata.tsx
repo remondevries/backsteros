@@ -10,6 +10,7 @@ import { ProjectDueDateDropdown } from "@/components/projects/project-due-date-d
 import { ProjectPriorityDropdown } from "@/components/projects/project-priority-dropdown";
 import { ProjectProgressRing } from "@/components/projects/project-progress-ring";
 import { ProjectStartDateDropdown } from "@/components/projects/project-start-date-dropdown";
+import { ProjectTypeDropdown } from "@/components/projects/project-type-dropdown";
 import { formatProjectTaskProgressPercent } from "@/lib/project-task-progress";
 
 import { ProjectOverviewKeyEditor } from "./project-overview-key-editor";
@@ -26,6 +27,7 @@ type ProjectOverviewMetadataProject = Pick<
   | "startDate"
   | "dueDate"
   | "area"
+  | "type"
 >;
 
 type ProjectOverviewMetadataProps = {
@@ -93,6 +95,7 @@ export function ProjectOverviewMetadata({
           projectId={project.id}
           priority={project.priority}
         />
+        <ProjectTypeDropdown projectId={project.id} type={project.type} />
         <ProjectOrganizationDropdown
           projectId={project.id}
           organizationId={project.organizationId}

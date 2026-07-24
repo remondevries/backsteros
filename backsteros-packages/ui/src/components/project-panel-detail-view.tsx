@@ -1,5 +1,6 @@
 "use client";
 
+import { CodeIcon, ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -17,6 +18,12 @@ import {
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
 } from "../project-status.js";
+import {
+  getProjectTypeLabel,
+  migrateLegacyProjectType,
+  PROJECT_TYPE_ORDER,
+  type ProjectType,
+} from "../project-type.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
@@ -68,6 +75,7 @@ export type ProjectPanelDetailViewProps = {
   onSaveDescription?: (description: string) => void | Promise<void>;
   onStatusChange?: (status: ProjectStatus) => void;
   onPriorityChange?: (priority: number) => void;
+  onTypeChange?: (type: ProjectType) => void;
   onAreaChange?: (area: ProjectArea | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
   onStartDateChange?: (startDate: Date | null) => void;
@@ -165,6 +173,7 @@ export function ProjectPanelDetailView({
   onSaveDescription,
   onStatusChange,
   onPriorityChange,
+  onTypeChange,
   onAreaChange,
   onOrganizationChange,
   onStartDateChange,
@@ -241,6 +250,7 @@ export function ProjectPanelDetailView({
   );
 
   const status = migrateLegacyProjectStatus(project.status);
+  const projectType = migrateLegacyProjectType(project.type);
   const progress = project.taskProgress ?? { total: 0, completed: 0 };
   const start = toDate(project.startDate);
   const due = toDate(project.dueDate);
@@ -286,6 +296,22 @@ export function ProjectPanelDetailView({
         value: String(value),
         label: getTaskPriorityLabel(value),
         icon: <TaskPriorityIcon priority={value} size={14} />,
+      })),
+    [],
+  );
+
+  const typeOptions = useMemo(
+    () =>
+      PROJECT_TYPE_ORDER.map((value) => ({
+        value,
+        label: getProjectTypeLabel(value),
+        searchTerms: `${value} ${getProjectTypeLabel(value)}`,
+        icon:
+          value === "codebase" ? (
+            <CodeIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          ),
       })),
     [],
   );
@@ -363,6 +389,24 @@ export function ProjectPanelDetailView({
           <TaskPriorityIcon priority={project.priority} size={14} />
         }
         fallbackLabel={getTaskPriorityLabel(project.priority)}
+        triggerVariant={propertyTriggerVariant}
+        panelAlign={propertyPanelAlign}
+      />
+      <PropertyDropdown
+        value={projectType}
+        options={typeOptions}
+        onChange={(next) => onTypeChange?.(next as ProjectType)}
+        searchPlaceholder="Change type…"
+        searchShortcutLabel="Y"
+        ariaLabel="Type"
+        fallbackIcon={
+          projectType === "codebase" ? (
+            <CodeIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          )
+        }
+        fallbackLabel={getProjectTypeLabel(projectType)}
         triggerVariant={propertyTriggerVariant}
         panelAlign={propertyPanelAlign}
       />

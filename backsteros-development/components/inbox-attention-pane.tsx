@@ -37,6 +37,7 @@ import {
 import {
   ProjectsSidePanelIcon,
 } from "@/components/panel-icons";
+import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
 import { TaskActivityPanel } from "@/components/task-activity-panel";
 import { useApiResource, useConsoleApi } from "@/lib/api-context";
 import {
@@ -618,37 +619,70 @@ export function InboxAttentionDetail({
 
   const detail = mapApiTaskDetail(selectedRaw, projectsById);
   const working = workingTaskIds.includes(selectedRaw.id);
-  const headerTitle = detail.displayId?.trim() || "Task";
+  const taskProject = selectedRaw.projectId
+    ? (projectsById.get(selectedRaw.projectId) ?? null)
+    : null;
+  const headerSegment = detail.displayId?.trim() || "Task";
 
   return (
     <aside className="console-pane">
-      <div className="console-pane-header">
-        <div className="console-pane-header-title">
-          <span>{headerTitle}</span>
+      {taskProject ? (
+        <ConsoleProjectBreadcrumbHeader
+          projectIcon={taskProject.icon}
+          projectName={taskProject.name}
+          segment={headerSegment}
+          actions={
+            onToggleTerminal ? (
+              <button
+                type="button"
+                className="console-icon-btn"
+                onClick={onToggleTerminal}
+                title={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal — expand task"
+                }
+                aria-label={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal and expand task"
+                }
+                aria-pressed={terminalCollapsed}
+              >
+                <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
+              </button>
+            ) : null
+          }
+        />
+      ) : (
+        <div className="console-pane-header">
+          <div className="console-pane-header-title">
+            <span>{headerSegment}</span>
+          </div>
+          <div className="console-pane-header-actions">
+            {onToggleTerminal ? (
+              <button
+                type="button"
+                className="console-icon-btn"
+                onClick={onToggleTerminal}
+                title={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal — expand task"
+                }
+                aria-label={
+                  terminalCollapsed
+                    ? "Show terminal"
+                    : "Hide terminal and expand task"
+                }
+                aria-pressed={terminalCollapsed}
+              >
+                <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="console-pane-header-actions">
-          {onToggleTerminal ? (
-            <button
-              type="button"
-              className="console-icon-btn"
-              onClick={onToggleTerminal}
-              title={
-                terminalCollapsed
-                  ? "Show terminal"
-                  : "Hide terminal — expand task"
-              }
-              aria-label={
-                terminalCollapsed
-                  ? "Show terminal"
-                  : "Hide terminal and expand task"
-              }
-              aria-pressed={terminalCollapsed}
-            >
-              <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
-            </button>
-          ) : null}
-        </div>
-      </div>
+      )}
       <div className="console-pane-body">
         <div className="task-panel-island task-panel-island--detail">
           <TaskStackedDetailView

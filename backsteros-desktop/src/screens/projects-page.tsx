@@ -72,6 +72,7 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 type WorkspaceProject = ProjectOverviewRowProject & {
   organizationId?: string | null;
+  type?: string;
 };
 
 export type ProjectsPageProps = {
@@ -1186,6 +1187,7 @@ export function ProjectsPage({
         project={{
           ...project,
           organizationId: project.organizationId ?? null,
+          type: project.type ?? "general",
           summary:
             workspace.projectSummaries[project.id] ??
             "",
@@ -1261,6 +1263,10 @@ export function ProjectsPage({
         onPriorityChange={(priority) => {
           patchSelected({ priority });
           void workspace.patchProject(project.id, { priority });
+        }}
+        onTypeChange={(type) => {
+          patchSelected({ type });
+          void workspace.patchProject(project.id, { type });
         }}
         onAreaChange={(area: ProjectArea | null) => {
           patchSelected({ area });

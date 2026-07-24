@@ -71,6 +71,7 @@ function mapTask(
 
 function mapProject(project: ApiProject): ProjectOverviewRowProject & {
   organizationId?: string | null;
+  type?: string;
 } {
   return {
     id: project.id,
@@ -79,6 +80,7 @@ function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     status: project.status,
     priority: project.priority,
     area: project.area ?? null,
+    type: project.type,
     icon: project.icon ?? null,
     organizationId: project.organizationId ?? null,
     startDate: asEpoch(project.startDate),
@@ -167,7 +169,10 @@ export type DesktopWorkspaceData = {
    */
   allTasks: TaskOverviewRowTask[];
   projects: Array<
-    ProjectOverviewRowProject & { organizationId?: string | null }
+    ProjectOverviewRowProject & {
+      organizationId?: string | null;
+      type?: string;
+    }
   >;
   letters: LetterListItem[];
   /** All documents (project + knowledge + journal metadata). */

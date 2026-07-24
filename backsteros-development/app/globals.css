@@ -319,15 +319,48 @@ button {
   transition: none;
 }
 
+.console-content-frame.is-list-resizing > .console-content-columns {
+  transition: none;
+}
+
 .console-content-frame--blank {
   grid-template-columns: minmax(0, 1fr);
   border-color: transparent;
   background: transparent;
 }
 
+/*
+ * Project / task workspace: one full-width chrome above the split columns so the
+ * divider between side panel and main does not cut through the titlebar.
+ */
 .console-content-frame--project,
 .console-content-frame--task-focus {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: unset;
+}
+
+.console-content-columns {
+  display: grid;
   grid-template-columns: var(--console-list-width, 360px) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  transition: grid-template-columns 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.console-content-frame--project > .console-content-columns,
+.console-content-frame--task-focus > .console-content-columns {
+  grid-template-columns: var(--console-list-width, 360px) minmax(0, 1fr);
+}
+
+.console-content-chrome.console-pane-header {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  border-bottom-color: rgb(255 255 255 / 0.1);
+  background: transparent;
 }
 
 /* Inbox home: attention list fills the frame. */
@@ -348,11 +381,19 @@ button {
  * column is the darker work surface.
  */
 .console-content-frame--task-focus > .console-content-main,
+.console-content-frame--task-focus > .console-content-columns > .console-content-main,
 .console-content-frame--inbox-task > .console-content-main {
   background: var(--background);
 }
 
 .console-content-frame--main-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.console-content-frame--project.console-content-frame--main-collapsed
+  > .console-content-columns,
+.console-content-frame--task-focus.console-content-frame--main-collapsed
+  > .console-content-columns {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -363,6 +404,7 @@ button {
 }
 
 .console-content-frame--main-collapsed > .console-content-main,
+.console-content-frame--main-collapsed > .console-content-columns > .console-content-main,
 .console-content-frame--blank > .console-content-main,
 .console-content-frame--inbox > .console-content-main {
   display: none;
@@ -559,7 +601,18 @@ html.is-tauri-shell .console-auth {
   background: transparent !important;
 }
 
-.console-side-layers {
+.console-side-layers,
+.console-side-stack {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.console-side-bodies {
   position: relative;
   display: flex;
   flex: 1;
@@ -608,6 +661,93 @@ html.is-tauri-shell .console-auth {
   width: 100%;
   height: 100%;
   background: transparent;
+}
+
+.console-side-stack > .console-pane-header {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+}
+
+.console-project-breadcrumb {
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--console-muted);
+}
+
+.console-project-breadcrumb-nav {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.console-project-breadcrumb-project {
+  min-width: 0;
+  max-width: min(40%, 280px);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--console-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.console-content-chrome .console-project-breadcrumb-project {
+  max-width: min(36vw, 420px);
+}
+
+.console-project-breadcrumb-project:hover {
+  color: var(--console-text);
+}
+
+.console-project-breadcrumb-project.is-static {
+  cursor: default;
+}
+
+.console-project-breadcrumb-sep {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--console-muted) 70%, transparent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.console-project-breadcrumb-segment {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--console-text) 88%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.console-commit-detail-chrome.console-pane-header {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.console-commit-detail-chrome .console-commit-detail-back {
+  margin-right: 2px;
 }
 
 .console-content-main-tasks .console-pane-header {
@@ -671,12 +811,14 @@ html.is-tauri-shell .console-auth {
   color: var(--console-muted);
 }
 
-.console-pane--overview .console-project-pane-title .overview-name-editor {
+.console-pane--overview .console-project-pane-title .overview-name-editor,
+.console-project-breadcrumb .overview-name-editor {
   min-width: 0;
   flex: 1;
 }
 
-.console-pane--overview .console-project-pane-name {
+.console-pane--overview .console-project-pane-name,
+.console-project-breadcrumb .console-project-pane-name {
   margin: 0;
   min-width: 0;
   overflow: hidden;
@@ -691,7 +833,9 @@ html.is-tauri-shell .console-auth {
 }
 
 .console-pane--overview .console-project-pane-name .overview-name-editor__button,
-.console-pane--overview .console-project-pane-name .overview-name-editor__input {
+.console-pane--overview .console-project-pane-name .overview-name-editor__input,
+.console-project-breadcrumb .console-project-pane-name .overview-name-editor__button,
+.console-project-breadcrumb .console-project-pane-name .overview-name-editor__input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2581,6 +2725,204 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   color: var(--console-accent);
 }
 
+.console-run-application-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--console-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.console-run-application-btn:hover {
+  border-color: color-mix(in srgb, var(--console-accent) 45%, var(--console-border));
+  background: var(--console-panel-2);
+  color: var(--console-text);
+}
+
+.console-run-application-btn[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--console-accent) 50%, var(--console-border));
+  background: color-mix(in srgb, var(--console-accent) 12%, transparent);
+  color: var(--console-accent);
+}
+
+.console-run-application-btn:disabled {
+  opacity: 0.85;
+  cursor: progress;
+}
+
+.console-run-application-btn svg {
+  flex-shrink: 0;
+}
+
+.console-run-application-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  border-radius: 6px;
+  border: 1px solid var(--console-border);
+  background: transparent;
+  overflow: visible;
+}
+
+.console-run-application-split:hover {
+  border-color: color-mix(in srgb, var(--console-accent) 45%, var(--console-border));
+  background: var(--console-panel-2);
+}
+
+.console-run-application-split.is-fullscreen,
+.console-run-application-split.is-running {
+  border-color: color-mix(in srgb, var(--console-accent) 50%, var(--console-border));
+  background: color-mix(in srgb, var(--console-accent) 12%, transparent);
+}
+
+.console-run-application-split .console-run-application-btn--split-main {
+  border: 0;
+  border-radius: 5px 0 0 5px;
+  background: transparent;
+  color: inherit;
+  height: 22px;
+  padding: 0 8px;
+}
+
+.console-run-application-split .console-run-application-btn--split-main:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--console-text);
+}
+
+.console-run-application-split.is-fullscreen .console-run-application-btn--split-main,
+.console-run-application-split.is-running .console-run-application-btn--split-main {
+  color: var(--console-accent);
+}
+
+.console-run-application-split-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--console-border);
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  color: var(--console-muted);
+  padding: 0 6px;
+  min-width: 22px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.console-run-application-split:hover .console-run-application-split-chevron,
+.console-run-application-split.is-open .console-run-application-split-chevron {
+  color: var(--console-text);
+  background: color-mix(in srgb, var(--console-accent) 8%, transparent);
+}
+
+.console-run-application-split.is-fullscreen .console-run-application-split-chevron,
+.console-run-application-split.is-running .console-run-application-split-chevron {
+  border-left-color: color-mix(in srgb, var(--console-accent) 40%, var(--console-border));
+  color: var(--console-accent);
+}
+
+.console-run-application-split-chevron:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.console-run-application-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 70vw);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--console-border);
+  background: var(--console-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+.console-run-application-menu-label {
+  margin: 0;
+  color: var(--console-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.console-run-application-menu-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: var(--console-panel-2);
+  color: var(--console-text);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.console-run-application-menu-textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--console-accent) 55%, var(--console-border));
+}
+
+.console-run-application-menu-error {
+  margin: 0;
+  color: #ff9b94;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.console-run-application-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.console-run-application-menu-save {
+  appearance: none;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--console-accent) 45%, var(--console-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--console-accent) 14%, transparent);
+  color: var(--console-accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.console-run-application-menu-save:hover {
+  background: color-mix(in srgb, var(--console-accent) 22%, transparent);
+}
+
+.console-run-application-loader {
+  width: 14px;
+  height: 14px;
+  color: var(--console-accent);
+}
+
 .terminal-frame {
   display: flex;
   min-width: 0;
@@ -3118,6 +3460,10 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
       grid-template-columns 350ms cubic-bezier(0.22, 1, 0.36, 1),
       border-color 350ms ease,
       background-color 350ms ease !important;
+  }
+
+  .console-content-columns {
+    transition: grid-template-columns 350ms cubic-bezier(0.22, 1, 0.36, 1) !important;
   }
 
   .console-content-list {

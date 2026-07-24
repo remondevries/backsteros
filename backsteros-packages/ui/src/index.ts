@@ -517,6 +517,16 @@ export {
 } from "./project-status.js";
 
 export {
+  PROJECT_TYPES,
+  PROJECT_TYPE_LABELS,
+  PROJECT_TYPE_ORDER,
+  isProjectType,
+  getProjectTypeLabel,
+  migrateLegacyProjectType,
+  type ProjectType,
+} from "./project-type.js";
+
+export {
   describeProjectProgressHexagonPath,
   describeProjectProgressPieWedge,
   PROJECT_PROGRESS_HEX_STROKE_WIDTH,

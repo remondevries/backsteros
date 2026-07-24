@@ -255,8 +255,8 @@ export function ProjectSidebar({
           ) : null}
           {!collapsed && !loading && !error && projects.length === 0 ? (
             <div className="console-empty">
-              No codebase projects yet. Mark a project with{" "}
-              <code>type: &quot;codebase&quot;</code> via the API to show it
+              No codebase projects yet. Set a project&apos;s type to{" "}
+              <strong>Codebase</strong> in the web app Properties to show it
               here.
             </div>
           ) : null}

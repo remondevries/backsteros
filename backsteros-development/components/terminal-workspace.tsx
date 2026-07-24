@@ -381,6 +381,7 @@ export function TerminalWorkspace({
   cwd = null,
   collapsed = false,
   layoutReady = true,
+  showHeader = true,
 }: {
   projectId: string | null;
   projectLabel: string;
@@ -417,6 +418,8 @@ export function TerminalWorkspace({
    * Skips fit/remeasure until the host is actually painted.
    */
   layoutReady?: boolean;
+  /** When false, host chrome owns the pane header. */
+  showHeader?: boolean;
 }) {
   const [bucketsByTaskId, setBucketsByTaskId] = useState<
     Record<string, TaskSessionBucket>
@@ -2244,16 +2247,18 @@ export function TerminalWorkspace({
       }`}
       aria-hidden={collapsed}
     >
-      <div className="console-pane-header console-pane-header--terminal">
-        <div className="console-pane-header-title">
-          {agentSessionOpen ? (
-            <CursorAgentIcon size={14} />
-          ) : (
-            <TerminalHeaderIcon size={14} />
-          )}
-          <span>{agentSessionOpen ? "Cursor Agent" : "Terminal"}</span>
+      {showHeader ? (
+        <div className="console-pane-header console-pane-header--terminal">
+          <div className="console-pane-header-title">
+            {agentSessionOpen ? (
+              <CursorAgentIcon size={14} />
+            ) : (
+              <TerminalHeaderIcon size={14} />
+            )}
+            <span>{agentSessionOpen ? "Cursor Agent" : "Terminal"}</span>
+          </div>
         </div>
-      </div>
+      ) : null}
       <div className="terminal-frame">
         <div className="terminal-stage">
           {!hasTask ? (

@@ -3,6 +3,7 @@
 import type { GithubCommit, GithubPullRequest } from "@backsteros/contracts";
 import { ProjectOcticon } from "@backsteros/ui";
 
+import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
 import { CommitFilesPane } from "@/components/pull-request-files-pane";
 
 function commitSubject(message: string): string {
@@ -31,17 +32,25 @@ function formatCommitDetailDate(value: string | null): string {
 
 export function CommitDetailPane({
   projectId,
+  projectIcon,
+  projectName,
   commit,
   repository,
   parentPullRequest,
+  showChromeHeader = true,
   onClose,
+  onNavigateToProject,
   onNavigateToPull,
 }: {
   projectId: string;
+  projectIcon?: string | null;
+  projectName: string;
   commit: GithubCommit;
   repository: string;
   parentPullRequest?: GithubPullRequest | null;
+  showChromeHeader?: boolean;
   onClose: () => void;
+  onNavigateToProject?: () => void;
   onNavigateToPull?: () => void;
 }) {
   const subject = commitSubject(commit.message);
@@ -52,71 +61,42 @@ export function CommitDetailPane({
 
   return (
     <div className="console-pane console-pane--commit-detail">
-      <div className="console-pane-header">
-        <div className="console-pane-header-title console-commit-detail-header">
-          <button
-            type="button"
-            className="console-commit-detail-back"
-            aria-label={fromPull ? "Back to pull request" : "Back"}
-            onClick={onClose}
-          >
-            <ProjectOcticon icon="chevron-left" size={14} />
-          </button>
-          {fromPull && parentPullRequest ? (
-            <nav
-              className="console-github-breadcrumb"
-              aria-label="Commit location"
+      {showChromeHeader ? (
+        <ConsoleProjectBreadcrumbHeader
+          className="console-commit-detail-chrome"
+          projectIcon={projectIcon}
+          projectName={projectName}
+          segment={subject}
+          onNavigateToProject={onNavigateToProject ?? onClose}
+          leading={
+            <button
+              type="button"
+              className="console-commit-detail-back"
+              aria-label={fromPull ? "Back to pull request" : "Back"}
+              onClick={
+                fromPull
+                  ? () => {
+                      onNavigateToPull?.();
+                      if (!onNavigateToPull) onClose();
+                    }
+                  : onClose
+              }
             >
-              <span className="console-github-breadcrumb-sep" aria-hidden="true">
-                /
-              </span>
-              <button
-                type="button"
-                className="console-github-breadcrumb-item"
-                title={parentPullRequest.title}
-                onClick={() => {
-                  onNavigateToPull?.();
-                }}
-              >
-                <span className="console-github-breadcrumb-prefix">
-                  Pull request:
-                </span>{" "}
-                <span className="console-github-breadcrumb-strong">
-                  {parentPullRequest.title}
-                </span>
-              </button>
-              <span className="console-github-breadcrumb-sep" aria-hidden="true">
-                /
-              </span>
-              <span
-                className="console-github-breadcrumb-item is-current"
-                aria-current="page"
-                title={subject}
-              >
-                {subject}
-              </span>
-            </nav>
-          ) : (
-            <>
-              <span className="console-commit-detail-header-label">Commit</span>
-              <span
-                className="console-commit-detail-header-repo"
-                title={repository}
-              >
-                {repository}
-              </span>
-            </>
-          )}
-        </div>
-        <a
-          className="console-commit-detail-open-github"
-          href={commit.htmlUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open on GitHub
-        </a>
-      </div>
+              <ProjectOcticon icon="chevron-left" size={14} />
+            </button>
+          }
+          actions={
+            <a
+              className="console-commit-detail-open-github"
+              href={commit.htmlUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open on GitHub
+            </a>
+          }
+        />
+      ) : null}
 
       <div className="console-pane-body console-commit-detail-body">
         <div className="console-github-detail-container is-files">
@@ -139,7 +119,10 @@ export function CommitDetailPane({
             ) : null}
 
             <div className="console-commit-detail-meta">
-              <span className="console-commit-detail-author-avatar" aria-hidden="true">
+              <span
+                className="console-commit-detail-author-avatar"
+                aria-hidden="true"
+              >
                 {commit.authorLogin ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -158,6 +141,12 @@ export function CommitDetailPane({
                   <span className="console-commit-detail-meta-muted">
                     {" "}
                     committed on {authoredLabel}
+                  </span>
+                ) : null}
+                {repository ? (
+                  <span className="console-commit-detail-meta-muted">
+                    {" "}
+                    · {repository}
                   </span>
                 ) : null}
               </div>

@@ -11,6 +11,7 @@ export async function updateLocalProjectStatus(...args: unknown[]): Promise<Fail
 export async function updateLocalProjectIcon(...args: unknown[]): Promise<Fail> { void args; return fail(); }
 export async function updateLocalProjectPriority(...args: unknown[]): Promise<Fail> { void args; return fail(); }
 export async function updateLocalProjectArea(...args: unknown[]): Promise<Fail> { void args; return fail(); }
+export async function updateLocalProjectType(...args: unknown[]): Promise<Fail> { void args; return fail(); }
 export async function updateLocalProjectOrganization(...args: unknown[]): Promise<Fail> { void args; return fail(); }
 export async function updateLocalProjectStartDate(...args: unknown[]): Promise<Fail> { void args; return fail(); }
 export async function updateLocalProjectDueDate(...args: unknown[]): Promise<Fail> { void args; return fail(); }

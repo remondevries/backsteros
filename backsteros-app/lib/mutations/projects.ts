@@ -8,6 +8,7 @@ import type { ProjectArea } from "@/lib/project-areas";
 import { isProjectArea } from "@/lib/project-areas";
 import { normalizeProjectKey } from "@/lib/project-key";
 import { isProjectStatus, type ProjectStatus } from "@/lib/project-status";
+import { isProjectType, type ProjectType } from "@/lib/project-type";
 import { isTaskPriority, type TaskPriority } from "@/lib/task-priority";
 
 import {
@@ -58,6 +59,10 @@ export type UpdateProjectDueDateResult =
   | { ok: false; error: string };
 
 export type UpdateProjectAreaResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type UpdateProjectTypeResult =
   | { ok: true }
   | { ok: false; error: string };
 
@@ -277,6 +282,22 @@ export async function updateProjectAreaAction(input: {
   }
   try {
     await patchProject(input.projectId, { area: input.area });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: apiErrorText(error) };
+  }
+}
+
+export async function updateProjectTypeAction(input: {
+  projectId: string;
+  type: ProjectType;
+}): Promise<UpdateProjectTypeResult> {
+  if (!input.projectId.trim()) return { ok: false, error: "Project is required." };
+  if (!isProjectType(input.type)) {
+    return { ok: false, error: "Invalid project type." };
+  }
+  try {
+    await patchProject(input.projectId, { type: input.type });
     return { ok: true };
   } catch (error) {
     return { ok: false, error: apiErrorText(error) };

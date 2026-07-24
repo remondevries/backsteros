@@ -86,6 +86,7 @@ function mapProjectForDetail(
     status: project.status,
     priority: project.priority,
     area: project.area,
+    type: project.type,
     icon: project.icon,
     organizationId: project.organizationId,
     summary: project.summary,
@@ -1036,6 +1037,7 @@ export function ProjectOverviewPane({
   onSelectPullRequest,
   tasksPanelCollapsed = false,
   onToggleTasksPanel,
+  showHeader = true,
 }: {
   project: ApiProject;
   projects: ApiProject[];
@@ -1051,9 +1053,11 @@ export function ProjectOverviewPane({
   ) => void;
   tasksPanelCollapsed?: boolean;
   onToggleTasksPanel?: () => void;
+  /** When false, host chrome owns the pane header (stable breadcrumb). */
+  showHeader?: boolean;
 }) {
   const tasksPanelToggle =
-    onToggleTasksPanel != null ? (
+    showHeader !== false && onToggleTasksPanel != null ? (
       <button
         type="button"
         className="console-icon-btn"
@@ -1165,21 +1169,23 @@ export function ProjectOverviewPane({
   if (tasksLoading && !tasks) {
     return (
       <>
-        <div className="console-pane-header">
-          <div className="console-pane-header-title console-project-pane-title">
-            <span
-              className="project-panel-overview-skeleton__header-icon detail-skeleton-block"
-              aria-hidden="true"
-            />
-            <span
-              className="project-panel-overview-skeleton__header-title detail-skeleton-block"
-              aria-hidden="true"
-            />
+        {showHeader ? (
+          <div className="console-pane-header">
+            <div className="console-pane-header-title console-project-pane-title">
+              <span
+                className="project-panel-overview-skeleton__header-icon detail-skeleton-block"
+                aria-hidden="true"
+              />
+              <span
+                className="project-panel-overview-skeleton__header-title detail-skeleton-block"
+                aria-hidden="true"
+              />
+            </div>
+            {tasksPanelToggle ? (
+              <div className="console-pane-header-actions">{tasksPanelToggle}</div>
+            ) : null}
           </div>
-          {tasksPanelToggle ? (
-            <div className="console-pane-header-actions">{tasksPanelToggle}</div>
-          ) : null}
-        </div>
+        ) : null}
         <div className="console-pane-body">
           <div className="console-project-overview console-content-swap">
             <ProjectPanelOverviewSkeleton />
@@ -1191,29 +1197,31 @@ export function ProjectOverviewPane({
 
   return (
     <>
-      <div className="console-pane-header">
-        <div className="console-pane-header-title console-project-pane-title">
-          <ProjectOverviewIcon
-            icon={project.icon}
-            name={project.name}
-            size={14}
-            variant="bare"
-            onIconChange={(icon) => {
-              void patchProject({ icon });
-            }}
-          />
-          <OverviewNameEditor
-            value={project.name}
-            entityLabel="Project"
-            resetKey={project.id}
-            titleClassName="console-project-pane-name"
-            onSave={saveName}
-          />
+      {showHeader ? (
+        <div className="console-pane-header">
+          <div className="console-pane-header-title console-project-pane-title">
+            <ProjectOverviewIcon
+              icon={project.icon}
+              name={project.name}
+              size={14}
+              variant="bare"
+              onIconChange={(icon) => {
+                void patchProject({ icon });
+              }}
+            />
+            <OverviewNameEditor
+              value={project.name}
+              entityLabel="Project"
+              resetKey={project.id}
+              titleClassName="console-project-pane-name"
+              onSave={saveName}
+            />
+          </div>
+          {tasksPanelToggle ? (
+            <div className="console-pane-header-actions">{tasksPanelToggle}</div>
+          ) : null}
         </div>
-        {tasksPanelToggle ? (
-          <div className="console-pane-header-actions">{tasksPanelToggle}</div>
-        ) : null}
-      </div>
+      ) : null}
       <div className="console-pane-body">
         <div
           key={project.id}
@@ -1289,6 +1297,9 @@ export function ProjectOverviewPane({
         }}
         onPriorityChange={(priority) => {
           void patchProject({ priority }).catch(() => undefined);
+        }}
+        onTypeChange={(type) => {
+          void patchProject({ type }).catch(() => undefined);
         }}
         onAreaChange={(area: ProjectArea | null) => {
           void patchProject({ area }).catch(() => undefined);

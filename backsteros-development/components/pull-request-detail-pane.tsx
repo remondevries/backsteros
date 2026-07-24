@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { GithubCommitIcon } from "@/components/github-commit-icon";
 import { GithubPullRequestIcon } from "@/components/github-pull-request-icon";
+import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
 import { PullRequestFilesPane } from "@/components/pull-request-files-pane";
 import { apiErrorMessage, useConsoleApi } from "@/lib/api-context";
 
@@ -182,20 +183,28 @@ function CheckoutCodeMenu({
 
 export function PullRequestDetailPane({
   projectId,
+  projectIcon,
+  projectName,
   pullRequest: initialPullRequest,
   repository,
   tab: controlledTab,
   onTabChange,
   onClose,
+  onNavigateToProject,
   onSelectCommit,
+  showChromeHeader = true,
 }: {
   projectId: string;
+  projectIcon?: string | null;
+  projectName: string;
   pullRequest: GithubPullRequest;
   repository: string;
   tab?: PullDetailTab;
   onTabChange?: (tab: PullDetailTab) => void;
   onClose: () => void;
+  onNavigateToProject?: () => void;
   onSelectCommit?: (commit: GithubCommit, repository: string) => void;
+  showChromeHeader?: boolean;
 }) {
   const { client } = useConsoleApi();
   const [pullRequest, setPullRequest] =
@@ -350,32 +359,35 @@ export function PullRequestDetailPane({
 
   return (
     <div className="console-pane console-pane--pull-detail">
-      <div className="console-pane-header">
-        <div className="console-pane-header-title console-commit-detail-header">
-          <button
-            type="button"
-            className="console-commit-detail-back"
-            aria-label="Back to tasks"
-            onClick={onClose}
-          >
-            <ProjectOcticon icon="chevron-left" size={14} />
-          </button>
-          <span className="console-commit-detail-header-label">
-            Pull request
-          </span>
-          <span className="console-commit-detail-header-repo" title={repository}>
-            {repository}
-          </span>
-        </div>
-        <a
-          className="console-commit-detail-open-github"
-          href={pullRequest.htmlUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open on GitHub
-        </a>
-      </div>
+      {showChromeHeader ? (
+        <ConsoleProjectBreadcrumbHeader
+          className="console-commit-detail-chrome"
+          projectIcon={projectIcon}
+          projectName={projectName}
+          segment={pullRequest.title}
+          onNavigateToProject={onNavigateToProject ?? onClose}
+          leading={
+            <button
+              type="button"
+              className="console-commit-detail-back"
+              aria-label="Back to project"
+              onClick={onClose}
+            >
+              <ProjectOcticon icon="chevron-left" size={14} />
+            </button>
+          }
+          actions={
+            <a
+              className="console-commit-detail-open-github"
+              href={pullRequest.htmlUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open on GitHub
+            </a>
+          }
+        />
+      ) : null}
 
       <div className="console-pane-body console-pull-detail-body">
         <div
