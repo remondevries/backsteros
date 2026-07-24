@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mergeLocalAndApiByUpdatedAt } from "./prefer-local-or-api";
+import {
+  findLocalOrApi,
+  mergeLocalAndApiByUpdatedAt,
+} from "./prefer-local-or-api";
 
 test("mergeLocalAndApiByUpdatedAt prefers API when local is empty", () => {
   const api = [
@@ -34,4 +37,54 @@ test("mergeLocalAndApiByUpdatedAt upserts missing and newer API rows", () => {
   assert.equal(merged.find((row) => row.id === "a")?.title, "API A newer");
   assert.equal(merged.find((row) => row.id === "b")?.title, "Local B");
   assert.equal(merged.find((row) => row.id === "c")?.title, "API C new");
+});
+
+test("findLocalOrApi prefers newer API row after REST patch", () => {
+  const local = [
+    {
+      id: "p1",
+      key: "AB",
+      type: undefined as string | undefined,
+      updatedAt: "2026-07-19T10:00:00.000Z",
+    },
+  ];
+  const api = [
+    {
+      id: "p1",
+      key: "AB",
+      type: "codebase",
+      updatedAt: "2026-07-19T12:00:00.000Z",
+    },
+  ];
+  const match = findLocalOrApi(
+    local,
+    api,
+    (row) => row.key.toLowerCase() === "ab",
+  );
+  assert.equal(match?.type, "codebase");
+});
+
+test("findLocalOrApi fills missing local type from API", () => {
+  const local = [
+    {
+      id: "p1",
+      key: "AB",
+      type: null as string | null,
+      updatedAt: "2026-07-19T12:00:00.000Z",
+    },
+  ];
+  const api = [
+    {
+      id: "p1",
+      key: "AB",
+      type: "codebase",
+      updatedAt: "2026-07-19T11:00:00.000Z",
+    },
+  ];
+  const match = findLocalOrApi(
+    local,
+    api,
+    (row) => row.key.toLowerCase() === "ab",
+  );
+  assert.equal(match?.type, "codebase");
 });

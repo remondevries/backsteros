@@ -376,6 +376,12 @@ function mapProjectUpsert(
     icon: asString(payload.icon),
     color: asString(payload.color),
     type: asString(payload.type) as Project["type"] | undefined,
+    githubRepository: asNullableString(
+      payload.github_repository ?? payload.githubRepository,
+    ),
+    localWorkingDirectory: asNullableString(
+      payload.local_working_directory ?? payload.localWorkingDirectory,
+    ),
     status: asString(payload.status) as Project["status"] | undefined,
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),

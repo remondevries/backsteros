@@ -17,9 +17,28 @@ export function findLocalOrApi<T>(
   apiRows: T[] | null | undefined,
   match: (row: T) => boolean,
 ): T | null {
-  return (
-    localRows?.find(match) ?? apiRows?.find(match) ?? null
+  const local = localRows?.find(match);
+  const api = apiRows?.find(match);
+  if (!local) return api ?? null;
+  if (!api) return local;
+
+  const localMs = updatedAtMs(
+    (local as { updatedAt?: string | number | Date | null }).updatedAt,
   );
+  const apiMs = updatedAtMs(
+    (api as { updatedAt?: string | number | Date | null }).updatedAt,
+  );
+  // Prefer the newer row so REST patches (e.g. project type) win over stale
+  // PowerSync rows that may omit newer columns.
+  if (apiMs > localMs) return api;
+
+  const localType = (local as { type?: string | null }).type;
+  const apiType = (api as { type?: string | null }).type;
+  if ((localType == null || localType === "") && apiType) {
+    return { ...local, type: apiType };
+  }
+
+  return local;
 }
 
 function updatedAtMs(value: string | number | Date | null | undefined): number {
