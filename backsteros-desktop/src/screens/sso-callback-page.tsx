@@ -31,7 +31,6 @@ export function SsoCallbackPage() {
         signUpForceRedirectUrl: returnUrl,
         signInFallbackRedirectUrl: returnUrl,
         signUpFallbackRedirectUrl: returnUrl,
-        continueSignInUrl: returnUrl,
         continueSignUpUrl: returnUrl,
       })
       .catch(() => undefined)
