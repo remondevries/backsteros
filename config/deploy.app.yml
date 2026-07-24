@@ -8,8 +8,12 @@ servers:
     - 161.35.86.25
 
 ssh:
-  user: root
+  # Root login is disabled on this droplet; use the docker-capable sudo user.
+  # keys_only: false so Net::SSH can use the 1Password SSH agent (OpenSSH
+  # IdentityFile points at a .pub stub, which breaks Ruby Net::SSH if config: true).
+  user: wsmk_rvw4fjmeeydkdvhghwnq7_wbfxa
   config: false
+  keys_only: false
 
 # Kamal routes on Host backsteros.com (shared proxy :8082). Public traffic hits
 # nginx on :443 for backsteros.com and proxies /app → this same Host.
