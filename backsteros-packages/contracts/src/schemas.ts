@@ -21,7 +21,13 @@ export const PROJECT_STATUSES = [
 ] as const;
 
 /** Extensible project kinds — development console filters on `codebase`. */
-export const PROJECT_TYPES = ["general", "codebase"] as const;
+export const PROJECT_TYPES = [
+  "general",
+  "codebase",
+  "it_service",
+  "webhosting",
+  "domeinname",
+] as const;
 
 export const DOCUMENT_TYPES = ["project", "knowledge", "journal"] as const;
 

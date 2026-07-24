@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -10,6 +11,12 @@ import {
   type DragEvent,
   type MouseEvent,
 } from "react";
+
+import {
+  groupProjectsByType,
+  projectTypeCollapseKey,
+  ProjectTypeGroupSection,
+} from "@backsteros/ui";
 
 import { reorderProjectAction } from "@/lib/mutations/projects";
 import {
@@ -53,7 +60,6 @@ import {
 } from "@/lib/projects/project-reorder-client";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "@/lib/shortcuts/keyboard-nav-item";
 import { shouldHandleListKeyboardActivate } from "@/lib/shortcuts/should-handle-list-keyboard-navigation";
-import { flattenGroupedListItemIds } from "@/lib/shortcuts/list-keyboard-nav-index";
 
 import { applyDesktopDragImage } from "@/lib/platform/desktop-drag-image";
 import { isMobileShellBuildActive } from "@/lib/mobile/is-mobile-shell-env";
@@ -163,6 +169,9 @@ export function ProjectsList({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<ProjectStatus>>(
     () => new Set(),
   );
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [addingToStatus, setAddingToStatus] = useState<ProjectStatus | null>(
     null,
   );
@@ -204,15 +213,26 @@ export function ProjectsList({
     [localProjects],
   );
 
-  const itemIds = useMemo(
-    () =>
-      flattenGroupedListItemIds(
-        groups.map((group) => ({ key: group.status, items: group.projects })),
-        collapsedGroups,
-        (project) => project.id,
-      ),
-    [collapsedGroups, groups],
-  );
+  const itemIds = useMemo(() => {
+    const result: string[] = [];
+    for (const group of groups) {
+      if (collapsedGroups.has(group.status)) continue;
+      for (const typeGroup of groupProjectsByType(group.projects)) {
+        if (
+          typeGroup.showHeader &&
+          collapsedTypes.has(
+            projectTypeCollapseKey(group.status, typeGroup.type),
+          )
+        ) {
+          continue;
+        }
+        for (const project of typeGroup.projects) {
+          result.push(project.id);
+        }
+      }
+    }
+    return result;
+  }, [collapsedGroups, collapsedTypes, groups]);
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -480,7 +500,8 @@ export function ProjectsList({
                 },
               }}
             >
-              {group.projects.map((project) => {
+              {groupProjectsByType(group.projects).map((typeGroup) => {
+                const rows = typeGroup.projects.map((project) => {
                 const taskProgress =
                   taskProgressByProjectId[project.id] ?? EMPTY_TASK_PROGRESS;
 
@@ -651,6 +672,35 @@ export function ProjectsList({
                       )}
                     </div>
                   </li>
+                );
+                });
+
+                if (!typeGroup.showHeader) {
+                  return <Fragment key={typeGroup.type}>{rows}</Fragment>;
+                }
+
+                const typeKey = projectTypeCollapseKey(
+                  group.status,
+                  typeGroup.type,
+                );
+                const typeCollapsed = collapsedTypes.has(typeKey);
+
+                return (
+                  <ProjectTypeGroupSection
+                    key={typeGroup.type}
+                    title={typeGroup.label}
+                    collapsed={typeCollapsed}
+                    onToggle={() =>
+                      setCollapsedTypes((current) => {
+                        const next = new Set(current);
+                        if (next.has(typeKey)) next.delete(typeKey);
+                        else next.add(typeKey);
+                        return next;
+                      })
+                    }
+                  >
+                    {rows}
+                  </ProjectTypeGroupSection>
                 );
               })}
               {isAdding ? (

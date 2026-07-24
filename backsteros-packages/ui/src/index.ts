@@ -568,6 +568,18 @@ export {
 } from "./group-projects-by-status.js";
 
 export {
+  groupProjectsByType,
+  projectTypeCollapseKey,
+  type ProjectTypeGroup,
+  type ProjectLikeForTypeGrouping,
+} from "./group-projects-by-type.js";
+
+export {
+  ProjectTypeGroupSection,
+  type ProjectTypeGroupSectionProps,
+} from "./components/project-type-group-section.js";
+
+export {
   PROJECT_LIST_DRAG_TYPE,
   PROJECT_LIST_DRAG_FALLBACK_TYPE,
   projectOrderKey,

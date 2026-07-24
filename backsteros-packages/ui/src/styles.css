@@ -2145,6 +2145,82 @@ body[data-keyboard-nav-hover="suppressed"]
   list-style: none;
 }
 
+/* Nested project type subgroup (e.g. Codebase under a status group). */
+.project-type-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.project-type-subgroup__header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.project-type-subgroup__header:hover {
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.project-type-subgroup__toggle {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  transition: transform 150ms ease;
+}
+
+.project-type-subgroup__header[aria-expanded="true"]
+  .project-type-subgroup__toggle
+  svg {
+  transform: rotate(90deg);
+}
+
+.project-type-subgroup__toggle svg {
+  display: block;
+  transition: transform 150ms ease;
+}
+
+.project-type-subgroup__label {
+  flex-shrink: 0;
+}
+
+.project-type-subgroup__rule {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  height: 0;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.project-type-subgroup__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .app-side-panel {
   display: flex;
   width: 100%;

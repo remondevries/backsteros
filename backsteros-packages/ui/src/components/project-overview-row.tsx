@@ -30,6 +30,8 @@ export type ProjectOverviewRowProject = {
   status: string;
   priority: number;
   area: ProjectArea | null;
+  /** Project kind — `general` (default) or a labeled type (codebase, etc.). */
+  type?: string | null;
   icon?: string | null;
   startDate?: number | Date | null;
   dueDate?: number | Date | null;

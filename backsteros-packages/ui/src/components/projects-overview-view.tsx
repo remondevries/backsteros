@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import type { DragEvent } from "react";
 
 import { groupProjectsByStatus } from "../group-projects-by-status.js";
-import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
+import {
+  groupProjectsByType,
+  projectTypeCollapseKey,
+} from "../group-projects-by-type.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
 import {
   filterProjectsByArea,
@@ -38,6 +41,7 @@ import {
   type ProjectOverviewRowProject,
 } from "./project-overview-row.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
+import { ProjectTypeGroupSection } from "./project-type-group-section.js";
 import { StatusGroupSection } from "./status-group-section.js";
 import { AddProjectInline } from "./add-project-inline.js";
 import {
@@ -116,6 +120,9 @@ export function ProjectsOverviewView({
     }
   };
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [localProjects, setLocalProjects] = useState(projects);
   const [addingToStatus, setAddingToStatus] = useState<ProjectStatus | null>(
     null,
@@ -233,15 +240,26 @@ export function ProjectsOverviewView({
     [groups],
   );
 
-  const itemIds = useMemo(
-    () =>
-      flattenGroupedListItemIds(
-        groups.map((group) => ({ key: group.status, items: group.projects })),
-        collapsed,
-        (project) => project.id,
-      ),
-    [collapsed, groups],
-  );
+  const itemIds = useMemo(() => {
+    const result: string[] = [];
+    for (const group of groups) {
+      if (collapsed.has(group.status)) continue;
+      for (const typeGroup of groupProjectsByType(group.projects)) {
+        if (
+          typeGroup.showHeader &&
+          collapsedTypes.has(
+            projectTypeCollapseKey(group.status, typeGroup.type),
+          )
+        ) {
+          continue;
+        }
+        for (const project of typeGroup.projects) {
+          result.push(project.id);
+        }
+      }
+    }
+    return result;
+  }, [collapsed, collapsedTypes, groups]);
 
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
@@ -373,47 +391,82 @@ export function ProjectsOverviewView({
                   />
                 </li>
               ) : null}
-              {group.projects.map((project) => (
-                <ProjectOverviewRow
-                  key={project.id}
-                  project={project}
-                  keyboardHighlighted={highlightedId === project.id}
-                  onSelect={onSelectProject}
-                  onStatusChange={handleStatusChange}
-                  onPriorityChange={handlePriorityChange}
-                  onStartDateChange={handleStartDateChange}
-                  onDueDateChange={handleDueDateChange}
-                  draggable={canReorder}
-                  showDragInsertBefore={
-                    dragInsertBeforeKey === projectOrderKey(project.id)
-                  }
-                  onDragStart={(event: DragEvent<HTMLDivElement>) => {
-                    writeProjectDragPayload(event.dataTransfer, project);
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggingProjectId(project.id);
-                  }}
-                  onDragEnd={handleProjectDragEnd}
-                  onDragOver={(event: DragEvent<HTMLLIElement>) => {
-                    if (!isProjectListDragActive(event.dataTransfer)) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.dataTransfer.dropEffect = "move";
-                    setDragInsertBeforeKey(projectOrderKey(project.id));
-                  }}
-                  onDrop={(event: DragEvent<HTMLLIElement>) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const payload = readProjectDragPayload(event.dataTransfer);
-                    handleProjectDragEnd();
-                    if (!payload) return;
-                    const request = resolveProjectDropBeforeProject({
-                      payload,
-                      targetProject: project,
-                    });
-                    if (request) handleProjectReorder(request);
-                  }}
-                />
-              ))}
+              {groupProjectsByType(group.projects).map((typeGroup) => {
+                const renderRows = () =>
+                  typeGroup.projects.map((project) => (
+                    <ProjectOverviewRow
+                      key={project.id}
+                      project={project}
+                      keyboardHighlighted={highlightedId === project.id}
+                      onSelect={onSelectProject}
+                      onStatusChange={handleStatusChange}
+                      onPriorityChange={handlePriorityChange}
+                      onStartDateChange={handleStartDateChange}
+                      onDueDateChange={handleDueDateChange}
+                      draggable={canReorder}
+                      showDragInsertBefore={
+                        dragInsertBeforeKey === projectOrderKey(project.id)
+                      }
+                      onDragStart={(event: DragEvent<HTMLDivElement>) => {
+                        writeProjectDragPayload(event.dataTransfer, project);
+                        event.dataTransfer.effectAllowed = "move";
+                        setDraggingProjectId(project.id);
+                      }}
+                      onDragEnd={handleProjectDragEnd}
+                      onDragOver={(event: DragEvent<HTMLLIElement>) => {
+                        if (!isProjectListDragActive(event.dataTransfer)) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.dataTransfer.dropEffect = "move";
+                        setDragInsertBeforeKey(projectOrderKey(project.id));
+                      }}
+                      onDrop={(event: DragEvent<HTMLLIElement>) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const payload = readProjectDragPayload(
+                          event.dataTransfer,
+                        );
+                        handleProjectDragEnd();
+                        if (!payload) return;
+                        const request = resolveProjectDropBeforeProject({
+                          payload,
+                          targetProject: project,
+                        });
+                        if (request) handleProjectReorder(request);
+                      }}
+                    />
+                  ));
+
+                if (!typeGroup.showHeader) {
+                  return (
+                    <Fragment key={typeGroup.type}>{renderRows()}</Fragment>
+                  );
+                }
+
+                const typeKey = projectTypeCollapseKey(
+                  group.status,
+                  typeGroup.type,
+                );
+                const typeCollapsed = collapsedTypes.has(typeKey);
+
+                return (
+                  <ProjectTypeGroupSection
+                    key={typeGroup.type}
+                    title={typeGroup.label}
+                    collapsed={typeCollapsed}
+                    onToggle={() =>
+                      setCollapsedTypes((current) => {
+                        const next = new Set(current);
+                        if (next.has(typeKey)) next.delete(typeKey);
+                        else next.add(typeKey);
+                        return next;
+                      })
+                    }
+                  >
+                    {renderRows()}
+                  </ProjectTypeGroupSection>
+                );
+              })}
             </StatusGroupSection>
           );
         })}
