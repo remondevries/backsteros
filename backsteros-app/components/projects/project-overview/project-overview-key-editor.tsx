@@ -60,7 +60,7 @@ export function ProjectOverviewKeyEditor({
     }
 
     if (!isValidProjectKey(normalized)) {
-      setError("Use 2–6 letters or numbers.");
+      setError("Use 2–3 letters or numbers.");
       return;
     }
 
@@ -122,7 +122,7 @@ export function ProjectOverviewKeyEditor({
               }
             }}
             disabled={isPending}
-            maxLength={6}
+            maxLength={3}
             aria-label="Project ID"
             className="w-[4.5rem] border-none bg-transparent p-0 font-mono text-sm leading-[18px] text-foreground uppercase outline-none placeholder:text-foreground/40 disabled:opacity-60"
           />

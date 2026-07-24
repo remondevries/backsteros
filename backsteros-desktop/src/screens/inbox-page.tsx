@@ -12,6 +12,7 @@ import {
   getInboxItemDisplayId,
 } from "@backsteros/ui";
 
+import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -212,6 +213,14 @@ export function InboxPage() {
             });
           });
         }}
+        belowDescription={
+          <DesktopTaskActivityPanel
+            taskId={selectedTask.id}
+            taskUpdatedAt={selectedTaskRecord?.updatedAt ?? null}
+            contacts={workspace.contacts}
+            contactAvatarSrc={contactAvatarSrc}
+          />
+        }
       />
     </>
   );

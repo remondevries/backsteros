@@ -4,6 +4,7 @@ export type SettingsTabId =
   | "sync"
   | "api"
   | "cursor"
+  | "github"
   | "whoop"
   | "storage";
 
@@ -58,6 +59,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Use Cursor with Backsteros",
     group: "integration",
     href: "/settings/cursor",
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    description: "Connect personal and organization repositories",
+    group: "integration",
+    href: "/settings/github",
   },
   {
     id: "whoop",

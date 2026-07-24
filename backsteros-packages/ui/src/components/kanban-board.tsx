@@ -59,6 +59,13 @@ export type KanbanBoardProps<TItem> = {
   compareItems?: (left: TItem, right: TItem) => number;
   findItemById?: (itemId: string) => TItem | undefined;
   onMoveItem?: (request: KanbanBoardMoveRequest) => void;
+  /** Fired when an HTML5 drag gesture ends (drop or cancel). */
+  onDragGestureEnd?: () => void;
+  /**
+   * When true, allow reordering within the same column.
+   * Default false preserves desktop/web board behavior (cross-column moves only).
+   */
+  allowSameColumnReorder?: boolean;
 };
 
 /**
@@ -76,6 +83,8 @@ export function KanbanBoard<TItem>({
   compareItems,
   findItemById,
   onMoveItem,
+  onDragGestureEnd,
+  allowSameColumnReorder = false,
 }: KanbanBoardProps<TItem>) {
   const dragEnabled = Boolean(
     onMoveItem && getItemColumnKey && compareItems && findItemById,
@@ -198,13 +207,33 @@ export function KanbanBoard<TItem>({
       }
 
       const fromColumnKey = getItemColumnKey(item);
+      const indicator = resolveDropIndicator(columnKey, columnItems, item);
+
       if (fromColumnKey === columnKey) {
-        setDraggingItemId(null);
-        setDropIndicator(null);
-        return;
+        if (!allowSameColumnReorder) {
+          setDraggingItemId(null);
+          setDropIndicator(null);
+          return;
+        }
+        const currentIds = columnItems.map((entry) => getItemId(entry));
+        const fromIndex = currentIds.indexOf(droppedItemId);
+        const beforeId = indicator?.beforeItemId ?? null;
+        const toIndex =
+          beforeId == null
+            ? currentIds.length
+            : currentIds.indexOf(beforeId);
+        if (
+          fromIndex === -1 ||
+          toIndex === -1 ||
+          fromIndex === toIndex ||
+          fromIndex + 1 === toIndex
+        ) {
+          setDraggingItemId(null);
+          setDropIndicator(null);
+          return;
+        }
       }
 
-      const indicator = resolveDropIndicator(columnKey, columnItems, item);
       onMoveItem({
         itemId: droppedItemId,
         fromColumnKey,
@@ -215,9 +244,11 @@ export function KanbanBoard<TItem>({
       setDropIndicator(null);
     },
     [
+      allowSameColumnReorder,
       dragEnabled,
       findItemById,
       getItemColumnKey,
+      getItemId,
       onMoveItem,
       resolveDropIndicator,
     ],
@@ -355,6 +386,7 @@ export function KanbanBoard<TItem>({
                               ? () => {
                                   setDraggingItemId(null);
                                   setDropIndicator(null);
+                                  onDragGestureEnd?.();
                                 }
                               : undefined
                           }

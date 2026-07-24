@@ -259,9 +259,7 @@ function ConsoleEscapeBackNavigation({
               ? `/${selectedProjectId}/pull/${selectedPullNumber}`
               : selectedProjectId
                 ? "/projects"
-                : inboxActive
-                  ? "/inbox"
-                  : "/";
+                : "/inbox";
 
   const goBack = useCallback(() => {
     if (selectedCommitSha) {
@@ -808,7 +806,7 @@ export function ConsoleShell() {
         taskId: selectedTaskId,
       });
     } else {
-      nextPath = "/";
+      nextPath = "/inbox";
     }
 
     if (nextPath === locationPath) return;
@@ -878,27 +876,6 @@ export function ConsoleShell() {
         },
       );
       onProjectUpdated(updated);
-      // #region agent log
-      fetch("http://127.0.0.1:7376/ingest/5f7ef8e1-42a2-490c-b746-4355365451a0", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "cb7a52",
-        },
-        body: JSON.stringify({
-          sessionId: "cb7a52",
-          runId: "post-fix",
-          hypothesisId: "H3",
-          location: "console-shell.tsx:saveProjectWorkingDirectory",
-          message: "Saved working directory from terminal gate",
-          data: {
-            projectId,
-            persisted: Boolean(updated.localWorkingDirectory),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return updated;
     },
     [client, onProjectUpdated],
@@ -934,7 +911,7 @@ export function ConsoleShell() {
     });
   }, []);
 
-  const settingsReturnPathRef = useRef("/");
+  const settingsReturnPathRef = useRef("/inbox");
 
   const navigateConsolePath = useCallback((href: string) => {
     const nextPath = href.startsWith("/") ? href : `/${href}`;
@@ -953,19 +930,19 @@ export function ConsoleShell() {
 
   const openAppSettings = useCallback(() => {
     if (!locationPath.startsWith("/settings")) {
-      settingsReturnPathRef.current = locationPath || "/";
+      settingsReturnPathRef.current = locationPath || "/inbox";
     }
     navigateConsolePath(getDefaultSettingsHref());
   }, [locationPath, navigateConsolePath]);
 
   const closeSettings = useCallback(() => {
-    navigateConsolePath(settingsReturnPathRef.current || "/");
+    navigateConsolePath(settingsReturnPathRef.current || "/inbox");
   }, [navigateConsolePath]);
 
   const openSettingsFromShortcut = useCallback(
     (href: string) => {
       if (!locationPath.startsWith("/settings")) {
-        settingsReturnPathRef.current = locationPath || "/";
+        settingsReturnPathRef.current = locationPath || "/inbox";
       }
       navigateConsolePath(href);
     },
@@ -1445,27 +1422,6 @@ export function ConsoleShell() {
     void saveProjectWorkingDirectory(projectId, legacy)
       .then(() => {
         clearLegacyLocalDirectory(projectId);
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7376/ingest/5f7ef8e1-42a2-490c-b746-4355365451a0",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Debug-Session-Id": "cb7a52",
-            },
-            body: JSON.stringify({
-              sessionId: "cb7a52",
-              runId: "post-fix",
-              hypothesisId: "H5",
-              location: "console-shell.tsx:legacy-migrate",
-              message: "Migrated localStorage cwd to API",
-              data: { projectId },
-              timestamp: Date.now(),
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
       })
       .catch(() => undefined);
   }, [
@@ -1473,36 +1429,6 @@ export function ConsoleShell() {
     terminalProject?.id,
     terminalProject?.localWorkingDirectory,
   ]);
-
-  // #region agent log
-  useEffect(() => {
-    if (!terminalProjectId) return;
-    fetch("http://127.0.0.1:7376/ingest/5f7ef8e1-42a2-490c-b746-4355365451a0", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "cb7a52",
-      },
-      body: JSON.stringify({
-        sessionId: "cb7a52",
-        runId: "post-fix",
-        hypothesisId: "H1",
-        location: "console-shell.tsx:cwd-source",
-        message: "Resolved terminal cwd from project API field",
-        data: {
-          projectId: terminalProjectId,
-          hasApiDirectory: terminalDirectoryReady,
-          fieldPresent: "localWorkingDirectory" in (terminalProject ?? {}),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }, [
-    terminalDirectoryReady,
-    terminalProject,
-    terminalProjectId,
-  ]);
-  // #endregion
 
   /**
    * Terminal buckets / agent attach are keyed by task UUID. Inbox URLs often

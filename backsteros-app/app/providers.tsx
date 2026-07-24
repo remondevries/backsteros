@@ -71,6 +71,9 @@ export function Providers({
       signInUrl="/sign-in"
       signInFallbackRedirectUrl="/projects"
       afterSignOutUrl="/sign-in"
+      allowedRedirectOrigins={
+        typeof window !== "undefined" ? [window.location.origin] : undefined
+      }
     >
       {content}
       <Toaster

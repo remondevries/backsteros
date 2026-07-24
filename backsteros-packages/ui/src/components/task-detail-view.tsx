@@ -35,6 +35,10 @@ export type TaskDetailViewProps = {
   task: TaskDetailViewTask;
   sectionLabel?: string;
   headerMeta?: ReactNode;
+  /**
+   * Optional content rendered below the description (e.g. activity / comments).
+   */
+  belowDescription?: ReactNode;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onSaveTitle?: (
     title: string,
@@ -61,6 +65,7 @@ export function TaskDetailView({
   task,
   sectionLabel = "Tasks",
   headerMeta,
+  belowDescription,
   onSaveDescription,
   onSaveTitle,
   onFieldActivate,
@@ -106,7 +111,6 @@ export function TaskDetailView({
     initialValue: task.description ?? "",
     save: (next) => {
       if (!onSaveDescription) {
-        console.info("[task-detail] save description", next.slice(0, 80));
         return { ok: true };
       }
       return Promise.resolve(onSaveDescription(next)).then(() => ({ ok: true }));
@@ -198,6 +202,11 @@ export function TaskDetailView({
                 </ContentMarkdownPreviewColumn>
               }
             />
+            {belowDescription ? (
+              <div className="task-detail-below-description">
+                {belowDescription}
+              </div>
+            ) : null}
             {error ? (
               <p className="overview-empty" role="alert">
                 {error}

@@ -25,6 +25,8 @@ export type SettingsSidePanelNavViewProps = {
   onBack?: () => void;
   onNavigate?: () => void;
   historyToolbar?: ReactNode;
+  /** Defaults to all product settings tabs. */
+  tabs?: typeof SETTINGS_NAV_TABS;
 };
 
 export function SettingsSidePanelNavView({
@@ -33,6 +35,7 @@ export function SettingsSidePanelNavView({
   onBack,
   onNavigate,
   historyToolbar,
+  tabs = SETTINGS_NAV_TABS,
 }: SettingsSidePanelNavViewProps) {
   const activeTab = getSettingsTabFromPath(pathname);
   const [expandedSections, setExpandedSections] = useState<
@@ -42,7 +45,7 @@ export function SettingsSidePanelNavView({
     integration: true,
   });
 
-  const tabsBySection = SETTINGS_NAV_TABS.reduce(
+  const tabsBySection = tabs.reduce(
     (acc, tab) => {
       acc[tab.group].push(tab);
       return acc;

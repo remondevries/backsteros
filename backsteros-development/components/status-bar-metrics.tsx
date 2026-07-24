@@ -84,9 +84,18 @@ export function StatusBarMetrics({
     return (
       <div className="statusbar-metrics" aria-live="polite">
         {leading}
-        <span className="statusbar-metric">CPU —</span>
-        <span className="statusbar-metric">MEM —</span>
-        <span className="statusbar-metric">Disk —</span>
+        <span className="statusbar-metric statusbar-metric--cpu">
+          <span className="statusbar-metric-label">CPU</span>
+          <span className="statusbar-metric-value">—</span>
+        </span>
+        <span className="statusbar-metric statusbar-metric--mem">
+          <span className="statusbar-metric-label">MEM</span>
+          <span className="statusbar-metric-value">—</span>
+        </span>
+        <span className="statusbar-metric statusbar-metric--disk">
+          <span className="statusbar-metric-label">Disk</span>
+          <span className="statusbar-metric-value">—</span>
+        </span>
       </div>
     );
   }
@@ -100,7 +109,7 @@ export function StatusBarMetrics({
     <div className="statusbar-metrics" aria-live="polite">
       {leading}
       <span
-        className="statusbar-metric"
+        className="statusbar-metric statusbar-metric--cpu"
         title="System CPU usage (host machine)"
       >
         <span className="statusbar-metric-label">CPU</span>
@@ -109,7 +118,7 @@ export function StatusBarMetrics({
         </span>
       </span>
       <span
-        className="statusbar-metric"
+        className="statusbar-metric statusbar-metric--mem"
         title={`Memory ${formatBytes(stats.memory.used)} used of ${formatBytes(stats.memory.total)} (app + wired + compressed)`}
       >
         <span className="statusbar-metric-label">MEM</span>
@@ -126,7 +135,7 @@ export function StatusBarMetrics({
         </span>
       </span>
       <span
-        className="statusbar-metric"
+        className="statusbar-metric statusbar-metric--disk"
         title={
           stats.disk
             ? `Disk ${formatBytes(stats.disk.used)} used of ${formatBytes(stats.disk.total)} (${stats.disk.path})`

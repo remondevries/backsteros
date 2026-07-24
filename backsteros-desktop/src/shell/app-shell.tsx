@@ -38,6 +38,7 @@ import {
   BreadcrumbChromeSkeleton,
   buildDocumentFoldersByTarget,
   buildDocumentTree,
+  buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
   contactMatchesSlug,
   findDocumentTreeNodeById,
@@ -1390,6 +1391,13 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               includeNone: true,
             },
           )}
+          assigneeOptions={buildAssigneeDropdownOptions(
+            workspace.contacts.map((contact) => ({
+              id: contact.id,
+              name: contact.name,
+              email: contact.email,
+            })),
+          )}
           onPriorityChange={(taskId, priority) => {
             void workspace.patchTask(taskId, { priority });
           }}
@@ -1407,8 +1415,10 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               projectId: project?.id ?? null,
             });
           }}
-        />
-      );
+          onAssigneeChange={(taskId, assigneeId) => {
+            void workspace.patchTask(taskId, { assigneeId });
+          }}
+        />      );
     } else if (isJournalSectionPath(panelPathname)) {
       sidePanelBody = (
         <DesktopJournalSidePanel

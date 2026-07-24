@@ -152,4 +152,6 @@ export function resolveListKeyboardNavTabTargetZone(
 export type ApplyListKeyboardNavZoneOptions = {
   /** When true, j/k keeps navigating the side panel until the user opens a main list or changes route. */
   preferSidepanelForJk?: boolean;
+  /** When true, focus the zone list and restore its highlight after switching. */
+  activate?: boolean;
 };

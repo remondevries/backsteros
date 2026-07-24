@@ -2,13 +2,12 @@
 
 import {
   createElement,
-  useEffect,
-  useState,
   type ComponentType,
   type CSSProperties,
 } from "react";
-import * as PrimerOcticons from "@primer/octicons-react";
 
+import { isProjectIconKey } from "../project-icon-keys.js";
+import { getOcticonComponent } from "../project-octicon-registry.js";
 import { DocumentIcon } from "./document-icon.js";
 import {
   getDisplayProjectIcon,
@@ -31,21 +30,11 @@ type OcticonComponent = ComponentType<{
   "aria-hidden"?: boolean | "true" | "false";
 }>;
 
-function kebabToPascalIconName(key: string): string {
-  return (
-    key
-      .split("-")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join("") + "Icon"
-  );
-}
-
 function resolveOcticonComponent(key: string): OcticonComponent | null {
-  const exportName = kebabToPascalIconName(key);
-  const candidate = (PrimerOcticons as Record<string, unknown>)[exportName];
-  return typeof candidate === "function"
-    ? (candidate as OcticonComponent)
-    : null;
+  if (!isProjectIconKey(key)) {
+    return null;
+  }
+  return getOcticonComponent(key) as OcticonComponent | null;
 }
 
 /**
@@ -61,25 +50,14 @@ export function DocumentOcticon({
 }: DocumentOcticonProps) {
   const display = getDisplayProjectIcon(icon);
   const color = getEntityIconColor(icon);
-  const [component, setComponent] = useState<OcticonComponent | null>(null);
   const colorStyle: CSSProperties | undefined = color
     ? { color, ...style }
     : style;
 
-  useEffect(() => {
-    if (!display || display.length <= 2) {
-      setComponent(null);
-      return;
-    }
-    if (/[\u{1F300}-\u{1FAFF}]/u.test(display) || display.length <= 2) {
-      setComponent(null);
-      return;
-    }
-    setComponent(resolveOcticonComponent(display));
-  }, [display]);
-
   if (!display) {
-    return <DocumentIcon size={size} className={className} style={colorStyle} />;
+    return (
+      <DocumentIcon size={size} className={className} style={colorStyle} />
+    );
   }
 
   if (/[\u{1F300}-\u{1FAFF}]/u.test(display) || display.length <= 2) {
@@ -104,6 +82,7 @@ export function DocumentOcticon({
     );
   }
 
+  const component = resolveOcticonComponent(display);
   if (component) {
     return createElement(component, {
       size,

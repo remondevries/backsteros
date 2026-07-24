@@ -85,7 +85,10 @@ export function parseConsoleSlug(
   const fourth = decodePart(parts[3]);
 
   if (!projectId) {
-    return emptyConsoleRoute();
+    return {
+      ...emptyConsoleRoute(),
+      inbox: true,
+    };
   }
 
   if (second === "commit" && third) {
@@ -184,7 +187,7 @@ export function buildConsolePath(route: ConsoleRoute): string {
       }
     }
   }
-  return segments.length > 0 ? `/${segments.join("/")}` : "/";
+  return segments.length > 0 ? `/${segments.join("/")}` : "/inbox";
 }
 
 export function buildSettingsPath(tab: string = "general"): string {

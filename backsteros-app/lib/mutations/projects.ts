@@ -74,8 +74,8 @@ export type DeleteProjectResult =
   | { ok: false; error: string };
 
 function projectKeyFromName(name: string) {
-  const base = normalizeProjectKey(name).slice(0, 6) || "PRJ";
-  return `${base}${Math.floor(Math.random() * 90 + 10)}`.slice(0, 8);
+  const base = normalizeProjectKey(name);
+  return base.length >= 2 ? base : "PRJ";
 }
 
 async function patchProject(
@@ -170,8 +170,8 @@ export async function updateProjectKeyAction(input: {
 }): Promise<UpdateProjectKeyResult> {
   if (!input.projectId.trim()) return { ok: false, error: "Project is required." };
   const key = normalizeProjectKey(input.key);
-  if (key.length < 2 || key.length > 6) {
-    return { ok: false, error: "Project ID must be 2–6 letters or numbers." };
+  if (key.length < 2 || key.length > 3) {
+    return { ok: false, error: "Project ID must be 2–3 letters or numbers." };
   }
   try {
     const project = await patchProject(input.projectId, { key });

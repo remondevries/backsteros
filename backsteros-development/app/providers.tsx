@@ -2,12 +2,25 @@
 
 import { ClerkProvider, SignedIn, SignedOut, SignIn } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { ConfigureAuthScreen } from "@/components/configure-auth-screen";
 import { ConsoleApiProvider } from "@/lib/api-context";
 import { AgentTestingModeProvider } from "@/lib/agent-testing-mode-context";
 import { GITHUB_SSO_CALLBACK_PATH } from "@/lib/github-oauth";
+
+function useTauriShellClass() {
+  useEffect(() => {
+    const isTauri = Boolean(
+      (window as unknown as { __TAURI_INTERNALS__?: unknown })
+        .__TAURI_INTERNALS__,
+    );
+    document.documentElement.classList.toggle("is-tauri-shell", isTauri);
+    return () => {
+      document.documentElement.classList.remove("is-tauri-shell");
+    };
+  }, []);
+}
 
 function SignedInConsole({
   apiUrl,
@@ -62,6 +75,8 @@ export function Providers({
   publishableKey: string;
   apiUrl: string;
 }) {
+  useTauriShellClass();
+
   if (!publishableKey) {
     return <ConfigureAuthScreen />;
   }

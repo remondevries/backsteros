@@ -103,7 +103,6 @@ export function MarkdownDocumentDetailView({
     initialValue: initialBody,
     save: (next) => {
       if (!onSave) {
-        console.info("[markdown-detail] save", next.slice(0, 80));
         return { ok: true };
       }
       return Promise.resolve(onSave(next))

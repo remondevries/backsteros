@@ -15,9 +15,8 @@ import {
 } from "../project-areas.js";
 import type { ProjectStatus } from "../project-status.js";
 import {
-  createProjectDragPayload,
+  writeProjectDragPayload,
   isProjectListDragActive,
-  PROJECT_LIST_DRAG_TYPE,
   projectGroupAppendOrderKey,
   projectOrderKey,
   readProjectDragPayload,
@@ -389,10 +388,7 @@ export function ProjectsOverviewView({
                     dragInsertBeforeKey === projectOrderKey(project.id)
                   }
                   onDragStart={(event: DragEvent<HTMLDivElement>) => {
-                    event.dataTransfer.setData(
-                      PROJECT_LIST_DRAG_TYPE,
-                      createProjectDragPayload(project),
-                    );
+                    writeProjectDragPayload(event.dataTransfer, project);
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingProjectId(project.id);
                   }}

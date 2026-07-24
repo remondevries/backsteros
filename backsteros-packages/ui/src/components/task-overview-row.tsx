@@ -35,6 +35,8 @@ export type TaskOverviewRowTask = {
   assigneeId?: string | null;
   ownerInitials?: string | null;
   sortOrder?: number;
+  /** Epoch ms when known — used to refresh activity feeds after patches. */
+  updatedAt?: number;
 };
 
 export type TaskOverviewRowProps = {

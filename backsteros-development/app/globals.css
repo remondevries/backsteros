@@ -43,6 +43,7 @@ button {
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
+  padding-bottom: 4px;
   background: var(--console-bg);
 }
 
@@ -53,7 +54,8 @@ button {
   gap: 8px;
   height: 22px;
   min-height: 22px;
-  padding: 0 8px;
+  margin-top: 4px;
+  padding: 0 10px;
   background: var(--console-panel);
   color: var(--console-muted);
   font-size: 11px;
@@ -63,10 +65,12 @@ button {
 
 .statusbar-agents {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
+  width: 12.5rem;
+  flex: 0 0 auto;
   white-space: nowrap;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .statusbar-agents-dot {
@@ -74,14 +78,17 @@ button {
   height: 6px;
   border-radius: 999px;
   flex-shrink: 0;
+  visibility: hidden;
 }
 
 .statusbar-agents-dot.is-working {
+  visibility: visible;
   background: #3dd68c;
   box-shadow: 0 0 0 2px rgb(61 214 140 / 0.2);
 }
 
 .statusbar-agents-dot.is-attention {
+  visibility: visible;
   background: #ee7a47;
   box-shadow: 0 0 0 2px rgb(238 122 71 / 0.2);
 }
@@ -103,9 +110,23 @@ button {
 
 .statusbar-metric {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
   white-space: nowrap;
+  overflow: hidden;
+}
+
+.statusbar-metric--cpu {
+  width: 4.75rem;
+}
+
+.statusbar-metric--mem {
+  width: 14.5rem;
+}
+
+.statusbar-metric--disk {
+  width: 15rem;
 }
 
 .statusbar-metric-label {
@@ -242,11 +263,20 @@ button {
 }
 
 .console-sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  flex-shrink: 0;
-  margin: 0 2px 14px;
+  /* Match product sidebar nav (Inbox / Journal / Tasks): shared .sidebar-link
+   * height, gap, and hover/active colors from @backsteros/ui. */
+  flex: 0 0 auto;
+  overflow: visible;
+  margin: 0 0 14px;
+}
+
+.console-sidebar-nav .sidebar-link {
+  /* Keep shared .sidebar-link type (13px / 16px lh) — do not `font: inherit`. */
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
 }
 
 .console-sidebar-nav.is-collapsed {
@@ -254,23 +284,18 @@ button {
   align-items: center;
 }
 
-.console-sidebar-nav .sidebar-link {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
+.console-sidebar-nav.is-collapsed section {
+  align-items: center;
 }
 
 .console-sidebar-nav.is-collapsed .sidebar-link {
   width: auto;
   justify-content: center;
-  padding: 8px;
+  padding: 6px;
 }
 
-.console-sidebar-nav.is-collapsed .nav-icon {
-  margin: 0;
+.console-sidebar-nav.is-collapsed .sidebar-link-label {
+  display: none;
 }
 
 .console-content-frame {
@@ -279,7 +304,7 @@ button {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  margin: 0 4px 4px 0;
+  margin: 0 4px 0 0;
   overflow: hidden;
   border: 0.5px solid var(--border);
   border-radius: 5px;
@@ -356,6 +381,59 @@ button {
 
 .console-shell .content-tabs-bar {
   padding-right: 4px;
+}
+
+/*
+ * Overlay titlebar (Tauri/macOS): content fills under the traffic lights.
+ * Inset the sidebar chrome so controls clear the lights; tabs become the
+ * window drag strip (same idea as product desktop).
+ */
+html.is-tauri-shell .console-sidebar-inner {
+  padding-top: 0;
+}
+
+html.is-tauri-shell .app-side-panel-history-toolbar {
+  min-height: 44px;
+  margin-bottom: 0;
+  padding-left: 72px;
+  align-items: center;
+}
+
+html.is-tauri-shell .console-shell--projects-collapsed .console-shell-nav {
+  width: 88px;
+  min-width: 88px;
+}
+
+html.is-tauri-shell .console-shell--projects-collapsed .app-side-panel-history-toolbar {
+  width: 100%;
+  min-height: 44px;
+  padding-left: 72px;
+  justify-content: flex-start;
+}
+
+html.is-tauri-shell .console-shell .content-tabs-bar {
+  min-height: 44px;
+  cursor: default;
+}
+
+html.is-tauri-shell .console-shell .workspace,
+html.is-tauri-shell .console-shell .console-content-frame,
+html.is-tauri-shell .console-shell .console-pane-body,
+html.is-tauri-shell .console-shell .terminal-frame,
+html.is-tauri-shell .console-shell .console-content-list {
+  -webkit-app-region: no-drag;
+}
+
+html.is-tauri-shell .console-shell [data-tauri-drag-region] button,
+html.is-tauri-shell .console-shell [data-tauri-drag-region] a,
+html.is-tauri-shell .console-shell [data-tauri-drag-region] input,
+html.is-tauri-shell .console-shell [data-tauri-drag-region] [role="tab"],
+html.is-tauri-shell .console-shell [data-tauri-drag-region] [role="menuitem"] {
+  -webkit-app-region: no-drag;
+}
+
+html.is-tauri-shell .console-auth {
+  padding-top: 44px;
 }
 
 .console-content-list {
@@ -825,15 +903,16 @@ button {
 
 .console-github-commit-sha {
   flex-shrink: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
   text-decoration: none;
 }
 
 .console-github-commit-sha:hover {
-  color: var(--foreground);
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
   text-decoration: underline;
 }
 
@@ -855,10 +934,11 @@ button {
 }
 
 .console-github-commit-age {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1;
-  color: var(--console-muted);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -891,15 +971,20 @@ button {
 
 .console-github-commit-message {
   font-size: 13px;
+  font-weight: 400;
   line-height: 1.35;
-  color: var(--foreground);
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
   overflow-wrap: anywhere;
 }
 
 .console-github-commit-meta {
   margin-top: 2px;
-  font-size: 11px;
-  color: var(--console-muted);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
 .console-github-pane-more {
@@ -2002,6 +2087,16 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   margin: 0;
   padding: 8px 6px 12px;
   list-style: none;
+}
+
+/* List container is focused for j/k nav — never show a UA focus ring around it. */
+.console-project-groups:focus,
+.console-project-groups:focus-visible,
+.console-project-list:focus,
+.console-project-list:focus-visible,
+[data-list-keyboard-nav-container]:focus,
+[data-list-keyboard-nav-container]:focus-visible {
+  outline: none;
 }
 
 .console-project-groups .status-group-section {

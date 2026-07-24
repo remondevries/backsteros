@@ -169,7 +169,6 @@ export function LetterDetailView({
     initialValue: letter.body ?? "",
     save: (next) => {
       if (!onSaveBody) {
-        console.info("[letter-detail] save body", next.slice(0, 80));
         return { ok: true };
       }
       return Promise.resolve(onSaveBody(next)).then(() => ({ ok: true }));

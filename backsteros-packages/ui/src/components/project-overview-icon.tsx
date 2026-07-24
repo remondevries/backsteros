@@ -9,6 +9,13 @@ export type ProjectOverviewIconProps = {
   icon: string | null | undefined;
   name: string;
   disabled?: boolean;
+  /** Glyph size in px. Default 28. */
+  size?: number;
+  /**
+   * `bare` — no padded chrome around the glyph (panel headers).
+   * Default keeps the bordered tile used on full project overview.
+   */
+  variant?: "default" | "bare";
   onIconChange?: (icon: string | null) => void | Promise<void>;
 };
 
@@ -19,6 +26,8 @@ export function ProjectOverviewIcon({
   icon: initialIcon,
   name,
   disabled = false,
+  size = 28,
+  variant = "default",
   onIconChange,
 }: ProjectOverviewIconProps) {
   const [icon, setIcon] = useState<string | null>(initialIcon ?? null);
@@ -35,7 +44,11 @@ export function ProjectOverviewIcon({
   const interactive = Boolean(onIconChange) && !disabled;
 
   return (
-    <div className="project-overview-icon">
+    <div
+      className={`project-overview-icon${
+        variant === "bare" ? " project-overview-icon--bare" : ""
+      }`}
+    >
       <button
         type="button"
         className="project-overview-icon__trigger"
@@ -45,7 +58,7 @@ export function ProjectOverviewIcon({
           if (interactive) setPickerOpen(true);
         }}
       >
-        <ProjectOcticon icon={icon} size={28} />
+        <ProjectOcticon icon={icon} size={size} />
       </button>
       {interactive ? (
         <ProjectIconPicker

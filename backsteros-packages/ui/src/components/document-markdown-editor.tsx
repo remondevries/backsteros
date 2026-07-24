@@ -344,7 +344,7 @@ export function DocumentMarkdownEditor({
           }}
           extensions={extensions}
           onChange={onChange}
-          onCreateEditor={(view) => {
+          onCreateEditor={(view: EditorView) => {
             setEditorView(view);
           }}
           editable={!disabled}

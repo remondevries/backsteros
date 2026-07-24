@@ -153,7 +153,7 @@ function normalizeProjectKey(value: string): string {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 6);
+    .slice(0, 3);
 }
 
 function splitPathSegments(href: string): string[] {

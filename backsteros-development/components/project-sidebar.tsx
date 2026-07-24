@@ -167,7 +167,10 @@ export function ProjectSidebar({
     >
       <div className="sidebar-inner console-sidebar-inner">
         <div className="console-sidebar-chrome">
-          <div className="app-side-panel-history-toolbar">
+          <div
+            className="app-side-panel-history-toolbar"
+            data-tauri-drag-region
+          >
             <div className="app-side-panel-history-actions">
               {onToggleCollapsed ? (
                 <button
@@ -209,26 +212,26 @@ export function ProjectSidebar({
         <div className="console-pane-body">
           {onSelectInbox ? (
             <nav
-              className={`console-sidebar-nav${
+              className={`sidebar-sections console-sidebar-nav${
                 collapsed ? " is-collapsed" : ""
               }`}
               aria-label="Workspace"
             >
-              <button
-                type="button"
-                className={`sidebar-link${inboxActive ? " is-active" : ""}`}
-                aria-current={inboxActive ? "page" : undefined}
-                title="Inbox"
-                aria-label="Inbox"
-                onClick={onSelectInbox}
-              >
-                <span className="nav-icon">
-                  <InboxNavIcon />
-                </span>
-                {!collapsed ? (
-                  <span className="sidebar-link-label">Inbox</span>
-                ) : null}
-              </button>
+              <section>
+                <button
+                  type="button"
+                  className={`sidebar-link${inboxActive ? " is-active" : ""}`}
+                  aria-current={inboxActive ? "page" : undefined}
+                  title="Inbox"
+                  aria-label="Inbox"
+                  onClick={onSelectInbox}
+                >
+                  <InboxNavIcon className="nav-icon" />
+                  {!collapsed ? (
+                    <span className="sidebar-link-label">Inbox</span>
+                  ) : null}
+                </button>
+              </section>
             </nav>
           ) : null}
 

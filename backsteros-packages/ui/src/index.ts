@@ -199,6 +199,11 @@ export {
   getInboxItemRouteSlug,
   getInboxTaskRouteHref,
   getInboxTaskRouteSlugForTask,
+  groupInboxItemsByAttentionStatus,
+  sortInboxItemsByAttentionStatus,
+  INBOX_ATTENTION_STATUS_ORDER,
+  type InboxAttentionStatus,
+  type InboxAttentionStatusGroup,
   type InboxLetterListItem,
   type InboxListItem,
   type InboxTaskListItem,
@@ -453,6 +458,7 @@ export {
 
 export {
   SettingsSidePanelNavView,
+  type SettingsSidePanelLinkComponent,
   type SettingsSidePanelNavViewProps,
 } from "./components/settings-side-panel-nav-view.js";
 
@@ -470,11 +476,14 @@ export {
   AccountSettingsSectionView,
   ComingSoonSettingsSectionView,
   GeneralSettingsSectionView,
+  GithubSettingsSectionView,
   IntegrationConnectionSettingsView,
   SyncSettingsSectionView,
   type AccountSettingsSectionViewProps,
   type ComingSoonSettingsSectionViewProps,
   type GeneralSettingsSectionViewProps,
+  type GithubSettingsOrganization,
+  type GithubSettingsSectionViewProps,
   type IntegrationConnectionSettingsViewProps,
   type SyncSettingsSectionViewProps,
 } from "./components/settings-sections.js";
@@ -549,9 +558,11 @@ export {
 
 export {
   PROJECT_LIST_DRAG_TYPE,
+  PROJECT_LIST_DRAG_FALLBACK_TYPE,
   projectOrderKey,
   projectGroupAppendOrderKey,
   createProjectDragPayload,
+  writeProjectDragPayload,
   readProjectDragPayload,
   isProjectListDragActive,
   resolveProjectDropBeforeProject,
@@ -566,6 +577,28 @@ export {
   projectReorderPatches,
   type ProjectLikeForReorder,
 } from "./project-reorder.js";
+
+export {
+  TASK_LIST_DRAG_TYPE,
+  TASK_LIST_DRAG_FALLBACK_TYPE,
+  taskOrderKey,
+  taskGroupAppendOrderKey,
+  createTaskDragPayload,
+  writeTaskDragPayload,
+  readTaskDragPayload,
+  isTaskListDragActive,
+  resolveTaskDropBeforeTask,
+  resolveTaskDropOnGroupAppend,
+  type TaskReorderRequest,
+  type TaskDragPayload,
+  type TaskLikeForDrag,
+} from "./task-list-drag.js";
+
+export {
+  applyOptimisticTaskReorder,
+  taskReorderPatches,
+  type TaskLikeForReorder,
+} from "./task-reorder.js";
 
 export {
   TASKS_DUE_FILTERS,
@@ -622,6 +655,11 @@ export {
 } from "./components/task-overview-row.js";
 
 export {
+  TaskWorkbenchRow,
+  type TaskWorkbenchRowProps,
+} from "./components/task-workbench-row.js";
+
+export {
   TasksOverviewView,
   type TasksOverviewViewProps,
 } from "./components/tasks-overview-view.js";
@@ -630,6 +668,11 @@ export {
   ProjectTasksView,
   type ProjectTasksViewProps,
 } from "./components/project-tasks-view.js";
+
+export {
+  ProjectTasksWorkbenchView,
+  type ProjectTasksWorkbenchViewProps,
+} from "./components/project-tasks-workbench-view.js";
 
 export {
   ProjectOverviewRow,
@@ -654,6 +697,11 @@ export {
   type ProjectDetailViewProps,
   type ProjectDetailViewProject,
 } from "./components/project-detail-view.js";
+
+export {
+  ProjectPanelDetailView,
+  type ProjectPanelDetailViewProps,
+} from "./components/project-panel-detail-view.js";
 
 export {
   ProjectKeyEditor,
@@ -728,7 +776,9 @@ export {
 
 export {
   DOCUMENT_TREE_DRAG_TYPE,
+  DOCUMENT_TREE_DRAG_FALLBACK_TYPE,
   createTreeDragPayload,
+  writeTreeDragPayload,
   readTreeDragPayload,
   isTreeDragActive,
   resolveFolderDragOverMode,
@@ -839,6 +889,11 @@ export {
   type TaskPropertiesDisplayProps,
   type TaskPropertiesDisplayTask,
 } from "./components/task-properties-display.js";
+
+export {
+  TaskPropertiesInlineChips,
+  type TaskPropertiesInlineChipsProps,
+} from "./components/task-properties-inline-chips.js";
 
 export {
   LetterPropertiesDisplay,
@@ -1010,6 +1065,36 @@ export {
 } from "./components/task-detail-view.js";
 
 export {
+  TaskStackedDetailView,
+  type TaskStackedDetailViewProps,
+} from "./components/task-stacked-detail-view.js";
+
+export {
+  TaskActivityPanel,
+  type TaskActivityPanelProps,
+  type TaskActivityRequestJson,
+  type TaskActivityCurrentUser,
+} from "./components/task-activity-panel.js";
+
+export {
+  AgentActivityIcon,
+} from "./components/agent-activity-icon.js";
+
+export {
+  AGENT_HOLD_COMMENT_PREFIXES,
+  isAgentHoldCommentBody,
+} from "./agent-hold-comment.js";
+
+export {
+  agentWorkTotals,
+  formatActivityDurationMs,
+  formatActivityTokenCount,
+  groupConsecutiveAgentWorked,
+  mergeAgentWorkedActivities,
+  type GroupedActivity,
+} from "./task-activity-format.js";
+
+export {
   ContentChromeHeader,
   ContentBreadcrumb,
   type ContentChromeHeaderProps,
@@ -1028,6 +1113,12 @@ export {
   EntityHeaderActionsShell,
   EntityHeaderActionsSlot,
 } from "./components/entity-actions/entity-header-actions-shell.js";
+
+export {
+  EntityActionsMenu,
+  type EntityActionsMenuItem,
+  type EntityActionsMenuProps,
+} from "./components/entity-actions/entity-actions-menu.js";
 
 export { RegisterEntityDeleteAction } from "./components/entity-actions/register-entity-delete-action.js";
 
@@ -1764,6 +1855,7 @@ export {
   ListKeyboardNavigationProvider,
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
   isKeyboardNavHighlighted,
   type ListKeyboardNavigationRegistration,
 } from "./components/list-keyboard-navigation-provider.js";
@@ -1793,6 +1885,7 @@ export {
   type JournalDetailSkeletonProps,
 } from "./components/skeletons/journal-detail-skeleton.js";
 export { ProjectOverviewSkeleton } from "./components/skeletons/project-overview-skeleton.js";
+export { ProjectPanelOverviewSkeleton } from "./components/skeletons/project-panel-overview-skeleton.js";
 export { BreadcrumbChromeSkeleton } from "./components/skeletons/breadcrumb-chrome-skeleton.js";
 export {
   InboxSidePanelSkeleton,

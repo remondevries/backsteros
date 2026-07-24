@@ -2,13 +2,12 @@
 
 import {
   createElement,
-  useEffect,
-  useState,
   type ComponentType,
   type CSSProperties,
 } from "react";
-import * as PrimerOcticons from "@primer/octicons-react";
 
+import { isProjectIconKey } from "../project-icon-keys.js";
+import { getOcticonComponent } from "../project-octicon-registry.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 
 export type ProjectOcticonProps = {
@@ -26,15 +25,6 @@ type OcticonComponent = ComponentType<{
   "aria-label"?: string;
   "aria-hidden"?: boolean | "true" | "false";
 }>;
-
-function kebabToPascalIconName(key: string): string {
-  return (
-    key
-      .split("-")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join("") + "Icon"
-  );
-}
 
 type DisplayEntityIcon = {
   /** Octicon key or emoji glyph to render — null means "use the default icon". */
@@ -94,16 +84,15 @@ export function getEntityIconColor(
 }
 
 function resolveOcticonComponent(key: string): OcticonComponent | null {
-  const exportName = kebabToPascalIconName(key);
-  const candidate = (PrimerOcticons as Record<string, unknown>)[exportName];
-  return typeof candidate === "function"
-    ? (candidate as OcticonComponent)
-    : null;
+  if (!isProjectIconKey(key)) {
+    return null;
+  }
+  return getOcticonComponent(key) as OcticonComponent | null;
 }
 
 /**
  * Project glyph — Primer octicon by key, emoji passthrough, else DefaultProjectIcon.
- * Matches Next `ProjectOcticon` for bare keys without requiring the full app registry.
+ * Uses an explicit import registry so Turbopack/webpack cannot tree-shake icons away.
  */
 export function ProjectOcticon({
   icon,
@@ -113,23 +102,9 @@ export function ProjectOcticon({
   style,
 }: ProjectOcticonProps) {
   const { display, color } = parseDisplayEntityIcon(icon);
-  const [component, setComponent] = useState<OcticonComponent | null>(null);
   const colorStyle: CSSProperties | undefined = color
     ? { color, ...style }
     : style;
-
-  useEffect(() => {
-    if (!display || display.length <= 2) {
-      setComponent(null);
-      return;
-    }
-    // Emoji / short glyph — render as text below.
-    if (/[\u{1F300}-\u{1FAFF}]/u.test(display) || display.length <= 2) {
-      setComponent(null);
-      return;
-    }
-    setComponent(resolveOcticonComponent(display));
-  }, [display]);
 
   if (!display) {
     return (
@@ -159,6 +134,7 @@ export function ProjectOcticon({
     );
   }
 
+  const component = resolveOcticonComponent(display);
   if (component) {
     return createElement(component, {
       size,

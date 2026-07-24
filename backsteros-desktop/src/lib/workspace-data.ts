@@ -65,6 +65,7 @@ function mapTask(
     contactId: task.contactId,
     assigneeId: task.assigneeId,
     sortOrder: task.sortOrder,
+    updatedAt: asEpoch(task.updatedAt) ?? undefined,
   };
 }
 
@@ -520,6 +521,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
       projectKey: project?.key ?? null,
       projectName: project?.name ?? null,
       projectIcon: project?.icon ?? null,
+      assigneeId: task.assigneeId ?? null,
     });
   });
 
@@ -781,7 +783,12 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     }) => {
       const name = input.name.trim();
       if (!name) throw new Error("Project name is required.");
-      const key = entityKeyFromName(name, "prj");
+      const base = name
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(0, 3);
+      const key = base.length >= 2 ? base : "PRJ";
       const body = {
         key,
         name,
@@ -810,7 +817,6 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     [
       authenticated,
       client,
-      entityKeyFromName,
       powerSync,
       toSnakeFields,
     ],

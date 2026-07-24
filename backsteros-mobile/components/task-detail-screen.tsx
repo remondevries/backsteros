@@ -1,9 +1,9 @@
 import type { Contact, Project, Task } from "@backsteros/contracts";
+import { useUser } from "@clerk/clerk-expo";
 import { Stack } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -43,6 +43,7 @@ import {
   PropertyOptionSheet,
   type PropertyOption,
 } from "./property-option-sheet";
+import { TaskActivityPanel } from "./task-activity-panel";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
@@ -79,8 +80,23 @@ function asTaskStatus(value: string | null | undefined): TaskStatus {
 
 export function TaskDetailScreen({ taskId }: Props) {
   const powerSync = useMobilePowerSync();
+  const { user } = useUser();
 
   const client = useMobileApiClient();
+
+  const requestJson = useCallback(
+    <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
+    [client],
+  );
+
+  const currentUser = useMemo(
+    () => ({
+      email:
+        user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase() || null,
+      imageUrl: user?.imageUrl?.trim() || null,
+    }),
+    [user?.imageUrl, user?.primaryEmailAddress?.emailAddress],
+  );
 
   const { task, loading, error, retry } = useTaskDetail(taskId);
 
@@ -104,6 +120,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [activityFeedRevision, setActivityFeedRevision] = useState(0);
 
   useEffect(() => {
     setLocalTitle(null);
@@ -232,6 +249,9 @@ export function TaskDetailScreen({ taskId }: Props) {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(values),
+        })
+        .then(() => {
+          setActivityFeedRevision((current) => current + 1);
         })
         .catch(() => {
           /* local already updated */
@@ -560,9 +580,10 @@ export function TaskDetailScreen({ taskId }: Props) {
           ),
         }}
       />
-      <ScrollView
+      <KeyboardAwareScrollView
         style={ui.screen}
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
+        bottomClearance={FLOATING_TAB_BAR_CLEARANCE}
+        keepEndVisibleWhileTyping
       >
         <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 6 }}>
           {task.display_id ? (
@@ -593,7 +614,14 @@ export function TaskDetailScreen({ taskId }: Props) {
             No description yet.
           </Text>
         )}
-      </ScrollView>
+
+        <TaskActivityPanel
+          taskId={task.id}
+          feedRevision={activityFeedRevision}
+          requestJson={requestJson}
+          currentUser={currentUser}
+        />
+      </KeyboardAwareScrollView>
     </>
   );
 }

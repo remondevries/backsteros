@@ -9,7 +9,10 @@ import {
   type SearchableDropdownOption,
 } from "./searchable-dropdown.js";
 
-export type PropertyDropdownTriggerVariant = "default" | "composePill";
+export type PropertyDropdownTriggerVariant =
+  | "default"
+  | "composePill"
+  | "inlineChip";
 
 export type PropertyDropdownProps<T extends string> = {
   value: T | null;
@@ -104,7 +107,9 @@ export function PropertyDropdown<T extends string>({
           ? "property-dropdown property-dropdown--shortcut-anchor"
           : triggerVariant === "composePill"
             ? "property-dropdown property-dropdown--compose"
-            : "property-dropdown"
+            : triggerVariant === "inlineChip"
+              ? "property-dropdown property-dropdown--inline-chip"
+              : "property-dropdown"
       }
       panelWidth={panelWidth}
       panelAlign={panelAlign}
@@ -120,6 +125,9 @@ export function PropertyDropdown<T extends string>({
               "property-dropdown-trigger",
               triggerVariant === "composePill"
                 ? "property-dropdown-trigger--compose"
+                : null,
+              triggerVariant === "inlineChip"
+                ? "property-dropdown-trigger--inline-chip"
                 : null,
               open ? "is-open" : null,
               mutedTrigger ? "is-muted" : null,

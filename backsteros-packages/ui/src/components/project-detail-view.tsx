@@ -189,7 +189,6 @@ export function ProjectDetailView({
     shortcutsEnabled: section === "overview",
     save: (next) => {
       if (!onSaveDescription) {
-        console.info("[project-detail] save description", next.slice(0, 80));
         return { ok: true };
       }
       return Promise.resolve(onSaveDescription(next)).then(() => ({

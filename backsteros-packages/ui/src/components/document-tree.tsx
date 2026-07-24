@@ -21,8 +21,7 @@ import {
   type DocumentTreeNode,
 } from "../document-tree.js";
 import {
-  createTreeDragPayload,
-  DOCUMENT_TREE_DRAG_TYPE,
+  writeTreeDragPayload,
   isTreeDragActive,
   readTreeDragPayload,
   resolveFolderDragOverMode,
@@ -210,10 +209,7 @@ function DocumentTreeItem({
       id: document.id,
       parentId,
     };
-    event.dataTransfer.setData(
-      DOCUMENT_TREE_DRAG_TYPE,
-      createTreeDragPayload(document, parentId),
-    );
+    writeTreeDragPayload(event.dataTransfer, document, parentId);
     event.dataTransfer.effectAllowed = "move";
     onTreeDragStart?.(payload);
   }
@@ -398,10 +394,7 @@ function DocumentTreeFolder({
       id: folder.id,
       parentId,
     };
-    event.dataTransfer.setData(
-      DOCUMENT_TREE_DRAG_TYPE,
-      createTreeDragPayload(folder, parentId),
-    );
+    writeTreeDragPayload(event.dataTransfer, folder, parentId);
     event.dataTransfer.effectAllowed = "move";
     setIsDragging(true);
     onTreeDragStart?.(payload);

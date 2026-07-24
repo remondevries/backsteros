@@ -147,7 +147,12 @@ function ProvidersWithBackend({
   }
 
   return (
-    <ClerkProvider publishableKey={clerkPublishableKey}>
+    <ClerkProvider
+      publishableKey={clerkPublishableKey}
+      allowedRedirectOrigins={
+        typeof window !== "undefined" ? [window.location.origin] : undefined
+      }
+    >
       <AuthenticatedProviders
         enablePowerSync={enablePowerSync}
         isOverlay={isOverlay}

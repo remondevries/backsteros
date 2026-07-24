@@ -84,6 +84,7 @@ import {
 import { AccountSettingsSection } from "@/components/settings/account-settings-section";
 import { ApiKeysSettingsSection } from "@/components/settings/api-keys-settings-section";
 import { GeneralSettingsSection } from "@/components/settings/general-settings-section";
+import { GithubSettingsSection } from "@/components/settings/github-settings-section";
 import { StorageSettingsSection } from "@/components/settings/storage-settings-section";
 import { WhoopSettingsSection } from "@/components/settings/whoop-settings-section";
 import { SettingsContentHeader } from "@/components/settings/settings-content-header";
@@ -810,6 +811,11 @@ function SettingsScreen({ tab }: { tab?: string }) {
             />
           ) : activeTab === "storage" ? (
             <StorageSettingsSection
+              title={meta.label}
+              description={meta.description}
+            />
+          ) : activeTab === "github" ? (
+            <GithubSettingsSection
               title={meta.label}
               description={meta.description}
             />

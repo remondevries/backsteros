@@ -27,7 +27,9 @@ function shouldHandleEscapeBack(
       tag === "SELECT" ||
       target.isContentEditable ||
       target.closest(".cm-editor") ||
-      target.closest("[role='textbox']")
+      target.closest("[role='textbox']") ||
+      // xterm focuses a textarea, but also guard the host so Escape stays in-agent.
+      target.closest(".xterm")
     ) {
       return false;
     }

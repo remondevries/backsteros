@@ -47,10 +47,10 @@ type EditableProperty = {
 function projectKeyFromName(name: string): string {
   const base = name
     .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 6);
-  return (base || "prj") + Math.floor(Math.random() * 90 + 10);
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 3);
+  return base.length >= 2 ? base : "PRJ";
 }
 
 /** Compose a new project — name, description, status, and area. */

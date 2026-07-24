@@ -48,7 +48,44 @@ import {
   shouldHandleListKeyboardActivate,
   shouldHandleListKeyboardNavigation,
 } from "../should-handle-list-keyboard-navigation.js";
+import { isBlockingModalOpen } from "../shortcut-guards.js";
 import { useCommandPalette } from "./command-palette-context.js";
+
+function shouldHandleListKeyboardEscape(
+  event: KeyboardEvent,
+  commandPaletteOpen: boolean,
+): boolean {
+  if (event.key !== "Escape" || event.repeat) {
+    return false;
+  }
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+  if (commandPaletteOpen || isBlockingModalOpen()) {
+    return false;
+  }
+  if (document.querySelector("[data-searchable-dropdown-panel]")) {
+    return false;
+  }
+
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    const tag = target.tagName;
+    if (
+      tag === "INPUT" ||
+      tag === "TEXTAREA" ||
+      tag === "SELECT" ||
+      target.isContentEditable ||
+      target.closest(".cm-editor") ||
+      target.closest("[role='textbox']") ||
+      target.closest(".xterm")
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export const LIST_KEYBOARD_NAV_SIDE_PANEL_PRIORITY = 10;
 export { LIST_KEYBOARD_NAV_CONTENT_PRIORITY } from "../list-keyboard-nav-zone.js";
@@ -330,6 +367,7 @@ export function ListKeyboardNavigationProvider({
   const registrationsRef = useRef<ListKeyboardNavigationRegistration[]>([]);
   const activeZoneRef = useRef<ListKeyboardNavZone | null>(null);
   const preferSidepanelForJkRef = useRef(false);
+  const pendingActivateZoneRef = useRef<ListKeyboardNavZone | null>(null);
   const [activeZone, setActiveZoneState] = useState<ListKeyboardNavZone | null>(
     null,
   );
@@ -343,6 +381,23 @@ export function ListKeyboardNavigationProvider({
       preferSidepanelForJkRef.current = options?.preferSidepanelForJk ?? false;
       document.body.setAttribute("data-keyboard-nav-active-zone", zone);
       clearHighlightsExceptZone(registrationsRef.current, zone);
+      if (options?.activate) {
+        const registration = pickBestRegistrationInZone(
+          registrationsRef.current,
+          zone,
+        );
+        if (registration) {
+          pendingActivateZoneRef.current = null;
+          activateListKeyboardRegistration(
+            registrationsRef.current,
+            registration,
+          );
+        } else {
+          pendingActivateZoneRef.current = zone;
+        }
+      } else {
+        pendingActivateZoneRef.current = null;
+      }
     },
     [],
   );
@@ -426,6 +481,25 @@ export function ListKeyboardNavigationProvider({
       ];
 
       requestAnimationFrame(() => {
+        const pendingZone = pendingActivateZoneRef.current;
+        if (
+          pendingZone &&
+          zoneHasNavigableItems(registrationsRef.current, pendingZone)
+        ) {
+          pendingActivateZoneRef.current = null;
+          const pendingRegistration = pickBestRegistrationInZone(
+            registrationsRef.current,
+            pendingZone,
+          );
+          if (pendingRegistration) {
+            activateListKeyboardRegistration(
+              registrationsRef.current,
+              pendingRegistration,
+            );
+          }
+          return;
+        }
+
         const zone = activeZoneRef.current;
         if (zone && !zoneHasNavigableItems(registrationsRef.current, zone)) {
           syncActiveZoneToAvailableRegistrations(
@@ -496,6 +570,26 @@ function ListKeyboardNavigationGlobalListener({
         return;
       }
 
+      if (shouldHandleListKeyboardEscape(event, commandPaletteOpen)) {
+        const currentZone = activeZoneRef.current;
+        if (currentZone === "main" || currentZone === "content") {
+          const sidepanel = pickBestRegistrationInZone(
+            registrationsRef.current,
+            "sidepanel",
+          );
+          if (sidepanel) {
+            event.preventDefault();
+            event.stopPropagation();
+            suppressKeyboardNavHover();
+            applyActiveZone("sidepanel", {
+              preferSidepanelForJk: true,
+              activate: true,
+            });
+            return;
+          }
+        }
+      }
+
       if (shouldHandleListKeyboardZoneTab(event)) {
         const available = getAvailableKeyboardNavZones(registrationsRef.current);
         if (available.length === 0) {
@@ -540,11 +634,8 @@ function ListKeyboardNavigationGlobalListener({
         suppressKeyboardNavHover();
         applyActiveZone(nextZone, {
           preferSidepanelForJk: nextZone === "sidepanel",
+          activate: true,
         });
-        activateListKeyboardRegistration(
-          registrationsRef.current,
-          nextRegistration,
-        );
         return;
       }
 
@@ -585,8 +676,7 @@ function ListKeyboardNavigationGlobalListener({
         event.preventDefault();
         event.stopPropagation();
         suppressKeyboardNavHover();
-        applyActiveZone("main");
-        activateListKeyboardRegistration(registrationsRef.current, registration);
+        applyActiveZone("main", { activate: true });
         if (isActivate) {
           const targetId =
             registration.getSelectedId() ??
@@ -782,6 +872,20 @@ export function useListKeyboardNavigation({
 
   return {
     highlightedId: activeZone === zone ? resolvedHighlight : null,
+  };
+}
+
+export function useListKeyboardNavigationZone(): {
+  activeZone: ListKeyboardNavZone | null;
+  setActiveZone: (
+    zone: ListKeyboardNavZone,
+    options?: ApplyListKeyboardNavZoneOptions,
+  ) => void;
+} {
+  const context = useListKeyboardNavigationContext();
+  return {
+    activeZone: context.activeZone,
+    setActiveZone: context.setActiveZone,
   };
 }
 

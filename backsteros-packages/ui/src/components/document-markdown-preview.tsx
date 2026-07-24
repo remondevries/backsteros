@@ -76,11 +76,6 @@ const markdownPreviewComponents: Components = {
   },
 };
 
-const inlineMarkdownComponents: Components = {
-  ...markdownPreviewComponents,
-  p: ({ children }) => <>{children}</>,
-};
-
 export type DocumentMarkdownPreviewProps = {
   body: string;
   /** Override catalog; defaults to MentionCatalogProvider. */
@@ -125,6 +120,14 @@ function splitParagraphs(body: string): string[] {
   return parts;
 }
 
+/**
+ * Soft line breaks inside a paragraph → markdown hard breaks so ReactMarkdown
+ * keeps the same visual rows the editor shows with pre-wrap.
+ */
+function withSoftLineHardBreaks(content: string): string {
+  return content.replace(/([^\n])\n(?!\n)/g, "$1  \n");
+}
+
 function BlankParagraph() {
   return (
     <p className="content-markdown-preview-blank-line" aria-hidden="true">
@@ -133,27 +136,27 @@ function BlankParagraph() {
   );
 }
 
-function InlineMarkdownText({ content }: { content: string }) {
-  if (!content) {
-    return null;
-  }
-
-  return (
-    <ReactMarkdown components={inlineMarkdownComponents}>{content}</ReactMarkdown>
-  );
-}
+/** Inline markdown (bold/italic/code/links) without wrapping an extra `<p>`. */
+const inlineMarkdownComponents: Components = {
+  ...markdownPreviewComponents,
+  p({ children }) {
+    return (
+      <span className="content-markdown-preview-prewrap">{children}</span>
+    );
+  },
+};
 
 function InlineMarkdownSegment({ content }: { content: string }) {
   if (!content) {
     return null;
   }
 
-  if (hasBlockMarkdown(content)) {
-    return <InlineMarkdownText content={content} />;
-  }
-
+  // Block markdown is emitted as MarkdownBlockSegment siblings by
+  // renderParagraphWithMentions — never via block ReactMarkdown under <p>.
   return (
-    <span className="content-markdown-preview-prewrap">{content}</span>
+    <ReactMarkdown components={inlineMarkdownComponents}>
+      {withSoftLineHardBreaks(content)}
+    </ReactMarkdown>
   );
 }
 
@@ -163,7 +166,9 @@ function MarkdownBlockSegment({ content }: { content: string }) {
   }
 
   return (
-    <ReactMarkdown components={markdownPreviewComponents}>{content}</ReactMarkdown>
+    <ReactMarkdown components={markdownPreviewComponents}>
+      {content}
+    </ReactMarkdown>
   );
 }
 
@@ -786,6 +791,21 @@ function renderParagraphWithMentions(
     }
 
     flushBlockGroup();
+
+    // Headings/lists/code must not land inside the inline <p> run — that
+    // produces invalid <p><h2>… nesting and hydration errors.
+    if (segment.type === "markdown" && hasBlockMarkdown(segment.content)) {
+      flushInlineRun();
+      elements.push(
+        <MarkdownBlockSegment
+          key={`${keyPrefix}-block-md-${index}`}
+          content={segment.content}
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
     inlineRun.push(
       renderInlineSegment(
         segment,
@@ -828,7 +848,7 @@ function ParagraphPreview({
 
     return (
       <p>
-        <span className="content-markdown-preview-prewrap">{paragraph}</span>
+        <InlineMarkdownSegment content={paragraph} />
       </p>
     );
   }

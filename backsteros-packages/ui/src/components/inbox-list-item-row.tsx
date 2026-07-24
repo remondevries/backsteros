@@ -8,9 +8,11 @@ import { keyboardNavItemProps } from "../keyboard-nav-item.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import { sidePanelItemClass } from "../side-panel-styles.js";
 import {
+  DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
   resolveDropdownProjectKey,
 } from "./dropdown-options.js";
+import { ContactPersonIcon } from "./contact-person-icon.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
@@ -26,8 +28,9 @@ export type InboxListItemLinkComponent = ComponentType<{
   to: string;
   className?: string;
   "aria-current"?: "page";
-  children: ReactNode;
+  children?: ReactNode;
   onClick?: () => void;
+  "aria-label"?: string;
 }>;
 
 export type InboxListItemRowProps = {
@@ -36,10 +39,14 @@ export type InboxListItemRowProps = {
   isSelected: boolean;
   keyboardHighlighted?: boolean;
   Link: InboxListItemLinkComponent;
+  /** Optional trailing control next to the title (e.g. agent busy loader). */
+  titleTrailing?: ReactNode;
   projectOptions?: SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
+  onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
 };
 
 function stopFieldEvent(event: SyntheticEvent) {
@@ -68,6 +75,7 @@ function ProjectMeta({
 
 /**
  * Inbox list row — stacked layout; task meta is interactive when handlers are provided.
+ * Full card is clickable via an overlay hit-area; field controls keep their own events.
  */
 export function InboxListItemRow({
   item,
@@ -75,10 +83,13 @@ export function InboxListItemRow({
   isSelected,
   keyboardHighlighted = false,
   Link,
+  titleTrailing = null,
   projectOptions = [],
+  assigneeOptions = [],
   onPriorityChange,
   onDueDateChange,
   onProjectChange,
+  onAssigneeChange,
 }: InboxListItemRowProps) {
   const priorityOptions = useMemo(
     () =>
@@ -91,7 +102,6 @@ export function InboxListItemRow({
   );
 
   if (item.kind === "letter") {
-    // Next parity: show project meta only when name or key is present.
     const hasProject = Boolean(item.projectKey ?? item.projectName);
 
     return (
@@ -123,81 +133,95 @@ export function InboxListItemRow({
     );
   }
 
-  // Next parity: priority always; due/project only when set (no status filler).
   const hasProjectMeta = Boolean(
     item.projectId || item.projectName || item.projectKey,
   );
   const hasDueMeta = item.dueDate != null;
-  const interactive = Boolean(
-    onPriorityChange || onDueDateChange || onProjectChange,
+  const canEditAssignee =
+    assigneeOptions.length > 0 && Boolean(onAssigneeChange);
+  const showAssignee = canEditAssignee || Boolean(item.assigneeId);
+  const assigneeOption = assigneeOptions.find(
+    (entry) => entry.value === (item.assigneeId ?? DROPDOWN_NONE_VALUE),
   );
+  const assigneeLabel = item.assigneeId
+    ? (assigneeOption?.label ?? "Assigned")
+    : "Unassigned";
 
   return (
     <li className="inbox-list-item" {...keyboardNavItemProps(item.id)}>
       <div
-        className={sidePanelItemClass({
+        className={`${sidePanelItemClass({
           active: isSelected,
           keyboardHighlighted,
           stacked: true,
-        })}
+        })} inbox-list-item-card`}
       >
         <Link
           to={href}
           aria-current={isSelected ? "page" : undefined}
-          className="app-side-panel-item-row-primary"
-        >
+          aria-label={item.title}
+          className="inbox-list-item-hit-area"
+        />
+        <div className="app-side-panel-item-row-primary inbox-list-item-card-layer">
           <InboxItemTypeIcon kind="task" />
-          <span className="inbox-list-item-title">{item.title}</span>
-        </Link>
-        <div
-          className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox"
-          onMouseDown={interactive ? stopFieldEvent : undefined}
-          onClick={interactive ? stopFieldEvent : undefined}
-        >
+          <span className="inbox-list-item-title-wrap">
+            <span className="inbox-list-item-title">{item.title}</span>
+            {titleTrailing ? (
+              <span className="inbox-list-item-title-trailing">
+                {titleTrailing}
+              </span>
+            ) : null}
+          </span>
+        </div>
+        <div className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox inbox-list-item-card-layer">
           {onPriorityChange ? (
-            <SearchableDropdown
-              value={String(item.priority)}
-              options={priorityOptions}
-              onChange={(next) => onPriorityChange(item.id, Number(next))}
-              searchPlaceholder="Change priority…"
-              searchShortcutLabel="P"
-              ariaLabel={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
-              taskPropertyDropdownId="priority"
-              panelAlign="start"
-              panelWidth={280}
-              renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-                <button
-                  type="button"
-                  id={triggerId}
-                  className="task-overview-row__icon-trigger"
-                  title={getTaskPriorityLabel(item.priority)}
-                  tabIndex={-1}
-                  disabled={disabled}
-                  aria-haspopup="listbox"
-                  aria-expanded={open}
-                  aria-label={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
-                  onMouseDown={stopFieldEvent}
-                  onClick={(event) => {
-                    stopFieldEvent(event);
-                    onToggle();
-                  }}
-                >
-                  <TaskPriorityIcon priority={item.priority} size={14} />
-                </button>
-              )}
-            />
+            <span className="inbox-list-item-field">
+              <SearchableDropdown
+                value={String(item.priority)}
+                options={priorityOptions}
+                onChange={(next) => onPriorityChange(item.id, Number(next))}
+                searchPlaceholder="Change priority…"
+                searchShortcutLabel="P"
+                ariaLabel={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
+                taskPropertyDropdownId="priority"
+                panelAlign="start"
+                panelWidth={280}
+                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className="task-overview-row__icon-trigger"
+                    title={getTaskPriorityLabel(item.priority)}
+                    tabIndex={-1}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
+                    onMouseDown={stopFieldEvent}
+                    onClick={(event) => {
+                      stopFieldEvent(event);
+                      onToggle();
+                    }}
+                  >
+                    <TaskPriorityIcon priority={item.priority} size={14} />
+                  </button>
+                )}
+              />
+            </span>
           ) : (
             <TaskListPriorityLabel priority={item.priority} />
           )}
           {hasDueMeta ? (
             onDueDateChange ? (
-              <TaskDueDateDropdown
-                dueDate={item.dueDate}
-                status={item.status}
-                variant="list"
-                showIcon={false}
-                onDueDateChange={(next) => onDueDateChange(item.id, next)}
-              />
+              <span className="inbox-list-item-field">
+                <TaskDueDateDropdown
+                  dueDate={item.dueDate}
+                  status={item.status}
+                  variant="list"
+                  showIcon={false}
+                  onDueDateChange={(next) => onDueDateChange(item.id, next)}
+                />
+              </span>
             ) : (
               <TaskListDueDateLabel
                 dueDate={new Date(item.dueDate!)}
@@ -207,48 +231,50 @@ export function InboxListItemRow({
           ) : null}
           {hasProjectMeta ? (
             projectOptions.length > 0 && onProjectChange ? (
-              <SearchableDropdown
-                value={item.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
-                options={projectOptions}
-                onChange={(next) =>
-                  onProjectChange(item.id, resolveDropdownProjectKey(next))
-                }
-                searchPlaceholder="Change project…"
-                searchShortcutLabel="⇧P"
-                ariaLabel="Change project"
-                taskPropertyDropdownId="project"
-                panelAlign="end"
-                panelWidth={280}
-                renderTrigger={({ open, disabled, triggerId, onToggle }) => {
-                  const projectLabel =
-                    item.projectName?.trim() ||
-                    item.projectKey?.trim() ||
-                    "No project";
-                  return (
-                    <button
-                      type="button"
-                      id={triggerId}
-                      className="inbox-list-item-meta-label"
-                      title={projectLabel}
-                      tabIndex={-1}
-                      disabled={disabled}
-                      aria-haspopup="listbox"
-                      aria-expanded={open}
-                      aria-label={`Change project: ${projectLabel}`}
-                      onMouseDown={stopFieldEvent}
-                      onClick={(event) => {
-                        stopFieldEvent(event);
-                        onToggle();
-                      }}
-                    >
-                      <ProjectOcticon icon={item.projectIcon} size={12} />
-                      <span className="inbox-list-item-truncate">
-                        {projectLabel}
-                      </span>
-                    </button>
-                  );
-                }}
-              />
+              <span className="inbox-list-item-field">
+                <SearchableDropdown
+                  value={item.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
+                  options={projectOptions}
+                  onChange={(next) =>
+                    onProjectChange(item.id, resolveDropdownProjectKey(next))
+                  }
+                  searchPlaceholder="Change project…"
+                  searchShortcutLabel="⇧P"
+                  ariaLabel="Change project"
+                  taskPropertyDropdownId="project"
+                  panelAlign="end"
+                  panelWidth={280}
+                  renderTrigger={({ open, disabled, triggerId, onToggle }) => {
+                    const projectLabel =
+                      item.projectName?.trim() ||
+                      item.projectKey?.trim() ||
+                      "No project";
+                    return (
+                      <button
+                        type="button"
+                        id={triggerId}
+                        className="inbox-list-item-meta-label"
+                        title={projectLabel}
+                        tabIndex={-1}
+                        disabled={disabled}
+                        aria-haspopup="listbox"
+                        aria-expanded={open}
+                        aria-label={`Change project: ${projectLabel}`}
+                        onMouseDown={stopFieldEvent}
+                        onClick={(event) => {
+                          stopFieldEvent(event);
+                          onToggle();
+                        }}
+                      >
+                        <ProjectOcticon icon={item.projectIcon} size={12} />
+                        <span className="inbox-list-item-truncate">
+                          {projectLabel}
+                        </span>
+                      </button>
+                    );
+                  }}
+                />
+              </span>
             ) : (
               <ProjectMeta
                 projectName={item.projectName}
@@ -256,6 +282,68 @@ export function InboxListItemRow({
                 projectIcon={item.projectIcon}
               />
             )
+          ) : null}
+          {showAssignee ? (
+            <span className="inbox-list-item-assignee inbox-list-item-field">
+              {canEditAssignee ? (
+                <SearchableDropdown
+                  value={item.assigneeId ?? DROPDOWN_NONE_VALUE}
+                  options={assigneeOptions}
+                  onChange={(next) =>
+                    onAssigneeChange!(
+                      item.id,
+                      next === DROPDOWN_NONE_VALUE ? null : next,
+                    )
+                  }
+                  searchPlaceholder="Change assignee…"
+                  searchShortcutLabel="A"
+                  ariaLabel="Change assignee"
+                  taskPropertyDropdownId="assignee"
+                  panelAlign="end"
+                  panelWidth={280}
+                  renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                    <button
+                      type="button"
+                      id={triggerId}
+                      className="inbox-list-item-assignee-trigger"
+                      title={assigneeLabel}
+                      tabIndex={-1}
+                      disabled={disabled}
+                      aria-haspopup="listbox"
+                      aria-expanded={open}
+                      aria-label={`Change assignee: ${assigneeLabel}`}
+                      onMouseDown={stopFieldEvent}
+                      onClick={(event) => {
+                        stopFieldEvent(event);
+                        onToggle();
+                      }}
+                    >
+                      <span className="inbox-list-item-assignee-avatar">
+                        {assigneeOption?.icon ?? (
+                          <ContactPersonIcon size={14} />
+                        )}
+                      </span>
+                      <span className="inbox-list-item-assignee-name">
+                        {assigneeLabel}
+                      </span>
+                    </button>
+                  )}
+                />
+              ) : (
+                <span
+                  className="inbox-list-item-assignee-trigger"
+                  title={assigneeLabel}
+                  aria-label={assigneeLabel}
+                >
+                  <span className="inbox-list-item-assignee-avatar">
+                    <ContactPersonIcon size={14} />
+                  </span>
+                  <span className="inbox-list-item-assignee-name">
+                    {assigneeLabel}
+                  </span>
+                </span>
+              )}
+            </span>
           ) : null}
         </div>
       </div>

@@ -1,4 +1,20 @@
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "./task-display-id.js";
+import {
+  getTaskStatusLabel,
+  isTaskStatus,
+  migrateLegacyTaskStatus,
+  type TaskStatus,
+} from "./task-status.js";
+
+/** Attention inbox section order: hold → review → in progress (last). */
+export const INBOX_ATTENTION_STATUS_ORDER = [
+  "on_hold",
+  "in_review",
+  "in_progress",
+] as const satisfies readonly TaskStatus[];
+
+export type InboxAttentionStatus =
+  (typeof INBOX_ATTENTION_STATUS_ORDER)[number];
 
 export type InboxTaskListItem = {
   kind: "task";
@@ -11,6 +27,7 @@ export type InboxTaskListItem = {
   projectName: string | null;
   projectIcon: string | null;
   contactKey: string | null;
+  assigneeId: string | null;
   priority: number;
   dueDate: number | null;
   updatedAt: number;
@@ -66,6 +83,7 @@ export function buildInboxTaskListItem(input: {
   projectKey?: string | null;
   projectName?: string | null;
   projectIcon?: string | null;
+  assigneeId?: string | null;
 }): InboxTaskListItem {
   return {
     kind: "task",
@@ -78,6 +96,7 @@ export function buildInboxTaskListItem(input: {
     projectName: input.projectName ?? null,
     projectIcon: input.projectIcon ?? null,
     contactKey: null,
+    assigneeId: input.assigneeId ?? null,
     priority: input.priority ?? 0,
     dueDate: input.dueDate ?? null,
     updatedAt: input.updatedAt ?? Date.now(),
@@ -160,4 +179,74 @@ export function formatInboxDueDateLabel(dueDateMs: number): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function attentionStatusRank(status: string): number {
+  const migrated = migrateLegacyTaskStatus(status);
+  const index = INBOX_ATTENTION_STATUS_ORDER.indexOf(
+    migrated as InboxAttentionStatus,
+  );
+  return index === -1 ? INBOX_ATTENTION_STATUS_ORDER.length : index;
+}
+
+/** Sort tasks into On Hold → In Review → In Progress, then by updatedAt desc. */
+export function sortInboxItemsByAttentionStatus(
+  items: readonly InboxListItem[],
+): InboxListItem[] {
+  return [...items].sort((a, b) => {
+    if (a.kind !== "task" || b.kind !== "task") {
+      if (a.kind === b.kind) return b.updatedAt - a.updatedAt;
+      return a.kind === "task" ? -1 : 1;
+    }
+    const rankDiff =
+      attentionStatusRank(a.status) - attentionStatusRank(b.status);
+    if (rankDiff !== 0) return rankDiff;
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
+export type InboxAttentionStatusGroup = {
+  status: string;
+  label: string;
+  items: InboxListItem[];
+};
+
+/** Group sorted/unsorted inbox tasks into non-empty attention sections. */
+export function groupInboxItemsByAttentionStatus(
+  items: readonly InboxListItem[],
+): InboxAttentionStatusGroup[] {
+  const buckets = new Map<string, InboxListItem[]>();
+  for (const status of INBOX_ATTENTION_STATUS_ORDER) {
+    buckets.set(status, []);
+  }
+  const other: InboxListItem[] = [];
+
+  for (const item of sortInboxItemsByAttentionStatus(items)) {
+    if (item.kind !== "task") {
+      other.push(item);
+      continue;
+    }
+    const status = migrateLegacyTaskStatus(item.status);
+    const bucket = buckets.get(status);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      other.push(item);
+    }
+  }
+
+  const groups: InboxAttentionStatusGroup[] = [];
+  for (const status of INBOX_ATTENTION_STATUS_ORDER) {
+    const groupItems = buckets.get(status) ?? [];
+    if (groupItems.length === 0) continue;
+    groups.push({
+      status,
+      label: isTaskStatus(status) ? getTaskStatusLabel(status) : status,
+      items: groupItems,
+    });
+  }
+  if (other.length > 0) {
+    groups.push({ status: "other", label: "Other", items: other });
+  }
+  return groups;
 }

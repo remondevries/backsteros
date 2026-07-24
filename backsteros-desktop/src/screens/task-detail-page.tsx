@@ -17,6 +17,7 @@ import {
   type TasksDueFilter,
 } from "@backsteros/ui";
 
+import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -294,6 +295,14 @@ export function TaskDetailPage({
             void workspace.patchTask(task.id, { assigneeId: created.id });
           });
         }}
+        belowDescription={
+          <DesktopTaskActivityPanel
+            taskId={task.id}
+            taskUpdatedAt={base?.updatedAt ?? null}
+            contacts={contacts}
+            contactAvatarSrc={contactAvatarSrc}
+          />
+        }
       />
     </>
   );

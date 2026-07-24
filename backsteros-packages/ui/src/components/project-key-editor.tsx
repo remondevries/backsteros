@@ -60,7 +60,7 @@ export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
     }
 
     if (!isValidProjectKey(normalized)) {
-      setError("Use 2–6 letters or numbers.");
+      setError("Use 2–3 letters or numbers.");
       return;
     }
 
@@ -104,7 +104,7 @@ export function ProjectKeyEditor({ value, onSave }: ProjectKeyEditorProps) {
               }
             }}
             disabled={isPending}
-            maxLength={6}
+            maxLength={3}
             aria-label="Project ID"
             className="project-detail__key-input"
           />

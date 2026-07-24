@@ -12,6 +12,7 @@ export function StatusBarAgents({
       <span className="statusbar-agents" title="No in-app agents detected">
         <span className="statusbar-metric-label">Agents</span>
         <span className="statusbar-metric-value">0</span>
+        <span className="statusbar-agents-dot" aria-hidden="true" />
       </span>
     );
   }
@@ -39,6 +40,13 @@ export function StatusBarAgents({
     .filter(Boolean)
     .join("\n");
 
+  const dotClass =
+    summary.working > 0
+      ? "statusbar-agents-dot is-working"
+      : summary.attention > 0
+        ? "statusbar-agents-dot is-attention"
+        : "statusbar-agents-dot";
+
   return (
     <span className="statusbar-agents" title={title}>
       <span className="statusbar-metric-label">Agents</span>
@@ -48,14 +56,7 @@ export function StatusBarAgents({
           <span className="statusbar-metric-pct"> · {detail}</span>
         ) : null}
       </span>
-      {summary.working > 0 ? (
-        <span className="statusbar-agents-dot is-working" aria-hidden="true" />
-      ) : summary.attention > 0 ? (
-        <span
-          className="statusbar-agents-dot is-attention"
-          aria-hidden="true"
-        />
-      ) : null}
+      <span className={dotClass} aria-hidden="true" />
     </span>
   );
 }

@@ -11,7 +11,7 @@ export function deriveProjectKeyFromName(name: string): string {
     return parts
       .map((part) => part.charAt(0).toUpperCase())
       .join("")
-      .slice(0, 6);
+      .slice(0, 3);
   }
 
   const single = parts[0] ?? "PR";
@@ -27,9 +27,9 @@ export function normalizeProjectKey(value: string): string {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 6);
+    .slice(0, 3);
 }
 
 export function isValidProjectKey(value: string): boolean {
-  return /^[A-Z0-9]{2,6}$/.test(value);
+  return /^[A-Z0-9]{2,3}$/.test(value);
 }

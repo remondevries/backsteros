@@ -668,11 +668,11 @@ export function ProjectOverviewPanel({
         title="Project ID"
         value={projectKey}
         placeholder="e.g. ACME"
-        maxLength={6}
+        maxLength={3}
         autoCapitalize="characters"
         normalize={normalizeProjectKey}
         validate={(next) =>
-          isValidProjectKey(next) ? null : "Use 2–6 letters or numbers."
+          isValidProjectKey(next) ? null : "Use 2–3 letters or numbers."
         }
         onSave={async (next) => {
           const previous = projectKey;

@@ -31,6 +31,7 @@ import { NotFoundPage } from "./screens/not-found-page";
 import { OrganizationsPage } from "./screens/organizations-page";
 import { ProjectsPage } from "./screens/projects-page";
 import { SettingsPage } from "./screens/settings-page";
+import { SsoCallbackPage } from "./screens/sso-callback-page";
 import { TaskDetailPage } from "./screens/task-detail-page";
 import { TaskListPage } from "./screens/task-list-page";
 
@@ -376,6 +377,7 @@ export default function App() {
         path="/desktop-overlay/compose"
         element={<DesktopOverlayComposePage />}
       />
+      <Route path="/sso-callback" element={<SsoCallbackPage />} />
       <Route element={<ShellLayout />}>
         <Route index element={<StartupRedirect />} />
         <Route path="inbox" element={<InboxPage />} />

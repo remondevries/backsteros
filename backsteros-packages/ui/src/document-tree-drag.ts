@@ -10,6 +10,9 @@ export type { TreeReorderRequest };
 
 export const DOCUMENT_TREE_DRAG_TYPE = "application/x-backsteros-tree-item";
 
+/** Fallback — custom MIME types are often invisible during dragover in WKWebView/Tauri. */
+export const DOCUMENT_TREE_DRAG_FALLBACK_TYPE = "text/plain";
+
 export function createTreeDragPayload(
   node: DocumentTreeNode,
   parentId: string | null,
@@ -24,13 +27,29 @@ export function createTreeDragPayload(
 export function readTreeDragPayload(
   dataTransfer: DataTransfer,
 ): TreeDragPayload | null {
-  return parseTreeDragPayload(
-    dataTransfer.getData(DOCUMENT_TREE_DRAG_TYPE),
-  );
+  const custom = dataTransfer.getData(DOCUMENT_TREE_DRAG_TYPE);
+  if (custom) return parseTreeDragPayload(custom);
+  const fallback = dataTransfer.getData(DOCUMENT_TREE_DRAG_FALLBACK_TYPE);
+  if (fallback) return parseTreeDragPayload(fallback);
+  return null;
+}
+
+export function writeTreeDragPayload(
+  dataTransfer: DataTransfer,
+  node: DocumentTreeNode,
+  parentId: string | null,
+): void {
+  const payload = createTreeDragPayload(node, parentId);
+  dataTransfer.setData(DOCUMENT_TREE_DRAG_TYPE, payload);
+  dataTransfer.setData(DOCUMENT_TREE_DRAG_FALLBACK_TYPE, payload);
 }
 
 export function isTreeDragActive(dataTransfer: DataTransfer): boolean {
-  return dataTransfer.types.includes(DOCUMENT_TREE_DRAG_TYPE);
+  const types = Array.from(dataTransfer.types);
+  return (
+    types.includes(DOCUMENT_TREE_DRAG_TYPE) ||
+    types.includes(DOCUMENT_TREE_DRAG_FALLBACK_TYPE)
+  );
 }
 
 export function resolveFolderDragOverMode(

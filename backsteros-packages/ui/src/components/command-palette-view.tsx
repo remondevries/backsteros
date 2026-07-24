@@ -2,6 +2,7 @@
 
 import { Command } from "cmdk";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import {
   activateFilterModeFromTab,
@@ -449,14 +450,14 @@ export function CommandPaletteView({
             className="command-input"
             placeholder={inputPlaceholder}
             value={isGoMode ? goQuery : filter.searchTerm}
-            onValueChange={(value) => {
+            onValueChange={(value: string) => {
               if (isGoMode) {
                 setGoQuery(value);
                 return;
               }
               setSearchTerm(value);
             }}
-            onKeyDown={(event) => {
+            onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
               const inputValue = isGoMode ? goQuery : filter.searchTerm;
               const inputEmpty = inputValue.length === 0;
               const notComposing = !event.nativeEvent.isComposing;

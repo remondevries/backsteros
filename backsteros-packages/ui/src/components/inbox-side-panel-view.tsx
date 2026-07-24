@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Fragment,
   useMemo,
   useState,
   type HTMLAttributes,
+  type ReactNode,
   type Ref,
 } from "react";
 
@@ -11,6 +13,7 @@ import { getSelectedInboxSlugFromPathname } from "../content-side-panel.js";
 import {
   findInboxItemBySlugOrId,
   getInboxItemHref,
+  groupInboxItemsByAttentionStatus,
   type InboxListItem,
 } from "../inbox-items.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
@@ -41,9 +44,18 @@ export type InboxSidePanelViewProps = {
     | void;
   onCreatedTask?: (taskId: string) => void;
   projectOptions?: SearchableDropdownOption<string>[];
+  assigneeOptions?: SearchableDropdownOption<string>[];
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
+  onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
+  /**
+   * Group tasks into plain On Hold / In Review / In Progress sections
+   * (iOS-style text labels — not gradient status headers).
+   */
+  groupByAttentionStatus?: boolean;
+  /** Optional trailing control next to each task title (e.g. agent busy). */
+  renderTitleTrailing?: (item: InboxListItem) => ReactNode;
   emptyLabel?: string;
   /** Keyboard-nav highlighted row id (from useListKeyboardNavigation). */
   highlightedId?: string | null;
@@ -65,9 +77,13 @@ export function InboxSidePanelView({
   onCreateTask,
   onCreatedTask,
   projectOptions,
+  assigneeOptions,
   onPriorityChange,
   onDueDateChange,
   onProjectChange,
+  onAssigneeChange,
+  groupByAttentionStatus = false,
+  renderTitleTrailing,
   emptyLabel = "Your inbox is empty.",
   highlightedId = null,
   listRef,
@@ -82,6 +98,33 @@ export function InboxSidePanelView({
     if (!selectedSlug) return null;
     return findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null;
   }, [items, selectedSlug]);
+
+  const attentionGroups = useMemo(
+    () =>
+      groupByAttentionStatus ? groupInboxItemsByAttentionStatus(items) : null,
+    [groupByAttentionStatus, items],
+  );
+
+  function renderRow(item: InboxListItem) {
+    const href = getInboxItemHref(item, items);
+    return (
+      <InboxListItemRow
+        key={`${item.kind}-${item.id}`}
+        item={item}
+        href={href}
+        isSelected={selectedItemId === item.id}
+        keyboardHighlighted={highlightedId === item.id}
+        Link={Link}
+        titleTrailing={renderTitleTrailing?.(item) ?? null}
+        projectOptions={projectOptions}
+        assigneeOptions={assigneeOptions}
+        onPriorityChange={onPriorityChange}
+        onDueDateChange={onDueDateChange}
+        onProjectChange={onProjectChange}
+        onAssigneeChange={onAssigneeChange}
+      />
+    );
+  }
 
   return (
     <div className="app-content-side-panel">
@@ -145,23 +188,18 @@ export function InboxSidePanelView({
             ref={listRef}
             {...listContainerProps}
           >
-            {items.map((item) => {
-              const href = getInboxItemHref(item, items);
-              return (
-                <InboxListItemRow
-                  key={`${item.kind}-${item.id}`}
-                  item={item}
-                  href={href}
-                  isSelected={selectedItemId === item.id}
-                  keyboardHighlighted={highlightedId === item.id}
-                  Link={Link}
-                  projectOptions={projectOptions}
-                  onPriorityChange={onPriorityChange}
-                  onDueDateChange={onDueDateChange}
-                  onProjectChange={onProjectChange}
-                />
-              );
-            })}
+            {attentionGroups
+              ? attentionGroups.map((group) => (
+                  <Fragment key={group.status}>
+                    <li className="side-panel-plain-group-header">
+                      <span className="side-panel-plain-group-label">
+                        {group.label}
+                      </span>
+                    </li>
+                    {group.items.map((item) => renderRow(item))}
+                  </Fragment>
+                ))
+              : items.map((item) => renderRow(item))}
           </ContentSidePanelList>
         ) : null}
       </div>

@@ -291,3 +291,145 @@ export function IntegrationConnectionSettingsView({
     </>
   );
 }
+
+export type GithubSettingsOrganization = {
+  login: string;
+};
+
+export type GithubSettingsSectionViewProps = {
+  title: string;
+  headerDescription: string;
+  loading?: boolean;
+  connected?: boolean;
+  login: string | null;
+  scopes: string[];
+  missingScopes: string[];
+  organizations: GithubSettingsOrganization[];
+  repositoryCount: number | null;
+  reason?: string | null;
+  connecting?: boolean;
+  testing?: boolean;
+  testMessage?: string | null;
+  testOk?: boolean | null;
+  connectLabel: string;
+  onConnect: () => void;
+  onTestConnection: () => void;
+  connectDisabled?: boolean;
+};
+
+export function GithubSettingsSectionView({
+  title,
+  headerDescription,
+  loading = false,
+  connected,
+  login,
+  scopes,
+  missingScopes,
+  organizations,
+  repositoryCount,
+  reason,
+  connecting = false,
+  testing = false,
+  testMessage,
+  testOk,
+  connectLabel,
+  onConnect,
+  onTestConnection,
+  connectDisabled = false,
+}: GithubSettingsSectionViewProps) {
+  const statusLabel = loading
+    ? "Loading…"
+    : connected
+      ? missingScopes.length > 0
+        ? "Connected — needs more access"
+        : "Connected"
+      : "Not connected";
+
+  return (
+    <>
+      <SettingsContentHeader
+        title={title}
+        description={headerDescription}
+        connected={loading ? undefined : connected && missingScopes.length === 0}
+      />
+      <section className="settings-card">
+        <h2>Connection</h2>
+        <div className="settings-card-body-copy">
+          <p>
+            Link GitHub so project panels can browse your personal repositories
+            and repositories in organizations you belong to. Grant{" "}
+            <code>repo</code> and <code>read:org</code> when prompted. Org
+            owners may also need to approve the OAuth app under GitHub →
+            Settings → Third-party access.
+          </p>
+        </div>
+
+        <dl className="settings-sync-status">
+          <div>
+            <dt>Status</dt>
+            <dd>{statusLabel}</dd>
+          </div>
+          <div>
+            <dt>Account</dt>
+            <dd>{login ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Scopes</dt>
+            <dd>{scopes.length > 0 ? scopes.join(", ") : "—"}</dd>
+          </div>
+          <div>
+            <dt>Organizations</dt>
+            <dd>
+              {organizations.length > 0
+                ? organizations.map((org) => org.login).join(", ")
+                : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt>Repositories (sample)</dt>
+            <dd>
+              {repositoryCount === null ? "—" : String(repositoryCount)}
+            </dd>
+          </div>
+        </dl>
+
+        {reason ? <p className="settings-hint">{reason}</p> : null}
+
+        <div className="settings-integration-actions">
+          <button
+            type="button"
+            disabled={connectDisabled || connecting || loading}
+            onClick={onConnect}
+          >
+            {connecting ? "Opening GitHub…" : connectLabel}
+          </button>
+          <button
+            type="button"
+            disabled={testing || loading}
+            onClick={onTestConnection}
+          >
+            {testing ? "Testing…" : "Test connection"}
+          </button>
+        </div>
+
+        {testMessage ? (
+          <p
+            className={[
+              "settings-integration-test-result",
+              testOk === true
+                ? "settings-integration-test-result--ok"
+                : testOk === false
+                  ? "settings-integration-test-result--error"
+                  : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            role="status"
+          >
+            {testMessage}
+          </p>
+        ) : null}
+      </section>
+    </>
+  );
+}

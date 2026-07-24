@@ -15,6 +15,8 @@ export type OverviewNameEditorProps = {
   onLeaveTitle?: (reason: "enter" | "escape" | "tab") => void;
   /** Fires on every keystroke while editing (compose / empty-create flows). */
   onDraftChange?: (draft: string) => void;
+  /** Override the title heading class (default: content-detail title). */
+  titleClassName?: string;
   onSave: (
     name: string,
   ) =>
@@ -32,6 +34,7 @@ export function OverviewNameEditor({
   renameFocusRequest = 0,
   onLeaveTitle,
   onDraftChange,
+  titleClassName = CONTENT_DETAIL_TITLE_CLASS,
   onSave,
   onSaved,
 }: OverviewNameEditorProps) {
@@ -164,11 +167,11 @@ export function OverviewNameEditor({
   if (editing) {
     return (
       <div className="overview-name-editor">
-        <h1 className={CONTENT_DETAIL_TITLE_CLASS}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
+      <h1 className={titleClassName}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
             onChange={(event) => {
               const next = event.target.value;
               setDraft(next);
@@ -215,7 +218,7 @@ export function OverviewNameEditor({
 
   return (
     <div className="overview-name-editor">
-      <h1 className={CONTENT_DETAIL_TITLE_CLASS}>
+      <h1 className={titleClassName}>
         <button
           ref={buttonRef}
           type="button"

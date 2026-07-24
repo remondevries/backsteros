@@ -42,6 +42,8 @@ export type TaskDueDateDropdownProps = {
   taskPropertyDropdownId?: TaskPropertyDropdownId;
   /** When false, list/property triggers omit the calendar icon (Next list/board). */
   showIcon?: boolean;
+  /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
+  triggerVariant?: import("./property-dropdown.js").PropertyDropdownTriggerVariant;
 };
 
 function stopFieldEvent(event: SyntheticEvent) {
@@ -64,6 +66,7 @@ export function TaskDueDateDropdown({
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId = "dueDate",
   showIcon = true,
+  triggerVariant = "default",
 }: TaskDueDateDropdownProps) {
   const [ymdValue, setYmdValue] = useState(() =>
     formatDueDateInputValue(dueDate),
@@ -172,6 +175,7 @@ export function TaskDueDateDropdown({
           }
           fallbackLabel={displayLabel}
           mutedFallback={!hasDueDate}
+          triggerVariant={triggerVariant}
           onQuerySubmit={handleQuerySubmit}
           queryPreviewLabel={handleQueryPreview}
         />

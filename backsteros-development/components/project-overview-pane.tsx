@@ -196,30 +196,6 @@ function ProjectWorkingDirectoryField({
                 },
               );
               onProjectUpdated(updated);
-              // #region agent log
-              fetch(
-                "http://127.0.0.1:7376/ingest/5f7ef8e1-42a2-490c-b746-4355365451a0",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-Debug-Session-Id": "cb7a52",
-                  },
-                  body: JSON.stringify({
-                    sessionId: "cb7a52",
-                    runId: "post-fix",
-                    hypothesisId: "H3",
-                    location: "project-overview-pane.tsx:set-cwd",
-                    message: "Saved working directory via API",
-                    data: {
-                      projectId: project.id,
-                      persisted: Boolean(updated.localWorkingDirectory),
-                    },
-                    timestamp: Date.now(),
-                  }),
-                },
-              ).catch(() => {});
-              // #endregion
             } finally {
               setSaving(false);
             }

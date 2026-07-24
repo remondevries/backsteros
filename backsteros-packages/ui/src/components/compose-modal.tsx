@@ -129,12 +129,19 @@ export type ComposeModalProps = {
   contextLoading?: boolean;
   contextError?: string | null;
   onCreateTask: (input: ComposeModalCreateTaskInput) => Promise<{ href: string }>;
-  onCreateDocument: (
+  onCreateDocument?: (
     input: ComposeModalCreateDocumentInput,
   ) => Promise<{ href: string }>;
   onNavigate: (href: string) => void;
   /** Optional link for empty projects CTA; if omitted render plain text. */
   projectsHref?: string;
+  /**
+   * Which compose kinds are available. Defaults to task + document.
+   * Pass `["task"]` to hide document creation (e.g. development console).
+   */
+  allowedKinds?: ComposeKind[];
+  /** When true, task creation requires a project from `projects`. */
+  requireProject?: boolean;
 };
 
 export function ComposeModal({
@@ -151,7 +158,20 @@ export function ComposeModal({
   onCreateDocument,
   onNavigate,
   projectsHref,
+  allowedKinds = ["task", "document"],
+  requireProject = false,
 }: ComposeModalProps) {
+  const kindOptions = useMemo(() => {
+    const allowed = new Set(
+      allowedKinds.length > 0 ? allowedKinds : (["task"] as ComposeKind[]),
+    );
+    return (["task", "document"] as const).filter((value) =>
+      allowed.has(value),
+    );
+  }, [allowedKinds]);
+  const allowsKindToggle = kindOptions.length > 1;
+  const defaultKind = kindOptions[0] ?? "task";
+
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -216,10 +236,16 @@ export function ComposeModal({
       pathname,
       projects,
     );
-    setKind(resolveComposeContextKind(pathname));
+    const contextKind = resolveComposeContextKind(pathname);
+    setKind(
+      kindOptions.includes(contextKind) ? contextKind : defaultKind,
+    );
     setTitle("");
     setDescription("");
-    setTaskProjectId(contextProjectId);
+    setTaskProjectId(
+      contextProjectId ??
+        (requireProject ? (projects[0]?.id ?? null) : null),
+    );
     setDocumentProjectId(contextDocumentTarget);
     setDocumentFolderId(
       resolveComposeDocumentFolderValue(
@@ -394,6 +420,9 @@ export function ComposeModal({
 
   const handleKindChange = useCallback(
     (nextKind: ComposeKind) => {
+      if (!kindOptions.includes(nextKind)) {
+        return;
+      }
       setKind(nextKind);
       setError(null);
       if (nextKind === "document") {
@@ -410,7 +439,13 @@ export function ComposeModal({
         titleInputRef.current?.focus();
       });
     },
-    [documentFoldersByTarget, documentProjectId, pathname, projects],
+    [
+      documentFoldersByTarget,
+      documentProjectId,
+      kindOptions,
+      pathname,
+      projects,
+    ],
   );
 
   const submitTask = useCallback(() => {
@@ -428,6 +463,11 @@ export function ComposeModal({
     setPending(true);
     setError(null);
     const resolvedProjectId = taskProjectId?.trim() ? taskProjectId : null;
+    if (requireProject && !resolvedProjectId) {
+      setPending(false);
+      setError("Select a project for this task.");
+      return;
+    }
 
     onCreateTask({
       title: trimmedTitle,
@@ -453,12 +493,17 @@ export function ComposeModal({
     navigateAfterCompose,
     onCreateTask,
     pending,
+    requireProject,
     status,
     taskProjectId,
     title,
   ]);
 
   const submitDocument = useCallback(() => {
+    if (!onCreateDocument) {
+      setError("Document creation is not available.");
+      return;
+    }
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError("Document title is required.");
@@ -521,11 +566,23 @@ export function ComposeModal({
     }
 
     if (kind === "task") {
+      if (requireProject && !taskProjectId?.trim()) {
+        return false;
+      }
       return true;
     }
 
     return Boolean(documentProjectId) && projects.length > 0;
-  }, [contextLoading, documentProjectId, kind, pending, projects.length, title]);
+  }, [
+    contextLoading,
+    documentProjectId,
+    kind,
+    pending,
+    projects.length,
+    requireProject,
+    taskProjectId,
+    title,
+  ]);
 
   const submit = useCallback(() => {
     if (!canSubmit) {
@@ -675,7 +732,11 @@ export function ComposeModal({
       }
 
       const nextKind = getComposeKindForShortcutKey(event.key, event.code);
-      if (!nextKind || nextKind === kind) {
+      if (
+        !nextKind ||
+        nextKind === kind ||
+        !kindOptions.includes(nextKind)
+      ) {
         return;
       }
 
@@ -691,6 +752,7 @@ export function ComposeModal({
     canSubmit,
     handleKindChange,
     kind,
+    kindOptions,
     onOpenChange,
     open,
     submit,
@@ -698,18 +760,22 @@ export function ComposeModal({
 
   const taskProjectOptions = useMemo(
     () => [
-      {
-        value: NO_PROJECT_VALUE,
-        label: "No project",
-        searchTerms: "no project unassigned",
-        icon: (
-          <ProjectOcticon
-            icon={getDisplayProjectIcon(null)}
-            size={14}
-            className="text-foreground/70"
-          />
-        ),
-      },
+      ...(requireProject
+        ? []
+        : [
+            {
+              value: NO_PROJECT_VALUE,
+              label: "No project",
+              searchTerms: "no project unassigned",
+              icon: (
+                <ProjectOcticon
+                  icon={getDisplayProjectIcon(null)}
+                  size={14}
+                  className="text-foreground/70"
+                />
+              ),
+            },
+          ]),
       ...projects.map((project) => ({
         value: project.id,
         label: project.name,
@@ -723,7 +789,7 @@ export function ComposeModal({
         ),
       })),
     ],
-    [projects],
+    [projects, requireProject],
   );
 
   const documentProjectOptions = useMemo(
@@ -1064,7 +1130,11 @@ export function ComposeModal({
               ]
                 .filter(Boolean)
                 .join(" ")}
-              title="Task: ⌘⇧← · Document: ⌘⇧→"
+              title={
+                allowsKindToggle
+                  ? "Task: ⌘⇧← · Document: ⌘⇧→"
+                  : undefined
+              }
             >
               {isTask ? (
                 <div className="compose-modal-header-project">
@@ -1072,18 +1142,20 @@ export function ComposeModal({
                 </div>
               ) : null}
 
-              <div className="shrink-0">
-                <SegmentedPillToggle
-                  value={kind}
-                  options={[
-                    { value: "task", label: "Task" },
-                    { value: "document", label: "Document" },
-                  ]}
-                  onChange={handleKindChange}
-                  ariaLabel="Create type"
-                  disabled={pending || contextLoading}
-                />
-              </div>
+              {allowsKindToggle ? (
+                <div className="shrink-0">
+                  <SegmentedPillToggle
+                    value={kind}
+                    options={kindOptions.map((value) => ({
+                      value,
+                      label: value === "task" ? "Task" : "Document",
+                    }))}
+                    onChange={handleKindChange}
+                    ariaLabel="Create type"
+                    disabled={pending || contextLoading}
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="create-task-modal-text-fields">

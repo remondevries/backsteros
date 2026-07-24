@@ -16,14 +16,22 @@ config.watchFolders = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 
-// pnpm stores real package trees under node_modules/.pnpm; Metro must resolve
-// through those paths for RN peer packages (gesture-handler, reanimated, …).
-config.resolver.nodeModulesPaths = [
+const nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
   path.resolve(workspaceRoot, "node_modules"),
 ];
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.nodeModulesPaths = nodeModulesPaths;
 
+// Prefer mobile's React / RN (public-hoist-pattern in .npmrc) so other
+// workspace apps cannot introduce a second copy.
+config.resolver.extraNodeModules = {
+  react: path.resolve(projectRoot, "node_modules/react"),
+  "react-native": path.resolve(projectRoot, "node_modules/react-native"),
+};
+
+// Allow Metro to walk pnpm's nested node_modules (needed for packages like
+// @react-navigation/core that sit beside @react-navigation/native in .pnpm).
+config.resolver.disableHierarchicalLookup = false;
 config.resolver.unstable_enablePackageExports = true;
 
 module.exports = config;

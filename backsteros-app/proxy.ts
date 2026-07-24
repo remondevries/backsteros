@@ -4,7 +4,11 @@ import { NextResponse } from "next/server";
 import { isE2eAuthBypassEnabled } from "@/lib/e2e-bypass-auth";
 import { validateServerEnvironment } from "@/lib/env";
 
-const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/api/health"]);
+const isPublicRoute = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sso-callback(.*)",
+  "/api/health",
+]);
 
 const authenticatedProxy = clerkMiddleware(async (auth, request) => {
   validateServerEnvironment();

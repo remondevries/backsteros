@@ -70,31 +70,13 @@ function BlankParagraph() {
   );
 }
 
-function InlineMarkdownText({ content }: { content: string }) {
-  if (!content) {
-    return null;
-  }
-
-  return (
-    <ReactMarkdown
-      components={{
-        p: ({ children }) => <>{children}</>,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-}
-
 function InlineMarkdownSegment({ content }: { content: string }) {
   if (!content) {
     return null;
   }
 
-  if (hasBlockMarkdown(content)) {
-    return <InlineMarkdownText content={content} />;
-  }
-
+  // Block markdown is emitted as MarkdownBlockSegment siblings by
+  // renderParagraphWithMentions — never via ReactMarkdown under <p>.
   return <span className="whitespace-pre-wrap">{content}</span>;
 }
 
@@ -381,6 +363,21 @@ function renderParagraphWithMentions(
     }
 
     flushBlockGroup();
+
+    // Headings/lists/code must not land inside the inline <p> run — that
+    // produces invalid <p><h2>… nesting and hydration errors.
+    if (segment.type === "markdown" && hasBlockMarkdown(segment.content)) {
+      flushInlineRun();
+      elements.push(
+        <MarkdownBlockSegment
+          key={`${keyPrefix}-block-md-${index}`}
+          content={segment.content}
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
     inlineRun.push(
       renderInlineSegment(
         segment,

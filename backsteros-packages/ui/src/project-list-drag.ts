@@ -22,6 +22,9 @@ export type ProjectLikeForDrag = {
 
 export const PROJECT_LIST_DRAG_TYPE = "application/x-backsteros-project-item";
 
+/** Fallback — custom MIME types are often invisible during dragover in WKWebView/Tauri. */
+export const PROJECT_LIST_DRAG_FALLBACK_TYPE = "text/plain";
+
 export function projectOrderKey(projectId: string): string {
   return `project:${projectId}`;
 }
@@ -39,12 +42,7 @@ export function createProjectDragPayload(project: ProjectLikeForDrag): string {
   return JSON.stringify(payload);
 }
 
-export function readProjectDragPayload(
-  dataTransfer: DataTransfer,
-): ProjectDragPayload | null {
-  const rawPayload = dataTransfer.getData(PROJECT_LIST_DRAG_TYPE);
-  if (!rawPayload) return null;
-
+function parseProjectDragPayload(rawPayload: string): ProjectDragPayload | null {
   try {
     const payload = JSON.parse(rawPayload) as Partial<ProjectDragPayload>;
     if (
@@ -63,8 +61,31 @@ export function readProjectDragPayload(
   }
 }
 
+export function readProjectDragPayload(
+  dataTransfer: DataTransfer,
+): ProjectDragPayload | null {
+  const custom = dataTransfer.getData(PROJECT_LIST_DRAG_TYPE);
+  if (custom) return parseProjectDragPayload(custom);
+  const fallback = dataTransfer.getData(PROJECT_LIST_DRAG_FALLBACK_TYPE);
+  if (fallback) return parseProjectDragPayload(fallback);
+  return null;
+}
+
+export function writeProjectDragPayload(
+  dataTransfer: DataTransfer,
+  project: ProjectLikeForDrag,
+): void {
+  const payload = createProjectDragPayload(project);
+  dataTransfer.setData(PROJECT_LIST_DRAG_TYPE, payload);
+  dataTransfer.setData(PROJECT_LIST_DRAG_FALLBACK_TYPE, payload);
+}
+
 export function isProjectListDragActive(dataTransfer: DataTransfer): boolean {
-  return dataTransfer.types.includes(PROJECT_LIST_DRAG_TYPE);
+  const types = Array.from(dataTransfer.types);
+  return (
+    types.includes(PROJECT_LIST_DRAG_TYPE) ||
+    types.includes(PROJECT_LIST_DRAG_FALLBACK_TYPE)
+  );
 }
 
 export function resolveProjectDropBeforeProject(input: {
