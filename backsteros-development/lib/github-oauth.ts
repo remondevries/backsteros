@@ -151,9 +151,8 @@ export function consumeGithubOauthReturnUrl(
 
 /**
  * Starts Clerk GitHub OAuth (connect or reauthorize) with org + repo scopes.
- * Opens GitHub authorization in a popup (Tauri cannot navigate the main window
- * to github.com). Falls back to a full-page redirect in the browser if the
- * popup is blocked.
+ * Opens GitHub authorization in a popup (keeps the main shell on the console).
+ * Falls back to a full-page redirect in the browser if the popup is blocked.
  *
  * Always pass an absolute `redirectUrl` on this origin (e.g. localhost:3100).
  * Relative paths are resolved against the Clerk app home URL (production /app).
@@ -185,10 +184,9 @@ export async function startGithubOauthConnect(
     throw new Error("Clerk did not return a GitHub authorization URL.");
   }
 
-  // Tauri blocks main-window navigations to github.com (keeps the shell intact).
-  // Use window.open so the native on_new_window handler can host the OAuth flow.
-  // WKWebView/Tauri may still report a null Window handle even when the native
-  // popup was created successfully.
+  // Prefer window.open so the native on_new_window handler can host the OAuth
+  // flow without leaving the console. WKWebView/Tauri may still report a null
+  // Window handle even when the native popup was created successfully.
   const popup = window.open(
     url.href,
     "backsteros-github-oauth",
@@ -200,6 +198,6 @@ export async function startGithubOauthConnect(
   if (popup != null || isTauri) {
     return;
   }
-  // Browser fallback when popups are blocked.
+  // Browser / shell fallback when popups are blocked.
   window.location.href = url.href;
 }

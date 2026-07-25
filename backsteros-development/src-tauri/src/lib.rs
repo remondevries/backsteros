@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewWindowBuilder};
-use tauri::{AppHandle, Manager, WebviewUrl};
+use tauri::webview::{NewWindowFeatures, NewWindowResponse, PageLoadEvent, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, TitleBarStyle, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
 
 const CONSOLE_PORT: u16 = 3100;
@@ -137,10 +137,21 @@ fn host_is_oauth_provider(host: &str) -> bool {
         || host.ends_with(".github.com")
         || host.ends_with(".clerk.accounts.dev")
         || host.ends_with(".clerk.com")
+        || host.ends_with(".accounts.dev")
         || host == "accounts.google.com"
         || host.ends_with(".google.com")
         || host.ends_with(".microsoftonline.com")
         || host.ends_with(".apple.com")
+}
+
+fn url_is_oauth_navigation(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "about" => true, // Clerk may window.open("about:blank") then navigate
+        "http" | "https" => url
+            .host_str()
+            .is_some_and(host_is_oauth_provider),
+        _ => false,
+    }
 }
 
 fn should_close_oauth_window(url: &tauri::Url) -> bool {
@@ -176,12 +187,66 @@ fn allow_main_navigation(url: &tauri::Url) -> bool {
     if is_app_origin(url) {
         return true;
     }
-    if let Some(host) = url.host_str() {
-        if host.ends_with(".clerk.accounts.dev") || host.ends_with(".clerk.com") {
-            return true;
-        }
+    // Clerk Sign-In often falls back to a same-window redirect when the popup
+    // path fails (common in release WKWebView). Allow the OAuth hop so GitHub
+    // login is not silently cancelled.
+    if url_is_oauth_navigation(url) {
+        return true;
     }
     false
+}
+
+fn allow_oauth_window_navigation(url: &tauri::Url) -> bool {
+    is_app_origin(url) || url_is_oauth_navigation(url)
+}
+
+fn open_oauth_window(
+    handle: &AppHandle,
+    url: &tauri::Url,
+    features: NewWindowFeatures,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
+    let label = format!(
+        "oauth-{}",
+        OAUTH_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let host = url.host_str().unwrap_or("");
+    let title = if host.is_empty() || host == "blank" {
+        "Sign in".to_string()
+    } else {
+        format!("Sign in — {host}")
+    };
+
+    // Prefer a predictable size: Clerk's WindowFeatures can be 0×0 /
+    // off-screen in embedded WebViews, which looks like "nothing happened".
+    let (width, height) = match features.size() {
+        Some(size) if size.width > 200.0 && size.height > 200.0 => (size.width, size.height),
+        _ => (520.0, 780.0),
+    };
+
+    // window_features is required on macOS so the new WKWebView shares the
+    // opener's configuration (cookies / related browsing context).
+    WebviewWindowBuilder::new(handle, &label, WebviewUrl::External(url.clone()))
+        .window_features(features)
+        .title(title)
+        .inner_size(width, height)
+        .resizable(true)
+        .center()
+        .on_navigation(|nav_url| allow_oauth_window_navigation(nav_url))
+        .on_page_load(|window, payload| {
+            if payload.event() != PageLoadEvent::Finished {
+                return;
+            }
+            let url = payload.url();
+            if is_app_origin(url) {
+                relay_oauth_callback_to_main(&window.app_handle(), url);
+                close_oauth_window_soon(window);
+                return;
+            }
+            if should_close_oauth_window(url) {
+                close_oauth_window_soon(window);
+            }
+        })
+        .build()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -198,57 +263,42 @@ pub fn run() {
                 .cloned()
                 .expect("tauri.conf.json must define a main window");
 
-            WebviewWindowBuilder::from_config(app, &config)?
-                .disable_drag_drop_handler()
+            // from_config reads Overlay/hiddenTitle from tauri.conf.json; re-apply
+            // explicitly so the native title string never shows after splash → Next.
+            #[cfg(target_os = "macos")]
+            let builder = WebviewWindowBuilder::from_config(app, &config)?
+                .title_bar_style(TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .disable_drag_drop_handler();
+            #[cfg(not(target_os = "macos"))]
+            let builder =
+                WebviewWindowBuilder::from_config(app, &config)?.disable_drag_drop_handler();
+
+            let main_window = builder
                 .on_navigation(|url| allow_main_navigation(url))
+                .on_page_load(|window, payload| {
+                    if payload.event() != PageLoadEvent::Finished {
+                        return;
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = window.set_title_bar_style(TitleBarStyle::Overlay);
+                        let _ = window.set_title("");
+                    }
+                })
                 .on_new_window(move |url, features| {
                     // Clerk / GitHub OAuth uses window.open. Build a related
                     // webview so opener/postMessage keep working through the IdP.
-                    let label = format!(
-                        "oauth-{}",
-                        OAUTH_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
-                    );
-                    let host = url.host_str().unwrap_or("OAuth");
-                    let title = if host_is_oauth_provider(host)
-                        || host.ends_with(".clerk.accounts.dev")
-                        || host.ends_with(".clerk.com")
-                        || host.is_empty()
-                    {
-                        if host.is_empty() {
-                            "Sign in".to_string()
-                        } else {
-                            format!("Sign in — {host}")
-                        }
-                    } else {
-                        "Sign in".to_string()
-                    };
+                    if !(url_is_oauth_navigation(&url) || is_app_origin(&url)) {
+                        eprintln!(
+                            "[development] denying non-OAuth new window: {}",
+                            url.as_str()
+                        );
+                        let _ = handle.opener().open_url(url.as_str(), None::<&str>);
+                        return NewWindowResponse::Deny;
+                    }
 
-                    match WebviewWindowBuilder::new(
-                        &handle,
-                        &label,
-                        WebviewUrl::External(url.clone()),
-                    )
-                    .window_features(features)
-                    .title(title)
-                    .inner_size(520.0, 780.0)
-                    .resizable(true)
-                    .center()
-                    .on_page_load(|window, payload| {
-                        if payload.event() != PageLoadEvent::Finished {
-                            return;
-                        }
-                        let url = payload.url();
-                        if is_app_origin(url) {
-                            relay_oauth_callback_to_main(&window.app_handle(), url);
-                            close_oauth_window_soon(window);
-                            return;
-                        }
-                        if should_close_oauth_window(url) {
-                            close_oauth_window_soon(window);
-                        }
-                    })
-                    .build()
-                    {
+                    match open_oauth_window(&handle, &url, features) {
                         Ok(window) => NewWindowResponse::Create { window },
                         Err(error) => {
                             eprintln!("[development] failed to open OAuth window: {error}");
@@ -258,6 +308,12 @@ pub fn run() {
                     }
                 })
                 .build()?;
+
+            #[cfg(target_os = "macos")]
+            {
+                let _ = main_window.set_title_bar_style(TitleBarStyle::Overlay);
+                let _ = main_window.set_title("");
+            }
 
             open_console_when_ready(app.handle().clone());
             Ok(())

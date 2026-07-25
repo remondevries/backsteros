@@ -168,7 +168,7 @@ function RouterLink({
 }: {
   to: string;
   className?: string;
-  children: ReactNode;
+  children?: ReactNode;
   onClick?: (event?: MouseEvent<HTMLAnchorElement>) => void;
   onDoubleClick?: (event: MouseEvent) => void;
   onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
@@ -176,6 +176,7 @@ function RouterLink({
   onPointerDown?: (event: PointerEvent<HTMLAnchorElement>) => void;
   title?: string;
   "aria-current"?: "page";
+  "aria-label"?: string;
   [key: string]: unknown;
 }) {
   return (

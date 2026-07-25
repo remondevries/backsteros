@@ -47,6 +47,11 @@ button {
   background: var(--console-bg);
 }
 
+/* Client layout single-root wrapper — no box model of its own. */
+.console-layout-root {
+  display: contents;
+}
+
 .console-statusbar {
   display: flex;
   align-items: center;
