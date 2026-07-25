@@ -4,14 +4,16 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
+  SectionList,
   Text,
   View,
+  type SectionListData,
 } from "react-native";
 
 import { ListSearchField } from "../../../components/list-search-field";
+import { ChevronRightIcon } from "../../../components/chevron-right-icon";
 import { ProjectIcon } from "../../../components/project-icon";
 import { ProjectProgressRing } from "../../../components/project-progress-ring";
 import { ProjectsHeader } from "../../../components/projects-header";
@@ -30,6 +32,14 @@ import {
   type ProjectArea,
   type ProjectAreaFilter,
 } from "../../../lib/project-areas";
+import {
+  groupProjectsByStatus,
+  type ProjectStatus,
+} from "../../../lib/project-status";
+import {
+  groupProjectsByType,
+  projectTypeCollapseKey,
+} from "../../../lib/project-type";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../../../lib/tab-bar-inset";
 import { colors } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
@@ -42,12 +52,30 @@ type ProjectRow = {
   key: string | null;
   name: string | null;
   status: string | null;
+  type: string | null;
   area: ProjectArea | null;
+  sort_order: number | null;
 };
 
 type TaskProgressRow = {
   project_id: string | null;
   status: string | null;
+};
+
+type ProjectListRow =
+  | {
+      kind: "type-header";
+      id: string;
+      label: string;
+      collapseKey: string;
+      collapsed: boolean;
+    }
+  | { kind: "project"; id: string; project: ProjectRow };
+
+type Section = {
+  title: string;
+  status: ProjectStatus;
+  data: ProjectListRow[];
 };
 
 const EMPTY_PROGRESS: ProjectTaskProgress = { total: 0, completed: 0 };
@@ -59,7 +87,39 @@ function asProjectArea(value: string | null | undefined): ProjectArea | null {
   return null;
 }
 
-const PROJECTS_SQL = `SELECT id, key, name, status, area FROM projects
+function buildProjectSections(
+  projects: readonly ProjectRow[],
+  collapsedTypes: ReadonlySet<string>,
+): Section[] {
+  return groupProjectsByStatus(projects).map((group) => ({
+    title: group.label,
+    status: group.status,
+    data: groupProjectsByType(group.projects).flatMap((typeGroup) => {
+      const rows: ProjectListRow[] = [];
+      if (typeGroup.showHeader) {
+        const collapseKey = projectTypeCollapseKey(
+          group.status,
+          typeGroup.type,
+        );
+        const collapsed = collapsedTypes.has(collapseKey);
+        rows.push({
+          kind: "type-header",
+          id: `type:${collapseKey}`,
+          label: typeGroup.label,
+          collapseKey,
+          collapsed,
+        });
+        if (collapsed) return rows;
+      }
+      for (const project of typeGroup.projects) {
+        rows.push({ kind: "project", id: project.id, project });
+      }
+      return rows;
+    }),
+  }));
+}
+
+const PROJECTS_SQL = `SELECT id, key, name, status, type, area, sort_order FROM projects
  WHERE deleted_at IS NULL
  ORDER BY sort_order ASC, name ASC`;
 
@@ -73,6 +133,9 @@ export default function ProjectsScreen() {
   const { apiUrl } = getMobileEnvironment();
   const powerSync = useMobilePowerSync();
   const [area, setArea] = useState<ProjectAreaFilter>(PROJECT_AREA_FILTER_ALL);
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const search = usePullToRevealSearch();
 
   const client = useMobileApiClient();
@@ -115,7 +178,9 @@ export default function ProjectsScreen() {
           key: project.key,
           name: project.name,
           status: project.status,
+          type: project.type ?? "general",
           area: asProjectArea(project.area),
+          sort_order: project.sortOrder ?? 0,
         })),
       );
       setRestProgress(
@@ -150,6 +215,8 @@ export default function ProjectsScreen() {
       (syncedProjects ?? []).map((row) => ({
         ...row,
         area: asProjectArea(row.area),
+        type: row.type ?? "general",
+        sort_order: row.sort_order ?? 0,
       })),
     [syncedProjects],
   );
@@ -167,6 +234,19 @@ export default function ProjectsScreen() {
     [area, search.query, sourceRows],
   );
 
+  const sections = useMemo(
+    () => buildProjectSections(rows, collapsedTypes),
+    [collapsedTypes, rows],
+  );
+
+  const toggleTypeGroup = useCallback((collapseKey: string) => {
+    setCollapsedTypes((current) => {
+      const next = new Set(current);
+      if (next.has(collapseKey)) next.delete(collapseKey);
+      else next.add(collapseKey);
+      return next;
+    });
+  }, []);
   const localProgress = useMemo(
     () => aggregateTaskProgressByProjectId(syncedTaskRows ?? []),
     [syncedTaskRows],
@@ -209,10 +289,11 @@ export default function ProjectsScreen() {
           placeholder="Search projects"
         />
       ) : null}
-      <FlatList
+      <SectionList
         style={ui.screen}
-        data={rows}
+        sections={sections as SectionListData<ProjectListRow, Section>[]}
         keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
@@ -241,15 +322,46 @@ export default function ProjectsScreen() {
               : "No projects in this area."}
           </Text>
         }
+        renderSectionHeader={({ section }) => (
+          <Text style={ui.sectionHeader}>{section.title}</Text>
+        )}
         renderItem={({ item }) => {
-          const title = item.name ?? "Untitled";
-          const progress = progressByProjectId[item.id] ?? EMPTY_PROGRESS;
+          if (item.kind === "type-header") {
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: !item.collapsed }}
+                accessibilityLabel={`${item.label}, ${item.collapsed ? "collapsed" : "expanded"}`}
+                onPress={() => toggleTypeGroup(item.collapseKey)}
+                style={({ pressed }) => [
+                  ui.typeSubheaderRow,
+                  pressed ? { opacity: 0.7 } : null,
+                ]}
+              >
+                <View
+                  style={{
+                    transform: [{ rotate: item.collapsed ? "0deg" : "90deg" }],
+                  }}
+                >
+                  <ChevronRightIcon
+                    size={12}
+                    color="rgba(255, 255, 255, 0.38)"
+                  />
+                </View>
+                <Text style={ui.typeSubheaderLabel}>{item.label}</Text>
+              </Pressable>
+            );
+          }
+
+          const project = item.project;
+          const title = project.name ?? "Untitled";
+          const progress = progressByProjectId[project.id] ?? EMPTY_PROGRESS;
           const percentLabel = formatProjectTaskProgressPercent(progress);
           return (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${title}, ${percentLabel} complete`}
-              onPress={() => router.push(projectDetailHref(item.id))}
+              onPress={() => router.push(projectDetailHref(project.id))}
               style={({ pressed }) => [
                 ui.row,
                 pressed ? { backgroundColor: colors.rowPressed } : null,
@@ -259,9 +371,7 @@ export default function ProjectsScreen() {
                 <ProjectIcon size={18} color={colors.foreground} />
               </View>
               <View style={ui.rowBody}>
-                <View
-                  style={[ui.rowTitleLine, { alignItems: "center" }]}
-                >
+                <View style={[ui.rowTitleLine, { alignItems: "center" }]}>
                   <Text
                     style={ui.rowTitle}
                     numberOfLines={1}

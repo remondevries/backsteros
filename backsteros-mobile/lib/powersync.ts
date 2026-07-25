@@ -31,12 +31,21 @@ const projects = new Table(
     due_date: column.text,
     icon: column.text,
     color: column.text,
+    type: column.text,
+    github_repository: column.text,
+    local_working_directory: column.text,
     status: column.text,
     priority: column.integer,
     sort_order: column.integer,
     ...commonDates,
   },
-  { indexes: { status: ["status"], organization: ["organization_id"] } },
+  {
+    indexes: {
+      status: ["status"],
+      organization: ["organization_id"],
+      type: ["type"],
+    },
+  },
 );
 
 const tasks = new Table(
