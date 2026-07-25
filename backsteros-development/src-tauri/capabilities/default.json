@@ -11,6 +11,8 @@
       "http://127.0.0.1:3100/**",
       "https://*.clerk.accounts.dev",
       "https://*.clerk.accounts.dev/**",
+      "https://clerk.accounts.dev",
+      "https://clerk.accounts.dev/**",
       "https://*.accounts.dev",
       "https://*.accounts.dev/**",
       "https://*.clerk.com",
@@ -20,7 +22,13 @@
       "https://github.com",
       "https://github.com/**",
       "https://*.github.com",
-      "https://*.github.com/**"
+      "https://*.github.com/**",
+      "https://tender-caiman-58.clerk.accounts.dev",
+      "https://tender-caiman-58.clerk.accounts.dev/**",
+      "https://clerk.shared.lcl.dev",
+      "https://clerk.shared.lcl.dev/**",
+      "https://*.lcl.dev",
+      "https://*.lcl.dev/**"
     ]
   },
   "permissions": [

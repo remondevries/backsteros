@@ -151,10 +151,12 @@ export function consumeGithubOauthReturnUrl(
 
 /**
  * Starts Clerk GitHub OAuth (connect or reauthorize) with org + repo scopes.
- * Opens GitHub authorization in a popup (keeps the main shell on the console).
- * Falls back to a full-page redirect in the browser if the popup is blocked.
  *
- * Always pass an absolute `redirectUrl` on this origin (e.g. localhost:3100).
+ * Uses a same-window redirect (same as desktop). Popup OAuth often stalls on
+ * GitHub's "You are being redirected to the authorized application" page in
+ * the packaged WKWebView because the callback never reaches `/sso-callback`.
+ *
+ * Always pass an absolute `redirectUrl` on this origin (e.g. 127.0.0.1:3100).
  * Relative paths are resolved against the Clerk app home URL (production /app).
  */
 export async function startGithubOauthConnect(
@@ -184,20 +186,6 @@ export async function startGithubOauthConnect(
     throw new Error("Clerk did not return a GitHub authorization URL.");
   }
 
-  // Prefer window.open so the native on_new_window handler can host the OAuth
-  // flow without leaving the console. WKWebView/Tauri may still report a null
-  // Window handle even when the native popup was created successfully.
-  const popup = window.open(
-    url.href,
-    "backsteros-github-oauth",
-    "width=600,height=800",
-  );
-  const isTauri = Boolean(
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
-  );
-  if (popup != null || isTauri) {
-    return;
-  }
-  // Browser / shell fallback when popups are blocked.
+  console.info("[github-oauth] redirecting to", url.href, "→ callback", redirectUrl);
   window.location.href = url.href;
 }

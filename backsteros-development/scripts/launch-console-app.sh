@@ -30,6 +30,44 @@ NEXT_PID_FILE="${PID_DIR}/next.pid"
 
 mkdir -p "${PID_DIR}"
 
+# GUI apps (LaunchServices / Tauri) inherit a minimal PATH without Homebrew,
+# nvm, or pnpm. Bootstrap common locations before we look for tooling.
+ensure_devtools_path() {
+  local dirs=(
+    "/opt/homebrew/bin"
+    "/opt/homebrew/sbin"
+    "/usr/local/bin"
+    "/usr/local/sbin"
+    "${HOME}/.local/bin"
+    "${HOME}/Library/pnpm"
+    "${HOME}/.bun/bin"
+    "${HOME}/.cargo/bin"
+  )
+  local nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
+  if [[ -d "${nvm_dir}/versions/node" ]]; then
+    local latest
+    latest="$(ls -1d "${nvm_dir}/versions/node"/v*/bin 2>/dev/null | sort -V | tail -1 || true)"
+    if [[ -n "${latest}" ]]; then
+      dirs+=("${latest}")
+    fi
+  fi
+  local prefix=""
+  local d
+  for d in "${dirs[@]}"; do
+    if [[ -d "${d}" ]]; then
+      case ":${PATH:-}:" in
+        *":${d}:"*) ;;
+        *) prefix="${prefix}${prefix:+:}${d}" ;;
+      esac
+    fi
+  done
+  if [[ -n "${prefix}" ]]; then
+    export PATH="${prefix}:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+  fi
+}
+
+ensure_devtools_path
+
 port_listening() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
@@ -55,7 +93,7 @@ wait_for_http() {
 
 http_ready() {
   local url="$1"
-  curl -sf -o /dev/null --max-time 2 "${url}" >/dev/null 2>&1
+  curl -sf -o /dev/null --max-time 5 "${url}" >/dev/null 2>&1
 }
 
 kill_port_listeners() {
@@ -149,22 +187,46 @@ start_pty() {
 }
 
 start_next() {
+  # Avoid killing a healthy/starting Next: a concurrent launch (e.g. Tauri
+  # shell) used to see "port open, HTTP not ready yet" and SIGKILL Turbopack.
   if port_listening "${PORT}"; then
     if http_ready "${URL}"; then
       echo "[console-app] Next already on :${PORT}"
       return 0
     fi
-    echo "[console-app] :${PORT} is listening but HTTP is not responding — restarting Next"
+    echo "[console-app] :${PORT} is listening — waiting for HTTP before considering restart…"
+    local i
+    for ((i = 1; i <= 60; i++)); do
+      if http_ready "${URL}"; then
+        echo "[console-app] Next became ready on :${PORT}"
+        return 0
+      fi
+      if ! port_listening "${PORT}"; then
+        break
+      fi
+      sleep 0.5
+    done
+    if http_ready "${URL}"; then
+      echo "[console-app] Next already on :${PORT}"
+      return 0
+    fi
+    echo "[console-app] :${PORT} still not serving HTTP — restarting Next"
     kill_port_listeners "${PORT}"
   fi
   echo "[console-app] Starting Next on :${PORT}…"
+  # Turbopack watches the monorepo; the default soft limit (256) is too low.
+  ulimit -n 10240 2>/dev/null || true
   (
     cd "${APP_DIR}"
     export PORT
+    {
+      echo ""
+      echo "----- $(date '+%Y-%m-%d %H:%M:%S') next start (CONSOLE_USE_DEV=${CONSOLE_USE_DEV:-0}) -----"
+    } >>"${NEXT_LOG}"
     if [[ "${CONSOLE_USE_DEV:-}" == "1" ]]; then
-      nohup pnpm exec next dev --port "${PORT}" >"${NEXT_LOG}" 2>&1 &
+      nohup pnpm exec next dev --port "${PORT}" >>"${NEXT_LOG}" 2>&1 &
     else
-      nohup pnpm exec next start --port "${PORT}" >"${NEXT_LOG}" 2>&1 &
+      nohup pnpm exec next start --port "${PORT}" >>"${NEXT_LOG}" 2>&1 &
     fi
     echo $! >"${NEXT_PID_FILE}"
   )

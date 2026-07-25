@@ -67,7 +67,7 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 | Task | Output | Status |
 | --- | --- | --- |
-| Vite + React at `/admin` | Owner-only shell | Done (local) |
+| Next.js + Clerk at `/admin` | Owner-only shell | Done (local) |
 | API health probe | `/health` in admin UI | Done (local) |
 | Sync health view | Cursor, devices (`/api/v1/ops/sync-health`) | Done (local) |
 | API health + log tail | `/api/v1/ops/logs` ring buffer | Done (local) |

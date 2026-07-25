@@ -4735,6 +4735,47 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   color: var(--console-accent);
 }
 
+.console-auth-tauri h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.console-auth-tauri p {
+  margin: 0 0 12px;
+  color: var(--console-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.console-auth-github-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  margin: 8px 0 4px;
+  border: 1px solid var(--console-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 92%, transparent);
+  color: var(--console-bg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.console-auth-github-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.console-auth-github-btn:not(:disabled):hover {
+  filter: brightness(1.05);
+}
+
+.console-auth-error {
+  color: #f87171 !important;
+}
+
 .task-overview-row__title-trailing {
   color: #fff;
 }

@@ -3,7 +3,11 @@
 import {
   createDefaultTabsState,
   createProductTab,
+  isBlockingModalOpen,
+  isTargetInsideBlockingModal,
   normalizeTabHref,
+  shouldHandleGlobalShortcut,
+  useTabShortcuts,
   type ProductTab,
   type ProductTabsState,
 } from "@backsteros/ui";
@@ -19,11 +23,17 @@ import {
 
 const STORAGE_KEY = "backsteros.development.app-tabs";
 
+export type ConsoleTabTaskMeta = {
+  taskId?: string | null;
+  taskStatus?: string | null;
+};
+
 type AppTabsContextValue = {
   tabs: ProductTab[];
   activeTabId: string;
   activeTab: ProductTab | undefined;
   hydrated: boolean;
+  workingTaskIds: ReadonlySet<string>;
   activateTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
   openNewTab: () => void;
@@ -59,42 +69,86 @@ function syncActiveTab(
   state: ProductTabsState,
   pathname: string,
   title: string,
+  taskMeta: ConsoleTabTaskMeta = {},
 ): ProductTabsState {
   const normalized = normalizeTabHref(pathname);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+  const nextTaskId = taskMeta.taskId ?? null;
+  const nextTaskStatus = taskMeta.taskStatus ?? null;
   if (!activeTab) {
     const tab = createProductTab(normalized, title);
-    return { tabs: [tab], activeTabId: tab.id };
+    return {
+      tabs: [
+        {
+          ...tab,
+          taskId: nextTaskId,
+          taskStatus: nextTaskStatus,
+        },
+      ],
+      activeTabId: tab.id,
+    };
   }
-  if (activeTab.href === normalized && activeTab.title === title) {
+  if (
+    activeTab.href === normalized &&
+    activeTab.title === title &&
+    (activeTab.taskId ?? null) === nextTaskId &&
+    (activeTab.taskStatus ?? null) === nextTaskStatus
+  ) {
     return state;
   }
   return {
     ...state,
     tabs: state.tabs.map((tab) =>
       tab.id === state.activeTabId
-        ? { ...tab, href: normalized, title }
+        ? {
+            ...tab,
+            href: normalized,
+            title,
+            taskId: nextTaskId,
+            taskStatus: nextTaskStatus,
+          }
         : tab,
     ),
   };
+}
+
+/** Allow ⌘T / ⌘⇧[ / ] while the embedded terminal is focused. */
+function shouldHandleConsoleTabShortcut(event: KeyboardEvent): boolean {
+  const target = event.target;
+  const inXterm =
+    target instanceof HTMLElement && Boolean(target.closest(".xterm"));
+  if (inXterm) {
+    return !(
+      isBlockingModalOpen() && !isTargetInsideBlockingModal(event.target)
+    );
+  }
+  return shouldHandleGlobalShortcut(event);
 }
 
 export function AppTabsProvider({
   children,
   pathname,
   tabTitle,
+  tabTaskMeta,
   newTabHref,
   newTabTitle,
   navigate,
+  workingTaskIds = [],
+  shortcutsEnabled = true,
 }: {
   children: ReactNode;
   pathname: string;
   tabTitle: string;
+  tabTaskMeta?: ConsoleTabTaskMeta;
   newTabHref: string;
   newTabTitle: string;
   navigate: (href: string) => void;
+  workingTaskIds?: readonly string[];
+  /** When false, file editor tabs own ⌘T / ⌘⇧[ / ⌘⇧] / ⌘W. */
+  shortcutsEnabled?: boolean;
 }) {
   const normalizedPath = normalizeTabHref(pathname);
+  const taskMeta = tabTaskMeta ?? {};
   const [state, setState] = useState<ProductTabsState>(() =>
     createDefaultTabsState(normalizedPath),
   );
@@ -102,7 +156,7 @@ export function AppTabsProvider({
 
   useEffect(() => {
     const stored = loadStoredState(normalizedPath);
-    setState(syncActiveTab(stored, normalizedPath, tabTitle));
+    setState(syncActiveTab(stored, normalizedPath, tabTitle, taskMeta));
     setHydrated(true);
     // Hydrate once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
@@ -110,8 +164,16 @@ export function AppTabsProvider({
 
   useEffect(() => {
     if (!hydrated) return;
-    setState((current) => syncActiveTab(current, normalizedPath, tabTitle));
-  }, [hydrated, normalizedPath, tabTitle]);
+    setState((current) =>
+      syncActiveTab(current, normalizedPath, tabTitle, taskMeta),
+    );
+  }, [
+    hydrated,
+    normalizedPath,
+    tabTitle,
+    taskMeta.taskId,
+    taskMeta.taskStatus,
+  ]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -171,6 +233,37 @@ export function AppTabsProvider({
     }
   }, [navigate, newTabHref, newTabTitle, normalizedPath]);
 
+  const activatePreviousTab = useCallback(() => {
+    setState((current) => {
+      if (current.tabs.length <= 1) return current;
+      const index = current.tabs.findIndex(
+        (tab) => tab.id === current.activeTabId,
+      );
+      if (index < 0) return current;
+      const previous =
+        current.tabs[(index - 1 + current.tabs.length) % current.tabs.length]!;
+      if (previous.href !== normalizedPath) {
+        queueMicrotask(() => navigate(previous.href));
+      }
+      return { ...current, activeTabId: previous.id };
+    });
+  }, [navigate, normalizedPath]);
+
+  const activateNextTab = useCallback(() => {
+    setState((current) => {
+      if (current.tabs.length <= 1) return current;
+      const index = current.tabs.findIndex(
+        (tab) => tab.id === current.activeTabId,
+      );
+      if (index < 0) return current;
+      const next = current.tabs[(index + 1) % current.tabs.length]!;
+      if (next.href !== normalizedPath) {
+        queueMicrotask(() => navigate(next.href));
+      }
+      return { ...current, activeTabId: next.id };
+    });
+  }, [navigate, normalizedPath]);
+
   const updateActiveTabTitle = useCallback((title: string) => {
     setState((current) => ({
       ...current,
@@ -180,9 +273,24 @@ export function AppTabsProvider({
     }));
   }, []);
 
+  useTabShortcuts({
+    enabled: shortcutsEnabled,
+    activeTabId: state.activeTabId,
+    openNewTab,
+    closeTab,
+    activatePreviousTab,
+    activateNextTab,
+    shouldHandle: shouldHandleConsoleTabShortcut,
+  });
+
   const activeTab = useMemo(
     () => state.tabs.find((tab) => tab.id === state.activeTabId),
     [state.activeTabId, state.tabs],
+  );
+
+  const workingTaskIdSet = useMemo(
+    () => new Set(workingTaskIds),
+    [workingTaskIds],
   );
 
   const value = useMemo(
@@ -191,6 +299,7 @@ export function AppTabsProvider({
       activeTabId: state.activeTabId,
       activeTab,
       hydrated,
+      workingTaskIds: workingTaskIdSet,
       activateTab,
       closeTab,
       openNewTab,
@@ -201,6 +310,7 @@ export function AppTabsProvider({
       state.activeTabId,
       activeTab,
       hydrated,
+      workingTaskIdSet,
       activateTab,
       closeTab,
       openNewTab,

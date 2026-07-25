@@ -12,6 +12,10 @@ export type ProductTab = {
   title: string;
   /** Optional entity icon payload; shells may render a custom glyph. */
   icon?: string | null;
+  /** Task entity id when this tab is on a task route (working/status icons). */
+  taskId?: string | null;
+  /** Last-known task status for status-icon rendering on task tabs. */
+  taskStatus?: string | null;
 };
 
 export type ProductTabsState = {

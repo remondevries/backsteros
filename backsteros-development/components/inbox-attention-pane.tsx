@@ -168,6 +168,7 @@ export function AttentionInboxProvider({
       title: string;
       projectId: string | null;
       displayId?: string | null;
+      status?: string | null;
     } | null,
   ) => void;
   /** Soft-reload comments/activities only — must not remount the inbox list. */
@@ -239,6 +240,9 @@ export function AttentionInboxProvider({
       title: item.title,
       projectId: raw?.projectId ?? item.projectId ?? null,
       displayId: getInboxItemDisplayId(item),
+      status: raw
+        ? migrateLegacyTaskStatus(raw.status)
+        : migrateLegacyTaskStatus(item.status),
     });
   }, [items, loading, onSelectedTaskMeta, pathname, rawTasks]);
 

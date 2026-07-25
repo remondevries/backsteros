@@ -140,6 +140,7 @@ export function TaskSidebar({
       title: string;
       projectId?: string | null;
       displayId?: string | null;
+      status?: string | null;
     } | null,
   ) => void;
   /** When false, host chrome owns the side pane header (stable breadcrumb). */
@@ -266,6 +267,7 @@ export function TaskSidebar({
         taskProject?.key && selectedRawTask.number
           ? formatTaskDisplayId(taskProject.key, selectedRawTask.number)
           : null,
+      status: migrateLegacyTaskStatus(selectedRawTask.status),
     });
   }, [onSelectedTaskChange, project, projectsById, selectedRawTask, selectedTaskId]);
 

@@ -34,7 +34,7 @@ fn launch_script() -> PathBuf {
 
 fn console_ready() -> bool {
     Command::new("curl")
-        .args(["-sf", "-o", "/dev/null", "--max-time", "2", CONSOLE_URL])
+        .args(["-sf", "-o", "/dev/null", "--max-time", "5", CONSOLE_URL])
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
@@ -46,6 +46,29 @@ fn set_splash_status(window: &tauri::WebviewWindow, message: &str) {
         serde_json::to_string(message).unwrap_or_else(|_| "\"Starting…\"".into())
     );
     let _ = window.eval(&script);
+}
+
+/// PATH for GUI-launched processes (no shell profile / Homebrew).
+fn gui_augmented_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut prefixes = vec![
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/local/sbin".to_string(),
+    ];
+    if !home.is_empty() {
+        prefixes.extend([
+            format!("{home}/.local/bin"),
+            format!("{home}/Library/pnpm"),
+            format!("{home}/.bun/bin"),
+            format!("{home}/.cargo/bin"),
+        ]);
+    }
+    let current = std::env::var("PATH").unwrap_or_else(|_| {
+        "/usr/bin:/bin:/usr/sbin:/sbin".to_string()
+    });
+    format!("{}:{current}", prefixes.join(":"))
 }
 
 fn ensure_console_services() -> Result<(), String> {
@@ -62,15 +85,31 @@ fn ensure_console_services() -> Result<(), String> {
         ));
     }
 
+    let launch_log = development_root().join(".console-app/launch.log");
+    if let Some(parent) = launch_log.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&launch_log)
+        .map_err(|error| format!("Failed to open launch log: {error}"))?;
+    let log_err = log_file
+        .try_clone()
+        .map_err(|error| format!("Failed to clone launch log: {error}"))?;
+
     eprintln!("[development] Starting PTY + Next via {}", script.display());
     let mut cmd = Command::new("bash");
     cmd.arg(&script)
         .env("CONSOLE_APP_BROWSER", "none")
+        // Always use next:dev for this local console — release builds must not
+        // kill a healthy Turbopack server and swap in `next start`.
+        .env("CONSOLE_USE_DEV", "1")
         .env("PORT", CONSOLE_PORT.to_string())
-        .current_dir(development_root());
-    if cfg!(debug_assertions) {
-        cmd.env("CONSOLE_USE_DEV", "1");
-    }
+        .env("PATH", gui_augmented_path())
+        .current_dir(development_root())
+        .stdout(log_file)
+        .stderr(log_err);
     let status = cmd
         .status()
         .map_err(|error| format!("Failed to run launch script: {error}"))?;
@@ -79,7 +118,7 @@ fn ensure_console_services() -> Result<(), String> {
         return Err(format!("Launch script exited with {status}"));
     }
 
-    for _ in 0..30 {
+    for _ in 0..60 {
         if console_ready() {
             eprintln!("[development] Ready at {CONSOLE_URL}");
             return Ok(());
@@ -95,29 +134,43 @@ fn open_console_when_ready(app: tauri::AppHandle) {
             return;
         };
 
-        if console_ready() {
-            if let Ok(url) = CONSOLE_URL.parse() {
-                let _ = window.navigate(url);
-            }
-            return;
-        }
-
-        set_splash_status(&window, "Starting PTY and Next.js…");
-        match ensure_console_services() {
-            Ok(()) => {
-                set_splash_status(&window, "Opening console…");
+        // Retry a few times: Next may still be compiling, or a previous race
+        // may have left the splash up after a transient failure.
+        for attempt in 1..=8 {
+            if console_ready() {
                 if let Ok(url) = CONSOLE_URL.parse() {
                     let _ = window.navigate(url);
                 }
+                return;
             }
-            Err(error) => {
-                eprintln!("[development] {error}");
-                set_splash_status(
-                    &window,
-                    &format!("{error}. Check logs in .console-app/"),
-                );
+
+            set_splash_status(
+                &window,
+                &format!("Starting PTY and Next.js… ({attempt}/8)"),
+            );
+            match ensure_console_services() {
+                Ok(()) => {
+                    set_splash_status(&window, "Opening console…");
+                    if let Ok(url) = CONSOLE_URL.parse() {
+                        let _ = window.navigate(url);
+                    }
+                    return;
+                }
+                Err(error) => {
+                    eprintln!("[development] attempt {attempt}: {error}");
+                    set_splash_status(
+                        &window,
+                        &format!("{error}. Retrying…"),
+                    );
+                    thread::sleep(Duration::from_secs(2));
+                }
             }
         }
+
+        set_splash_status(
+            &window,
+            "Could not start the local console. Check .console-app/next.log and launch.log",
+        );
     });
 }
 
@@ -134,10 +187,16 @@ fn is_app_origin(url: &tauri::Url) -> bool {
 
 fn host_is_oauth_provider(host: &str) -> bool {
     host == "github.com"
+        || host == "clerk.accounts.dev"
+        || host == "accounts.dev"
+        || host == "clerk.com"
+        || host == "clerk.shared.lcl.dev"
         || host.ends_with(".github.com")
         || host.ends_with(".clerk.accounts.dev")
         || host.ends_with(".clerk.com")
         || host.ends_with(".accounts.dev")
+        // Clerk development OAuth callback (shared): clerk.shared.lcl.dev
+        || host.ends_with(".lcl.dev")
         || host == "accounts.google.com"
         || host.ends_with(".google.com")
         || host.ends_with(".microsoftonline.com")
@@ -150,7 +209,15 @@ fn url_is_oauth_navigation(url: &tauri::Url) -> bool {
         "http" | "https" => url
             .host_str()
             .is_some_and(host_is_oauth_provider),
-        _ => false,
+        // Custom schemes — never silently cancel; GitHub's interstitial hangs
+        // when WKWebView blocks the protocol hop.
+        _ => {
+            eprintln!(
+                "[development] allowing non-http OAuth navigation: {}",
+                url.as_str()
+            );
+            true
+        }
     }
 }
 
@@ -159,6 +226,40 @@ fn should_close_oauth_window(url: &tauri::Url) -> bool {
     path.contains("popup-callback")
         || path.contains("popup_callback")
         || path.contains("popup_auth_callback")
+}
+
+fn follow_oauth_interstitial(window: &tauri::WebviewWindow, url: &tauri::Url) {
+    let Some(host) = url.host_str() else {
+        return;
+    };
+    // GitHub's authorize interstitial ("You are being redirected…") often
+    // stalls in WKWebView; click/follow the continue link if present.
+    let on_github = host == "github.com" || host.ends_with(".github.com");
+    let on_clerk = host_is_oauth_provider(host) && !on_github;
+    if !on_github && !on_clerk {
+        return;
+    }
+    let script = r#"
+      (function () {
+        try {
+          var text = (document.body && document.body.innerText) || "";
+          if (!/redirected to the authorized application|you are being redirected|redirecting/i.test(text)) {
+            return;
+          }
+          var links = Array.prototype.slice.call(document.querySelectorAll("a[href]"));
+          var preferred = links.find(function (a) {
+            var href = a.href || "";
+            return /clerk|oauth|callback|accounts\.dev|127\.0\.0\.1|localhost/i.test(href);
+          }) || links.find(function (a) {
+            return (a.textContent || "").trim().length > 0;
+          });
+          if (preferred && preferred.href) {
+            window.location.replace(preferred.href);
+          }
+        } catch (e) {}
+      })();
+    "#;
+    let _ = window.eval(script);
 }
 
 fn close_oauth_window_soon(window: tauri::WebviewWindow) {
@@ -184,20 +285,39 @@ fn relay_oauth_callback_to_main(app: &AppHandle, url: &tauri::Url) {
 }
 
 fn allow_main_navigation(url: &tauri::Url) -> bool {
-    if is_app_origin(url) {
+    // Do not cancel http(s) hops during OAuth — blocking GitHub→Clerk
+    // (clerk.shared.lcl.dev) leaves WKWebView stuck on the redirect interstitial.
+    // Also allow captcha/status iframe hosts used by GitHub's authorize page.
+    eprintln!("[development] main navigate: {}", url.as_str());
+    if is_app_origin(url) || url_is_oauth_navigation(url) {
         return true;
     }
-    // Clerk Sign-In often falls back to a same-window redirect when the popup
-    // path fails (common in release WKWebView). Allow the OAuth hop so GitHub
-    // login is not silently cancelled.
-    if url_is_oauth_navigation(url) {
-        return true;
+    if let Some(host) = url.host_str() {
+        if host == "www.githubstatus.com"
+            || host == "githubstatus.com"
+            || host == "www.recaptcha.net"
+            || host == "recaptcha.net"
+            || host.ends_with(".recaptcha.net")
+            || host.ends_with(".gstatic.com")
+        {
+            return true;
+        }
     }
-    false
+    match url.scheme() {
+        "http" | "https" | "about" | "tauri" | "asset" | "data" | "blob" => true,
+        _ => {
+            eprintln!(
+                "[development] allowing custom-scheme main navigate: {}",
+                url.as_str()
+            );
+            true
+        }
+    }
 }
 
 fn allow_oauth_window_navigation(url: &tauri::Url) -> bool {
-    is_app_origin(url) || url_is_oauth_navigation(url)
+    eprintln!("[development] oauth navigate: {}", url.as_str());
+    allow_main_navigation(url)
 }
 
 fn open_oauth_window(
@@ -242,6 +362,7 @@ fn open_oauth_window(
                 close_oauth_window_soon(window);
                 return;
             }
+            follow_oauth_interstitial(&window, url);
             if should_close_oauth_window(url) {
                 close_oauth_window_soon(window);
             }
@@ -285,6 +406,7 @@ pub fn run() {
                         let _ = window.set_title_bar_style(TitleBarStyle::Overlay);
                         let _ = window.set_title("");
                     }
+                    follow_oauth_interstitial(&window, payload.url());
                 })
                 .on_new_window(move |url, features| {
                     // Clerk / GitHub OAuth uses window.open. Build a related

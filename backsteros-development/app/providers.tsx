@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ConfigureAuthScreen } from "@/components/configure-auth-screen";
+import { TauriGithubSignIn } from "@/components/tauri-github-sign-in";
 import { ConsoleApiProvider } from "@/lib/api-context";
 import { AgentTestingModeProvider } from "@/lib/agent-testing-mode-context";
 import { GITHUB_SSO_CALLBACK_PATH } from "@/lib/github-oauth";
@@ -46,13 +47,10 @@ function SignedInConsole({
 
 function SignInGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  // Popup OAuth is flaky in the packaged WKWebView (async window.open after
-  // Clerk's network call). Prefer a same-window redirect once we know we are
-  // inside Tauri; detect after mount to avoid SSR/hydration mismatch.
-  const [oauthFlow, setOauthFlow] = useState<"popup" | "redirect">("popup");
+  const [tauriShell, setTauriShell] = useState(false);
 
   useEffect(() => {
-    if (isTauriShell()) setOauthFlow("redirect");
+    setTauriShell(isTauriShell());
   }, []);
 
   if (pathname === GITHUB_SSO_CALLBACK_PATH) {
@@ -65,17 +63,21 @@ function SignInGate({ children }: { children: ReactNode }) {
       <SignedOut key="signed-out">
         <div className="console-auth">
           <div className="console-auth-panel">
-            <SignIn
-              routing="hash"
-              oauthFlow={oauthFlow}
-              fallbackRedirectUrl="/"
-              appearance={{
-                elements: {
-                  rootBox: "console-auth-clerk",
-                  card: "console-auth-clerk-card",
-                },
-              }}
-            />
+            {tauriShell ? (
+              <TauriGithubSignIn />
+            ) : (
+              <SignIn
+                routing="hash"
+                oauthFlow="popup"
+                fallbackRedirectUrl="/"
+                appearance={{
+                  elements: {
+                    rootBox: "console-auth-clerk",
+                    card: "console-auth-clerk-card",
+                  },
+                }}
+              />
+            )}
           </div>
         </div>
       </SignedOut>

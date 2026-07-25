@@ -18,6 +18,7 @@ export function useTabShortcuts({
   closeTab,
   activatePreviousTab,
   activateNextTab,
+  shouldHandle = shouldHandleGlobalShortcut,
 }: {
   enabled?: boolean;
   activeTabId: string;
@@ -25,6 +26,8 @@ export function useTabShortcuts({
   closeTab: (tabId: string) => void;
   activatePreviousTab: () => void;
   activateNextTab: () => void;
+  /** Override focus/modal guards (e.g. allow while xterm is focused). */
+  shouldHandle?: (event: KeyboardEvent) => boolean;
 }) {
   useEffect(() => {
     if (!enabled) return;
@@ -34,7 +37,7 @@ export function useTabShortcuts({
         return;
       }
 
-      if (!shouldHandleGlobalShortcut(event)) {
+      if (!shouldHandle(event)) {
         return;
       }
 
@@ -79,5 +82,6 @@ export function useTabShortcuts({
     closeTab,
     enabled,
     openNewTab,
+    shouldHandle,
   ]);
 }

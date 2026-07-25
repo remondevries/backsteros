@@ -19,11 +19,25 @@ export function consoleRouteFromHref(href: string) {
   return parseConsoleSlug(pathParts(href));
 }
 
+/** Tab label for a task: `CI-33 Title` (display id + title). */
+export function formatConsoleTaskTabTitle(
+  displayId?: string | null,
+  taskTitle?: string | null,
+): string {
+  const id = displayId?.trim() || "";
+  const title = taskTitle?.trim() || "";
+  if (id && title) return `${id} ${title}`;
+  if (id) return id;
+  if (title) return title;
+  return "Task";
+}
+
 export function getConsoleTabTitle(
   href: string,
   options: {
     projectName?: string | null;
     taskTitle?: string | null;
+    taskDisplayId?: string | null;
   } = {},
 ): string {
   const route = consoleRouteFromHref(href);
@@ -31,16 +45,20 @@ export function getConsoleTabTitle(
     return "Settings";
   }
   if (route.inbox) {
-    const taskTitle = options.taskTitle?.trim();
-    return taskTitle ? `Inbox · ${taskTitle}` : "Inbox";
+    if (route.taskId) {
+      return formatConsoleTaskTabTitle(
+        options.taskDisplayId,
+        options.taskTitle,
+      );
+    }
+    return "Inbox";
   }
   if (!route.projectId) {
     return "Projects";
   }
   const projectName = options.projectName?.trim() || "Project";
-  const taskTitle = options.taskTitle?.trim();
-  if (route.taskId && taskTitle) {
-    return `${projectName} · ${taskTitle}`;
+  if (route.taskId) {
+    return formatConsoleTaskTabTitle(options.taskDisplayId, options.taskTitle);
   }
   if (route.commitSha) {
     if (route.pullNumber != null) {

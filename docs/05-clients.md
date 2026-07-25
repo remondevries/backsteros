@@ -93,7 +93,7 @@ Owner dashboard for **system behavior**, not content editing.
 
 ### Stack
 
-- Independent frontend stack optimized for tables and observability
+- Next.js App Router + `@clerk/nextjs` (same auth gate pattern as the development console)
 - Online-first; PowerSync optional or omitted
 - Same Clerk identity as the product app; **owner-only** routes
 

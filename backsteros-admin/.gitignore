@@ -1,4 +1,4 @@
-node_modules/
-dist/
+.next/
+tsconfig.tsbuildinfo
 .env
-.DS_Store
+.env.local

@@ -1049,6 +1049,7 @@ export function ConsoleShell() {
     title: string;
     projectId?: string | null;
     displayId?: string | null;
+    status?: string | null;
   } | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<{
     commit: GithubCommit;
@@ -2571,6 +2572,7 @@ export function ConsoleShell() {
         title: string;
         projectId: string | null;
         displayId?: string | null;
+        status?: string | null;
       } | null,
     ) => {
       setSelectedTaskMeta(task);
@@ -2692,13 +2694,27 @@ export function ConsoleShell() {
     () =>
       getConsoleTabTitle(locationPath, {
         projectName: selectedProject?.name,
-        taskTitle:
-          selectedTaskMeta && selectedTaskMeta.id === selectedTaskId
-            ? selectedTaskMeta.title
-            : null,
+        taskTitle: selectedTaskMeta?.title ?? null,
+        taskDisplayId: selectedTaskMeta?.displayId ?? null,
       }),
-    [locationPath, selectedProject?.name, selectedTaskId, selectedTaskMeta],
+    [locationPath, selectedProject?.name, selectedTaskMeta],
   );
+
+  const appTabTaskMeta = useMemo(() => {
+    if (!route.taskId) {
+      return { taskId: null, taskStatus: null };
+    }
+    if (selectedTaskMeta) {
+      return {
+        taskId: selectedTaskMeta.id,
+        taskStatus: selectedTaskMeta.status ?? null,
+      };
+    }
+    if (selectedTaskId) {
+      return { taskId: selectedTaskId, taskStatus: null };
+    }
+    return { taskId: null, taskStatus: null };
+  }, [route.taskId, selectedTaskId, selectedTaskMeta]);
 
   const newAppTabHref = useMemo(
     () =>
@@ -2792,6 +2808,15 @@ export function ConsoleShell() {
         ? "task-focus"
         : "project";
 
+  /** File editor tabs own ⌘T / ⌘⇧[ / ] / ⌘W while any file tab is open. */
+  const fileTabsOwnShortcuts =
+    Boolean(selectedProject) &&
+    contentStage === "project" &&
+    githubListTab === "files" &&
+    openFilePaths.length > 0 &&
+    !selectedCommit &&
+    !selectedPullRequest;
+
   /** ⇧[ on project overview → narrow rail (inbox-style), not full hide. */
   const contentListMinimized =
     tasksCollapsed && !route.inbox && contentStage === "project";
@@ -2838,10 +2863,10 @@ export function ConsoleShell() {
     setFileEditorFocusRequest(0);
   }, [fileDetailOpen]);
 
-  // ⌘⇧[ / ⌘⇧] cycle open file tabs; ⌘W closes the active tab
-  // (works while focused in the editor).
+  // File tabs own ⌘T / ⌘⇧[ / ⌘⇧] / ⌘W while any file is open on the Files
+  // view. Global app-tab shortcuts resume only after all file tabs are closed.
   useEffect(() => {
-    if (!fileDetailOpen) return;
+    if (!fileTabsOwnShortcuts) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) {
@@ -2850,13 +2875,20 @@ export function ConsoleShell() {
 
       const open = openFilePathsRef.current;
       const active = activeFilePathRef.current;
-      if (!active || open.length === 0) return;
+      if (open.length === 0) return;
+
+      if (!event.shiftKey && event.key.toLowerCase() === "t") {
+        // Reserved for the files content section — do not open an app tab.
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
 
       if (
         event.shiftKey &&
         (event.key === "[" || event.code === "BracketLeft")
       ) {
-        if (open.length < 2) return;
+        if (!active || open.length < 2) return;
         const index = open.indexOf(active);
         if (index < 0) return;
         event.preventDefault();
@@ -2870,7 +2902,7 @@ export function ConsoleShell() {
         event.shiftKey &&
         (event.key === "]" || event.code === "BracketRight")
       ) {
-        if (open.length < 2) return;
+        if (!active || open.length < 2) return;
         const index = open.indexOf(active);
         if (index < 0) return;
         event.preventDefault();
@@ -2881,6 +2913,7 @@ export function ConsoleShell() {
       }
 
       if (!event.shiftKey && event.key.toLowerCase() === "w") {
+        if (!active) return;
         event.preventDefault();
         event.stopPropagation();
         const requestClose = requestCloseFileTabRef.current;
@@ -2894,7 +2927,7 @@ export function ConsoleShell() {
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [fileDetailOpen]);
+  }, [fileTabsOwnShortcuts]);
 
   // Tasks tab → task list. While Commits/PRs auto-select is pending, keep the
   // previous main content (often tasks) so the pane does not flash blank.
@@ -3240,9 +3273,12 @@ export function ConsoleShell() {
         <AppTabsProvider
           pathname={locationPath}
           tabTitle={appTabTitle}
+          tabTaskMeta={appTabTaskMeta}
           newTabHref={newAppTabHref}
           newTabTitle={newAppTabTitle}
           navigate={navigateAppTab}
+          workingTaskIds={workingTaskIds}
+          shortcutsEnabled={!fileTabsOwnShortcuts}
         >
           <div className="console-root">
             <ConsoleEscapeBackNavigation
