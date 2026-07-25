@@ -5,12 +5,25 @@ import type {
   GithubPullRequest,
   GithubPullRequestState,
 } from "@backsteros/contracts";
-import { PillNav, ProjectOcticon } from "@backsteros/ui";
+import {
+  DocumentMarkdownPreview,
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
+  PillNav,
+  ProjectOcticon,
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+  shouldHandleGlobalShortcut,
+  useCommandPalette,
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
+} from "@backsteros/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
+import { GithubCodeMenu } from "@/components/github-code-menu";
 import { GithubCommitIcon } from "@/components/github-commit-icon";
 import { GithubPullRequestIcon } from "@/components/github-pull-request-icon";
-import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
 import { PullRequestFilesPane } from "@/components/pull-request-files-pane";
 import { apiErrorMessage, useConsoleApi } from "@/lib/api-context";
 
@@ -93,94 +106,6 @@ function formatDiffStat(value: number | null | undefined): string {
   return value.toLocaleString("en-US");
 }
 
-function CheckoutCodeMenu({
-  pullNumber,
-}: {
-  pullNumber: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const command = `gh pr checkout ${pullNumber}`;
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  return (
-    <div className="console-pull-code-menu" ref={rootRef}>
-      <button
-        type="button"
-        className="console-pull-code-trigger"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((current) => !current)}
-      >
-        Code
-        <ProjectOcticon icon="triangle-down" size={12} />
-      </button>
-      {open ? (
-        <div className="console-pull-code-panel" role="menu">
-          <div className="console-pull-code-panel-header">
-            <span className="console-pull-code-panel-icon" aria-hidden="true">
-              <ProjectOcticon icon="terminal" size={14} />
-            </span>
-            <span className="console-pull-code-panel-title">
-              Checkout with GitHub CLI
-            </span>
-          </div>
-          <div className="console-pull-code-command-row">
-            <code className="console-pull-code-command">{command}</code>
-            <button
-              type="button"
-              className="console-pull-code-copy"
-              aria-label={copied ? "Copied" : "Copy checkout command"}
-              title={copied ? "Copied" : "Copy"}
-              onClick={() => {
-                void navigator.clipboard.writeText(command).then(() => {
-                  setCopied(true);
-                });
-              }}
-            >
-              <ProjectOcticon icon={copied ? "check" : "copy"} size={14} />
-            </button>
-          </div>
-          <p className="console-pull-code-panel-foot">
-            Work fast with our official CLI.{" "}
-            <a
-              href="https://cli.github.com/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Learn more
-            </a>
-          </p>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function PullRequestDetailPane({
   projectId,
   projectIcon,
@@ -193,6 +118,8 @@ export function PullRequestDetailPane({
   onNavigateToProject,
   onSelectCommit,
   showChromeHeader = true,
+  hotkeysEnabled = false,
+  onSelectedFilenameChange,
 }: {
   projectId: string;
   projectIcon?: string | null;
@@ -205,8 +132,13 @@ export function PullRequestDetailPane({
   onNavigateToProject?: () => void;
   onSelectCommit?: (commit: GithubCommit, repository: string) => void;
   showChromeHeader?: boolean;
+  /** When false, 1/2/3 stay on the side-panel list tabs. */
+  hotkeysEnabled?: boolean;
+  onSelectedFilenameChange?: (filename: string | null) => void;
 }) {
   const { client } = useConsoleApi();
+  const { open: commandPaletteOpen } = useCommandPalette();
+  const { clearHighlights, setActiveZone } = useListKeyboardNavigationZone();
   const [pullRequest, setPullRequest] =
     useState<GithubPullRequest>(initialPullRequest);
   const [uncontrolledTab, setUncontrolledTab] =
@@ -222,6 +154,67 @@ export function PullRequestDetailPane({
   const [commitsError, setCommitsError] = useState<string | null>(null);
   const commitsLoadedForRef = useRef<number | null>(null);
   const commitsRequestGenerationRef = useRef(0);
+  const tabsRowRef = useRef<HTMLDivElement>(null);
+  const commitsListRef = useRef<HTMLUListElement>(null);
+  const commitsListContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
+
+  const focusTabButton = useCallback((nextTab: PullDetailTab) => {
+    const root = tabsRowRef.current;
+    if (!root) return;
+    const byValue = root.querySelector<HTMLButtonElement>(
+      `.app-pill-nav-item[data-pill-nav-value="${CSS.escape(nextTab)}"]`,
+    );
+    if (byValue) {
+      byValue.focus({ preventScroll: true });
+      return;
+    }
+    // Fallback before @backsteros/ui rebuild ships data-pill-nav-value.
+    const order: PullDetailTab[] = ["conversation", "commits", "files"];
+    const index = order.indexOf(nextTab);
+    root
+      .querySelectorAll<HTMLButtonElement>(".app-pill-nav-item")
+      [index]?.focus({ preventScroll: true });
+  }, []);
+
+  /** Drop side-panel PR/commit list focus so its orange ring cannot linger. */
+  const blurSidepanelGithubListFocus = useCallback(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return;
+    if (!active.closest("[data-keyboard-nav-item]")) return;
+    // Keep focus inside this PR detail (commit list / files / tabs).
+    if (active.closest(".console-pane--pull-detail")) return;
+    active.blur();
+  }, []);
+
+  const selectDetailTab = useCallback(
+    (nextTab: PullDetailTab) => {
+      setTab(nextTab);
+      // Clear list keyboard rings, leave content zone so j/k cannot re-highlight
+      // the side PR list while tabs own focus.
+      clearHighlights();
+      setActiveZone("main", { activate: false });
+      blurSidepanelGithubListFocus();
+      // Focus after paint so `is-active` lands on the same button we focus.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          blurSidepanelGithubListFocus();
+          focusTabButton(nextTab);
+          if (nextTab === "commits") {
+            setActiveZone("main", { activate: true });
+          }
+        });
+      });
+    },
+    [
+      blurSidepanelGithubListFocus,
+      clearHighlights,
+      focusTabButton,
+      setActiveZone,
+      setTab,
+    ],
+  );
 
   useEffect(() => {
     setPullRequest(initialPullRequest);
@@ -315,6 +308,109 @@ export function PullRequestDetailPane({
     void loadCommitsPage(1, false);
   }, [commits.length, loadCommitsPage, pullRequest.number, tab]);
 
+  // 1 / 2 / 3 → Conversation / Commits / Files while PR detail is engaged
+  // (Enter/Space). While browsing the PR list, the side panel owns 1–4.
+  useEffect(() => {
+    if (!hotkeysEnabled) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (commandPaletteOpen) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      const nextTab: PullDetailTab | null =
+        event.key === "1"
+          ? "conversation"
+          : event.key === "2"
+            ? "commits"
+            : event.key === "3"
+              ? "files"
+              : null;
+      if (!nextTab) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      selectDetailTab(nextTab);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [commandPaletteOpen, hotkeysEnabled, selectDetailTab]);
+
+  // Enter/Space into the PR — claim focus for the active detail tab.
+  // Escape back to the list — drop tab-button focus so the highlight clears.
+  useEffect(() => {
+    if (!hotkeysEnabled) {
+      const root = tabsRowRef.current;
+      if (root) {
+        for (const button of root.querySelectorAll<HTMLButtonElement>(
+          ".app-pill-nav-item",
+        )) {
+          if (button === document.activeElement) {
+            button.blur();
+          }
+        }
+      }
+      return;
+    }
+
+    let cancelled = false;
+    clearHighlights();
+    setActiveZone("main", { activate: false });
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        focusTabButton(tab);
+        if (tab === "commits") {
+          setActiveZone("main", { activate: true });
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+    // Only when engaging / changing PR — not on every tab switch via 1/2/3.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [hotkeysEnabled, pullRequest.number]);
+
+  const commitItemIds = useMemo(
+    () => commits.map((commit) => commit.sha),
+    [commits],
+  );
+  const navigatePullCommit = useCallback(
+    (sha: string) => {
+      const commit = commits.find((entry) => entry.sha === sha);
+      if (commit) onSelectCommit?.(commit, repository);
+    },
+    [commits, onSelectCommit, repository],
+  );
+  const { highlightedId: commitHighlightedId } = useListKeyboardNavigation({
+    containerRef: commitsListRef,
+    itemIds: commitItemIds,
+    selectedId: null,
+    onNavigate: navigatePullCommit,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    priority: 20,
+    enabled:
+      hotkeysEnabled && tab === "commits" && commitItemIds.length > 0,
+  });
+
+  // After switching to Commits (or commits finishing load), claim j/k —
+  // only while the PR detail is engaged.
+  useEffect(() => {
+    if (!hotkeysEnabled) return;
+    if (tab !== "commits" || commitItemIds.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setActiveZone("main", { activate: true });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [commitItemIds.length, hotkeysEnabled, setActiveZone, tab]);
+
   const author = pullRequest.authorLogin || "Unknown";
   const body = pullRequest.body?.trim() || null;
   const stateClass = `is-${pullRequest.state}${
@@ -376,211 +472,256 @@ export function PullRequestDetailPane({
               <ProjectOcticon icon="chevron-left" size={14} />
             </button>
           }
-          actions={
-            <a
-              className="console-commit-detail-open-github"
-              href={pullRequest.htmlUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open on GitHub
-            </a>
-          }
         />
       ) : null}
 
       <div className="console-pane-body console-pull-detail-body">
-        <div
-          className={[
-            "console-github-detail-container",
-            tab === "files" ? "is-files" : null,
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-        <header className="console-pull-detail-hero">
-          <div className="console-pull-detail-title-row">
-            <h1 className="console-pull-detail-title">
-              {pullRequest.title}{" "}
-              <a
-                className="console-pull-detail-title-number"
-                href={pullRequest.htmlUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                #{pullRequest.number}
-              </a>
-            </h1>
-            <CheckoutCodeMenu pullNumber={pullRequest.number} />
-          </div>
+        <div className="console-github-detail-stack">
+          <div className="console-github-detail-hero-rail console-github-detail-hero-rail--pull">
+            <div className="console-github-detail-hero-inner">
+              <header className="console-pull-detail-hero">
+                <div className="console-pull-detail-title-row">
+                  <h1 className="console-pull-detail-title">
+                    {pullRequest.title}{" "}
+                    <a
+                      className="console-pull-detail-title-number"
+                      href={pullRequest.htmlUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      #{pullRequest.number}
+                    </a>
+                  </h1>
+                  <GithubCodeMenu
+                    command={`gh pr checkout ${pullRequest.number}`}
+                    commandTitle="Checkout with GitHub CLI"
+                    githubUrl={pullRequest.htmlUrl}
+                  />
+                </div>
 
-          <div className="console-pull-detail-meta-row">
-            <span className={`console-pull-detail-badge ${stateClass}`}>
-              <GithubPullRequestIcon size={14} />
-              {pullStateLabel(pullRequest.state, pullRequest.draft)}
-            </span>
-            <div className="console-pull-detail-meta-copy">
-              <span className="console-pull-detail-meta-author">{author}</span>
-              <span className="console-pull-detail-meta-muted">
-                {" "}
-                {pullActionVerb(pullRequest.state)}
-                {commitsPhrase ? ` ${commitsPhrase}` : ""}
-                {pullRequest.baseRef || pullRequest.headRef ? " into " : ""}
-              </span>
-              {pullRequest.baseRef ? (
-                <span className="console-pull-detail-branch">
-                  {pullRequest.baseRef}
-                </span>
-              ) : null}
-              {pullRequest.baseRef && pullRequest.headRef ? (
-                <span className="console-pull-detail-meta-muted"> from </span>
-              ) : null}
-              {pullRequest.headRef ? (
-                <span className="console-pull-detail-branch">
-                  {pullRequest.headRef}
-                </span>
-              ) : null}
-              {agoLabel ? (
-                <span className="console-pull-detail-meta-ago">
-                  <ProjectOcticon icon="comment" size={12} />
-                  {agoLabel}
-                </span>
-              ) : null}
+                <div className="console-pull-detail-meta-row">
+                  <span className={`console-pull-detail-badge ${stateClass}`}>
+                    <GithubPullRequestIcon size={14} />
+                    {pullStateLabel(pullRequest.state, pullRequest.draft)}
+                  </span>
+                  <div className="console-pull-detail-meta-copy">
+                    <span className="console-pull-detail-meta-author">
+                      {author}
+                    </span>
+                    <span className="console-pull-detail-meta-muted">
+                      {" "}
+                      {pullActionVerb(pullRequest.state)}
+                      {commitsPhrase ? ` ${commitsPhrase}` : ""}
+                      {pullRequest.baseRef || pullRequest.headRef
+                        ? " into "
+                        : ""}
+                    </span>
+                    {pullRequest.baseRef ? (
+                      <span className="console-pull-detail-branch">
+                        {pullRequest.baseRef}
+                      </span>
+                    ) : null}
+                    {pullRequest.baseRef && pullRequest.headRef ? (
+                      <span className="console-pull-detail-meta-muted">
+                        {" "}
+                        from{" "}
+                      </span>
+                    ) : null}
+                    {pullRequest.headRef ? (
+                      <span className="console-pull-detail-branch">
+                        {pullRequest.headRef}
+                      </span>
+                    ) : null}
+                    {agoLabel ? (
+                      <span className="console-pull-detail-meta-ago">
+                        <ProjectOcticon icon="comment" size={12} />
+                        {agoLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div
+                  ref={tabsRowRef}
+                  className={`console-pull-detail-tabs-row${
+                    hotkeysEnabled ? " is-hotkeys-active" : ""
+                  }`}
+                >
+                  <PillNav
+                    ariaLabel="Pull request sections"
+                    items={tabItems}
+                    value={tab}
+                    onChange={selectDetailTab}
+                  />
+                  {pullRequest.additions != null ||
+                  pullRequest.deletions != null ? (
+                    <div
+                      className="console-pull-detail-diffstat"
+                      aria-label="Diff stats"
+                    >
+                      <span className="console-pull-detail-diffstat-add">
+                        +{formatDiffStat(pullRequest.additions)}
+                      </span>
+                      <span className="console-pull-detail-diffstat-del">
+                        −{formatDiffStat(pullRequest.deletions)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </header>
             </div>
           </div>
 
-          <div className="console-pull-detail-tabs-row">
-            <PillNav
-              ariaLabel="Pull request sections"
-              items={tabItems}
-              value={tab}
-              onChange={setTab}
-            />
-            {pullRequest.additions != null || pullRequest.deletions != null ? (
-              <div className="console-pull-detail-diffstat" aria-label="Diff stats">
-                <span className="console-pull-detail-diffstat-add">
-                  +{formatDiffStat(pullRequest.additions)}
-                </span>
-                <span className="console-pull-detail-diffstat-del">
-                  −{formatDiffStat(pullRequest.deletions)}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </header>
-
-        {detailError ? (
-          <p className="console-github-pane-error" role="alert">
-            {detailError}
-          </p>
-        ) : null}
-
-        {tab === "conversation" ? (
-          <section
-            className="console-pull-detail-description"
-            aria-label="Conversation"
+          <div
+            className={[
+              "console-github-detail-content",
+              tab === "files" ? "is-full" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
-            {body ? (
-              <pre className="console-pull-detail-description-body">{body}</pre>
+            {tab === "files" ? (
+              <PullRequestFilesPane
+                key={pullRequest.number}
+                projectId={projectId}
+                pullNumber={pullRequest.number}
+                autoFocusList={hotkeysEnabled}
+                onSelectedFilenameChange={onSelectedFilenameChange}
+              />
             ) : (
-              <p className="console-pull-detail-description-empty">
-                No description provided.
-              </p>
-            )}
-          </section>
-        ) : null}
+              <div className="console-github-detail-content-inner">
+                {detailError ? (
+                  <p className="console-github-pane-error" role="alert">
+                    {detailError}
+                  </p>
+                ) : null}
 
-        {tab === "commits" ? (
-          <section className="console-pull-detail-commits" aria-label="Commits">
-            {commitsError ? (
-              <p className="console-github-pane-error" role="alert">
-                {commitsError}
-              </p>
-            ) : null}
-
-            {commitsLoading && commits.length === 0 ? (
-              <p className="console-github-pane-status">Loading commits…</p>
-            ) : null}
-
-            {!commitsLoading && !commitsError && commits.length === 0 ? (
-              <p className="console-github-pane-status">
-                No commits on this pull request.
-              </p>
-            ) : null}
-
-            {commits.length > 0 ? (
-              <ul className="console-github-commit-list">
-                {commits.map((commit) => (
-                  <li key={commit.sha}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="console-github-commit"
-                      onClick={() => {
-                        onSelectCommit?.(commit, repository);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") {
-                          return;
-                        }
-                        event.preventDefault();
-                        onSelectCommit?.(commit, repository);
-                      }}
-                    >
-                      <div className="console-github-commit-body">
-                        <div className="console-github-commit-message">
-                          {commitSubject(commit.message)}
-                        </div>
-                        <div className="console-github-commit-meta">
-                          {[
-                            commit.shortSha,
-                            commit.authorLogin || commit.authorName,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </div>
+                {tab === "conversation" ? (
+                  <section
+                    className="console-pull-detail-description"
+                    aria-label="Conversation"
+                  >
+                    {body ? (
+                      <div className="console-pull-detail-description-body">
+                        <DocumentMarkdownPreview body={body} />
                       </div>
-                      <div className="console-github-commit-trailing">
-                        <span
-                          className="console-github-commit-icon"
-                          aria-hidden="true"
+                    ) : (
+                      <p className="console-pull-detail-description-empty">
+                        No description provided.
+                      </p>
+                    )}
+                  </section>
+                ) : null}
+
+                {tab === "commits" ? (
+                  <section
+                    className="console-pull-detail-commits"
+                    aria-label="Commits"
+                  >
+                    {commitsError ? (
+                      <p className="console-github-pane-error" role="alert">
+                        {commitsError}
+                      </p>
+                    ) : null}
+
+                    {commitsLoading && commits.length === 0 ? (
+                      <p className="console-github-pane-status">
+                        Loading commits…
+                      </p>
+                    ) : null}
+
+                    {!commitsLoading &&
+                    !commitsError &&
+                    commits.length === 0 ? (
+                      <p className="console-github-pane-status">
+                        No commits on this pull request.
+                      </p>
+                    ) : null}
+
+                    {commits.length > 0 ? (
+                      <ul
+                        ref={commitsListRef}
+                        className="console-github-commit-list"
+                        {...commitsListContainerProps}
+                      >
+                        {commits.map((commit) => (
+                          <li key={commit.sha}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              {...keyboardNavItemProps(commit.sha)}
+                              className={[
+                                "console-github-commit",
+                                keyboardNavListItemClass(
+                                  commitHighlightedId === commit.sha,
+                                ),
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              onClick={() => {
+                                onSelectCommit?.(commit, repository);
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  event.key !== "Enter" &&
+                                  event.key !== " "
+                                ) {
+                                  return;
+                                }
+                                event.preventDefault();
+                                onSelectCommit?.(commit, repository);
+                              }}
+                            >
+                              <div className="console-github-commit-body">
+                                <div className="console-github-commit-message">
+                                  {commitSubject(commit.message)}
+                                </div>
+                                <div className="console-github-commit-meta">
+                                  {[
+                                    commit.shortSha,
+                                    commit.authorLogin || commit.authorName,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </div>
+                              </div>
+                              <div className="console-github-commit-trailing">
+                                <span
+                                  className="console-github-commit-icon"
+                                  aria-hidden="true"
+                                >
+                                  <GithubCommitIcon size={14} />
+                                </span>
+                                <span className="console-github-commit-age">
+                                  {formatRelativeAge(commit.authoredAt) ||
+                                    "—"}
+                                </span>
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    {commitsHasMore ? (
+                      <div className="console-github-pane-more">
+                        <button
+                          type="button"
+                          className="console-btn"
+                          disabled={commitsLoadingMore}
+                          onClick={() => {
+                            void loadCommitsPage(commitsPage + 1, true);
+                          }}
                         >
-                          <GithubCommitIcon size={14} />
-                        </span>
-                        <span className="console-github-commit-age">
-                          {formatRelativeAge(commit.authoredAt) || "—"}
-                        </span>
+                          {commitsLoadingMore ? "Loading…" : "Load more"}
+                        </button>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            {commitsHasMore ? (
-              <div className="console-github-pane-more">
-                <button
-                  type="button"
-                  className="console-btn"
-                  disabled={commitsLoadingMore}
-                  onClick={() => {
-                    void loadCommitsPage(commitsPage + 1, true);
-                  }}
-                >
-                  {commitsLoadingMore ? "Loading…" : "Load more"}
-                </button>
+                    ) : null}
+                  </section>
+                ) : null}
               </div>
-            ) : null}
-          </section>
-        ) : null}
-
-        {tab === "files" ? (
-          <PullRequestFilesPane
-            key={pullRequest.number}
-            projectId={projectId}
-            pullNumber={pullRequest.number}
-          />
-        ) : null}
+            )}
+          </div>
         </div>
       </div>
     </div>

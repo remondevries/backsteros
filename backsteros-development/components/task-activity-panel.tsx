@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  isBlockingModalOpen,
   SidebarChevronIcon,
   TaskActivityPanel as SharedTaskActivityPanel,
   type TaskActivityPanelProps,
@@ -13,6 +14,25 @@ import {
   useRef,
   useState,
 } from "react";
+
+/** True when focus is in a real text field (not the xterm helper textarea). */
+function isTypingInFormField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target.closest(".xterm") ||
+    target.classList.contains("xterm-helper-textarea")
+  ) {
+    // Task open auto-focuses the terminal — ⇧Enter must still hit the agent btn.
+    return false;
+  }
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  if (target.closest(".cm-editor") || target.closest("[role='textbox']")) {
+    return true;
+  }
+  return false;
+}
 
 import { useConsoleApi } from "@/lib/api-context";
 import { useAgentTestingMode } from "@/lib/agent-testing-mode-context";
@@ -262,6 +282,28 @@ export function TaskActivityPanel({
     startAgentSession,
     viewAgentSession,
   ]);
+
+  // ⇧Enter activates the agent header button in whatever mode it is in
+  // (Start / View / Stop) — same path as a click. Only registered while this
+  // task detail panel is mounted (single-task view).
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!event.shiftKey) return;
+      if (event.key !== "Enter" && event.code !== "Enter") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.repeat || creatingAgent) return;
+      if (isBlockingModalOpen()) return;
+      if (isTypingInFormField(event.target)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      onAgentButtonClick();
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [creatingAgent, onAgentButtonClick]);
 
   const resumeFromHold = useCallback(
     async (

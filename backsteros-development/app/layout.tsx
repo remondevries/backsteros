@@ -8,7 +8,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "BacksterOS Development",
+  title: "Development ADE",
   description: "Agent console — projects, terminals, and tasks.",
 };
 

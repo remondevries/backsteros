@@ -1627,6 +1627,53 @@ body[data-keyboard-nav-hover="suppressed"]
   width: 100%;
 }
 
+.app-content-side-panel.is-minimized .app-content-side-panel-main {
+  padding-inline: 4px;
+}
+
+.app-content-side-panel.is-minimized .app-content-side-panel-list {
+  gap: 1px;
+  padding-block: 6px;
+}
+
+.side-panel-plain-group-header--minimized {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px 4px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.side-panel-plain-group-header--minimized:first-child {
+  padding-top: 4px;
+}
+
+.inbox-list-item--minimized > a,
+.inbox-list-item--minimized > .app-side-panel-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  padding: 5px 2px;
+  text-align: center;
+}
+
+.inbox-list-item-minimized-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: inherit;
+  text-align: center;
+}
+
 .inbox-list-item-title-wrap {
   display: flex;
   min-width: 0;
@@ -5563,6 +5610,34 @@ a.mention-chip-lite--deleted:hover {
   border-top: 0;
 }
 
+/* Tab-driven panel body (Tasks = description + properties; other tabs = custom). */
+.project-panel-tab-body {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.project-panel-tab-body__custom {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.project-panel-tab-body__description {
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+.project-panel-tab-body__properties {
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+}
+
 .project-panel-block {
   display: flex;
   width: 100%;
@@ -5835,10 +5910,9 @@ a.mention-chip-lite--deleted:hover {
   overflow: hidden;
 }
 
-.project-detail--panel .project-panel-accordion {
+.project-detail--panel .project-panel-tab-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
 }
 
 .project-detail--panel .project-detail__description--expanded {
@@ -7205,7 +7279,11 @@ body.app-is-dragging * {
 }
 
 .task-detail-stacked__properties {
+  box-sizing: border-box;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
 }
 
 .task-detail-stacked__properties .task-detail-properties-scroll {

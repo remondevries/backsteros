@@ -1,0 +1,806 @@
+"use client";
+
+import {
+  ComposeFolderIcon,
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  boardKeyboardNavDirection,
+  isBlockingModalOpen,
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+  shouldHandleGlobalShortcut,
+  useCommandPalette,
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
+} from "@backsteros/ui";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
+
+import { FileDeleteConfirmModal } from "@/components/file-delete-confirm-modal";
+import { FsTreeInlineCreate } from "@/components/fs-tree-inline-create";
+import {
+  isFsTreeCreateShortcutKey,
+  setFsTreeKeyboardActive,
+} from "@/lib/fs-tree-create-shortcut";
+import type { SelectProjectFileHandler } from "@/lib/project-file-tabs";
+
+type PendingCreate = {
+  kind: "file" | "directory";
+  parentPath: string;
+  depth: number;
+};
+
+type FsTreeEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "directory";
+};
+
+type Listing = {
+  path: string | null;
+  entries: FsTreeEntry[];
+  error?: string;
+};
+
+type VisibleNode = {
+  path: string;
+  name: string;
+  kind: "file" | "directory";
+  depth: number;
+  parentPath: string | null;
+};
+
+type FolderState = {
+  children: FsTreeEntry[] | null;
+  loading: boolean;
+  error: string | null;
+};
+
+async function fetchEntries(
+  directoryPath: string,
+  signal?: AbortSignal,
+): Promise<Listing> {
+  const url = new URL("/api/fs/entries", window.location.origin);
+  url.searchParams.set("path", directoryPath);
+  const response = await fetch(url, { signal });
+  const data = (await response.json()) as Listing;
+  if (!response.ok) {
+    throw new Error(data.error || "Could not list directory.");
+  }
+  return data;
+}
+
+function FileIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M2.75 1A1.75 1.75 0 0 0 1 2.75v10.5C1 14.216 1.784 15 2.75 15h10.5A1.75 1.75 0 0 0 15 13.25V6.5a.75.75 0 0 0-.22-.53l-4.75-4.75A.75.75 0 0 0 9.5 1H2.75Zm6.75 1.56L13.44 6.5H10.25A.75.75 0 0 1 9.5 5.75V2.56Z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+      className={`console-fs-tree-chevron${expanded ? " is-expanded" : ""}`}
+    >
+      <path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z" />
+    </svg>
+  );
+}
+
+function flattenVisible(
+  entries: FsTreeEntry[],
+  expandedPaths: ReadonlySet<string>,
+  folderState: Record<string, FolderState>,
+  depth = 0,
+  parentPath: string | null = null,
+): VisibleNode[] {
+  const result: VisibleNode[] = [];
+  for (const entry of entries) {
+    result.push({
+      path: entry.path,
+      name: entry.name,
+      kind: entry.kind,
+      depth,
+      parentPath,
+    });
+    if (entry.kind === "directory" && expandedPaths.has(entry.path)) {
+      const children = folderState[entry.path]?.children;
+      if (children) {
+        result.push(
+          ...flattenVisible(
+            children,
+            expandedPaths,
+            folderState,
+            depth + 1,
+            entry.path,
+          ),
+        );
+      }
+    }
+  }
+  return result;
+}
+
+export function ProjectWorkingDirectoryTree({
+  workingDirectory,
+  selectedPath = null,
+  onSelectFile,
+  onEntryDeleted,
+  keyboardEnabled = true,
+  refreshToken = 0,
+}: {
+  workingDirectory: string | null;
+  selectedPath?: string | null;
+  onSelectFile?: SelectProjectFileHandler;
+  /** Called after a highlighted file or folder is deleted from the tree. */
+  onEntryDeleted?: (path: string) => void;
+  keyboardEnabled?: boolean;
+  /** Increment to reload the tree (e.g. after deleting a file). */
+  refreshToken?: number;
+}) {
+  const [entries, setEntries] = useState<FsTreeEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [folderState, setFolderState] = useState<Record<string, FolderState>>(
+    {},
+  );
+  const folderStateRef = useRef(folderState);
+  folderStateRef.current = folderState;
+  const { open: commandPaletteOpen } = useCommandPalette();
+  const { activeZone } = useListKeyboardNavigationZone();
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
+    null,
+  );
+  const [pendingDelete, setPendingDelete] = useState<{
+    path: string;
+    name: string;
+    kind: "file" | "directory";
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const treeRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  );
+
+  useEffect(() => {
+    setExpandedPaths(new Set());
+    setFolderState({});
+  }, [workingDirectory]);
+
+  useEffect(() => {
+    if (!workingDirectory) {
+      setEntries([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    void fetchEntries(workingDirectory, controller.signal)
+      .then((listing) => {
+        if (controller.signal.aborted) return;
+        setEntries(listing.entries);
+      })
+      .catch((loadError: unknown) => {
+        if (controller.signal.aborted) return;
+        if ((loadError as { name?: string }).name === "AbortError") return;
+        setEntries([]);
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Could not list working directory.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [refreshToken, workingDirectory]);
+
+  const loadFolder = useCallback(async (path: string, signal?: AbortSignal) => {
+    setFolderState((current) => ({
+      ...current,
+      [path]: {
+        children: current[path]?.children ?? null,
+        loading: true,
+        error: null,
+      },
+    }));
+    try {
+      const listing = await fetchEntries(path, signal);
+      if (signal?.aborted) return;
+      setFolderState((current) => ({
+        ...current,
+        [path]: {
+          children: listing.entries,
+          loading: false,
+          error: null,
+        },
+      }));
+    } catch (loadError: unknown) {
+      if (signal?.aborted) return;
+      if ((loadError as { name?: string }).name === "AbortError") return;
+      setFolderState((current) => ({
+        ...current,
+        [path]: {
+          children: current[path]?.children ?? null,
+          loading: false,
+          error:
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not list folder.",
+        },
+      }));
+    }
+  }, []);
+
+  // Load children for newly expanded folders. Depend only on `expandedPaths`
+  // so completing a fetch (folderState update) does not abort in-flight work.
+  useEffect(() => {
+    const controllers: AbortController[] = [];
+    for (const path of expandedPaths) {
+      const state = folderStateRef.current[path];
+      if (state?.children != null || state?.loading) continue;
+      const controller = new AbortController();
+      controllers.push(controller);
+      void loadFolder(path, controller.signal);
+    }
+    return () => {
+      for (const controller of controllers) controller.abort();
+    };
+  }, [expandedPaths, loadFolder]);
+
+  useEffect(() => {
+    if (!refreshToken || !workingDirectory) return;
+    const controller = new AbortController();
+    for (const folderPath of expandedPaths) {
+      void loadFolder(folderPath, controller.signal);
+    }
+    return () => controller.abort();
+    // Re-fetch expanded folders only when refreshToken changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [refreshToken]);
+
+  const expandFolder = useCallback((path: string) => {
+    setExpandedPaths((current) => {
+      if (current.has(path)) return current;
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+  }, []);
+
+  const collapseFolder = useCallback((path: string) => {
+    setExpandedPaths((current) => {
+      if (!current.has(path)) return current;
+      const next = new Set(current);
+      next.delete(path);
+      return next;
+    });
+  }, []);
+
+  const toggleFolder = useCallback((path: string) => {
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+
+  const visibleNodes = useMemo(
+    () => flattenVisible(entries, expandedPaths, folderState),
+    [entries, expandedPaths, folderState],
+  );
+  const itemIds = useMemo(
+    () => visibleNodes.map((node) => node.path),
+    [visibleNodes],
+  );
+  const nodesByPath = useMemo(() => {
+    const map = new Map<string, VisibleNode>();
+    for (const node of visibleNodes) map.set(node.path, node);
+    return map;
+  }, [visibleNodes]);
+  const nodesByPathRef = useRef(nodesByPath);
+  nodesByPathRef.current = nodesByPath;
+  const expandedPathsRef = useRef(expandedPaths);
+  expandedPathsRef.current = expandedPaths;
+
+  const resolveNextItemId = useCallback(
+    ({
+      key,
+      currentId,
+      itemIds: ids,
+    }: {
+      key: string;
+      currentId: string | null;
+      itemIds: string[];
+    }) => {
+      const direction = boardKeyboardNavDirection(key);
+      if (!direction) return null;
+
+      if (direction === "up" || direction === "down") {
+        if (ids.length === 0) return null;
+        const index = currentId != null ? ids.indexOf(currentId) : -1;
+        if (direction === "down") {
+          return ids[Math.min(index + 1, ids.length - 1)] ?? ids[0] ?? null;
+        }
+        return ids[Math.max(index - 1, 0)] ?? ids[0] ?? null;
+      }
+
+      if (!currentId) return null;
+      const node = nodesByPathRef.current.get(currentId);
+      if (!node) return null;
+
+      if (direction === "right") {
+        if (node.kind !== "directory") return currentId;
+        if (!expandedPathsRef.current.has(currentId)) {
+          expandFolder(currentId);
+          return currentId;
+        }
+        const children = folderStateRef.current[currentId]?.children;
+        return children?.[0]?.path ?? currentId;
+      }
+
+      // left: collapse, or move to parent
+      if (node.kind === "directory" && expandedPathsRef.current.has(currentId)) {
+        collapseFolder(currentId);
+        return currentId;
+      }
+      return node.parentPath ?? currentId;
+    },
+    [collapseFolder, expandFolder],
+  );
+
+  const onActivate = useCallback(
+    (itemId: string) => {
+      const node = nodesByPathRef.current.get(itemId);
+      if (!node) return;
+      if (node.kind === "directory") {
+        toggleFolder(itemId);
+        return;
+      }
+      onSelectFile?.(itemId, { focusEditor: true });
+    },
+    [onSelectFile, toggleFolder],
+  );
+
+  const navEnabled =
+    keyboardEnabled && Boolean(workingDirectory) && itemIds.length > 0;
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: treeRef,
+    itemIds,
+    selectedId: selectedPath,
+    onNavigate: onActivate,
+    zone: LIST_KEYBOARD_NAV_ZONE_CONTENT,
+    // Keep the content-zone registration alive during inline create. Disabling
+    // it unregisters the tree, sync falls through to the sidepanel, and that
+    // steals focus → blur-cancels the empty rename field.
+    enabled: navEnabled,
+    resolveNextItemId,
+  });
+  const highlightedIdRef = useRef(highlightedId);
+  highlightedIdRef.current = highlightedId;
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
+  const workingDirectoryRef = useRef(workingDirectory);
+  workingDirectoryRef.current = workingDirectory;
+
+  // Keep compose suppressed while the files list owns the content zone so
+  // plain C creates a file here instead of opening compose.
+  const filesTreeFocused =
+    keyboardEnabled &&
+    Boolean(workingDirectory) &&
+    !commandPaletteOpen &&
+    activeZone === LIST_KEYBOARD_NAV_ZONE_CONTENT;
+  const ownsTreeShortcuts =
+    filesTreeFocused && pendingCreate == null && pendingDelete == null;
+
+  useEffect(() => {
+    setFsTreeKeyboardActive(filesTreeFocused);
+    return () => setFsTreeKeyboardActive(false);
+  }, [filesTreeFocused]);
+
+  const beginCreate = useCallback(
+    (kind: "file" | "directory") => {
+      const root = workingDirectoryRef.current;
+      if (!root) return false;
+
+      const focusPath =
+        highlightedIdRef.current ?? selectedPathRef.current ?? null;
+      let parentPath = root;
+      let depth = 0;
+
+      if (focusPath) {
+        const node = nodesByPathRef.current.get(focusPath);
+        if (node?.kind === "directory") {
+          parentPath = node.path;
+          depth = node.depth + 1;
+          expandFolder(node.path);
+        } else if (node) {
+          parentPath = node.parentPath ?? root;
+          depth = node.depth;
+        }
+      }
+
+      setPendingCreate({ kind, parentPath, depth });
+      return true;
+    },
+    [expandFolder],
+  );
+
+  const beginDeleteHighlighted = useCallback(() => {
+    const focusPath =
+      highlightedIdRef.current ?? selectedPathRef.current ?? null;
+    if (!focusPath) return false;
+    const node = nodesByPathRef.current.get(focusPath);
+    if (!node) return false;
+    if (node.path === workingDirectoryRef.current) return false;
+    setDeleteError(null);
+    setPendingDelete({
+      path: node.path,
+      name: node.name,
+      kind: node.kind,
+    });
+    return true;
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete || !workingDirectory || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const url = new URL("/api/fs/file", window.location.origin);
+      url.searchParams.set("root", workingDirectory);
+      url.searchParams.set("path", pendingDelete.path);
+      const response = await fetch(url, { method: "DELETE" });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not delete.");
+      }
+      const deletedPath = pendingDelete.path;
+      setPendingDelete(null);
+      onEntryDeleted?.(deletedPath);
+
+      // Refresh local tree state immediately.
+      const rootListing = await fetchEntries(workingDirectory);
+      setEntries(rootListing.entries);
+      setExpandedPaths((current) => {
+        const next = new Set<string>();
+        for (const path of current) {
+          if (path === deletedPath) continue;
+          if (path.startsWith(`${deletedPath}/`)) continue;
+          next.add(path);
+        }
+        return next;
+      });
+      setFolderState((current) => {
+        const next: Record<string, FolderState> = {};
+        for (const [path, state] of Object.entries(current)) {
+          if (path === deletedPath || path.startsWith(`${deletedPath}/`)) {
+            continue;
+          }
+          next[path] = state;
+        }
+        return next;
+      });
+    } catch (deleteErr: unknown) {
+      setDeleteError(
+        deleteErr instanceof Error
+          ? deleteErr.message
+          : "Could not delete.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleting, onEntryDeleted, pendingDelete, workingDirectory]);
+
+  useEffect(() => {
+    if (!ownsTreeShortcuts) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isBlockingModalOpen() || !shouldHandleGlobalShortcut(event)) return;
+
+      if (isFsTreeCreateShortcutKey(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        beginCreate(event.shiftKey ? "directory" : "file");
+        return;
+      }
+
+      if (
+        event.key.toLowerCase() === "d" &&
+        !event.shiftKey &&
+        beginDeleteHighlighted()
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [beginCreate, beginDeleteHighlighted, ownsTreeShortcuts]);
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (
+        event.key.toLowerCase() !== "d" ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void confirmDelete();
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [confirmDelete, pendingDelete]);
+
+  const submitCreate = useCallback(
+    async (name: string) => {
+      const pending = pendingCreate;
+      const root = workingDirectory;
+      if (!pending || !root) {
+        return { ok: false as const, error: "Nothing to create." };
+      }
+
+      try {
+        const response = await fetch("/api/fs/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            root,
+            parent: pending.parentPath,
+            name,
+            kind: pending.kind,
+          }),
+        });
+        const data = (await response.json()) as {
+          path?: string;
+          error?: string;
+        };
+        if (!response.ok) {
+          return {
+            ok: false as const,
+            error: data.error || "Could not create.",
+          };
+        }
+
+        const createdPath = data.path;
+        if (!createdPath) {
+          return { ok: false as const, error: "Could not create." };
+        }
+
+        // Refresh root listing and the parent folder (if nested).
+        const rootListing = await fetchEntries(root);
+        setEntries(rootListing.entries);
+        if (pending.parentPath !== root) {
+          await loadFolder(pending.parentPath);
+          expandFolder(pending.parentPath);
+        }
+
+        if (pending.kind === "file") {
+          onSelectFile?.(createdPath, { focusEditor: true });
+        } else {
+          expandFolder(createdPath);
+        }
+
+        return { ok: true as const };
+      } catch (createError: unknown) {
+        return {
+          ok: false as const,
+          error:
+            createError instanceof Error
+              ? createError.message
+              : "Could not create.",
+        };
+      }
+    },
+    [
+      expandFolder,
+      loadFolder,
+      onSelectFile,
+      pendingCreate,
+      workingDirectory,
+    ],
+  );
+
+  if (!workingDirectory) {
+    return (
+      <p className="console-github-pane-status">
+        Set a working directory to browse project files.
+      </p>
+    );
+  }
+
+  if (loading && entries.length === 0 && !pendingCreate) {
+    return <p className="console-github-pane-status">Loading files…</p>;
+  }
+
+  if (error && entries.length === 0 && !pendingCreate) {
+    return (
+      <p className="console-github-pane-error" role="alert">
+        {error}
+      </p>
+    );
+  }
+
+  const showEmptyHint = entries.length === 0 && !pendingCreate;
+
+  return (
+    <>
+    <ul
+      ref={treeRef}
+      className="console-fs-tree"
+      role="tree"
+      aria-label="Working directory"
+      {...listContainerProps}
+    >
+      {pendingCreate && pendingCreate.parentPath === workingDirectory ? (
+        <FsTreeInlineCreate
+          kind={pendingCreate.kind}
+          depth={pendingCreate.depth}
+          onCancel={() => setPendingCreate(null)}
+          onSubmit={submitCreate}
+        />
+      ) : null}
+
+      {showEmptyHint ? (
+        <li className="console-fs-tree-status" role="presentation">
+          Empty — press C for a file, ⇧C for a folder.
+        </li>
+      ) : null}
+
+      {visibleNodes.map((node) => {
+        const expanded =
+          node.kind === "directory" && expandedPaths.has(node.path);
+        const folder = folderState[node.path];
+        const highlighted = highlightedId === node.path;
+        const selected = selectedPath === node.path;
+        const showCreateAfter =
+          pendingCreate != null &&
+          pendingCreate.parentPath === node.path &&
+          node.kind === "directory";
+
+        return (
+          <Fragment key={node.path}>
+            <li
+              className="console-fs-tree-item"
+              {...keyboardNavItemProps(node.path)}
+            >
+              <button
+                type="button"
+                className={`console-fs-tree-row${
+                  node.kind === "file" ? " is-file" : ""
+                }${selected ? " is-selected" : ""} ${keyboardNavListItemClass(
+                  highlighted,
+                )}`}
+                style={{ paddingLeft: 8 + node.depth * 14 }}
+                aria-expanded={
+                  node.kind === "directory" ? expanded : undefined
+                }
+                onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                  if (node.kind === "directory") {
+                    toggleFolder(node.path);
+                    return;
+                  }
+                  onSelectFile?.(node.path, {
+                    newTab: event.metaKey || event.ctrlKey,
+                    focusEditor: true,
+                  });
+                }}
+              >
+                {node.kind === "directory" ? (
+                  <ChevronIcon expanded={expanded} />
+                ) : (
+                  <span
+                    className="console-fs-tree-chevron-spacer"
+                    aria-hidden="true"
+                  />
+                )}
+                {node.kind === "directory" ? (
+                  <ComposeFolderIcon className="console-fs-tree-icon" />
+                ) : (
+                  <FileIcon />
+                )}
+                <span className="console-fs-tree-name">{node.name}</span>
+              </button>
+              {node.kind === "directory" &&
+              expanded &&
+              folder?.loading &&
+              folder.children == null ? (
+                <p
+                  className="console-fs-tree-status"
+                  style={{ paddingLeft: 24 + node.depth * 14 }}
+                >
+                  Loading…
+                </p>
+              ) : null}
+              {node.kind === "directory" && expanded && folder?.error ? (
+                <p
+                  className="console-fs-tree-status is-error"
+                  style={{ paddingLeft: 24 + node.depth * 14 }}
+                >
+                  {folder.error}
+                </p>
+              ) : null}
+              {node.kind === "directory" &&
+              expanded &&
+              folder?.children &&
+              folder.children.length === 0 &&
+              !folder.loading &&
+              !showCreateAfter ? (
+                <p
+                  className="console-fs-tree-status"
+                  style={{ paddingLeft: 24 + node.depth * 14 }}
+                >
+                  Empty
+                </p>
+              ) : null}
+            </li>
+            {showCreateAfter && pendingCreate ? (
+              <FsTreeInlineCreate
+                kind={pendingCreate.kind}
+                depth={pendingCreate.depth}
+                onCancel={() => setPendingCreate(null)}
+                onSubmit={submitCreate}
+              />
+            ) : null}
+          </Fragment>
+        );
+      })}
+    </ul>
+
+    {pendingDelete ? (
+      <FileDeleteConfirmModal
+        fileName={pendingDelete.name}
+        kind={pendingDelete.kind}
+        deleting={deleting}
+        error={deleteError}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+        onCancel={() => {
+          if (deleting) return;
+          setPendingDelete(null);
+          setDeleteError(null);
+        }}
+      />
+    ) : null}
+    </>
+  );
+}

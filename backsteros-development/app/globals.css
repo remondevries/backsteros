@@ -51,14 +51,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  height: 22px;
-  min-height: 22px;
-  margin-top: 4px;
-  padding: 0 10px;
+  gap: 10px;
+  height: 16px;
+  min-height: 16px;
+  margin-top: 2px;
+  padding: 0 8px;
   background: var(--console-panel);
   color: var(--console-muted);
-  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -66,16 +69,16 @@ button {
 .statusbar-agents {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  width: 12.5rem;
+  gap: 4px;
   flex: 0 0 auto;
   white-space: nowrap;
   overflow: hidden;
+  font: inherit;
 }
 
 .statusbar-agents-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   flex-shrink: 0;
   visibility: hidden;
@@ -96,51 +99,57 @@ button {
 .console-statusbar-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
   min-width: 0;
+  font: inherit;
 }
 
 .statusbar-metrics {
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
   min-width: 0;
+  font: inherit;
   font-variant-numeric: tabular-nums;
 }
 
 .statusbar-metric {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex: 0 0 auto;
   white-space: nowrap;
   overflow: hidden;
+  font: inherit;
 }
 
-.statusbar-metric--cpu {
-  width: 4.75rem;
-}
-
-.statusbar-metric--mem {
-  width: 14.5rem;
-}
-
+.statusbar-metric--cpu,
+.statusbar-metric--mem,
 .statusbar-metric--disk {
-  width: 15rem;
+  width: auto;
 }
 
 .statusbar-metric-label {
-  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--console-muted);
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 .statusbar-metric-value {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   color: var(--console-text);
-  opacity: 0.85;
+  opacity: 0.8;
 }
 
 .statusbar-metric-sep {
@@ -150,6 +159,91 @@ button {
 
 .statusbar-metric-pct {
   opacity: 0.55;
+}
+
+.statusbar-agents.is-open {
+  color: var(--console-text);
+}
+
+.statusbar-hover-panel {
+  position: fixed;
+  z-index: 90;
+  box-sizing: border-box;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--console-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background, #0b0d10) 92%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.35);
+  color: var(--console-text);
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.statusbar-hover-empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--console-muted);
+}
+
+.statusbar-hover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(240px, 40vh);
+  overflow: auto;
+}
+
+.statusbar-hover-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.statusbar-hover-item:hover,
+.statusbar-hover-item:focus-visible {
+  background: color-mix(in srgb, var(--console-accent) 14%, transparent);
+  outline: none;
+}
+
+.statusbar-hover-item-title {
+  color: var(--console-text);
+  font-weight: 600;
+}
+
+.statusbar-hover-item-subtitle {
+  color: var(--console-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.statusbar-hover-item-meta {
+  color: color-mix(in srgb, var(--console-muted) 85%, transparent);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .console-shell {
@@ -230,6 +324,18 @@ button {
   gap: 8px;
 }
 
+.console-brand-name {
+  letter-spacing: -0.01em;
+}
+
+.console-brand-name-thin {
+  font-weight: 200;
+}
+
+.console-brand-name-bold {
+  font-weight: 700;
+}
+
 .console-pane--projects .console-profile-row.is-collapsed {
   width: 100%;
   justify-content: center;
@@ -298,6 +404,44 @@ button {
   display: none;
 }
 
+/* Inbox row sits above project groups; match project row spacing. */
+.console-sidebar-nav .console-inbox-nav-item {
+  width: 100%;
+}
+
+.console-sidebar-nav.is-collapsed .console-inbox-nav-item {
+  width: auto;
+}
+
+.console-sidebar-nav.is-collapsed .console-inbox-nav-item .console-project-item-select {
+  justify-content: center;
+  padding: 6px;
+}
+
+/*
+ * Belt-and-suspenders: j/k focuses the inner button. Even if the React
+ * highlight class lags, :focus-within still shows the orange project ring.
+ */
+.console-sidebar-nav .console-inbox-nav-item:focus-within {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width)
+    var(--keyboard-nav-highlight-color);
+}
+
+.console-sidebar-nav .console-inbox-nav-item:focus-within .console-project-item-select,
+.console-sidebar-nav
+  .console-inbox-nav-item:focus-within
+  .console-project-item-select:focus,
+.console-sidebar-nav
+  .console-inbox-nav-item:focus-within
+  .console-project-item-select:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  color: var(--foreground);
+}
+
 .console-content-frame {
   display: grid;
   grid-template-columns: var(--console-list-width, 360px) minmax(0, 1fr);
@@ -355,6 +499,14 @@ button {
   grid-template-columns: var(--console-list-width, 360px) minmax(0, 1fr);
 }
 
+/* ⇧[ — project list becomes a narrow rail (same width as inbox focus). */
+.console-content-frame--project > .console-content-columns.is-list-minimized,
+.console-shell--tasks-collapsed.console-shell--stage-project
+  .console-content-frame--project
+  > .console-content-columns {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
 .console-content-chrome.console-pane-header {
   position: relative;
   z-index: 3;
@@ -368,12 +520,128 @@ button {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* Inbox task selected: list | task detail | terminal. */
+/*
+ * Inbox task workspace: one full-width chrome above list | detail | terminal,
+ * matching project / task-focus chrome.
+ *
+ * Use flex + width transitions (not grid-template-columns) so browse ↔ focus
+ * slides on WebKit/Tauri as well as Chromium.
+ */
 .console-content-frame--inbox-task {
-  grid-template-columns:
-    var(--console-list-width, 320px)
-    var(--console-inbox-detail-width, 380px)
-    minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: unset;
+}
+
+.console-content-frame--inbox-task > .console-content-columns {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  grid-template-columns: unset;
+  transition: none;
+}
+
+/*
+ * Inbox columns: concrete pixel widths via --inbox-*-w (set from React).
+ * Never use flex-grow / width:0 here — those cannot interpolate in WebKit.
+ */
+.console-content-frame--inbox-task > .console-content-columns > .console-content-list,
+.console-content-frame--inbox-task > .console-content-columns > .console-content-inbox-detail,
+.console-content-frame--inbox-task > .console-content-columns > .console-content-main {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  transition:
+    width 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 140ms ease,
+    transform 140ms ease,
+    border-color 140ms ease;
+}
+
+.console-content-frame--inbox-task > .console-content-columns > .console-content-list {
+  width: var(--inbox-list-w, var(--console-list-width, 360px));
+}
+
+.console-content-frame--inbox-task > .console-content-columns > .console-content-inbox-detail {
+  width: var(--inbox-detail-w, 0px);
+}
+
+.console-content-frame--inbox-task > .console-content-columns > .console-content-main {
+  width: var(--inbox-terminal-w, 46px);
+}
+
+/*
+ * Inbox focus slide: keep column chrome visible while widths move; fade only
+ * the inner content so text does not reflow mid-resize.
+ */
+.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-list
+  > *:not(.console-list-resize-handle),
+.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-inbox-detail
+  > *,
+.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-main
+  > * {
+  transition: opacity 55ms ease;
+}
+
+.console-content-frame--inbox-task
+  > .console-content-columns.console-content-columns--content-hidden
+  > .console-content-list
+  > *:not(.console-list-resize-handle),
+.console-content-frame--inbox-task
+  > .console-content-columns.console-content-columns--content-hidden
+  > .console-content-inbox-detail
+  > *,
+.console-content-frame--inbox-task
+  > .console-content-columns.console-content-columns--content-hidden
+  > .console-content-main
+  > * {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/*
+ * Project list ⇧[ rail: keep column chrome while width moves; fade only the
+ * inner list content so tab labels do not reflow mid-resize (inbox parity).
+ */
+.console-content-frame--project
+  > .console-content-columns
+  > .console-content-list
+  > *:not(.console-list-resize-handle) {
+  transition: opacity 55ms ease;
+}
+
+.console-content-frame--project
+  > .console-content-columns.console-content-columns--content-hidden
+  > .console-content-list
+  > *:not(.console-list-resize-handle) {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.console-content-frame--inbox-task.console-content-frame--inbox-no-terminal
+  > .console-content-columns
+  > .console-content-main {
+  display: none;
+}
+
+.console-content-frame.is-list-resizing.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-list,
+.console-content-frame.is-list-resizing.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-inbox-detail,
+.console-content-frame.is-list-resizing.console-content-frame--inbox-task
+  > .console-content-columns
+  > .console-content-main {
+  transition: none;
 }
 
 /*
@@ -382,7 +650,7 @@ button {
  */
 .console-content-frame--task-focus > .console-content-main,
 .console-content-frame--task-focus > .console-content-columns > .console-content-main,
-.console-content-frame--inbox-task > .console-content-main {
+.console-content-frame--inbox-task > .console-content-columns > .console-content-main {
   background: var(--background);
 }
 
@@ -395,12 +663,6 @@ button {
 .console-content-frame--task-focus.console-content-frame--main-collapsed
   > .console-content-columns {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.console-content-frame--inbox-task.console-content-frame--main-collapsed {
-  grid-template-columns:
-    var(--console-list-width, 320px)
-    minmax(0, 1fr);
 }
 
 .console-content-frame--main-collapsed > .console-content-main,
@@ -441,16 +703,54 @@ html.is-tauri-shell .app-side-panel-history-toolbar {
   align-items: center;
 }
 
+/*
+ * Collapsed projects rail (Tauri): keep the icon column narrow, park the
+ * expand/collapse control after the traffic lights, and nudge tabs right so
+ * they clear that control. Expanded layout keeps the normal 72px inset.
+ *
+ * Traffic lights use trafficLightPosition (16, 15) so their center matches the
+ * 28px toggle in the shared 44px titlebar row.
+ */
 html.is-tauri-shell .console-shell--projects-collapsed .console-shell-nav {
-  width: 88px;
-  min-width: 88px;
+  width: 56px;
+  min-width: 56px;
+  overflow: visible;
+  z-index: 30;
+}
+
+html.is-tauri-shell .console-shell--projects-collapsed .console-pane--projects,
+html.is-tauri-shell .console-shell--projects-collapsed .console-sidebar-inner,
+html.is-tauri-shell .console-shell--projects-collapsed .console-sidebar-chrome {
+  overflow: visible;
 }
 
 html.is-tauri-shell .console-shell--projects-collapsed .app-side-panel-history-toolbar {
+  position: relative;
+  z-index: 40;
   width: 100%;
+  height: 44px;
   min-height: 44px;
-  padding-left: 72px;
+  padding-left: 0;
   justify-content: flex-start;
+  align-items: center;
+  overflow: visible;
+}
+
+html.is-tauri-shell .console-shell--projects-collapsed .app-side-panel-history-actions {
+  position: absolute;
+  /* Clear traffic lights (x:16 + cluster ≈54) + small gap. */
+  left: 78px;
+  top: 0;
+  bottom: 0;
+  margin-left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+html.is-tauri-shell .console-shell--projects-collapsed .content-tabs-bar {
+  /* Toggle ends ~106px from window left; nav is 56px → overhang + gap. */
+  padding-left: 56px;
 }
 
 html.is-tauri-shell .console-shell .content-tabs-bar {
@@ -516,7 +816,7 @@ html.is-tauri-shell .console-auth {
   transform: translateY(0);
 }
 
-.console-content-inbox-detail > .console-pane {
+.console-content-inbox-detail > .console-pane-body {
   flex: 1;
   min-height: 0;
   border: 0;
@@ -524,21 +824,232 @@ html.is-tauri-shell .console-auth {
   background: transparent;
 }
 
-.console-content-inbox-detail .console-pane-header {
-  position: relative;
-  z-index: 2;
-  border-bottom-color: rgb(255 255 255 / 0.1);
-  background: transparent;
-}
-
-.console-content-inbox-detail .console-pane-body {
-  position: relative;
-  z-index: 0;
-  background: transparent;
-}
-
 .console-content-inbox-detail .task-panel-island {
   background: transparent !important;
+}
+
+.console-content-list.is-minimized {
+  border-right-color: var(--border);
+}
+
+.console-content-list.is-minimized .app-content-side-panel {
+  background: transparent;
+}
+
+/* Project overview ⇧[ rail — compact commits / PRs / vertical tabs. */
+.console-content-list.is-minimized .console-pane--overview,
+.console-content-list.is-minimized .console-pane-body,
+.console-content-list.is-minimized .console-project-overview,
+.console-content-list.is-minimized .project-panel-repositories {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.console-content-list.is-minimized .console-pane--overview,
+.console-content-list.is-minimized .console-pane-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+
+.console-content-list.is-minimized .project-panel-repositories {
+  gap: 6px;
+  padding: 4px 2px 8px;
+}
+
+.console-content-list.is-minimized
+  .project-panel-repositories
+  > .project-github-list-toggle {
+  margin: 0;
+  width: 100%;
+}
+
+.console-content-list.is-minimized .project-panel-repositories.is-minimized {
+  height: 100%;
+  overflow: hidden;
+}
+
+.console-content-list.is-minimized .project-panel-repositories.is-minimized > .console-github-commit-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-github-list-toggle--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.project-github-list-toggle__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.project-github-list-toggle__btn:hover {
+  background: rgb(255 255 255 / 0.04);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn.is-active {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.project-github-list-toggle__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.project-github-list-toggle__icon .project-github-list-toggle__tasks-icon,
+.project-github-list-toggle__icon .project-github-list-toggle__folder-icon,
+.project-github-list-toggle__icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.project-github-list-toggle__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-content-list.is-minimized .console-github-commit-list {
+  gap: 1px;
+}
+
+.console-content-list.is-minimized .console-github-commit {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 2px;
+}
+
+.console-content-list.is-minimized .console-github-commit-body {
+  display: none;
+}
+
+.console-content-list.is-minimized .console-github-commit-trailing {
+  min-width: 0;
+  padding-top: 0;
+  gap: 3px;
+}
+
+.console-content-list.is-minimized .console-github-commit-age,
+.console-content-list.is-minimized .console-github-pull-number {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  text-align: center;
+}
+
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-commit-age,
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-pull-number {
+  color: var(--foreground);
+}
+
+.console-content-list.is-minimized .console-github-pane-more,
+.console-content-list.is-minimized .console-github-pane-status,
+.console-content-list.is-minimized .console-github-pane-error {
+  display: none;
+}
+
+.console-content-main.is-terminal-strip {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--background);
+  border-left: 0.5px solid rgb(255 255 255 / 0.06);
+}
+
+.console-content-main.is-terminal-strip .console-content-main-terminal {
+  display: none;
+}
+
+.console-terminal-strip {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 6px;
+  border: 0;
+  background: rgb(0 0 0 / 0.22);
+  color: color-mix(in srgb, var(--console-muted) 88%, transparent);
+  cursor: pointer;
+}
+
+.console-terminal-strip:hover {
+  color: var(--console-text);
+  background: rgb(0 0 0 / 0.32);
+}
+
+.console-terminal-strip-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.console-project-breadcrumb-project-wrap {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(40%, 280px);
+  align-items: center;
+  gap: 6px;
+}
+
+.console-content-chrome .console-project-breadcrumb-project-wrap {
+  max-width: min(36vw, 420px);
+}
+
+.console-project-breadcrumb-segment--id {
+  flex: 0 1 auto;
+  max-width: 9rem;
 }
 
 .console-list-resize-handle {
@@ -577,7 +1088,8 @@ html.is-tauri-shell .console-auth {
   transform: translateY(0);
 }
 
-.console-content-list > .console-pane {
+.console-content-list > .console-pane,
+.console-content-list > .app-content-side-panel {
   flex: 1;
   min-height: 0;
   background: transparent;
@@ -741,6 +1253,50 @@ html.is-tauri-shell .console-auth {
   white-space: nowrap;
 }
 
+button.console-project-breadcrumb-segment.is-clickable {
+  flex: 0 1 auto;
+  max-width: 12rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--console-text) 62%, transparent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.console-project-breadcrumb-segment.is-clickable:hover {
+  color: var(--console-text);
+}
+
+.console-project-breadcrumb-leaf {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: color-mix(in srgb, var(--console-text) 75%, transparent);
+}
+
+.console-project-breadcrumb-leaf-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--console-text) 50%, transparent);
+}
+
+.console-project-breadcrumb-leaf-title {
+  font-weight: 500;
+}
+
 .console-commit-detail-chrome.console-pane-header {
   text-transform: none;
   letter-spacing: normal;
@@ -787,6 +1343,11 @@ html.is-tauri-shell .console-auth {
 
 .console-pane--overview .console-pane-body {
   overflow: hidden;
+  padding: 0;
+}
+
+.console-pane--overview .console-project-overview {
+  padding: 0;
 }
 
 .console-project-pane-nav {
@@ -854,16 +1415,16 @@ html.is-tauri-shell .console-auth {
   padding: 0;
 }
 
-/* Blocks stay full-bleed; only inner content is capped like task detail. */
-.console-project-overview .project-panel-block__body {
-  align-items: center;
-  min-width: 0;
+/* Tab body stays full-bleed within the padded repositories stack. */
+.console-project-overview .project-panel-tab-body {
+  min-height: 0;
+  height: 100%;
+  padding: 0 0 8px;
 }
 
-.console-project-overview .project-panel-block__body > * {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 800px;
+.console-project-overview .project-panel-tab-body__custom {
+  min-height: 0;
+  height: 100%;
 }
 
 .project-panel-repositories {
@@ -873,20 +1434,51 @@ html.is-tauri-shell .console-auth {
   min-width: 0;
   width: 100%;
   max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Inset Files / Commits / PRs / Tasks below the full-bleed tabs. */
+  padding: 0 10px 8px;
 }
 
-.console-project-overview .project-panel-block--fill > .project-panel-block__body {
+.project-panel-repositories > .project-github-list-toggle {
+  /* Keep the segmented tabs edge-to-edge. */
+  margin: 0 -10px;
+  width: calc(100% + 20px);
+  max-width: none;
+}
+
+.project-panel-list-body {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.project-panel-repositories > .project-detail,
+.project-panel-repositories > .project-panel-list-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Files / Commits / PRs — scroll the list, keep toolbar + load-more pinned. */
+.project-panel-list-body > .console-fs-tree-pane,
+.project-panel-list-body > .console-github-commit-list,
+.project-panel-repositories > .console-github-commit-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
 
-.console-project-overview .project-panel-block--fill > .project-panel-block__body > * {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+.project-panel-list-body > .console-github-pane-toolbar,
+.project-panel-list-body > .console-github-pane-more,
+.project-panel-list-body > .console-github-pane-status,
+.project-panel-list-body > .console-github-pane-error {
+  flex-shrink: 0;
 }
 
 .console-github-pane-toolbar {
@@ -955,6 +1547,155 @@ html.is-tauri-shell .console-auth {
   line-height: 1.4;
 }
 
+.console-fs-tree-pane {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  overflow: auto;
+}
+
+.console-fs-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-fs-tree-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-fs-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+button.console-fs-tree-row {
+  cursor: pointer;
+}
+
+/* Never show the UA/system blue focus ring on tree rows — orange highlight only. */
+button.console-fs-tree-row:focus,
+button.console-fs-tree-row:focus-visible,
+button.console-fs-tree-row.keyboard-nav-list-item:focus,
+button.console-fs-tree-row.keyboard-nav-list-item:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
+button.console-fs-tree-row:hover {
+  background: var(--faint);
+}
+
+button.console-fs-tree-row.is-selected {
+  background: var(--faint);
+  color: var(--foreground);
+}
+
+button.console-fs-tree-row.is-selected:hover {
+  background: var(--faint);
+}
+
+button.console-fs-tree-row.keyboard-nav-item-highlight,
+button.console-fs-tree-row.keyboard-nav-item-highlight:hover,
+button.console-fs-tree-row.keyboard-nav-item-highlight:focus,
+button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 0 0 1px
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  outline: none !important;
+}
+
+.console-fs-tree-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.console-fs-tree-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+.console-fs-tree-chevron-spacer {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.console-fs-tree-icon,
+.console-fs-tree-row svg {
+  flex: none;
+  color: var(--sidebar-icon-color, var(--muted));
+}
+
+.console-fs-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-fs-tree-status {
+  margin: 0;
+  padding: 4px 8px;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.console-fs-tree-status.is-error {
+  color: var(--danger, #c45c5c);
+}
+
+.console-fs-tree-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  box-shadow: inset 0 0 0 1px
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-fs-tree-create-input {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  outline: none;
+}
+
+.console-fs-tree-create-input::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
 .project-github-list-toggle {
   display: flex;
   flex-shrink: 0;
@@ -966,11 +1707,25 @@ html.is-tauri-shell .console-auth {
   display: flex;
   width: 100%;
   min-width: 0;
+  margin: 0;
+  padding: 3px;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 9%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.project-github-list-toggle .segmented-pill-toggle__indicator {
+  border-radius: 6px;
 }
 
 .project-github-list-toggle .segmented-pill-toggle-btn {
   flex: 1 1 0;
   min-width: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 
 .console-github-pane-status,
@@ -992,7 +1747,6 @@ html.is-tauri-shell .console-auth {
   gap: 2px;
   margin: 0;
   padding: 0;
-  overflow: visible;
   list-style: none;
 }
 
@@ -1002,7 +1756,7 @@ html.is-tauri-shell .console-auth {
   gap: 12px;
   align-items: flex-start;
   margin: 0;
-  padding: 8px 6px;
+  padding: 8px 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -1017,8 +1771,10 @@ html.is-tauri-shell .console-auth {
 }
 
 .console-github-commit:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
-  outline-offset: 1px;
+  outline: none;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
 }
 
 .console-github-commit.is-selected {
@@ -1028,11 +1784,15 @@ html.is-tauri-shell .console-auth {
 .console-github-commit.keyboard-nav-item-highlight,
 .console-github-commit.keyboard-nav-item-highlight:hover,
 .console-github-commit.keyboard-nav-item-highlight:focus,
-.console-github-commit.keyboard-nav-item-highlight:focus-visible {
-  background: rgb(255 255 255 / 0.06);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--foreground) 22%, transparent);
+.console-github-commit.keyboard-nav-item-highlight:focus-visible,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
   outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02)) !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47) !important;
 }
 
 /* Global: only the orange/inset keyboard ring — never stack UA focus rings. */
@@ -1218,10 +1978,323 @@ html.is-tauri-shell .console-auth {
   min-height: 0;
 }
 
-.console-content-main-commit > .console-pane--commit-detail {
+.console-content-main-commit > .console-pane--commit-detail,
+.console-content-main-commit > .console-pane--file-detail {
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+
+.console-pane--file-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.console-file-detail-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Orca-inspired editor file tab strip */
+.console-file-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  min-height: 32px;
+  max-height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+}
+
+.console-file-tab-width {
+  display: flex;
+  min-width: 88px;
+  max-width: 280px;
+  flex: 1 1 180px;
+}
+
+@media (min-width: 1280px) {
+  .console-file-tab-width {
+    flex: 1 1 220px;
+  }
+}
+
+.console-file-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.console-file-tab.has-border-right {
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-file-tab:hover {
+  color: var(--foreground);
+}
+
+.console-file-tab.is-active {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  color: var(--foreground);
+}
+
+.console-file-tab-active-bar {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 2px;
+  background: color-mix(in srgb, var(--foreground) 60%, var(--background));
+}
+
+.console-file-tab-icon {
+  flex: none;
+  opacity: 0.85;
+}
+
+.console-file-tab-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-file-tab-trailing {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.console-file-tab-dirty {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-tab-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.console-file-tab-close.is-active-tab {
+  display: inline-flex;
+}
+
+.console-file-tab-close.is-dirty {
+  display: none;
+}
+
+.console-file-tab:hover .console-file-tab-close,
+.console-file-tab:focus-within .console-file-tab-close {
+  display: inline-flex;
+}
+
+.console-file-tab:hover .console-file-tab-dirty,
+.console-file-tab:focus-within .console-file-tab-dirty {
+  display: none;
+}
+
+.console-file-tab-close:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.console-unsaved-close-actions {
+  flex-wrap: wrap;
+}
+
+.console-unsaved-close-discard {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.console-unsaved-close-discard:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  color: var(--foreground);
+}
+
+.console-unsaved-close-save {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 22%,
+    transparent
+  );
+  color: var(--keyboard-nav-highlight-color, #ee7a47);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.console-unsaved-close-save:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 32%,
+    transparent
+  );
+}
+
+.console-unsaved-close-discard:disabled,
+.console-unsaved-close-save:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.console-file-detail-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 12px 4px;
+}
+
+.console-file-detail-toolbar .segmented-pill-toggle {
+  width: auto;
+}
+
+.console-file-detail-body > .console-github-pane-status,
+.console-file-detail-body > .console-github-pane-error {
+  margin: 12px 16px;
+}
+
+.console-file-code-viewer {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.console-file-code-viewer > div {
+  height: auto !important;
+  min-height: 100%;
+}
+
+.console-file-code-viewer .cm-editor {
+  height: auto !important;
+  max-height: none !important;
+  background: transparent;
+}
+
+.console-file-code-viewer .cm-scroller {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  font-family:
+    "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono",
+    Menlo, monospace;
+}
+
+.console-file-code-viewer .cm-editor,
+.console-file-code-viewer .cm-editor.cm-focused,
+.console-file-code-viewer .cm-content,
+.console-file-code-viewer .cm-content:focus,
+.console-file-code-viewer .cm-content:focus-visible {
+  outline: none !important;
+}
+
+.console-file-code-viewer .cm-fat-cursor {
+  background: var(--keyboard-nav-highlight-color, #ee7a47) !important;
+  color: #0a0a0a !important;
+}
+
+.console-file-code-viewer .cm-editor:not(.cm-focused) .cm-fat-cursor {
+  background: transparent !important;
+  outline: solid 1px var(--keyboard-nav-highlight-color, #ee7a47);
+  color: transparent !important;
+}
+
+.console-file-code-viewer .cm-cursor,
+.console-file-code-viewer .cm-dropCursor {
+  border-left-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-code-viewer .cm-content {
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-image-preview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background:
+    linear-gradient(45deg, rgb(255 255 255 / 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(255 255 255 / 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(255 255 255 / 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(255 255 255 / 0.04) 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+
+.console-file-image-preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: transparent;
 }
 
 .console-pane--commit-detail .console-pane-header {
@@ -1350,29 +2423,93 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   min-height: 0;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 20px 20px;
+  padding: 0;
   overflow: auto;
 }
 
 .console-commit-detail-body:has(.console-pull-files) {
+  gap: 0;
   overflow: hidden;
 }
 
-.console-github-detail-container {
+.console-github-detail-stack {
   display: flex;
   width: 100%;
-  max-width: 920px;
-  margin-inline: auto;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   gap: 16px;
 }
 
-.console-github-detail-container.is-files {
+/* Title / meta / tabs — content centered; PR rail can go full-width for the rule. */
+.console-github-detail-hero-rail {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  flex-shrink: 0;
+  padding: 16px 20px 0;
+}
+
+.console-github-detail-hero-rail--pull {
   max-width: none;
+  margin-inline: 0;
+  padding: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-github-detail-hero-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 16px 20px 0;
+}
+
+/* Tab body scrolls full-width (scrollbar on the pane edge); inner content is centered. */
+.console-github-detail-content {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  overflow: auto;
+}
+
+.console-github-detail-content.is-full {
+  gap: 0;
+  overflow: hidden;
+}
+
+.console-github-detail-content-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.console-commit-detail-body:has(.console-pull-files) .console-github-detail-stack,
+.console-pull-detail-body:has(.console-pull-files) .console-github-detail-stack {
+  gap: 0;
+}
+
+/* Diff panel owns the separator under the commit hero.
+   PR detail: tabs row owns the separator — no extra rule above files. */
+.console-commit-detail-body:has(.console-pull-files) .console-commit-detail-hero {
+  border-bottom: 0;
+  padding-bottom: 16px;
+}
+
+.console-pull-detail-body:has(.console-pull-files) .console-pull-detail-hero {
+  padding-bottom: 0;
 }
 
 .console-commit-detail-hero {
@@ -1382,6 +2519,13 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   gap: 12px;
   padding-bottom: 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-commit-detail-title-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .console-commit-detail-title-row {
@@ -1421,15 +2565,11 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
 
 .console-commit-detail-message {
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.console-commit-detail-message .content-markdown-preview-body {
+  outline: none;
   color: color-mix(in srgb, var(--foreground) 78%, transparent);
 }
 
@@ -1518,11 +2658,12 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   min-height: 0;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 20px 20px;
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
 }
 
 .console-pull-detail-body:has(.console-pull-files) {
+  gap: 0;
   overflow: hidden;
 }
 
@@ -1681,6 +2822,26 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   text-decoration: underline;
 }
 
+.console-pull-code-github-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, #58a6ff);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.console-pull-code-github-link:hover {
+  color: #58a6ff;
+  text-decoration: underline;
+}
+
 .console-pull-detail-meta-row {
   display: flex;
   flex-wrap: wrap;
@@ -1764,14 +2925,41 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  padding-top: 4px;
+  padding-bottom: 12px;
 }
 
 .console-pull-detail-tabs-row .app-pill-nav {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0;
+}
+
+/* Stronger PR tab highlight only while the detail is engaged (Enter/Space).
+   When browsing the list, fall back to default pill-nav styles (border stays). */
+.console-pull-detail-tabs-row.is-hotkeys-active .app-pill-nav-item.is-active {
+  border-color: rgb(255 255 255 / 0.22);
+  background: rgb(255 255 255 / 0.08);
+  color: var(--foreground);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.console-pull-detail-tabs-row.is-hotkeys-active .app-pill-nav-item:focus,
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item:focus-visible {
+  outline: none !important;
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.1);
+  box-shadow: none;
+}
+
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item.is-active:focus,
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item.is-active:focus-visible {
+  border-color: rgb(255 255 255 / 0.32);
+  background: rgb(255 255 255 / 0.11);
 }
 
 .console-pull-detail-diffstat {
@@ -1797,27 +2985,23 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .console-pull-detail-description-body {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--foreground) 3%, transparent);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: color-mix(in srgb, var(--foreground) 86%, transparent);
+  min-width: 0;
+}
+
+.console-pull-detail-description-body .content-markdown-preview-body {
+  outline: none;
 }
 
 .console-pull-detail-description-empty {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  border-radius: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--console-muted);
   font-size: 13px;
   font-style: italic;
@@ -1826,6 +3010,7 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
 .console-pull-detail-commits {
   display: flex;
   min-width: 0;
+  flex-shrink: 0;
   flex-direction: column;
   gap: 8px;
 }
@@ -1858,6 +3043,30 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--foreground) 1.5%, transparent);
+}
+
+/* Commit / PR content: flush diff panel — no rounded card chrome. */
+.console-pane--commit-detail .console-pull-files,
+.console-pane--pull-detail .console-pull-files {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Commit detail: top rule under the hero (no tabs). */
+.console-pane--commit-detail .console-pull-files {
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+.console-pane--commit-detail .console-pull-files-diff-body,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-tailwindcss-wrapper,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-view-wrapper,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-view,
+.console-pane--pull-detail .console-pull-files-diff-body,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-tailwindcss-wrapper,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-view-wrapper,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-view {
+  border-radius: 0 !important;
 }
 
 .console-pull-files-rail {
@@ -1900,8 +3109,31 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   background: rgb(255 255 255 / 0.04);
 }
 
+/* Never show the UA/system blue focus ring — orange inset like commits/tree. */
+.console-pull-files-item:focus,
+.console-pull-files-item:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
 .console-pull-files-item.is-selected {
   background: rgb(255 255 255 / 0.08);
+}
+
+.console-pull-files-item.keyboard-nav-item-highlight,
+.console-pull-files-item.keyboard-nav-item-highlight:hover,
+.console-pull-files-item.keyboard-nav-item-highlight:focus,
+.console-pull-files-item.keyboard-nav-item-highlight:focus-visible,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02)) !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47) !important;
 }
 
 .console-pull-files-item-status {
@@ -2247,6 +3479,12 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   gap: 2px;
 }
 
+.console-project-groups .status-group-header-row {
+  background-image: none !important;
+  background-color: transparent;
+  padding: 4px 6px;
+}
+
 .console-project-groups .status-group-items {
   gap: 2px;
 }
@@ -2300,6 +3538,26 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   color: var(--foreground);
 }
 
+.console-project-row-item {
+  list-style: none;
+}
+
+.console-project-row-item--insert-before {
+  border-top: 1px solid color-mix(in srgb, #ee7a47 50%, transparent);
+}
+
+.console-project-item.is-dragging {
+  opacity: 0.55;
+}
+
+.console-project-item[draggable="true"] {
+  cursor: grab;
+}
+
+.console-project-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .console-project-item-select {
   flex: 1;
   min-width: 0;
@@ -2307,8 +3565,10 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: inherit;
+  /* Same muted chrome as product `.sidebar-link` / side-panel nav items. */
+  color: var(--sidebar-icon-color);
   padding: 8px 10px;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -2319,11 +3579,21 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
 
 .console-project-item:hover {
   background: var(--faint);
+  color: var(--foreground);
+}
+
+.console-project-item:hover .console-project-item-select {
+  color: var(--foreground);
 }
 
 /* Selected project — surface only; orange ring is reserved for keyboard focus. */
 .console-project-item.is-active {
   background: var(--sidebar-surface-1, var(--keyboard-nav-highlight-bg));
+  color: var(--foreground);
+}
+
+.console-project-item.is-active .console-project-item-select,
+.console-project-item.keyboard-nav-item-highlight .console-project-item-select {
   color: var(--foreground);
 }
 
@@ -2356,6 +3626,16 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
 
 .console-project-icon {
   flex-shrink: 0;
+  /* Stronger mute than full foreground — matches product side-panel chrome. */
+  color: var(--sidebar-icon-color, color-mix(in srgb, var(--foreground) 55%, transparent));
+  opacity: 0.72;
+}
+
+.console-project-item:hover .console-project-icon,
+.console-project-item.is-active .console-project-icon,
+.console-project-item.keyboard-nav-item-highlight .console-project-icon {
+  color: var(--foreground);
+  opacity: 1;
 }
 
 .console-project-icon--agent {
@@ -2781,10 +4061,10 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   background: var(--console-panel-2);
 }
 
-.console-run-application-split.is-fullscreen,
 .console-run-application-split.is-running {
-  border-color: color-mix(in srgb, var(--console-accent) 50%, var(--console-border));
-  background: color-mix(in srgb, var(--console-accent) 12%, transparent);
+  border-color: var(--console-border);
+  background: transparent;
+  color: var(--console-muted);
 }
 
 .console-run-application-split .console-run-application-btn--split-main {
@@ -2802,9 +4082,15 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   color: var(--console-text);
 }
 
-.console-run-application-split.is-fullscreen .console-run-application-btn--split-main,
 .console-run-application-split.is-running .console-run-application-btn--split-main {
-  color: var(--console-accent);
+  color: var(--console-muted);
+  cursor: pointer;
+}
+
+.console-run-application-split.is-running
+  .console-run-application-btn--split-main.is-shut-down:hover:not(:disabled) {
+  color: var(--console-muted);
+  background: transparent;
 }
 
 .console-run-application-split-chevron {
@@ -2831,10 +4117,31 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   background: color-mix(in srgb, var(--console-accent) 8%, transparent);
 }
 
-.console-run-application-split.is-fullscreen .console-run-application-split-chevron,
 .console-run-application-split.is-running .console-run-application-split-chevron {
-  border-left-color: color-mix(in srgb, var(--console-accent) 40%, var(--console-border));
-  color: var(--console-accent);
+  border-left-color: var(--console-border);
+  color: var(--console-muted);
+}
+
+.console-run-application-icon.is-running {
+  color: #3fb950;
+  animation: console-run-application-icon-pulse 1.4s ease-in-out infinite;
+}
+
+.console-run-application-icon.is-shut-down {
+  color: #f85149;
+  animation: none;
+}
+
+@keyframes console-run-application-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
 }
 
 .console-run-application-split-chevron:disabled {
@@ -2842,42 +4149,211 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   cursor: not-allowed;
 }
 
-.console-run-application-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 40;
+.console-run-application-panel {
+  position: fixed;
+  z-index: 80;
+  /* top/right/bottom/width are set inline from the content-frame bounds */
+  left: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: min(320px, 70vw);
-  padding: 10px;
-  border-radius: 8px;
+  gap: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0;
   border: 1px solid var(--console-border);
-  background: var(--console-panel);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  border-radius: 10px;
+  isolation: isolate;
+  background: color-mix(in srgb, var(--background, #0b0d10) 82%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: -8px 0 28px rgb(0 0 0 / 0.28);
+  color: var(--console-text);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.35;
+  overflow: hidden;
+  transform: translate3d(calc(100% + 16px), 0, 0);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.console-run-application-panel.is-shown {
+  transform: translate3d(0, 0, 0);
+}
+
+.console-run-application-panel.is-closing {
+  transform: translate3d(calc(100% + 16px), 0, 0);
+  transition: transform 220ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.console-run-application-menu-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.console-run-application-menu-chrome .console-run-application-menu-label-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.console-run-application-menu-chrome .console-run-application-menu-actions {
+  flex-shrink: 0;
+}
+
+.console-run-application-panel .console-run-application-menu-error,
+.console-run-application-panel .console-run-application-menu-status {
+  padding: 0 14px 10px;
+}
+
+.console-run-application-panel-editor {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px;
+}
+
+.console-run-application-panel-editor .console-run-application-menu-textarea {
+  flex: 1 1 auto;
+  min-height: 160px;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.console-run-application-panel-editor .console-run-application-menu-textarea:focus {
+  border-color: transparent;
+  outline: none;
+}
+
+.console-run-application-panel-editor .console-run-application-menu-error {
+  padding: 0;
+}
+
+.console-run-application-panel-editor-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.console-run-application-panel-editor-footer-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-run-application-panel-editor-hint {
+  color: var(--console-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.console-run-application-menu-run {
+  appearance: none;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, #3fb950 55%, var(--console-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, #3fb950 18%, transparent);
+  color: #3fb950;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.console-run-application-menu-run:hover {
+  background: color-mix(in srgb, #3fb950 28%, transparent);
+}
+
+.console-run-application-menu-run-kbd {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, #3fb950 40%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, #3fb950 12%, transparent);
+  color: color-mix(in srgb, #3fb950 88%, white);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .console-run-application-menu-label {
+  display: block;
   margin: 0;
   color: var(--console-muted);
   font-size: 11px;
   font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.console-run-application-menu-label-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.console-run-application-menu-command {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--console-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 
 .console-run-application-menu-textarea {
   box-sizing: border-box;
+  display: block;
   width: 100%;
-  min-height: 64px;
+  min-height: 72px;
   margin: 0;
   padding: 8px;
   border: 1px solid var(--console-border);
   border-radius: 6px;
   background: var(--console-panel-2);
   color: var(--console-text);
-  font: inherit;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
   line-height: 1.4;
   resize: vertical;
 }
@@ -2887,40 +4363,99 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   border-color: color-mix(in srgb, var(--console-accent) 55%, var(--console-border));
 }
 
+.console-run-application-menu-output {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #d7dde5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .console-run-application-menu-error {
   margin: 0;
   color: #ff9b94;
   font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
   line-height: 1.35;
+}
+
+.console-run-application-menu-status {
+  margin: 0;
+  color: var(--console-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.console-run-application-menu-status.is-ok {
+  color: #3fb950;
+}
+
+.console-run-application-menu-status.is-failed {
+  color: #ff9b94;
+}
+
+.console-run-application-menu-status.is-aborted {
+  color: #e3b341;
 }
 
 .console-run-application-menu-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
-.console-run-application-menu-save {
+.console-run-application-menu-save,
+.console-run-application-menu-secondary {
   appearance: none;
   margin: 0;
   padding: 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--console-accent) 45%, var(--console-border));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--console-accent) 14%, transparent);
-  color: var(--console-accent);
   font: inherit;
   font-size: 11px;
   font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
   cursor: pointer;
+}
+
+.console-run-application-menu-save {
+  border: 1px solid color-mix(in srgb, var(--console-accent) 45%, var(--console-border));
+  background: color-mix(in srgb, var(--console-accent) 14%, transparent);
+  color: var(--console-accent);
 }
 
 .console-run-application-menu-save:hover {
   background: color-mix(in srgb, var(--console-accent) 22%, transparent);
 }
 
-.console-run-application-loader {
-  width: 14px;
-  height: 14px;
-  color: var(--console-accent);
+.console-run-application-menu-secondary {
+  border: 1px solid var(--console-border);
+  background: transparent;
+  color: var(--console-muted);
+}
+
+.console-run-application-menu-secondary:hover {
+  color: var(--console-text);
+  background: var(--console-panel-2);
 }
 
 .terminal-frame {
@@ -2960,6 +4495,20 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   text-align: center;
   background: #111111;
   z-index: 0;
+}
+
+.terminal-directory-gate.terminal-directory-gate--compact {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 160px;
+  padding: 20px 16px;
+  text-align: center;
+  background: transparent;
 }
 
 .terminal-directory-gate__copy {
@@ -3453,7 +5002,8 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
   }
 }
 
-/* Keep console motion and skeleton pulse even when OS reduced-motion is on */
+/* Keep console motion even when OS reduced-motion is on — inbox focus slides
+ * rely on width/flex-basis, which the generic opacity-only overrides would kill. */
 @media (prefers-reduced-motion: reduce) {
   .console-content-frame {
     transition:
@@ -3487,6 +5037,38 @@ button.console-github-breadcrumb-item:hover .console-github-breadcrumb-strong {
     transition:
       opacity 350ms ease,
       transform 350ms ease !important;
+  }
+
+  /* Inbox browse ↔ focus: force width slide (pixel vars from React). */
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-list,
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-inbox-detail,
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-main {
+    transition:
+      width 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 140ms ease,
+      transform 140ms ease,
+      border-color 140ms ease !important;
+  }
+
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-list
+    > *:not(.console-list-resize-handle),
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-inbox-detail
+    > *,
+  .console-content-frame--inbox-task
+    > .console-content-columns
+    > .console-content-main
+    > * {
+    transition: opacity 55ms ease !important;
   }
 
   .console-content-swap {

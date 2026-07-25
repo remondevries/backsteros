@@ -1,4 +1,4 @@
-export type GithubListTab = "commits" | "pulls";
+export type GithubListTab = "tasks" | "files" | "commits" | "pulls";
 export type GithubPullDetailTab = "conversation" | "commits" | "files";
 
 export type ConsoleRoute = {
@@ -8,7 +8,7 @@ export type ConsoleRoute = {
   projectId: string | null;
   taskId: string | null;
   tabId: string | null;
-  /** Project overview GitHub list segment (`/commits` or `/pulls`). */
+  /** Project overview list segment (`/tasks`, `/files`, `/commits`, or `/pulls`). */
   githubListTab: GithubListTab | null;
   /** Commit detail (`/{projectId}/commit/{sha}`). */
   commitSha: string | null;
@@ -18,7 +18,12 @@ export type ConsoleRoute = {
   pullTab: GithubPullDetailTab | null;
 };
 
-const GITHUB_LIST_TABS = new Set<string>(["commits", "pulls"]);
+const GITHUB_LIST_TABS = new Set<string>([
+  "tasks",
+  "files",
+  "commits",
+  "pulls",
+]);
 const GITHUB_PULL_TABS = new Set<string>([
   "conversation",
   "commits",

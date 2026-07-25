@@ -1,9 +1,10 @@
 "use client";
 
 import type { GithubCommit, GithubPullRequest } from "@backsteros/contracts";
-import { ProjectOcticon } from "@backsteros/ui";
+import { DocumentMarkdownPreview, ProjectOcticon } from "@backsteros/ui";
 
 import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
+import { GithubCodeMenu } from "@/components/github-code-menu";
 import { CommitFilesPane } from "@/components/pull-request-files-pane";
 
 function commitSubject(message: string): string {
@@ -85,79 +86,82 @@ export function CommitDetailPane({
               <ProjectOcticon icon="chevron-left" size={14} />
             </button>
           }
-          actions={
-            <a
-              className="console-commit-detail-open-github"
-              href={commit.htmlUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open on GitHub
-            </a>
-          }
         />
       ) : null}
 
       <div className="console-pane-body console-commit-detail-body">
-        <div className="console-github-detail-container is-files">
-          <header className="console-commit-detail-hero">
-            <div className="console-commit-detail-title-row">
-              <h1 className="console-commit-detail-title">{subject}</h1>
-              <a
-                className="console-commit-detail-sha"
-                href={commit.htmlUrl}
-                target="_blank"
-                rel="noreferrer"
-                title={commit.sha}
-              >
-                {commit.shortSha}
-              </a>
-            </div>
-
-            {body ? (
-              <pre className="console-commit-detail-message">{body}</pre>
-            ) : null}
-
-            <div className="console-commit-detail-meta">
-              <span
-                className="console-commit-detail-author-avatar"
-                aria-hidden="true"
-              >
-                {commit.authorLogin ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=48`}
-                    alt=""
-                    width={24}
-                    height={24}
+        <div className="console-github-detail-stack">
+          <div className="console-github-detail-hero-rail">
+            <header className="console-commit-detail-hero">
+              <div className="console-commit-detail-title-row">
+                <h1 className="console-commit-detail-title">{subject}</h1>
+                <div className="console-commit-detail-title-actions">
+                  <a
+                    className="console-commit-detail-sha"
+                    href={commit.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={commit.sha}
+                  >
+                    {commit.shortSha}
+                  </a>
+                  <GithubCodeMenu
+                    command={`git checkout ${commit.shortSha}`}
+                    commandTitle="Checkout commit"
+                    githubUrl={commit.htmlUrl}
                   />
-                ) : (
-                  <ProjectOcticon icon="person" size={14} />
-                )}
-              </span>
-              <div className="console-commit-detail-meta-text">
-                <span className="console-commit-detail-author">{author}</span>
-                {authoredLabel ? (
-                  <span className="console-commit-detail-meta-muted">
-                    {" "}
-                    committed on {authoredLabel}
-                  </span>
-                ) : null}
-                {repository ? (
-                  <span className="console-commit-detail-meta-muted">
-                    {" "}
-                    · {repository}
-                  </span>
-                ) : null}
+                </div>
               </div>
-            </div>
-          </header>
 
-          <CommitFilesPane
-            key={commit.sha}
-            projectId={projectId}
-            sha={commit.sha}
-          />
+              {body ? (
+                <div className="console-commit-detail-message">
+                  <DocumentMarkdownPreview body={body} />
+                </div>
+              ) : null}
+
+              <div className="console-commit-detail-meta">
+                <span
+                  className="console-commit-detail-author-avatar"
+                  aria-hidden="true"
+                >
+                  {commit.authorLogin ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=48`}
+                      alt=""
+                      width={24}
+                      height={24}
+                    />
+                  ) : (
+                    <ProjectOcticon icon="person" size={14} />
+                  )}
+                </span>
+                <div className="console-commit-detail-meta-text">
+                  <span className="console-commit-detail-author">{author}</span>
+                  {authoredLabel ? (
+                    <span className="console-commit-detail-meta-muted">
+                      {" "}
+                      committed on {authoredLabel}
+                    </span>
+                  ) : null}
+                  {repository ? (
+                    <span className="console-commit-detail-meta-muted">
+                      {" "}
+                      · {repository}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </header>
+          </div>
+
+          <div className="console-github-detail-content is-full">
+            <CommitFilesPane
+              key={commit.sha}
+              projectId={projectId}
+              sha={commit.sha}
+            />
+          </div>
         </div>
       </div>
     </div>

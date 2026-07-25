@@ -52,5 +52,14 @@ export function shouldHandleGlobalShortcut(event: KeyboardEvent): boolean {
     return false;
   }
 
+  // xterm focuses a helper textarea; also guard the host so j/k cannot steal
+  // keys while the user is typing in a terminal.
+  if (
+    target.closest(".xterm") ||
+    target.classList.contains("xterm-helper-textarea")
+  ) {
+    return false;
+  }
+
   return true;
 }

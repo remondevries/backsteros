@@ -8,6 +8,14 @@ import {
   type TaskPropertyDropdownId,
 } from "./task-property-dropdown-keys.js";
 
+/** Open task / inbox detail surfaces (desktop main-slot + agent console). */
+const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
+  ".main-slot",
+  ".console-content-inbox-detail",
+  ".task-panel-island--detail",
+  ".task-detail-stacked",
+] as const;
+
 export function getTaskPropertyDropdownTrigger(
   id: TaskPropertyDropdownId,
   scope?: ParentNode | null,
@@ -61,6 +69,43 @@ function pageHasTaskListPropertyRows(): boolean {
   );
 }
 
+function resolveTaskDetailPropertyScopes(): ParentNode[] {
+  const scopes: ParentNode[] = [];
+  for (const selector of TASK_DETAIL_PROPERTY_SCOPE_SELECTORS) {
+    for (const node of document.querySelectorAll(selector)) {
+      if (node instanceof HTMLElement && node.isConnected) {
+        scopes.push(node);
+      }
+    }
+  }
+  return scopes;
+}
+
+function tryOpenInScope(
+  scope: ParentNode,
+  ids: TaskPropertyDropdownId[],
+  options?: { centerPlacement?: boolean },
+): boolean {
+  for (const candidate of ids) {
+    const trigger = getTaskPropertyDropdownTrigger(candidate, scope);
+    if (!trigger) {
+      continue;
+    }
+
+    if (options?.centerPlacement) {
+      const root = resolveSearchableDropdownRoot(trigger);
+      if (root) {
+        markSearchableDropdownOpenPlacement(root, "center");
+      }
+    }
+
+    trigger.click();
+    return true;
+  }
+
+  return false;
+}
+
 export function openTaskPropertyDropdown(
   id: TaskPropertyDropdownId | TaskPropertyDropdownId[],
 ): boolean {
@@ -68,46 +113,28 @@ export function openTaskPropertyDropdown(
   requestCloseSearchableDropdowns();
 
   const composeScope = resolveComposeModalPropertyScope();
+  if (composeScope) {
+    return tryOpenInScope(composeScope, ids);
+  }
+
+  // Prefer the keyboard-highlighted / active list row when it exposes the field.
   const listScope = resolveTaskListPropertyScope();
-  const scopes: ParentNode[] = composeScope
-    ? [composeScope]
-    : listScope
-      ? [listScope]
-      : pageHasTaskListPropertyRows()
-        ? []
-        : [document];
+  if (listScope && tryOpenInScope(listScope, ids, { centerPlacement: true })) {
+    return true;
+  }
 
-  for (const scope of scopes) {
-    for (const candidate of ids) {
-      const trigger = getTaskPropertyDropdownTrigger(candidate, scope);
-      if (!trigger) {
-        continue;
-      }
-
-      if (listScope && scope === listScope) {
-        const root = resolveSearchableDropdownRoot(trigger);
-        if (root) {
-          markSearchableDropdownOpenPlacement(root, "center");
-        }
-      }
-
-      trigger.click();
+  // Highlighted list rows may omit some properties (e.g. inbox has no Status).
+  // Also covers agent-console task/inbox detail while list rows still exist.
+  for (const scope of resolveTaskDetailPropertyScopes()) {
+    if (tryOpenInScope(scope, ids)) {
       return true;
     }
   }
 
-  if (listScope && !composeScope) {
-    const mainSlot = document.querySelector(".main-slot");
-    if (mainSlot) {
-      for (const candidate of ids) {
-        const trigger = getTaskPropertyDropdownTrigger(candidate, mainSlot);
-        if (!trigger) {
-          continue;
-        }
-        trigger.click();
-        return true;
-      }
-    }
+  // Document-wide only when there is no ambiguous list of property rows, or the
+  // list row was tried and lacked this property (detail already failed above).
+  if (!pageHasTaskListPropertyRows() || listScope) {
+    return tryOpenInScope(document, ids);
   }
 
   return false;

@@ -1,7 +1,7 @@
 [package]
 name = "backsteros-development"
 version = "0.1.0"
-description = "Thin native window for BacksterOS Development (loads local Next.js)"
+description = "Thin native window for Development ADE (loads local Next.js)"
 authors = ["BacksterOS"]
 edition = "2021"
 

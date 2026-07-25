@@ -78,7 +78,14 @@ export type CommandPaletteViewProps = {
     options?: { searchParams?: URLSearchParams },
   ) => Promise<CommandPaletteHit[]> | CommandPaletteHit[];
   goItems?: GoNavigationItem[];
-  destinations?: { id: string; label: string; href: string; iconId?: string }[];
+  destinations?: {
+    id: string;
+    label: string;
+    href: string;
+    iconId?: string;
+    /** When set, selecting this item scopes search instead of navigating. */
+    filterMode?: Exclude<CommandPaletteFilterMode, "all">;
+  }[];
   /** Shortcut hint shown in the input row (default ⌘K). */
   shortcutHint?: string;
 };
@@ -114,7 +121,7 @@ export function CommandPaletteView({
   destinations,
   shortcutHint = "⌘K",
 }: CommandPaletteViewProps) {
-  const { open, setOpen, mode, toggle } = useCommandPalette();
+  const { open, setOpen, mode, toggle, openSearch } = useCommandPalette();
   const isGoMode = mode === "go";
   const inputRef = useRef<HTMLInputElement>(null);
   const lastToggleAtRef = useRef(0);
@@ -138,6 +145,9 @@ export function CommandPaletteView({
       label: item.label,
       href: item.href,
       iconId: item.icon,
+      filterMode: undefined as
+        | Exclude<CommandPaletteFilterMode, "all">
+        | undefined,
     }));
   }, [destinations]);
 
@@ -147,13 +157,18 @@ export function CommandPaletteView({
   );
 
   const effectiveRouteContext = routeContextOverride ?? searchContext;
-  const resolvedIds = resolveContextIds?.(effectiveRouteContext) ?? {};
-  const activeSearchContext = withResolvedIds(
+  const baseSearchContext =
     manualContext ??
-      (filter.mode === "all" && !contextDismissed
-        ? effectiveRouteContext
-        : null),
-    resolvedIds,
+    (filter.mode === "all" && !contextDismissed
+      ? effectiveRouteContext
+      : null);
+  const activeSearchContext = useMemo(
+    () =>
+      withResolvedIds(
+        baseSearchContext,
+        resolveContextIds?.(baseSearchContext) ?? {},
+      ),
+    [baseSearchContext, resolveContextIds],
   );
 
   const contextBreadcrumb = useMemo(
@@ -172,6 +187,7 @@ export function CommandPaletteView({
     ],
   );
   const hasContextLayers = contextBreadcrumb.length > 0;
+  const wasOpenRef = useRef(open);
 
   useEffect(() => {
     const runToggle = () => {
@@ -207,21 +223,23 @@ export function CommandPaletteView({
   }, [toggle]);
 
   useEffect(() => {
-    if (!open) {
-      setFilter(createDefaultCommandPaletteFilterState());
-      setGoQuery("");
-      setHits([]);
-      setLoading(false);
-      setRemoteError(null);
-      setManualContext(null);
-      setRouteContextOverride(null);
-      setContextDismissed(false);
-    }
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    // Reset only when the palette closes — not on every mount while closed.
+    if (open || !wasOpen) return;
+    setFilter(createDefaultCommandPaletteFilterState());
+    setGoQuery("");
+    setHits([]);
+    setLoading(false);
+    setRemoteError(null);
+    setManualContext(null);
+    setRouteContextOverride(null);
+    setContextDismissed(false);
   }, [open]);
 
   useEffect(() => {
-    setContextDismissed(false);
-    setRouteContextOverride(null);
+    setContextDismissed((current) => (current ? false : current));
+    setRouteContextOverride((current) => (current != null ? null : current));
   }, [pathname]);
 
   useEffect(() => {
@@ -249,9 +267,9 @@ export function CommandPaletteView({
     if (!open || isGoMode) return;
     const query = filter.searchTerm.trim();
     if (!query) {
-      setHits([]);
-      setLoading(false);
-      setRemoteError(null);
+      setHits((current) => (current.length === 0 ? current : []));
+      setLoading((current) => (current ? false : current));
+      setRemoteError((current) => (current != null ? null : current));
       return;
     }
     if (!search) {
@@ -523,7 +541,24 @@ export function CommandPaletteView({
                     key={item.id}
                     value={goNavigationItemSearchValue(item)}
                     className="command-item"
-                    onSelect={() => closeAndNavigate(item.href)}
+                    onSelect={() => {
+                      const destination = navDestinations.find(
+                        (entry) => entry.id === item.id,
+                      );
+                      if (destination?.filterMode) {
+                        openSearch();
+                        setFilter({
+                          mode: destination.filterMode,
+                          searchTerm: "",
+                        });
+                        setManualContext(null);
+                        setContextDismissed(true);
+                        setRouteContextOverride(null);
+                        setGoQuery("");
+                        return;
+                      }
+                      closeAndNavigate(item.href);
+                    }}
                   >
                     <NavigationItemIcon navId={item.id} />
                     <span className="command-item-label">{item.label}</span>
@@ -545,13 +580,29 @@ export function CommandPaletteView({
                         key={item.href}
                         value={`${item.label} ${item.href}`}
                         className="command-item"
-                        onSelect={() => closeAndNavigate(item.href)}
+                        onSelect={() => {
+                          if (item.filterMode) {
+                            setFilter({
+                              mode: item.filterMode,
+                              searchTerm: "",
+                            });
+                            setManualContext(null);
+                            setContextDismissed(true);
+                            setRouteContextOverride(null);
+                            return;
+                          }
+                          closeAndNavigate(item.href);
+                        }}
                       >
                         {item.iconId ? (
                           <NavigationItemIcon navId={item.iconId} />
                         ) : null}
                         <span className="command-item-label">{item.label}</span>
-                        <small>{item.href}</small>
+                        <small>
+                          {item.filterMode
+                            ? `Search ${item.label.toLowerCase()}`
+                            : item.href}
+                        </small>
                       </Command.Item>
                     ))}
                   </Command.Group>

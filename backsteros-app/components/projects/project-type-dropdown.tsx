@@ -1,6 +1,7 @@
 "use client";
 
-import { CodeIcon, ProjectIcon } from "@primer/octicons-react";
+import { ProjectIcon } from "@primer/octicons-react";
+import { TerminalConsoleIcon } from "@backsteros/ui";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 
 import { PropertyDropdown } from "@/components/ui/property-dropdown";
@@ -22,7 +23,7 @@ type ProjectTypeDropdownProps = {
 };
 
 function ProjectTypeIcon({ type }: { type: ProjectType }) {
-  const Icon = type === "codebase" ? CodeIcon : ProjectIcon;
+  const Icon = type === "codebase" ? TerminalConsoleIcon : ProjectIcon;
   return <Icon size={14} aria-hidden="true" />;
 }
 

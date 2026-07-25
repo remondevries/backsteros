@@ -5,7 +5,15 @@ import type {
   GithubPullRequestFileStatus,
 } from "@backsteros/contracts";
 import { DiffModeEnum, DiffView } from "@git-diff-view/react";
-import { ProjectOcticon } from "@backsteros/ui";
+import {
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
+  ProjectOcticon,
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
+} from "@backsteros/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiErrorMessage, useConsoleApi } from "@/lib/api-context";
@@ -144,9 +152,14 @@ type FilesPage = {
 export function GithubFilesDiffPane({
   cacheKey,
   fetchPage,
+  autoFocusList = false,
+  onSelectedFilenameChange,
 }: {
   cacheKey: string;
   fetchPage: (page: number) => Promise<FilesPage>;
+  /** When true, claim j/k on the file list once files load (commit detail). */
+  autoFocusList?: boolean;
+  onSelectedFilenameChange?: (filename: string | null) => void;
 }) {
   const [files, setFiles] = useState<GithubPullRequestFile[]>([]);
   const [page, setPage] = useState(1);
@@ -157,6 +170,12 @@ export function GithubFilesDiffPane({
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const loadedForRef = useRef<string | null>(null);
   const requestGenerationRef = useRef(0);
+  const autoFocusedCacheKeyRef = useRef<string | null>(null);
+  const fileListRef = useRef<HTMLUListElement>(null);
+  const { setActiveZone } = useListKeyboardNavigationZone();
+  const fileListContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
 
   const loadPage = useCallback(
     async (nextPage: number, append: boolean) => {
@@ -206,6 +225,52 @@ export function GithubFilesDiffPane({
     void loadPage(1, false);
   }, [cacheKey, files.length, loadPage]);
 
+  const fileItemIds = useMemo(
+    () => files.map((file) => file.filename),
+    [files],
+  );
+
+  const selectFile = useCallback((filename: string) => {
+    setSelectedFilename(filename);
+  }, []);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: fileListRef,
+    itemIds: fileItemIds,
+    selectedId: selectedFilename,
+    onNavigate: selectFile,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    // Beat the hidden project-tasks list (same main zone, equal default
+    // priority, still "visible" via layout rects while opacity:0).
+    priority: 20,
+    enabled: autoFocusList && fileItemIds.length > 0,
+  });
+
+  // j/k updates the diff as the highlight moves (no Enter required).
+  useEffect(() => {
+    if (!highlightedId) return;
+    if (highlightedId === selectedFilename) return;
+    setSelectedFilename(highlightedId);
+  }, [highlightedId, selectedFilename]);
+
+  useEffect(() => {
+    onSelectedFilenameChange?.(selectedFilename);
+  }, [onSelectedFilenameChange, selectedFilename]);
+
+  // After opening a commit, land j/k on the changed-files list.
+  useEffect(() => {
+    if (!autoFocusList) return;
+    if (fileItemIds.length === 0) return;
+    if (autoFocusedCacheKeyRef.current === cacheKey) return;
+    autoFocusedCacheKeyRef.current = cacheKey;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setActiveZone("main", { activate: true });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocusList, cacheKey, fileItemIds.length, setActiveZone]);
+
   const selected = useMemo(
     () => files.find((file) => file.filename === selectedFilename) ?? null,
     [files, selectedFilename],
@@ -251,7 +316,11 @@ export function GithubFilesDiffPane({
           <p className="console-github-pane-status">No files changed.</p>
         ) : null}
         {files.length > 0 ? (
-          <ul className="console-pull-files-list">
+          <ul
+            ref={fileListRef}
+            className="console-pull-files-list"
+            {...fileListContainerProps}
+          >
             {files.map((file) => {
               const dir = dirname(file.filename);
               const name = basename(file.filename);
@@ -259,8 +328,12 @@ export function GithubFilesDiffPane({
                 <li key={file.filename}>
                   <button
                     type="button"
+                    {...keyboardNavItemProps(file.filename)}
                     className={[
                       "console-pull-files-item",
+                      keyboardNavListItemClass(
+                        highlightedId === file.filename,
+                      ),
                       selectedFilename === file.filename ? "is-selected" : null,
                       `is-${file.status}`,
                     ]
@@ -353,9 +426,14 @@ export function GithubFilesDiffPane({
 export function PullRequestFilesPane({
   projectId,
   pullNumber,
+  autoFocusList = false,
+  onSelectedFilenameChange,
 }: {
   projectId: string;
   pullNumber: number;
+  /** When true, claim j/k on the file list once files load. */
+  autoFocusList?: boolean;
+  onSelectedFilenameChange?: (filename: string | null) => void;
 }) {
   const { client } = useConsoleApi();
   const fetchPage = useCallback(
@@ -376,6 +454,8 @@ export function PullRequestFilesPane({
     <GithubFilesDiffPane
       cacheKey={`pull:${projectId}:${pullNumber}`}
       fetchPage={fetchPage}
+      autoFocusList={autoFocusList}
+      onSelectedFilenameChange={onSelectedFilenameChange}
     />
   );
 }

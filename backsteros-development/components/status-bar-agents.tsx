@@ -1,44 +1,113 @@
 "use client";
 
-import type { AgentActivitySummary } from "@/lib/agent-activity";
+import { useEffect, useMemo, useState } from "react";
+import type { Task } from "@backsteros/contracts";
+import { formatTaskDisplayId } from "@backsteros/ui";
+
+import {
+  StatusBarHoverMenu,
+  type StatusBarHoverItem,
+} from "@/components/status-bar-hover-menu";
+import type {
+  AgentActivity,
+  AgentActivitySummary,
+  StatusBarAgentItem,
+} from "@/lib/agent-activity";
+import { useConsoleApi } from "@/lib/api-context";
+
+function activityLabel(activity: AgentActivity): string {
+  switch (activity) {
+    case "working":
+      return "Working";
+    case "attention":
+      return "Needs attention";
+    case "idle":
+      return "Idle";
+    case "present":
+      return "Open";
+  }
+}
 
 export function StatusBarAgents({
   summary,
+  items,
+  projectKeys,
+  onNavigate,
 }: {
   summary: AgentActivitySummary;
+  items: StatusBarAgentItem[];
+  projectKeys: Record<string, string>;
+  onNavigate: (item: StatusBarAgentItem) => void;
 }) {
-  if (summary.total === 0) {
-    return (
-      <span className="statusbar-agents" title="No in-app agents detected">
-        <span className="statusbar-metric-label">Agents</span>
-        <span className="statusbar-metric-value">0</span>
-        <span className="statusbar-agents-dot" aria-hidden="true" />
-      </span>
-    );
-  }
+  const { client } = useConsoleApi();
+  const [labelsByTaskId, setLabelsByTaskId] = useState<Record<string, string>>(
+    {},
+  );
 
-  const parts: string[] = [];
-  if (summary.working > 0) parts.push(`${summary.working} working`);
+  const taskIdsKey = items.map((item) => item.taskId).join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing = items
+      .map((item) => item.taskId)
+      .filter((taskId) => !labelsByTaskId[taskId]);
+    if (missing.length === 0) return;
+
+    void (async () => {
+      const entries = await Promise.all(
+        missing.map(async (taskId) => {
+          try {
+            const task = await client.requestJson<Task>(
+              `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+            );
+            const projectKey = task.projectId
+              ? projectKeys[task.projectId]
+              : null;
+            const displayId =
+              projectKey && task.number
+                ? formatTaskDisplayId(projectKey, task.number)
+                : null;
+            const label =
+              displayId?.trim() || task.title?.trim() || taskId.slice(0, 8);
+            return [taskId, label] as const;
+          } catch {
+            return [taskId, taskId.slice(0, 8)] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setLabelsByTaskId((current) => {
+        const next = { ...current };
+        for (const [taskId, label] of entries) next[taskId] = label;
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit labelsByTaskId — we only fetch missing ids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, projectKeys, taskIdsKey]);
+
+  const menuItems = useMemo((): StatusBarHoverItem[] => {
+    return items.map((item) => ({
+      id: item.taskId,
+      title: labelsByTaskId[item.taskId] ?? item.projectLabel,
+      subtitle: item.projectLabel,
+      meta: activityLabel(item.activity),
+      onSelect: () => onNavigate(item),
+    }));
+  }, [items, labelsByTaskId, onNavigate]);
+
+  const detailParts: string[] = [];
+  if (summary.working > 0) detailParts.push(`${summary.working} working`);
   if (summary.attention > 0) {
-    parts.push(`${summary.attention} needs attention`);
+    detailParts.push(`${summary.attention} needs attention`);
   }
-  if (summary.idle > 0) parts.push(`${summary.idle} idle`);
-  if (summary.present > 0 && summary.working === 0 && summary.attention === 0) {
-    parts.push(`${summary.present} open`);
-  } else if (summary.present > 0) {
-    parts.push(`${summary.present} open`);
-  }
-
-  const detail = parts.join(" · ");
-  const title = [
-    "In-app agents (from terminal sessions)",
-    summary.working ? `${summary.working} working` : null,
-    summary.attention ? `${summary.attention} needs attention` : null,
-    summary.idle ? `${summary.idle} idle` : null,
-    summary.present ? `${summary.present} open (status unknown)` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  if (summary.idle > 0) detailParts.push(`${summary.idle} idle`);
+  if (summary.present > 0) detailParts.push(`${summary.present} open`);
+  const detail = detailParts.join(" · ");
 
   const dotClass =
     summary.working > 0
@@ -48,15 +117,19 @@ export function StatusBarAgents({
         : "statusbar-agents-dot";
 
   return (
-    <span className="statusbar-agents" title={title}>
-      <span className="statusbar-metric-label">Agents</span>
-      <span className="statusbar-metric-value">
-        {summary.total}
-        {detail ? (
-          <span className="statusbar-metric-pct"> · {detail}</span>
-        ) : null}
-      </span>
-      <span className={dotClass} aria-hidden="true" />
-    </span>
+    <StatusBarHoverMenu
+      label="Agents"
+      value={
+        <>
+          {summary.total}
+          {detail ? (
+            <span className="statusbar-metric-pct"> · {detail}</span>
+          ) : null}
+        </>
+      }
+      emptyHint="No active agents"
+      items={menuItems}
+      dot={<span className={dotClass} aria-hidden="true" />}
+    />
   );
 }

@@ -3,7 +3,10 @@
 import type { ComponentType, ReactNode, SyntheticEvent } from "react";
 import { useMemo } from "react";
 
-import { type InboxListItem } from "../inbox-items.js";
+import {
+  getInboxItemDisplayId,
+  type InboxListItem,
+} from "../inbox-items.js";
 import { keyboardNavItemProps } from "../keyboard-nav-item.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import { sidePanelItemClass } from "../side-panel-styles.js";
@@ -39,6 +42,8 @@ export type InboxListItemRowProps = {
   isSelected: boolean;
   keyboardHighlighted?: boolean;
   Link: InboxListItemLinkComponent;
+  /** Narrow rail: status icon + display id only. */
+  minimized?: boolean;
   /** Optional trailing control next to the title (e.g. agent busy loader). */
   titleTrailing?: ReactNode;
   projectOptions?: SearchableDropdownOption<string>[];
@@ -83,6 +88,7 @@ export function InboxListItemRow({
   isSelected,
   keyboardHighlighted = false,
   Link,
+  minimized = false,
   titleTrailing = null,
   projectOptions = [],
   assigneeOptions = [],
@@ -100,6 +106,26 @@ export function InboxListItemRow({
       })),
     [],
   );
+
+  if (minimized) {
+    const displayId = getInboxItemDisplayId(item);
+    return (
+      <li className="inbox-list-item inbox-list-item--minimized" {...keyboardNavItemProps(item.id)}>
+        <Link
+          to={href}
+          aria-current={isSelected ? "page" : undefined}
+          aria-label={`${displayId}: ${item.title}`}
+          className={sidePanelItemClass({
+            active: isSelected,
+            keyboardHighlighted,
+            stacked: false,
+          })}
+        >
+          <span className="inbox-list-item-minimized-id">{displayId}</span>
+        </Link>
+      </li>
+    );
+  }
 
   if (item.kind === "letter") {
     const hasProject = Boolean(item.projectKey ?? item.projectName);

@@ -7,7 +7,7 @@
 #   ./scripts/install-macos-app.sh
 #   ./scripts/install-macos-app.sh ~/Applications
 #
-# Then open "BacksterOS Development" from Applications / Spotlight / Dock.
+# Then open "Development ADE" from Applications / Spotlight / Dock.
 
 set -euo pipefail
 
@@ -15,21 +15,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LAUNCHER="${SCRIPT_DIR}/launch-console-app.sh"
 DEST_DIR="${1:-${HOME}/Applications}"
-APP_NAME="BacksterOS Development.app"
+APP_NAME="Development ADE.app"
+OLD_APP_NAME="BacksterOS Development.app"
 APP_ROOT="${DEST_DIR}/${APP_NAME}"
 MACOS_DIR="${APP_ROOT}/Contents/MacOS"
 RESOURCES_DIR="${APP_ROOT}/Contents/Resources"
 
 chmod +x "${LAUNCHER}"
 
+rm -rf "${DEST_DIR}/${OLD_APP_NAME}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-cat >"${MACOS_DIR}/BacksterOS Development" <<EOF
+cat >"${MACOS_DIR}/Development ADE" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 exec /bin/bash $(printf '%q' "${LAUNCHER}")
 EOF
-chmod +x "${MACOS_DIR}/BacksterOS Development"
+chmod +x "${MACOS_DIR}/Development ADE"
 
 cat >"${APP_ROOT}/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,15 +41,15 @@ cat >"${APP_ROOT}/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>BacksterOS Development</string>
+  <string>Development ADE</string>
   <key>CFBundleIdentifier</key>
   <string>com.backsteros.development</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>BacksterOS Development</string>
+  <string>Development ADE</string>
   <key>CFBundleDisplayName</key>
-  <string>BacksterOS Development</string>
+  <string>Development ADE</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

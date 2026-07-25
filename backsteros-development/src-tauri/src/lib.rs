@@ -263,5 +263,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running BacksterOS Development");
+        .expect("error while running Development ADE");
 }

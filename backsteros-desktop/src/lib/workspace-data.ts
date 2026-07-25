@@ -26,7 +26,11 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
-import { mergeLocalAndApiByUpdatedAt } from "./merge-local-and-api";
+import {
+  fillMissingLinksFromApi,
+  fillMissingTypeFromApi,
+  mergeLocalAndApiByUpdatedAt,
+} from "./merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import { getDesktopPublicEnvironment } from "./env";
 
@@ -103,7 +107,7 @@ function mapProject(project: ApiProject): ProjectOverviewRowProject & {
     status: project.status,
     priority: project.priority,
     area: project.area ?? null,
-    type: project.type,
+    type: project.type ?? "general",
     icon: project.icon ?? null,
     organizationId: project.organizationId ?? null,
     startDate: asEpoch(project.startDate),
@@ -442,18 +446,29 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     powerSync.ready,
   ]);
 
-  // Soft-revalidate documents from API when sync checkpoints advance so
-  // mergeLocalAndApiByUpdatedAt can surface remote creates if watch misses.
+  // Soft-revalidate documents + tasks + projects from API when sync checkpoints
+  // advance so mergeLocalAndApiByUpdatedAt can surface remote creates / newer
+  // columns (e.g. task.links, project.type) if local SQLite is stale.
   const syncEpoch = powerSync.lastSyncedAt?.getTime() ?? 0;
   useEffect(() => {
     if (!authenticated || !powerSync.ready || !syncEpoch) return;
     let cancelled = false;
     void (async () => {
       try {
-        const documentsBody = await client.requestJson<{
-          documents: ApiDocument[];
-        }>("/api/v1/documents");
-        if (!cancelled) setApiDocuments(documentsBody.documents);
+        const [documentsBody, tasksBody, inboxTasksBody, projectsBody] =
+          await Promise.all([
+            client.requestJson<{ documents: ApiDocument[] }>(
+              "/api/v1/documents",
+            ),
+            client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks"),
+            client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox"),
+            client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
+          ]);
+        if (cancelled) return;
+        setApiDocuments(documentsBody.documents);
+        setApiTasks(tasksBody.tasks);
+        setApiInboxTasks(inboxTasksBody.tasks);
+        setApiProjects(projectsBody.projects);
       } catch {
         // PowerSync remains the primary source.
       }
@@ -465,10 +480,13 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
 
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
-    const rows =
-      localProjects.data?.map((row) => snakeRow(row) as ApiProject) ??
-      apiProjects ??
-      [];
+    const rows = fillMissingTypeFromApi(
+      mergeLocalAndApiByUpdatedAt(
+        localProjects.data?.map((row) => snakeRow(row) as ApiProject),
+        apiProjects,
+      ),
+      apiProjects,
+    );
     for (const project of rows) map.set(project.id, project);
     return map;
   }, [apiProjects, localProjects.data]);
@@ -485,16 +503,27 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     return map;
   }, [apiOrganizations, localOrganizations.data]);
 
-  const rawProjects =
-    localProjects.data?.map((row) => snakeRow(row) as ApiProject) ??
-    apiProjects ??
-    [];
-  const rawTasks =
-    localTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? apiTasks ?? [];
-  const rawInboxTasks =
-    localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask) ??
-    apiInboxTasks ??
-    [];
+  const rawProjects = fillMissingTypeFromApi(
+    mergeLocalAndApiByUpdatedAt(
+      localProjects.data?.map((row) => snakeRow(row) as ApiProject),
+      apiProjects,
+    ),
+    apiProjects,
+  );
+  const rawTasks = fillMissingLinksFromApi(
+    mergeLocalAndApiByUpdatedAt(
+      localTasks.data?.map((row) => snakeRow(row) as ApiTask),
+      apiTasks,
+    ),
+    apiTasks,
+  );
+  const rawInboxTasks = fillMissingLinksFromApi(
+    mergeLocalAndApiByUpdatedAt(
+      localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask),
+      apiInboxTasks,
+    ),
+    apiInboxTasks,
+  );
   const rawLetters =
     localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ??
     apiLetters ??
@@ -626,6 +655,64 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     return `/api/v1/organizations/${encodeURIComponent(id)}`;
   }, []);
 
+  const applyApiTaskPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      const nextUpdatedAt = new Date().toISOString();
+      const patchRows = (rows: ApiTask[] | null): ApiTask[] | null => {
+        if (!rows) return rows;
+        return rows.map((row) =>
+          row.id === id
+            ? ({ ...row, ...values, updatedAt: nextUpdatedAt } as ApiTask)
+            : row,
+        );
+      };
+      setApiTasks(patchRows);
+      setApiInboxTasks(patchRows);
+    },
+    [],
+  );
+
+  const applyApiProjectPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      const nextUpdatedAt = new Date().toISOString();
+      setApiProjects((rows) => {
+        if (!rows) return rows;
+        return rows.map((row) =>
+          row.id === id
+            ? ({ ...row, ...values, updatedAt: nextUpdatedAt } as ApiProject)
+            : row,
+        );
+      });
+    },
+    [],
+  );
+
+  const softRefreshApiTasks = useCallback(async () => {
+    if (!authenticated) return;
+    try {
+      const [tasksBody, inboxTasksBody] = await Promise.all([
+        client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks"),
+        client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox"),
+      ]);
+      setApiTasks(tasksBody.tasks);
+      setApiInboxTasks(inboxTasksBody.tasks);
+    } catch {
+      // PowerSync remains the primary source.
+    }
+  }, [authenticated, client]);
+
+  const softRefreshApiProjects = useCallback(async () => {
+    if (!authenticated) return;
+    try {
+      const projectsBody = await client.requestJson<{ projects: ApiProject[] }>(
+        "/api/v1/projects",
+      );
+      setApiProjects(projectsBody.projects);
+    } catch {
+      // PowerSync remains the primary source.
+    }
+  }, [authenticated, client]);
+
   const patchViaPowerSyncOrApi = useCallback(
     async (table: string, id: string, values: Record<string, unknown>) => {
       const path = entityPatchPath(table, id);
@@ -655,6 +742,20 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
             headers: { "content-type": "application/json" },
             body: JSON.stringify(values),
           });
+          if (table === "tasks") {
+            applyApiTaskPatch(id, values);
+            // Re-fetch when links change so merge can fill local SQLite gaps.
+            if ("links" in values) {
+              void softRefreshApiTasks();
+            }
+          }
+          if (table === "projects") {
+            applyApiProjectPatch(id, values);
+            // Re-fetch when type changes so list subgroups surface correctly.
+            if ("type" in values) {
+              void softRefreshApiProjects();
+            }
+          }
         } catch {
           // Local write + upload queue remain the source of truth if REST fails.
         }
@@ -666,8 +767,30 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(values),
       });
+      if (table === "tasks") {
+        applyApiTaskPatch(id, values);
+        if ("links" in values) {
+          void softRefreshApiTasks();
+        }
+      }
+      if (table === "projects") {
+        applyApiProjectPatch(id, values);
+        if ("type" in values) {
+          void softRefreshApiProjects();
+        }
+      }
     },
-    [authenticated, client, entityPatchPath, powerSync, toSnakeFields],
+    [
+      applyApiProjectPatch,
+      applyApiTaskPatch,
+      authenticated,
+      client,
+      entityPatchPath,
+      powerSync,
+      softRefreshApiProjects,
+      softRefreshApiTasks,
+      toSnakeFields,
+    ],
   );
 
   type SoftDeletableTable =

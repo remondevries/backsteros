@@ -16,6 +16,7 @@ import {
   groupInboxItemsByAttentionStatus,
   type InboxListItem,
 } from "../inbox-items.js";
+import { isTaskStatus } from "../task-status.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
@@ -29,6 +30,8 @@ import {
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
 import { InboxSidePanelSkeleton } from "./skeletons/inbox-side-panel-skeleton.js";
+import { TaskStatusIcon } from "./task-status-icon.js";
+import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 
 export type InboxSidePanelViewProps = {
   pathname: string;
@@ -57,6 +60,13 @@ export type InboxSidePanelViewProps = {
   /** Optional trailing control next to each task title (e.g. agent busy). */
   renderTitleTrailing?: (item: InboxListItem) => ReactNode;
   emptyLabel?: string;
+  /** Hide the local "Inbox" pane header when a parent chrome breadcrumb is used. */
+  showHeader?: boolean;
+  /**
+   * Narrow rail: status icon + task id only (attention inbox focus mode).
+   * Hides section labels and interactive meta fields.
+   */
+  minimized?: boolean;
   /** Keyboard-nav highlighted row id (from useListKeyboardNavigation). */
   highlightedId?: string | null;
   /** Ref to the scrollable list container (keyboard-nav focus target). */
@@ -85,6 +95,8 @@ export function InboxSidePanelView({
   groupByAttentionStatus = false,
   renderTitleTrailing,
   emptyLabel = "Your inbox is empty.",
+  showHeader = true,
+  minimized = false,
   highlightedId = null,
   listRef,
   listContainerProps,
@@ -115,39 +127,44 @@ export function InboxSidePanelView({
         isSelected={selectedItemId === item.id}
         keyboardHighlighted={highlightedId === item.id}
         Link={Link}
-        titleTrailing={renderTitleTrailing?.(item) ?? null}
-        projectOptions={projectOptions}
-        assigneeOptions={assigneeOptions}
-        onPriorityChange={onPriorityChange}
-        onDueDateChange={onDueDateChange}
-        onProjectChange={onProjectChange}
-        onAssigneeChange={onAssigneeChange}
+        minimized={minimized}
+        titleTrailing={minimized ? null : renderTitleTrailing?.(item) ?? null}
+        projectOptions={minimized ? undefined : projectOptions}
+        assigneeOptions={minimized ? undefined : assigneeOptions}
+        onPriorityChange={minimized ? undefined : onPriorityChange}
+        onDueDateChange={minimized ? undefined : onDueDateChange}
+        onProjectChange={minimized ? undefined : onProjectChange}
+        onAssigneeChange={minimized ? undefined : onAssigneeChange}
       />
     );
   }
 
   return (
-    <div className="app-content-side-panel">
-      <ContentSidePanelHeader
-        title="Inbox"
-        actions={
-          onCreateTask ? (
-            <button
-              type="button"
-              className="app-side-panel-section-action"
-              aria-label="Add inbox task"
-              onClick={() => {
-                setCreateError(null);
-                setComposing(true);
-              }}
-            >
-              <SidePanelPlusIcon />
-            </button>
-          ) : undefined
-        }
-      />
+    <div
+      className={`app-content-side-panel${minimized ? " is-minimized" : ""}`}
+    >
+      {showHeader ? (
+        <ContentSidePanelHeader
+          title="Inbox"
+          actions={
+            onCreateTask && !minimized ? (
+              <button
+                type="button"
+                className="app-side-panel-section-action"
+                aria-label="Add inbox task"
+                onClick={() => {
+                  setCreateError(null);
+                  setComposing(true);
+                }}
+              >
+                <SidePanelPlusIcon />
+              </button>
+            ) : undefined
+          }
+        />
+      ) : null}
       <div className="app-content-side-panel-main">
-        {composing && onCreateTask ? (
+        {composing && onCreateTask && !minimized ? (
           <div className="app-content-side-panel-inline">
             <AddInboxTaskInline
               disabled={creating}
@@ -191,11 +208,29 @@ export function InboxSidePanelView({
             {attentionGroups
               ? attentionGroups.map((group) => (
                   <Fragment key={group.status}>
-                    <li className="side-panel-plain-group-header">
-                      <span className="side-panel-plain-group-label">
-                        {group.label}
-                      </span>
-                    </li>
+                    {minimized ? (
+                      <li
+                        className="side-panel-plain-group-header side-panel-plain-group-header--minimized"
+                        title={group.label}
+                      >
+                        {isTaskStatus(group.status) ? (
+                          <TaskStatusIcon
+                            status={group.status}
+                            size={14}
+                            title={group.label}
+                          />
+                        ) : (
+                          <InboxItemTypeIcon kind="letter" />
+                        )}
+                        <span className="sr-only">{group.label}</span>
+                      </li>
+                    ) : (
+                      <li className="side-panel-plain-group-header">
+                        <span className="side-panel-plain-group-label">
+                          {group.label}
+                        </span>
+                      </li>
+                    )}
                     {group.items.map((item) => renderRow(item))}
                   </Fragment>
                 ))

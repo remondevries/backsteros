@@ -120,6 +120,8 @@ type ListKeyboardNavigationContextValue = {
     zone: ListKeyboardNavZone,
     options?: ApplyListKeyboardNavZoneOptions,
   ) => void;
+  /** Drop all list keyboard highlights (e.g. focus moved to the terminal). */
+  clearHighlights: () => void;
   activeZone: ListKeyboardNavZone | null;
 };
 
@@ -133,6 +135,7 @@ const ListKeyboardNavigationContext =
 const noopListKeyboardNavigationContext: ListKeyboardNavigationContextValue = {
   register: () => () => {},
   setActiveZone: () => {},
+  clearHighlights: () => {},
   activeZone: null,
 };
 
@@ -263,6 +266,14 @@ function syncActiveZoneToAvailableRegistrations(
     zone: ListKeyboardNavZone,
     options?: ApplyListKeyboardNavZoneOptions,
   ) => void,
+  options?: {
+    /**
+     * When false, only retarget the active zone — do not focus/highlight a row.
+     * Used when a list unmounts (e.g. project task → terminal) so j/k does not
+     * steal focus from the terminal by activating the projects rail.
+     */
+    activate?: boolean;
+  },
 ): void {
   const available = getAvailableKeyboardNavZones(registrations);
   const zone = resolveActiveListKeyboardNavZone(preferredZone, available);
@@ -270,12 +281,11 @@ function syncActiveZoneToAvailableRegistrations(
     return;
   }
 
-  applyActiveZone(zone, { preferSidepanelForJk: zone === "sidepanel" });
-
-  const registration = pickBestRegistrationInZone(registrations, zone);
-  if (registration) {
-    activateListKeyboardRegistration(registrations, registration);
-  }
+  const shouldActivate = options?.activate !== false;
+  applyActiveZone(zone, {
+    preferSidepanelForJk: shouldActivate && zone === "sidepanel",
+    activate: shouldActivate,
+  });
 }
 
 function clearHighlightsExceptZone(
@@ -310,13 +320,15 @@ function clearAllListKeyboardHighlights(
 function activateListKeyboardRegistration(
   registrations: ListKeyboardNavigationRegistration[],
   registration: ListKeyboardNavigationRegistration,
+  highlightItemId?: string | null,
 ): void {
   clearHighlightsExceptZone(registrations, registration.zone);
-  focusListKeyboardRegistration(registration);
+  focusListKeyboardRegistration(registration, highlightItemId);
 }
 
 function focusListKeyboardRegistration(
   registration: ListKeyboardNavigationRegistration,
+  preferredItemId?: string | null,
 ): void {
   const container = registration.containerRef.current;
   if (!container) {
@@ -325,8 +337,17 @@ function focusListKeyboardRegistration(
 
   const itemIds = registration.getItemIds();
   const selectedId = registration.getSelectedId();
+  const preferred =
+    preferredItemId && itemIds.includes(preferredItemId)
+      ? preferredItemId
+      : null;
   const anchorId =
-    selectedId && itemIds.includes(selectedId) ? selectedId : itemIds[0] ?? null;
+    preferred ??
+    (selectedId && itemIds.includes(selectedId) ? selectedId : null) ??
+    itemIds[0] ??
+    null;
+
+  suppressKeyboardNavHover();
 
   if (anchorId) {
     registration.setHighlightedId(anchorId);
@@ -360,14 +381,21 @@ function scrollHighlightedItem(
 export function ListKeyboardNavigationProvider({
   children,
   pathname,
+  /**
+   * When true (default), Escape from main/content activates the side panel.
+   * Agent console keeps Escape in the content column — use G then P for projects.
+   */
+  escapeReturnsToSidepanel = true,
 }: {
   children: ReactNode;
   pathname: string;
+  escapeReturnsToSidepanel?: boolean;
 }) {
   const registrationsRef = useRef<ListKeyboardNavigationRegistration[]>([]);
   const activeZoneRef = useRef<ListKeyboardNavZone | null>(null);
   const preferSidepanelForJkRef = useRef(false);
   const pendingActivateZoneRef = useRef<ListKeyboardNavZone | null>(null);
+  const pendingActivateHighlightItemIdRef = useRef<string | null>(null);
   const [activeZone, setActiveZoneState] = useState<ListKeyboardNavZone | null>(
     null,
   );
@@ -388,19 +416,31 @@ export function ListKeyboardNavigationProvider({
         );
         if (registration) {
           pendingActivateZoneRef.current = null;
+          pendingActivateHighlightItemIdRef.current = null;
           activateListKeyboardRegistration(
             registrationsRef.current,
             registration,
+            options.highlightItemId,
           );
         } else {
           pendingActivateZoneRef.current = zone;
+          pendingActivateHighlightItemIdRef.current =
+            options.highlightItemId ?? null;
         }
       } else {
         pendingActivateZoneRef.current = null;
+        pendingActivateHighlightItemIdRef.current = null;
       }
     },
     [],
   );
+
+  const clearHighlights = useCallback(() => {
+    pendingActivateZoneRef.current = null;
+    pendingActivateHighlightItemIdRef.current = null;
+    preferSidepanelForJkRef.current = false;
+    clearAllListKeyboardHighlights(registrationsRef.current);
+  }, []);
 
   useEffect(() => {
     const preferredZone = getDefaultListKeyboardNavZone(pathname);
@@ -486,7 +526,10 @@ export function ListKeyboardNavigationProvider({
           pendingZone &&
           zoneHasNavigableItems(registrationsRef.current, pendingZone)
         ) {
+          const pendingHighlightItemId =
+            pendingActivateHighlightItemIdRef.current;
           pendingActivateZoneRef.current = null;
+          pendingActivateHighlightItemIdRef.current = null;
           const pendingRegistration = pickBestRegistrationInZone(
             registrationsRef.current,
             pendingZone,
@@ -495,6 +538,7 @@ export function ListKeyboardNavigationProvider({
             activateListKeyboardRegistration(
               registrationsRef.current,
               pendingRegistration,
+              pendingHighlightItemId,
             );
           }
           return;
@@ -502,10 +546,13 @@ export function ListKeyboardNavigationProvider({
 
         const zone = activeZoneRef.current;
         if (zone && !zoneHasNavigableItems(registrationsRef.current, zone)) {
+          // List went empty/hidden — retarget zone only; do not focus a row
+          // (would steal from terminal when a project task opens).
           syncActiveZoneToAvailableRegistrations(
             registrationsRef.current,
             zone,
             applyActiveZone,
+            { activate: false },
           );
         }
       });
@@ -522,6 +569,7 @@ export function ListKeyboardNavigationProvider({
               registrationsRef.current,
               zone,
               applyActiveZone,
+              { activate: false },
             );
           }
         });
@@ -530,15 +578,24 @@ export function ListKeyboardNavigationProvider({
     [applyActiveZone],
   );
 
+  const escapeReturnsToSidepanelRef = useRef(escapeReturnsToSidepanel);
+  escapeReturnsToSidepanelRef.current = escapeReturnsToSidepanel;
+
   return (
     <ListKeyboardNavigationContext.Provider
-      value={{ register, setActiveZone: applyActiveZone, activeZone }}
+      value={{
+        register,
+        setActiveZone: applyActiveZone,
+        clearHighlights,
+        activeZone,
+      }}
     >
       <ListKeyboardNavigationGlobalListener
         registrationsRef={registrationsRef}
         activeZoneRef={activeZoneRef}
         preferSidepanelForJkRef={preferSidepanelForJkRef}
         pathnameRef={pathnameRef}
+        escapeReturnsToSidepanelRef={escapeReturnsToSidepanelRef}
         applyActiveZone={applyActiveZone}
       />
       {children}
@@ -551,12 +608,14 @@ function ListKeyboardNavigationGlobalListener({
   activeZoneRef,
   preferSidepanelForJkRef,
   pathnameRef,
+  escapeReturnsToSidepanelRef,
   applyActiveZone,
 }: {
   registrationsRef: RefObject<ListKeyboardNavigationRegistration[]>;
   activeZoneRef: RefObject<ListKeyboardNavZone | null>;
   preferSidepanelForJkRef: RefObject<boolean>;
   pathnameRef: RefObject<string>;
+  escapeReturnsToSidepanelRef: RefObject<boolean>;
   applyActiveZone: (
     zone: ListKeyboardNavZone,
     options?: ApplyListKeyboardNavZoneOptions,
@@ -570,7 +629,10 @@ function ListKeyboardNavigationGlobalListener({
         return;
       }
 
-      if (shouldHandleListKeyboardEscape(event, commandPaletteOpen)) {
+      if (
+        escapeReturnsToSidepanelRef.current &&
+        shouldHandleListKeyboardEscape(event, commandPaletteOpen)
+      ) {
         const currentZone = activeZoneRef.current;
         if (currentZone === "main" || currentZone === "content") {
           const sidepanel = pickBestRegistrationInZone(
@@ -708,6 +770,10 @@ function ListKeyboardNavigationGlobalListener({
           }
 
           if (nextItemId === highlightedId && anchorId === highlightedId) {
+            // Side effects (e.g. tree expand/collapse) may already have run in
+            // resolveNextItemId — still consume the key.
+            event.preventDefault();
+            event.stopPropagation();
             return;
           }
 
@@ -771,6 +837,7 @@ function ListKeyboardNavigationGlobalListener({
     activeZoneRef,
     applyActiveZone,
     commandPaletteOpen,
+    escapeReturnsToSidepanelRef,
     pathnameRef,
     preferSidepanelForJkRef,
     registrationsRef,
@@ -821,8 +888,17 @@ export function useListKeyboardNavigation({
 
   const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
   if (selectedId !== prevSelectedId) {
+    const previous = prevSelectedId;
     setPrevSelectedId(selectedId);
-    if (manualHighlight !== null) {
+    if (
+      selectedId == null &&
+      previous != null &&
+      itemIds.includes(previous)
+    ) {
+      // Escape / clear selection — keep j/k anchored on the row that was open
+      // instead of falling through to the top of the list.
+      setManualHighlight(previous);
+    } else if (manualHighlight !== null) {
       setManualHighlight(null);
     }
   }
@@ -881,11 +957,13 @@ export function useListKeyboardNavigationZone(): {
     zone: ListKeyboardNavZone,
     options?: ApplyListKeyboardNavZoneOptions,
   ) => void;
+  clearHighlights: () => void;
 } {
   const context = useListKeyboardNavigationContext();
   return {
     activeZone: context.activeZone,
     setActiveZone: context.setActiveZone,
+    clearHighlights: context.clearHighlights,
   };
 }
 

@@ -19,5 +19,9 @@
       "https://github.com/**"
     ]
   },
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "opener:default"
+  ]
 }

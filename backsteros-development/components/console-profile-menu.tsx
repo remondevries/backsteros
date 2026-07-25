@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  ProfileLogoIcon,
   SidebarAccountIcon,
   SidebarChevronIcon,
   SidebarLogoutIcon,
   SidebarSettingsIcon,
   SETTINGS_SHORTCUT_HINT,
 } from "@backsteros/ui";
+import { DevelopmentAdeLogoIcon } from "@/components/development-ade-logo-icon";
 import { useClerk, useUser } from "@clerk/nextjs";
 import {
   useEffect,
@@ -98,11 +98,14 @@ export function ConsoleProfileMenu({
           onClick={() => setMenuOpen((open) => !open)}
         >
           <span className="app-side-panel-profile-logo" aria-hidden="true">
-            <ProfileLogoIcon className="app-side-panel-profile-logo-mark" />
+            <DevelopmentAdeLogoIcon className="app-side-panel-profile-logo-mark" />
           </span>
           {!collapsed ? (
             <>
-              <span className="app-side-panel-profile-name">{displayName}</span>
+              <span className="app-side-panel-profile-name console-brand-name">
+                <span className="console-brand-name-thin">Development</span>
+                <span className="console-brand-name-bold">ADE</span>
+              </span>
               <SidebarChevronIcon
                 className="app-side-panel-profile-trigger-chevron"
                 pointing="down"

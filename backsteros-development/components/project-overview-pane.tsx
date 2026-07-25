@@ -20,6 +20,7 @@ import {
   ProjectOverviewIcon,
   PropertyDropdown,
   SegmentedPillToggle,
+  TasksNavIcon,
   buildOrganizationDropdownOptions,
   keyboardNavItemProps,
   keyboardNavListItemClass,
@@ -36,11 +37,15 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { GithubCommitIcon } from "@/components/github-commit-icon";
 import { GithubPullRequestIcon } from "@/components/github-pull-request-icon";
 import { ProjectsSidePanelIcon } from "@/components/panel-icons";
+import { ProjectWorkingDirectoryTree } from "@/components/project-working-directory-tree";
+import { TerminalDirectoryGate } from "@/components/terminal-directory-gate";
+import type { SelectProjectFileHandler } from "@/lib/project-file-tabs";
 import {
   apiErrorMessage,
   useApiResource,
   useConsoleApi,
 } from "@/lib/api-context";
+import type { GithubListTab } from "@/lib/console-path";
 import {
   getCachedBranches,
   getCachedCommits,
@@ -58,12 +63,35 @@ import { normalizeWorkingDirectory } from "@/lib/project-workspace";
 
 const NONE_REPO_VALUE = "__none__";
 
-type GithubListTab = "commits" | "pulls";
-
-const GITHUB_LIST_TAB_OPTIONS = [
+const CODEBASE_LIST_TAB_OPTIONS = [
+  { value: "tasks" as const, label: "Tasks" },
+  { value: "files" as const, label: "Files" },
   { value: "commits" as const, label: "Commits" },
   { value: "pulls" as const, label: "PRs" },
 ];
+
+const TASKS_ONLY_TAB_OPTIONS = [
+  { value: "tasks" as const, label: "Tasks" },
+];
+
+const GITHUB_LIST_TAB_ICONS: Record<
+  Exclude<GithubListTab, "tasks" | "files">,
+  string
+> = {
+  commits: "git-commit",
+  pulls: "git-pull-request",
+};
+
+function ProjectListTabIcon({ tab }: { tab: GithubListTab }) {
+  if (tab === "tasks") {
+    return <TasksNavIcon className="project-github-list-toggle__tasks-icon" />;
+  }
+  if (tab === "files") {
+    // Same folder mark as compose / documents on web + desktop.
+    return <ComposeFolderIcon className="project-github-list-toggle__folder-icon" />;
+  }
+  return <ProjectOcticon icon={GITHUB_LIST_TAB_ICONS[tab]} size={14} />;
+}
 
 function pullRequestStateLabel(
   state: GithubPullRequestState,
@@ -216,6 +244,13 @@ function ProjectCommitHistory({
   onSelectCommit,
   selectedPullNumber,
   onSelectPullRequest,
+  selectedFilePath,
+  onSelectFile,
+  onFileEntryDeleted,
+  fileTreeRefreshToken = 0,
+  minimized = false,
+  showTabs = true,
+  pullDetailEngaged = false,
 }: {
   project: ApiProject;
   onProjectUpdated: (project: ApiProject) => void;
@@ -227,7 +262,18 @@ function ProjectCommitHistory({
   onSelectPullRequest?: (
     pullRequest: GithubPullRequest,
     repository: string,
+    options?: { engageHotkeys?: boolean },
   ) => void;
+  selectedFilePath?: string | null;
+  onSelectFile?: SelectProjectFileHandler;
+  onFileEntryDeleted?: (path: string) => void;
+  fileTreeRefreshToken?: number;
+  /** Narrow ⇧[ rail: icon stack / compact rows. */
+  minimized?: boolean;
+  /** When false, host renders the Files/Commits/PRs toggle. */
+  showTabs?: boolean;
+  /** True while PR detail owns keyboard (Enter/Space) — hide list orange ring. */
+  pullDetailEngaged?: boolean;
 }) {
   const { client } = useConsoleApi();
   const [repoSaving, setRepoSaving] = useState(false);
@@ -665,17 +711,19 @@ function ProjectCommitHistory({
   const githubListContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_CONTENT,
   );
-  const githubItemIds = useMemo(
-    () =>
-      listTab === "commits"
-        ? commits.map((commit) => commit.sha)
-        : pullRequests.map((pull) => String(pull.number)),
-    [commits, listTab, pullRequests],
-  );
+  const githubItemIds = useMemo(() => {
+    if (listTab === "commits") {
+      return commits.map((commit) => commit.sha);
+    }
+    if (listTab === "pulls") {
+      return pullRequests.map((pull) => String(pull.number));
+    }
+    return [];
+  }, [commits, listTab, pullRequests]);
   const githubSelectedId =
     listTab === "commits"
       ? (selectedCommitSha ?? null)
-      : selectedPullNumber != null
+      : listTab === "pulls" && selectedPullNumber != null
         ? String(selectedPullNumber)
         : null;
   const navigateGithubItem = useCallback(
@@ -689,7 +737,11 @@ function ProjectCommitHistory({
       const pull = pullRequests.find(
         (entry) => String(entry.number) === itemId,
       );
-      if (pull) onSelectPullRequest?.(pull, project.githubRepository);
+      if (pull) {
+        onSelectPullRequest?.(pull, project.githubRepository, {
+          engageHotkeys: true,
+        });
+      }
     },
     [
       commits,
@@ -700,99 +752,319 @@ function ProjectCommitHistory({
       pullRequests,
     ],
   );
+  const { activeZone, setActiveZone, clearHighlights } =
+    useListKeyboardNavigationZone();
+  // Register whenever commits/PRs are visible — do not require content zone
+  // first (that chicken-and-egg left j/k on the projects rail after 2 / 3).
+  // Registration alone does not steal focus; 1 / 2 / 3 (or the effect below)
+  // activate the content zone.
+  // While a PR detail is engaged, drop list j/k + orange ring so focus reads
+  // as inside the PR (Escape restores the list).
+  const githubKeyboardEnabled =
+    Boolean(project.githubRepository) &&
+    (listTab === "commits" || listTab === "pulls") &&
+    githubItemIds.length > 0 &&
+    !(listTab === "pulls" && pullDetailEngaged);
   const { highlightedId: githubHighlightedId } = useListKeyboardNavigation({
     containerRef: githubListRef,
     itemIds: githubItemIds,
     selectedId: githubSelectedId,
     onNavigate: navigateGithubItem,
     zone: LIST_KEYBOARD_NAV_ZONE_CONTENT,
-    enabled: Boolean(project.githubRepository) && githubItemIds.length > 0,
+    enabled: githubKeyboardEnabled,
   });
-  const { setActiveZone } = useListKeyboardNavigationZone();
+
+  // Enter/Space into a PR — clear list highlight/focus immediately.
+  useEffect(() => {
+    if (!pullDetailEngaged || listTab !== "pulls") return;
+    clearHighlights();
+    const root = githubListRef.current;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && root?.contains(active)) {
+      active.blur();
+    }
+  }, [clearHighlights, listTab, pullDetailEngaged]);
   const previousGithubListTabRef = useRef(listTab);
+  /** Auto-open first row only when entering Commits/PRs — not after Escape clears. */
+  const autoSelectOnTabRef = useRef<"commits" | "pulls" | null>(
+    listTab === "commits" || listTab === "pulls" ? listTab : null,
+  );
   useEffect(() => {
     const tabChanged = previousGithubListTabRef.current !== listTab;
     previousGithubListTabRef.current = listTab;
-    if (!tabChanged || githubItemIds.length === 0) return;
-    setActiveZone("content", { activate: true });
-  }, [githubItemIds.length, listTab, setActiveZone]);
+
+    if (tabChanged) {
+      autoSelectOnTabRef.current =
+        listTab === "commits" || listTab === "pulls" ? listTab : null;
+    }
+
+    if (listTab === "files") {
+      // Pill / 2 — move j/k onto the files tree (not the projects rail).
+      if (tabChanged) {
+        setActiveZone("content", { activate: true });
+      }
+      return;
+    }
+
+    if (listTab === "tasks" || githubItemIds.length === 0) return;
+
+    // 3 / 4 or commits/PRs pill — activate once the list has rows.
+    if (tabChanged) {
+      setActiveZone("content", { activate: true });
+      return;
+    }
+
+    // After a tab switch, list unregister can briefly leave the projects rail
+    // active; pull j/k back to content when items are ready. Do not steal from
+    // main (task list) after Enter on a project.
+    if (activeZone === "sidepanel") {
+      setActiveZone("content", { activate: true });
+    }
+  }, [activeZone, githubItemIds.length, listTab, setActiveZone]);
+
+  useEffect(() => {
+    if (autoSelectOnTabRef.current !== "commits") return;
+    if (listTab !== "commits") return;
+    if (!project.githubRepository || commits.length === 0) return;
+    if (selectedCommitSha) {
+      autoSelectOnTabRef.current = null;
+      // Selection change clears list highlight — re-activate content for j/k
+      // on the open commit (not the first row).
+      const sha = selectedCommitSha;
+      requestAnimationFrame(() => {
+        setActiveZone("content", {
+          activate: true,
+          highlightItemId: sha,
+        });
+      });
+      return;
+    }
+    const first = commits[0];
+    if (!first) return;
+    // Keep pending until selection sticks (URL sync used to wipe it once).
+    onSelectCommit?.(first, project.githubRepository);
+  }, [
+    commits,
+    listTab,
+    onSelectCommit,
+    project.githubRepository,
+    selectedCommitSha,
+    setActiveZone,
+  ]);
+
+  useEffect(() => {
+    if (autoSelectOnTabRef.current !== "pulls") return;
+    if (listTab !== "pulls") return;
+    if (!project.githubRepository || pullRequests.length === 0) return;
+    if (selectedPullNumber != null) {
+      autoSelectOnTabRef.current = null;
+      const pullId = String(selectedPullNumber);
+      requestAnimationFrame(() => {
+        setActiveZone("content", {
+          activate: true,
+          highlightItemId: pullId,
+        });
+      });
+      return;
+    }
+    const first = pullRequests[0];
+    if (!first) return;
+    onSelectPullRequest?.(first, project.githubRepository, {
+      engageHotkeys: false,
+    });
+  }, [
+    listTab,
+    onSelectPullRequest,
+    project.githubRepository,
+    pullRequests,
+    selectedPullNumber,
+    setActiveZone,
+  ]);
+
+  // Escape / explicit clear while staying on the tab — do not auto-reopen.
+  const previousSelectedCommitShaRef = useRef(selectedCommitSha);
+  const previousSelectedPullNumberRef = useRef(selectedPullNumber);
+  useEffect(() => {
+    if (
+      listTab === "commits" &&
+      previousSelectedCommitShaRef.current &&
+      !selectedCommitSha
+    ) {
+      autoSelectOnTabRef.current = null;
+    }
+    if (
+      listTab === "pulls" &&
+      previousSelectedPullNumberRef.current != null &&
+      selectedPullNumber == null
+    ) {
+      autoSelectOnTabRef.current = null;
+    }
+    previousSelectedCommitShaRef.current = selectedCommitSha;
+    previousSelectedPullNumberRef.current = selectedPullNumber;
+  }, [listTab, selectedCommitSha, selectedPullNumber]);
 
   return (
-    <div className="project-panel-repositories">
-      <div className="console-github-pane-toolbar project-details-github-toolbar">
-        <div className="project-github-repo-chip">
-          <PropertyDropdown
-            ariaLabel="GitHub repository"
-            value={project.githubRepository ?? NONE_REPO_VALUE}
-            options={repositoryOptions}
-            disabled={repoSaving || showRepositoriesLoading}
-            searchPlaceholder="Search repositories…"
-            panelWidth={320}
-            panelAlign="start"
-            triggerVariant="inlineChip"
-            fallbackIcon={<ProjectOcticon icon="mark-github" size={14} />}
-            fallbackLabel="Select repository…"
-            mutedFallback
-            mutedSelected={!project.githubRepository}
-            onChange={(value) => {
-              void saveGithubRepository(
-                value === NONE_REPO_VALUE ? null : value,
-              );
-            }}
-          />
-        </div>
-        {project.githubRepository ? (
-          <div className="project-github-branch-chip">
+    <div
+      className={
+        showTabs || minimized
+          ? `project-panel-repositories${minimized ? " is-minimized" : ""}`
+          : "project-panel-list-body"
+      }
+    >
+      {!minimized ? (
+        <div className="console-github-pane-toolbar project-details-github-toolbar">
+          <div className="project-github-repo-chip">
             <PropertyDropdown
-              ariaLabel="Git branch"
-              value={selectedBranch}
-              options={branchOptions}
-              disabled={showBranchesLoading || branchOptions.length === 0}
-              searchPlaceholder="Search branches…"
-              panelWidth={260}
+              ariaLabel="GitHub repository"
+              value={project.githubRepository ?? NONE_REPO_VALUE}
+              options={repositoryOptions}
+              disabled={repoSaving || showRepositoriesLoading}
+              searchPlaceholder="Search repositories…"
+              panelWidth={320}
               panelAlign="start"
               triggerVariant="inlineChip"
-              fallbackIcon={<ProjectOcticon icon="git-branch" size={14} />}
-              fallbackLabel="Select branch…"
+              fallbackIcon={<ProjectOcticon icon="mark-github" size={14} />}
+              fallbackLabel="Select repository…"
               mutedFallback
+              mutedSelected={!project.githubRepository}
               onChange={(value) => {
-                setSelectedBranch(value);
-                setCachedSelectedBranch(
-                  project.id,
-                  project.githubRepository,
-                  value,
+                void saveGithubRepository(
+                  value === NONE_REPO_VALUE ? null : value,
                 );
-                loadedCommitsKeyRef.current = null;
               }}
             />
           </div>
-        ) : null}
-      </div>
-      {repositoriesError ? (
+          {project.githubRepository ? (
+            <div className="project-github-branch-chip">
+              <PropertyDropdown
+                ariaLabel="Git branch"
+                value={selectedBranch}
+                options={branchOptions}
+                disabled={showBranchesLoading || branchOptions.length === 0}
+                searchPlaceholder="Search branches…"
+                panelWidth={260}
+                panelAlign="start"
+                triggerVariant="inlineChip"
+                fallbackIcon={<ProjectOcticon icon="git-branch" size={14} />}
+                fallbackLabel="Select branch…"
+                mutedFallback
+                onChange={(value) => {
+                  setSelectedBranch(value);
+                  setCachedSelectedBranch(
+                    project.id,
+                    project.githubRepository,
+                    value,
+                  );
+                  loadedCommitsKeyRef.current = null;
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {!minimized && repositoriesError ? (
         <p className="console-github-pane-error" role="alert">
           {apiErrorMessage(repositoriesError)}
         </p>
       ) : null}
-      {repoError ? (
+      {!minimized && repoError ? (
         <p className="console-github-pane-error" role="alert">
           {repoError}
         </p>
       ) : null}
 
-      {project.githubRepository ? (
-        <>
-          <div className="project-github-list-toggle">
-            <SegmentedPillToggle
-              value={listTab}
-              options={GITHUB_LIST_TAB_OPTIONS}
-              onChange={(value) => {
-                onGithubListTabChange?.(value);
-              }}
-              ariaLabel="Repository list"
-            />
-          </div>
+      {showTabs && minimized ? (
+        <div
+          className="project-github-list-toggle project-github-list-toggle--vertical"
+          role="tablist"
+          aria-label="Project lists"
+        >
+          {CODEBASE_LIST_TAB_OPTIONS.map((option) => {
+            const active = listTab === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`project-github-list-toggle__btn${
+                  active ? " is-active" : ""
+                }`}
+                title={option.label}
+                onClick={() => {
+                  onGithubListTabChange?.(option.value);
+                }}
+              >
+                <span className="project-github-list-toggle__icon" aria-hidden="true">
+                  <ProjectListTabIcon tab={option.value} />
+                </span>
+                <span className="project-github-list-toggle__label">
+                  {option.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
-          {branchesError ? (
+      {showTabs && !minimized ? (
+        <div className="project-github-list-toggle">
+          <SegmentedPillToggle
+            value={listTab}
+            options={CODEBASE_LIST_TAB_OPTIONS}
+            onChange={(value) => {
+              onGithubListTabChange?.(value);
+            }}
+            ariaLabel="Project lists"
+          />
+        </div>
+      ) : null}
+
+      {listTab === "files" && !minimized ? (
+        <div className="console-fs-tree-pane">
+          {normalizeWorkingDirectory(project.localWorkingDirectory) ? (
+            <ProjectWorkingDirectoryTree
+              workingDirectory={normalizeWorkingDirectory(
+                project.localWorkingDirectory,
+              )}
+              selectedPath={selectedFilePath}
+              onSelectFile={onSelectFile}
+              onEntryDeleted={onFileEntryDeleted}
+              refreshToken={fileTreeRefreshToken}
+            />
+          ) : (
+            <TerminalDirectoryGate
+              compact
+              showHeader={false}
+              message="Files are unavailable until a working directory is defined for this project."
+              onSelectDirectory={async (directory) => {
+                const updated = await client.requestJson<ApiProject>(
+                  `/api/v1/projects/${encodeURIComponent(project.id)}`,
+                  {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ localWorkingDirectory: directory }),
+                  },
+                );
+                onProjectUpdated(updated);
+              }}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {!project.githubRepository &&
+      (listTab === "commits" || listTab === "pulls") &&
+      !minimized ? (
+        <p className="console-github-pane-status">
+          Link a GitHub repository to browse commits and pull requests.
+        </p>
+      ) : null}
+
+      {project.githubRepository &&
+      (listTab === "commits" || listTab === "pulls") ? (
+        <>
+          {!minimized && branchesError ? (
             <p className="console-github-pane-error" role="alert">
               {apiErrorMessage(branchesError)}
             </p>
@@ -800,17 +1072,18 @@ function ProjectCommitHistory({
 
           {listTab === "commits" ? (
             <>
-              {commitsError ? (
+              {!minimized && commitsError ? (
                 <p className="console-github-pane-error" role="alert">
                   {commitsError}
                 </p>
               ) : null}
 
-              {commitsLoading && commits.length === 0 ? (
+              {!minimized && commitsLoading && commits.length === 0 ? (
                 <p className="console-github-pane-status">Loading commits…</p>
               ) : null}
 
-              {!commitsLoading &&
+              {!minimized &&
+              !commitsLoading &&
               !commitsError &&
               commits.length === 0 &&
               selectedBranch ? (
@@ -826,10 +1099,11 @@ function ProjectCommitHistory({
                   {...githubListContainerProps}
                 >
                   {commits.map((commit) => (
-                    <li key={commit.sha} {...keyboardNavItemProps(commit.sha)}>
+                    <li key={commit.sha}>
                       <div
                         role="button"
                         tabIndex={0}
+                        {...keyboardNavItemProps(commit.sha)}
                         className={[
                           "console-github-commit",
                           keyboardNavListItemClass(
@@ -841,6 +1115,9 @@ function ProjectCommitHistory({
                         ]
                           .filter(Boolean)
                           .join(" ")}
+                        aria-label={`${commitSubject(commit.message)} · ${
+                          formatRelativeAge(commit.authoredAt) || "unknown age"
+                        }`}
                         onClick={() => {
                           if (!project.githubRepository) return;
                           onSelectCommit?.(commit, project.githubRepository);
@@ -854,19 +1131,21 @@ function ProjectCommitHistory({
                           onSelectCommit?.(commit, project.githubRepository);
                         }}
                       >
-                        <div className="console-github-commit-body">
-                          <div className="console-github-commit-message">
-                            {commitSubject(commit.message)}
+                        {!minimized ? (
+                          <div className="console-github-commit-body">
+                            <div className="console-github-commit-message">
+                              {commitSubject(commit.message)}
+                            </div>
+                            <div className="console-github-commit-meta">
+                              {[
+                                commit.shortSha,
+                                commit.authorLogin || commit.authorName,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
                           </div>
-                          <div className="console-github-commit-meta">
-                            {[
-                              commit.shortSha,
-                              commit.authorLogin || commit.authorName,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </div>
-                        </div>
+                        ) : null}
                         <div className="console-github-commit-trailing">
                           <span
                             className="console-github-commit-icon"
@@ -884,7 +1163,7 @@ function ProjectCommitHistory({
                 </ul>
               ) : null}
 
-              {commitsHasMore && selectedBranch ? (
+              {!minimized && commitsHasMore && selectedBranch ? (
                 <div className="console-github-pane-more">
                   <button
                     type="button"
@@ -905,19 +1184,20 @@ function ProjectCommitHistory({
             </>
           ) : (
             <>
-              {pullsError ? (
+              {!minimized && pullsError ? (
                 <p className="console-github-pane-error" role="alert">
                   {pullsError}
                 </p>
               ) : null}
 
-              {pullsLoading && pullRequests.length === 0 ? (
+              {!minimized && pullsLoading && pullRequests.length === 0 ? (
                 <p className="console-github-pane-status">
                   Loading pull requests…
                 </p>
               ) : null}
 
-              {!pullsLoading &&
+              {!minimized &&
+              !pullsLoading &&
               !pullsError &&
               pullRequests.length === 0 ? (
                 <p className="console-github-pane-status">
@@ -932,32 +1212,34 @@ function ProjectCommitHistory({
                   {...githubListContainerProps}
                 >
                   {pullRequests.map((pull) => (
-                    <li
-                      key={pull.number}
-                      {...keyboardNavItemProps(String(pull.number))}
-                    >
+                    <li key={pull.number}>
                       <div
                         role="button"
                         tabIndex={0}
+                        {...keyboardNavItemProps(String(pull.number))}
                         className={[
                           "console-github-commit",
                           "console-github-pull",
                           keyboardNavListItemClass(
-                            githubHighlightedId === String(pull.number),
+                            !pullDetailEngaged &&
+                              githubHighlightedId === String(pull.number),
                           ),
                           `is-${pull.state}`,
                           pull.draft ? "is-draft" : null,
-                          selectedPullNumber === pull.number
+                          selectedPullNumber === pull.number &&
+                          !pullDetailEngaged
                             ? "is-selected"
                             : null,
                         ]
                           .filter(Boolean)
                           .join(" ")}
+                        aria-label={`#${pull.number}: ${pull.title}`}
                         onClick={() => {
                           if (!project.githubRepository) return;
                           onSelectPullRequest?.(
                             pull,
                             project.githubRepository,
+                            { engageHotkeys: true },
                           );
                         }}
                         onKeyDown={(event) => {
@@ -969,23 +1251,26 @@ function ProjectCommitHistory({
                           onSelectPullRequest?.(
                             pull,
                             project.githubRepository,
+                            { engageHotkeys: true },
                           );
                         }}
                       >
-                        <div className="console-github-commit-body">
-                          <div className="console-github-commit-message">
-                            {pull.title}
+                        {!minimized ? (
+                          <div className="console-github-commit-body">
+                            <div className="console-github-commit-message">
+                              {pull.title}
+                            </div>
+                            <div className="console-github-commit-meta">
+                              {[
+                                `#${pull.number}`,
+                                pullRequestStateLabel(pull.state, pull.draft),
+                                pull.authorLogin,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
                           </div>
-                          <div className="console-github-commit-meta">
-                            {[
-                              `#${pull.number}`,
-                              pullRequestStateLabel(pull.state, pull.draft),
-                              pull.authorLogin,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </div>
-                        </div>
+                        ) : null}
                         <div className="console-github-commit-trailing">
                           <span
                             className="console-github-pull-icon"
@@ -993,9 +1278,15 @@ function ProjectCommitHistory({
                           >
                             <GithubPullRequestIcon size={14} />
                           </span>
-                          <span className="console-github-commit-age">
-                            {formatRelativeAge(pull.updatedAt) || "—"}
-                          </span>
+                          {minimized ? (
+                            <span className="console-github-pull-number">
+                              #{pull.number}
+                            </span>
+                          ) : (
+                            <span className="console-github-commit-age">
+                              {formatRelativeAge(pull.updatedAt) || "—"}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </li>
@@ -1003,7 +1294,7 @@ function ProjectCommitHistory({
                 </ul>
               ) : null}
 
-              {pullsHasMore ? (
+              {!minimized && pullsHasMore ? (
                 <div className="console-github-pane-more">
                   <button
                     type="button"
@@ -1029,15 +1320,21 @@ export function ProjectOverviewPane({
   project,
   projects,
   onProjectUpdated,
-  githubListTab = "commits",
+  githubListTab = "tasks",
   onGithubListTabChange,
   selectedCommitSha,
   onSelectCommit,
   selectedPullNumber,
   onSelectPullRequest,
+  selectedFilePath,
+  onSelectFile,
+  onFileEntryDeleted,
+  fileTreeRefreshToken = 0,
   tasksPanelCollapsed = false,
   onToggleTasksPanel,
   showHeader = true,
+  minimized = false,
+  pullDetailEngaged = false,
 }: {
   project: ApiProject;
   projects: ApiProject[];
@@ -1050,11 +1347,20 @@ export function ProjectOverviewPane({
   onSelectPullRequest?: (
     pullRequest: GithubPullRequest,
     repository: string,
+    options?: { engageHotkeys?: boolean },
   ) => void;
+  selectedFilePath?: string | null;
+  onSelectFile?: SelectProjectFileHandler;
+  onFileEntryDeleted?: (path: string) => void;
+  fileTreeRefreshToken?: number;
   tasksPanelCollapsed?: boolean;
   onToggleTasksPanel?: () => void;
   /** When false, host chrome owns the pane header (stable breadcrumb). */
   showHeader?: boolean;
+  /** Narrow ⇧[ rail — Files/Commits/PRs compact presentation. */
+  minimized?: boolean;
+  /** True while PR detail owns keyboard — suppress list orange highlight. */
+  pullDetailEngaged?: boolean;
 }) {
   const tasksPanelToggle =
     showHeader !== false && onToggleTasksPanel != null ? (
@@ -1166,6 +1472,76 @@ export function ProjectOverviewPane({
     [patchProject],
   );
 
+  if (minimized) {
+    const tabOptions =
+      project.type === "codebase"
+        ? CODEBASE_LIST_TAB_OPTIONS
+        : TASKS_ONLY_TAB_OPTIONS;
+    return (
+      <div className="console-pane-body">
+        <div
+          className={`project-panel-repositories is-minimized`}
+        >
+          <div
+            className="project-github-list-toggle project-github-list-toggle--vertical"
+            role="tablist"
+            aria-label="Project lists"
+          >
+            {tabOptions.map((option) => {
+              const active = githubListTab === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`project-github-list-toggle__btn${
+                    active ? " is-active" : ""
+                  }`}
+                  title={option.label}
+                  onClick={() => {
+                    onGithubListTabChange?.(option.value);
+                  }}
+                >
+                  <span
+                    className="project-github-list-toggle__icon"
+                    aria-hidden="true"
+                  >
+                    <ProjectListTabIcon tab={option.value} />
+                  </span>
+                  <span className="project-github-list-toggle__label">
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {project.type === "codebase" &&
+          githubListTab !== "tasks" &&
+          githubListTab !== "files" ? (
+            <ProjectCommitHistory
+              project={project}
+              onProjectUpdated={onProjectUpdated}
+              githubListTab={githubListTab}
+              onGithubListTabChange={onGithubListTabChange}
+              selectedCommitSha={selectedCommitSha}
+              onSelectCommit={onSelectCommit}
+              selectedPullNumber={selectedPullNumber}
+              onSelectPullRequest={onSelectPullRequest}
+              selectedFilePath={selectedFilePath}
+              onSelectFile={onSelectFile}
+              onFileEntryDeleted={onFileEntryDeleted}
+              fileTreeRefreshToken={fileTreeRefreshToken}
+              minimized
+              showTabs={false}
+              pullDetailEngaged={pullDetailEngaged}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   if (tasksLoading && !tasks) {
     return (
       <>
@@ -1227,97 +1603,127 @@ export function ProjectOverviewPane({
           key={project.id}
           className="console-project-overview console-content-swap"
         >
-          <ProjectPanelDetailView
-            project={detailProject}
-            section="overview"
-            showHeader={false}
-            organizationOptions={organizationOptions}
-            propertiesExtra={
-              <ProjectWorkingDirectoryField
+          <div className="project-panel-repositories">
+            <div className="project-github-list-toggle">
+              <SegmentedPillToggle
+                value={
+                  project.type === "codebase"
+                    ? githubListTab
+                    : "tasks"
+                }
+                options={
+                  project.type === "codebase"
+                    ? CODEBASE_LIST_TAB_OPTIONS
+                    : TASKS_ONLY_TAB_OPTIONS
+                }
+                onChange={(value) => {
+                  onGithubListTabChange?.(value);
+                }}
+                ariaLabel="Project lists"
+              />
+            </div>
+            {githubListTab === "tasks" || project.type !== "codebase" ? (
+              <ProjectPanelDetailView
+                project={detailProject}
+                section="overview"
+                showHeader={false}
+                organizationOptions={organizationOptions}
+                propertiesExtra={
+                  <ProjectWorkingDirectoryField
+                    project={project}
+                    onProjectUpdated={onProjectUpdated}
+                  />
+                }
+                onSaveName={saveName}
+                onSaveKey={async (key) => {
+                  const trimmed = key.trim();
+                  if (!trimmed) {
+                    return {
+                      ok: false as const,
+                      error: "Project key is required.",
+                    };
+                  }
+                  const conflict = projects.some(
+                    (entry) =>
+                      entry.id !== project.id &&
+                      entry.key.toLowerCase() === trimmed.toLowerCase(),
+                  );
+                  if (conflict) {
+                    return {
+                      ok: false as const,
+                      error: "Project key already exists.",
+                    };
+                  }
+                  try {
+                    const updated = await patchProject({ key: trimmed });
+                    return { ok: true as const, key: updated.key };
+                  } catch (error) {
+                    return {
+                      ok: false as const,
+                      error: apiErrorMessage(error),
+                    };
+                  }
+                }}
+                onSaveSummary={(summary) => {
+                  void patchProject({
+                    summary: summary.trim() ? summary.trim() : null,
+                  }).catch(() => undefined);
+                }}
+                onSaveDescription={(description) => {
+                  void patchProject({
+                    description: description.trim()
+                      ? description.trim()
+                      : null,
+                  }).catch(() => undefined);
+                }}
+                onIconChange={(icon) => {
+                  void patchProject({ icon }).catch(() => undefined);
+                }}
+                onStatusChange={(status: ProjectStatus) => {
+                  void patchProject({ status }).catch(() => undefined);
+                }}
+                onPriorityChange={(priority) => {
+                  void patchProject({ priority }).catch(() => undefined);
+                }}
+                onTypeChange={(type) => {
+                  void patchProject({ type }).catch(() => undefined);
+                }}
+                onAreaChange={(area: ProjectArea | null) => {
+                  void patchProject({ area }).catch(() => undefined);
+                }}
+                onOrganizationChange={(organizationId) => {
+                  void patchProject({ organizationId }).catch(() => undefined);
+                }}
+                onStartDateChange={(startDate) => {
+                  void patchProject({
+                    startDate: startDate ? startDate.toISOString() : null,
+                  }).catch(() => undefined);
+                }}
+                onDueDateChange={(dueDate) => {
+                  void patchProject({
+                    dueDate: dueDate ? dueDate.toISOString() : null,
+                  }).catch(() => undefined);
+                }}
+              />
+            ) : (
+              <ProjectCommitHistory
                 project={project}
                 onProjectUpdated={onProjectUpdated}
+                githubListTab={githubListTab}
+                onGithubListTabChange={onGithubListTabChange}
+                selectedCommitSha={selectedCommitSha}
+                onSelectCommit={onSelectCommit}
+                selectedPullNumber={selectedPullNumber}
+                onSelectPullRequest={onSelectPullRequest}
+                selectedFilePath={selectedFilePath}
+                onSelectFile={onSelectFile}
+                onFileEntryDeleted={onFileEntryDeleted}
+                fileTreeRefreshToken={fileTreeRefreshToken}
+                showTabs={false}
+                pullDetailEngaged={pullDetailEngaged}
               />
-            }
-            repositoriesSection={
-              project.type === "codebase" ? (
-                <ProjectCommitHistory
-                  project={project}
-                  onProjectUpdated={onProjectUpdated}
-                  githubListTab={githubListTab}
-                  onGithubListTabChange={onGithubListTabChange}
-                  selectedCommitSha={selectedCommitSha}
-                  onSelectCommit={onSelectCommit}
-                  selectedPullNumber={selectedPullNumber}
-                  onSelectPullRequest={onSelectPullRequest}
-                />
-              ) : null
-            }
-            onSaveName={saveName}
-            onSaveKey={async (key) => {
-              const trimmed = key.trim();
-              if (!trimmed) {
-                return { ok: false as const, error: "Project key is required." };
-              }
-              const conflict = projects.some(
-                (entry) =>
-                  entry.id !== project.id &&
-                  entry.key.toLowerCase() === trimmed.toLowerCase(),
-              );
-              if (conflict) {
-                return {
-                  ok: false as const,
-                  error: "Project key already exists.",
-                };
-              }
-              try {
-                const updated = await patchProject({ key: trimmed });
-                return { ok: true as const, key: updated.key };
-              } catch (error) {
-                return {
-                  ok: false as const,
-                  error: apiErrorMessage(error),
-                };
-              }
-            }}
-        onSaveSummary={(summary) => {
-          void patchProject({ summary: summary.trim() ? summary.trim() : null }).catch(
-            () => undefined,
-          );
-        }}
-        onSaveDescription={(description) => {
-          void patchProject({
-            description: description.trim() ? description.trim() : null,
-          }).catch(() => undefined);
-        }}
-        onIconChange={(icon) => {
-          void patchProject({ icon }).catch(() => undefined);
-        }}
-        onStatusChange={(status: ProjectStatus) => {
-          void patchProject({ status }).catch(() => undefined);
-        }}
-        onPriorityChange={(priority) => {
-          void patchProject({ priority }).catch(() => undefined);
-        }}
-        onTypeChange={(type) => {
-          void patchProject({ type }).catch(() => undefined);
-        }}
-        onAreaChange={(area: ProjectArea | null) => {
-          void patchProject({ area }).catch(() => undefined);
-        }}
-        onOrganizationChange={(organizationId) => {
-          void patchProject({ organizationId }).catch(() => undefined);
-        }}
-        onStartDateChange={(startDate) => {
-          void patchProject({
-            startDate: startDate ? startDate.toISOString() : null,
-          }).catch(() => undefined);
-        }}
-        onDueDateChange={(dueDate) => {
-          void patchProject({
-            dueDate: dueDate ? dueDate.toISOString() : null,
-          }).catch(() => undefined);
-        }}
-          />
+            )}
+          </div>
         </div>
       </div>
     </>

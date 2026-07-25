@@ -1,6 +1,6 @@
 "use client";
 
-import { CodeIcon, ProjectIcon } from "@primer/octicons-react";
+import { ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -25,6 +25,7 @@ import {
   type ProjectType,
 } from "../project-type.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { TerminalConsoleIcon } from "./terminal-console-icon.js";
 import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
 import {
@@ -237,7 +238,7 @@ export function ProjectDetailView({
         searchTerms: `${value} ${getProjectTypeLabel(value)}`,
         icon:
           value === "codebase" ? (
-            <CodeIcon size={14} />
+            <TerminalConsoleIcon size={14} />
           ) : (
             <ProjectIcon size={14} />
           ),
@@ -406,7 +407,7 @@ export function ProjectDetailView({
                     ariaLabel="Type"
                     fallbackIcon={
                       projectType === "codebase" ? (
-                        <CodeIcon size={14} />
+                        <TerminalConsoleIcon size={14} />
                       ) : (
                         <ProjectIcon size={14} />
                       )

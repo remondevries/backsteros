@@ -33,6 +33,7 @@ export function PillNav<T extends string>({
             key={item.value}
             type="button"
             onClick={() => onChange(item.value)}
+            data-pill-nav-value={item.value}
             className={`app-pill-nav-item${isActive ? " is-active" : ""}`}
             aria-current={isActive ? "page" : undefined}
           >

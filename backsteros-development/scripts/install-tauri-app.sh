@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the thin Tauri wrapper and install BacksterOS Development.app.
+# Build the thin Tauri wrapper and install Development ADE.app.
 # Same Next.js console as `pnpm dev` — native window only, no UI rewrite.
 #
 # Usage:
@@ -12,7 +12,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEST_DIR="${1:-${HOME}/Applications}"
-PRODUCT_NAME="BacksterOS Development.app"
+PRODUCT_NAME="Development ADE.app"
+OLD_PRODUCT_NAME="BacksterOS Development.app"
 
 cd "${APP_DIR}"
 
@@ -40,7 +41,8 @@ fi
 
 mkdir -p "${DEST_DIR}"
 DEST_APP="${DEST_DIR}/${PRODUCT_NAME}"
-rm -rf "${DEST_APP}"
+# Remove previous install names so Dock/Spotlight do not keep the old app.
+rm -rf "${DEST_APP}" "${DEST_DIR}/${OLD_PRODUCT_NAME}"
 cp -R "${BUNDLE_APP}" "${DEST_APP}"
 
 # Packaged binary resolves the launch script via compile-time CARGO_MANIFEST_DIR

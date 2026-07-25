@@ -10,6 +10,39 @@ export type AgentActivitySummary = {
   total: number;
 };
 
+/** One agent-backed task for the status-bar hover list. */
+export type StatusBarAgentItem = {
+  taskId: string;
+  projectId: string | null;
+  projectLabel: string;
+  activity: AgentActivity;
+};
+
+const ACTIVITY_RANK: Record<AgentActivity, number> = {
+  working: 0,
+  attention: 1,
+  idle: 2,
+  present: 3,
+};
+
+export function rankAgentActivity(activity: AgentActivity): number {
+  return ACTIVITY_RANK[activity];
+}
+
+export function pickPreferredAgentActivity(
+  activities: Array<AgentActivity | null | undefined>,
+): AgentActivity | null {
+  let best: AgentActivity | null = null;
+  for (const activity of activities) {
+    if (!activity) continue;
+    if (!best || rankAgentActivity(activity) < rankAgentActivity(best)) {
+      best = activity;
+    }
+  }
+  return best;
+}
+
+
 /**
  * Fallback only — primary turn-end is the Cursor `stop` hook.
  * Quiet gaps between tools/thinking are often >2s; a short timer made the

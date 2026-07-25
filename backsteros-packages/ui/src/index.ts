@@ -1868,6 +1868,7 @@ export {
   LIST_KEYBOARD_NAV_ZONE_ORDER,
   LIST_KEYBOARD_NAV_ACTIVE_ZONE_ATTR,
   isEntitySectionListPathname,
+  isInboxPathname,
   getDefaultListKeyboardNavZone,
   shouldAutoSwitchJkToMainList,
   type ListKeyboardNavZone,

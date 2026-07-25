@@ -28,11 +28,20 @@ export function isEntitySectionListPathname(pathname: string): boolean {
   );
 }
 
+/** Agent console inbox — attention list lives in the main column. */
+export function isInboxPathname(pathname: string): boolean {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  return path === "/inbox" || path.startsWith("/inbox/");
+}
+
 /** Default j/k target when Tab has not been used yet on this view. */
 export function getDefaultListKeyboardNavZone(
   pathname: string,
 ): ListKeyboardNavZone {
-  return isEntitySectionListPathname(pathname) ? "main" : "sidepanel";
+  if (isEntitySectionListPathname(pathname) || isInboxPathname(pathname)) {
+    return "main";
+  }
+  return "sidepanel";
 }
 
 /** Journal keeps j/k on entry dates until the user presses Tab to reach due tasks. */
@@ -154,4 +163,9 @@ export type ApplyListKeyboardNavZoneOptions = {
   preferSidepanelForJk?: boolean;
   /** When true, focus the zone list and restore its highlight after switching. */
   activate?: boolean;
+  /**
+   * When activating, highlight this item instead of the selected row / first
+   * item (e.g. G then P → first project in the console rail).
+   */
+  highlightItemId?: string | null;
 };

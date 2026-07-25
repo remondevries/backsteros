@@ -2,7 +2,7 @@ export function ConfigureAuthScreen() {
   return (
     <div className="console-auth">
       <div className="console-auth-panel">
-        <h1>BacksterOS Development</h1>
+        <h1>Development ADE</h1>
         <p>
           Sign-in is required. Set{" "}
           <code>NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> in{" "}

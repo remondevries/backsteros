@@ -28,6 +28,8 @@ import {
   summarizeAgentActivity,
   type AgentActivity,
   type AgentActivitySummary,
+  type StatusBarAgentItem,
+  pickPreferredAgentActivity,
 } from "@/lib/agent-activity";
 import {
   parseAgentTurnUsage,
@@ -369,6 +371,7 @@ export function TerminalWorkspace({
   onAgentActivitySummaryChange,
   onWorkingTaskIdsChange,
   onWorkingProjectIdsChange,
+  onAgentStatusItemsChange,
   onTaskAgentBecameWorking,
   onTaskAgentBecameIdle,
   onTaskAgentBecameAttention,
@@ -382,6 +385,7 @@ export function TerminalWorkspace({
   collapsed = false,
   layoutReady = true,
   showHeader = true,
+  focusRequest = 0,
 }: {
   projectId: string | null;
   projectLabel: string;
@@ -392,6 +396,8 @@ export function TerminalWorkspace({
   onWorkingTaskIdsChange?: (taskIds: string[]) => void;
   /** Project ids that currently have at least one working agent task. */
   onWorkingProjectIdsChange?: (projectIds: string[]) => void;
+  /** Active agent tasks for the status-bar hover list. */
+  onAgentStatusItemsChange?: (items: StatusBarAgentItem[]) => void;
   /** Fired when a task's agent enters a working turn. */
   onTaskAgentBecameWorking?: (taskId: string) => void;
   /** Fired when a task's agent finishes a turn (idle). */
@@ -420,6 +426,11 @@ export function TerminalWorkspace({
   layoutReady?: boolean;
   /** When false, host chrome owns the pane header. */
   showHeader?: boolean;
+  /**
+   * Increment to focus the active xterm (e.g. after Inbox Enter opens
+   * the terminal column). Re-runs when layout becomes ready.
+   */
+  focusRequest?: number;
 }) {
   const [bucketsByTaskId, setBucketsByTaskId] = useState<
     Record<string, TaskSessionBucket>
@@ -2162,14 +2173,56 @@ export function TerminalWorkspace({
     onWorkingProjectIdsChange?.(workingProjectIds);
   }, [onWorkingProjectIdsChange, workingProjectIds, workingProjectIdsKey]);
 
+  const agentStatusItems = useMemo((): StatusBarAgentItem[] => {
+    const open = new Set(agentOpenTaskIds);
+    const items: StatusBarAgentItem[] = [];
+    for (const [bucketTaskId, bucket] of Object.entries(bucketsByTaskId)) {
+      if (!open.has(bucketTaskId)) continue;
+      const activities = bucket.sessions.map(
+        (session) => activityBySessionId[session.id] ?? null,
+      );
+      const preferred = pickPreferredAgentActivity(activities) ?? "present";
+      const session = bucket.sessions[0];
+      items.push({
+        taskId: bucketTaskId,
+        projectId: session?.projectId ?? projectId,
+        projectLabel: session?.projectLabel || projectLabel || "Project",
+        activity: preferred,
+      });
+    }
+    items.sort((a, b) => {
+      const byActivity =
+        (a.activity === "working" ? 0 : a.activity === "attention" ? 1 : 2) -
+        (b.activity === "working" ? 0 : b.activity === "attention" ? 1 : 2);
+      if (byActivity !== 0) return byActivity;
+      return a.taskId.localeCompare(b.taskId);
+    });
+    return items;
+  }, [
+    activityBySessionId,
+    agentOpenTaskIds,
+    bucketsByTaskId,
+    projectId,
+    projectLabel,
+  ]);
+
+  const agentStatusItemsKey = agentStatusItems
+    .map((item) => `${item.taskId}:${item.activity}:${item.projectId ?? ""}`)
+    .join("|");
+  useEffect(() => {
+    onAgentStatusItemsChange?.(agentStatusItems);
+  }, [agentStatusItems, agentStatusItemsKey, onAgentStatusItemsChange]);
+
   useEffect(() => {
     return () => {
       onAgentActivitySummaryChange?.(emptyAgentActivitySummary());
       onWorkingTaskIdsChange?.([]);
       onWorkingProjectIdsChange?.([]);
+      onAgentStatusItemsChange?.([]);
     };
   }, [
     onAgentActivitySummaryChange,
+    onAgentStatusItemsChange,
     onWorkingProjectIdsChange,
     onWorkingTaskIdsChange,
   ]);
@@ -2222,6 +2275,56 @@ export function TerminalWorkspace({
     });
     return () => cancelAnimationFrame(frame);
   }, [collapsed, layoutReady, taskId]);
+
+  // External focus request (Inbox Enter / strip click) — wait until the
+  // column is painted and the task PTY exists so xterm can take input.
+  useEffect(() => {
+    if (!focusRequest || collapsed || !layoutReady || !taskId) return;
+
+    function focusActiveTerminal() {
+      const bucket = bucketsByTaskIdRef.current[taskId!];
+      const sessionId = bucket?.activeId;
+      if (!sessionId) return false;
+      const session =
+        bucket.sessions.find((entry) => entry.id === sessionId) ?? null;
+      // Session row can exist a frame before the host ref + Terminal attach.
+      if (session && !termsRef.current.has(sessionId)) {
+        ensureTerminal(session);
+      }
+      const entry = termsRef.current.get(sessionId);
+      if (!entry || entry.disposed) return false;
+      try {
+        entry.term.focus();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 45;
+    function tryFocus() {
+      if (cancelled) return;
+      if (focusActiveTerminal()) return;
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        requestAnimationFrame(tryFocus);
+      }
+    }
+    const frame = requestAnimationFrame(tryFocus);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    activeId,
+    collapsed,
+    ensureTerminal,
+    focusRequest,
+    layoutReady,
+    taskId,
+  ]);
 
   useEffect(() => {
     installXtermRendererErrorGuard();

@@ -57,5 +57,11 @@ export function getConsoleTabTitle(
   if (route.githubListTab === "commits") {
     return `${projectName} · Commits`;
   }
+  if (route.githubListTab === "files") {
+    return `${projectName} · Files`;
+  }
+  if (route.githubListTab === "tasks") {
+    return `${projectName} · Tasks`;
+  }
   return projectName;
 }

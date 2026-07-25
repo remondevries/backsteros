@@ -347,7 +347,6 @@ import {
   TasklistIcon,
   TelescopeIcon,
   TelescopeFillIcon,
-  TerminalIcon,
   ThreeBarsIcon,
   ThumbsdownIcon,
   ThumbsupIcon,
@@ -387,6 +386,7 @@ import {
 } from "@primer/octicons-react";
 
 import type { ProjectIconKey } from "./project-icon-keys.js";
+import { TerminalConsoleIcon } from "./components/terminal-console-icon.js";
 
 export type ProjectOcticonProps = SVGProps<SVGSVGElement> & {
   size?: number | string;
@@ -738,7 +738,7 @@ const OCTICON_BY_KEY = {
   "tasklist": TasklistIcon,
   "telescope": TelescopeIcon,
   "telescope-fill": TelescopeFillIcon,
-  "terminal": TerminalIcon,
+  "terminal": TerminalConsoleIcon,
   "three-bars": ThreeBarsIcon,
   "thumbsdown": ThumbsdownIcon,
   "thumbsup": ThumbsupIcon,

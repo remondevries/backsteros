@@ -33,6 +33,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -117,6 +118,7 @@ export function TaskSidebar({
   agentStatusHandlersRef,
   onAttachAgentSession,
   onEndAgentSession,
+  onFocusTerminal,
   showChromeHeader = true,
   showListHeader = true,
 }: {
@@ -172,10 +174,12 @@ export function TaskSidebar({
   onAttachAgentSession?: (request: AgentAttachRequest) => void;
   /** End a Cursor Agent chat: `/quit` in the terminal when attached, drop UI binding. */
   onEndAgentSession?: (request: AgentEndRequest) => void;
+  /** Refocus the task terminal (Tab after Escape-blur). */
+  onFocusTerminal?: () => void;
 }) {
   const { client } = useConsoleApi();
   const { open: commandPaletteOpen } = useCommandPalette();
-  const { setActiveZone } = useListKeyboardNavigationZone();
+  const { setActiveZone, clearHighlights } = useListKeyboardNavigationZone();
   const projectId = project?.id ?? null;
   const [tasksView, setTasksView] = useState<ListBoardViewMode>(() =>
     parseListBoardView(null, TASKS_LIST_BOARD_STORAGE_KEY),
@@ -658,26 +662,137 @@ export function TaskSidebar({
     [holdTaskForAgent, onAttachAgentSession],
   );
 
+  const blurTaskTerminal = useCallback(() => {
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (active.closest(".xterm") ||
+        active.classList.contains("xterm-helper-textarea"))
+    ) {
+      active.blur();
+    }
+  }, []);
+
   const closeOverlay = useCallback(() => {
+    // Leave the PTY so list j/k can take the highlight on the task row.
+    blurTaskTerminal();
     onSelectedTaskIdChange(null);
-    // Escape from task detail returns to the task list focus.
+    // Escape from task detail returns to the task list (main), not projects.
     requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setActiveZone("main", { activate: true });
+      });
+    });
+  }, [blurTaskTerminal, onSelectedTaskIdChange, setActiveZone]);
+
+  // After switching projects (no task open), claim j/k for the task list once
+  // it has rows. Do not re-run on later load ticks — that would steal focus
+  // back from Files/commits/PRs after the user presses 1 / 2 / 3.
+  const focusedTasksForProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectId || selectedTaskId || loading || tasks.length === 0) return;
+    if (focusedTasksForProjectRef.current === projectId) return;
+    focusedTasksForProjectRef.current = projectId;
+    const frame = requestAnimationFrame(() => {
       setActiveZone("main", { activate: true });
     });
-  }, [onSelectedTaskIdChange, setActiveZone]);
+    return () => cancelAnimationFrame(frame);
+  }, [loading, projectId, selectedTaskId, setActiveZone, tasks.length]);
+
   const headerTitle = detailOpen
     ? (selectedDetailTask?.displayId?.trim() || "Task")
     : "Tasks";
   const showBack = workspaceStage === "task";
 
-  // Escape → leave task detail (same role as desktop escape-back).
+  // Escape (not from terminal) → leave task detail back to the task list.
+  // Escape from terminal is handled below (blur only; second Escape leaves).
   useEscapeBackNavigation({
     enabled: showBack,
     pathname: "/console/detail",
     commandPaletteOpen,
     canGoBack: true,
+    allowFromTerminal: false,
     onGoBack: closeOverlay,
   });
+
+  // Task page: Escape in terminal blurs; Tab (outside terminal/inputs) refocuses.
+  // Stable layout listener stays ahead of list-keyboard Tab (useEffect).
+  const showBackRef = useRef(showBack);
+  showBackRef.current = showBack;
+  const commandPaletteOpenForKeysRef = useRef(commandPaletteOpen);
+  commandPaletteOpenForKeysRef.current = commandPaletteOpen;
+  const clearHighlightsRef = useRef(clearHighlights);
+  clearHighlightsRef.current = clearHighlights;
+  const blurTaskTerminalRef = useRef(blurTaskTerminal);
+  blurTaskTerminalRef.current = blurTaskTerminal;
+  const onFocusTerminalRef = useRef(onFocusTerminal);
+  onFocusTerminalRef.current = onFocusTerminal;
+
+  useLayoutEffect(() => {
+    function isInTerminal(target: EventTarget | null): boolean {
+      return (
+        target instanceof HTMLElement &&
+        Boolean(
+          target.closest(".xterm") ||
+            target.classList.contains("xterm-helper-textarea"),
+        )
+      );
+    }
+
+    function isEditableField(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        // xterm's helper textarea is handled as terminal, not a form field.
+        if (isInTerminal(target)) return false;
+        return true;
+      }
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor") || target.closest("[role='textbox']")) {
+        return true;
+      }
+      if (target.closest("[data-searchable-dropdown-panel]")) return true;
+      return false;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!showBackRef.current) return;
+      if (commandPaletteOpenForKeysRef.current) return;
+      if (isBlockingModalOpen()) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (
+        event.key === "Escape" &&
+        !event.shiftKey &&
+        isInTerminal(event.target)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        clearHighlightsRef.current();
+        blurTaskTerminalRef.current();
+        return;
+      }
+
+      const focusTerminal = onFocusTerminalRef.current;
+      if (
+        event.key === "Tab" &&
+        !event.shiftKey &&
+        focusTerminal &&
+        !isInTerminal(event.target) &&
+        !isEditableField(event.target)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        clearHighlightsRef.current();
+        focusTerminal();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
 
   const listPane = (
     <aside className="console-pane console-pane--tasks-main">

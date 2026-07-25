@@ -1,6 +1,6 @@
 "use client";
 
-import { CodeIcon, ProjectIcon } from "@primer/octicons-react";
+import { ProjectIcon } from "@primer/octicons-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import {
@@ -25,6 +25,7 @@ import {
   type ProjectType,
 } from "../project-type.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { TerminalConsoleIcon } from "./terminal-console-icon.js";
 import { adoptRemoteField } from "../adopt-remote-field.js";
 import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
 import {
@@ -91,79 +92,25 @@ export type ProjectPanelDetailViewProps = {
   initialSection?: ProjectSectionId;
   /** Host-provided pane for non-overview sections (tasks, letters, …). */
   renderSection?: (sectionId: ProjectSectionId) => ReactNode;
-  /** Rendered inside the Properties accordion body. */
+  /** Extra controls under Properties (e.g. working directory). */
   propertiesExtra?: ReactNode;
-  /** Rendered as the Repositories accordion body. */
+  /**
+   * When set, replaces description + properties as the sole overview body
+   * (e.g. Files / Commits / PRs tab content).
+   */
   repositoriesSection?: ReactNode;
   /** When false, skip the in-view icon/name header (host chrome shows it). Default false. */
   showHeader?: boolean;
 };
-
-type ProjectPanelBlockId = "description" | "repositories" | "properties";
 
 function toDate(value: number | Date | null | undefined): Date | null {
   if (value == null) return null;
   return value instanceof Date ? value : new Date(value);
 }
 
-function ProjectPanelAccordionBlock({
-  title,
-  expanded,
-  onSelect,
-  children,
-  collapsible = true,
-  className,
-}: {
-  title: string;
-  expanded: boolean;
-  onSelect?: () => void;
-  children: ReactNode;
-  collapsible?: boolean;
-  className?: string;
-}) {
-  const rootClass = [
-    "project-panel-block",
-    expanded ? "project-panel-block--expanded" : null,
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <section className={rootClass}>
-      {collapsible ? (
-        <button
-          type="button"
-          className="project-panel-block__header"
-          aria-expanded={expanded}
-          onClick={onSelect}
-        >
-          <span className="project-panel-block__title">{title}</span>
-          <span
-            aria-hidden="true"
-            className={`project-panel-block__chevron${
-              expanded ? "" : " project-panel-block__chevron--collapsed"
-            }`}
-          >
-            ▾
-          </span>
-        </button>
-      ) : (
-        <div className="project-panel-block__header project-panel-block__header--static">
-          <span className="project-panel-block__title">{title}</span>
-        </div>
-      )}
-      {/* Keep mounted when collapsed so section state (e.g. commit history) is retained. */}
-      <div className="project-panel-block__body" hidden={!expanded}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
 /**
- * Narrow-panel project overview with accordion blocks (repositories / description /
- * properties). Separate from the desktop/web `ProjectDetailView`.
+ * Narrow-panel project overview (description + properties, or a custom body).
+ * Separate from the desktop/web `ProjectDetailView`.
  */
 export function ProjectPanelDetailView({
   project,
@@ -206,11 +153,6 @@ export function ProjectPanelDetailView({
   const remoteSummary = project.summary ?? "";
   const [summary, setSummary] = useState(remoteSummary);
   const [summarySource, setSummarySource] = useState(remoteSummary);
-  const [panelBlocks, setPanelBlocks] = useState({
-    description: false,
-    repositories: true,
-    properties: false,
-  });
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(project.id);
   if (project.id !== prevId) {
@@ -219,11 +161,6 @@ export function ProjectPanelDetailView({
     setNameSource(project.name);
     setSummary(remoteSummary);
     setSummarySource(remoteSummary);
-    setPanelBlocks({
-      description: false,
-      repositories: true,
-      properties: false,
-    });
   } else {
     adoptRemoteField(project.name, name, nameSource, setName, setNameSource);
     adoptRemoteField(
@@ -234,13 +171,6 @@ export function ProjectPanelDetailView({
       setSummarySource,
     );
   }
-
-  const togglePanelBlock = useCallback((block: ProjectPanelBlockId) => {
-    setPanelBlocks((current) => ({
-      ...current,
-      [block]: !current[block],
-    }));
-  }, []);
 
   useTitleRenameShortcut(
     useCallback(() => {
@@ -308,7 +238,7 @@ export function ProjectPanelDetailView({
         searchTerms: `${value} ${getProjectTypeLabel(value)}`,
         icon:
           value === "codebase" ? (
-            <CodeIcon size={14} />
+            <TerminalConsoleIcon size={14} />
           ) : (
             <ProjectIcon size={14} />
           ),
@@ -401,7 +331,7 @@ export function ProjectPanelDetailView({
         ariaLabel="Type"
         fallbackIcon={
           projectType === "codebase" ? (
-            <CodeIcon size={14} />
+            <TerminalConsoleIcon size={14} />
           ) : (
             <ProjectIcon size={14} />
           )
@@ -555,31 +485,15 @@ export function ProjectPanelDetailView({
               </header>
             ) : null}
 
-            <div className="project-panel-accordion" aria-label="Project details">
-                {repositoriesSection ? (
-                  <ProjectPanelAccordionBlock
-                    title="Repositories"
-                    className="project-panel-block--fill"
-                    expanded={panelBlocks.repositories}
-                    onSelect={() => togglePanelBlock("repositories")}
-                  >
-                    {repositoriesSection}
-                  </ProjectPanelAccordionBlock>
-                ) : (
+            <div className="project-panel-tab-body" aria-label="Project details">
+              {repositoriesSection ? (
+                <div className="project-panel-tab-body__custom">
+                  {repositoriesSection}
+                </div>
+              ) : (
+                <>
                   <div
-                    className="project-panel-block-spacer"
-                    aria-hidden="true"
-                  />
-                )}
-
-                <ProjectPanelAccordionBlock
-                  title="Description"
-                  className="project-panel-block--description"
-                  expanded={panelBlocks.description}
-                  onSelect={() => togglePanelBlock("description")}
-                >
-                  <div
-                    className="project-detail__description-body"
+                    className="project-detail__description-body project-panel-tab-body__description"
                     data-content-view-mode={mode}
                   >
                     <ContentMarkdownViewLayout
@@ -626,22 +540,15 @@ export function ProjectPanelDetailView({
                       {error}
                     </p>
                   ) : null}
-                </ProjectPanelAccordionBlock>
-
-                <ProjectPanelAccordionBlock
-                  title="Properties"
-                  className="project-panel-block--pinned"
-                  expanded={panelBlocks.properties}
-                  onSelect={() => togglePanelBlock("properties")}
-                >
-                  <div className="task-properties-inline">
+                  <div className="project-panel-tab-body__properties task-properties-inline">
                     <div className="task-properties-inline__fields">
                       {propertyControls}
                       {propertiesExtra}
                     </div>
                   </div>
-                </ProjectPanelAccordionBlock>
-              </div>
+                </>
+              )}
+            </div>
 
           </div>
         </div>

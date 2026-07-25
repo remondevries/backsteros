@@ -15,10 +15,16 @@ import {
   buildProjectDropdownOptions,
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
+  getInboxItemDisplayId,
+  getInboxItemHref,
   INBOX_ATTENTION_STATUS_ORDER,
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
   migrateLegacyTaskStatus,
   sortInboxItemsByAttentionStatus,
   DotScrollLoader,
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
   type InboxListItem,
   type InboxListItemLinkComponent,
   type TaskStatus,
@@ -34,11 +40,6 @@ import {
   type ReactNode,
 } from "react";
 
-import {
-  ProjectsSidePanelIcon,
-} from "@/components/panel-icons";
-import { ConsoleProjectBreadcrumbHeader } from "@/components/console-project-breadcrumb-header";
-import { TaskActivityPanel } from "@/components/task-activity-panel";
 import { useApiResource, useConsoleApi } from "@/lib/api-context";
 import {
   useConsoleAvatarSrcMap,
@@ -59,6 +60,7 @@ import type {
 } from "@/lib/cursor-agent-cli";
 import { mapApiTaskDetail } from "@/lib/map-task";
 import type { TaskAgentSession } from "@/lib/task-agent-sessions";
+import { TaskActivityPanel } from "@/components/task-activity-panel";
 
 const ATTENTION_STATUSES = INBOX_ATTENTION_STATUS_ORDER;
 
@@ -161,7 +163,12 @@ export function AttentionInboxProvider({
   projectsReady?: boolean;
   pathname?: string;
   onSelectedTaskMeta?: (
-    task: { id: string; title: string; projectId: string | null } | null,
+    task: {
+      id: string;
+      title: string;
+      projectId: string | null;
+      displayId?: string | null;
+    } | null,
   ) => void;
   /** Soft-reload comments/activities only — must not remount the inbox list. */
   onActivityFeedInvalidate?: () => void;
@@ -231,6 +238,7 @@ export function AttentionInboxProvider({
       id: item.id,
       title: item.title,
       projectId: raw?.projectId ?? item.projectId ?? null,
+      displayId: getInboxItemDisplayId(item),
     });
   }, [items, loading, onSelectedTaskMeta, pathname, rawTasks]);
 
@@ -392,16 +400,28 @@ export function InboxAttentionList({
   pathname,
   Link,
   onNavigate,
+  onActivateFocus,
   workingTaskIds = [],
+  minimized = false,
+  showHeader = true,
 }: {
   pathname: string;
   Link: InboxListItemLinkComponent;
   onNavigate?: (href: string) => void;
+  /** Enter — open focus layout (minimized list + terminal). */
+  onActivateFocus?: (taskId: string) => void;
   workingTaskIds?: readonly string[];
+  minimized?: boolean;
+  showHeader?: boolean;
 }) {
   const { client } = useConsoleApi();
   const { items, loading, patchTask } = useAttentionInbox();
   const autoSelectDoneRef = useRef(false);
+  const listRef = useRef<HTMLElement>(null);
+  const { setActiveZone } = useListKeyboardNavigationZone();
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
   const workingTaskIdSet = useMemo(
     () => new Set(workingTaskIds),
     [workingTaskIds],
@@ -437,6 +457,51 @@ export function InboxAttentionList({
     [contactAvatarSrc, contacts],
   );
 
+  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
+
+  const selectedSlug = pathname.match(/^\/inbox\/([^/]+)/)?.[1] ?? null;
+  const selectedItemId = useMemo(() => {
+    if (!selectedSlug) return null;
+    return (
+      findInboxItemBySlugOrId(items, decodeURIComponent(selectedSlug))?.id ??
+      null
+    );
+  }, [items, selectedSlug]);
+
+  const navigateToItem = useCallback(
+    (itemId: string) => {
+      const item = items.find((entry) => entry.id === itemId);
+      if (!item || !onNavigate) return;
+      onNavigate(getInboxItemHref(item, items));
+    },
+    [items, onNavigate],
+  );
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds,
+    selectedId: selectedItemId,
+    onNavigate: (itemId) => {
+      navigateToItem(itemId);
+      onActivateFocus?.(itemId);
+    },
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    // Keep the main zone registered while minimized so focus does not fall
+    // through to the navbar Inbox (which broke ⌘⌥←/→ and stole terminal focus).
+    enabled: itemIds.length > 0,
+  });
+
+  // Arrow / j/k highlight updates the task pane without Enter.
+  const lastPreviewIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (minimized) return;
+    if (!highlightedId || !onNavigate) return;
+    if (highlightedId === selectedItemId) return;
+    if (highlightedId === lastPreviewIdRef.current) return;
+    lastPreviewIdRef.current = highlightedId;
+    navigateToItem(highlightedId);
+  }, [highlightedId, minimized, navigateToItem, onNavigate, selectedItemId]);
+
   useEffect(() => {
     if (!onNavigate || loading) return;
     const slug = pathname.match(/^\/inbox\/([^/]+)/)?.[1];
@@ -450,7 +515,10 @@ export function InboxAttentionList({
     if (!first) return;
     autoSelectDoneRef.current = true;
     onNavigate(first);
-  }, [items, loading, onNavigate, pathname]);
+    requestAnimationFrame(() => {
+      setActiveZone("main", { activate: true });
+    });
+  }, [items, loading, onNavigate, pathname, setActiveZone]);
 
   return (
     <InboxSidePanelView
@@ -460,6 +528,12 @@ export function InboxAttentionList({
       loading={loading}
       emptyLabel="No tasks need your attention."
       groupByAttentionStatus
+      showHeader={showHeader}
+      minimized={minimized}
+      // Hide the orange list ring while the terminal is the focus target.
+      highlightedId={minimized ? null : highlightedId}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
       assigneeOptions={assigneeOptions}
       renderTitleTrailing={(item) =>
         item.kind === "task" && workingTaskIdSet.has(item.id) ? (
@@ -491,7 +565,6 @@ export function InboxAttentionDetail({
   workingTaskIds,
   agentOpenTaskIds,
   terminalCollapsed = false,
-  onToggleTerminal,
   onAttachAgentSession,
   onEndAgentSession,
   onActivityFeedInvalidate,
@@ -503,7 +576,6 @@ export function InboxAttentionDetail({
   workingTaskIds: readonly string[];
   agentOpenTaskIds: readonly string[];
   terminalCollapsed?: boolean;
-  onToggleTerminal?: () => void;
   onAttachAgentSession: (request: AgentAttachRequest) => void;
   onEndAgentSession: (request: AgentEndRequest) => void;
   onActivityFeedInvalidate: () => void;
@@ -587,249 +659,253 @@ export function InboxAttentionDetail({
     [onActivityFeedInvalidate, patchTask],
   );
 
+  // Keep the detail column mounted while loading / auto-selecting the first
+  // item so empty inbox still matches the filled list | detail chrome.
   if (loading && !selectedRaw) {
     return (
-      <aside className="console-pane">
-        <div className="console-pane-header">
-          <div className="console-pane-header-title">
-            <span>Inbox</span>
-          </div>
-        </div>
-        <div className="console-pane-body">
-          <InboxDetailLayout item={null} resolving />
-        </div>
-      </aside>
+      <div className="console-pane-body">
+        <InboxDetailLayout item={null} resolving />
+      </div>
     );
   }
 
   if (!selectedItem || !selectedRaw) {
+    const awaitingAutoSelect = !slug && items.length > 0;
     return (
-      <aside className="console-pane">
-        <div className="console-pane-header">
-          <div className="console-pane-header-title">
-            <span>Inbox</span>
-          </div>
-        </div>
-        <div className="console-pane-body">
-          <InboxDetailLayout item={null} />
-        </div>
-      </aside>
+      <div className="console-pane-body">
+        <InboxDetailLayout item={null} resolving={awaitingAutoSelect} />
+      </div>
     );
   }
 
   const detail = mapApiTaskDetail(selectedRaw, projectsById);
   const working = workingTaskIds.includes(selectedRaw.id);
-  const taskProject = selectedRaw.projectId
-    ? (projectsById.get(selectedRaw.projectId) ?? null)
-    : null;
-  const headerSegment = detail.displayId?.trim() || "Task";
 
   return (
-    <aside className="console-pane">
-      {taskProject ? (
-        <ConsoleProjectBreadcrumbHeader
-          projectIcon={taskProject.icon}
-          projectName={taskProject.name}
-          segment={headerSegment}
-          actions={
-            onToggleTerminal ? (
-              <button
-                type="button"
-                className="console-icon-btn"
-                onClick={onToggleTerminal}
-                title={
-                  terminalCollapsed
-                    ? "Show terminal"
-                    : "Hide terminal — expand task"
-                }
-                aria-label={
-                  terminalCollapsed
-                    ? "Show terminal"
-                    : "Hide terminal and expand task"
-                }
-                aria-pressed={terminalCollapsed}
-              >
-                <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
-              </button>
-            ) : null
+    <div className="console-pane-body">
+      <div className="task-panel-island task-panel-island--detail">
+        <TaskStackedDetailView
+          task={detail}
+          showDisplayId={false}
+          projectOptions={projectOptions}
+          assigneeOptions={assigneeOptions}
+          onStatusChange={(next) => {
+            void patchAndInvalidate(selectedRaw.id, {
+              status: next as TaskStatus,
+            });
+          }}
+          onPriorityChange={(next) => {
+            void patchAndInvalidate(selectedRaw.id, { priority: next });
+          }}
+          onDueDateChange={(next) => {
+            void patchAndInvalidate(selectedRaw.id, {
+              dueDate: next ? next.toISOString() : null,
+            });
+          }}
+          onAssigneeChange={(next) => {
+            void patchAndInvalidate(selectedRaw.id, { assigneeId: next });
+          }}
+          onProjectChange={(next) => {
+            const nextProject = next
+              ? [...projectsById.values()].find(
+                  (entry) => entry.key === next,
+                ) ?? null
+              : null;
+            void patchAndInvalidate(selectedRaw.id, {
+              projectId: nextProject?.id ?? null,
+            });
+          }}
+          onSaveDescription={(description) => {
+            void patchAndInvalidate(selectedRaw.id, { description });
+          }}
+          onChangeLinks={(links) => {
+            void patchAndInvalidate(selectedRaw.id, { links });
+          }}
+          onSaveTitle={async (title) => {
+            const trimmed = title.trim();
+            if (!trimmed) {
+              return { ok: false as const, error: "Task title is required." };
+            }
+            try {
+              await patchAndInvalidate(selectedRaw.id, { title: trimmed });
+              return { ok: true as const };
+            } catch (error) {
+              return {
+                ok: false as const,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Could not rename task.",
+              };
+            }
+          }}
+          belowDescription={
+            <TaskActivityPanel
+              taskId={selectedRaw.id}
+              taskUpdatedAt={selectedRaw.updatedAt}
+              feedRevision={feedRevision}
+              working={working}
+              agentOpenInTerminal={
+                !terminalCollapsed &&
+                agentOpenTaskIds.includes(selectedRaw.id)
+              }
+              taskSummary={{
+                number: selectedRaw.number,
+                title: selectedRaw.title,
+                description: selectedRaw.description,
+                projectKey: detail.projectKey,
+                projectId: selectedRaw.projectId,
+                workingDirectory: selectedRaw.projectId
+                  ? (projectsById.get(selectedRaw.projectId)
+                      ?.localWorkingDirectory ?? null)
+                  : null,
+              }}
+              onAttachSession={(session, options) => {
+                onAttachAgentSession({
+                  taskId: session.taskId,
+                  chatId: session.chatId,
+                  prompt: options?.prompt,
+                  focusUi: options?.focusUi,
+                  sessionIsNew: options?.sessionIsNew,
+                  forceReattach: options?.forceReattach,
+                  replyParentCommentId: options?.replyParentCommentId,
+                });
+              }}
+              onEndSession={(session: TaskAgentSession) => {
+                onEndAgentSession({
+                  taskId: session.taskId,
+                  chatId: session.chatId,
+                });
+              }}
+              onMarkInProgress={async () => {
+                await patchAndInvalidate(selectedRaw.id, {
+                  status: "in_progress",
+                  activityActor: "agent",
+                });
+              }}
+              onLaunchFailed={(error) =>
+                void holdTaskForAgent(
+                  selectedRaw.id,
+                  buildLaunchFailedHold(error),
+                  { force: true },
+                )
+              }
+              onSimulateLaunchFail={() =>
+                void holdTaskForAgent(
+                  selectedRaw.id,
+                  buildLaunchFailedHold(
+                    "Simulated launch failure (agent testing mode).",
+                  ),
+                  { force: true },
+                )
+              }
+              onSimulateNeedsInput={() =>
+                void holdTaskForAgent(
+                  selectedRaw.id,
+                  {
+                    kind: "needs_input",
+                    commentBody: formatAgentHoldComment(
+                      "needs_input",
+                      "Simulated needs-input hold (agent testing mode). Reply to continue.",
+                    ),
+                  },
+                  { force: true },
+                )
+              }
+              onSimulateReadyForReview={() =>
+                reviewTaskForAgent(
+                  client,
+                  selectedRaw.id,
+                  "Simulated ready-for-review (agent testing mode).",
+                  { force: true },
+                ).then((ok) => {
+                  if (!ok) return;
+                  applyLocalStatus(selectedRaw.id, "in_review");
+                  onActivityFeedInvalidate();
+                })
+              }
+            />
           }
         />
-      ) : (
-        <div className="console-pane-header">
-          <div className="console-pane-header-title">
-            <span>{headerSegment}</span>
-          </div>
-          <div className="console-pane-header-actions">
-            {onToggleTerminal ? (
-              <button
-                type="button"
-                className="console-icon-btn"
-                onClick={onToggleTerminal}
-                title={
-                  terminalCollapsed
-                    ? "Show terminal"
-                    : "Hide terminal — expand task"
-                }
-                aria-label={
-                  terminalCollapsed
-                    ? "Show terminal"
-                    : "Hide terminal and expand task"
-                }
-                aria-pressed={terminalCollapsed}
-              >
-                <ProjectsSidePanelIcon collapsed={terminalCollapsed} />
-              </button>
-            ) : null}
-          </div>
-        </div>
-      )}
-      <div className="console-pane-body">
-        <div className="task-panel-island task-panel-island--detail">
-          <TaskStackedDetailView
-            task={detail}
-            showDisplayId={false}
-            projectOptions={projectOptions}
-            assigneeOptions={assigneeOptions}
-            onStatusChange={(next) => {
-              void patchAndInvalidate(selectedRaw.id, {
-                status: next as TaskStatus,
-              });
-            }}
-            onPriorityChange={(next) => {
-              void patchAndInvalidate(selectedRaw.id, { priority: next });
-            }}
-            onDueDateChange={(next) => {
-              void patchAndInvalidate(selectedRaw.id, {
-                dueDate: next ? next.toISOString() : null,
-              });
-            }}
-            onAssigneeChange={(next) => {
-              void patchAndInvalidate(selectedRaw.id, { assigneeId: next });
-            }}
-            onProjectChange={(next) => {
-              const nextProject = next
-                ? [...projectsById.values()].find(
-                    (entry) => entry.key === next,
-                  ) ?? null
-                : null;
-              void patchAndInvalidate(selectedRaw.id, {
-                projectId: nextProject?.id ?? null,
-              });
-            }}
-            onSaveDescription={(description) => {
-              void patchAndInvalidate(selectedRaw.id, { description });
-            }}
-            onChangeLinks={(links) => {
-              void patchAndInvalidate(selectedRaw.id, { links });
-            }}
-            onSaveTitle={async (title) => {
-              const trimmed = title.trim();
-              if (!trimmed) {
-                return { ok: false as const, error: "Task title is required." };
-              }
-              try {
-                await patchAndInvalidate(selectedRaw.id, { title: trimmed });
-                return { ok: true as const };
-              } catch (error) {
-                return {
-                  ok: false as const,
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Could not rename task.",
-                };
-              }
-            }}
-            belowDescription={
-              <TaskActivityPanel
-                taskId={selectedRaw.id}
-                taskUpdatedAt={selectedRaw.updatedAt}
-                feedRevision={feedRevision}
-                working={working}
-                agentOpenInTerminal={
-                  !terminalCollapsed &&
-                  agentOpenTaskIds.includes(selectedRaw.id)
-                }
-                taskSummary={{
-                  number: selectedRaw.number,
-                  title: selectedRaw.title,
-                  description: selectedRaw.description,
-                  projectKey: detail.projectKey,
-                  projectId: selectedRaw.projectId,
-                  workingDirectory: selectedRaw.projectId
-                    ? (projectsById.get(selectedRaw.projectId)
-                        ?.localWorkingDirectory ?? null)
-                    : null,
-                }}
-                onAttachSession={(session, options) => {
-                  onAttachAgentSession({
-                    taskId: session.taskId,
-                    chatId: session.chatId,
-                    prompt: options?.prompt,
-                    focusUi: options?.focusUi,
-                    sessionIsNew: options?.sessionIsNew,
-                    forceReattach: options?.forceReattach,
-                    replyParentCommentId: options?.replyParentCommentId,
-                  });
-                }}
-                onEndSession={(session: TaskAgentSession) => {
-                  onEndAgentSession({
-                    taskId: session.taskId,
-                    chatId: session.chatId,
-                  });
-                }}
-                onMarkInProgress={async () => {
-                  await patchAndInvalidate(selectedRaw.id, {
-                    status: "in_progress",
-                    activityActor: "agent",
-                  });
-                }}
-                onLaunchFailed={(error) =>
-                  void holdTaskForAgent(
-                    selectedRaw.id,
-                    buildLaunchFailedHold(error),
-                    { force: true },
-                  )
-                }
-                onSimulateLaunchFail={() =>
-                  void holdTaskForAgent(
-                    selectedRaw.id,
-                    buildLaunchFailedHold(
-                      "Simulated launch failure (agent testing mode).",
-                    ),
-                    { force: true },
-                  )
-                }
-                onSimulateNeedsInput={() =>
-                  void holdTaskForAgent(
-                    selectedRaw.id,
-                    {
-                      kind: "needs_input",
-                      commentBody: formatAgentHoldComment(
-                        "needs_input",
-                        "Simulated needs-input hold (agent testing mode). Reply to continue.",
-                      ),
-                    },
-                    { force: true },
-                  )
-                }
-                onSimulateReadyForReview={() =>
-                  reviewTaskForAgent(
-                    client,
-                    selectedRaw.id,
-                    "Simulated ready-for-review (agent testing mode).",
-                    { force: true },
-                  ).then((ok) => {
-                    if (!ok) return;
-                    applyLocalStatus(selectedRaw.id, "in_review");
-                    onActivityFeedInvalidate();
-                  })
-                }
-              />
-            }
-          />
-        </div>
       </div>
-    </aside>
+    </div>
+  );
+}
+
+/** Inbox chrome: `Inbox / TASK-ID Title` (id + title as one leaf crumb). */
+export function InboxChromeBreadcrumb({
+  pathname,
+  onNavigateRoot,
+  actions,
+}: {
+  pathname: string;
+  onNavigateRoot?: () => void;
+  actions?: ReactNode;
+}) {
+  const { items } = useAttentionInbox();
+  const slug = pathname.match(/^\/inbox\/([^/]+)/)?.[1] ?? null;
+  const selectedItem = slug
+    ? (findInboxItemBySlugOrId(items, decodeURIComponent(slug)) ?? null)
+    : null;
+
+  if (!selectedItem || selectedItem.kind !== "task") {
+    return (
+      <div className="console-pane-header console-content-chrome">
+        <div className="console-pane-header-title console-project-breadcrumb">
+          <span className="console-project-pane-name">Inbox</span>
+        </div>
+        {actions ? (
+          <div className="console-pane-header-actions">{actions}</div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const displayId = getInboxItemDisplayId(selectedItem);
+  const title = selectedItem.title.trim() || "Untitled";
+  const leafLabel = `${displayId} ${title}`;
+
+  return (
+    <div className="console-pane-header console-content-chrome">
+      <div className="console-pane-header-title console-project-breadcrumb">
+        <nav className="console-project-breadcrumb-nav" aria-label="Location">
+          {onNavigateRoot ? (
+            <button
+              type="button"
+              className="console-project-breadcrumb-project"
+              title="Inbox"
+              onClick={onNavigateRoot}
+            >
+              Inbox
+            </button>
+          ) : (
+            <span
+              className="console-project-breadcrumb-project is-static"
+              title="Inbox"
+            >
+              Inbox
+            </span>
+          )}
+          <span className="console-project-breadcrumb-sep" aria-hidden="true">
+            /
+          </span>
+          <span
+            className="console-project-breadcrumb-leaf"
+            aria-current="page"
+            title={leafLabel}
+          >
+            <span className="console-project-breadcrumb-leaf-id">
+              {displayId}
+            </span>{" "}
+            <span className="console-project-breadcrumb-leaf-title">
+              {title}
+            </span>
+          </span>
+        </nav>
+      </div>
+      {actions ? (
+        <div className="console-pane-header-actions">{actions}</div>
+      ) : null}
+    </div>
   );
 }
