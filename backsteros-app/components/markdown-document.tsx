@@ -80,14 +80,16 @@ export function MarkdownDocument({
                     if (!isValidElement(child)) return true;
                     return child.type !== "input";
                   });
+                  const isChecked = checked === true;
                   return (
                     <li
                       className={[className, "task-list-item"]
                         .filter(Boolean)
                         .join(" ")}
+                      data-checked={isChecked ? "true" : "false"}
                       {...rest}
                     >
-                      <MarkdownTaskCheckbox checked={checked === true} />
+                      <MarkdownTaskCheckbox checked={isChecked} />
                       <span className="md-task-checkbox__content">{body}</span>
                     </li>
                   );

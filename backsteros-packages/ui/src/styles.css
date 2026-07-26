@@ -4075,12 +4075,20 @@ body[data-keyboard-nav-hover="suppressed"]
   display: inline;
 }
 
+/* Mute label text on checked items so completed tasks read as done. */
+.content-markdown-preview-body--rendered
+  .task-list-item[data-checked="true"]
+  .md-task-checkbox__content,
+.document-markdown .task-list-item[data-checked="true"] .md-task-checkbox__content {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
 .md-task-checkbox {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  margin-top: 0.2em;
+  margin-top: 0.35em;
   padding: 0;
   border: none;
   background: transparent;
@@ -4117,9 +4125,9 @@ body[data-keyboard-nav-hover="suppressed"]
 }
 
 .md-task-checkbox[data-checked="true"] .md-task-checkbox__box {
-  border-color: color-mix(in srgb, var(--foreground) 70%, #67a25a);
-  background: color-mix(in srgb, #67a25a 55%, transparent);
-  color: #f4faf2;
+  border-color: #868686;
+  background: #868686;
+  color: #111111;
 }
 
 .md-task-checkbox__check {

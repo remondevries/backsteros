@@ -153,12 +153,14 @@ const markdownPreviewComponents: Components = {
       if (!isValidElement(child)) return true;
       return child.type !== "input";
     });
+    const isChecked = checked === true;
     return (
       <li
         className={[className, "task-list-item"].filter(Boolean).join(" ")}
+        data-checked={isChecked ? "true" : "false"}
         {...rest}
       >
-        <MarkdownTaskCheckbox checked={checked === true} />
+        <MarkdownTaskCheckbox checked={isChecked} />
         <span className="md-task-checkbox__content">{body}</span>
       </li>
     );
@@ -294,8 +296,10 @@ function consumeListItem(
       />,
     );
   }
+
+  const contentChildren: ReactNode[] = [];
   if (textAfterMarker) {
-    children.push(
+    contentChildren.push(
       <InlineMarkdownSegment
         key={`${keyPrefix}-li-text-${startIndex}`}
         content={textAfterMarker}
@@ -311,7 +315,7 @@ function consumeListItem(
     }
 
     if (segment.type === "mention") {
-      children.push(
+      contentChildren.push(
         <DocumentMentionChip
           key={`${keyPrefix}-li-mention-${index}`}
           raw={segment.raw}
@@ -328,7 +332,7 @@ function consumeListItem(
     }
 
     if (segment.content) {
-      children.push(
+      contentChildren.push(
         <span
           key={`${keyPrefix}-li-md-${index}`}
           className="whitespace-pre-wrap"
@@ -338,6 +342,21 @@ function consumeListItem(
       );
     }
     index += 1;
+  }
+
+  if (contentChildren.length > 0) {
+    children.push(
+      checkbox ? (
+        <span
+          key={`${keyPrefix}-li-content-${startIndex}`}
+          className="md-task-checkbox__content"
+        >
+          {contentChildren}
+        </span>
+      ) : (
+        contentChildren
+      ),
+    );
   }
 
   if (children.length === 0) {
@@ -351,6 +370,9 @@ function consumeListItem(
       <li
         key={`${keyPrefix}-li-${startIndex}`}
         className={checkbox ? "task-list-item" : undefined}
+        data-checked={
+          checkbox ? (checkbox.checked ? "true" : "false") : undefined
+        }
       >
         {children}
       </li>
