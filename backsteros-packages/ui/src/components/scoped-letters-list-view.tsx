@@ -222,7 +222,7 @@ export function ScopedLettersListView({
                           searchShortcutLabel="S"
                           ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
                           taskPropertyDropdownId="status"
-                          className="task-overview-row__dropdown"
+                          className="task-item-row__dropdown"
                           panelAlign="start"
                           panelWidth={280}
                           renderTrigger={({
@@ -234,7 +234,7 @@ export function ScopedLettersListView({
                             <button
                               type="button"
                               id={triggerId}
-                              className="task-overview-row__icon-trigger"
+                              className="task-item-row__icon-trigger"
                               title={getTaskStatusLabel(status)}
                               tabIndex={-1}
                               disabled={disabled}

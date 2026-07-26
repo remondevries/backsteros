@@ -3,8 +3,14 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { vim } from "@replit/codemirror-vim";
 import CodeMirror from "@uiw/react-codemirror";
-import { useState } from "react";
+import { Children, isValidElement, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  MarkdownTaskCheckbox,
+  MarkdownTaskListInteractProvider,
+  normalizeMarkdownTaskLists,
+} from "@backsteros/ui";
 
 export function MarkdownDocument({
   value,
@@ -44,8 +50,62 @@ export function MarkdownDocument({
           basicSetup={{ lineNumbers: false, foldGutter: false }}
         />
       ) : (
-        <article className="markdown-preview">
-          {draft ? <ReactMarkdown>{draft}</ReactMarkdown> : <p className="muted">This document is empty.</p>}
+        <article className="markdown-preview document-markdown">
+          {draft ? (
+            <MarkdownTaskListInteractProvider
+              body={draft}
+              onChange={(next) => {
+                setDraft(next);
+              }}
+            >
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  li(props) {
+                    const { children, className, ...rest } = props;
+                    const checked = (props as { checked?: boolean | null })
+                      .checked;
+                    const isTaskItem =
+                      typeof checked === "boolean" ||
+                      (typeof className === "string" &&
+                        className.includes("task-list-item"));
+                    if (!isTaskItem) {
+                      return (
+                        <li className={className} {...rest}>
+                          {children}
+                        </li>
+                      );
+                    }
+                    const body = Children.toArray(children).filter((child) => {
+                      if (!isValidElement(child)) return true;
+                      return child.type !== "input";
+                    });
+                    return (
+                      <li
+                        className={[className, "task-list-item"]
+                          .filter(Boolean)
+                          .join(" ")}
+                        {...rest}
+                      >
+                        <MarkdownTaskCheckbox checked={checked === true} />
+                        <span className="md-task-checkbox__content">{body}</span>
+                      </li>
+                    );
+                  },
+                  input(props) {
+                    if (props.type === "checkbox") {
+                      return null;
+                    }
+                    return <input {...props} />;
+                  },
+                }}
+              >
+                {normalizeMarkdownTaskLists(draft)}
+              </ReactMarkdown>
+            </MarkdownTaskListInteractProvider>
+          ) : (
+            <p className="muted">This document is empty.</p>
+          )}
         </article>
       )}
     </section>

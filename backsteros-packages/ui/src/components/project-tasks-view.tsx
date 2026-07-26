@@ -23,13 +23,13 @@ import {
 import { StatusGroupSection } from "./status-group-section.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
-  TaskOverviewRow,
-  type TaskOverviewRowTask,
-} from "./task-overview-row.js";
+  TaskItemRow,
+  type TaskItemRowTask,
+} from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 export type ProjectTasksViewProps = {
-  tasks: TaskOverviewRowTask[];
+  tasks: TaskItemRowTask[];
   onSelectTask?: (taskId: string) => void;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
@@ -238,7 +238,7 @@ export function ProjectTasksView({
               </li>
             ) : null}
             {group.tasks.map((task) => (
-              <TaskOverviewRow
+              <TaskItemRow
                 key={task.id}
                 task={task}
                 keyboardHighlighted={highlightedId === task.id}

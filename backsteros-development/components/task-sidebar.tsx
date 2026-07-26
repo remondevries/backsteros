@@ -845,7 +845,7 @@ export function TaskSidebar({
                 agentActiveTaskIdSet.has(task.id) ? (
                   <AgentActivityIcon
                     size={9}
-                    className="task-overview-row__agent-badge-icon"
+                    className="task-item-row__agent-badge-icon"
                   />
                 ) : null
               }

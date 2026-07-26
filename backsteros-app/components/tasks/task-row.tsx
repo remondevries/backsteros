@@ -1,14 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useTransition, type DragEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
+
+import {
+  TaskItemRow,
+  buildProjectDropdownOptions,
+  type TaskItemRowTask,
+  type TaskStatus as SharedTaskStatus,
+} from "@backsteros/ui";
 
 import type { Task } from "@/lib/db/schema";
-import { getTaskDisplayId } from "@/lib/task-display-id";
-import { migrateLegacyTaskStatus, type TaskStatus } from "@/lib/task-status";
 import {
-  getDisplayProjectIcon,
-  ProjectOcticon,
-} from "@/components/project-icon";
+  navigateInboxAfterStatusChange,
+  notifyInboxStatusChange,
+  shouldNotifyInboxStatusChange,
+} from "@/lib/inbox/inbox-status-change-notification";
+import {
+  moveTaskToProjectAction,
+  updateTaskDueDateAction,
+  updateTaskPriorityAction,
+  updateTaskStatusAction,
+} from "@/lib/mutations/tasks";
+import type { AssignableProject } from "@/lib/projects/assignable-project";
+import { formatDueDateInputValue } from "@/lib/task-due-date";
+import {
+  moveLocalTaskToProject,
+  updateLocalTaskDueDate,
+  updateLocalTaskPriority,
+  updateLocalTaskStatus,
+} from "@/lib/sync/local-task-mutations";
+import { runEntityPersist } from "@/lib/sync/run-entity-persist";
+import { isTaskPriority, type TaskPriority } from "@/lib/task-priority";
+import { migrateLegacyTaskStatus, type TaskStatus } from "@/lib/task-status";
+import { applyDesktopDragImage } from "@/lib/platform/desktop-drag-image";
+
 import {
   createTaskDragPayload,
   isTaskListDragActive,
@@ -19,25 +45,8 @@ import {
   type TaskDragPayload,
   type TaskReorderRequest,
 } from "./task-list-drag";
-import {
-  keyboardNavListItemClass,
-  keyboardNavItemProps,
-} from "@/lib/shortcuts/keyboard-nav-item";
-import { shouldHandleListKeyboardActivate } from "@/lib/shortcuts/should-handle-list-keyboard-navigation";
-import { TaskDueDateDropdown } from "./task-due-date-dropdown";
-import {
-  TaskListDueDateLabel,
-  TaskListPriorityLabel,
-} from "./task-list-property-label";
-import { TaskPriorityDropdown } from "./task-priority-dropdown";
-import { TaskProjectField, type AssignableProject } from "./task-project-field";
-import { useIsMobileUi } from "@/hooks/use-circle-platform";
-import { applyDesktopDragImage } from "@/lib/platform/desktop-drag-image";
-import { TaskStatusDropdown } from "./task-status-dropdown";
 
-function stopFieldEvent(event: React.MouseEvent) {
-  event.stopPropagation();
-}
+export type { AssignableProject };
 
 type TaskRowProps = {
   task: Task;
@@ -58,13 +67,37 @@ type TaskRowProps = {
   assignableProjects?: AssignableProject[];
 };
 
+function toOverviewTask(
+  task: Task,
+  projectKey?: string | null,
+  projectName?: string | null,
+): TaskItemRowTask {
+  return {
+    id: task.id,
+    number: task.number,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    dueDate: task.dueDate ? task.dueDate.getTime() : null,
+    projectId: task.projectId,
+    projectKey: projectKey ?? null,
+    projectName: projectName ?? null,
+    contactId: task.contactId,
+    assigneeId: task.assigneeId,
+    sortOrder: task.sortOrder,
+  };
+}
+
+/**
+ * Web adapter over shared `@backsteros/ui` task rows — keeps Next persist /
+ * inbox / drag wiring while the visual layout stays in sync with desktop.
+ */
 export function TaskRow({
   task,
   projectId,
   onClick,
   onStatusChange,
   projectName,
-  projectIcon,
   projectKey,
   recentlyMoved = false,
   showDueMeta = true,
@@ -76,255 +109,228 @@ export function TaskRow({
   keyboardHighlighted = false,
   assignableProjects = [],
 }: TaskRowProps) {
-  const isMobileUi = useIsMobileUi();
-  const [isDragging, setIsDragging] = useState(false);
-  const displayId = getTaskDisplayId(task, projectKey);
+  const router = useRouter();
+  const pathname = usePathname();
+  const [, startTransition] = useTransition();
+  const dragEnabled = Boolean(onReorderTask && projectId);
   const orderKey = taskOrderKey(task.id);
   const showInsertIndicator = dragInsertBeforeKey === orderKey;
-  const dragEnabled = Boolean(onReorderTask && projectId);
-  const hasMobileProjectMeta = Boolean(task.projectId || projectName);
-  const hasMobileDueMeta = Boolean(showDueMeta && task.dueDate);
 
-  useEffect(() => {
-    if (!isDragging) return;
+  const overviewTask = useMemo(
+    () => toOverviewTask(task, projectKey, projectName),
+    [projectKey, projectName, task],
+  );
 
-    document.body.classList.add("app-is-dragging");
-    return () => document.body.classList.remove("app-is-dragging");
-  }, [isDragging]);
+  const projectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        assignableProjects.map((project) => ({
+          key: project.key,
+          name: project.name,
+          icon: project.icon,
+        })),
+      ),
+    [assignableProjects],
+  );
 
-  function handleDragStart(event: React.DragEvent) {
-    if (!projectId) {
-      return;
-    }
+  function handleStatusChange(_taskId: string, nextStatus: SharedTaskStatus) {
+    const status = migrateLegacyTaskStatus(nextStatus);
+    onStatusChange?.(status);
 
-    event.dataTransfer.setData(
-      TASK_LIST_DRAG_TYPE,
-      createTaskDragPayload(task, projectId),
-    );
-    event.dataTransfer.effectAllowed = "move";
-    applyDesktopDragImage(event);
-    setIsDragging(true);
-    onTaskDragStart?.({
-      taskId: task.id,
-      status: migrateLegacyTaskStatus(task.status),
-      projectId,
+    startTransition(async () => {
+      const result = await runEntityPersist(
+        () =>
+          updateLocalTaskStatus({
+            taskId: task.id,
+            projectId: task.projectId,
+            status,
+          }),
+        () =>
+          updateTaskStatusAction({
+            taskId: task.id,
+            projectId: task.projectId,
+            status,
+          }),
+      );
+
+      if (!result.ok) {
+        onStatusChange?.(migrateLegacyTaskStatus(task.status));
+        return;
+      }
+
+      if (
+        pathname.startsWith("/inbox") &&
+        shouldNotifyInboxStatusChange(status) &&
+        result.taskNumber != null
+      ) {
+        notifyInboxStatusChange(
+          {
+            kind: "task",
+            title: result.title,
+            status,
+            taskNumber: result.taskNumber,
+            projectKey: result.projectKey,
+            projectName: result.projectName,
+            contactKey: result.contactKey,
+          },
+          router,
+        );
+        navigateInboxAfterStatusChange(router);
+      }
     });
   }
 
-  function handleDragEnd() {
-    setIsDragging(false);
-    onTaskDragEnd?.();
+  function handlePriorityChange(_taskId: string, priority: number) {
+    if (!isTaskPriority(priority)) return;
+    const nextPriority = priority as TaskPriority;
+
+    startTransition(async () => {
+      await runEntityPersist(
+        () =>
+          updateLocalTaskPriority({
+            taskId: task.id,
+            projectId: task.projectId,
+            priority: nextPriority,
+          }),
+        () =>
+          updateTaskPriorityAction({
+            taskId: task.id,
+            projectId: task.projectId,
+            priority: nextPriority,
+          }),
+      );
+    });
   }
 
-  function handleDragOver(event: React.DragEvent) {
-    if (!dragEnabled || !isTaskListDragActive(event.dataTransfer)) {
-      return;
-    }
+  function handleDueDateChange(_taskId: string, dueDate: Date | null) {
+    const dueDateYmd = formatDueDateInputValue(dueDate) || null;
 
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    event.stopPropagation();
-    onDragInsertBeforeKey?.(orderKey);
+    startTransition(async () => {
+      await runEntityPersist(
+        () =>
+          updateLocalTaskDueDate({
+            taskId: task.id,
+            projectId: task.projectId,
+            dueDate: dueDateYmd,
+          }),
+        () =>
+          updateTaskDueDateAction({
+            taskId: task.id,
+            projectId: task.projectId,
+            dueDate: dueDateYmd,
+          }),
+      );
+    });
   }
 
-  function handleDrop(event: React.DragEvent) {
-    if (!dragEnabled) {
-      return;
-    }
+  function handleProjectChange(_taskId: string, nextProjectKey: string | null) {
+    if (assignableProjects.length === 0) return;
 
-    event.preventDefault();
-    event.stopPropagation();
-    onTaskDragEnd?.();
+    const nextProjectId = nextProjectKey
+      ? (assignableProjects.find((project) => project.key === nextProjectKey)
+          ?.id ?? null)
+      : null;
 
-    const payload = readTaskDragPayload(event.dataTransfer);
-    if (!payload) {
-      return;
-    }
+    if (nextProjectId === task.projectId) return;
 
-    const action = resolveTaskDropBeforeTask({ payload, targetTask: task });
-    if (action) {
-      onReorderTask?.(action);
-    }
+    startTransition(async () => {
+      const result = await runEntityPersist(
+        () =>
+          moveLocalTaskToProject({
+            taskId: task.id,
+            projectId: nextProjectId,
+          }),
+        () =>
+          moveTaskToProjectAction({
+            taskId: task.id,
+            projectId: nextProjectId,
+          }),
+      );
+
+      if (result.ok) {
+        router.refresh();
+      }
+    });
   }
+
+  const sharedProps = {
+    task: overviewTask,
+    keyboardHighlighted,
+    onSelect: onClick ? () => onClick() : undefined,
+    showDueMeta,
+    showProject: assignableProjects.length > 0 || Boolean(projectName),
+    className: recentlyMoved ? "task-row-enter" : undefined,
+    onStatusChange: handleStatusChange,
+    onPriorityChange: handlePriorityChange,
+    onDueDateChange: handleDueDateChange,
+    onProjectChange:
+      assignableProjects.length > 0 ? handleProjectChange : undefined,
+    projectOptions: assignableProjects.length > 0 ? projectOptions : undefined,
+  };
 
   return (
-    <li
-      className={`list-none ${showInsertIndicator ? "border-t border-[#ee7a47]/50" : ""}`}
-      {...(onClick ? keyboardNavItemProps(task.id) : {})}
-      onDragOver={dragEnabled ? handleDragOver : undefined}
-      onDrop={dragEnabled ? handleDrop : undefined}
-    >
-      <div
-        role={onClick ? "button" : undefined}
-        tabIndex={onClick ? 0 : undefined}
-        data-tauri-drag-region="false"
-        draggable={dragEnabled}
-        onDragStart={dragEnabled ? handleDragStart : undefined}
-        onDragEnd={dragEnabled ? handleDragEnd : undefined}
-        onClick={(event) => {
-          if (event.defaultPrevented) return;
-          onClick?.();
-        }}
-        onKeyDown={
-          onClick
-            ? (event) => {
-                if (shouldHandleListKeyboardActivate(event.nativeEvent)) {
-                  event.preventDefault();
-                  onClick();
-                }
+    <TaskItemRow
+      {...sharedProps}
+      showAssignee={false}
+      draggable={dragEnabled && Boolean(projectId)}
+      showDragInsertBefore={showInsertIndicator}
+      onDragStart={
+        dragEnabled && projectId
+          ? (event: DragEvent<HTMLDivElement>) => {
+              event.dataTransfer.setData(
+                TASK_LIST_DRAG_TYPE,
+                createTaskDragPayload(task, projectId),
+              );
+              event.dataTransfer.effectAllowed = "move";
+              applyDesktopDragImage(event);
+              document.body.classList.add("app-is-dragging");
+              onTaskDragStart?.({
+                taskId: task.id,
+                status: migrateLegacyTaskStatus(task.status),
+                projectId,
+              });
+            }
+          : undefined
+      }
+      onDragEnd={
+        dragEnabled
+          ? () => {
+              document.body.classList.remove("app-is-dragging");
+              onTaskDragEnd?.();
+            }
+          : undefined
+      }
+      onDragOver={
+        dragEnabled
+          ? (event: DragEvent<HTMLLIElement>) => {
+              if (!isTaskListDragActive(event.dataTransfer)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              event.stopPropagation();
+              onDragInsertBeforeKey?.(orderKey);
+            }
+          : undefined
+      }
+      onDrop={
+        dragEnabled
+          ? (event: DragEvent<HTMLLIElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onTaskDragEnd?.();
+
+              const payload = readTaskDragPayload(event.dataTransfer);
+              if (!payload) return;
+
+              const action = resolveTaskDropBeforeTask({
+                payload,
+                targetTask: task,
+              });
+              if (action) {
+                onReorderTask?.(action);
               }
-            : undefined
-        }
-        className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 text-left text-sm text-foreground hover:bg-white/[0.03] ${
-          isDragging ? "cursor-grabbing" : "cursor-pointer"
-        } ${recentlyMoved ? "task-row-enter" : ""} ${keyboardNavListItemClass(keyboardHighlighted)}`}
-      >
-        {isMobileUi ? (
-          <div className="task-row__content min-w-0 flex-1">
-            <div className="task-row__main min-w-0">
-              <span
-                className="task-row__status inline-flex shrink-0"
-                onMouseDown={stopFieldEvent}
-                onClick={stopFieldEvent}
-              >
-                <TaskStatusDropdown
-                  taskId={task.id}
-                  projectId={task.projectId}
-                  status={task.status}
-                  variant="icon"
-                  onStatusChange={onStatusChange}
-                />
-              </span>
-
-              <span className="task-row__title min-w-0 flex-1 basis-0 truncate text-sm font-medium leading-[18px]">
-                {task.title}
-              </span>
-            </div>
-
-            <div className="task-row__meta min-w-0">
-              <span className="task-row__priority inline-flex shrink-0">
-                <TaskListPriorityLabel priority={task.priority} />
-              </span>
-
-              {hasMobileDueMeta ? (
-                <span className="task-row__due inline-flex shrink-0">
-                  <TaskListDueDateLabel
-                    dueDate={task.dueDate!}
-                    status={task.status}
-                  />
-                </span>
-              ) : null}
-
-              {hasMobileProjectMeta ? (
-                assignableProjects.length > 0 && task.projectId ? (
-                  <span
-                    className="task-row__project inline-flex max-w-full min-w-0"
-                    onMouseDown={stopFieldEvent}
-                    onClick={stopFieldEvent}
-                  >
-                    <TaskProjectField
-                      variant="list"
-                      taskId={task.id}
-                      projectId={task.projectId}
-                      status={task.status}
-                      projects={assignableProjects}
-                    />
-                  </span>
-                ) : projectName ? (
-                  <span className="task-row__project inline-flex max-w-full min-w-0 items-center gap-1 text-xs leading-none">
-                    <ProjectOcticon
-                      icon={getDisplayProjectIcon(projectIcon)}
-                      size={12}
-                      className="shrink-0 text-foreground/70"
-                    />
-                    <span className="truncate">{projectName}</span>
-                  </span>
-                ) : null
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <>
-            <span
-              className="inline-flex shrink-0"
-              onMouseDown={stopFieldEvent}
-              onClick={stopFieldEvent}
-            >
-              <TaskPriorityDropdown
-                taskId={task.id}
-                projectId={task.projectId}
-                priority={task.priority}
-                variant="icon"
-              />
-            </span>
-
-            {displayId ? (
-              <span className="shrink-0 font-mono text-xs tabular-nums text-foreground/45">
-                {displayId}
-              </span>
-            ) : null}
-
-            <span
-              className="inline-flex shrink-0"
-              onMouseDown={stopFieldEvent}
-              onClick={stopFieldEvent}
-            >
-              <TaskStatusDropdown
-                taskId={task.id}
-                projectId={task.projectId}
-                status={task.status}
-                variant="icon"
-                onStatusChange={onStatusChange}
-              />
-            </span>
-
-            <span className="min-w-0 flex-1 truncate text-sm font-medium leading-[18px]">
-              {task.title}
-            </span>
-
-            {assignableProjects.length > 0 ? (
-              <span
-                className="inline-flex max-w-[8rem] shrink-0"
-                onMouseDown={stopFieldEvent}
-                onClick={stopFieldEvent}
-              >
-                <TaskProjectField
-                  variant="list"
-                  taskId={task.id}
-                  projectId={task.projectId}
-                  status={task.status}
-                  projects={assignableProjects}
-                />
-              </span>
-            ) : projectName ? (
-              <span className="inline-flex max-w-[8rem] shrink-0 items-center gap-1 text-xs leading-none text-foreground/50">
-                <ProjectOcticon
-                  icon={getDisplayProjectIcon(projectIcon)}
-                  size={12}
-                  className="shrink-0 text-foreground/70"
-                />
-                <span className="truncate">{projectName}</span>
-              </span>
-            ) : null}
-
-            {showDueMeta ? (
-              <span
-                className="inline-flex shrink-0"
-                onMouseDown={stopFieldEvent}
-                onClick={stopFieldEvent}
-              >
-                <TaskDueDateDropdown
-                  taskId={task.id}
-                  projectId={task.projectId}
-                  dueDate={task.dueDate}
-                  status={task.status}
-                  variant="list"
-                />
-              </span>
-            ) : null}
-          </>
-        )}
-      </div>
-    </li>
+            }
+          : undefined
+      }
+    />
   );
 }

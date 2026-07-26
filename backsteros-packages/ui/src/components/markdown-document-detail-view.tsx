@@ -201,7 +201,10 @@ export function MarkdownDocumentDetailView({
           <>
             <ContentMarkdownPreviewBody titleHeader={previewTitleHeader}>
               {value.trim() ? (
-                <DocumentMarkdownPreview body={value} />
+                <DocumentMarkdownPreview
+                  body={value}
+                  onChange={handleChange}
+                />
               ) : (
                 <p className="content-markdown-empty-hint">
                   This document is empty.

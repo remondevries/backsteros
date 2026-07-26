@@ -25,6 +25,52 @@ import {
 import { colors } from "../lib/theme";
 import { MentionChip } from "./mention-chip";
 
+function parseTaskCheckbox(textAfterMarker: string): {
+  checked: boolean;
+  textAfter: string;
+} | null {
+  // `` `[ ]` `` / `` `[x]` `` — documenting syntax, not a real checkbox.
+  if (/^`+\[[ xX]?\]`/.test(textAfterMarker)) {
+    return null;
+  }
+  const match = textAfterMarker.match(/^\[([ xX]?)\](?:[ \t]+|(?=$))(.*)$/);
+  if (!match) return null;
+  const mark = match[1] ?? "";
+  return {
+    checked: mark === "x" || mark === "X",
+    textAfter: match[2] ?? "",
+  };
+}
+
+function TaskCheckbox({ checked }: { checked: boolean }) {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        width: 14,
+        height: 14,
+        marginTop: 3,
+        marginRight: 6,
+        borderRadius: 3,
+        borderWidth: 1.5,
+        borderColor: checked
+          ? "rgba(103, 162, 90, 0.85)"
+          : "rgba(255, 255, 255, 0.45)",
+        backgroundColor: checked
+          ? "rgba(103, 162, 90, 0.55)"
+          : "rgba(0, 0, 0, 0.25)",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {checked ? (
+        <Text style={{ color: "#f4faf2", fontSize: 10, lineHeight: 11 }}>✓</Text>
+      ) : null}
+    </View>
+  );
+}
+
 type Props = {
   body: string;
 };
@@ -109,8 +155,16 @@ function consumeListItem(
     return null;
   }
 
+  const checkbox = parseTaskCheckbox(opener.textAfterMarker);
+  const textAfterMarker = checkbox?.textAfter ?? opener.textAfterMarker;
+
   const children: ReactNode[] = [];
-  if (opener.textAfterMarker) {
+  if (checkbox) {
+    children.push(
+      <TaskCheckbox key={`li-check-${startIndex}`} checked={checkbox.checked} />,
+    );
+  }
+  if (textAfterMarker) {
     children.push(
       <Text
         key={`li-text-${startIndex}`}
@@ -120,7 +174,7 @@ function consumeListItem(
           lineHeight: BODY_LINE_HEIGHT,
         }}
       >
-        {opener.textAfterMarker}
+        {textAfterMarker}
       </Text>,
     );
   }
@@ -172,7 +226,9 @@ function consumeListItem(
 
   const markerLabel = opener.ordered
     ? `${(start.content.match(/(\d+)\./)?.[1] ?? "1")}.`
-    : "•";
+    : checkbox
+      ? null
+      : "•";
 
   return {
     leadingNewlines: opener.leadingNewlines,
@@ -183,29 +239,31 @@ function consumeListItem(
         style={{
           flexDirection: "row",
           flexWrap: "wrap",
-          alignItems: "center",
+          alignItems: "flex-start",
           columnGap: 6,
           rowGap: 4,
           width: "100%",
           paddingLeft: 2,
         }}
       >
-        <Text
-          style={{
-            color: colors.muted,
-            fontSize: BODY_FONT_SIZE,
-            lineHeight: BODY_LINE_HEIGHT,
-            minWidth: opener.ordered ? 18 : 14,
-          }}
-        >
-          {markerLabel}
-        </Text>
+        {markerLabel ? (
+          <Text
+            style={{
+              color: colors.muted,
+              fontSize: BODY_FONT_SIZE,
+              lineHeight: BODY_LINE_HEIGHT,
+              minWidth: opener.ordered ? 18 : 14,
+            }}
+          >
+            {markerLabel}
+          </Text>
+        ) : null}
         <View
           style={{
             flex: 1,
             flexDirection: "row",
             flexWrap: "wrap",
-            alignItems: "center",
+            alignItems: "flex-start",
             columnGap: 2,
             rowGap: 4,
             minWidth: 0,
@@ -230,6 +288,105 @@ function ParagraphWithMentions({
   const hasMentions = segments.some((segment) => segment.type === "mention");
 
   if (!hasMentions) {
+    // Skip checkbox rendering inside fenced code or fully backtick-wrapped lines.
+    const inFence = /^[ \t]*(```|~~~)/.test(paragraph);
+    if (!inFence) {
+      const lines = paragraph.split("\n");
+      let fenceOpen = false;
+      const taskLines = lines.map((line) => {
+        if (/^[ \t]*(```|~~~)/.test(line)) {
+          fenceOpen = !fenceOpen;
+          return null;
+        }
+        if (fenceOpen) return null;
+        if (/^`.*`$/.test(line.trim())) return null;
+        const opener = matchListItemOpener(line);
+        if (!opener || opener.ordered) return null;
+        return parseTaskCheckbox(opener.textAfterMarker);
+      });
+      if (taskLines.some(Boolean)) {
+        fenceOpen = false;
+        return (
+          <View style={{ width: "100%", gap: 4 }}>
+            {lines.map((line, lineIndex) => {
+              if (/^[ \t]*(```|~~~)/.test(line)) {
+                fenceOpen = !fenceOpen;
+                return (
+                  <Text
+                    key={`plain-fence-${lineIndex}`}
+                    style={{
+                      color: colors.muted,
+                      fontSize: BODY_FONT_SIZE,
+                      lineHeight: BODY_LINE_HEIGHT,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {line}
+                  </Text>
+                );
+              }
+              if (fenceOpen || /^`.*`$/.test(line.trim())) {
+                return (
+                  <Text
+                    key={`plain-code-${lineIndex}`}
+                    style={{
+                      color: colors.foreground,
+                      fontSize: BODY_FONT_SIZE,
+                      lineHeight: BODY_LINE_HEIGHT,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {line}
+                  </Text>
+                );
+              }
+              const opener = matchListItemOpener(line);
+              const checkbox =
+                opener && !opener.ordered
+                  ? parseTaskCheckbox(opener.textAfterMarker)
+                  : null;
+              if (checkbox) {
+                return (
+                  <View
+                    key={`plain-li-${lineIndex}`}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      width: "100%",
+                    }}
+                  >
+                    <TaskCheckbox checked={checkbox.checked} />
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: colors.foreground,
+                        fontSize: BODY_FONT_SIZE,
+                        lineHeight: BODY_LINE_HEIGHT,
+                      }}
+                    >
+                      {checkbox.textAfter}
+                    </Text>
+                  </View>
+                );
+              }
+              return (
+                <Text
+                  key={`plain-line-${lineIndex}`}
+                  style={{
+                    color: colors.foreground,
+                    fontSize: BODY_FONT_SIZE,
+                    lineHeight: BODY_LINE_HEIGHT,
+                  }}
+                >
+                  {line}
+                </Text>
+              );
+            })}
+          </View>
+        );
+      }
+    }
+
     return (
       <Text
         style={{

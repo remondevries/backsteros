@@ -183,7 +183,7 @@ export function TaskStatusGroupSection({
     <li className="group/header flex list-none flex-col gap-1">
       <div
         style={headerGradientStyle}
-        className={`task-status-group-header sticky top-0 z-10 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-foreground ${
+        className={`task-status-group-header sticky top-0 z-10 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-foreground backdrop-blur-md ${
           showAppendIndicator ? "ring-1 ring-inset ring-[#ee7a47]/50" : ""
         }`}
         onDragOver={dragEnabled ? handleHeaderDragOver : undefined}

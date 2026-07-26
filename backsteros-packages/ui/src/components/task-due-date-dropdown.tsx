@@ -206,7 +206,7 @@ export function TaskDueDateDropdown({
               type="button"
               id={triggerId}
               title={displayLabel}
-              className="task-overview-row__icon-trigger"
+              className="task-item-row__icon-trigger"
               tabIndex={-1}
               disabled={isDisabled}
               aria-haspopup="listbox"

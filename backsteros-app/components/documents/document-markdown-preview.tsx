@@ -1,7 +1,20 @@
 "use client";
 
-import { useMemo, useRef, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  Children,
+  isValidElement,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  MarkdownTaskCheckbox,
+  MarkdownTaskListInteractProvider,
+  normalizeMarkdownTaskLists,
+  parseMarkdownTaskCheckbox,
+} from "@backsteros/ui";
 
 import { useContentPreviewLinkNavigation } from "@/components/shortcuts/use-content-preview-link-navigation";
 import {
@@ -22,6 +35,10 @@ import { DocumentMentionChip } from "./document-mention-chip";
 type DocumentMarkdownPreviewProps = {
   body: string;
   mentionCatalog?: MentionCatalog;
+  /**
+   * When set, task-list checkboxes are clickable and update this markdown body.
+   */
+  onChange?: (nextBody: string) => void;
 };
 
 function hasBlockMarkdown(content: string): boolean {
@@ -30,22 +47,67 @@ function hasBlockMarkdown(content: string): boolean {
   );
 }
 
+/** Inclusive ranges of fenced code blocks so blank lines inside stay intact. */
+function findFencedCodeRanges(body: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let fence: { start: number; char: string; len: number } | null = null;
+  let offset = 0;
+  for (const line of body.split("\n")) {
+    const lineStart = offset;
+    const lineEnd = offset + line.length;
+    if (!fence) {
+      const open = line.match(/^([ \t]*)(`{3,}|~{3,})/);
+      if (open) {
+        fence = {
+          start: lineStart,
+          char: open[2]![0]!,
+          len: open[2]!.length,
+        };
+      }
+    } else {
+      const close = line.match(/^[ \t]*(`{3,}|~{3,})[ \t]*$/);
+      if (
+        close &&
+        close[1]!.startsWith(fence.char) &&
+        close[1]!.length >= fence.len
+      ) {
+        ranges.push([fence.start, lineEnd]);
+        fence = null;
+      }
+    }
+    offset = lineEnd + 1;
+  }
+  if (fence) {
+    ranges.push([fence.start, body.length]);
+  }
+  return ranges;
+}
+
 /**
  * Split on blank-line runs while keeping empty rows visible in preview.
  * N consecutive newlines (N >= 2) become N - 1 blank paragraphs — matching
  * the empty lines the user sees in the editor.
+ * Blank lines inside fenced code are preserved so `- [ ]` examples stay literal.
  */
 function splitParagraphs(body: string): string[] {
   if (!body) {
     return [];
   }
 
+  const fenceRanges = findFencedCodeRanges(body);
   const parts: string[] = [];
   const blankLineRuns = /\n{2,}/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = blankLineRuns.exec(body)) !== null) {
+    if (
+      fenceRanges.some(
+        ([start, end]) => match!.index >= start && match!.index < end,
+      )
+    ) {
+      continue;
+    }
     parts.push(body.slice(lastIndex, match.index));
     const blankLineCount = match[0].length - 1;
     for (let i = 0; i < blankLineCount; i += 1) {
@@ -70,14 +132,65 @@ function BlankParagraph() {
   );
 }
 
+const markdownRemarkPlugins = [remarkGfm];
+
+const markdownPreviewComponents: Components = {
+  li(props) {
+    const { children, className, ...rest } = props;
+    const checked = (props as { checked?: boolean | null }).checked;
+    const isTaskItem =
+      typeof checked === "boolean" ||
+      (typeof className === "string" && className.includes("task-list-item"));
+    if (!isTaskItem) {
+      return (
+        <li className={className} {...rest}>
+          {children}
+        </li>
+      );
+    }
+    const body = Children.toArray(children).filter((child) => {
+      if (!isValidElement(child)) return true;
+      return child.type !== "input";
+    });
+    return (
+      <li
+        className={[className, "task-list-item"].filter(Boolean).join(" ")}
+        {...rest}
+      >
+        <MarkdownTaskCheckbox checked={checked === true} />
+        <span className="md-task-checkbox__content">{body}</span>
+      </li>
+    );
+  },
+  input(props) {
+    if (props.type === "checkbox") {
+      return null;
+    }
+    return <input {...props} />;
+  },
+};
+
+const inlineMarkdownComponents: Components = {
+  ...markdownPreviewComponents,
+  p({ children }) {
+    return <span className="whitespace-pre-wrap">{children}</span>;
+  },
+};
+
 function InlineMarkdownSegment({ content }: { content: string }) {
   if (!content) {
     return null;
   }
 
-  // Block markdown is emitted as MarkdownBlockSegment siblings by
-  // renderParagraphWithMentions — never via ReactMarkdown under <p>.
-  return <span className="whitespace-pre-wrap">{content}</span>;
+  // Inline markdown so backtick code spans stay literal (no checkbox conversion).
+  return (
+    <ReactMarkdown
+      remarkPlugins={markdownRemarkPlugins}
+      components={inlineMarkdownComponents}
+    >
+      {normalizeMarkdownTaskLists(content)}
+    </ReactMarkdown>
+  );
 }
 
 function MarkdownBlockSegment({ content }: { content: string }) {
@@ -85,7 +198,14 @@ function MarkdownBlockSegment({ content }: { content: string }) {
     return null;
   }
 
-  return <ReactMarkdown>{content}</ReactMarkdown>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={markdownRemarkPlugins}
+      components={markdownPreviewComponents}
+    >
+      {normalizeMarkdownTaskLists(content)}
+    </ReactMarkdown>
+  );
 }
 
 function renderMentionChip(
@@ -161,15 +281,24 @@ function consumeListItem(
     return null;
   }
 
+  const checkbox = parseMarkdownTaskCheckbox(opener.textAfterMarker);
+  const textAfterMarker = checkbox?.textAfter ?? opener.textAfterMarker;
+
   const children: ReactNode[] = [];
-  if (opener.textAfterMarker) {
+  if (checkbox) {
     children.push(
-      <span
+      <MarkdownTaskCheckbox
+        key={`${keyPrefix}-li-check-${startIndex}`}
+        checked={checkbox.checked}
+      />,
+    );
+  }
+  if (textAfterMarker) {
+    children.push(
+      <InlineMarkdownSegment
         key={`${keyPrefix}-li-text-${startIndex}`}
-        className="whitespace-pre-wrap"
-      >
-        {opener.textAfterMarker}
-      </span>,
+        content={textAfterMarker}
+      />,
     );
   }
 
@@ -217,7 +346,14 @@ function consumeListItem(
   return {
     leadingNewlines: opener.leadingNewlines,
     ordered: opener.ordered,
-    item: <li key={`${keyPrefix}-li-${startIndex}`}>{children}</li>,
+    item: (
+      <li
+        key={`${keyPrefix}-li-${startIndex}`}
+        className={checkbox ? "task-list-item" : undefined}
+      >
+        {children}
+      </li>
+    ),
     nextIndex: index,
   };
 }
@@ -441,6 +577,7 @@ function ParagraphPreview({
 export function DocumentMarkdownPreview({
   body,
   mentionCatalog: mentionCatalogProp,
+  onChange,
 }: DocumentMarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mentionCatalogFromContext = useMentionCatalogOptional()?.catalog;
@@ -463,24 +600,26 @@ export function DocumentMarkdownPreview({
   const paragraphs = splitParagraphs(body);
 
   return (
-    <div
-      ref={containerRef}
-      data-content-preview-links
-      tabIndex={-1}
-      className={
-        enableMentions
-          ? "document-markdown document-markdown-with-mentions"
-          : "document-markdown"
-      }
-    >
-      {paragraphs.map((paragraph, index) => (
-        <ParagraphPreview
-          key={`paragraph-${index}`}
-          paragraph={paragraph}
-          mentionCatalog={mentionCatalog}
-          paragraphIndex={index}
-        />
-      ))}
-    </div>
+    <MarkdownTaskListInteractProvider body={body} onChange={onChange}>
+      <div
+        ref={containerRef}
+        data-content-preview-links
+        tabIndex={-1}
+        className={
+          enableMentions
+            ? "document-markdown document-markdown-with-mentions"
+            : "document-markdown"
+        }
+      >
+        {paragraphs.map((paragraph, index) => (
+          <ParagraphPreview
+            key={`paragraph-${index}`}
+            paragraph={paragraph}
+            mentionCatalog={mentionCatalog}
+            paragraphIndex={index}
+          />
+        ))}
+      </div>
+    </MarkdownTaskListInteractProvider>
   );
 }

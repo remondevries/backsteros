@@ -37,7 +37,8 @@
     "@uiw/react-codemirror": "^4.25.4",
     "chrono-node": "^2.10.0",
     "cmdk": "^1.1.1",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

@@ -135,6 +135,7 @@ function ProjectOverviewDescriptionEditorInner({
                   <DocumentMarkdownPreview
                     body={description}
                     mentionCatalog={mentionCatalog}
+                    onChange={handleChange}
                   />
                 ) : (
                   <p className="text-sm text-foreground/40">

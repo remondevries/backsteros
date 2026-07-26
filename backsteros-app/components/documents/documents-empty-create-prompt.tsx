@@ -274,6 +274,7 @@ function DocumentsEmptyCreatePromptInner(
               <DocumentMarkdownPreview
                 body={markdown}
                 mentionCatalog={mentionCatalog}
+                onChange={setMarkdown}
               />
             ) : (
               <p className="text-sm text-foreground/40">

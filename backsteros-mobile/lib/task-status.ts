@@ -73,6 +73,8 @@ export type TaskLikeForGrouping = {
   status: string | null;
   sort_order?: number | null;
   sortOrder?: number | null;
+  due_date?: Date | number | string | null;
+  dueDate?: Date | number | string | null;
 };
 
 export type TaskStatusGroup<T extends TaskLikeForGrouping> = {
@@ -80,6 +82,57 @@ export type TaskStatusGroup<T extends TaskLikeForGrouping> = {
   label: string;
   tasks: T[];
 };
+
+/** Terminal / archive columns — newest due date first for easier find-back. */
+const DUE_DATE_SORT_STATUSES = new Set<TaskStatus>([
+  "completed",
+  "in_review",
+  "canceled",
+  "duplicated",
+]);
+
+function dueDateYmd(
+  dueDate: Date | number | string | null | undefined,
+): string | null {
+  if (dueDate == null) return null;
+  if (typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())) {
+    return dueDate.trim();
+  }
+  const date =
+    dueDate instanceof Date
+      ? dueDate
+      : typeof dueDate === "number"
+        ? new Date(dueDate)
+        : new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function compareTasksInStatusGroup<T extends TaskLikeForGrouping>(
+  status: TaskStatus,
+  left: T,
+  right: T,
+): number {
+  if (DUE_DATE_SORT_STATUSES.has(status)) {
+    const leftYmd = dueDateYmd(left.due_date ?? left.dueDate ?? null);
+    const rightYmd = dueDateYmd(right.due_date ?? right.dueDate ?? null);
+    if (leftYmd && rightYmd) {
+      const byDue = rightYmd.localeCompare(leftYmd);
+      if (byDue !== 0) return byDue;
+    } else if (leftYmd) {
+      return -1;
+    } else if (rightYmd) {
+      return 1;
+    }
+  }
+
+  const a = left.sort_order ?? left.sortOrder ?? 0;
+  const b = right.sort_order ?? right.sortOrder ?? 0;
+  return a - b;
+}
 
 export function groupTasksByStatus<T extends TaskLikeForGrouping>(
   tasks: readonly T[],
@@ -97,10 +150,8 @@ export function groupTasksByStatus<T extends TaskLikeForGrouping>(
   return TASK_STATUS_ORDER.map((status) => ({
     status,
     label: TASK_STATUS_LABELS[status],
-    tasks: (buckets.get(status) ?? []).sort((left, right) => {
-      const a = left.sort_order ?? left.sortOrder ?? 0;
-      const b = right.sort_order ?? right.sortOrder ?? 0;
-      return a - b;
-    }),
+    tasks: (buckets.get(status) ?? []).sort((left, right) =>
+      compareTasksInStatusGroup(status, left, right),
+    ),
   })).filter((group) => group.tasks.length > 0);
 }

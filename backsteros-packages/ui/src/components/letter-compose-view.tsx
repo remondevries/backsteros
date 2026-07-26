@@ -331,7 +331,10 @@ export function LetterComposeView({
                   preview={
                     <ContentMarkdownPreviewColumn includeTopInset={false}>
                       {value.trim() ? (
-                        <DocumentMarkdownPreview body={value} />
+                        <DocumentMarkdownPreview
+                          body={value}
+                          onChange={handleChange}
+                        />
                       ) : (
                         <p className="content-markdown-empty-hint">
                           This letter is empty.

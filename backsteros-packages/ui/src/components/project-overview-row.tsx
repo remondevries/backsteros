@@ -148,14 +148,14 @@ export function ProjectOverviewRow({
               searchShortcutLabel="S"
               ariaLabel={`Change status: ${getProjectStatusLabel(status)}`}
               taskPropertyDropdownId="status"
-              className="task-overview-row__dropdown"
+              className="task-item-row__dropdown"
               panelAlign="start"
               panelWidth={280}
               renderTrigger={({ open, disabled, triggerId, onToggle }) => (
                 <button
                   type="button"
                   id={triggerId}
-                  className="task-overview-row__icon-trigger"
+                  className="task-item-row__icon-trigger"
                   title={getProjectStatusLabel(status)}
                   tabIndex={-1}
                   disabled={disabled}
@@ -189,14 +189,14 @@ export function ProjectOverviewRow({
             searchShortcutLabel="P"
             ariaLabel={`Change priority: ${getTaskPriorityLabel(project.priority)}`}
             taskPropertyDropdownId="priority"
-            className="task-overview-row__dropdown"
+            className="task-item-row__dropdown"
             panelAlign="start"
             panelWidth={280}
             renderTrigger={({ open, disabled, triggerId, onToggle }) => (
               <button
                 type="button"
                 id={triggerId}
-                className="task-overview-row__icon-trigger"
+                className="task-item-row__icon-trigger"
                 title={getTaskPriorityLabel(project.priority)}
                 tabIndex={-1}
                 disabled={disabled}

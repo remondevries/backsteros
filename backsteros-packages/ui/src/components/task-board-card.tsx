@@ -125,7 +125,7 @@ export function TaskBoardCard({
                 searchShortcutLabel="A"
                 ariaLabel="Change assignee"
                 taskPropertyDropdownId="assignee"
-                className="task-overview-row__dropdown"
+                className="task-item-row__dropdown"
                 panelAlign="end"
                 renderTrigger={({ open, disabled, triggerId, onToggle }) => (
                   <button
@@ -175,13 +175,13 @@ export function TaskBoardCard({
             searchShortcutLabel="S"
             ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
             taskPropertyDropdownId="status"
-            className="task-overview-row__dropdown"
+            className="task-item-row__dropdown"
             panelAlign="start"
             renderTrigger={({ open, disabled, triggerId, onToggle }) => (
               <button
                 type="button"
                 id={triggerId}
-                className="task-overview-row__icon-trigger"
+                className="task-item-row__icon-trigger"
                 title={getTaskStatusLabel(status)}
                 tabIndex={-1}
                 disabled={disabled}
@@ -217,13 +217,13 @@ export function TaskBoardCard({
             searchShortcutLabel="P"
             ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
             taskPropertyDropdownId="priority"
-            className="task-overview-row__dropdown"
+            className="task-item-row__dropdown"
             panelAlign="start"
             renderTrigger={({ open, disabled, triggerId, onToggle }) => (
               <button
                 type="button"
                 id={triggerId}
-                className="task-overview-row__icon-trigger"
+                className="task-item-row__icon-trigger"
                 title={getTaskPriorityLabel(task.priority)}
                 tabIndex={-1}
                 disabled={disabled}

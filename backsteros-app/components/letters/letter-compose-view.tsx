@@ -478,6 +478,7 @@ function LetterComposeViewInner({
                 <DocumentMarkdownPreview
                   body={context}
                   mentionCatalog={mentionCatalog}
+                  onChange={setContext}
                 />
               ) : (
                 <p className="text-sm text-foreground/40">

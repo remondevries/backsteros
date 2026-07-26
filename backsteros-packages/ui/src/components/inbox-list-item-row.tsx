@@ -216,7 +216,7 @@ export function InboxListItemRow({
                   <button
                     type="button"
                     id={triggerId}
-                    className="task-overview-row__icon-trigger"
+                    className="task-item-row__icon-trigger"
                     title={getTaskPriorityLabel(item.priority)}
                     tabIndex={-1}
                     disabled={disabled}

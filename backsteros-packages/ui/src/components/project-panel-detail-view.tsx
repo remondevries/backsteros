@@ -512,7 +512,10 @@ export function ProjectPanelDetailView({
                       preview={
                         <ContentMarkdownPreviewColumn includeTopInset={false}>
                           {value.trim() ? (
-                            <DocumentMarkdownPreview body={value} />
+                            <DocumentMarkdownPreview
+                              body={value}
+                              onChange={handleChange}
+                            />
                           ) : (
                             <p className="project-detail__description-empty">
                               Add a project description…

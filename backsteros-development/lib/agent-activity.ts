@@ -121,16 +121,14 @@ export function isAgentActivelyWorking(
   return activity === "working";
 }
 
+export function emptyAgentActivitySummary(): AgentActivitySummary {
+  return { working: 0, attention: 0, idle: 0, present: 0, total: 0 };
+}
+
 export function summarizeAgentActivity(
   activityBySessionId: Record<string, AgentActivity | null | undefined>,
 ): AgentActivitySummary {
-  const summary: AgentActivitySummary = {
-    working: 0,
-    attention: 0,
-    idle: 0,
-    present: 0,
-    total: 0,
-  };
+  const summary = emptyAgentActivitySummary();
   for (const activity of Object.values(activityBySessionId)) {
     if (!activity) continue;
     summary.total += 1;
@@ -139,6 +137,17 @@ export function summarizeAgentActivity(
   return summary;
 }
 
-export function emptyAgentActivitySummary(): AgentActivitySummary {
-  return { working: 0, attention: 0, idle: 0, present: 0, total: 0 };
+/**
+ * Status-bar count — one entry per task with an actively linked agent TUI.
+ * Prefer this over session activity maps so removed/deleted agents drop out.
+ */
+export function summarizeStatusBarAgents(
+  items: readonly StatusBarAgentItem[],
+): AgentActivitySummary {
+  const summary = emptyAgentActivitySummary();
+  for (const item of items) {
+    summary.total += 1;
+    summary[item.activity] += 1;
+  }
+  return summary;
 }

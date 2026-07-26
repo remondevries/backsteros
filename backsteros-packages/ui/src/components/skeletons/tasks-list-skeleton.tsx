@@ -29,42 +29,8 @@ function TaskRowSkeleton({ index }: { index: number }) {
 
   return (
     <li className="list-none">
-      {/* Mobile */}
       <div
-        className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 md:hidden ${fadeClass}`}
-        data-skeleton-index={index}
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <SkeletonBlock
-              as="span"
-              className="inline-block h-3.5 w-3.5 shrink-0 rounded-full"
-            />
-            <SkeletonBlock
-              as="span"
-              className="inline-block h-3 min-w-24 flex-1 rounded-md"
-            />
-          </div>
-          <div className="flex min-w-0 items-center gap-2">
-            <SkeletonBlock
-              as="span"
-              className="inline-block h-3.5 w-3.5 shrink-0 rounded-full"
-            />
-            <SkeletonBlock
-              as="span"
-              className="inline-block h-3 w-[4.5rem] rounded"
-            />
-            <SkeletonBlock
-              as="span"
-              className="inline-block h-3 w-[5.5rem] rounded"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop */}
-      <div
-        className={`hidden w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 md:flex ${fadeClass}`}
+        className={`flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 ${fadeClass}`}
         data-skeleton-index={index}
       >
         <SkeletonBlock
@@ -81,15 +47,15 @@ function TaskRowSkeleton({ index }: { index: number }) {
         />
         <SkeletonBlock
           as="span"
-          className={`inline-block h-3 shrink-0 rounded-md ${titleWidth}`}
-        />
-        <SkeletonBlock
-          as="span"
-          className="inline-block h-3 w-[5.5rem] shrink-0 rounded"
+          className={`inline-block h-3 min-w-0 flex-1 rounded-md ${titleWidth}`}
         />
         <SkeletonBlock
           as="span"
           className="inline-block h-3 w-[4.5rem] shrink-0 rounded"
+        />
+        <SkeletonBlock
+          as="span"
+          className="inline-block h-3 w-[5.5rem] shrink-0 rounded"
         />
       </div>
     </li>
@@ -98,7 +64,7 @@ function TaskRowSkeleton({ index }: { index: number }) {
 
 /**
  * Tasks list loading state: real status group headers with item-shaped
- * skeleton rows — matching the ready task-row layout (web + desktop).
+ * skeleton rows — matching TaskItemRow (priority · id · status · title · props).
  */
 export function TasksListSkeleton({
   itemsPerGroup = 3,

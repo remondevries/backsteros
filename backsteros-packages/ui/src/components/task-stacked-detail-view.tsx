@@ -192,7 +192,10 @@ export function TaskStackedDetailView({
             preview={
               <ContentMarkdownPreviewColumn includeTopInset={false}>
                 {value.trim() ? (
-                  <DocumentMarkdownPreview body={value} />
+                  <DocumentMarkdownPreview
+                    body={value}
+                    onChange={handleChange}
+                  />
                 ) : (
                   <p className="overview-empty">Add a description…</p>
                 )}

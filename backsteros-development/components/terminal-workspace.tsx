@@ -29,7 +29,7 @@ import {
   emptyAgentActivitySummary,
   isAgentActivelyWorking,
   AGENT_WORKING_IDLE_FALLBACK_MS,
-  summarizeAgentActivity,
+  summarizeStatusBarAgents,
   type AgentActivity,
   type AgentActivitySummary,
   type StatusBarAgentItem,
@@ -868,6 +868,14 @@ export function TerminalWorkspace({
         setAttachedChatForTask(forTaskId, null);
         flushPendingShellClearRef.current(forTaskId);
       }
+      // Drop stale activity so the status bar cannot keep counting a removed agent.
+      setActivityBySessionId((current) => {
+        if (!(sessionId in current)) return current;
+        const next = { ...current };
+        delete next[sessionId];
+        activityBySessionIdRef.current = next;
+        return next;
+      });
       setBucketsByTaskId((current) => {
         for (const [bucketTaskId, bucket] of Object.entries(current)) {
           const index = bucket.sessions.findIndex(
@@ -1359,13 +1367,8 @@ export function TerminalWorkspace({
           agentTurnArmedRef.current.delete(sessionId);
           turnCompleteReasonBySessionRef.current.delete(sessionId);
           turnStartedAtRef.current.delete(sessionId);
-          // Drop to idle without a second turn-completed (already emitted).
-          setActivityBySessionId((current) => {
-            if (current[sessionId] === "idle") return current;
-            const next = { ...current, [sessionId]: "idle" as const };
-            activityBySessionIdRef.current = next;
-            return next;
-          });
+          // TUI left — activity already cleared in markAgentCliLeftSession.
+          // Do not re-add idle; that kept deleted agents in the status-bar count.
           return;
         }
 
@@ -1483,7 +1486,7 @@ export function TerminalWorkspace({
               stickyWorkingTaskIdsRef.current.delete(forTaskId);
               publishStickyWorkingTasks();
             }
-            setSessionActivity(sessionId, "idle");
+            // markAgentCliLeftSession already cleared activity — do not re-add idle.
             publishAgentOpenTaskIds();
             return;
           }
@@ -2238,15 +2241,6 @@ export function TerminalWorkspace({
     onActiveTabIdChange?.(activeId);
   }, [activeId, onActiveTabIdChange]);
 
-  const agentSummary = useMemo(
-    () => summarizeAgentActivity(activityBySessionId),
-    [activityBySessionId],
-  );
-
-  useEffect(() => {
-    onAgentActivitySummaryChange?.(agentSummary);
-  }, [agentSummary, onAgentActivitySummaryChange]);
-
   const workingTaskIds = useMemo(() => {
     const ids = new Set<string>(stickyWorkingTaskIds);
     for (const [bucketTaskId, bucket] of Object.entries(bucketsByTaskId)) {
@@ -2316,6 +2310,15 @@ export function TerminalWorkspace({
     projectId,
     projectLabel,
   ]);
+
+  const agentSummary = useMemo(
+    () => summarizeStatusBarAgents(agentStatusItems),
+    [agentStatusItems],
+  );
+
+  useEffect(() => {
+    onAgentActivitySummaryChange?.(agentSummary);
+  }, [agentSummary, onAgentActivitySummaryChange]);
 
   const agentStatusItemsKey = agentStatusItems
     .map((item) => `${item.taskId}:${item.activity}:${item.projectId ?? ""}`)

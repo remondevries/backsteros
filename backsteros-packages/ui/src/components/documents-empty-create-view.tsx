@@ -187,7 +187,10 @@ export function DocumentsEmptyCreateView({
         preview={
           <ContentMarkdownPreviewColumn includeTopInset={false}>
             {markdown.trim() ? (
-              <DocumentMarkdownPreview body={markdown} />
+              <DocumentMarkdownPreview
+                body={markdown}
+                onChange={handleChange}
+              />
             ) : (
               <p className="content-markdown-empty-hint">
                 This document is empty.

@@ -548,6 +548,7 @@ function DocumentDetailScreenInner({
                   <DocumentMarkdownPreview
                     body={previewBody}
                     mentionCatalog={mentionCatalog}
+                    onChange={handleContentChange}
                   />
                 ) : (
                   <p className="text-sm text-foreground/40">

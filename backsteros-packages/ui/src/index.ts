@@ -558,7 +558,29 @@ export {
   groupTasksByStatus,
   type TaskStatusGroup,
   type TaskLikeForGrouping,
+  type GroupTasksByStatusOptions,
 } from "./group-tasks-by-status.js";
+
+export {
+  mapMarkdownOutsideCode,
+  normalizeMarkdownTaskLists,
+  parseMarkdownTaskCheckbox,
+  findMarkdownTaskListCheckboxes,
+  toggleMarkdownTaskListItem,
+  type MarkdownTaskCheckboxParse,
+  type MarkdownTaskListCheckboxMatch,
+} from "./markdown-task-list.js";
+
+export {
+  MarkdownTaskCheckbox,
+  type MarkdownTaskCheckboxProps,
+} from "./components/markdown-task-checkbox.js";
+
+export {
+  MarkdownTaskListInteractProvider,
+  useMarkdownTaskListInteract,
+  type MarkdownTaskListInteract,
+} from "./markdown-task-list-interact.js";
 
 export {
   groupProjectsByStatus,
@@ -672,11 +694,19 @@ export {
 } from "./components/list-board-view-shell.js";
 
 export {
+  TaskItemRow,
+  type TaskItemRowProps,
+  type TaskItemRowTask,
+} from "./components/task-item-row.js";
+
+/** @deprecated Prefer `TaskItemRow` / `TaskItemRowTask`. */
+export {
   TaskOverviewRow,
   type TaskOverviewRowProps,
   type TaskOverviewRowTask,
 } from "./components/task-overview-row.js";
 
+/** @deprecated Prefer `TaskItemRow`. */
 export {
   TaskWorkbenchRow,
   type TaskWorkbenchRowProps,

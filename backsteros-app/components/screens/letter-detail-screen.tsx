@@ -533,6 +533,7 @@ function LetterDetailScreenInner({
                       <DocumentMarkdownPreview
                         body={context}
                         mentionCatalog={mentionCatalog}
+                        onChange={handleContextChange}
                       />
                     ) : (
                       <p className="text-sm text-foreground/40">

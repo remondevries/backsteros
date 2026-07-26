@@ -45,13 +45,13 @@ import {
 import { StatusGroupSection } from "./status-group-section.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
-  TaskWorkbenchRow,
-} from "./task-workbench-row.js";
-import type { TaskOverviewRowTask } from "./task-overview-row.js";
+  TaskItemRow,
+  type TaskItemRowTask,
+} from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 export type ProjectTasksWorkbenchViewProps = {
-  tasks: TaskOverviewRowTask[];
+  tasks: TaskItemRowTask[];
   onSelectTask?: (taskId: string) => void;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
@@ -60,9 +60,9 @@ export type ProjectTasksWorkbenchViewProps = {
   /** Persist list/board drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: TaskReorderRequest) => void;
   /** Shown after the task title in list rows (e.g. sync loader). */
-  renderTaskTitleTrailing?: (task: TaskOverviewRowTask) => ReactNode;
+  renderTaskTitleTrailing?: (task: TaskItemRowTask) => ReactNode;
   /** Overlay stacked on the list-row assignee avatar (e.g. agent badge). */
-  renderAssigneeAccessory?: (task: TaskOverviewRowTask) => ReactNode;
+  renderAssigneeAccessory?: (task: TaskItemRowTask) => ReactNode;
   /** `inline` = right after the title; `end` = flush right in the title area. */
   titleTrailingAlign?: "inline" | "end";
   showDueMeta?: boolean;
@@ -383,7 +383,7 @@ export function ProjectTasksWorkbenchView({
               </li>
             ) : null}
             {group.tasks.map((task) => (
-              <TaskWorkbenchRow
+              <TaskItemRow
                 key={task.id}
                 task={task}
                 keyboardHighlighted={highlightedId === task.id}

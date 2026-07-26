@@ -1984,6 +1984,10 @@ body[data-keyboard-nav-hover="suppressed"]
   border-radius: 6px;
   color: var(--foreground);
   box-sizing: border-box;
+  /* Solid base so sticky headers cover scrolling rows; status tint stays on background-image. */
+  background-color: #161616;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .status-group-header {
@@ -3173,17 +3177,17 @@ body[data-keyboard-nav-hover="suppressed"]
   padding-top: 4px;
 }
 
-.task-overview-row-item,
+.task-item-row-item,
 .project-overview-row-item {
   list-style: none;
 }
 
-.task-overview-row-item--insert-before,
+.task-item-row-item--insert-before,
 .project-overview-row-item--insert-before {
   border-top: 1px solid color-mix(in srgb, #ee7a47 50%, transparent);
 }
 
-.task-overview-row {
+.task-item-row {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -3200,20 +3204,30 @@ body[data-keyboard-nav-hover="suppressed"]
   cursor: pointer;
 }
 
-.task-overview-row:hover {
+.task-item-row:hover {
   background: rgb(255 255 255 / 0.03);
 }
 
-.task-overview-row__priority,
-.task-overview-row__status,
-.task-overview-row__due,
-.task-overview-row__assignee {
+/* priority | id | status | title …… properties (due / project / assignee) */
+.task-item-row__priority,
+.task-item-row__status,
+.task-item-row__due,
+.task-item-row__assignee {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
 }
 
-.task-overview-row__assignee-stack {
+.task-item-row__properties {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.task-item-row__assignee-stack {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
@@ -3221,7 +3235,7 @@ body[data-keyboard-nav-hover="suppressed"]
   justify-content: center;
 }
 
-.task-overview-row__assignee-accessory {
+.task-item-row__assignee-accessory {
   position: absolute;
   right: -5px;
   bottom: -4px;
@@ -3238,7 +3252,7 @@ body[data-keyboard-nav-hover="suppressed"]
   pointer-events: none;
 }
 
-.task-overview-row__assignee-trigger {
+.task-item-row__assignee-trigger {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -3253,17 +3267,17 @@ body[data-keyboard-nav-hover="suppressed"]
   line-height: 0;
 }
 
-.task-overview-row__assignee-trigger:hover {
+.task-item-row__assignee-trigger:hover {
   opacity: 0.85;
 }
 
-.task-overview-row__dropdown {
+.task-item-row__dropdown {
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
 }
 
-.task-overview-row__icon-trigger {
+.task-item-row__icon-trigger {
   display: inline-flex;
   width: 16px;
   height: 16px;
@@ -3493,7 +3507,7 @@ body[data-keyboard-nav-hover="suppressed"]
   opacity: 0.45;
 }
 
-.task-overview-row__id {
+.task-item-row__id {
   flex-shrink: 0;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -3501,15 +3515,15 @@ body[data-keyboard-nav-hover="suppressed"]
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
-.task-overview-row__title-wrap {
+.task-item-row__title-wrap {
   display: inline-flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
 }
 
-.task-overview-row__title {
+.task-item-row__title {
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
@@ -3520,18 +3534,18 @@ body[data-keyboard-nav-hover="suppressed"]
   line-height: 18px;
 }
 
-.task-overview-row__title-trailing {
+.task-item-row__title-trailing {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
-.task-overview-row__title-wrap--trailing-end .task-overview-row__title-trailing {
+.task-item-row__title-wrap--trailing-end .task-item-row__title-trailing {
   margin-left: auto;
 }
 
-.task-overview-row__project {
+.task-item-row__project {
   display: inline-flex;
   max-width: 8rem;
   flex-shrink: 0;
@@ -3542,7 +3556,7 @@ body[data-keyboard-nav-hover="suppressed"]
   line-height: 1;
 }
 
-.task-overview-row__project-name {
+.task-item-row__project-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4037,6 +4051,96 @@ body[data-keyboard-nav-hover="suppressed"]
 .content-markdown-preview-body--rendered ul,
 .content-markdown-preview-body--rendered ol {
   padding-left: 1.35em;
+}
+
+.content-markdown-preview-body--rendered ul.contains-task-list,
+.content-markdown-preview-body--rendered .contains-task-list {
+  list-style: none;
+  padding-left: 0.15em;
+}
+
+.content-markdown-preview-body--rendered li.task-list-item,
+.content-markdown-preview-body--rendered .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45em;
+  list-style: none;
+  margin-left: 0;
+}
+
+.md-task-checkbox__content {
+  min-width: 0;
+  flex: 1;
+  /* Normal inline flow so `code` / emphasis stay on one wrapped line. */
+  display: inline;
+}
+
+.md-task-checkbox {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.2em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
+  font: inherit;
+}
+
+.md-task-checkbox--interactive {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.md-task-checkbox--interactive:hover .md-task-checkbox__box {
+  border-color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.md-task-checkbox--interactive:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.md-task-checkbox__box {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--foreground);
+  box-sizing: border-box;
+}
+
+.md-task-checkbox[data-checked="true"] .md-task-checkbox__box {
+  border-color: color-mix(in srgb, var(--foreground) 70%, #67a25a);
+  background: color-mix(in srgb, #67a25a 55%, transparent);
+  color: #f4faf2;
+}
+
+.md-task-checkbox__check {
+  display: block;
+}
+
+/* Hide native GFM checkbox inputs; we render MarkdownTaskCheckbox instead. */
+.content-markdown-preview-body--rendered .md-task-checkbox-native,
+.document-markdown .md-task-checkbox-native,
+.content-markdown-preview-body--rendered .task-list-item input[type="checkbox"],
+.document-markdown .task-list-item input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  appearance: none;
 }
 
 .content-markdown-preview-body--rendered code {
@@ -6044,7 +6148,7 @@ a.mention-chip-lite--deleted:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.task-overview-row__project-trigger {
+.task-item-row__project-trigger {
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
@@ -6061,7 +6165,7 @@ a.mention-chip-lite--deleted:hover {
   overflow: hidden;
 }
 
-.task-overview-row__project-trigger:hover {
+.task-item-row__project-trigger:hover {
   background: rgb(255 255 255 / 0.04);
 }
 

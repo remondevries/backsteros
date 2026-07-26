@@ -2,7 +2,7 @@ import type { Project as ApiProject, Task as ApiTask } from "@backsteros/contrac
 import {
   formatTaskDisplayId,
   type TaskDetailViewTask,
-  type TaskOverviewRowTask,
+  type TaskItemRowTask,
 } from "@backsteros/ui";
 
 function asEpoch(value: string | null): number | null {
@@ -14,7 +14,7 @@ function asEpoch(value: string | null): number | null {
 export function mapApiTask(
   task: ApiTask,
   projectsById: Map<string, ApiProject>,
-): TaskOverviewRowTask {
+): TaskItemRowTask {
   const project = task.projectId
     ? (projectsById.get(task.projectId) ?? null)
     : null;

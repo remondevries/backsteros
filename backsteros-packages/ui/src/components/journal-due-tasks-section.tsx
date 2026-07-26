@@ -15,21 +15,21 @@ import {
 import { StatusGroupSection } from "./status-group-section.js";
 import { TasksNavIcon } from "./sidebar-nav-icons.js";
 import {
-  TaskOverviewRow,
-  type TaskOverviewRowTask,
-} from "./task-overview-row.js";
+  TaskItemRow,
+  type TaskItemRowTask,
+} from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 export type JournalDueTasksSectionProps = {
   dateSlug: string;
-  tasks: TaskOverviewRowTask[];
+  tasks: TaskItemRowTask[];
   isLoading?: boolean;
   calendarTimeZone?: string;
   onSelectTask?: (taskId: string) => void;
 };
 
 /** Tasks whose due calendar date matches the journal entry `YYYY-MM-DD`. */
-export function filterTasksDueOnJournalDate<T extends { dueDate: TaskOverviewRowTask["dueDate"] }>(
+export function filterTasksDueOnJournalDate<T extends { dueDate: TaskItemRowTask["dueDate"] }>(
   tasks: T[],
   dateSlug: string,
   calendarTimeZone?: string,
@@ -164,7 +164,7 @@ export function JournalDueTasksSection({
                   onToggle={() => toggleGroup(group.status)}
                 >
                   {group.tasks.map((task) => (
-                    <TaskOverviewRow
+                    <TaskItemRow
                       key={task.id}
                       task={task}
                       showDueMeta={false}
@@ -177,7 +177,7 @@ export function JournalDueTasksSection({
             })
           ) : (
             tasks.map((task) => (
-              <TaskOverviewRow
+              <TaskItemRow
                 key={task.id}
                 task={task}
                 showDueMeta={false}

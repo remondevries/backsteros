@@ -22,7 +22,7 @@ import {
   type LetterListItem,
   type OrganizationListItem,
   type ProjectOverviewRowProject,
-  type TaskOverviewRowTask,
+  type TaskItemRowTask,
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
@@ -75,7 +75,7 @@ function parseTaskLinks(value: unknown): TaskLink[] {
 function mapTask(
   task: ApiTask,
   projectsById: Map<string, ApiProject>,
-): TaskOverviewRowTask {
+): TaskItemRowTask {
   const project = task.projectId
     ? projectsById.get(task.projectId) ?? null
     : null;
@@ -187,14 +187,14 @@ export type DesktopWorkspaceData = {
   source: "empty" | "api" | "powersync";
   ready: boolean;
   /** Non-inbox tasks — use for the Tasks list (`/tasks`). */
-  tasks: TaskOverviewRowTask[];
+  tasks: TaskItemRowTask[];
   /** Inbox tasks with full metadata (assigneeId, etc.) — not in `tasks`. */
-  inboxTasks: TaskOverviewRowTask[];
+  inboxTasks: TaskItemRowTask[];
   /**
    * Non-inbox + inbox, deduped by id.
    * Use for contact/project/journal filters and task id lookups.
    */
-  allTasks: TaskOverviewRowTask[];
+  allTasks: TaskItemRowTask[];
   projects: Array<
     ProjectOverviewRowProject & {
       organizationId?: string | null;
@@ -1397,7 +1397,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     mapTask(task, projectsById),
   );
   // REST `/api/v1/tasks` may already include inbox rows; dedupe by id.
-  const allTasksById = new Map<string, TaskOverviewRowTask>();
+  const allTasksById = new Map<string, TaskItemRowTask>();
   for (const task of mappedTasks) allTasksById.set(task.id, task);
   for (const task of mappedInboxTasks) {
     if (!allTasksById.has(task.id)) allTasksById.set(task.id, task);
