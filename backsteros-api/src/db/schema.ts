@@ -601,6 +601,45 @@ export const syncEvents = pgTable(
   ],
 );
 
+/**
+ * Owner-managed templates that spawn tasks on a UTC cron schedule.
+ * Managed from backsteros-admin; runner ticks inside the API process.
+ */
+export const recurringTasks = pgTable(
+  "recurring_tasks",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    inbox: boolean("inbox").notNull().default(true),
+    /** 5-field UTC cron: minute hour day-of-month month day-of-week */
+    cronExpression: text("cron_expression").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastTaskId: text("last_task_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("recurring_tasks_workspace_id_idx").on(table.workspaceId),
+    index("recurring_tasks_due_idx").on(table.enabled, table.nextRunAt),
+    index("recurring_tasks_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
 export const entityCounters = pgTable(
   "entity_counters",
   {
@@ -705,6 +744,7 @@ export const migrationItems = pgTable(
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
+export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;

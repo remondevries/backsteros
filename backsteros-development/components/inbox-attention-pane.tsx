@@ -628,17 +628,23 @@ export function InboxAttentionDetail({
     [],
   );
   const { data: contacts } = useApiResource(loadContacts, []);
+  const contactAvatarSrc = useConsoleAvatarSrcMap("contact", contacts ?? []);
 
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
-        (contacts ?? []).map((contact) => ({
-          id: contact.id,
-          name: contact.name,
-          email: contact.email,
-        })),
+        withAvatarSrc(
+          (contacts ?? []).map((contact) => ({
+            id: contact.id,
+            name: contact.name?.trim() || "Untitled",
+            email: contact.email,
+            avatarStorageKey: contact.avatarStorageKey,
+            updatedAt: contact.updatedAt,
+          })),
+          contactAvatarSrc,
+        ),
       ),
-    [contacts],
+    [contactAvatarSrc, contacts],
   );
 
   const projectOptions = useMemo(

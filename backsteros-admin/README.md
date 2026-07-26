@@ -12,8 +12,8 @@
 ## Status
 
 - Next.js App Router + `@clerk/nextjs` (same auth gate pattern as `backsteros-development`)
-- Left panel: logo + **Admin Dashboard** title, **Dashboard** nav item
-- API `/health` on the dashboard (via same-origin `/api/health` proxy)
+- Nav: **Dashboard** (API health), **Sync**, **Logs**, **Recurring** (UTC cron templates)
+- Same-origin proxies for `/api/health` and `/api/v1/*`
 
 Owner access: workspace `owner` membership, workspace `ownerUserId`, or
 `ADMIN_OWNER_USER_IDS` on the API.

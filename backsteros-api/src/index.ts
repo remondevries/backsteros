@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 
 import { createApp } from "./app.js";
 import { assertPowerSyncSecrets } from "./lib/secrets.js";
+import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
 
 assertPowerSyncSecrets();
 
@@ -17,5 +18,6 @@ serve(
   (info) => {
     console.log(`backsteros-api listening on http://localhost:${info.port}`);
     console.log(`OpenAPI: http://localhost:${info.port}/api/v1/openapi.json`);
+    startRecurringTaskRunner();
   },
 );

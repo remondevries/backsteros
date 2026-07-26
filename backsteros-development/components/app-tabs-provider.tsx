@@ -6,22 +6,25 @@ import {
   isBlockingModalOpen,
   isTargetInsideBlockingModal,
   normalizeTabHref,
-  shouldHandleGlobalShortcut,
   useTabShortcuts,
   type ProductTab,
   type ProductTabsState,
 } from "@backsteros/ui";
 import {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 
 const STORAGE_KEY = "backsteros.development.app-tabs";
+/** How many closed tabs ⌘⇧T can walk back through. */
+const MAX_CLOSED_TABS = 25;
 
 export type ConsoleTabTaskMeta = {
   taskId?: string | null;
@@ -112,17 +115,14 @@ function syncActiveTab(
   };
 }
 
-/** Allow ⌘T / ⌘⇧[ / ] while the embedded terminal is focused. */
+/**
+ * App-tab chrome (⌘T / ⌘W / ⌘⇧T / ⌘⇧[]) behaves like a browser: works from
+ * terminals and editors. Only yield when a blocking modal owns the UI.
+ */
 function shouldHandleConsoleTabShortcut(event: KeyboardEvent): boolean {
-  const target = event.target;
-  const inXterm =
-    target instanceof HTMLElement && Boolean(target.closest(".xterm"));
-  if (inXterm) {
-    return !(
-      isBlockingModalOpen() && !isTargetInsideBlockingModal(event.target)
-    );
-  }
-  return shouldHandleGlobalShortcut(event);
+  return !(
+    isBlockingModalOpen() && !isTargetInsideBlockingModal(event.target)
+  );
 }
 
 export function AppTabsProvider({
@@ -153,6 +153,11 @@ export function AppTabsProvider({
     createDefaultTabsState(normalizedPath),
   );
   const [hydrated, setHydrated] = useState(false);
+  /** Most-recently closed first — ⌘⇧T pops from the front. */
+  const closedTabsRef = useRef<ProductTab[]>([]);
+  /** Mirror of `state` so close/reopen can read tabs without racing setState. */
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     const stored = loadStoredState(normalizedPath);
@@ -177,46 +182,64 @@ export function AppTabsProvider({
 
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      /* ignore */
-    }
+    // Defer so tab switches are not blocked on synchronous localStorage I/O.
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch {
+        /* ignore */
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [hydrated, state]);
 
   const activateTab = useCallback(
     (tabId: string) => {
-      setState((current) => {
-        const tab = current.tabs.find((entry) => entry.id === tabId);
-        if (!tab || current.activeTabId === tabId) {
-          return current;
-        }
-        if (tab.href !== normalizedPath) {
-          queueMicrotask(() => navigate(tab.href));
-        }
-        return { ...current, activeTabId: tabId };
-      });
+      const current = stateRef.current;
+      const tab = current.tabs.find((entry) => entry.id === tabId);
+      if (!tab || current.activeTabId === tabId) return;
+      const nextState = { ...current, activeTabId: tabId };
+      stateRef.current = nextState;
+      // Urgent: tab chrome. Defer route/content work so the active tab paints first.
+      setState(nextState);
+      if (tab.href !== normalizedPath) {
+        startTransition(() => {
+          navigate(tab.href);
+        });
+      }
     },
     [navigate, normalizedPath],
   );
 
   const closeTab = useCallback(
     (tabId: string) => {
-      setState((current) => {
-        if (current.tabs.length <= 1) return current;
-        const index = current.tabs.findIndex((tab) => tab.id === tabId);
-        if (index < 0) return current;
-        const tabs = current.tabs.filter((tab) => tab.id !== tabId);
-        const closingActive = current.activeTabId === tabId;
-        if (!closingActive) {
-          return { ...current, tabs };
-        }
-        const nextTab = tabs[Math.min(index, tabs.length - 1)]!;
-        if (nextTab.href !== normalizedPath) {
-          queueMicrotask(() => navigate(nextTab.href));
-        }
-        return { tabs, activeTabId: nextTab.id };
-      });
+      const current = stateRef.current;
+      if (current.tabs.length <= 1) return;
+      const index = current.tabs.findIndex((tab) => tab.id === tabId);
+      if (index < 0) return;
+      const closed = current.tabs[index]!;
+      const tabs = current.tabs.filter((tab) => tab.id !== tabId);
+      const closingActive = current.activeTabId === tabId;
+      const nextTab = closingActive
+        ? tabs[Math.min(index, tabs.length - 1)]!
+        : undefined;
+
+      closedTabsRef.current = [closed, ...closedTabsRef.current].slice(
+        0,
+        MAX_CLOSED_TABS,
+      );
+
+      const nextState: ProductTabsState = {
+        tabs,
+        activeTabId: closingActive ? nextTab!.id : current.activeTabId,
+      };
+      stateRef.current = nextState;
+      setState(nextState);
+      if (nextTab && nextTab.href !== normalizedPath) {
+        startTransition(() => {
+          navigate(nextTab.href);
+        });
+      }
     },
     [navigate, normalizedPath],
   );
@@ -224,44 +247,54 @@ export function AppTabsProvider({
   const openNewTab = useCallback(() => {
     const href = normalizeTabHref(newTabHref);
     const tab = createProductTab(href, newTabTitle);
-    setState((current) => ({
-      tabs: [...current.tabs, tab],
+    const nextState = {
+      tabs: [...stateRef.current.tabs, tab],
       activeTabId: tab.id,
-    }));
+    };
+    stateRef.current = nextState;
+    setState(nextState);
     if (href !== normalizedPath) {
-      navigate(href);
+      startTransition(() => {
+        navigate(href);
+      });
     }
   }, [navigate, newTabHref, newTabTitle, normalizedPath]);
 
   const activatePreviousTab = useCallback(() => {
-    setState((current) => {
-      if (current.tabs.length <= 1) return current;
-      const index = current.tabs.findIndex(
-        (tab) => tab.id === current.activeTabId,
-      );
-      if (index < 0) return current;
-      const previous =
-        current.tabs[(index - 1 + current.tabs.length) % current.tabs.length]!;
-      if (previous.href !== normalizedPath) {
-        queueMicrotask(() => navigate(previous.href));
-      }
-      return { ...current, activeTabId: previous.id };
-    });
+    const current = stateRef.current;
+    if (current.tabs.length <= 1) return;
+    const index = current.tabs.findIndex(
+      (tab) => tab.id === current.activeTabId,
+    );
+    if (index < 0) return;
+    const previous =
+      current.tabs[(index - 1 + current.tabs.length) % current.tabs.length]!;
+    const nextState = { ...current, activeTabId: previous.id };
+    stateRef.current = nextState;
+    setState(nextState);
+    if (previous.href !== normalizedPath) {
+      startTransition(() => {
+        navigate(previous.href);
+      });
+    }
   }, [navigate, normalizedPath]);
 
   const activateNextTab = useCallback(() => {
-    setState((current) => {
-      if (current.tabs.length <= 1) return current;
-      const index = current.tabs.findIndex(
-        (tab) => tab.id === current.activeTabId,
-      );
-      if (index < 0) return current;
-      const next = current.tabs[(index + 1) % current.tabs.length]!;
-      if (next.href !== normalizedPath) {
-        queueMicrotask(() => navigate(next.href));
-      }
-      return { ...current, activeTabId: next.id };
-    });
+    const current = stateRef.current;
+    if (current.tabs.length <= 1) return;
+    const index = current.tabs.findIndex(
+      (tab) => tab.id === current.activeTabId,
+    );
+    if (index < 0) return;
+    const next = current.tabs[(index + 1) % current.tabs.length]!;
+    const nextState = { ...current, activeTabId: next.id };
+    stateRef.current = nextState;
+    setState(nextState);
+    if (next.href !== normalizedPath) {
+      startTransition(() => {
+        navigate(next.href);
+      });
+    }
   }, [navigate, normalizedPath]);
 
   const updateActiveTabTitle = useCallback((title: string) => {
@@ -273,6 +306,28 @@ export function AppTabsProvider({
     }));
   }, []);
 
+  const reopenClosedTab = useCallback((): boolean => {
+    const closed = closedTabsRef.current[0];
+    if (!closed) return false;
+    closedTabsRef.current = closedTabsRef.current.slice(1);
+    const tab: ProductTab = {
+      ...createProductTab(closed.href, closed.title),
+      icon: closed.icon,
+      taskId: closed.taskId ?? null,
+      taskStatus: closed.taskStatus ?? null,
+    };
+    const nextState: ProductTabsState = {
+      tabs: [...stateRef.current.tabs, tab],
+      activeTabId: tab.id,
+    };
+    stateRef.current = nextState;
+    setState(nextState);
+    if (tab.href !== normalizedPath) {
+      navigate(tab.href);
+    }
+    return true;
+  }, [navigate, normalizedPath]);
+
   useTabShortcuts({
     enabled: shortcutsEnabled,
     activeTabId: state.activeTabId,
@@ -280,6 +335,7 @@ export function AppTabsProvider({
     closeTab,
     activatePreviousTab,
     activateNextTab,
+    reopenClosedTab,
     shouldHandle: shouldHandleConsoleTabShortcut,
   });
 

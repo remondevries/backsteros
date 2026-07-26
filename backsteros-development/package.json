@@ -16,7 +16,7 @@
     "tauri": "tauri",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/cursor-agent-cli.test.ts lib/agent-review.test.ts lib/agent-hold.test.ts lib/format-agent-comment-reply-prompt.test.ts lib/agent-launch.test.ts"
+    "test": "node --experimental-strip-types --test lib/cursor-agent-cli.test.ts lib/agent-cli-open.test.ts lib/agent-review.test.ts lib/agent-hold.test.ts lib/format-agent-comment-reply-prompt.test.ts lib/agent-launch.test.ts lib/cursor-api-usage.test.ts lib/cursor-plan-usage-shared.test.ts lib/due-date.test.ts"
   },
   "dependencies": {
     "@backsteros/api-client": "workspace:*",

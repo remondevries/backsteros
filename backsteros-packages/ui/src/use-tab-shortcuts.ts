@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
@@ -9,7 +9,13 @@ function hasPrimaryModifier(event: KeyboardEvent): boolean {
 }
 
 /**
- * ⌘T / ⌘W / ⌘⇧[ / ⌘⇧] for app tabs (Next useTabShortcuts).
+ * ⌘T / ⌘⇧T / ⌘W / ⌘⇧[ / ⌘⇧] for app tabs.
+ *
+ * When `enabled` is false (e.g. file editor tabs own the shortcuts), ⌘⇧T
+ * still reopens a closed app tab if `reopenClosedTab` is provided.
+ *
+ * Handlers are read from refs so tab switches do not rebind the capture
+ * keydown listener on every `activeTabId` change.
  */
 export function useTabShortcuts({
   enabled = true,
@@ -18,6 +24,7 @@ export function useTabShortcuts({
   closeTab,
   activatePreviousTab,
   activateNextTab,
+  reopenClosedTab,
   shouldHandle = shouldHandleGlobalShortcut,
 }: {
   enabled?: boolean;
@@ -26,32 +33,63 @@ export function useTabShortcuts({
   closeTab: (tabId: string) => void;
   activatePreviousTab: () => void;
   activateNextTab: () => void;
+  /** ⌘⇧T — restore the most recently closed tab. Return true if one was restored. */
+  reopenClosedTab?: () => boolean | void;
   /** Override focus/modal guards (e.g. allow while xterm is focused). */
   shouldHandle?: (event: KeyboardEvent) => boolean;
 }) {
-  useEffect(() => {
-    if (!enabled) return;
+  const shouldHandleRef = useRef(shouldHandle);
+  shouldHandleRef.current = shouldHandle;
+  const reopenClosedTabRef = useRef(reopenClosedTab);
+  reopenClosedTabRef.current = reopenClosedTab;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const openNewTabRef = useRef(openNewTab);
+  openNewTabRef.current = openNewTab;
+  const closeTabRef = useRef(closeTab);
+  closeTabRef.current = closeTab;
+  const activatePreviousTabRef = useRef(activatePreviousTab);
+  activatePreviousTabRef.current = activatePreviousTab;
+  const activateNextTabRef = useRef(activateNextTab);
+  activateNextTabRef.current = activateNextTab;
 
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (!hasPrimaryModifier(event) || event.altKey) {
         return;
       }
 
-      if (!shouldHandle(event)) {
+      if (!shouldHandleRef.current(event)) {
         return;
       }
 
-      const key = event.key.toLowerCase();
+      const isT =
+        event.key.toLowerCase() === "t" || event.code === "KeyT";
 
-      if (key === "t" && !event.shiftKey) {
+      // ⌘⇧T — reopen closed tab (allowed even when other tab shortcuts yield).
+      if (isT && event.shiftKey) {
+        if (!reopenClosedTabRef.current) return;
+        const restored = reopenClosedTabRef.current();
+        if (restored === false) return;
         event.preventDefault();
-        openNewTab();
+        event.stopPropagation();
         return;
       }
 
-      if (key === "w" && !event.shiftKey) {
+      if (!enabled) return;
+
+      if (isT) {
         event.preventDefault();
-        closeTab(activeTabId);
+        openNewTabRef.current();
+        return;
+      }
+
+      if (
+        !event.shiftKey &&
+        (event.key.toLowerCase() === "w" || event.code === "KeyW")
+      ) {
+        event.preventDefault();
+        closeTabRef.current(activeTabIdRef.current);
         return;
       }
 
@@ -60,7 +98,7 @@ export function useTabShortcuts({
         (event.key === "[" || event.code === "BracketLeft")
       ) {
         event.preventDefault();
-        activatePreviousTab();
+        activatePreviousTabRef.current();
         return;
       }
 
@@ -69,19 +107,11 @@ export function useTabShortcuts({
         (event.key === "]" || event.code === "BracketRight")
       ) {
         event.preventDefault();
-        activateNextTab();
+        activateNextTabRef.current();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [
-    activateNextTab,
-    activatePreviousTab,
-    activeTabId,
-    closeTab,
-    enabled,
-    openNewTab,
-    shouldHandle,
-  ]);
+  }, [enabled]);
 }

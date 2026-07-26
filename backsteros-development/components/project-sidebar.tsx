@@ -41,6 +41,7 @@ import {
   type DragEvent,
 } from "react";
 
+import { CursorUsageFooter } from "@/components/cursor-usage-footer";
 import { ProjectsSidePanelIcon } from "@/components/panel-icons";
 import { ConsoleProfileMenu } from "@/components/console-profile-menu";
 import { apiErrorMessage } from "@/lib/api-context";
@@ -57,7 +58,7 @@ const CONSOLE_PROJECT_STATUS_ORDER: ProjectStatus[] = [
 /** Sentinel id so Inbox participates in the side-panel j/k list. */
 const INBOX_NAV_ID = "__console-inbox__";
 
-/** First project in rail order (active → …) — used by G then P. */
+/** First project in rail order (active → …) — G then P fallback when none selected. */
 export function getFirstConsoleProjectId(
   projects: readonly ApiProject[],
 ): string | null {
@@ -587,6 +588,10 @@ export function ProjectSidebar({
             </ul>
           )}
           </div>
+        </div>
+
+        <div className="console-sidebar-footer">
+          <CursorUsageFooter collapsed={collapsed} />
         </div>
       </div>
     </aside>

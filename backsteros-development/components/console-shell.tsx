@@ -102,10 +102,12 @@ import {
   reviewTaskForAgent,
 } from "@/lib/agent-task-mutations";
 import type { AgentTurnCompletedEvent } from "@/lib/agent-turn";
+import { recordCursorApiUsage } from "@/lib/cursor-api-usage";
 import type {
   AgentAttachRequest,
   AgentEndRequest,
 } from "@/lib/cursor-agent-cli";
+import { dueDateToIso } from "@/lib/due-date";
 import {
   buildConsolePath,
   buildSettingsPath,
@@ -621,7 +623,7 @@ function ConsoleDestinationNavigate({
   enabled: boolean;
   inboxActive: boolean;
   inboxFocusMode: boolean;
-  /** First project in left-rail order — G then P highlights this row. */
+  /** Fallback when no project is selected (e.g. Inbox) — first row in rail order. */
   firstProjectId: string | null;
   onSelectInbox: () => void;
   onExitInboxFocus: () => void;
@@ -658,14 +660,15 @@ function ConsoleDestinationNavigate({
       if (path === "/projects") {
         onEnsureProjectsExpanded();
         onArmProjectsRail();
-        // After the Go palette closes, land keyboard highlight on the first
-        // project (not Inbox / the currently selected project).
+        // After the Go palette closes, land keyboard highlight on the project
+        // the user is already in (not the top of the list / Inbox).
+        const highlightItemId = selectedProjectId ?? firstProjectId;
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             setActiveZone("sidepanel", {
               preferSidepanelForJk: true,
               activate: true,
-              highlightItemId: firstProjectId,
+              highlightItemId,
             });
           });
         });
@@ -683,6 +686,7 @@ function ConsoleDestinationNavigate({
       onEnsureProjectsExpanded,
       onExitInboxFocus,
       onSelectInbox,
+      selectedProjectId,
       setActiveZone,
     ],
   );
@@ -1495,8 +1499,10 @@ export function ConsoleShell() {
     pullNumber: route.pullNumber,
   });
 
-  // Apply URL → state (refresh, back/forward, shared links).
-  useEffect(() => {
+  // Apply URL → state (refresh, back/forward, shared links, app tabs).
+  // Layout phase so tab switches paint selection + terminal in the same frame
+  // as the path change (useEffect would leave one paint on the previous task).
+  useLayoutEffect(() => {
     skippingUrlSyncRef.current = true;
 
     if (route.settings) {
@@ -2394,6 +2400,14 @@ export function ConsoleShell() {
 
   const handleAgentTurnCompleted = useCallback(
     (event: AgentTurnCompletedEvent) => {
+      recordCursorApiUsage({
+        totalTokens: event.totalTokens,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens,
+        cacheWriteTokens: event.cacheWriteTokens,
+      });
+
       void (async () => {
         try {
           await client.requestJson(
@@ -2774,16 +2788,23 @@ export function ConsoleShell() {
       if (!projectsById.has(input.projectId)) {
         throw new Error("That project is not available in Development.");
       }
+      const title = input.title.trim();
+      if (!title) {
+        throw new Error("Task title is required.");
+      }
+      // Compose modal stores calendar days as YYYY-MM-DD; API expects ISO datetime.
+      const dueDate = dueDateToIso(input.dueDate);
       const created = await client.requestJson<ApiTask>("/api/v1/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: input.projectId,
-          title: input.title,
-          description: input.description || undefined,
-          status: input.status,
-          dueDate: input.dueDate,
-          assigneeId: input.assigneeId,
+          title,
+          description: input.description?.trim() || undefined,
+          status: input.status ?? "ready_to_start",
+          ...(dueDate ? { dueDate } : {}),
+          assigneeId: input.assigneeId ?? null,
+          inbox: false,
         }),
       });
       refresh();

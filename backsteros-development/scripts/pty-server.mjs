@@ -58,6 +58,8 @@ const ptysById = new Map();
 
 /** @type {Map<string, "working" | "idle">} */
 const lastActivityBySession = new Map();
+/** Sessions that received sessionEnd since last agent start (survives UI detach). */
+const sessionEndedBySession = new Map();
 
 const WORKING_HOOK_EVENTS = new Set([
   "beforeSubmitPrompt",
@@ -409,6 +411,15 @@ function handleAgentHook(sessionId, payloadText) {
   if (activity === "working" || activity === "idle") {
     lastActivityBySession.set(sessionId, activity);
   }
+  if (event === "sessionEnd") {
+    sessionEndedBySession.set(sessionId, true);
+  } else if (
+    WORKING_HOOK_EVENTS.has(event) ||
+    event === "sessionStart" ||
+    event === "beforeSubmitPrompt"
+  ) {
+    sessionEndedBySession.delete(sessionId);
+  }
 
   const usage = extractHookUsage(payload);
   // CLI often omits afterAgentResponse; on stop pull text from the payload or
@@ -417,7 +428,7 @@ function handleAgentHook(sessionId, payloadText) {
 
   const ws = sessionsById.get(sessionId);
   if (!ws) {
-    // Detached UI — keep lastActivity for reattach; still accept the hook.
+    // Detached UI — keep lastActivity / sessionEnded for reattach; still accept.
     return true;
   }
 
@@ -468,6 +479,7 @@ function destroyPty(sessionId, reason = "kill") {
   if (!entry) return;
   ptysById.delete(sessionId);
   lastActivityBySession.delete(sessionId);
+  sessionEndedBySession.delete(sessionId);
   try {
     entry.dataDisposable.dispose();
   } catch {
@@ -506,6 +518,7 @@ function bindSocketToPty(ws, sessionId, entry, { reattached, cols, rows }) {
     /* ignore resize races */
   }
 
+  const sessionEnded = Boolean(sessionEndedBySession.get(sessionId));
   send(ws, {
     type: "ready",
     shell: SHELL,
@@ -515,7 +528,12 @@ function bindSocketToPty(ws, sessionId, entry, { reattached, cols, rows }) {
     ...(reattached && lastActivityBySession.has(sessionId)
       ? { lastActivity: lastActivityBySession.get(sessionId) }
       : {}),
+    ...(reattached && sessionEnded ? { agentSessionEnded: true } : {}),
   });
+  // Consumed by the reattached client — don't keep forcing View forever.
+  if (reattached && sessionEnded) {
+    sessionEndedBySession.delete(sessionId);
+  }
 
   ws.on("message", (raw) => {
     let message;
@@ -653,6 +671,7 @@ wss.on("connection", (ws, req) => {
       sessionsById.delete(sessionId);
       ptysById.delete(sessionId);
       lastActivityBySession.delete(sessionId);
+      sessionEndedBySession.delete(sessionId);
       console.log(`[pty] process exited session=${sessionId} code=${exitCode}`);
     }),
   };

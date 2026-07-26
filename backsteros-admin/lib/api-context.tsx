@@ -16,7 +16,7 @@ import {
 type AdminApiContextValue = {
   apiUrl: string;
   client: BacksterosApiClient;
-  requestJson: <T>(path: string) => Promise<T>;
+  requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
 
 const AdminApiContext = createContext<AdminApiContextValue | null>(null);
@@ -47,7 +47,8 @@ export function AdminApiProvider({
     () => ({
       apiUrl,
       client,
-      requestJson: <T,>(path: string) => client.requestJson<T>(path),
+      requestJson: <T,>(path: string, init?: RequestInit) =>
+        client.requestJson<T>(path, init),
     }),
     [apiUrl, client],
   );

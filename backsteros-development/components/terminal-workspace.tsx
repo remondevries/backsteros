@@ -21,6 +21,10 @@ import {
   TerminalHeaderIcon,
 } from "@/components/panel-icons";
 import {
+  AGENT_CLI_LEAVE_DEBOUNCE_MS,
+  isAgentCliOpenFromSignals,
+} from "@/lib/agent-cli-open";
+import {
   detectAgentActivityFromTitle,
   emptyAgentActivitySummary,
   isAgentActivelyWorking,
@@ -743,22 +747,36 @@ export function TerminalWorkspace({
       bucketsByTaskIdRef.current[forTaskId]?.sessions[0] ?? null;
     if (!session) return false;
     const sessionId = session.id;
-    if (agentTitleConfirmedRef.current.has(sessionId)) return true;
-    if (agentHookLiveSessionsRef.current.has(sessionId)) return true;
-    if (
-      session.title === CURSOR_AI_TAB_TITLE ||
-      isCursorAgentTitle(session.title)
-    ) {
-      return true;
-    }
-    const activity = activityBySessionIdRef.current[sessionId] ?? null;
-    if (activity === "working" || activity === "attention") return true;
-    // Soft open: we attached a chat into this PTY. Attach is cleared on
-    // sessionEnd / End — do not also require markAsAgent (that can lag or
-    // be wiped by a flaky non-agent OSC title before confirmation).
-    if (attachedChatByTaskIdRef.current.has(forTaskId)) return true;
-    if (cursorAgentSessionIdsRef.current.has(sessionId)) return true;
-    return false;
+    const entry = termsRef.current.get(sessionId);
+    const uiConnected = Boolean(
+      entry &&
+        !entry.disposed &&
+        entry.socket &&
+        entry.socket.readyState === WebSocket.OPEN,
+    );
+    return isAgentCliOpenFromSignals({
+      uiConnected,
+      hasAgentTitle:
+        session.title === CURSOR_AI_TAB_TITLE ||
+        isCursorAgentTitle(session.title),
+      titleConfirmed: agentTitleConfirmedRef.current.has(sessionId),
+      hookLive: agentHookLiveSessionsRef.current.has(sessionId),
+      activity: activityBySessionIdRef.current[sessionId] ?? null,
+      attached: attachedChatByTaskIdRef.current.has(forTaskId),
+      markedAsAgent: cursorAgentSessionIdsRef.current.has(sessionId),
+    });
+  }, []);
+
+  /** Debounced clear when OSC flips to a shell title but sessionEnd is missed. */
+  const agentLeaveTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
+
+  const clearAgentLeaveTimer = useCallback((sessionId: string) => {
+    const timer = agentLeaveTimersRef.current.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    agentLeaveTimersRef.current.delete(sessionId);
   }, []);
 
   const publishAgentOpenTaskIds = useCallback(() => {
@@ -821,21 +839,73 @@ export function TerminalWorkspace({
 
   const markCursorAgentSession = useCallback(
     (sessionId: string) => {
+      clearAgentLeaveTimer(sessionId);
       const already = cursorAgentSessionIdsRef.current.has(sessionId);
       cursorAgentSessionIdsRef.current.add(sessionId);
       if (!already) publishAgentOpenTaskIds();
     },
-    [publishAgentOpenTaskIds],
+    [clearAgentLeaveTimer, publishAgentOpenTaskIds],
   );
 
   const clearCursorAgentSession = useCallback(
     (sessionId: string) => {
+      clearAgentLeaveTimer(sessionId);
       agentTitleConfirmedRef.current.delete(sessionId);
       agentHookLiveSessionsRef.current.delete(sessionId);
       cursorAgentSessionIdsRef.current.delete(sessionId);
       publishAgentOpenTaskIds();
     },
-    [publishAgentOpenTaskIds],
+    [clearAgentLeaveTimer, publishAgentOpenTaskIds],
+  );
+
+  /** Agent TUI left this PTY — drop open marks so the button returns to View. */
+  const markAgentCliLeftSession = useCallback(
+    (sessionId: string) => {
+      clearAgentLeaveTimer(sessionId);
+      const forTaskId = findTaskIdForSession(sessionId);
+      clearCursorAgentSession(sessionId);
+      if (forTaskId) {
+        setAttachedChatForTask(forTaskId, null);
+        flushPendingShellClearRef.current(forTaskId);
+      }
+      setBucketsByTaskId((current) => {
+        for (const [bucketTaskId, bucket] of Object.entries(current)) {
+          const index = bucket.sessions.findIndex(
+            (entry) => entry.id === sessionId,
+          );
+          if (index < 0) continue;
+          const session = bucket.sessions[index];
+          if (!session || session.title === session.defaultTitle) {
+            return current;
+          }
+          const sessions = [...bucket.sessions];
+          sessions[index] = { ...session, title: session.defaultTitle };
+          return {
+            ...current,
+            [bucketTaskId]: { ...bucket, sessions },
+          };
+        }
+        return current;
+      });
+    },
+    [
+      clearAgentLeaveTimer,
+      clearCursorAgentSession,
+      findTaskIdForSession,
+      setAttachedChatForTask,
+    ],
+  );
+
+  const scheduleAgentCliLeave = useCallback(
+    (sessionId: string) => {
+      clearAgentLeaveTimer(sessionId);
+      const timer = setTimeout(() => {
+        agentLeaveTimersRef.current.delete(sessionId);
+        markAgentCliLeftSession(sessionId);
+      }, AGENT_CLI_LEAVE_DEBOUNCE_MS);
+      agentLeaveTimersRef.current.set(sessionId, timer);
+    },
+    [clearAgentLeaveTimer, markAgentCliLeftSession],
   );
 
   const isCursorAgentSession = useCallback(
@@ -941,11 +1011,6 @@ export function TerminalWorkspace({
   const activeBucket = taskId ? (bucketsByTaskId[taskId] ?? null) : null;
   const activeId = activeBucket?.activeId ?? null;
 
-  const activeSession = useMemo(
-    () => activeBucket?.sessions.find((session) => session.id === activeId) ?? null,
-    [activeBucket, activeId],
-  );
-
   const allTerminalSessions = useMemo(() => {
     const list: WorkspaceSession[] = [];
     for (const bucket of Object.values(bucketsByTaskId)) {
@@ -961,6 +1026,7 @@ export function TerminalWorkspace({
     options?: { kill?: boolean },
   ) => {
     clearIdleWatch(id);
+    clearAgentLeaveTimer(id);
     // Detach keeps sticky task busy ids (persisted) so the list indicator
     // stays on while the agent continues in the background. Kill clears them.
     stickyWorkingSessionsRef.current.delete(id);
@@ -981,8 +1047,28 @@ export function TerminalWorkspace({
     turnStartedAtRef.current.delete(id);
     turnUsageBySessionRef.current.delete(id);
     lastAssistantTextBySessionRef.current.delete(id);
+    // Drop stale agent tab labels so Stop agent cannot linger on a detached
+    // bucket title after the user navigates away.
+    setBucketsByTaskId((current) => {
+      for (const [bucketTaskId, bucket] of Object.entries(current)) {
+        const index = bucket.sessions.findIndex((session) => session.id === id);
+        if (index < 0) continue;
+        const session = bucket.sessions[index];
+        if (!session || session.title === session.defaultTitle) return current;
+        const sessions = [...bucket.sessions];
+        sessions[index] = { ...session, title: session.defaultTitle };
+        return {
+          ...current,
+          [bucketTaskId]: { ...bucket, sessions },
+        };
+      }
+      return current;
+    });
     const entry = termsRef.current.get(id);
-    if (!entry || entry.disposed) return;
+    if (!entry || entry.disposed) {
+      publishAgentOpenTaskIds();
+      return;
+    }
     entry.disposed = true;
     termsRef.current.delete(id);
 
@@ -1038,10 +1124,14 @@ export function TerminalWorkspace({
       delete next[id];
       return next;
     });
+    // UI socket is gone — republish so Stop agent clears even if attach remains.
+    publishAgentOpenTaskIds();
   }, [
+    clearAgentLeaveTimer,
     clearCursorAgentSession,
     clearIdleWatch,
     findTaskIdForSession,
+    publishAgentOpenTaskIds,
     publishStickyWorkingTasks,
   ]);
 
@@ -1052,28 +1142,26 @@ export function TerminalWorkspace({
       const wasAgent = cursorAgentSessionIdsRef.current.has(sessionId);
       const titleConfirmed = agentTitleConfirmedRef.current.has(sessionId);
       const hookLive = agentHookLiveSessionsRef.current.has(sessionId);
+      const leaveArmed = agentLeaveTimersRef.current.has(sessionId);
 
       if (stillAgent) {
+        clearAgentLeaveTimer(sessionId);
         markCursorAgentSession(sessionId);
         const alreadyConfirmed = titleConfirmed;
         agentTitleConfirmedRef.current.add(sessionId);
         if (!alreadyConfirmed) publishAgentOpenTaskIds();
-      } else if (wasAgent) {
+      } else if (wasAgent || titleConfirmed || hookLive) {
         const forTaskId = findTaskIdForSession(sessionId);
         const attachPending =
           Boolean(forTaskId) &&
           attachedChatByTaskIdRef.current.has(forTaskId!);
-        // Cursor often emits non-agent OSC titles while the Agent TUI is still
-        // up (idle / between turns). Once we have confirmed title or live hooks,
-        // stay open until sessionEnd or explicit End clears marks.
+        // Cursor blips non-agent OSC titles while the TUI is still up. Debounce
+        // the leave so Stop→View only flips after a sustained shell title (or
+        // sessionEnd / End clears immediately).
         if (titleConfirmed || hookLive || attachPending) {
-          /* keep marks — do not treat flaky titles as leaving the TUI */
+          if (!leaveArmed) scheduleAgentCliLeave(sessionId);
         } else {
-          clearCursorAgentSession(sessionId);
-          if (forTaskId) {
-            setAttachedChatForTask(forTaskId, null);
-            flushPendingShellClearRef.current(forTaskId);
-          }
+          markAgentCliLeftSession(sessionId);
         }
       }
 
@@ -1109,8 +1197,10 @@ export function TerminalWorkspace({
             session.title,
             session.defaultTitle,
           );
-          // Keep the agent tab label while the TUI is still considered open.
+          // Keep the agent tab label while the TUI is still considered open,
+          // but not once a leave debounce is armed (shell title is winning).
           if (
+            !agentLeaveTimersRef.current.has(sessionId) &&
             (agentTitleConfirmedRef.current.has(sessionId) ||
               agentHookLiveSessionsRef.current.has(sessionId)) &&
             session.title === CURSOR_AI_TAB_TITLE &&
@@ -1128,14 +1218,15 @@ export function TerminalWorkspace({
       });
     },
     [
-      clearCursorAgentSession,
+      clearAgentLeaveTimer,
       clearIdleWatch,
       clearTurnWorking,
       findTaskIdForSession,
+      markAgentCliLeftSession,
       markAgentWorking,
       markCursorAgentSession,
       publishAgentOpenTaskIds,
-      setAttachedChatForTask,
+      scheduleAgentCliLeave,
       setSessionActivity,
     ],
   );
@@ -1222,6 +1313,7 @@ export function TerminalWorkspace({
         text?: string;
         reattached?: boolean;
         lastActivity?: "working" | "idle" | null;
+        agentSessionEnded?: boolean;
       };
       try {
         message = JSON.parse(String(event.data));
@@ -1253,13 +1345,8 @@ export function TerminalWorkspace({
             stickyWorkingSessionsRef.current.has(sessionId) ||
             agentTurnArmedRef.current.has(sessionId);
 
-          agentHookLiveSessionsRef.current.delete(sessionId);
           clearIdleWatch(sessionId);
-          if (forTaskId) {
-            setAttachedChatForTask(forTaskId, null);
-            flushPendingShellClearRef.current(forTaskId);
-          }
-          clearCursorAgentSession(sessionId);
+          markAgentCliLeftSession(sessionId);
 
           if (turnStillActive && forTaskId) {
             emitTurnCompletedRef.current?.(sessionId, forTaskId, {
@@ -1387,6 +1474,19 @@ export function TerminalWorkspace({
             clearTimeout(startupTimer);
             startupTimer = null;
           }
+          const forTaskId = findTaskIdForSession(sessionId);
+          // sessionEnd while detached — TUI is gone; flip to View agent.
+          if (message.agentSessionEnded) {
+            markAgentCliLeftSession(sessionId);
+            clearTurnWorking(sessionId);
+            if (forTaskId) {
+              stickyWorkingTaskIdsRef.current.delete(forTaskId);
+              publishStickyWorkingTasks();
+            }
+            setSessionActivity(sessionId, "idle");
+            publishAgentOpenTaskIds();
+            return;
+          }
           try {
             entry.term.writeln(
               "\r\n\x1b[90m[reattached — agent kept running in the background]\x1b[0m\r\n",
@@ -1394,9 +1494,13 @@ export function TerminalWorkspace({
           } catch {
             /* disposed */
           }
-          // Sync busy indicator from hooks that fired while we were detached.
-          const forTaskId = findTaskIdForSession(sessionId);
+          // Sync open/busy from hooks that fired while we were detached.
+          // Idle after `stop` still means the Agent TUI is up — restore marks
+          // so Stop agent stays correct until the user exits.
           if (message.lastActivity === "idle") {
+            markCursorAgentSession(sessionId);
+            agentTitleConfirmedRef.current.add(sessionId);
+            agentHookLiveSessionsRef.current.add(sessionId);
             clearTurnWorking(sessionId);
             if (forTaskId) {
               stickyWorkingTaskIdsRef.current.delete(forTaskId);
@@ -1404,17 +1508,24 @@ export function TerminalWorkspace({
             }
             turnCompleteReasonBySessionRef.current.set(sessionId, "stop");
             setSessionActivity(sessionId, "idle");
+            publishAgentOpenTaskIds();
           } else if (
             message.lastActivity === "working" ||
             (forTaskId && stickyWorkingTaskIdsRef.current.has(forTaskId))
           ) {
             markCursorAgentSession(sessionId);
+            agentTitleConfirmedRef.current.add(sessionId);
+            agentHookLiveSessionsRef.current.add(sessionId);
             markTurnWorking(sessionId);
             armIdleWatchRef.current(sessionId);
+            publishAgentOpenTaskIds();
+          } else {
+            publishAgentOpenTaskIds();
           }
           return;
         }
         scheduleStartupCommand();
+        publishAgentOpenTaskIds();
         return;
       }
 
@@ -1450,6 +1561,8 @@ export function TerminalWorkspace({
       if (entry.socket === socket) {
         entry.socket = null;
       }
+      // Detached UI ⇒ Stop agent must clear (open requires a live socket).
+      publishAgentOpenTaskIds();
     });
 
     socket.addEventListener("error", () => {
@@ -1490,18 +1603,17 @@ export function TerminalWorkspace({
       });
     });
   }, [
-    clearCursorAgentSession,
     clearIdleWatch,
     clearTurnWorking,
     findTaskIdForSession,
     isCursorAgentSession,
+    markAgentCliLeftSession,
     markAgentWorking,
     markCursorAgentSession,
     markTurnWorking,
     noteSessionOutput,
     publishAgentOpenTaskIds,
     publishStickyWorkingTasks,
-    setAttachedChatForTask,
     setSessionActivity,
   ]);
 
@@ -1828,10 +1940,9 @@ export function TerminalWorkspace({
 
       // View agent: if the TUI is already up (including idle after `stop`),
       // only re-bind attach — never shell-resume into a live Agent session.
-      // Also noop when attach tracking still points at this chat even if
-      // open-detection briefly lags (typing resume into the composer is worse).
+      // Stale attach alone must not noop forever after the TUI has left.
       if (input.forceReattach) {
-        if (tuiOpen || previouslyAttached === requested) {
+        if (tuiOpen) {
           setAttachedChatForTask(input.taskId, input.chatId);
           return "noop";
         }
@@ -2247,13 +2358,17 @@ export function TerminalWorkspace({
       for (const session of allTerminalSessions) {
         ensureTerminal(session);
       }
-      for (const [sessionId, entry] of termsRef.current) {
-        const host = hostsRef.current.get(sessionId);
-        fitTerminal(entry, host);
+      // Parked hosts keep layout size via CSS; only fit the visible session on
+      // tab/task switches. Window resize still refits every live entry below.
+      if (activeId) {
+        const entry = termsRef.current.get(activeId);
+        if (entry) {
+          fitTerminal(entry, hostsRef.current.get(activeId));
+        }
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeSession, allTerminalSessions, disposeEntry, ensureTerminal, taskId]);
+  }, [activeId, allTerminalSessions, disposeEntry, ensureTerminal]);
 
   useEffect(() => {
     const onResize = () => {
@@ -2267,14 +2382,16 @@ export function TerminalWorkspace({
   }, []);
 
   useEffect(() => {
-    if (collapsed || !layoutReady) return;
+    if (collapsed || !layoutReady || !activeId) return;
+    const sessionId = activeId;
     const frame = requestAnimationFrame(() => {
-      for (const [sessionId, entry] of termsRef.current) {
+      const entry = termsRef.current.get(sessionId);
+      if (entry) {
         fitTerminal(entry, hostsRef.current.get(sessionId));
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [collapsed, layoutReady, taskId]);
+  }, [activeId, collapsed, layoutReady]);
 
   // External focus request (Inbox Enter / strip click) — wait until the
   // column is painted and the task PTY exists so xterm can take input.

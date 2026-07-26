@@ -1392,13 +1392,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               includeNone: true,
             },
           )}
-          assigneeOptions={buildAssigneeDropdownOptions(
-            workspace.contacts.map((contact) => ({
-              id: contact.id,
-              name: contact.name,
-              email: contact.email,
-            })),
-          )}
+          assigneeOptions={buildAssigneeDropdownOptions(composeContacts)}
           onPriorityChange={(taskId, priority) => {
             void workspace.patchTask(taskId, { priority });
           }}

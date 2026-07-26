@@ -5,10 +5,31 @@ import { usePathname } from "next/navigation";
 
 import { AdminProfileMenu } from "@/components/admin-profile-menu";
 import { DashboardNavIcon } from "@/components/dashboard-nav-icon";
+import { LogsNavIcon } from "@/components/logs-nav-icon";
+import { RepeatNavIcon } from "@/components/repeat-nav-icon";
+import { SyncNavIcon } from "@/components/sync-nav-icon";
+
+const NAV = [
+  { href: "/", label: "Dashboard", icon: DashboardNavIcon, match: "exact" as const },
+  { href: "/sync", label: "Sync", icon: SyncNavIcon, match: "prefix" as const },
+  { href: "/logs", label: "Logs", icon: LogsNavIcon, match: "prefix" as const },
+  {
+    href: "/recurring",
+    label: "Recurring",
+    icon: RepeatNavIcon,
+    match: "prefix" as const,
+  },
+];
+
+function isActive(pathname: string, href: string, match: "exact" | "prefix") {
+  if (match === "exact") {
+    return pathname === href || pathname === "";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function AdminShell() {
   const pathname = usePathname();
-  const dashboardActive = pathname === "/" || pathname === "";
 
   return (
     <div className="admin-shell">
@@ -21,14 +42,21 @@ export function AdminShell() {
             <div className="admin-pane-body">
               <nav className="sidebar-sections admin-sidebar-nav" aria-label="Workspace">
                 <section>
-                  <Link
-                    href="/"
-                    className={`sidebar-link${dashboardActive ? " is-active" : ""}`}
-                    aria-current={dashboardActive ? "page" : undefined}
-                  >
-                    <DashboardNavIcon className="nav-icon" />
-                    <span className="sidebar-link-label">Dashboard</span>
-                  </Link>
+                  {NAV.map((item) => {
+                    const active = isActive(pathname, item.href, item.match);
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`sidebar-link${active ? " is-active" : ""}`}
+                        aria-current={active ? "page" : undefined}
+                      >
+                        <Icon className="nav-icon" />
+                        <span className="sidebar-link-label">{item.label}</span>
+                      </Link>
+                    );
+                  })}
                 </section>
               </nav>
             </div>

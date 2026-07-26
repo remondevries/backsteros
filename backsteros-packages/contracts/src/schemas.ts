@@ -819,6 +819,37 @@ export const opsLogsSchema = z.object({
   logs: z.array(opsLogEntrySchema),
 });
 
+export const recurringTaskSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  projectId: z.string().nullable(),
+  inbox: z.boolean(),
+  /** 5-field UTC cron: minute hour day-of-month month day-of-week */
+  cronExpression: z.string(),
+  enabled: z.boolean(),
+  nextRunAt: z.string().datetime(),
+  lastRunAt: z.string().datetime().nullable(),
+  lastTaskId: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const createRecurringTaskSchema = z.object({
+  title: z.string().min(1).max(500),
+  description: z.string().max(10_000).nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  inbox: z.boolean().optional(),
+  cronExpression: z.string().min(1).max(100),
+  enabled: z.boolean().optional(),
+});
+
+export const updateRecurringTaskSchema = createRecurringTaskSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
 export const syncEntitySchema = z.enum(["project", "task", "document"]);
 export const syncOperationSchema = z.enum(["upsert", "delete"]);
 export const syncChangeSchema = z.object({
@@ -946,3 +977,6 @@ export type Mention = z.infer<typeof mentionSchema>;
 export type GlobalSearchResult = z.infer<typeof globalSearchResultSchema>;
 export type PowerSyncCredentials = z.infer<typeof powerSyncCredentialsSchema>;
 export type PowerSyncWriteInput = z.infer<typeof powerSyncWriteSchema>;
+export type RecurringTask = z.infer<typeof recurringTaskSchema>;
+export type CreateRecurringTaskInput = z.infer<typeof createRecurringTaskSchema>;
+export type UpdateRecurringTaskInput = z.infer<typeof updateRecurringTaskSchema>;

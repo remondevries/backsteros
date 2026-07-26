@@ -209,8 +209,8 @@ export type AgentAttachRequest = {
   focusUi?: boolean;
   /**
    * View agent: focus/reattach only — never /quit. When the TUI is already
-   * open (or attach still tracks this chat), the terminal noops instead of
-   * shell-resuming into the live Agent composer.
+   * open, the terminal noops instead of shell-resuming into the live composer.
+   * Stale attach alone must not block resume after the TUI has left.
    */
   forceReattach?: boolean;
   /**

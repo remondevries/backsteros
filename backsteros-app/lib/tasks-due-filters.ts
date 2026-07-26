@@ -8,6 +8,7 @@ import {
   PROJECT_TASK_VIEW_SEARCH_PARAM,
   type ProjectTaskView,
 } from "@/lib/project-task-view";
+import { migrateLegacyTaskStatus } from "@/lib/task-status";
 
 function resolveCalendarTimezone(timeZone?: string): string {
   return timeZone ?? getTaskCalendarTimezone();
@@ -20,6 +21,7 @@ export const TASKS_DUE_FILTERS = [
   "tomorrow",
   "this-week",
   "next-week",
+  "overdue",
 ] as const;
 
 export type TasksDueFilter = (typeof TASKS_DUE_FILTERS)[number];
@@ -31,14 +33,22 @@ export const TASKS_DUE_FILTER_LABELS: Record<TasksDueFilter, string> = {
   tomorrow: "Tomorrow",
   "this-week": "This week",
   "next-week": "Next week",
+  overdue: "Overdue",
 };
 
-/** Task statuses excluded from the Tasks due-date lists (Today, Tomorrow, etc.). */
+/** Terminal statuses — excluded from the Overdue tab; other due filters include them. */
 export const INACTIVE_TASK_STATUSES = [
   "completed",
   "canceled",
   "duplicated",
 ] as const;
+
+function isInactiveTaskStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  return (INACTIVE_TASK_STATUSES as readonly string[]).includes(
+    migrateLegacyTaskStatus(status),
+  );
+}
 
 /** Task statuses excluded from journal due-task views when completed tasks are included. */
 export const JOURNAL_EXCLUDED_TASK_STATUSES = ["canceled", "duplicated"] as const;
@@ -257,6 +267,11 @@ export function getTasksDueDateRange(
       const startYmd = addCalendarDaysYmd(getMondayYmdOfWeek(todayYmd), 7);
       return ymdHalfOpenRange(startYmd, 7);
     }
+    case "overdue": {
+      // Half-open range ending at local midnight today (excludes today).
+      const end = parseYmdLocal(todayYmd) ?? new Date(referenceDate);
+      return { start: new Date(0), end };
+    }
   }
 }
 
@@ -276,6 +291,8 @@ export function getDefaultDueDateYmdForTasksDueFilter(
       return todayYmd;
     case "next-week":
       return todayYmd;
+    case "overdue":
+      return todayYmd;
   }
 }
 
@@ -289,6 +306,8 @@ export function getTasksDueFilterEmptyMessage(filter: TasksDueFilter): string {
       return "No tasks due this week.";
     case "next-week":
       return "No tasks due next week.";
+    case "overdue":
+      return "No overdue tasks.";
   }
 }
 
@@ -376,6 +395,8 @@ export function taskDueDateMatchesFilter(
       const nextWeekEndYmd = addCalendarDaysYmd(nextWeekStartYmd, 6);
       return dueYmd >= nextWeekStartYmd && dueYmd <= nextWeekEndYmd;
     }
+    case "overdue":
+      return dueYmd < todayYmd;
   }
 }
 
@@ -404,15 +425,31 @@ export function taskDueDateInRange(
   return dueYmd >= startYmd && dueYmd <= endYmd;
 }
 
+/**
+ * Filter tasks by due-date window.
+ * Completed / canceled / duplicated stay when their due date matches — except
+ * on Overdue, which only shows still-open late tasks.
+ */
 export function filterTasksByDueFilter<
-  T extends { dueDate: Date | number | string | null | undefined },
+  T extends {
+    dueDate: Date | number | string | null | undefined;
+    status?: string;
+  },
 >(
   tasks: T[],
   filter: TasksDueFilter,
   referenceDate: Date = new Date(),
   timeZone?: string,
 ): T[] {
-  return tasks.filter((task) =>
-    taskDueDateMatchesFilter(task.dueDate, filter, referenceDate, timeZone),
-  );
+  return tasks.filter((task) => {
+    if (filter === "overdue" && isInactiveTaskStatus(task.status)) {
+      return false;
+    }
+    return taskDueDateMatchesFilter(
+      task.dueDate,
+      filter,
+      referenceDate,
+      timeZone,
+    );
+  });
 }

@@ -1,10 +1,12 @@
 import { formatLocalYmd, parseYmdLocal } from "./task-due-date.js";
+import { migrateLegacyTaskStatus } from "./task-status.js";
 
 export const TASKS_DUE_FILTERS = [
   "today",
   "tomorrow",
   "this-week",
   "next-week",
+  "overdue",
 ] as const;
 
 export type TasksDueFilter = (typeof TASKS_DUE_FILTERS)[number];
@@ -16,13 +18,22 @@ export const TASKS_DUE_FILTER_LABELS: Record<TasksDueFilter, string> = {
   tomorrow: "Tomorrow",
   "this-week": "This week",
   "next-week": "Next week",
+  overdue: "Overdue",
 };
 
+/** Terminal statuses — excluded from the Overdue tab; other due filters include them. */
 export const INACTIVE_TASK_STATUSES = [
   "completed",
   "canceled",
   "duplicated",
 ] as const;
+
+function isInactiveTaskStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  return (INACTIVE_TASK_STATUSES as readonly string[]).includes(
+    migrateLegacyTaskStatus(status),
+  );
+}
 
 export function isTasksDueFilter(value: string): value is TasksDueFilter {
   return (TASKS_DUE_FILTERS as readonly string[]).includes(value);
@@ -42,6 +53,8 @@ export function getTasksDueFilterEmptyMessage(filter: TasksDueFilter): string {
       return "No tasks due this week.";
     case "next-week":
       return "No tasks due next week.";
+    case "overdue":
+      return "No overdue tasks.";
   }
 }
 
@@ -60,6 +73,8 @@ export function getDefaultDueDateYmdForTasksDueFilter(
     case "this-week":
       return todayYmd;
     case "next-week":
+      return todayYmd;
+    case "overdue":
       return todayYmd;
   }
 }
@@ -141,9 +156,16 @@ export function taskDueDateMatchesFilter(
       const nextWeekEndYmd = addCalendarDaysYmd(nextWeekStartYmd, 6);
       return dueYmd >= nextWeekStartYmd && dueYmd <= nextWeekEndYmd;
     }
+    case "overdue":
+      return dueYmd < todayYmd;
   }
 }
 
+/**
+ * Filter tasks by due-date window.
+ * Completed / canceled / duplicated stay when their due date matches — except
+ * on Overdue, which only shows still-open late tasks.
+ */
 export function filterTasksByDueFilter<
   T extends {
     dueDate: Date | number | string | null | undefined;
@@ -151,10 +173,7 @@ export function filterTasksByDueFilter<
   },
 >(tasks: readonly T[], filter: TasksDueFilter, referenceDate?: Date): T[] {
   return tasks.filter((task) => {
-    if (
-      task.status &&
-      (INACTIVE_TASK_STATUSES as readonly string[]).includes(task.status)
-    ) {
+    if (filter === "overdue" && isInactiveTaskStatus(task.status)) {
       return false;
     }
     return taskDueDateMatchesFilter(task.dueDate, filter, referenceDate);

@@ -44,8 +44,9 @@ export default function DashboardPage() {
       <header className="admin-page-header">
         <h1>Dashboard</h1>
         <p className="admin-muted">
-          Ops overview. Probe <code>{apiUrl}/health</code> via same-origin{" "}
-          <code>/api/health</code>
+          Ops overview for the API (and later the agent). Probe{" "}
+          <code>{apiUrl}/health</code> via same-origin <code>/api/health</code>.
+          Use Sync, Logs, and Recurring in the sidebar for day-to-day ops.
         </p>
       </header>
 
