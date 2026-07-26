@@ -17,12 +17,11 @@ export function MarkdownTaskCheckbox({
   className,
 }: MarkdownTaskCheckboxProps) {
   const interact = useMarkdownTaskListInteract();
-  const interactive = Boolean(interact?.onToggle);
-  const index = interact?.allocateIndex() ?? -1;
+  const interactive = Boolean(interact?.onToggleAtElement);
 
   const classNames = ["md-task-checkbox", className].filter(Boolean).join(" ");
 
-  if (!interactive || index < 0) {
+  if (!interactive) {
     return (
       <span
         className={classNames}
@@ -47,7 +46,11 @@ export function MarkdownTaskCheckbox({
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        interact?.onToggle(index);
+        interact?.onToggleAtElement(event.currentTarget);
+      }}
+      onMouseDown={(event) => {
+        // Keep preview double-click-to-edit from stealing the gesture.
+        event.stopPropagation();
       }}
     >
       <span className="md-task-checkbox__box">

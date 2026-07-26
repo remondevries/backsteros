@@ -7,6 +7,7 @@ import { Children, isValidElement, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  getTaskListItemChecked,
   MarkdownTaskCheckbox,
   MarkdownTaskListInteractProvider,
   normalizeMarkdownTaskLists,
@@ -61,37 +62,36 @@ export function MarkdownDocument({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  li(props) {
-                    const { children, className, ...rest } = props;
-                    const checked = (props as { checked?: boolean | null })
-                      .checked;
-                    const isTaskItem =
-                      typeof checked === "boolean" ||
-                      (typeof className === "string" &&
-                        className.includes("task-list-item"));
-                    if (!isTaskItem) {
-                      return (
-                        <li className={className} {...rest}>
-                          {children}
-                        </li>
-                      );
-                    }
-                    const body = Children.toArray(children).filter((child) => {
-                      if (!isValidElement(child)) return true;
-                      return child.type !== "input";
-                    });
+                li(props) {
+                  const { children, className, ...rest } = props;
+                  const checked = getTaskListItemChecked(props);
+                  const isTaskItem =
+                    typeof checked === "boolean" ||
+                    (typeof className === "string" &&
+                      className.includes("task-list-item"));
+                  if (!isTaskItem) {
                     return (
-                      <li
-                        className={[className, "task-list-item"]
-                          .filter(Boolean)
-                          .join(" ")}
-                        {...rest}
-                      >
-                        <MarkdownTaskCheckbox checked={checked === true} />
-                        <span className="md-task-checkbox__content">{body}</span>
+                      <li className={className} {...rest}>
+                        {children}
                       </li>
                     );
-                  },
+                  }
+                  const body = Children.toArray(children).filter((child) => {
+                    if (!isValidElement(child)) return true;
+                    return child.type !== "input";
+                  });
+                  return (
+                    <li
+                      className={[className, "task-list-item"]
+                        .filter(Boolean)
+                        .join(" ")}
+                      {...rest}
+                    >
+                      <MarkdownTaskCheckbox checked={checked === true} />
+                      <span className="md-task-checkbox__content">{body}</span>
+                    </li>
+                  );
+                },
                   input(props) {
                     if (props.type === "checkbox") {
                       return null;

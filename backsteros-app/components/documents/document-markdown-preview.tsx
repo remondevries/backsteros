@@ -10,6 +10,7 @@ import {
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  getTaskListItemChecked,
   MarkdownTaskCheckbox,
   MarkdownTaskListInteractProvider,
   normalizeMarkdownTaskLists,
@@ -137,7 +138,7 @@ const markdownRemarkPlugins = [remarkGfm];
 const markdownPreviewComponents: Components = {
   li(props) {
     const { children, className, ...rest } = props;
-    const checked = (props as { checked?: boolean | null }).checked;
+    const checked = getTaskListItemChecked(props);
     const isTaskItem =
       typeof checked === "boolean" ||
       (typeof className === "string" && className.includes("task-list-item"));
@@ -604,6 +605,7 @@ export function DocumentMarkdownPreview({
       <div
         ref={containerRef}
         data-content-preview-links
+        data-markdown-task-list-root=""
         tabIndex={-1}
         className={
           enableMentions

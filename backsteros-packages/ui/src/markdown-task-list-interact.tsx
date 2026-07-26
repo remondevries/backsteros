@@ -12,9 +12,11 @@ import {
 import { toggleMarkdownTaskListItem } from "./markdown-task-list.js";
 
 export type MarkdownTaskListInteract = {
-  /** Allocate the next document-order checkbox index during render. */
-  allocateIndex: () => number;
-  onToggle: (index: number) => void;
+  /**
+   * Toggle by DOM order among interactive checkboxes in the preview root.
+   * Avoids render-phase index allocation (broken under React Strict Mode).
+   */
+  onToggleAtElement: (element: HTMLElement) => void;
 };
 
 const MarkdownTaskListInteractContext =
@@ -33,31 +35,34 @@ export function MarkdownTaskListInteractProvider({
   onChange?: (nextBody: string) => void;
   children: ReactNode;
 }): ReactNode {
-  const indexRef = useRef(0);
-  // Reset allocation each render so indices match source order.
-  indexRef.current = 0;
-
   const bodyRef = useRef(body);
   bodyRef.current = body;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const allocateIndex = useCallback(() => {
-    const index = indexRef.current;
-    indexRef.current += 1;
-    return index;
-  }, []);
+  const onToggleAtElement = useCallback((element: HTMLElement) => {
+    if (!onChangeRef.current) return;
+    const root =
+      element.closest("[data-markdown-task-list-root]") ??
+      element.closest("[data-content-preview-links]") ??
+      element.closest(".document-markdown");
+    if (!(root instanceof HTMLElement)) return;
 
-  const onToggle = useCallback((index: number) => {
+    const buttons = [
+      ...root.querySelectorAll<HTMLElement>(".md-task-checkbox--interactive"),
+    ];
+    const index = buttons.indexOf(element);
+    if (index < 0) return;
+
     const next = toggleMarkdownTaskListItem(bodyRef.current, index);
     if (next == null || next === bodyRef.current) return;
-    onChangeRef.current?.(next);
+    onChangeRef.current(next);
   }, []);
 
   const value = useMemo((): MarkdownTaskListInteract | null => {
     if (!onChange) return null;
-    return { allocateIndex, onToggle };
-  }, [allocateIndex, onChange, onToggle]);
+    return { onToggleAtElement };
+  }, [onChange, onToggleAtElement]);
 
   return (
     <MarkdownTaskListInteractContext.Provider value={value}>

@@ -4124,6 +4124,8 @@ body[data-keyboard-nav-hover="suppressed"]
 
 .md-task-checkbox__check {
   display: block;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 /* Hide native GFM checkbox inputs; we render MarkdownTaskCheckbox instead. */

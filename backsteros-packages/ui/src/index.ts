@@ -571,6 +571,8 @@ export {
   type MarkdownTaskListCheckboxMatch,
 } from "./markdown-task-list.js";
 
+export { getTaskListItemChecked } from "./markdown-task-list-checked.js";
+
 export {
   MarkdownTaskCheckbox,
   type MarkdownTaskCheckboxProps,

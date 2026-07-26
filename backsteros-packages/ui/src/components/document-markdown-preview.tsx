@@ -16,6 +16,7 @@ import {
   normalizeMarkdownTaskLists,
   parseMarkdownTaskCheckbox,
 } from "../markdown-task-list.js";
+import { getTaskListItemChecked } from "../markdown-task-list-checked.js";
 import { MarkdownTaskListInteractProvider } from "../markdown-task-list-interact.js";
 import { MarkdownTaskCheckbox } from "./markdown-task-checkbox.js";
 import {
@@ -89,8 +90,8 @@ const markdownPreviewComponents: Components = {
   },
   li(props) {
     const { children, className, ...rest } = props;
-    // remark-gfm attaches `checked` on task-list items (not in DOM typings).
-    const checked = (props as { checked?: boolean | null }).checked;
+    // remark-gfm puts `checked` on the child <input>, not the <li>.
+    const checked = getTaskListItemChecked(props);
     const isTaskItem =
       typeof checked === "boolean" ||
       (typeof className === "string" && className.includes("task-list-item"));
@@ -1033,6 +1034,7 @@ export function DocumentMarkdownPreview({
       <div
         ref={containerRef}
         data-content-preview-links=""
+        data-markdown-task-list-root=""
         tabIndex={-1}
         className="content-markdown-preview-body content-markdown-preview-body--rendered"
       >
