@@ -65,10 +65,13 @@ export function StatusBarAgents({
               : null;
             const displayId =
               projectKey && task.number
-                ? formatTaskDisplayId(projectKey, task.number)
+                ? formatTaskDisplayId(projectKey, task.number)?.trim()
                 : null;
+            const taskTitle = task.title?.trim() || "";
             const label =
-              displayId?.trim() || task.title?.trim() || taskId.slice(0, 8);
+              displayId && taskTitle
+                ? `${displayId} · ${taskTitle}`
+                : displayId || taskTitle || taskId.slice(0, 8);
             return [taskId, label] as const;
           } catch {
             return [taskId, taskId.slice(0, 8)] as const;
@@ -105,8 +108,6 @@ export function StatusBarAgents({
   if (summary.attention > 0) {
     detailParts.push(`${summary.attention} needs attention`);
   }
-  if (summary.idle > 0) detailParts.push(`${summary.idle} idle`);
-  if (summary.present > 0) detailParts.push(`${summary.present} open`);
   const detail = detailParts.join(" · ");
 
   const dotClass =

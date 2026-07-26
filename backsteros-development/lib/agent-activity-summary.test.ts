@@ -8,7 +8,7 @@ import {
 } from "./agent-activity.ts";
 
 describe("summarizeStatusBarAgents", () => {
-  it("counts only actively linked agent tasks", () => {
+  it("counts only working and attention agents", () => {
     const items: StatusBarAgentItem[] = [
       {
         taskId: "t1",
@@ -22,11 +22,25 @@ describe("summarizeStatusBarAgents", () => {
         projectLabel: "Alpha",
         activity: "idle",
       },
+      {
+        taskId: "t3",
+        projectId: "p1",
+        projectLabel: "Alpha",
+        activity: "attention",
+      },
+      {
+        taskId: "t4",
+        projectId: "p1",
+        projectLabel: "Alpha",
+        activity: "present",
+      },
     ];
     const summary = summarizeStatusBarAgents(items);
     assert.equal(summary.total, 2);
     assert.equal(summary.working, 1);
-    assert.equal(summary.idle, 1);
+    assert.equal(summary.attention, 1);
+    assert.equal(summary.idle, 0);
+    assert.equal(summary.present, 0);
   });
 
   it("is empty when no agents are linked", () => {

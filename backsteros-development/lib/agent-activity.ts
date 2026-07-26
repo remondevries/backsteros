@@ -121,6 +121,16 @@ export function isAgentActivelyWorking(
   return activity === "working";
 }
 
+/**
+ * Status-bar "active" agents — working or waiting on the user.
+ * Idle / present (TUI open between turns) are excluded from the count and hover list.
+ */
+export function isStatusBarActiveAgent(
+  activity: AgentActivity | null | undefined,
+): boolean {
+  return activity === "working" || activity === "attention";
+}
+
 export function emptyAgentActivitySummary(): AgentActivitySummary {
   return { working: 0, attention: 0, idle: 0, present: 0, total: 0 };
 }
@@ -138,7 +148,8 @@ export function summarizeAgentActivity(
 }
 
 /**
- * Status-bar count — one entry per task with an actively linked agent TUI.
+ * Status-bar count — one entry per task with a working/attention agent.
+ * Idle and present sessions are ignored (TUI open between turns doesn't matter).
  * Prefer this over session activity maps so removed/deleted agents drop out.
  */
 export function summarizeStatusBarAgents(
@@ -146,6 +157,7 @@ export function summarizeStatusBarAgents(
 ): AgentActivitySummary {
   const summary = emptyAgentActivitySummary();
   for (const item of items) {
+    if (!isStatusBarActiveAgent(item.activity)) continue;
     summary.total += 1;
     summary[item.activity] += 1;
   }

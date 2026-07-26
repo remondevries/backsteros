@@ -28,6 +28,7 @@ import {
   detectAgentActivityFromTitle,
   emptyAgentActivitySummary,
   isAgentActivelyWorking,
+  isStatusBarActiveAgent,
   AGENT_WORKING_IDLE_FALLBACK_MS,
   summarizeStatusBarAgents,
   type AgentActivity,
@@ -2287,6 +2288,8 @@ export function TerminalWorkspace({
         (session) => activityBySessionId[session.id] ?? null,
       );
       const preferred = pickPreferredAgentActivity(activities) ?? "present";
+      // Status bar only lists working / needs-attention — idle TUIs don't matter.
+      if (!isStatusBarActiveAgent(preferred)) continue;
       const session = bucket.sessions[0];
       items.push({
         taskId: bucketTaskId,
