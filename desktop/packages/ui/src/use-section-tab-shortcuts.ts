@@ -1,0 +1,63 @@
+"use client";
+
+import { useEffect } from "react";
+
+import {
+  normalizeTabLocation,
+  parseSectionTabIndex,
+  resolveDesktopSectionTabHrefs,
+} from "./section-tab-hrefs.js";
+import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
+
+/**
+ * Number keys switch list/entity section tabs (Next useSectionTabShortcuts).
+ * On letter detail, 1–5 also select PDF attachments when no section tabs apply
+ * (e.g. global `/letters/…`); project/org/contact letter routes prefer section tabs.
+ * On codebase projects, 1–4 switch Tasks / Files / Commits / PRs while the
+ * development workbench is mounted.
+ */
+export function useSectionTabShortcuts({
+  enabled = true,
+  pathname,
+  search = "",
+  commandPaletteOpen = false,
+  onNavigate,
+}: {
+  enabled?: boolean;
+  pathname: string;
+  search?: string;
+  commandPaletteOpen?: boolean;
+  onNavigate: (href: string) => void;
+}) {
+  useEffect(() => {
+    if (!enabled) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (commandPaletteOpen) return;
+
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      const tabIndex = parseSectionTabIndex(event.key);
+      if (tabIndex == null) return;
+
+      const tabHrefs = resolveDesktopSectionTabHrefs(pathname, search);
+      if (!tabHrefs?.length) return;
+
+      const targetHref = tabHrefs[tabIndex];
+      if (!targetHref) return;
+
+      const current = normalizeTabLocation(`${pathname}${search}`);
+      if (normalizeTabLocation(targetHref) === current) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onNavigate(targetHref);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [commandPaletteOpen, enabled, onNavigate, pathname, search]);
+}

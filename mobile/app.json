@@ -1,0 +1,76 @@
+{
+  "expo": {
+    "name": "BacksterOS v2",
+    "slug": "backsteros-v2",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "backsteros-v2",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "icon": "./assets/icon.png",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.backsteros.mobile.v2",
+      "backgroundColor": "#000000",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "CFBundleDisplayName": "BacksterOS v2",
+        "NSLocalNetworkUsageDescription": "BacksterOS connects to your laptop over Tailscale for the agent terminal and local API.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "tailc7e057.ts.net": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "TLSv1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            }
+          }
+        }
+      }
+    },
+    "android": {
+      "package": "com.backsteros.mobile.v2",
+      "backgroundColor": "#000000",
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1425"
+      }
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#000000",
+      "barStyle": "light-content",
+      "translucent": true
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#000000",
+      "barStyle": "light-content"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "./plugins/with-fmt-xcode-format.js",
+      "expo-web-browser",
+      "expo-document-picker",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

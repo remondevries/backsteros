@@ -2,30 +2,31 @@
 
 Read this file first when working in **`~/code/backsteros/`**. Specs live at the repo root (`docs/`). Application code goes in **subfolders** below — not in `docs/`.
 
-## Workspace root
+## Workspace root (v2)
 
 ```text
 ~/code/backsteros/
-├── docs/                      ← specs
-├── backsteros-api/            ← backend (service.backsteros.com)
-├── backsteros-app/            ← product web UI (backsteros.com/app)
-├── backsteros-admin/          ← ops dashboard (backsteros.com/admin)
-├── backsteros-mobile/         ← Expo (product)
-├── backsteros-desktop/        ← Tauri → app build
-├── backsteros-development/    ← agent console (Orca-style; Next.js)
-└── backsteros-packages/
+├── docs/                 ← specs
+├── core/
+│   ├── server/           ← API (Hono + Postgres + OpenAPI)
+│   └── packages/         ← contracts, api-client, powersync-schema
+├── mobile/               ← Expo (iPhone + iPad)
+├── desktop/              ← Tauri 2 + Vite/React
+└── legacy/               ← v1 snapshot (reference only)
 ```
 
-See [STRUCTURE.md](STRUCTURE.md) and [docs/11-urls-and-routing.md](docs/11-urls-and-routing.md).
+See [STRUCTURE.md](STRUCTURE.md) and [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md).
 
 ## Quick context
 
-BacksterOS replaces the Circle monolith (`~/code/circle.remondevries.com`) with:
+BacksterOS is a personal / company ops system:
 
-- **Thin clients:** Expo (mobile), Tauri + Vite/React (desktop), browser (same web UI)
-- **Central backend:** PostgreSQL + PowerSync + OpenAPI service + object storage + Meilisearch
-- **Linear-style sync:** offline-first, cursor deltas, batch mutations, realtime on open documents
-- **Agent-friendly API:** search, read/write markdown, lazy PDF fetch — same data as human apps
+- **Core** on a **local computer**: PostgreSQL + PowerSync + OpenAPI service + object/files storage
+- **Shells:** Expo (mobile), Tauri + Vite/React (desktop)
+- **Linear-style sync:** offline-first, cursor deltas, batch mutations
+- **Agent-friendly API:** search, read/write markdown, lazy PDF fetch
+
+Public Next.js product/admin and hosting portals are **out of scope** for active v2 work (see `legacy/`).
 
 ## Documentation map
 
@@ -33,45 +34,38 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 
 | Task | Read these docs |
 | --- | --- |
-| Starting any build work | `docs/00-vision.md`, `docs/01-architecture.md`, `docs/09-phased-build-plan.md` |
+| Starting any build work | `docs/00-vision.md`, `docs/01-architecture.md`, `docs/09-phased-build-plan.md`, `docs/12-v2-local-computer.md` |
 | Choosing or changing tools | `docs/02-tech-stack.md`, `docs/10-decisions-log.md` |
 | Database / entities / sync tiers | `docs/03-data-model.md` |
 | API routes, sync, agent access | `docs/04-api-and-sync.md` |
-| Desktop / mobile / web UI | `docs/05-clients.md`, `docs/11-urls-and-routing.md`, `docs/07-performance.md`, `docs/10-decisions-log.md` (ADR-019 desktop) |
+| Desktop / mobile UI | `docs/05-clients.md`, `docs/07-performance.md` |
 | PDFs, markdown bodies, search | `docs/06-storage-and-search.md` |
-| Migrating from Circle | `docs/08-legacy-circle.md` |
-| Human + agent co-editing markdown | `docs/04-api-and-sync.md` § Live documents |
 
 ## Non-negotiable rules
 
 1. **No Tier C/D bulk sync** — full markdown bodies and PDF bytes are never bootstrapped to clients by default. See `docs/03-data-model.md`.
-2. **One source of truth** — Postgres (metadata) + object storage (blobs). Not two parallel sync systems.
-3. **Business logic lives in `backsteros-api/`** — not in UI repos or `docs/`.
+2. **One source of truth** — Postgres (metadata) + object/file storage (blobs). Not two parallel sync systems.
+3. **Business logic lives in `core/server/`** — not in shell apps or `docs/`.
 4. **All writes pipeline** — storage → version bump → sync event → realtime push to open editors.
-5. **Do not extend** `circle.remondevries.com` for new platform features.
+5. **Do not develop in `legacy/`** — copy into v2 paths when porting.
+6. **No shared visual UI** between `mobile/` and `desktop/` — share contracts/api-client/schema only.
+7. **Do not extend** `circle.remondevries.com` for new platform features.
 
 ## Subfolders (code)
 
-| Path (under `backsteros/`) | Status | Purpose |
-| --- | --- | --- |
-| `backsteros-api/` | Phase 1+ | Hono + Postgres + OpenAPI |
-| `backsteros-packages/contracts/` | Phase 1 — done | Zod schemas + ts-rest contract |
-| `backsteros-packages/api-client/` | Phase 1+ | Typed HTTP client |
-| `backsteros-packages/powersync-schema/` | Phase 5 | Shared PowerSync Tier A/B client schema |
-| `backsteros-packages/ui/` | Phase 5 — desktop-first | Shared product UI; polish on desktop before Next adoption |
-| `backsteros-admin/` | Phase 3b | Ops UI at `/admin` — health, sync cursor, log tail |
-| `backsteros-mobile/` | Phase 4 | Expo — Clerk + PowerSync inbox/tasks (offline edits) |
-| `backsteros-app/` | Phase 5 — in progress | Product web at `/app` (Next.js; local screens for now) |
-| `backsteros-desktop/` | Phase 5 — working | Tauri 2 + Vite/React; primary `@backsteros/ui` consumer (ADR-019) |
-| `backsteros-development/` | Experiment | Agent console (projects \| terminals \| tasks). Next.js + `@backsteros/ui`; not product `/app`. |
-
-Do not put application code in `docs/` or loose at the workspace root — use the subfolder for each layer.
+| Path | Purpose |
+| --- | --- |
+| `core/server/` | Hono + Postgres + OpenAPI |
+| `core/packages/contracts/` | Zod schemas + ts-rest contract |
+| `core/packages/api-client/` | Typed HTTP client |
+| `core/packages/powersync-schema/` | Shared PowerSync Tier A/B client schema |
+| `mobile/` | Expo — Clerk + PowerSync |
+| `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |
+| `legacy/` | v1 Next apps, admin, development console, sync-demo |
 
 ## Phase gate
 
-Phases 1–5 are in progress in-repo. Do not skip ahead to later phases without
-explicit user approval (`docs/09-phased-build-plan.md`). Do not deepen Next’s use
-of shared `@backsteros/ui` detail/layout views until desktop polish is ready.
+v2 foundation reorganizes around local-computer core + Expo + Tauri. Do not scaffold hosting portals or revive Next product web without explicit approval.
 
 ## Fetching doc content
 

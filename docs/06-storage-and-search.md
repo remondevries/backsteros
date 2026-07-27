@@ -1,17 +1,49 @@
 # Storage and search
 
-## Object storage
+## Local vault (v2 primary)
 
-### Primary: Backblaze B2 or Cloudflare R2
+BacksterOS stores document bodies and letter PDFs in an **Obsidian-style local
+vault** on the core computer. Postgres keeps metadata + `storage_key` only.
+
+Configure via desktop **Settings → Storage** or `BACKSTEROS_VAULT_PATH`.
+
+### Vault layout
+
+```text
+{vault}/
+  Journal/
+    {YYYY-MM-DD}.md
+  Projects/
+    {PROJECT_KEY}/
+      Codebase/          # optional / empty OK
+      Documents/
+        {path}.md
+      Updates/
+  Letters/
+    {YYYY}/
+      {MM}/
+        {YYYY-MM-DD} - {Subject}.pdf
+  Knowledge Base/
+    {path}.md
+  .backsteros/           # avatars and other non-browsable blobs
+```
+
+Clients never talk to the filesystem directly for sync — they use the API /
+PowerSync metadata and lazy `GET …/content` or `…/pdf`.
+
+## Object storage (optional / future remote)
+
+### Primary remote option: Backblaze B2 or Cloudflare R2
 
 | Provider | Best for |
 | --- | --- |
 | **Backblaze B2** | Lowest cost for 100+ GB mostly-at-rest (~$6/TB/mo) |
 | **Cloudflare R2** | Frequent PDF downloads (zero egress) |
 
-S3-compatible API — use AWS SDK `@aws-sdk/client-s3` with custom endpoint.
+S3-compatible API — use AWS SDK `@aws-sdk/client-s3` with custom endpoint if/when
+a remote blob backend is reintroduced. v2 default is the local vault above.
 
-### Key layout (proposed)
+### Legacy cloud key layout (superseded)
 
 ```text
 {bucket}/
@@ -56,11 +88,11 @@ Stores for each document/letter:
 
 On document save (human or agent):
 
-1. Write body to object storage
+1. Write body to local vault (or object storage)
 2. Update Postgres metadata + snippet
 3. Async job: index `{ id, title, path, snippet, body_excerpt, project_id, type }`
 
-For PDFs: extract text (pdf-parse, Apache Tika, or cloud parser) → index text; store binary in B2/R2 only.
+For PDFs: extract text (pdf-parse, Apache Tika, or cloud parser) → index text; store binary in the vault (or B2/R2 when remote).
 
 ### Index fields (proposed)
 
@@ -94,7 +126,8 @@ Circle uses:
 - DO Spaces for markdown + PDFs + sync batches
 - Local vault on desktop
 
-BacksterOS: **Postgres replaces server SQLite**; Spaces pattern kept (or migrate bucket to B2/R2).
+BacksterOS: **Postgres replaces server SQLite**; **local Obsidian-style vault**
+replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 later).
 
 ## Cost estimate (100 GB PDFs + growth)
 

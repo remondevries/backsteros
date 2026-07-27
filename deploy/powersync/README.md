@@ -10,9 +10,12 @@ Included in root `docker-compose.yml`:
 pnpm db:up          # Postgres (wal_level=logical) + Mongo (replSet rs0) + PowerSync on :8080
 pnpm db:migrate
 pnpm db:powersync-setup
+pnpm db:powersync-verify   # publication + grants match Tier A/B tables
 ```
 
 Config: `service.local.yaml`, `sync-config.yaml`. Local Mongo runs as a single-node replica set (`--replSet rs0`) — required for PowerSync bucket-storage transactions.
+
+After adding sync tables: update `sync-config.yaml` + `POWERSYNC_PUBLICATION_TABLES` in `core/server/src/db/powersync-tables.ts`, run `db:powersync-setup`, restart PowerSync.
 
 ## Production (Neon + droplet)
 
@@ -29,6 +32,8 @@ Config: `service.local.yaml`, `sync-config.yaml`. Local Mongo runs as a single-n
 
 ## Sync rules
 
-Tier A/B only: `projects`, `tasks`, `documents` metadata (no blob bodies).
+Tier A/B metadata only (no PDF bytes / markdown bodies):
 
-See `sync-config.yaml`.
+`projects`, `tasks`, `documents`, `organizations`, `contacts`, `areas`, `letters`, `avatars`, `mentions`, `workspace_settings`
+
+See `sync-config.yaml` and `pnpm db:powersync-verify`.

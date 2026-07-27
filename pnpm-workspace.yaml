@@ -1,12 +1,9 @@
 packages:
-  - backsteros-api
-  - backsteros-app
-  - backsteros-admin
-  - backsteros-desktop
-  - backsteros-development
-  - backsteros-mobile
-  - backsteros-sync-demo
-  - backsteros-packages/*
+  - core/server
+  - core/packages/*
+  - mobile
+  - desktop
+  - desktop/packages/*
 allowBuilds:
   '@clerk/shared': true
   '@journeyapps/wa-sqlite': true
@@ -15,6 +12,7 @@ allowBuilds:
   bufferutil: true
   core-js: true
   esbuild: true
+  expo-libghostty: true
   node-pty: true
   sharp: true
   unrs-resolver: true

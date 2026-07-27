@@ -6,27 +6,21 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter @backsteros/api dev",
-    "dev:app": "pnpm --filter @backsteros/app dev",
-    "dev:admin": "pnpm --filter @backsteros/admin dev",
+    "dev": "pnpm --filter @backsteros/server dev",
     "dev:desktop": "pnpm --filter @backsteros/desktop tauri:dev",
-    "dev:development": "pnpm --filter @backsteros/development dev",
     "dev:mobile": "pnpm --filter @backsteros/mobile start",
+    "pty": "pnpm --filter @backsteros/desktop pty",
     "build": "pnpm -r build",
-    "build:admin": "pnpm --filter @backsteros/admin build",
     "build:desktop": "pnpm --filter @backsteros/desktop tauri:build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm --filter @backsteros/contracts build && pnpm --filter @backsteros/api-client build && pnpm --filter @backsteros/powersync-schema build && pnpm --filter @backsteros/ui build && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "test:integration": "pnpm --filter @backsteros/api test:integration",
-    "test:e2e": "pnpm --filter @backsteros/app test:e2e",
-    "build:app": "pnpm --filter @backsteros/app build",
-    "lint:app": "pnpm --filter @backsteros/app lint",
-    "typecheck:app": "pnpm --filter @backsteros/app typecheck",
+    "test:integration": "pnpm --filter @backsteros/server test:integration",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:migrate": "pnpm --filter @backsteros/api db:migrate",
-    "db:powersync-setup": "pnpm --filter @backsteros/api db:powersync-setup",
+    "db:migrate": "pnpm --filter @backsteros/server db:migrate",
+    "db:powersync-setup": "pnpm --filter @backsteros/server db:powersync-setup",
+    "db:powersync-verify": "pnpm --filter @backsteros/server db:powersync-verify",
     "powersync:up": "docker compose up -d mongo powersync"
   }
 }

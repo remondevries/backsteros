@@ -1,0 +1,154 @@
+import { useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
+import {
+  ProjectsListSkeleton,
+  ProjectsOverviewView,
+  RegisterPageTitle,
+  PROJECTS_LIST_BOARD_STORAGE_KEY,
+  parseListBoardViewFromLocation,
+  persistListBoardView,
+  projectReorderPatches,
+  type ListBoardView,
+  type OrganizationRef,
+  type ProjectOverviewRowProject,
+  type ProjectStatus,
+} from "@backsteros/ui";
+
+import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
+import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
+import {
+  type ProjectLocationState,
+} from "../lib/project-type-cache";
+
+const DEVELOPMENT_LIST_HREF = "/development";
+
+function buildDevelopmentListHref(view: ListBoardView): string {
+  if (view === "list") return DEVELOPMENT_LIST_HREF;
+  const params = new URLSearchParams({ view });
+  return `${DEVELOPMENT_LIST_HREF}?${params.toString()}`;
+}
+
+export function DevelopmentPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const workspace = useDesktopWorkspaceData();
+  const agentStatus = useDesktopAgentStatusOptional();
+
+  const listView = useMemo(
+    () =>
+      parseListBoardViewFromLocation(
+        location.pathname,
+        location.search,
+        PROJECTS_LIST_BOARD_STORAGE_KEY,
+      ),
+    [location.pathname, location.search],
+  );
+
+  const projects = useMemo(
+    () =>
+      workspace.projects.filter(
+        (project) => (project.type ?? "general") === "codebase",
+      ),
+    [workspace.projects],
+  );
+
+  const workingProjectIds = useMemo(
+    () =>
+      buildWorkingProjectIdSet(
+        workspace.allTasks,
+        agentStatus?.workingTaskIds ?? new Set(),
+      ),
+    [agentStatus?.workingTaskIds, workspace.allTasks],
+  );
+
+  const organizations = useMemo<OrganizationRef[]>(
+    () =>
+      workspace.organizations.map((org) => ({
+        id: org.id,
+        name: org.name,
+      })),
+    [workspace.organizations],
+  );
+
+  if (!workspace.ready) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
+        <RegisterPageTitle title="Development" />
+        <ProjectsListSkeleton />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <RegisterPageTitle title="Development" />
+      <ProjectsOverviewView
+        projects={projects}
+        workingProjectIds={workingProjectIds}
+        organizations={organizations}
+        secondaryGrouping="organization"
+        showAreaFilters={false}
+        showTypeGroups={false}
+        emptyMessage="No codebase projects yet."
+        view={listView}
+        onViewChange={(nextView) => {
+          persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
+          navigate(buildDevelopmentListHref(nextView));
+        }}
+        onSelectProject={(key) => {
+          const state: ProjectLocationState = {
+            projectType: "codebase",
+            from: "development",
+          };
+          navigate(`/projects/${key}`, { state });
+        }}
+        onStatusChange={(projectId, status: ProjectStatus) => {
+          void workspace.patchProject(projectId, { status });
+        }}
+        onPriorityChange={(projectId, priority) => {
+          void workspace.patchProject(projectId, { priority });
+        }}
+        onStartDateChange={(projectId, startDate) => {
+          void workspace.patchProject(projectId, {
+            startDate: startDate ? startDate.toISOString() : null,
+          });
+        }}
+        onDueDateChange={(projectId, dueDate) => {
+          void workspace.patchProject(projectId, {
+            dueDate: dueDate ? dueDate.toISOString() : null,
+          });
+        }}
+        onCreateProject={async ({ status, name }) => {
+          return workspace.createProject({
+            name,
+            status,
+            type: "codebase",
+          });
+        }}
+        onCreatedProject={(_id, key) => {
+          if (key) {
+            const state: ProjectLocationState = {
+              projectType: "codebase",
+              from: "development",
+            };
+            navigate(`/projects/${key}`, { state });
+          }
+        }}
+        onReorder={(request) => {
+          const patches = projectReorderPatches(
+            projects as ProjectOverviewRowProject[],
+            request,
+          );
+          for (const patch of patches) {
+            void workspace.patchProject(patch.id, {
+              status: patch.status,
+              sortOrder: patch.sortOrder,
+            });
+          }
+        }}
+      />
+    </>
+  );
+}

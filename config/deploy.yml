@@ -43,7 +43,7 @@ registry:
 
 builder:
   arch: amd64
-  dockerfile: backsteros-api/Dockerfile
+  dockerfile: core/server/Dockerfile
   context: .
 
 env:
@@ -52,15 +52,12 @@ env:
     PORT: "8787"
     PUBLIC_API_URL: https://service.backsteros.com
     CORS_ORIGINS: https://backsteros.com,https://service.backsteros.com,http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:1420,http://127.0.0.1:1420,http://localhost:3100,http://127.0.0.1:3100,tauri://localhost,https://tauri.localhost
-    SPACES_ENDPOINT: https://ams3.digitaloceanspaces.com
-    SPACES_BUCKET: backsteros
-    SPACES_REGION: ams3
-    SPACES_CDN_URL: https://backsteros.ams3.cdn.digitaloceanspaces.com
+    # Optional: set a server-side vault path. Prefer Settings → Storage when running
+    # core on the local computer (BACKSTEROS_VAULT_PATH or workspace settings.vaultPath).
+    # BACKSTEROS_VAULT_PATH: /var/lib/backsteros/vault
     POWERSYNC_URL: https://sync.backsteros.com
     POWERSYNC_AUDIENCE: backsteros-powersync
   secret:
     - DATABASE_URL
     - CLERK_SECRET_KEY
-    - SPACES_ACCESS_KEY_ID
-    - SPACES_SECRET_ACCESS_KEY
     - POWERSYNC_JWT_SECRET

@@ -1,0 +1,77 @@
+import { useEffect, useRef, useState } from "react";
+
+import { useMobilePowerSync } from "./powersync-context";
+import { rowsShallowEqual } from "./rows-shallow-equal";
+
+export { rowsShallowEqual } from "./rows-shallow-equal";
+
+function paramsKey(params: readonly unknown[]): string {
+  try {
+    return JSON.stringify(params);
+  } catch {
+    return String(params.length);
+  }
+}
+
+/**
+ * Watches a local SQLite query when the PowerSync database handle exists.
+ * Does not wait for `hasSynced` — first-sync rows stream in as they arrive.
+ */
+export function useLocalQuery<T extends Record<string, unknown>>(
+  sql: string,
+  params: readonly unknown[] = [],
+) {
+  const { database, status } = useMobilePowerSync();
+  const [data, setData] = useState<T[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const boundParams = useStableParams(params);
+
+  useEffect(() => {
+    if (!database) {
+      setData([]);
+      // Stay loading while auth/connect is in progress; stop on terminal states.
+      setIsLoading(status !== "error" && status !== "unauthenticated");
+      return;
+    }
+
+    const controller = new AbortController();
+    if (dataRef.current.length === 0) {
+      setIsLoading(true);
+    }
+
+    database.watch(
+      sql,
+      [...boundParams],
+      {
+        onResult: (result) => {
+          const rows = (result.rows?._array ?? []) as T[];
+          setData((previous) =>
+            rowsShallowEqual(previous, rows) ? previous : rows,
+          );
+          setIsLoading(false);
+        },
+        onError: () => {
+          setIsLoading(false);
+        },
+      },
+      { signal: controller.signal },
+    );
+
+    return () => {
+      controller.abort();
+    };
+  }, [boundParams, database, sql, status]);
+
+  return { data, isLoading };
+}
+
+/** Stabilize param array identity when contents are equal. */
+function useStableParams(params: readonly unknown[]): readonly unknown[] {
+  const ref = useRef(params);
+  if (paramsKey(ref.current) !== paramsKey(params)) {
+    ref.current = params;
+  }
+  return ref.current;
+}

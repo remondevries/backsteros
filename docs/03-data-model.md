@@ -30,7 +30,7 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 
 | Entity | Tier (metadata) | Tier (content) | Notes |
 | --- | --- | --- | --- |
-| Task | A | — | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task — distinct from future blob Attachment entities. |
+| Task | A | — | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task — distinct from future blob Attachment entities. `agentChatId` (Cursor chat id) is Tier A metadata for desktop/mobile; the PTY process stays on the local computer (desktop + Tailscale-trusted iPad viewers). |
 | Project | A | — | |
 | Contact / Organization | A | — | |
 | Document (project/knowledge) | B | D (body in object storage) | |

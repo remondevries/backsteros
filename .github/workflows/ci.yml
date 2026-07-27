@@ -2,16 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v2]
   pull_request:
 
 permissions:
   contents: read
 
 env:
-  NEXT_PUBLIC_API_URL: http://127.0.0.1:8787
-  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
   CLERK_SECRET_KEY: sk_test_ci_placeholder
 
 jobs:
@@ -51,8 +48,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      - run: pnpm --filter @backsteros/api exec tsx src/db/migrate.ts
+      - run: pnpm --filter @backsteros/server exec tsx src/db/migrate.ts
       - run: pnpm test:integration
       - run: pnpm build
-      - run: pnpm --filter @backsteros/app exec playwright install --with-deps chromium
-      - run: pnpm test:e2e

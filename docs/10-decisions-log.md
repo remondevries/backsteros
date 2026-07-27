@@ -65,7 +65,7 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ## ADR-007: Object storage B2 or R2 (not Postgres blobs)
 
-**Status:** Accepted  
+**Status:** Superseded for v2 local core by ADR-021 (local vault). Remains valid if/when a remote blob backend is needed.  
 **Context:** 100+ GB PDFs.  
 **Decision:** S3-compatible object storage; Postgres stores keys only.  
 **Default pick:** Backblaze B2 for cost; R2 if egress-heavy.
@@ -248,9 +248,102 @@ fork of the Next deployment pipeline.
 | ID | Question | Owner |
 | --- | --- | --- |
 | Q-001 | Domains: product + API host | **Resolved:** product `backsteros.com/app`, API `service.backsteros.com` (`api.` unavailable) |
-| Q-002 | B2 vs R2 after measuring PDF egress | Phase 2 |
+| Q-002 | B2 vs R2 after measuring PDF egress | Deferred — v2 uses local vault (ADR-021) |
 | Q-003 | Clerk vs Supabase Auth | **Resolved:** Clerk |
 | Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/code/backsteros/` with subfolders |
 | Q-005 | Self-host PowerSync vs PowerSync Cloud | Phase 3 |
 | Q-006 | Postgres host (prod) | **Resolved:** Neon (dev: Docker) |
 | Q-007 | Desktop client stack | **Resolved:** Tauri 2 + Vite/React (ADR-019); UI near-identical to web |
+
+---
+
+## ADR-020: v2 local-computer core + Expo/Tauri shells
+
+**Status:** Accepted  
+**Context:** v1 spread product UI across Next web, Expo, Tauri, admin, and a development console. Day-to-day BacksterOS should run on a **local computer** with Apple shells only (for now), without a shared visual UI between phone and desktop.  
+**Decision:**
+
+- **Core** on a **local computer**: `core/server` + Postgres + files + PowerSync
+- **Shells:** `mobile/` (Expo, iPhone + iPad adaptive) and `desktop/` (Tauri + React)
+- **Shared packages** under `core/packages/` (contracts, api-client, powersync-schema only)
+- **No shared UI** between mobile and desktop; desktop-owned UI may live under `desktop/packages/ui/`
+- **Archive** v1 apps into `legacy/` (Next app/admin/development, sync-demo) — reference only
+- **Naming:** use “local computer” in docs — not a specific hardware model
+
+**Consequences:** Cleaner root (`core`, `mobile`, `desktop`, `legacy`). Client hosting portals / Next product web are out of active v2 scope. Package `@backsteros/api` renamed to `@backsteros/server`.
+
+---
+
+## ADR-021: Local Obsidian-style vault (not DigitalOcean Spaces)
+
+**Status:** Accepted  
+**Context:** v2 core runs on a local computer; Spaces credentials and cloud bucket layout no longer fit day-to-day ops.  
+**Decision:**
+
+- Store markdown and letter PDFs under a **local vault root** (`BACKSTEROS_VAULT_PATH` or Settings → Storage)
+- Auto-create `Journal/`, `Projects/{KEY}/{Codebase,Documents,Updates}/`, `Letters/YYYY/MM/`, `Knowledge Base/`
+- Keep Postgres metadata + `storage_key`; clients use API/PowerSync (no bulk Tier C/D sync)
+- Avatars and other system blobs under `.backsteros/`
+
+**Supersedes for v2:** ADR-007 cloud-first default. Remote B2/R2 remains an optional future backend.
+
+---
+
+## ADR-022: Tailscale-trusted agent TUI on iPad
+
+**Status:** Accepted  
+**Context:** Desktop codebase tasks show stacked detail + a local Cursor agent PTY. iPad should mirror that layout; the agent binary and working directory live on the local computer.  
+**Decision:**
+
+- Keep PTY ownership on the laptop sidecar (`pnpm pty`); do **not** store PTY process ids in core
+- Core brokers `GET /api/v1/agent-pty/connection` (`AGENT_PTY_PUBLIC_URL` + `AGENT_PTY_AUTH_TOKEN`)
+- Sidecar may bind beyond loopback with `PTY_HOST` + required `PTY_AUTH_TOKEN` for Tailscale shells
+- iPad codebase task layout: stacked detail | **native WebSocket** + **Ghostty Metal** (`expo-libghostty`) over Tailscale (create / attach / resume)
+- Standard iPad tasks keep content + properties rail; **iPhone agent TUI deferred**
+- No shared visual UI with desktop — mobile owns its terminal surface
+
+**Consequences:** Laptop must run core + `pnpm pty` on the tailnet. Public internet PTY exposure remains a non-goal.
+
+---
+
+## ADR-023: Herdr for shared agent TTY (desktop + iPad)
+
+**Status:** Accepted  
+**Context:** Custom multi-viewer fan-out on raw `node-pty` could not keep desktop and iPad on one live Cursor Agent conversation. tmux would share a TTY but not agent state.  
+**Decision:**
+
+- Keep BacksterOS xterm / Ghostty UIs + Tailscale `pnpm pty` sidecar
+- Durable session = **one Herdr agent pane per task** (`herdr agent start backsteros-<taskId> …`)
+- Placement: Herdr **workspace** labeled with the project name; **tab** labeled with the task display id (e.g. `LD-2`) — not splits in General
+- Viewers attach with **one shared** `herdr agent attach` in the PTY sidecar (fan-out to desktop + iPad WebSockets). Herdr attach is exclusive — a second CLI attach kicks the first off
+- Start uses `POST /agent/ensure`
+- Bridge Herdr `agent_status` (working / blocked / idle / done) into BacksterOS activity indicators
+- Core still syncs only `agentChatId` — not Herdr pane ids
+- Invoke Herdr as an **unmodified external binary** (AGPL-3.0); do not vendor/fork into the repo. Revisit commercial licensing if BacksterOS ever wraps Herdr as a hosted multi-tenant product.
+
+**Alternatives rejected:** tmux-only multiplexer; custom byte fan-out; embedding the full Herdr TUI in-app.
+
+**Consequences:** Laptop needs Herdr + `herdr integration install cursor`. Agent sessions require Herdr; shell PTYs remain plain `node-pty`.
+
+---
+
+## ADR-024: Chat via Cursor ACP; Terminal via Herdr
+
+**Status:** Accepted (ACP-first Chat, 2026-07)  
+**Context:** Driving the Cursor Agent TUI with PTY/Herdr keystrokes (`agent send` + Enter) is brittle — Cursor CLI has known paste/Enter chunk bugs, and Chat history was not a first-class protocol. T3 Code’s reliable pattern is a structured agent protocol (ACP) under a React chat UI — not hybrid Chat→Herdr typing.  
+**Decision:**
+
+- **Chat tab = ACP only** (T3-style): text prompts, streaming, mode, and cancel go through Cursor ACP (`session/prompt`, `session/update`, `session/set_mode` / config mode, `session/cancel`) via `POST /agent/prompt`, `/agent/acp/mode`, `/agent/acp/cancel`
+- Chat **never** injects prompts or mode slashes into the Herdr TUI (`herdrSubmitAgentPrompt` / `herdrSwitchAgentMode` are not on the Chat path)
+- Mode chip maps UI `build` → ACP `agent`; Ask / Plan / Debug use ACP `set_mode`. Failures surface in Chat (chip rolls back) — no Herdr `/debug` fake
+- Live Chat turn chrome is driven by `acp-event` `session-update` / `prompt-complete`; Cursor hooks remain **optional enrichment** for Terminal-originated activity
+- Sidecar-started Herdr agents still get `BACKSTEROS_AGENT_*` hook env for Terminal/status; agents missing that env are replaced once so hooks work after `pnpm pty` restart
+- Herdr `blocked` → Chat/status **attention** (“needs input in Terminal”); ACP still owns in-Chat permission / ask-question UI when the turn is ACP-driven
+- The sidecar **symlinks** `~/.cursor/chats/<md5(cwd)>/<id>` → the ACP store so Terminal `agent --resume <id>` can **view** the same conversation
+- **Terminal tab** attaches to Herdr running `agent --resume <id>` as a **viewer** of the shared session; typing in Terminal is optional and not required for Chat
+- Tool `session/request_permission` is auto-approved (`allow-once` / `allow-always`) for personal-ops reliability; richer permission UI can come later
+
+**Alternatives rejected:** Hybrid Chat text via Herdr + ACP fallback (previous ADR-024); polish PTY chat injection only; adopt T3/Codex stack wholesale; drop Terminal/Herdr entirely; dual-run ACP + Herdr prompts on every Chat send.
+
+**Consequences:** Laptop needs a logged-in `agent` CLI (`agent login`) and Herdr for Terminal attach. Prefer Chat for sends — ACP is the agent. Restart `pnpm pty` after sidecar changes.
+

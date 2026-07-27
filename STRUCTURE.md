@@ -1,6 +1,6 @@
 # BacksterOS — folder structure
 
-Single workspace: **`~/code/backsteros/`**
+Single workspace: **`~/code/backsteros/`** (branch `v2`)
 
 ```text
 ~/code/backsteros/
@@ -8,37 +8,35 @@ Single workspace: **`~/code/backsteros/`**
 ├── README.md
 ├── STRUCTURE.md
 ├── docs/
+├── deploy/
+├── docker-compose.yml
 │
-├── backsteros-api/            Phase 1 — backend (service.backsteros.com)
-├── backsteros-packages/
-│   ├── contracts/
-│   ├── api-client/
-│   ├── powersync-schema/
-│   └── ui/
+├── core/
+│   ├── server/                 ← Hono API (local computer)
+│   └── packages/
+│       ├── contracts/          ← Zod / OpenAPI shapes
+│       ├── api-client/         ← typed HTTP client (shells only)
+│       └── powersync-schema/   ← client SQLite schema
 │
-├── backsteros-app/            Phase 5 — product web (backsteros.com/app, Next.js)
-├── backsteros-admin/          Phase 3b — ops dashboard (backsteros.com/admin)
-├── backsteros-mobile/         Phase 4 — Expo (product, not admin)
-├── backsteros-desktop/        Phase 5 — Tauri 2 + Vite/React scaffold (UI ≈ web)
-└── backsteros-development/    Experiment — agent console (Next.js + thin Tauri window)
+├── mobile/                     ← Expo (iPhone + iPad, adaptive UI)
+├── desktop/                    ← Tauri 2 + Vite/React (macOS)
+│   └── packages/ui/            ← desktop-owned UI (not shared with mobile)
+│
+└── legacy/                     ← v1 snapshot — do not develop here
 ```
 
-## URLs
+## Roles
 
-| Path | Folder |
+| Path | Role |
 | --- | --- |
-| `backsteros.com/app` | `backsteros-app` |
-| `backsteros.com/admin` | `backsteros-admin` |
-| `service.backsteros.com` | `backsteros-api` |
+| `core/server` | Business logic, Postgres, sync upload, OpenAPI |
+| `core/packages/*` | Shared **non-UI** contracts between core and shells |
+| `mobile/` | Expo product shell |
+| `desktop/` | Tauri product shell |
+| `legacy/` | Frozen v1 apps (Next app/admin/development, sync-demo) |
 
-Details: [docs/11-urls-and-routing.md](docs/11-urls-and-routing.md)
+## Runtime model
 
-## Phase → folder
-
-| Phase | Folder |
-| --- | --- |
-| 1 | `backsteros-api/`, `backsteros-packages/contracts/` |
-| 3b | `backsteros-admin/` (after sync metrics exist) |
-| 4 | `backsteros-mobile/` |
-| 5 | `backsteros-app/`, `backsteros-desktop/` |
-| — | `backsteros-development/` (agent console; not a product phase) |
+**Core** runs on a **local computer** (Postgres, files, API, PowerSync).  
+**Shells** (mobile, desktop) talk to core over localhost / Tailscale.  
+No shared visual UI package between mobile and desktop.
