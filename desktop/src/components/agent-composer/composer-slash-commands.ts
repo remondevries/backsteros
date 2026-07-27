@@ -10,7 +10,6 @@ export type ComposerSlashCommandId =
   | "ask"
   | "plan"
   | "build"
-  | "debug"
   | "clear";
 
 export type ComposerCommandItem =
@@ -68,12 +67,6 @@ const BUILTIN_SLASH: Array<{
     label: "/ask",
     description: "Switch to Ask mode (read-only)",
     mode: "ask",
-  },
-  {
-    command: "debug",
-    label: "/debug",
-    description: "Switch to Debug mode",
-    mode: "debug",
   },
   {
     command: "clear",

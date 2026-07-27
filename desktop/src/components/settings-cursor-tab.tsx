@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { CursorSettings } from "@backsteros/contracts";
 import { SegmentedPillToggle } from "@backsteros/ui";
 
-import { forgetLivePtySession } from "./desktop-terminal-panel";
 import { useDesktopApi } from "../lib/api-context";
 import {
   killPtySession,
@@ -250,7 +249,6 @@ export function SettingsCursorTab() {
     setError(null);
     const result = await killPtySession(sessionId);
     if (result.ok) {
-      forgetLivePtySession(sessionId);
       await refresh();
     } else {
       setError(result.error);
@@ -501,10 +499,10 @@ export function SettingsCursorTab() {
         <section className="settings-card">
           <h2>Active agents</h2>
           <p>
-            Local Cursor agent processes owned by the PTY sidecar. Leaving a
-            task only detaches the viewer; Kill stops that process. The
-            task&apos;s <code>agentChatId</code> in core is left alone so View
-            can resume later.
+            Local Cursor ACP agent sessions owned by the PTY sidecar. Leaving a
+            task only detaches the Chat viewer; Kill stops that ACP session. The
+            task&apos;s <code>agentChatId</code> in core is left alone so you can
+            bind a new session later.
           </p>
 
           {offline ? (

@@ -45,14 +45,14 @@ pnpm --filter @backsteros/desktop tauri:dev
 pnpm --filter @backsteros/desktop dev
 ```
 
-### Agent terminal (task view)
+### Agent Chat (task view)
 
-Desktop task detail includes a collapsible right **terminal rail**. **Start Agent** talks to a local Node PTY sidecar (`ws://127.0.0.1:3101`) that multiplexes through **[Herdr](https://herdr.dev)** so desktop and iPad share one live Cursor Agent TTY per task.
+Desktop task detail includes a collapsible right **agent Chat rail** (T3-style Cursor ACP). **Start Agent** talks to the local Node sidecar (`ws://127.0.0.1:3101`).
 
-- Install Herdr and run `herdr integration install cursor` once on the laptop.
-- Run `pnpm pty` (or `pnpm --filter @backsteros/desktop pty`) before using agent terminals.
-- Cursor Agent CLI (`agent`) must be on PATH; Start creates a chat and `POST /agent/ensure` starts it inside a Herdr pane.
-- Collapsing the rail / leaving the task only detaches the viewer; the Herdr agent keeps running. Stop Agent closes the pane.
+- Run `pnpm pty` (or `pnpm --filter @backsteros/desktop pty`) before using Chat.
+- Cursor Agent CLI (`agent`) must be on PATH and logged in (`agent login`).
+- Start ensures an ACP session (`POST /agent/acp/ensure`) and sends the bootstrap prompt via ACP. Switching tasks does not stop background turns — the sidecar projects the live timeline into the shared transcript store.
+- Collapsing the rail / leaving the task only detaches the Chat event subscriber. Stop Agent ends the ACP session.
 - Default bind is loopback. For **iPad over Tailscale**, run with e.g.:
 
 ```bash
@@ -60,6 +60,8 @@ PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm pty
 ```
 
   Set the same token on core (`AGENT_PTY_AUTH_TOKEN`) and `AGENT_PTY_PUBLIC_URL` to the Tailscale-reachable origin (e.g. `http://macbook.tailnet.ts.net:3101`). Desktop can set `VITE_PTY_AUTH_TOKEN` to match when auth is enabled.
+
+  Reference patterns: clone [pingdotgg/t3code](https://github.com/pingdotgg/t3code) to `tmp/t3-code` (gitignored).
 
 ### Cursor spellcheck
 

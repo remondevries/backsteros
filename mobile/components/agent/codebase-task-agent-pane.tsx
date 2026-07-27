@@ -11,41 +11,28 @@ import type { AgentPtyConnection } from "@backsteros/contracts";
 import { buildReadyToStartAgentPrompt } from "../../lib/agent/agent-launch";
 import {
   createAgentChatMessage,
-  hydrateAgentChatViewMode,
   loadAgentChatTranscript,
   publishAgentChatTranscriptMessage,
-  readAgentChatViewModeCached,
   saveAgentChatTranscript,
   syncAgentChatTranscript,
-  writeAgentChatViewMode,
   type AgentChatMessage,
-  type AgentChatViewMode,
 } from "../../lib/agent/agent-chat-transcript";
 import {
-  buildPtyWebSocketUrl,
+  cancelPtyAcpTurn,
   ensurePtyAcpSession,
-  ensurePtyAgent,
   fetchAgentPtyConnection,
   findPtySessionForTask,
   killPtySession,
-  cancelPtyAcpTurn,
-  sendPtyAgentKeys,
   setStoredPtySessionId,
   submitPtyAgentPrompt,
 } from "../../lib/agent/agent-pty";
 import {
-  readAgentChatModelIdCached,
   hydrateAgentChatModelId,
 } from "../../lib/agent/agent-chat-model";
-import {
-  cursorAgentResumeCommand,
-  resolveAgentTerminalAction,
-} from "../../lib/agent/cursor-agent-cli";
 import { colors } from "../../lib/theme";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentChatTranscript } from "./agent-chat-transcript";
-import { AgentTerminalWebView } from "./agent-terminal-webview";
 
 type Props = {
   taskId: string;
@@ -55,7 +42,8 @@ type Props = {
   taskDisplayId?: string | null;
   projectId: string;
   projectKey?: string | null;
-  projectLabel: string;
+  /** Kept for call-site compatibility; ACP chat does not use project labels. */
+  projectLabel?: string;
   cwd: string | null;
   agentChatId: string | null;
   onAgentChatIdChange: (chatId: string | null) => void | Promise<void>;
@@ -63,11 +51,9 @@ type Props = {
 
 type PaneStatus = "idle" | "connecting" | "ready" | "error";
 
-const QUIT_THEN_RESUME_DELAY_MS = 600;
-
 /**
  * iPad codebase right pane: Start / Stop agent (same lifecycle as desktop),
- * Chat / Terminal tabs (terminal default), interactive TUI over Tailscale.
+ * Chat-only via Cursor ACP on the laptop sidecar (T3-style; no agent TUI).
  */
 export function CodebaseTaskAgentPane({
   taskId,
@@ -75,9 +61,8 @@ export function CodebaseTaskAgentPane({
   taskTitle,
   taskDescription = null,
   taskDisplayId = null,
-  projectId,
+  projectId: _projectId,
   projectKey = null,
-  projectLabel,
   cwd,
   agentChatId,
   onAgentChatIdChange,
@@ -85,19 +70,11 @@ export function CodebaseTaskAgentPane({
   const client = useMobileApiClient();
   const [status, setStatus] = useState<PaneStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [connectUrl, setConnectUrl] = useState<string | null>(null);
-  const [connectEpoch, setConnectEpoch] = useState(0);
-  const [writeCommand, setWriteCommand] = useState<string | null>(null);
-  const [writeEpoch, setWriteEpoch] = useState(0);
   const [activity, setActivity] = useState<"working" | "idle" | null>(null);
   const [busy, setBusy] = useState<"create" | "end" | null>(null);
-  const [viewMode, setViewMode] = useState<AgentChatViewMode>(() =>
-    readAgentChatViewModeCached(),
-  );
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
-  const [ptyReady, setPtyReady] = useState(false);
 
   const chatIdRef = useRef<string | null>(
     agentChatId?.trim().toLowerCase() || null,
@@ -107,8 +84,6 @@ export function CodebaseTaskAgentPane({
   const sessionIsNewRef = useRef(false);
   const bootstrapPromptRef = useRef<string | null>(null);
   const connectKeyRef = useRef<string | null>(null);
-  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const promptTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const bootstrapPromptKeyRef = useRef<string | null>(null);
   const previousTaskIdRef = useRef(taskId);
 
@@ -116,23 +91,15 @@ export function CodebaseTaskAgentPane({
   const hasSession = Boolean(agentChatId?.trim());
   const agentButtonMode: "create" | "end" = !hasSession ? "create" : "end";
   const working = activity === "working";
+  const sessionReady = hasSession && status === "ready";
 
   useEffect(() => {
-    void hydrateAgentChatViewMode().then(setViewMode);
     void hydrateAgentChatModelId();
   }, []);
 
   useEffect(() => {
     chatIdRef.current = agentChatId?.trim().toLowerCase() || null;
   }, [agentChatId]);
-
-  useEffect(() => {
-    return () => {
-      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
-      for (const timer of promptTimersRef.current) clearTimeout(timer);
-      promptTimersRef.current = [];
-    };
-  }, []);
 
   useEffect(() => {
     const taskChanged = previousTaskIdRef.current !== taskId;
@@ -162,7 +129,6 @@ export function CodebaseTaskAgentPane({
       });
     };
 
-    // Local cache first, then shared sidecar (needs Tailscale PTY connection).
     void loadAgentChatTranscript(id).then((loaded) => {
       if (cancelled) return;
       setMessages((prev) => {
@@ -216,6 +182,7 @@ export function CodebaseTaskAgentPane({
   }, [agentChatId, messages]);
 
   useEffect(() => {
+    if (status !== "ready") return;
     if (!sessionIsNewRef.current) return;
     const prompt = bootstrapPromptRef.current?.trim();
     const chatId = agentChatId?.trim();
@@ -238,17 +205,9 @@ export function CodebaseTaskAgentPane({
       );
       return next;
     });
-  }, [agentChatId, connectUrl]);
-
-  const queueCommand = useCallback((command: string) => {
-    setWriteCommand(command);
-    setWriteEpoch((n) => n + 1);
-  }, []);
-
-  const clearPromptTimers = useCallback(() => {
-    for (const timer of promptTimersRef.current) clearTimeout(timer);
-    promptTimersRef.current = [];
-  }, []);
+    sessionIsNewRef.current = false;
+    bootstrapPromptRef.current = null;
+  }, [agentChatId, status]);
 
   const submitChatPrompt = useCallback(
     (prompt: string) => {
@@ -256,7 +215,6 @@ export function CodebaseTaskAgentPane({
       if (!trimmed || !hasSession) return false;
       const connection = connectionRef.current;
       if (!connection) return false;
-      clearPromptTimers();
       setActivity("working");
       void submitPtyAgentPrompt(connection, {
         taskId,
@@ -271,25 +229,19 @@ export function CodebaseTaskAgentPane({
       });
       return true;
     },
-    [clearPromptTimers, hasSession, taskId, workingDirectory],
+    [hasSession, taskId, workingDirectory],
   );
 
   const interruptChat = useCallback(() => {
     const connection = connectionRef.current;
-    if (!connection) {
-      queueCommand("\x1b");
-      return;
-    }
+    if (!connection) return;
     void cancelPtyAcpTurn(connection, taskId).then((result) => {
       if (!result.ok) {
-        void sendPtyAgentKeys(connection, { taskId, keys: ["esc"] }).then(
-          (keys) => {
-            if (!keys.ok) queueCommand("\x1b");
-          },
-        );
+        setSendError(result.error);
       }
+      setActivity("idle");
     });
-  }, [queueCommand, taskId]);
+  }, [taskId]);
 
   const handleModelChange = useCallback(
     (modelId: string) => {
@@ -299,7 +251,6 @@ export function CodebaseTaskAgentPane({
       const connection = connectionRef.current;
       if (!connection) return;
       const command = id === "auto" ? "/model auto" : `/model ${id}`;
-      clearPromptTimers();
       void submitPtyAgentPrompt(connection, {
         taskId,
         prompt: command,
@@ -307,13 +258,8 @@ export function CodebaseTaskAgentPane({
         cwd: workingDirectory,
       });
     },
-    [clearPromptTimers, hasSession, taskId, workingDirectory],
+    [hasSession, taskId, workingDirectory],
   );
-
-  const selectView = useCallback((mode: AgentChatViewMode) => {
-    setViewMode(mode);
-    void writeAgentChatViewMode(mode);
-  }, []);
 
   const appendMessage = useCallback((role: "user" | "assistant", text: string) => {
     const trimmed = text.trim();
@@ -346,7 +292,7 @@ export function CodebaseTaskAgentPane({
     const ok = submitChatPrompt(text);
     if (!ok) {
       setSendError(
-        hasSession
+        sessionReady
           ? "Agent session is not ready yet. Wait a moment and try again."
           : "Start an agent first.",
       );
@@ -355,14 +301,14 @@ export function CodebaseTaskAgentPane({
     setSendError(null);
     appendMessage("user", text);
     setDraft("");
-  }, [appendMessage, draft, hasSession, submitChatPrompt, working]);
+  }, [appendMessage, draft, sessionReady, submitChatPrompt, working]);
 
   const connectSession = useCallback(
     async (chatId: string) => {
       if (!workingDirectory) {
         setStatus("error");
         setError(
-          "The agent terminal needs a working directory on this project (set it from desktop).",
+          "The agent needs a working directory on this project (set it from desktop).",
         );
         return;
       }
@@ -375,164 +321,53 @@ export function CodebaseTaskAgentPane({
 
       setStatus("connecting");
       setError(null);
-      setWriteCommand(null);
-      setPtyReady(false);
 
       const discovered = await fetchAgentPtyConnection(client);
       if (!discovered.ok) {
         connectKeyRef.current = null;
         setStatus("error");
         setError(discovered.error);
-        setConnectUrl(null);
         return;
       }
       connectionRef.current = discovered.connection;
       chatIdRef.current = chatId.toLowerCase();
 
-      void ensurePtyAcpSession(discovered.connection, {
+      const acp = await ensurePtyAcpSession(discovered.connection, {
         taskId,
         cwd: workingDirectory,
         chatId,
       });
-
-      const prompt = bootstrapPromptRef.current;
-      const ensured = await ensurePtyAgent(discovered.connection, {
-        taskId,
-        chatId,
-        cwd: workingDirectory,
-        prompt: null,
-        model: sessionIsNewRef.current ? readAgentChatModelIdCached() : null,
-        label: projectLabel || projectId,
-        tabLabel: taskDisplayId || null,
-      });
-      if (!ensured.ok) {
+      if (!acp.ok) {
         connectKeyRef.current = null;
         setStatus("error");
-        setError(ensured.error);
-        setConnectUrl(null);
+        setError(acp.error);
         return;
       }
 
-      const sessionId = ensured.sessionId;
-      sessionIdRef.current = sessionId;
-      await setStoredPtySessionId(taskId, sessionId);
-
-      const url = buildPtyWebSocketUrl(discovered.connection, {
-        cols: 100,
-        rows: 32,
-        cwd: workingDirectory,
-        sessionId,
-        kind: "agent",
-        taskId,
-        label: projectLabel || projectId,
-        tabLabel: taskDisplayId || null,
-        chatId,
-      });
-
-      setConnectUrl(url);
-      setConnectEpoch((n) => n + 1);
+      sessionIdRef.current = acp.sessionId;
+      await setStoredPtySessionId(taskId, acp.sessionId);
       setStatus("ready");
     },
-    [client, projectId, projectLabel, taskDisplayId, taskId, workingDirectory],
+    [client, taskId, workingDirectory],
   );
 
   useEffect(() => {
     const chatId = agentChatId?.trim();
     if (!workingDirectory) return;
     if (!chatId) {
-      if (resumeTimerRef.current) {
-        clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
-      }
       connectKeyRef.current = null;
-      setConnectUrl(null);
-      setWriteCommand(null);
       setActivity(null);
-      setPtyReady(false);
       setStatus("idle");
       return;
     }
     void connectSession(chatId);
   }, [agentChatId, connectSession, workingDirectory]);
 
-  const onPtyReady = useCallback(
-    (info: {
-      sessionId: string | null;
-      reattached: boolean;
-      agentSessionEnded: boolean;
-      herdrManaged: boolean;
-      lastActivity: "working" | "idle" | null;
-    }) => {
-      setPtyReady(true);
-      if (info.sessionId) {
-        sessionIdRef.current = info.sessionId;
-        void setStoredPtySessionId(taskId, info.sessionId);
-      }
-
-      const chatId = chatIdRef.current;
-      if (!chatId) return;
-
-      if (info.herdrManaged) {
-        sessionIsNewRef.current = false;
-        bootstrapPromptRef.current = null;
-        if (info.lastActivity === "working" || info.lastActivity === "idle") {
-          setActivity(info.lastActivity);
-        }
-        return;
-      }
-
-      const agentLive = info.reattached && !info.agentSessionEnded;
-      const prompt = bootstrapPromptRef.current;
-      const sessionIsNew = sessionIsNewRef.current;
-      const action = resolveAgentTerminalAction({
-        tuiOpen: agentLive,
-        attachedChatId: agentLive ? chatId : null,
-        boundChatId: chatId,
-        requestedChatId: chatId,
-        sessionIsNew,
-        prompt,
-      });
-
-      sessionIsNewRef.current = false;
-      bootstrapPromptRef.current = null;
-
-      if (resumeTimerRef.current) {
-        clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
-      }
-
-      if (action === "abort" || action === "noop") return;
-
-      if (action === "prompt-in-tui" && prompt) {
-        const connection = connectionRef.current;
-        if (connection) {
-          void submitPtyAgentPrompt(connection, { taskId, prompt });
-        } else {
-          queueCommand(`${prompt}\n`);
-        }
-        return;
-      }
-
-      const resume = cursorAgentResumeCommand(chatId, prompt);
-      if (action === "quit-then-shell-resume") {
-        queueCommand("/quit\n");
-        resumeTimerRef.current = setTimeout(() => {
-          resumeTimerRef.current = null;
-          queueCommand(resume);
-        }, QUIT_THEN_RESUME_DELAY_MS);
-        return;
-      }
-
-      queueCommand(resume);
-    },
-    [queueCommand, taskId],
-  );
-
   const startAgentSession = useCallback(async () => {
     if (busy) return;
     if (!workingDirectory) {
       setError(
-        "The agent terminal needs a working directory on this project (set it from desktop).",
+        "The agent needs a working directory on this project (set it from desktop).",
       );
       setStatus("error");
       return;
@@ -565,24 +400,12 @@ export function CodebaseTaskAgentPane({
         workingDirectory,
       });
 
-      const ensured = await ensurePtyAgent(discovered.connection, {
-        taskId,
-        chatId: acp.chatId,
-        cwd: workingDirectory,
-        prompt: null,
-        model: readAgentChatModelIdCached(),
-        label: projectLabel || projectId,
-        tabLabel: taskDisplayId || null,
-      });
-      if (!ensured.ok) {
-        throw new Error(ensured.error);
-      }
-
       sessionIsNewRef.current = true;
       bootstrapPromptRef.current = prompt;
-      sessionIdRef.current = ensured.sessionId;
-      await setStoredPtySessionId(taskId, ensured.sessionId);
+      sessionIdRef.current = acp.sessionId;
+      await setStoredPtySessionId(taskId, acp.sessionId);
       connectKeyRef.current = null;
+      setActivity("working");
       await onAgentChatIdChange(acp.chatId);
 
       void submitPtyAgentPrompt(discovered.connection, {
@@ -593,6 +416,7 @@ export function CodebaseTaskAgentPane({
       }).then((result) => {
         if (!result.ok) {
           setError(result.error);
+          setActivity("idle");
         }
       });
     } catch (err) {
@@ -609,9 +433,7 @@ export function CodebaseTaskAgentPane({
     busy,
     client,
     onAgentChatIdChange,
-    projectId,
     projectKey,
-    projectLabel,
     taskDescription,
     taskDisplayId,
     taskId,
@@ -634,6 +456,10 @@ export function CodebaseTaskAgentPane({
         if (discovered.ok) connection = discovered.connection;
       }
 
+      if (connection) {
+        void cancelPtyAcpTurn(connection, taskId);
+      }
+
       let sessionId = sessionIdRef.current;
       if (!sessionId && connection) {
         sessionId = await findPtySessionForTask(connection, taskId);
@@ -646,20 +472,12 @@ export function CodebaseTaskAgentPane({
         }
       }
 
-      if (resumeTimerRef.current) {
-        clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
-      }
-      clearPromptTimers();
       sessionIdRef.current = null;
       sessionIsNewRef.current = false;
       bootstrapPromptRef.current = null;
       await setStoredPtySessionId(taskId, null);
       connectKeyRef.current = null;
-      setConnectUrl(null);
-      setWriteCommand(null);
       setActivity(null);
-      setPtyReady(false);
       setMessages([]);
       setDraft("");
       setStatus("idle");
@@ -671,14 +489,7 @@ export function CodebaseTaskAgentPane({
     } finally {
       setBusy(null);
     }
-  }, [
-    agentChatId,
-    busy,
-    clearPromptTimers,
-    client,
-    onAgentChatIdChange,
-    taskId,
-  ]);
+  }, [agentChatId, busy, client, onAgentChatIdChange, taskId]);
 
   const onAgentButtonClick = useCallback(() => {
     if (busy) return;
@@ -701,8 +512,8 @@ export function CodebaseTaskAgentPane({
     );
   }
 
-  const showStartGate = !hasSession && !connectUrl;
-  const showConnecting = status === "connecting" && !connectUrl;
+  const showStartGate = !hasSession;
+  const showConnecting = hasSession && status === "connecting";
 
   return (
     <View style={styles.root}>
@@ -713,10 +524,7 @@ export function CodebaseTaskAgentPane({
             <Pressable
               onPress={() => {
                 setError(null);
-                setStatus("connecting");
                 connectKeyRef.current = null;
-                setConnectUrl(null);
-                setPtyReady(false);
                 const chatId = agentChatId?.trim();
                 if (chatId) void connectSession(chatId);
               }}
@@ -736,7 +544,7 @@ export function CodebaseTaskAgentPane({
           <Text style={styles.gateTitle}>No agent on this task</Text>
           <Text style={styles.gateBody}>
             Start an agent to open a Cursor session on your laptop. Stop clears
-            the binding and kills the local PTY — same as desktop.
+            the binding and ends the ACP session — same as desktop.
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -759,49 +567,7 @@ export function CodebaseTaskAgentPane({
       ) : (
         <>
           <View style={styles.header}>
-            <View
-              style={styles.tabs}
-              accessibilityRole="tablist"
-              accessibilityLabel="Agent view"
-            >
-              <Pressable
-                accessibilityRole="tab"
-                accessibilityState={{ selected: viewMode === "chat" }}
-                onPress={() => selectView("chat")}
-                style={[
-                  styles.tab,
-                  viewMode === "chat" ? styles.tabActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    viewMode === "chat" ? styles.tabLabelActive : null,
-                  ]}
-                >
-                  Chat
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="tab"
-                accessibilityState={{ selected: viewMode === "terminal" }}
-                onPress={() => selectView("terminal")}
-                style={[
-                  styles.tab,
-                  viewMode === "terminal" ? styles.tabActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    viewMode === "terminal" ? styles.tabLabelActive : null,
-                  ]}
-                >
-                  Terminal
-                </Text>
-              </Pressable>
-            </View>
-
+            <Text style={styles.headerTitle}>Agent chat</Text>
             <View style={styles.headerActions}>
               {working ? (
                 <Text style={styles.workingLabel}>Working…</Text>
@@ -845,82 +611,33 @@ export function CodebaseTaskAgentPane({
               </View>
             ) : (
               <>
-                <View
-                  style={[
-                    styles.pane,
-                    viewMode === "chat"
-                      ? styles.paneActive
-                      : styles.paneInactive,
-                  ]}
-                  pointerEvents={viewMode === "chat" ? "auto" : "none"}
-                  accessibilityElementsHidden={viewMode !== "chat"}
-                  importantForAccessibility={
-                    viewMode === "chat" ? "auto" : "no-hide-descendants"
-                  }
-                >
-                  <AgentChatTranscript
-                    messages={messages}
-                    working={working}
-                    emptyHint="Send a message to talk to the agent."
-                  />
-                  <View style={styles.footer}>
-                    {sendError ? (
-                      <Text style={styles.sendError} accessibilityRole="alert">
-                        {sendError}
-                      </Text>
-                    ) : null}
-                    <AgentChatComposer
-                      value={draft}
-                      onChange={(next) => {
-                        setDraft(next);
-                        if (sendError) setSendError(null);
-                      }}
-                      onSend={handleSend}
-                      onCancel={interruptChat}
-                      onModelChange={handleModelChange}
-                      running={working}
-                      disabled={!hasSession && !working}
-                      placeholder={
-                        hasSession
-                          ? "Message the agent…"
-                          : "Start an agent to chat…"
-                      }
-                    />
-                  </View>
-                </View>
-
-                <View
-                  style={[
-                    styles.pane,
-                    viewMode === "terminal"
-                      ? styles.paneActive
-                      : styles.paneInactive,
-                  ]}
-                  pointerEvents={viewMode === "terminal" ? "auto" : "none"}
-                  accessibilityElementsHidden={viewMode !== "terminal"}
-                  importantForAccessibility={
-                    viewMode === "terminal" ? "auto" : "no-hide-descendants"
-                  }
-                >
-                  <AgentTerminalWebView
-                    connectUrl={connectUrl}
-                    connectEpoch={connectEpoch}
-                    writeCommand={writeCommand}
-                    writeEpoch={writeEpoch}
-                    onPtyReady={onPtyReady}
-                    onAssistantMessage={(text) =>
-                      appendMessage("assistant", text)
+                <AgentChatTranscript
+                  messages={messages}
+                  working={working}
+                  emptyHint="Send a message to talk to the agent."
+                />
+                <View style={styles.footer}>
+                  {sendError ? (
+                    <Text style={styles.sendError} accessibilityRole="alert">
+                      {sendError}
+                    </Text>
+                  ) : null}
+                  <AgentChatComposer
+                    value={draft}
+                    onChange={(next) => {
+                      setDraft(next);
+                      if (sendError) setSendError(null);
+                    }}
+                    onSend={handleSend}
+                    onCancel={interruptChat}
+                    onModelChange={handleModelChange}
+                    running={working}
+                    disabled={!sessionReady && !working}
+                    placeholder={
+                      sessionReady
+                        ? "Message the agent…"
+                        : "Connecting to agent…"
                     }
-                    onError={(message) => {
-                      setError(message);
-                      setStatus("error");
-                      setPtyReady(false);
-                    }}
-                    onActivity={(next) => {
-                      if (next === "working" || next === "idle") {
-                        setActivity(next);
-                      }
-                    }}
                   />
                 </View>
               </>
@@ -950,30 +667,11 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.06)",
     zIndex: 2,
   },
-  tabs: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    padding: 2,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.05)",
-  },
-  tab: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  tabActive: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-  },
-  tabLabel: {
-    color: "rgba(255,255,255,0.5)",
+  headerTitle: {
+    color: "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: "600",
     letterSpacing: 0.02,
-  },
-  tabLabelActive: {
-    color: "rgba(255,255,255,0.92)",
   },
   headerActions: {
     flexDirection: "row",
@@ -995,19 +693,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     minHeight: 0,
-    position: "relative",
-  },
-  pane: {
-    ...StyleSheet.absoluteFillObject,
     flexDirection: "column",
-  },
-  paneActive: {
-    opacity: 1,
-    zIndex: 2,
-  },
-  paneInactive: {
-    opacity: 0,
-    zIndex: 1,
   },
   footer: {
     flexShrink: 0,

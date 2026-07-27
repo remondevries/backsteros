@@ -1,5 +1,5 @@
 /**
- * Map Cursor CLI agent-hook events (Herdr / PTY) onto the same turn UI state
+ * Map Cursor CLI agent-hook events onto the same turn UI state
  * that ACP `session/update` frames populate — tools, thoughts, todos.
  */
 

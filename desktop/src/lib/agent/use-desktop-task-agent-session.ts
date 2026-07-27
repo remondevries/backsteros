@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { formatTaskDisplayId } from "@backsteros/ui";
 
 import { buildReadyToStartAgentPrompt } from "./agent-launch";
 import { readAgentChatModelId } from "./agent-chat-model";
@@ -80,15 +79,6 @@ export function useDesktopTaskAgentSession({
         projectKey: taskSummary.projectKey,
         workingDirectory,
       });
-      const displayId =
-        taskSummary.displayId?.trim() ||
-        (taskSummary.projectKey
-          ? formatTaskDisplayId(taskSummary.projectKey, taskSummary.number)
-          : null);
-      const workspaceLabel =
-        taskSummary.projectName?.trim() ||
-        taskSummary.projectKey?.trim() ||
-        "BacksterOS";
       // Optimistic — list/activity pulses should light up before ACP attaches
       // (bootstrap prompt is fire-and-forget; WebSocket hooks often miss it).
       setTaskResearchWorking(taskId, true);
@@ -98,8 +88,6 @@ export function useDesktopTaskAgentSession({
         cwd: workingDirectory,
         prompt,
         model: readAgentChatModelId(),
-        label: workspaceLabel,
-        tabLabel: displayId,
       });
       if (!result.ok) {
         clearLiveAgentWorkingForTask(taskId);

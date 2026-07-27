@@ -20,6 +20,7 @@ import {
 
 import {
   getDefaultAssigneeId,
+  resolveCreateAssigneeId,
   syncDefaultAssigneeIdFromSettings,
 } from "./default-assignee";
 
@@ -114,7 +115,7 @@ export async function createComposeOverlayTask(
       status: input.status ?? "ready_to_start",
       priority: 0,
       sortOrder: Date.now(),
-      assigneeId: input.assigneeId ?? null,
+      assigneeId: resolveCreateAssigneeId(input.assigneeId),
       dueDate: input.dueDate ?? null,
       inbox: false,
     };
@@ -139,7 +140,7 @@ export async function createComposeOverlayTask(
     status: input.status ?? "triage",
     priority: 0,
     sortOrder: Date.now(),
-    assigneeId: input.assigneeId ?? null,
+    assigneeId: resolveCreateAssigneeId(input.assigneeId),
     dueDate: input.dueDate ?? null,
     inbox: true,
     projectId: null,

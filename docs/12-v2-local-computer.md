@@ -33,17 +33,16 @@ See [STRUCTURE.md](../STRUCTURE.md). Shared non-UI packages live under `core/pac
 
 Trusted shells on the Tailscale network (desktop localhost + **iPad**) may attach to the local-computer PTY sidecar. **iPhone agent TUI is deferred.**
 
-## Agent PTYs (local computer + Tailscale)
+## Agent sessions (local computer + Tailscale)
 
-The `pnpm pty` sidecar owns long-lived agent sessions. Closing a terminal WebSocket only **detaches** the viewer; the agent keeps running.
+The `pnpm pty` sidecar owns long-lived **Cursor ACP** agent sessions (T3-style). Closing a Chat WebSocket only **detaches** the viewer; the ACP session keeps running and the sidecar keeps projecting the turn into the shared transcript store.
 
-**Chat vs Terminal (ADR-024):** **Chat = ACP only** (T3-style) — prompts, streaming, mode (`session/set_mode`), and cancel go through Cursor ACP; Chat never types into the Herdr TUI. **Terminal = Herdr viewer** of the same session (`agent --resume <id>`). The sidecar links `~/.cursor/chats/<md5(cwd)>/<id>` → `~/.cursor/acp-sessions/<id>` so history stays shared. Herdr `blocked` still shows as Chat attention when the Terminal pane needs input.
+**Chat = ACP only (ADR-025):** prompts, streaming, mode (`session/set_mode`), cancel, and permissions go through Cursor ACP. There is **no shared agent TTY pane**. Switching tasks does not stop background turns — leave/return reloads the projected transcript and re-subscribes to live events.
 
-**Durable Terminal session = Herdr.** One named Herdr agent pane per task (`backsteros-<taskId>`), placed in a Herdr workspace named after the **project** with a tab named after the **task display id** (e.g. `LD-2`). Cursor Agent runs inside that pane once (`POST /agent/ensure`). The sidecar keeps **one** `herdr agent attach` pipe per task and fans bytes out to desktop + iPad WebSockets (Herdr attach itself is exclusive). Herdr is an **unmodified external binary** (AGPL); install from [herdr.dev](https://herdr.dev) and run `herdr integration install cursor`. Do not vendor Herdr into this repo.
-
-- **Desktop** — task agent rail / codebase right pane: Start → create chat + ensure Herdr → attach viewer. Leave/return reattaches; does **not** inject a second `agent --resume`.
-- **iPad (codebase tasks)** — stacked task detail | remote agent TUI. Core brokers discovery via `GET /api/v1/agent-pty/connection` (`AGENT_PTY_PUBLIC_URL` + `AGENT_PTY_AUTH_TOKEN`). The iPad uses a **native WebSocket** to the sidecar over Tailscale and paints with **Ghostty (Metal)** via `expo-libghostty`.
-- Activity (working / idle) prefers Herdr agent status (sidecar poll) bridged into existing BacksterOS indicators; Cursor hooks still handle turn-complete comments.
+- **Desktop** — task agent rail / codebase pane: Start → `POST /agent/acp/ensure` (+ bootstrap `POST /agent/prompt`) → Chat UI. Leave/return reattaches the event subscriber only.
+- **Activity** — ACP `busy` / activity events + transcript projection drive Working… indicators (including background tasks via session poll).
 - Run the sidecar for Tailscale with e.g. `PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=… pnpm pty` (token required when bound beyond loopback).
-- **Settings → Cursor** (desktop) — lists live `kind=agent` sessions (`GET /sessions`) and can **Kill** them (`DELETE /sessions/:id`). Kill closes the Herdr pane; it does **not** clear `agentChatId` in core.
-- **Stop agent** on the task destroys the Herdr pane, clears the task terminal viewport (placeholder again), and clears `agentChatId`.
+- **Settings → Cursor** (desktop) — lists live ACP agent sessions (`GET /sessions?kind=agent`) and can **Kill** them (`DELETE /sessions/:id` or `POST /agent/stop`).
+- **Stop agent** cancels ACP, forgets the in-memory session, and clears `agentChatId` from the task when stopped from the UI.
+
+Reference implementation patterns: `tmp/t3-code` (local clone of pingdotgg/t3code; gitignored).

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * When an app enables terminal mouse reporting (Herdr TUI, etc.), forward
+ * When an app enables terminal mouse reporting (TUIs, etc.), forward
  * direct finger taps/drags as mouse events. Upstream expo-libghostty only
- * maps trackpad/mouse (UITouchTypeIndirectPointer) to mouse — so Herdr
- * chrome is not clickable by touch, and some pointer paths feel dead.
+ * maps trackpad/mouse (UITouchTypeIndirectPointer) to mouse — so some
+ * terminal UIs are not clickable by touch, and some pointer paths feel dead.
  *
  * Idempotent — safe to run from postinstall. Requires an iOS rebuild.
  */
@@ -177,7 +177,7 @@ const shouldBeginReplacement = `        override open func gestureRecognizerShou
 const helperInsertBefore = `        func handleIndirectPointerTouches(`;
 
 const helperCode = `        // ${MARKER}
-        /// Finger → mouse when the hosted app enabled mouse reporting (Herdr tabs/panes).
+        /// Finger → mouse when the hosted app enabled mouse reporting (terminal tabs/panes).
         func handleCapturedMouseTouches(
             _ touches: Set<UITouch>,
             phase: IndirectPointerPhase,

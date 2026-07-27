@@ -45,11 +45,17 @@ export function normalizeAskQuestions(raw: unknown): AskQuestionItem[] {
         label: String(o.label ?? o.name ?? o.text ?? optionId).trim() || optionId,
       });
     }
+    if (options.length === 0) {
+      options.push({ id: "ok", label: "OK" });
+    }
     out.push({
       id,
       prompt,
       options,
-      multiSelect: q.multiSelect === true || q.allow_multiple === true,
+      multiSelect:
+        q.multiSelect === true ||
+        q.allow_multiple === true ||
+        q.allowMultiple === true,
     });
   }
   return out;

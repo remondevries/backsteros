@@ -1,4 +1,4 @@
-/** Local PTY WebSocket bridge (desktop agent terminal). */
+/** Local PTY / ACP sidecar bridge (desktop agent Chat). */
 
 export const DEFAULT_PTY_WS_URL = "ws://127.0.0.1:3101";
 export const DEFAULT_PTY_HTTP_ORIGIN = "http://127.0.0.1:3101";
@@ -14,22 +14,7 @@ export type PtySessionInfo = {
   createdAt: string | null;
   lastActivity: "working" | "idle" | null;
   uiAttached: boolean;
-  herdrManaged?: boolean;
-  herdrName?: string | null;
-  herdrStatus?: string | null;
 };
-
-export type EnsurePtyAgentResult =
-  | {
-      ok: true;
-      sessionId: string;
-      taskId: string;
-      herdrName: string | null;
-      started: boolean;
-      herdrManaged: boolean;
-      lastActivity: "working" | "idle" | null;
-    }
-  | { ok: false; error: string };
 
 function getPtyAuthToken(): string | null {
   return (
@@ -160,89 +145,6 @@ export async function listCursorAgentModels(): Promise<
   }
 }
 
-/**
- * Create or reuse the Herdr agent pane for a task (durable shared TTY).
- * Desktop and iPad then attach with `herdr agent attach` via the WS path.
- */
-export async function ensurePtyAgent(options: {
-  taskId: string;
-  chatId: string;
-  cwd: string;
-  prompt?: string | null;
-  /** Cursor Agent `--model` id (omit / `auto` = CLI default). */
-  model?: string | null;
-  /** UI mode (build/ask/plan) or Cursor `--mode` id. */
-  mode?: string | null;
-  /** Herdr workspace label (project name). */
-  label?: string | null;
-  /** Herdr tab label (task display id, e.g. LD-2). */
-  tabLabel?: string | null;
-  replace?: boolean;
-}): Promise<EnsurePtyAgentResult> {
-  const taskId = options.taskId.trim();
-  const chatId = options.chatId.trim().toLowerCase();
-  const cwd = options.cwd.trim();
-  if (!taskId || !chatId || !cwd) {
-    return { ok: false, error: "taskId, chatId, and cwd are required." };
-  }
-  try {
-    const response = await fetch(`${getPtyHttpOrigin()}/agent/ensure`, {
-      method: "POST",
-      headers: {
-        ...ptyAuthHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        taskId,
-        chatId,
-        cwd,
-        prompt: options.prompt?.trim() || null,
-        model: options.model?.trim() || null,
-        mode: options.mode?.trim() || null,
-        label: options.label?.trim() || null,
-        tabLabel: options.tabLabel?.trim() || null,
-        replace: options.replace === true,
-      }),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      sessionId?: string;
-      taskId?: string;
-      herdrName?: string | null;
-      started?: boolean;
-      herdrManaged?: boolean;
-      lastActivity?: "working" | "idle" | null;
-      error?: string;
-    } | null;
-    if (!response.ok || !body?.sessionId) {
-      return {
-        ok: false,
-        error:
-          body?.error ||
-          "Could not ensure Herdr agent. Is `pnpm pty` running with Herdr installed?",
-      };
-    }
-    return {
-      ok: true,
-      sessionId: body.sessionId,
-      taskId: body.taskId ?? taskId,
-      herdrName: body.herdrName ?? null,
-      started: Boolean(body.started),
-      herdrManaged: body.herdrManaged !== false,
-      lastActivity:
-        body.lastActivity === "working" || body.lastActivity === "idle"
-          ? body.lastActivity
-          : null,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
-    };
-  }
-}
 
 export async function listPtySessions(options?: {
   kind?: PtySessionKind;
@@ -298,6 +200,20 @@ export type AgentChatTranscriptMessage = {
       lines: Array<{ type: "add" | "del" | "ctx"; text: string }>;
     };
   }>;
+  segments?: Array<
+    | {
+        id: string;
+        kind: "work";
+        activities: NonNullable<AgentChatTranscriptMessage["activities"]>;
+      }
+    | { id: string; kind: "text"; text: string }
+  >;
+  planSteps?: Array<{
+    step: string;
+    status: "completed" | "inProgress" | "pending";
+  }>;
+  proposedPlanMarkdown?: string | null;
+  workedStartedAt?: number | null;
 };
 
 function parseTranscriptActivities(
@@ -377,6 +293,50 @@ function parseTranscriptActivities(
   return out.length > 0 ? out : undefined;
 }
 
+function parseTranscriptSegments(
+  raw: unknown,
+): AgentChatTranscriptMessage["segments"] {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: NonNullable<AgentChatTranscriptMessage["segments"]> = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as Record<string, unknown>;
+    if (typeof item.id !== "string" || !item.id.trim()) continue;
+    if (item.kind === "text") {
+      if (typeof item.text !== "string" || !item.text.trim()) continue;
+      out.push({ id: item.id.trim(), kind: "text", text: item.text });
+      continue;
+    }
+    if (item.kind === "work") {
+      const activities = parseTranscriptActivities(item.activities);
+      if (!activities?.length) continue;
+      out.push({ id: item.id.trim(), kind: "work", activities });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function parseTranscriptPlanSteps(
+  raw: unknown,
+): AgentChatTranscriptMessage["planSteps"] {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: NonNullable<AgentChatTranscriptMessage["planSteps"]> = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as Record<string, unknown>;
+    const step = typeof item.step === "string" ? item.step.trim() : "";
+    if (!step) continue;
+    const status =
+      item.status === "completed" ||
+      item.status === "inProgress" ||
+      item.status === "pending"
+        ? item.status
+        : "pending";
+    out.push({ step, status });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function parseTranscriptMessages(
   raw: unknown,
 ): AgentChatTranscriptMessage[] {
@@ -389,22 +349,48 @@ function parseTranscriptMessages(
     const id = (entry as { id?: unknown }).id;
     const createdAt = (entry as { createdAt?: unknown }).createdAt;
     if (role !== "user" && role !== "assistant") continue;
-    if (typeof text !== "string" || !text.trim()) continue;
+    if (typeof text !== "string") continue;
     const activities = parseTranscriptActivities(
       (entry as { activities?: unknown }).activities,
     );
+    const segments = parseTranscriptSegments(
+      (entry as { segments?: unknown }).segments,
+    );
+    const trimmed = text.trim();
+    const hasTimeline =
+      Boolean(activities?.length) || Boolean(segments?.length);
+    // Allow empty assistant text when a tool timeline is already present.
+    if (!trimmed && !(role === "assistant" && hasTimeline)) continue;
+    const planSteps = parseTranscriptPlanSteps(
+      (entry as { planSteps?: unknown }).planSteps,
+    );
+    const proposedRaw = (entry as { proposedPlanMarkdown?: unknown })
+      .proposedPlanMarkdown;
+    const proposedPlanMarkdown =
+      typeof proposedRaw === "string" && proposedRaw.trim()
+        ? proposedRaw
+        : undefined;
+    const workedRaw = (entry as { workedStartedAt?: unknown }).workedStartedAt;
     out.push({
       id:
         typeof id === "string" && id.trim()
           ? id.trim()
           : `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       role,
-      text: text.trim(),
+      text: trimmed,
       createdAt:
         typeof createdAt === "number" && Number.isFinite(createdAt)
           ? createdAt
           : Date.now(),
       ...(activities ? { activities } : {}),
+      ...(segments ? { segments } : {}),
+      ...(planSteps ? { planSteps } : {}),
+      ...(proposedPlanMarkdown ? { proposedPlanMarkdown } : {}),
+      ...(typeof workedRaw === "number" && Number.isFinite(workedRaw)
+        ? { workedStartedAt: workedRaw }
+        : workedRaw === null
+          ? { workedStartedAt: null }
+          : {}),
     });
   }
   return out;
@@ -537,9 +523,75 @@ export async function appendAgentChatTranscriptMessage(
   }
 }
 
+/** Incremental assistant timeline upsert (tools while streaming). */
+export async function upsertAgentChatTranscriptTimeline(
+  chatId: string,
+  patch: {
+    id?: string;
+    text?: string;
+    createdAt?: number;
+    activities?: AgentChatTranscriptMessage["activities"];
+    segments?: AgentChatTranscriptMessage["segments"];
+    planSteps?: AgentChatTranscriptMessage["planSteps"];
+    proposedPlanMarkdown?: string | null;
+    workedStartedAt?: number | null;
+  },
+): Promise<
+  | {
+      ok: true;
+      messages: AgentChatTranscriptMessage[];
+      message: AgentChatTranscriptMessage | null;
+    }
+  | { ok: false; error: string }
+> {
+  const id = chatId.trim().toLowerCase();
+  if (!id) return { ok: false, error: "chatId is required." };
+  try {
+    const response = await fetch(
+      `${getPtyHttpOrigin()}/agent/chats/${encodeURIComponent(id)}/transcript/timeline`,
+      {
+        method: "POST",
+        headers: {
+          ...ptyAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch),
+      },
+    );
+    const body = (await response.json().catch(() => null)) as {
+      messages?: unknown;
+      message?: unknown;
+      error?: string;
+    } | null;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error:
+          body?.error || `Transcript timeline upsert failed (${response.status}).`,
+      };
+    }
+    const messages = parseTranscriptMessages(body?.messages);
+    const parsedOne = parseTranscriptMessages(
+      body?.message ? [body.message] : [],
+    );
+    return {
+      ok: true,
+      messages,
+      message: parsedOne[0] ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach local PTY server. Run `pnpm pty`.",
+    };
+  }
+}
+
 /**
- * Submit a follow-up prompt for a task (chat composer).
- * Sidecar prefers the live Herdr agent pane when present; ACP for images / fallback.
+ * Submit a follow-up prompt for a task (chat composer) via Cursor ACP.
  */
 export async function submitPtyAgentPrompt(options: {
   taskId: string;
@@ -548,6 +600,8 @@ export async function submitPtyAgentPrompt(options: {
   cwd?: string | null;
   /** UI mode (build/ask/plan) or Cursor mode id (agent/ask/plan). */
   mode?: string | null;
+  /** Cursor `--model` id (omit / auto = CLI default). */
+  model?: string | null;
   images?: { mimeType: string; data: string }[] | null;
   clear?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -573,6 +627,7 @@ export async function submitPtyAgentPrompt(options: {
         chatId: options.chatId?.trim() || null,
         cwd: options.cwd?.trim() || null,
         mode: options.mode?.trim() || null,
+        model: options.model?.trim() || null,
         images,
       }),
     });
@@ -597,7 +652,7 @@ export async function submitPtyAgentPrompt(options: {
   }
 }
 
-/** Switch Cursor ACP session mode (agent / ask / plan / debug). */
+/** Switch Cursor ACP session mode (agent / ask / plan). */
 export async function setPtyAgentMode(options: {
   taskId: string;
   mode: string;
@@ -808,46 +863,6 @@ export async function respondPtyAcpUiRequest(options: {
   }
 }
 
-/** Send named keys into the Herdr agent pane (`esc`, `enter`, …). */
-export async function sendPtyAgentKeys(options: {
-  taskId: string;
-  keys: string[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const taskId = options.taskId.trim();
-  const keys = options.keys.map((key) => key.trim()).filter(Boolean);
-  if (!taskId || keys.length === 0) {
-    return { ok: false, error: "taskId and keys are required." };
-  }
-  try {
-    const response = await fetch(`${getPtyHttpOrigin()}/agent/keys`, {
-      method: "POST",
-      headers: {
-        ...ptyAuthHeaders(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ taskId, keys }),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: body?.error || `Agent keys failed (${response.status}).`,
-      };
-    }
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
-    };
-  }
-}
-
 export async function killPtySession(
   sessionId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -865,6 +880,42 @@ export async function killPtySession(
       return {
         ok: false,
         error: body?.error || `Could not kill session (${response.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach local PTY server. Run `pnpm pty`.",
+    };
+  }
+}
+
+/** Stop an ACP agent session for a task (T3-style). */
+export async function stopPtyAgentTask(
+  taskId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = taskId.trim();
+  if (!id) return { ok: false, error: "taskId is required." };
+  try {
+    const response = await fetch(`${getPtyHttpOrigin()}/agent/stop`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ taskId: id }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: body?.error || `Could not stop agent (${response.status}).`,
       };
     }
     return { ok: true };

@@ -17,9 +17,13 @@ import {
   activityStatusLucide,
 } from "../lib/agent/agent-chat-icons";
 import {
+  ANCHOR_SCROLL_SETTLE_FALLBACK_MS,
   CHAT_LIST_ANCHOR_OFFSET,
+  createShowDebouncer,
+  isNearScrollEnd,
   measureAnchoredTurn,
   scrollAnchorToTop,
+  shouldRevealAnchoredEnd,
   type AgentChatScrollMode,
 } from "../lib/agent/agent-chat-scroll";
 import {
@@ -35,6 +39,7 @@ import {
   splitWorkLogEntries,
 } from "../lib/agent/agent-chat-work-ui";
 import type { AgentChatMessage } from "../lib/agent/agent-chat-transcript";
+import { shouldSuppressSettledAssistantForLiveTurn } from "../lib/agent/agent-chat-live-timeline";
 import { AgentChatUserMessageContent } from "../lib/agent/agent-chat-user-content";
 import { pairAgentChatTurns } from "../lib/agent/agent-chat-turns";
 import { toolActivityHeading } from "../lib/agent/t3-port/work-entry-labels";
@@ -61,6 +66,11 @@ export type DesktopAgentChatTranscriptProps = {
   /** High-level turn phase for the status line. */
   turnPhase?: AgentChatTurnPhase;
   working?: boolean;
+  /**
+   * When set and `working`, the matching settled assistant row is suppressed
+   * so we do not double-render the durable in-progress timeline + live overlay.
+   */
+  liveTurnMessageId?: string | null;
   /** Epoch ms when the current turn started (T3 WorkingTimer). */
   turnStartedAt?: number | null;
   /** Footer height so anchored turns clear the composer (T3 composerOverlayHeight). */
@@ -863,6 +873,7 @@ export function DesktopAgentChatTranscript({
   assistantDraft = "",
   turnPhase = "idle",
   working = false,
+  liveTurnMessageId = null,
   turnStartedAt = null,
   composerOverlayHeight = 0,
   projectLabel = "Task",
@@ -877,8 +888,17 @@ export function DesktopAgentChatTranscript({
   const endSpaceRef = useRef<HTMLDivElement | null>(null);
   const scrollModeRef = useRef<AgentChatScrollMode>("following-end");
   const userScrollGenRef = useRef(0);
-  const liveFollowGenRef = useRef(0);
+  const liveFollowGenRef = useRef<number | null>(0);
+  const pendingAnchorIdRef = useRef<string | null>(null);
   const positionedAnchorIdRef = useRef<string | null>(null);
+  const settledAnchorIdRef = useRef<string | null>(null);
+  const pendingScrollRestoreRef = useRef<{
+    messageId: string;
+    offset: number;
+    userScrollGeneration: number;
+  } | null>(null);
+  const restoreFrameRef = useRef<number | null>(null);
+  const settleCleanupRef = useRef<(() => void) | null>(null);
   const [endSpacePx, setEndSpacePx] = useState(0);
   const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
   const previousMessageIdsRef = useRef<string[] | null>(null);
@@ -911,6 +931,9 @@ export function DesktopAgentChatTranscript({
   const [draftHeroVisible, setDraftHeroVisible] = useState(showDraftHero);
   const [draftHeroExiting, setDraftHeroExiting] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const showScrollDebouncerRef = useRef(
+    createShowDebouncer(() => setShowScrollToBottom(true)),
+  );
   const turns = pairAgentChatTurns(messages);
 
   useEffect(() => {
@@ -981,7 +1004,14 @@ export function DesktopAgentChatTranscript({
     setAnchorMessageId(latestUserMessageId);
     scrollModeRef.current = "anchoring-new-turn";
     liveFollowGenRef.current = userScrollGenRef.current;
+    pendingAnchorIdRef.current = latestUserMessageId;
     positionedAnchorIdRef.current = null;
+    settledAnchorIdRef.current = null;
+    pendingScrollRestoreRef.current = null;
+    settleCleanupRef.current?.();
+    settleCleanupRef.current = null;
+    showScrollDebouncerRef.current.cancel();
+    setShowScrollToBottom(false);
   }, [anchorMessageId, latestUserMessageId, working]);
 
   useEffect(() => {
@@ -993,22 +1023,59 @@ export function DesktopAgentChatTranscript({
     }
   }, [working]);
 
+  const cancelLiveFollowForUserNavigation = () => {
+    userScrollGenRef.current += 1;
+    scrollModeRef.current = "free-scrolling";
+    liveFollowGenRef.current = null;
+    pendingAnchorIdRef.current = null;
+    // If the user interrupted mid-pin, treat the turn as settled so later
+    // expand/collapse can still restore scroll without jumping.
+    if (
+      positionedAnchorIdRef.current != null &&
+      settledAnchorIdRef.current !== positionedAnchorIdRef.current
+    ) {
+      settledAnchorIdRef.current = positionedAnchorIdRef.current;
+    }
+    pendingScrollRestoreRef.current = null;
+    settleCleanupRef.current?.();
+    settleCleanupRef.current = null;
+    if (restoreFrameRef.current != null) {
+      cancelAnimationFrame(restoreFrameRef.current);
+      restoreFrameRef.current = null;
+    }
+  };
+
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
 
     const updateScrollChrome = () => {
-      const remaining =
-        scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-      setShowScrollToBottom(remaining > 96);
+      const atEnd = isNearScrollEnd(scrollEl);
+      if (atEnd) {
+        if (scrollModeRef.current !== "anchoring-new-turn") {
+          scrollModeRef.current = "following-end";
+          liveFollowGenRef.current = userScrollGenRef.current;
+        }
+        showScrollDebouncerRef.current.cancel();
+        setShowScrollToBottom(false);
+        return;
+      }
+      if (
+        liveFollowGenRef.current === userScrollGenRef.current &&
+        scrollModeRef.current !== "free-scrolling"
+      ) {
+        // Programmatic follow scroll — don't flash the pill.
+        showScrollDebouncerRef.current.cancel();
+        setShowScrollToBottom(false);
+        return;
+      }
+      scrollModeRef.current = "free-scrolling";
+      liveFollowGenRef.current = null;
+      showScrollDebouncerRef.current.maybeExecute();
     };
 
     const markManualNavigation = () => {
-      userScrollGenRef.current += 1;
-      if (scrollModeRef.current !== "free-scrolling") {
-        scrollModeRef.current = "free-scrolling";
-        liveFollowGenRef.current = -1;
-      }
+      cancelLiveFollowForUserNavigation();
       updateScrollChrome();
     };
 
@@ -1016,15 +1083,20 @@ export function DesktopAgentChatTranscript({
     scrollEl.addEventListener("touchmove", markManualNavigation, {
       passive: true,
     });
+    scrollEl.addEventListener("pointerdown", markManualNavigation, {
+      passive: true,
+    });
     scrollEl.addEventListener("scroll", updateScrollChrome, { passive: true });
     updateScrollChrome();
     return () => {
       scrollEl.removeEventListener("wheel", markManualNavigation);
       scrollEl.removeEventListener("touchmove", markManualNavigation);
+      scrollEl.removeEventListener("pointerdown", markManualNavigation);
       scrollEl.removeEventListener("scroll", updateScrollChrome);
     };
   }, [messages.length, showTurnChrome, endSpacePx]);
 
+  // Apply end spacer + pin new anchor (pending → positioned → settled via scrollend).
   useLayoutEffect(() => {
     const scrollEl = scrollRef.current;
     const anchorEl = anchorElRef.current;
@@ -1044,7 +1116,6 @@ export function DesktopAgentChatTranscript({
     });
     if (!metrics) return;
 
-    // Apply spacer before scrolling so the user turn can sit at the top.
     if (endSpaceRef.current) {
       endSpaceRef.current.style.height = `${metrics.endSpace}px`;
     }
@@ -1052,38 +1123,49 @@ export function DesktopAgentChatTranscript({
       prev === metrics.endSpace ? prev : metrics.endSpace,
     );
 
-    const followingLive =
-      liveFollowGenRef.current === userScrollGenRef.current;
+    if (pendingAnchorIdRef.current === anchorMessageId) {
+      pendingAnchorIdRef.current = null;
+    }
 
     if (
       scrollModeRef.current === "anchoring-new-turn" &&
       positionedAnchorIdRef.current !== anchorMessageId
     ) {
       positionedAnchorIdRef.current = anchorMessageId;
+      settledAnchorIdRef.current = null;
+      settleCleanupRef.current?.();
+
+      let finished = false;
+      const finishAnimatedPositioning = () => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(fallbackTimer);
+        scrollEl.removeEventListener("scrollend", finishAnimatedPositioning);
+        if (positionedAnchorIdRef.current !== anchorMessageId) return;
+        // Freeze animated offset (T3 finishAnimatedPositioning).
+        scrollEl.scrollTop = scrollEl.scrollTop;
+        settledAnchorIdRef.current = anchorMessageId;
+        settleCleanupRef.current = null;
+      };
+      const fallbackTimer = window.setTimeout(
+        finishAnimatedPositioning,
+        ANCHOR_SCROLL_SETTLE_FALLBACK_MS,
+      );
+      scrollEl.addEventListener("scrollend", finishAnimatedPositioning, {
+        once: true,
+      });
+      settleCleanupRef.current = () => {
+        finished = true;
+        window.clearTimeout(fallbackTimer);
+        scrollEl.removeEventListener("scrollend", finishAnimatedPositioning);
+      };
+
       scrollAnchorToTop({
         scrollEl,
         anchorEl,
         anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
-        // Chat always uses smooth scroll — ignore prefers-reduced-motion.
         behavior: "smooth",
       });
-      return;
-    }
-
-    if (!followingLive) return;
-
-    if (scrollModeRef.current === "anchoring-new-turn") {
-      if (metrics.scrollDeltaToRevealEnd > 1) {
-        scrollEl.scrollTop += metrics.scrollDeltaToRevealEnd;
-      }
-      return;
-    }
-
-    if (scrollModeRef.current === "following-end") {
-      const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
-      if (maxScroll > 0 && scrollEl.scrollTop < maxScroll - 2) {
-        scrollEl.scrollTop = maxScroll;
-      }
     }
   }, [
     anchorMessageId,
@@ -1095,6 +1177,129 @@ export function DesktopAgentChatTranscript({
     showTurnChrome,
     composerOverlayHeight,
   ]);
+
+  // T3 double-rAF live follow while anchoring / following-end.
+  useEffect(() => {
+    if (liveFollowGenRef.current !== userScrollGenRef.current) return;
+    if (pendingAnchorIdRef.current != null) return;
+
+    let secondFrame: number | null = null;
+    const frame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (liveFollowGenRef.current !== userScrollGenRef.current) return;
+        if (pendingAnchorIdRef.current != null) return;
+
+        const scrollEl = scrollRef.current;
+        const anchorEl = anchorElRef.current;
+        const contentEndEl = contentEndRef.current;
+        if (!scrollEl || !anchorEl || !contentEndEl || !anchorMessageId) return;
+
+        if (
+          positionedAnchorIdRef.current != null &&
+          settledAnchorIdRef.current !== positionedAnchorIdRef.current &&
+          scrollModeRef.current === "anchoring-new-turn"
+        ) {
+          // Still animating the initial pin.
+          return;
+        }
+
+        const metrics = measureAnchoredTurn({
+          scrollEl,
+          anchorEl,
+          contentEndEl,
+          composerOverlayHeight,
+          anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
+        });
+        if (!metrics) return;
+
+        if (scrollModeRef.current === "anchoring-new-turn") {
+          if (shouldRevealAnchoredEnd(metrics)) {
+            scrollEl.scrollTop += metrics.scrollDeltaToRevealEnd;
+          }
+          return;
+        }
+
+        if (scrollModeRef.current !== "following-end") return;
+        const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
+        if (maxScroll > 0 && scrollEl.scrollTop < maxScroll - 2) {
+          scrollEl.scrollTop = maxScroll;
+        }
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (secondFrame != null) cancelAnimationFrame(secondFrame);
+    };
+  }, [
+    anchorMessageId,
+    messages.length,
+    activities.length,
+    draft.length,
+    turnPhase,
+    working,
+    showTurnChrome,
+    composerOverlayHeight,
+    endSpacePx,
+    liveSegments.length,
+  ]);
+
+  // T3: when settled content resizes (expand/collapse) and user is not live-following,
+  // restore scrollTop so the viewport does not jump.
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    const anchorEl = anchorElRef.current;
+    if (!scrollEl || !anchorEl || !anchorMessageId) return;
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      if (settledAnchorIdRef.current !== anchorMessageId) return;
+      if (liveFollowGenRef.current === userScrollGenRef.current) return;
+
+      const scrollOffset = scrollEl.scrollTop;
+      if (pendingScrollRestoreRef.current == null) {
+        pendingScrollRestoreRef.current = {
+          messageId: anchorMessageId,
+          offset: scrollOffset,
+          userScrollGeneration: userScrollGenRef.current,
+        };
+      }
+      if (restoreFrameRef.current != null) return;
+      restoreFrameRef.current = requestAnimationFrame(() => {
+        restoreFrameRef.current = null;
+        const pending = pendingScrollRestoreRef.current;
+        pendingScrollRestoreRef.current = null;
+        if (
+          pending &&
+          settledAnchorIdRef.current === pending.messageId &&
+          pending.userScrollGeneration === userScrollGenRef.current
+        ) {
+          if (Math.abs(scrollEl.scrollTop - pending.offset) <= 2) {
+            scrollEl.scrollTop = pending.offset;
+          }
+        }
+      });
+    });
+    observer.observe(anchorEl);
+    // Also observe the live turn / transcript inner so activity expands are caught.
+    const inner = scrollEl.querySelector(".desktop-agent-chat__transcript-inner");
+    if (inner) observer.observe(inner);
+
+    return () => {
+      observer.disconnect();
+      if (restoreFrameRef.current != null) {
+        cancelAnimationFrame(restoreFrameRef.current);
+        restoreFrameRef.current = null;
+      }
+    };
+  }, [anchorMessageId, messages.length, showTurnChrome]);
+
+  useEffect(() => {
+    return () => {
+      settleCleanupRef.current?.();
+      showScrollDebouncerRef.current.cancel();
+    };
+  }, []);
 
   return (
     <div className="desktop-agent-chat__transcript-shell">
@@ -1150,7 +1355,12 @@ export function DesktopAgentChatTranscript({
                   />
                 </div>
               ) : null}
-              {turn.assistant ? (
+              {turn.assistant &&
+              !shouldSuppressSettledAssistantForLiveTurn(
+                turn.assistant,
+                liveTurnMessageId,
+                Boolean(working),
+              ) ? (
                 <SettledAssistantTurn
                   message={turn.assistant}
                   startedAt={turn.user?.createdAt ?? null}
@@ -1226,11 +1436,13 @@ export function DesktopAgentChatTranscript({
         <button
           type="button"
           className="desktop-agent-chat__scroll-end"
+          style={{ bottom: composerOverlayHeight + 4 }}
           onClick={() => {
             const scrollEl = scrollRef.current;
             if (!scrollEl) return;
             scrollModeRef.current = "following-end";
             liveFollowGenRef.current = userScrollGenRef.current;
+            showScrollDebouncerRef.current.cancel();
             scrollEl.scrollTo({
               top: scrollEl.scrollHeight,
               behavior: "smooth",

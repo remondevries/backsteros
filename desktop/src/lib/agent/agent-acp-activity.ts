@@ -1,3 +1,4 @@
+import { stripTransientAgentStreamError } from "./agent-stream-errors";
 import {
   extractPlanMarkdown,
   extractTodosAsPlan,
@@ -220,14 +221,17 @@ function appendAssistantTextChunk(
   if (!chunk) return [...segments];
   const last = segments[segments.length - 1];
   if (last?.kind === "text") {
-    return [
-      ...segments.slice(0, -1),
-      { ...last, text: `${last.text}${chunk}` },
-    ];
+    const merged = stripTransientAgentStreamError(`${last.text}${chunk}`);
+    if (!merged) {
+      return [...segments.slice(0, -1)];
+    }
+    return [...segments.slice(0, -1), { ...last, text: merged }];
   }
+  const text = stripTransientAgentStreamError(chunk);
+  if (!text) return [...segments];
   return [
     ...segments,
-    { id: newSegmentId("text"), kind: "text", text: chunk },
+    { id: newSegmentId("text"), kind: "text", text },
   ];
 }
 
@@ -239,7 +243,7 @@ export function applyAssistantTextToTurn(
   state: AgentChatTurnUiState,
   text: string,
 ): AgentChatTurnUiState {
-  const trimmed = text.trim();
+  const trimmed = stripTransientAgentStreamError(text).trim();
   if (!trimmed) return state;
 
   const currentDraft = assistantDraftFromSegments(state.segments).trim();
@@ -267,7 +271,7 @@ export function applyAssistantTextToTurn(
     };
   }
 
-  // No text yet (Herdr tools-only so far) — open a text segment after work.
+  // No text yet (tools-only so far) — open a text segment after work.
   if (!currentDraft) {
     const segments = appendAssistantTextChunk(state.segments, trimmed);
     return {

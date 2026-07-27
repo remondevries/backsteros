@@ -30,6 +30,7 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
+import { resolveCreateAssigneeId } from "./default-assignee";
 import {
   fillMissingAgentChatIdFromApi,
   fillMissingCodebaseFieldsFromApi,
@@ -1163,7 +1164,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         status: input.status ?? "triage",
         priority: 0,
         sortOrder: Date.now(),
-        assigneeId: input.assigneeId ?? null,
+        assigneeId: resolveCreateAssigneeId(input.assigneeId),
         dueDate: input.dueDate ?? null,
         inbox: true,
         projectId: null,
@@ -1208,7 +1209,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         status: input.status ?? "ready_to_start",
         priority: 0,
         sortOrder: Date.now(),
-        assigneeId: input.assigneeId ?? null,
+        assigneeId: resolveCreateAssigneeId(input.assigneeId),
         dueDate: input.dueDate ?? null,
         inbox: false,
       };

@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import {
   Bot,
-  Bug,
   MessageCircleQuestion,
   PencilRuler,
   type LucideIcon,
@@ -25,12 +24,11 @@ const MODE_ICONS: Record<AgentChatMode, LucideIcon> = {
   build: Bot,
   plan: PencilRuler,
   ask: MessageCircleQuestion,
-  debug: Bug,
 };
 
 /**
  * Active mode as plain colored icon + label (no chip background).
- * Click or Shift+Tab cycles Build → Plan → Ask → Debug.
+ * Click or Shift+Tab cycles Build → Plan → Ask.
  */
 export function DesktopAgentModePicker({
   disabled = false,

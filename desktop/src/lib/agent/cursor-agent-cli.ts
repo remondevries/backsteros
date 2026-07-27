@@ -25,6 +25,14 @@ export function shellSingleQuote(value: string): string {
 }
 
 /**
+ * Pasteable shell command to open this chat in the Cursor Agent TUI
+ * (`agent --resume <chatId>`).
+ */
+export function cursorAgentResumeClipboardCommand(chatId: string): string {
+  return `agent --resume ${chatId.trim()}`;
+}
+
+/**
  * Shell command that resumes a Cursor Agent chat in the task terminal.
  * Optional `prompt` is passed as the initial agent turn (starts work immediately).
  */
@@ -32,10 +40,9 @@ export function cursorAgentResumeCommand(
   chatId: string,
   prompt?: string | null,
 ): string {
-  const id = chatId.trim();
   const text = prompt?.trim();
-  if (!text) return `agent --resume ${id}\n`;
-  return `agent --resume ${id} ${shellSingleQuote(text)}\n`;
+  if (!text) return `${cursorAgentResumeClipboardCommand(chatId)}\n`;
+  return `${cursorAgentResumeClipboardCommand(chatId)} ${shellSingleQuote(text)}\n`;
 }
 
 /**

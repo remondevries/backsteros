@@ -57,7 +57,7 @@ export const SETTINGS_NAV_TABS: {
   {
     id: "server",
     label: "Server",
-    description: "Herdr backster-system workspace on the laptop",
+    description: "Laptop agent sidecar (ACP chat over Tailscale)",
     iosOnly: true,
   },
 ];

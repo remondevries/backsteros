@@ -73,10 +73,12 @@ function ComposerStopIcon() {
   return (
     <svg
       className="desktop-agent-chat__send-icon"
-      viewBox="0 0 14 14"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
       aria-hidden="true"
     >
-      <rect x="4.25" y="4.25" width="5.5" height="5.5" rx="1" fill="currentColor" />
+      <rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor" />
     </svg>
   );
 }
@@ -393,7 +395,8 @@ export const DesktopAgentChatComposer = forwardRef<
       onClearChat?.();
       return;
     }
-    // Empty Enter while running → stop. Non-empty → queue follow-up / send.
+    // Empty Enter while running → stop (same as the primary Stop control).
+    // Non-empty → queue follow-up / send (keyboard path; button stays Stop like T3).
     if (running && !trimmed && images.length === 0) {
       onCancel?.();
       return;
@@ -564,6 +567,7 @@ export const DesktopAgentChatComposer = forwardRef<
             />
           </div>
           <div className="desktop-agent-chat__composer-toolbar-end">
+            {/* T3: one primary action — Stop while running, Send when idle. */}
             {running && onCancel ? (
               <button
                 type="button"
@@ -573,22 +577,23 @@ export const DesktopAgentChatComposer = forwardRef<
                   event.preventDefault();
                 }}
                 onClick={onCancel}
-                aria-label="Stop agent turn"
+                aria-label="Stop generation"
                 title="Stop"
               >
                 <ComposerStopIcon />
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="desktop-agent-chat__send"
-              onClick={handleSendClick}
-              disabled={!canSend && value.trim() !== "/clear"}
-              aria-label={running ? "Queue follow-up" : "Send message"}
-              title={running ? "Send next (after current turn)" : "Send"}
-            >
-              <ComposerSendIcon />
-            </button>
+            ) : (
+              <button
+                type="button"
+                className="desktop-agent-chat__send"
+                onClick={handleSendClick}
+                disabled={!canSend && value.trim() !== "/clear"}
+                aria-label="Send message"
+                title="Send"
+              >
+                <ComposerSendIcon />
+              </button>
+            )}
           </div>
         </div>
       </div>

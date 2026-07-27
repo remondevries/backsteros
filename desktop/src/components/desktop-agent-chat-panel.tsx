@@ -27,6 +27,7 @@ import {
   loadAgentChatTranscript,
   mergeAgentChatTranscripts,
   publishAgentChatTranscriptMessage,
+  publishAgentChatTranscriptTimeline,
   readAgentChatViewMode,
   saveAgentChatTranscript,
   syncAgentChatTranscript,
@@ -37,6 +38,12 @@ import {
   type AgentChatViewScope,
 } from "../lib/agent/agent-chat-transcript";
 import {
+  applyLiveTurnTimelineToMessages,
+  findRehydratableLiveAssistant,
+  liveTurnToTimelinePatch,
+  rehydrateTurnUiFromMessage,
+} from "../lib/agent/agent-chat-live-timeline";
+import {
   buildCheckpointPatchesFromActivities,
   collectPathsFromPatches,
 } from "../lib/agent/agent-chat-checkpoint";
@@ -46,9 +53,9 @@ import {
   type AgentChatMode,
 } from "../lib/agent/agent-chat-mode";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
-import type {
-  AgentAttachRequest,
-  AgentEndRequest,
+import {
+  type AgentAttachRequest,
+  type AgentEndRequest,
 } from "../lib/agent/cursor-agent-cli";
 import {
   AGENT_CHAT_COMPOSER_FOCUS_ATTR,
@@ -59,15 +66,21 @@ import { DesktopAgentChatTranscript } from "./desktop-agent-chat-transcript";
 import { DesktopAgentChatDiffPanel } from "./desktop-agent-chat-diff-panel";
 import { useAgentDiffPanelLayout } from "../lib/agent/agent-chat-diff-panel-layout";
 import {
-  DesktopTerminalPanel,
   clearLiveAgentWorkingForTask,
-  interruptAgentComposer,
-  submitAgentComposerPrompt,
-} from "./desktop-terminal-panel";
-import { markLiveAgentWorkingForTask } from "../lib/agent/clear-live-agent-working";
+  markLiveAgentWorkingForTask,
+} from "../lib/agent/clear-live-agent-working";
+import { useAgentAcpEvents } from "../lib/agent/use-agent-acp-events";
 import { markTaskInProgressForAgent } from "../lib/agent/agent-task-mutations";
 import { useDesktopApi } from "../lib/api-context";
-import { respondPtyAcpUiRequest, setPtyAgentMode, fetchPtyGitHead, revertPtyGitCheckpoint, ensurePtyAcpSession, ensurePtyAgent } from "../lib/pty";
+import {
+  cancelPtyAcpTurn,
+  ensurePtyAcpSession,
+  fetchPtyGitHead,
+  respondPtyAcpUiRequest,
+  revertPtyGitCheckpoint,
+  setPtyAgentMode,
+  submitPtyAgentPrompt,
+} from "../lib/pty";
 import {
   buildAskAnswersPayload,
   deriveAskProgress,
@@ -166,10 +179,9 @@ export type DesktopAgentChatPanelProps = {
 };
 
 /**
- * Agent surface with Chat / Terminal tabs. Chat sends via Cursor ACP; Terminal
- * attaches to Herdr `agent --resume` of the same session. Use
- * `viewScope="codebase"` on codebase tasks (terminal default); `"rail"` for
- * the non-codebase side rail (chat default).
+ * Agent Chat surface (T3-style ACP only). Live turns project server-side so
+ * switching tasks does not stop background sessions. Use
+ * `viewScope="codebase"` on codebase tasks; `"rail"` for the side rail.
  */
 export function DesktopAgentChatPanel({
   taskId,
@@ -190,7 +202,7 @@ export function DesktopAgentChatPanel({
   onWorkingTaskIdsChange,
   onAgentStatusItemsChange,
   onAgentOpenTaskIdsChange,
-  focusRequest = 0,
+  focusRequest: _focusRequest = 0,
   onHide,
   onStartAgent,
   startingAgent = false,
@@ -200,7 +212,7 @@ export function DesktopAgentChatPanel({
 }: DesktopAgentChatPanelProps) {
   const { client } = useDesktopApi();
   const agentStatus = useDesktopAgentStatus();
-  const { bumpFocusRequest, requestAttach, setTaskResearchWorking } =
+  const { requestAttach, setTaskResearchWorking } =
     agentStatus;
   const autoMarkInProgress = viewScope === "codebase";
   const [draft, setDraft] = useState("");
@@ -221,8 +233,6 @@ export function DesktopAgentChatPanel({
   const [turnPending, setTurnPending] = useState(false);
   const [uiRequest, setUiRequest] = useState<AgentChatUiRequest | null>(null);
   const [uiRequestBusy, setUiRequestBusy] = useState(false);
-  /** Herdr pane blocked (permission / question) — answer in Terminal. */
-  const [terminalAttention, setTerminalAttention] = useState(false);
   /** Cursor-style follow-ups — shown above composer until the live turn settles. */
   const [queuedFollowUps, setQueuedFollowUps] = useState<
     AgentChatFollowUpDraft[]
@@ -252,6 +262,12 @@ export function DesktopAgentChatPanel({
   const composerRef = useRef<DesktopAgentChatComposerHandle>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousTaskIdRef = useRef(taskId);
+  /** Stable id for the in-progress assistant message (T3 durable timeline). */
+  const liveTurnMessageIdRef = useRef<string | null>(null);
+  const [liveTurnMessageId, setLiveTurnMessageId] = useState<string | null>(
+    null,
+  );
+  const persistLiveTurnTimerRef = useRef<number | null>(null);
 
   const localTurnWorking =
     turnPending ||
@@ -262,12 +278,78 @@ export function DesktopAgentChatPanel({
   /** True between user/bootstrap send and settle — ignores late ACP frames. */
   const turnActiveRef = useRef(false);
 
+  const turnUiRef = useRef(turnUi);
+  turnUiRef.current = turnUi;
+
+  const persistLiveTurnTimelineNow = useCallback(
+    (turn: AgentChatTurnUiState, options?: { seal?: boolean }) => {
+      const patch = liveTurnToTimelinePatch(turn, {
+        messageId: liveTurnMessageIdRef.current,
+        workedStartedAt: turnStartedAtRef.current,
+        seal: options?.seal === true,
+      });
+      if (!patch) return;
+      setMessages((prev) => {
+        const applied = applyLiveTurnTimelineToMessages(prev, patch);
+        if (liveTurnMessageIdRef.current !== applied.messageId) {
+          liveTurnMessageIdRef.current = applied.messageId;
+          setLiveTurnMessageId(applied.messageId);
+        }
+        saveAgentChatTranscript(chatIdRef.current, applied.messages);
+        publishAgentChatTranscriptTimeline(chatIdRef.current, {
+          id: applied.messageId,
+          text: patch.text,
+          createdAt: patch.createdAt,
+          activities: patch.activities,
+          segments: patch.segments,
+          planSteps: patch.planSteps,
+          proposedPlanMarkdown: patch.proposedPlanMarkdown,
+          workedStartedAt: patch.workedStartedAt,
+        });
+        return applied.messages;
+      });
+    },
+    [],
+  );
+
+  const schedulePersistLiveTurnTimeline = useCallback(() => {
+    if (persistLiveTurnTimerRef.current != null) {
+      window.clearTimeout(persistLiveTurnTimerRef.current);
+    }
+    persistLiveTurnTimerRef.current = window.setTimeout(() => {
+      persistLiveTurnTimerRef.current = null;
+      persistLiveTurnTimelineNow(turnUiRef.current);
+    }, 120);
+  }, [persistLiveTurnTimelineNow]);
+
+  useEffect(() => {
+    return () => {
+      if (persistLiveTurnTimerRef.current != null) {
+        window.clearTimeout(persistLiveTurnTimerRef.current);
+      }
+    };
+  }, []);
+
+  const patchTurnUi = useCallback(
+    (recipe: (prev: AgentChatTurnUiState) => AgentChatTurnUiState) => {
+      setTurnUi((prev) => {
+        const next = recipe(prev);
+        // Keep the ref in sync inside the updater so finalize/afterAgentResponse
+        // in the same tick sees tools that just arrived via hooks/ACP.
+        turnUiRef.current = next;
+        return next;
+      });
+      schedulePersistLiveTurnTimeline();
+    },
+    [schedulePersistLiveTurnTimeline],
+  );
+
   const statusWorking = isTaskAgentWorkingForUi(
     { id: taskId, status: taskStatus },
     agentStatus,
   );
   // Chat "Working…" follows the live turn. List/board still use statusWorking
-  // via agentStatus; OR keeps the row lit for Herdr-only turns with no ACP UI.
+  // via agentStatus; OR keeps the row lit for ACP turns with no local UI.
   const working = localTurnWorking || statusWorking;
   const sessionReady =
     Boolean(agentChatId?.trim()) || Boolean(agentAttachRequest);
@@ -302,12 +384,13 @@ export function DesktopAgentChatPanel({
       // be running and list/board pulses should keep reflecting that.
       bootstrapPromptKeyRef.current = null;
       turnActiveRef.current = false;
+      liveTurnMessageIdRef.current = null;
+      setLiveTurnMessageId(null);
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
       setUiRequest(null);
       setUiRequestBusy(false);
-      setTerminalAttention(false);
       setQueuedFollowUps([]);
       setAskDrafts({});
       setAskQuestionIndex(0);
@@ -321,6 +404,8 @@ export function DesktopAgentChatPanel({
       // Session ended (Stop) or never bound — drop in-flight Working… chrome.
       // Working marks for list/board are cleared by Stop / turn-complete via
       // clearLiveAgentWorkingForTask — not here (avoids racing Start-agent).
+      liveTurnMessageIdRef.current = null;
+      setLiveTurnMessageId(null);
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
@@ -331,14 +416,41 @@ export function DesktopAgentChatPanel({
     }
 
     // Show local cache immediately, then pull the shared sidecar copy.
+    const maybeRehydrateLiveTurn = (list: AgentChatMessage[]) => {
+      if (localTurnWorkingRef.current) return;
+      if (
+        !isTaskAgentWorkingForUi(
+          { id: taskId, status: taskStatus },
+          agentStatus,
+        )
+      ) {
+        return;
+      }
+      const open = findRehydratableLiveAssistant(list);
+      if (!open) return;
+      const restored = rehydrateTurnUiFromMessage(open);
+      turnUiRef.current = restored;
+      liveTurnMessageIdRef.current = open.id;
+      setLiveTurnMessageId(open.id);
+      setTurnUi(restored);
+      setTurnPending(true);
+      turnActiveRef.current = true;
+      if (open.workedStartedAt != null) {
+        setTurnStartedAt(open.workedStartedAt);
+      }
+    };
+
     setMessages((prev) => {
       const loaded = loadAgentChatTranscript(id);
       if (loaded.length === 0 && prev.length > 0) {
         saveAgentChatTranscript(id, prev);
+        maybeRehydrateLiveTurn(prev);
         return prev;
       }
       if (loaded.length === 0) return [];
-      return mergeAgentChatTranscripts(loaded, prev);
+      const merged = mergeAgentChatTranscripts(loaded, prev);
+      maybeRehydrateLiveTurn(merged);
+      return merged;
     });
 
     let cancelled = false;
@@ -354,6 +466,13 @@ export function DesktopAgentChatPanel({
         }
         return mergeAgentChatTranscripts(loaded, prev);
       });
+      if (!cancelled) {
+        const merged =
+          loaded.length === 0
+            ? loadAgentChatTranscript(id)
+            : mergeAgentChatTranscripts(loaded, loadAgentChatTranscript(id));
+        maybeRehydrateLiveTurn(merged);
+      }
     };
 
     void syncAgentChatTranscript(id).then(applyRemote);
@@ -388,7 +507,7 @@ export function DesktopAgentChatPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentChatId, taskId]);
+  }, [agentChatId, agentStatus, taskId, taskStatus]);
 
   useEffect(() => {
     // Local cache only — shared store is updated via publish / hooks.
@@ -464,10 +583,17 @@ export function DesktopAgentChatPanel({
       turnActiveRef.current = true;
       setTurnPending(true);
       setTurnStartedAt((prev) => prev ?? Date.now());
-      setTurnUi((prev) =>
-        prev.phase === "idle" ? createOptimisticTurnUiState() : prev,
-      );
+      setTurnUi((prev) => {
+        if (prev.phase !== "idle") return prev;
+        const next = createOptimisticTurnUiState();
+        turnUiRef.current = next;
+        return next;
+      });
       markLiveAgentWorkingForTask(taskId);
+      // Persist optimistic timeline so leave/return mid-bootstrap keeps chrome.
+      window.setTimeout(() => {
+        schedulePersistLiveTurnTimeline();
+      }, 0);
     }
     const prompt = request.prompt?.trim();
     if (!prompt || !request.sessionIsNew) return;
@@ -488,7 +614,7 @@ export function DesktopAgentChatPanel({
       chatIdRef.current = request.chatId;
       return next;
     });
-  }, [agentAttachRequest, taskId]);
+  }, [agentAttachRequest, schedulePersistLiveTurnTimeline, taskId]);
 
   const appendMessage = useCallback(
     (
@@ -596,22 +722,6 @@ export function DesktopAgentChatPanel({
   },
   []);
 
-  const turnUiRef = useRef(turnUi);
-  turnUiRef.current = turnUi;
-
-  const patchTurnUi = useCallback(
-    (recipe: (prev: AgentChatTurnUiState) => AgentChatTurnUiState) => {
-      setTurnUi((prev) => {
-        const next = recipe(prev);
-        // Keep the ref in sync inside the updater so finalize/afterAgentResponse
-        // in the same tick sees tools that just arrived via hooks/ACP.
-        turnUiRef.current = next;
-        return next;
-      });
-    },
-    [],
-  );
-
   const upgradeLastAssistantWithHook = useCallback(
     (message: {
       event?: string;
@@ -677,7 +787,16 @@ export function DesktopAgentChatPanel({
           proposedPlanMarkdown:
             upgraded.proposedPlanMarkdown ?? last.proposedPlanMarkdown,
         };
-        publishAgentChatTranscriptMessage(chatIdRef.current, nextMessage);
+        publishAgentChatTranscriptTimeline(chatIdRef.current, {
+          id: nextMessage.id,
+          text: nextMessage.text,
+          createdAt: nextMessage.createdAt,
+          activities: nextMessage.activities,
+          segments: nextMessage.segments,
+          planSteps: nextMessage.planSteps,
+          proposedPlanMarkdown: nextMessage.proposedPlanMarkdown,
+          workedStartedAt: nextMessage.workedStartedAt,
+        });
         return [...prev.slice(0, -1), nextMessage];
       });
     },
@@ -688,33 +807,87 @@ export function DesktopAgentChatPanel({
     (text: string) => {
       const turn = turnUiRef.current;
       const trimmed = text.trim() || turn.assistantDraft.trim();
-      if (trimmed) {
-        const checkpointPatches = buildCheckpointPatchesFromActivities(
-          turn.activities,
-        );
-        appendMessage("assistant", trimmed, turn.activities, {
-          checkpointPatches,
-          planSteps: turn.planSteps,
-          proposedPlanMarkdown: turn.proposedPlanMarkdown,
-          workedStartedAt: turnStartedAtRef.current,
-          segments: turn.segments,
+      const sealedActivities = finalizeTurnActivities(turn.activities);
+      const sealedSegments = finalizeTurnSegments(
+        turn.segments.length > 0
+          ? turn.segments
+          : segmentsFromActivitiesAndText(sealedActivities, trimmed),
+      );
+      const sealed: AgentChatTurnUiState = {
+        ...turn,
+        activities: sealedActivities,
+        segments: sealedSegments,
+        assistantDraft: trimmed,
+        phase: "idle",
+      };
+      turnUiRef.current = sealed;
+
+      if (persistLiveTurnTimerRef.current != null) {
+        window.clearTimeout(persistLiveTurnTimerRef.current);
+        persistLiveTurnTimerRef.current = null;
+      }
+
+      const checkpointPatches = buildCheckpointPatchesFromActivities(
+        sealedActivities,
+      );
+      const patch = liveTurnToTimelinePatch(sealed, {
+        messageId: liveTurnMessageIdRef.current,
+        workedStartedAt: turnStartedAtRef.current,
+        seal: true,
+      });
+      if (patch) {
+        setMessages((prev) => {
+          const applied = applyLiveTurnTimelineToMessages(prev, patch);
+          const last = applied.messages[applied.messages.length - 1];
+          const withCheckpoint =
+            last?.role === "assistant" && checkpointPatches.length > 0
+              ? {
+                  ...last,
+                  checkpointPatches: [...checkpointPatches],
+                }
+              : last;
+          const nextMessages =
+            withCheckpoint && last
+              ? [...applied.messages.slice(0, -1), withCheckpoint]
+              : applied.messages;
+          liveTurnMessageIdRef.current = applied.messageId;
+          setLiveTurnMessageId(applied.messageId);
+          saveAgentChatTranscript(chatIdRef.current, nextMessages);
+          if (withCheckpoint) {
+            publishAgentChatTranscriptTimeline(chatIdRef.current, {
+              id: withCheckpoint.id,
+              text: withCheckpoint.text,
+              createdAt: withCheckpoint.createdAt,
+              activities: withCheckpoint.activities,
+              segments: withCheckpoint.segments,
+              planSteps: withCheckpoint.planSteps,
+              proposedPlanMarkdown: withCheckpoint.proposedPlanMarkdown,
+              workedStartedAt: withCheckpoint.workedStartedAt,
+            });
+          }
+          return nextMessages;
         });
       }
+
       turnActiveRef.current = false;
       turnUiRef.current = emptyAgentChatTurnUiState();
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
+      // Keep liveTurnMessageId until working clears so transcript can suppress
+      // duplicate settled+live rows for one frame; clear on next send.
       // Clear before React re-renders: bump listeners still see the old
       // localTurnWorkingRef for this tick if we leave it true.
       localTurnWorkingRef.current = false;
       clearLiveAgentWorkingForTask(taskId);
       // Flush Cursor-style follow-ups after the live turn settles.
       window.setTimeout(() => {
+        liveTurnMessageIdRef.current = null;
+        setLiveTurnMessageId(null);
         flushQueuedFollowUpRef.current?.();
       }, 350);
     },
-    [appendMessage, taskId],
+    [taskId],
   );
 
   const handleAssistantMessage = useCallback(
@@ -733,8 +906,9 @@ export function DesktopAgentChatPanel({
       const next = applyAssistantTextToTurn(turnUiRef.current, trimmed);
       turnUiRef.current = next;
       setTurnUi(next);
+      schedulePersistLiveTurnTimeline();
     },
-    [taskId],
+    [schedulePersistLiveTurnTimeline, taskId],
   );
 
   const handleAcpSessionUpdate = useCallback(
@@ -790,18 +964,6 @@ export function DesktopAgentChatPanel({
       },
     ) => {
       if (forTaskId !== taskId) return;
-      if (
-        message.event === "herdr-blocked" ||
-        message.activity === "attention"
-      ) {
-        setTerminalAttention(true);
-        return;
-      }
-      if (message.activity === "idle") {
-        setTerminalAttention(false);
-      } else if (message.activity === "working") {
-        setTerminalAttention(false);
-      }
       if (!agentHookEventAffectsTurnUi(message)) return;
       // Late tool/todo frames after settle — fold into the last assistant turn
       // so Read/Edit/diff chrome is not lost to the finalize race.
@@ -851,6 +1013,31 @@ export function DesktopAgentChatPanel({
     },
     [taskId],
   );
+
+  useAgentAcpEvents({
+    taskId,
+    projectId,
+    projectLabel,
+    chatId: agentChatId,
+    cwd,
+    enabled: Boolean(taskId) && !collapsed && layoutReady,
+    agentAttachRequest,
+    onAgentAttachRequestHandled,
+    agentEndRequest,
+    onAgentEndRequestHandled,
+    onAssistantMessage: handleAssistantMessage,
+    onAcpSessionUpdate: handleAcpSessionUpdate,
+    onCursorUpdateTodos: handleCursorUpdateTodos,
+    onCursorCreatePlan: handleCursorCreatePlan,
+    onAcpTurnSettled: handleAcpTurnSettled,
+    onAcpUiRequest: handleAcpUiRequest,
+    onAcpUiRequestCleared: handleAcpUiRequestCleared,
+    onAgentHookTurnUpdate: handleAgentHookTurnUpdate,
+    onAgentActivitySummaryChange,
+    onWorkingTaskIdsChange,
+    onAgentStatusItemsChange,
+    onAgentOpenTaskIdsChange,
+  });
 
   const askQuestions = useMemo(() => {
     if (!uiRequest || uiRequest.kind !== "ask_question") return [];
@@ -939,7 +1126,8 @@ export function DesktopAgentChatPanel({
         return;
       }
       if (working) {
-        interruptAgentComposer(taskId);
+        clearLiveAgentWorkingForTask(taskId);
+        void cancelPtyAcpTurn(taskId);
       }
       const later = messages.slice(index + 1);
       const patches = later.flatMap(
@@ -1002,9 +1190,14 @@ export function DesktopAgentChatPanel({
       }
       setSendError(null);
       turnActiveRef.current = true;
+      liveTurnMessageIdRef.current = null;
+      setLiveTurnMessageId(null);
       setTurnPending(true);
       setTurnStartedAt(Date.now());
-      setTurnUi(createOptimisticTurnUiState());
+      const optimistic = createOptimisticTurnUiState();
+      turnUiRef.current = optimistic;
+      setTurnUi(optimistic);
+      schedulePersistLiveTurnTimeline();
       if (autoMarkInProgress) {
         void markTaskInProgressForAgent(client, taskId);
       }
@@ -1021,7 +1214,10 @@ export function DesktopAgentChatPanel({
             images,
             gitHeadSha,
           });
-          const result = await submitAgentComposerPrompt(taskId, text || " ", {
+          markLiveAgentWorkingForTask(taskId);
+          const result = await submitPtyAgentPrompt({
+            taskId,
+            prompt: text || " ",
             chatId: agentChatId,
             cwd,
             mode: agentMode,
@@ -1030,6 +1226,8 @@ export function DesktopAgentChatPanel({
           if (!result.ok) {
             setSendError(result.error);
             turnActiveRef.current = false;
+            liveTurnMessageIdRef.current = null;
+            setLiveTurnMessageId(null);
             setTurnPending(false);
             setTurnStartedAt(null);
             setTurnUi(emptyAgentChatTurnUiState());
@@ -1048,6 +1246,7 @@ export function DesktopAgentChatPanel({
       autoMarkInProgress,
       client,
       cwd,
+      schedulePersistLiveTurnTimeline,
       sessionReady,
       taskId,
     ],
@@ -1121,14 +1320,65 @@ export function DesktopAgentChatPanel({
   }, [taskId]);
 
   const handleCancel = useCallback(() => {
-    interruptAgentComposer(taskId);
+    clearLiveAgentWorkingForTask(taskId);
+    void cancelPtyAcpTurn(taskId);
     clearLocalTurnWorking();
   }, [clearLocalTurnWorking, taskId]);
 
+  // Ctrl+C cancels the in-flight turn (Cursor TUI-style). Cmd+C stays copy on macOS.
+  useEffect(() => {
+    if (collapsed || viewMode !== "chat" || !working) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (event.key !== "c" && event.key !== "C") return;
+      // Prefer ctrl (not meta): matches TUI interrupt; leaves ⌘C for copy.
+      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (target.closest("[data-compose-modal]")) return;
+        if (target.closest("[data-command-palette]")) return;
+        if (target.closest("[data-searchable-dropdown-panel]")) return;
+      }
+
+      const root = rootRef.current;
+      const active = document.activeElement;
+      // Don't steal Ctrl+C from other editors (task title, docs, etc.).
+      if (
+        active instanceof Node &&
+        root &&
+        !root.contains(active) &&
+        isEditableFocusTarget(active)
+      ) {
+        return;
+      }
+
+      // Preserve copy when the user has an explicit selection.
+      const selection = window.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        (selection.toString()?.length ?? 0) > 0
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleCancel();
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [collapsed, handleCancel, viewMode, working]);
+
   const handleClearChat = useCallback(() => {
     const previousChatId = agentChatId?.trim() || chatIdRef.current;
-    interruptAgentComposer(taskId);
     clearLiveAgentWorkingForTask(taskId);
+    void cancelPtyAcpTurn(taskId);
     clearLocalTurnWorking();
     setMessages([]);
     setDraft("");
@@ -1160,18 +1410,8 @@ export function DesktopAgentChatPanel({
       saveAgentChatTranscript(nextChatId, []);
       void clearAgentChatTranscript(nextChatId);
 
-      // Keep Terminal/Herdr on the same fresh session when possible.
-      // No prompt — must stay idle (not "Working…") until the user sends.
-      void ensurePtyAgent({
-        taskId,
-        chatId: nextChatId,
-        cwd: workingDirectory,
-        prompt: null,
-        replace: true,
-      }).finally(() => {
-        clearLiveAgentWorkingForTask(taskId);
-        clearLocalTurnWorking();
-      });
+      clearLiveAgentWorkingForTask(taskId);
+      clearLocalTurnWorking();
 
       if (patchTaskValues) {
         try {
@@ -1207,28 +1447,15 @@ export function DesktopAgentChatPanel({
   ]);
 
   const handleStopAgent = useCallback(() => {
-    interruptAgentComposer(taskId);
     clearLiveAgentWorkingForTask(taskId);
+    void cancelPtyAcpTurn(taskId);
     clearLocalTurnWorking();
     onStopAgent?.();
   }, [clearLocalTurnWorking, onStopAgent, taskId]);
 
-  const handleModelChange = useCallback(
-    (modelId: string) => {
-      if (!sessionReady) return;
-      const id = modelId.trim();
-      if (!id) return;
-      // Best-effort mid-session switch — ACP model switching lands later;
-      // keep a slash command attempt for the Terminal TUI when attached.
-      const command = id === "auto" ? "/model auto" : `/model ${id}`;
-      void submitAgentComposerPrompt(taskId, command, {
-        chatId: agentChatId,
-        cwd,
-        mode: agentMode,
-      });
-    },
-    [agentChatId, agentMode, cwd, sessionReady, taskId],
-  );
+  const handleModelChange = useCallback((_modelId: string) => {
+      // Model is applied on the next ACP prompt via readAgentChatModelId().
+    }, []);
 
   const handleModeChange = useCallback(
     (mode: AgentChatMode) => {
@@ -1263,7 +1490,7 @@ export function DesktopAgentChatPanel({
     });
   }, [agentChatId, cwd, sessionReady, taskId]);
 
-  // After cancel / Herdr idle (no finalize path), flush any queued follow-ups.
+  // After cancel / ACP idle (no finalize path), flush any queued follow-ups.
   useEffect(() => {
     if (working || queuedFollowUps.length === 0) return;
     const timer = window.setTimeout(() => {
@@ -1287,20 +1514,14 @@ export function DesktopAgentChatPanel({
     const observer = new ResizeObserver(update);
     observer.observe(footer);
     return () => observer.disconnect();
-  }, [uiRequest, sendError, viewMode, queuedFollowUps.length, terminalAttention]);
+  }, [uiRequest, sendError, viewMode, queuedFollowUps.length]);
 
-  const selectView = useCallback(
-    (mode: AgentChatViewMode) => {
-      setViewMode(mode);
-      writeAgentChatViewMode(mode, viewScope);
-      if (mode === "terminal") {
-        setDiffSelection(null);
-        setTerminalAttention(false);
-        bumpFocusRequest();
-      }
-    },
-    [bumpFocusRequest, viewScope],
-  );
+  // Keep viewMode forced to chat (ACP-only — ADR-025).
+  useEffect(() => {
+    if (viewMode === "chat") return;
+    setViewMode("chat");
+    writeAgentChatViewMode("chat", viewScope);
+  }, [viewMode, viewScope]);
 
   if (!sessionReady && onStartAgent) {
     return (
@@ -1312,14 +1533,14 @@ export function DesktopAgentChatPanel({
         ) : null}
         <button
           type="button"
-          className="desktop-terminal-panel__start"
+          className="desktop-agent-chat__start"
           disabled={startingAgent}
           aria-busy={startingAgent || undefined}
           aria-label={startingAgent ? "Creating agent" : "Start agent"}
           title="Start a new agent session bound to this task"
           onClick={() => onStartAgent()}
         >
-          <span className="desktop-terminal-panel__start-label">
+          <span className="desktop-agent-chat__start-label">
             {startingAgent ? "Creating…" : "Start agent"}
           </span>
         </button>
@@ -1355,44 +1576,21 @@ export function DesktopAgentChatPanel({
         <div className="desktop-agent-chat__body-main">
           <header className="desktop-agent-chat__header">
             <div className="desktop-agent-chat__header-main">
-              <div
-                className="desktop-agent-chat__tabs"
-                role="tablist"
-                aria-label="Agent view"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={viewMode === "chat"}
-                  className={`desktop-agent-chat__tab${
-                    viewMode === "chat" ? " is-active" : ""
-                  }`}
-                  onClick={() => selectView("chat")}
-                >
-                  Chat
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={viewMode === "terminal"}
-                  className={`desktop-agent-chat__tab${
-                    viewMode === "terminal" ? " is-active" : ""
-                  }`}
-                  onClick={() => selectView("terminal")}
-                >
-                  Terminal
-                </button>
+              <div className="desktop-agent-chat__tabs" aria-label="Agent chat">
+                <span className="desktop-agent-chat__tab is-active">Chat</span>
               </div>
               {onStopAgent ? (
-                <button
-                  type="button"
-                  className="desktop-terminal-panel__stop"
-                  aria-label="Stop agent"
-                  title="Stop agent — kill the local PTY and clear this task's agent chat"
-                  onClick={() => handleStopAgent()}
-                >
-                  Stop
-                </button>
+                <div className="desktop-agent-chat__header-agent-actions">
+                  <button
+                    type="button"
+                    className="desktop-agent-chat__stop"
+                    aria-label="Stop agent"
+                    title="Stop agent — end the ACP session and clear this task's agent chat"
+                    onClick={() => handleStopAgent()}
+                  >
+                    Stop
+                  </button>
+                </div>
               ) : null}
             </div>
             {onHide ? (
@@ -1411,12 +1609,8 @@ export function DesktopAgentChatPanel({
 
           <div className="desktop-agent-chat__body-main-content">
             <div
-              className={`desktop-agent-chat__pane desktop-agent-chat__pane--chat${
-                viewMode === "chat" ? " is-active" : " is-inactive"
-              }`}
-              role="tabpanel"
+              className="desktop-agent-chat__pane desktop-agent-chat__pane--chat is-active"
               aria-label="Chat"
-              aria-hidden={viewMode !== "chat"}
             >
             <DesktopAgentChatTranscript
               messages={messages}
@@ -1427,6 +1621,7 @@ export function DesktopAgentChatPanel({
               assistantDraft={turnUi.assistantDraft}
               turnPhase={turnUi.phase}
               working={working}
+              liveTurnMessageId={liveTurnMessageId}
               turnStartedAt={turnStartedAt}
               composerOverlayHeight={composerOverlayHeight}
               projectLabel={projectLabel}
@@ -1436,48 +1631,6 @@ export function DesktopAgentChatPanel({
               onRevertToMessage={handleRevertToMessage}
             />
           </div>
-          <div
-            className={`desktop-agent-chat__pane desktop-agent-chat__pane--terminal${
-              viewMode === "terminal" ? " is-active" : " is-inactive"
-            }`}
-            role="tabpanel"
-            aria-label="Terminal"
-            aria-hidden={viewMode !== "terminal"}
-          >
-            <DesktopTerminalPanel
-              taskId={taskId}
-              projectId={projectId}
-              projectLabel={projectLabel}
-              taskDisplayId={taskDisplayId}
-              cwd={cwd}
-              kind="agent"
-              alwaysOpen={
-                viewScope === "codebase" && Boolean(agentChatId?.trim())
-              }
-              variant="chat"
-              autoMarkInProgress={autoMarkInProgress}
-              boundAgentChatId={agentChatId}
-              collapsed={collapsed}
-              layoutReady={layoutReady}
-              agentAttachRequest={agentAttachRequest}
-              onAgentAttachRequestHandled={onAgentAttachRequestHandled}
-              agentEndRequest={agentEndRequest}
-              onAgentEndRequestHandled={onAgentEndRequestHandled}
-              onAgentActivitySummaryChange={onAgentActivitySummaryChange}
-              onWorkingTaskIdsChange={onWorkingTaskIdsChange}
-              onAgentStatusItemsChange={onAgentStatusItemsChange}
-              onAgentOpenTaskIdsChange={onAgentOpenTaskIdsChange}
-              focusRequest={focusRequest}
-              onAssistantMessage={handleAssistantMessage}
-              onAcpSessionUpdate={handleAcpSessionUpdate}
-              onAgentHookTurnUpdate={handleAgentHookTurnUpdate}
-              onCursorUpdateTodos={handleCursorUpdateTodos}
-              onCursorCreatePlan={handleCursorCreatePlan}
-              onAcpTurnSettled={handleAcpTurnSettled}
-              onAcpUiRequest={handleAcpUiRequest}
-              onAcpUiRequestCleared={handleAcpUiRequestCleared}
-            />
-          </div>
           </div>
 
           <div ref={footerRef} className="desktop-agent-chat__footer">
@@ -1485,29 +1638,6 @@ export function DesktopAgentChatPanel({
               <p className="desktop-agent-chat__error" role="alert">
                 {sendError}
               </p>
-            ) : null}
-            {terminalAttention && !uiRequest ? (
-              <div
-                className="desktop-agent-chat__approval desktop-agent-chat__approval--terminal"
-                role="status"
-              >
-                <p className="desktop-agent-chat__approval-title">
-                  Agent needs input in Terminal
-                </p>
-                <p className="desktop-agent-chat__approval-prompt">
-                  Permission or a question is waiting in the Cursor TUI. Answer
-                  there to continue.
-                </p>
-                <div className="desktop-agent-chat__approval-options">
-                  <button
-                    type="button"
-                    className="desktop-agent-chat__approval-option is-primary"
-                    onClick={() => selectView("terminal")}
-                  >
-                    Open Terminal
-                  </button>
-                </div>
-              </div>
             ) : null}
             {uiRequest ? (
               <div

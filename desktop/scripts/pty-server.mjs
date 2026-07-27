@@ -10,30 +10,29 @@
  *   client → server: { type: "input", data: string }
  *                    { type: "resize", cols: number, rows: number }
  *                    { type: "kill" }  — destroy the agent (not just detach)
- *   server → client: { type: "ready", shell, cwd, sessionId, reattached?: boolean,
- *                      herdrManaged?: boolean }
- *                    { type: "output", data: string }
+ *   server → client: { type: "ready", sessionId, taskId?, kind?, reattached?: boolean,
+ *                      lastActivity?: string }
+ *                    { type: "output", data: string }  — shell PTY only
+ *                    { type: "acp-event", ... }       — agent chat (ACP)
  *                    { type: "agent-hook", event: string }
  *                    { type: "exit", code: number | null }
  *                    { type: "error", message: string }
  *
- * WebSocket close only detaches the UI viewer. Durable agent PTYs live in
- * Herdr (unmodified external binary): one named pane per task. Each UI
- * connects via `herdr agent attach`, so desktop + iPad share one TTY without
- * reinventing multi-attach on raw node-pty.
+ * WebSocket close only detaches the UI viewer. Durable agent sessions are
+ * Cursor ACP (in-process); Chat UIs subscribe per taskId. Shell PTYs use
+ * node-pty and stay alive across viewer detach.
  *
  * HTTP:
- *   POST /agent/ensure — create or reuse the Herdr agent for a task
+ *   POST /agent/ensure — ensure Cursor ACP session for a task
+ *   POST /agent/stop — cancel ACP, forget session, notify chat subscribers
  *   POST /agent/prompt — Chat follow-up via Cursor ACP (`session/prompt`)
  *   POST /agent/acp/mode — Chat mode via ACP (`session/set_mode`)
  *   POST /agent/acp/cancel — cancel in-flight ACP turn
  *   POST /agent/create-chat — `agent create-chat`
- *   POST /herdr/system-shell — ensure Herdr TUI shell on workspace `backster-system`
- *   GET/DELETE /sessions — list / kill (Herdr pane close for agents)
+ *   GET/DELETE /sessions — list / kill shell PTYs and ACP agent sessions
  *
  * Cursor Agent hooks POST to /agent-hook so the UI can mark working/idle.
- * Herdr status is also polled as a backup. Hook POSTs stay unauthenticated
- * (local Cursor → loopback).
+ * Hook POSTs stay unauthenticated (local Cursor → loopback).
  */
 import { createServer } from "node:http";
 import net from "node:net";
@@ -51,41 +50,41 @@ import {
   extractHookUserPrompt,
   loadChatTranscript,
   saveChatTranscript,
+  upsertAssistantTurnTimeline,
 } from "./agent-chat-transcript-store.mjs";
+import { stripTransientAgentStreamError } from "./agent-stream-errors.mjs";
 import {
   acpCancel,
   acpPrompt,
   acpSetMode,
   normalizeCursorModeId,
-  beginMcpIsolation,
   clearAcpBusy,
-  endMcpIsolation,
   ensureAcpSession,
   ensureAcpSessionCliLink,
   forgetAcpSession,
   getAcpSession,
   listAcpSessions,
+  listPendingUiRequests,
   onAcpEvent,
   respondAcpUiRequest,
 } from "./agent-acp-manager.mjs";
 import {
-  HERDR_BIN,
-  HERDR_SYSTEM_WORKSPACE_LABEL,
-  herdrAgentGet,
-  herdrAgentNameForTask,
-  herdrAgentStart,
-  herdrEnsureAgentPlacement,
-  herdrEnsureSystemWorkspace,
-  herdrIsAvailable,
-  herdrPaneClose,
-  herdrPaneSendKeys,
-  herdrSanitizeLabel,
-  herdrSessionIdForTask,
-  mapHerdrStatusToActivity,
-} from "./herdr-agent.mjs";
-
-/** Stable shell session that runs the Herdr TUI focused on `backster-system`. */
-const SYSTEM_HERDR_SESSION_ID = "herdr-system";
+  broadcastChat,
+  chatSubscriberCount,
+  closeChatSubscribersForTask,
+  registerChatSubscriber,
+  unregisterChatSubscriber,
+} from "./agent-chat-bus.mjs";
+import {
+  beginAcpProjectedTurn,
+  clearAcpProjectedTurn,
+  completeAcpProjectedUiRequest,
+  projectAcpSessionUpdate,
+  projectAcpUiRequest,
+  projectCursorCreatePlan,
+  projectCursorUpdateTodos,
+  sealAcpProjectedTurn,
+} from "./agent-acp-projector.mjs";
 
 const HOST = process.env.PTY_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PTY_PORT ?? 3101);
@@ -110,8 +109,7 @@ const SCROLLBACK_MAX_CHARS = 200_000;
 const sessionsById = new Map();
 
 /**
- * Live shell PTY processes keyed by session id. Agent durability lives in Herdr;
- * agent UI viewers are tracked separately in `agentViewersBySession`.
+ * Live shell PTY processes keyed by session id.
  * @type {Map<string, {
  *   pty: import("node-pty").IPty,
  *   cwd: string,
@@ -127,66 +125,10 @@ const sessionsById = new Map();
  */
 const ptysById = new Map();
 
-/**
- * Durable Herdr agent per task (1:1).
- * @type {Map<string, {
- *   taskId: string,
- *   name: string,
- *   sessionId: string,
- *   paneId: string | null,
- *   terminalId: string | null,
- *   cwd: string,
- *   chatId: string | null,
- *   label: string | null,
- *   tabLabel: string | null,
- *   workspaceId: string | null,
- *   tabId: string | null,
- *   createdAt: string,
- *   lastActivity: "working" | "attention" | "idle" | null,
- *   herdrStatus: string | null,
- *   runtime?: "agent-resume" | "shell" | null,
- *   hookEnv?: boolean,
- *   lastModeId?: string | null,
- * }>}
- */
-const herdrByTaskId = new Map();
-
-/**
- * Per-viewer `herdr agent attach` PTYs for a canonical agent sessionId.
- * @deprecated Replaced by shared attach in `herdrAttachBySession` — Herdr
- * attach is exclusive; multiple attaches kick each other off.
- * @type {Map<string, Set<{
- *   ws: import("ws").WebSocket,
- *   pty: import("node-pty").IPty,
- *   dataDisposable: { dispose: () => void },
- *   exitDisposable: { dispose: () => void },
- * }>>}
- */
-const agentViewersBySession = new Map();
-
-/**
- * One shared `herdr agent attach` pipe per agent session.
- * WebSocket viewers fan in/out via `sessionsById` (same as shell PTYs).
- * Herdr attach is exclusive — a second CLI attach exits with code 1 and
- * crashes the iPad Ghostty surface ("failed to launch…").
- * @type {Map<string, {
- *   pty: import("node-pty").IPty,
- *   name: string,
- *   scrollback: string,
- *   cols: number,
- *   rows: number,
- *   dataDisposable: { dispose: () => void },
- *   exitDisposable: { dispose: () => void },
- * }>}
- */
-const herdrAttachBySession = new Map();
-
 /** @type {Map<string, "working" | "idle">} */
 const lastActivityBySession = new Map();
 /** Sessions that received sessionEnd since last agent start (survives UI detach). */
 const sessionEndedBySession = new Map();
-
-let herdrAvailable = false;
 
 const WORKING_HOOK_EVENTS = new Set([
   "beforeSubmitPrompt",
@@ -241,27 +183,6 @@ function broadcast(sessionId, message) {
   for (const socket of set) send(socket, message);
 }
 
-function disposeHerdrAttach(sessionId) {
-  const attach = herdrAttachBySession.get(sessionId);
-  if (!attach) return;
-  herdrAttachBySession.delete(sessionId);
-  try {
-    attach.dataDisposable.dispose();
-  } catch {
-    /* ignore */
-  }
-  try {
-    attach.exitDisposable.dispose();
-  } catch {
-    /* ignore */
-  }
-  try {
-    attach.pty.kill();
-  } catch {
-    /* ignore */
-  }
-}
-
 function closeSessionSockets(sessionId) {
   const set = getSessionSockets(sessionId);
   if (set) {
@@ -274,73 +195,86 @@ function closeSessionSockets(sessionId) {
     }
     sessionsById.delete(sessionId);
   }
-  disposeHerdrAttach(sessionId);
-  // Legacy per-viewer attaches (should be empty after fan-out refactor).
-  disposeAgentViewers(sessionId, { closeSockets: false });
 }
 
-function disposeAgentViewer(sessionId, viewer) {
-  const set = agentViewersBySession.get(sessionId);
-  if (set) {
-    set.delete(viewer);
-    if (set.size === 0) agentViewersBySession.delete(sessionId);
-  }
-  try {
-    viewer.dataDisposable.dispose();
-  } catch {
-    /* ignore */
-  }
-  try {
-    viewer.exitDisposable.dispose();
-  } catch {
-    /* ignore */
-  }
-  try {
-    viewer.pty.kill();
-  } catch {
-    /* ignore */
-  }
+/**
+ * @param {string} taskId
+ * @param {string | null | undefined} eventSessionId
+ */
+function resolveAcpChatId(taskId, eventSessionId) {
+  const fromSession = getAcpSession(taskId)?.sessionId ?? null;
+  if (fromSession) return fromSession;
+  const sid =
+    typeof eventSessionId === "string" ? eventSessionId.trim().toLowerCase() : "";
+  return sid || null;
 }
 
-function disposeAgentViewers(sessionId, { closeSockets = false } = {}) {
-  const set = agentViewersBySession.get(sessionId);
-  if (set) {
-    for (const viewer of [...set]) {
-      disposeAgentViewer(sessionId, viewer);
-      if (closeSockets) {
-        try {
-          viewer.ws.close();
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    agentViewersBySession.delete(sessionId);
-  }
-  disposeHerdrAttach(sessionId);
-}
-
-function findHerdrBySessionId(sessionId) {
-  for (const entry of herdrByTaskId.values()) {
-    if (entry.sessionId === sessionId) return entry;
+/**
+ * @param {string} sessionId — hook or UI session id (often ACP chat id)
+ */
+function resolveChatIdForHookSession(sessionId) {
+  const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!sid) return null;
+  for (const s of listAcpSessions()) {
+    if (s.sessionId === sid) return s.sessionId;
   }
   return null;
 }
 
-function findHerdrByTaskId(taskId) {
-  if (!taskId) return null;
-  return herdrByTaskId.get(taskId) ?? null;
+/**
+ * @param {string} sessionId
+ */
+function resolveTaskIdForHookSession(sessionId) {
+  const sid = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!sid) return null;
+  for (const s of listAcpSessions()) {
+    if (s.sessionId === sid) return s.taskId;
+  }
+  return null;
 }
 
 /**
- * Fan ACP events to every WebSocket viewer attached to this task's Herdr session.
- * @param {string} taskId
- * @param {Record<string, unknown>} message
+ * @param {string} acpSessionId
  */
-function broadcastToTask(taskId, message) {
-  const herdr = findHerdrByTaskId(taskId);
-  if (!herdr?.sessionId) return;
-  broadcast(herdr.sessionId, message);
+function findAcpTaskBySessionId(acpSessionId) {
+  const sid =
+    typeof acpSessionId === "string" ? acpSessionId.trim().toLowerCase() : "";
+  if (!sid) return null;
+  for (const s of listAcpSessions()) {
+    if (s.sessionId === sid) return s.taskId;
+  }
+  return null;
+}
+
+/**
+ * Stop durable ACP agent for a task and notify chat subscribers.
+ * @param {string} taskId
+ * @param {string} [reason]
+ */
+async function stopAgentTask(taskId, reason = "stop") {
+  const id = typeof taskId === "string" ? taskId.trim() : "";
+  if (!id) return false;
+  try {
+    await acpCancel(id);
+  } catch (error) {
+    console.warn(
+      "[acp] cancel on stop failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+  clearAcpProjectedTurn(id);
+  acpAssistantDraftByTask.delete(id);
+  forgetAcpSession(id);
+  broadcastChat(id, {
+    type: "acp-event",
+    event: "activity",
+    activity: "idle",
+    reason,
+  });
+  broadcastChat(id, { type: "exit", code: null, reason });
+  closeChatSubscribersForTask(id);
+  console.log(`[pty] agent stopped task=${id} reason=${reason}`);
+  return true;
 }
 
 /** In-flight assistant text assembled from ACP agent_message_chunk updates. */
@@ -365,21 +299,20 @@ onAcpEvent((event) => {
   }
   if (!taskId) return;
 
+  const chatId = resolveAcpChatId(taskId, event.sessionId);
+
   if (event.type === "activity") {
     const activity = event.activity === "working" ? "working" : "idle";
-    const herdr = findHerdrByTaskId(taskId);
-    const sessionId = herdr?.sessionId || null;
-    if (sessionId) {
-      lastActivityBySession.set(sessionId, activity);
-      if (herdr) herdr.lastActivity = activity;
+    if (activity === "working" && chatId) {
+      beginAcpProjectedTurn(taskId, chatId);
     }
-    broadcastToTask(taskId, {
+    broadcastChat(taskId, {
       type: "acp-event",
       event: "activity",
       activity,
-      sessionId: event.sessionId ?? null,
+      sessionId: event.sessionId ?? chatId ?? null,
     });
-    broadcastToTask(taskId, {
+    broadcastChat(taskId, {
       type: "agent-hook",
       event: activity === "working" ? "preToolUse" : "stop",
       activity,
@@ -390,13 +323,9 @@ onAcpEvent((event) => {
 
   if (event.type === "session-update") {
     const update = event.update;
-    broadcastToTask(taskId, {
-      type: "acp-event",
-      event: "session-update",
-      sessionId: event.sessionId ?? null,
-      update,
-    });
-
+    if (chatId) {
+      projectAcpSessionUpdate(taskId, chatId, update);
+    }
     if (update && typeof update === "object") {
       const u = /** @type {Record<string, unknown>} */ (update);
       if (
@@ -411,29 +340,32 @@ onAcpEvent((event) => {
         }
       }
     }
+    broadcastChat(taskId, {
+      type: "acp-event",
+      event: "session-update",
+      sessionId: event.sessionId ?? chatId ?? null,
+      update,
+    });
     return;
   }
 
   if (event.type === "prompt-complete") {
-    const draft = (acpAssistantDraftByTask.get(taskId) || "").trim();
+    const draft = stripTransientAgentStreamError(
+      acpAssistantDraftByTask.get(taskId) || "",
+    ).trim();
     acpAssistantDraftByTask.delete(taskId);
-    const herdr = findHerdrByTaskId(taskId);
-    const chatId = herdr?.chatId || getAcpSession(taskId)?.sessionId || null;
-    if (chatId && draft) {
-      appendChatTranscriptMessage(chatId, {
-        role: "assistant",
-        text: draft,
-      });
+    if (chatId) {
+      sealAcpProjectedTurn(taskId, chatId, draft);
     }
-    broadcastToTask(taskId, {
+    broadcastChat(taskId, {
       type: "acp-event",
       event: "prompt-complete",
-      sessionId: event.sessionId ?? null,
+      sessionId: event.sessionId ?? chatId ?? null,
       text: draft || null,
       result: event.result ?? null,
     });
     if (draft) {
-      broadcastToTask(taskId, {
+      broadcastChat(taskId, {
         type: "agent-hook",
         event: "afterAgentResponse",
         text: draft,
@@ -441,17 +373,20 @@ onAcpEvent((event) => {
         streaming: false,
       });
     }
-    // Reload Terminal TUI so it picks up ACP turns from the linked store.
-    scheduleHerdrResumeRefresh(taskId);
     return;
   }
 
   if (event.type === "prompt-error") {
     acpAssistantDraftByTask.delete(taskId);
-    broadcastToTask(taskId, {
+    if (chatId) {
+      sealAcpProjectedTurn(taskId, chatId, "");
+    } else {
+      clearAcpProjectedTurn(taskId);
+    }
+    broadcastChat(taskId, {
       type: "acp-event",
       event: "prompt-error",
-      sessionId: event.sessionId ?? null,
+      sessionId: event.sessionId ?? chatId ?? null,
       error: event.error ?? "ACP prompt failed",
     });
     return;
@@ -464,7 +399,31 @@ onAcpEvent((event) => {
     event.type === "ask-question-timeout" ||
     event.type === "ui-request-cleared"
   ) {
-    broadcastToTask(taskId, {
+    const requestId =
+      typeof event.requestId === "string" ? event.requestId : null;
+    if (
+      (event.type === "permission" || event.type === "ask-question") &&
+      event.auto !== true &&
+      requestId &&
+      chatId
+    ) {
+      projectAcpUiRequest(taskId, chatId, {
+        requestId,
+        kind: event.type === "ask-question" ? "ask_question" : "permission",
+        title: typeof event.title === "string" ? event.title : null,
+        detail: typeof event.detail === "string" ? event.detail : null,
+      });
+    }
+    if (
+      (event.type === "permission-timeout" ||
+        event.type === "ask-question-timeout" ||
+        event.type === "ui-request-cleared") &&
+      requestId &&
+      chatId
+    ) {
+      completeAcpProjectedUiRequest(taskId, chatId, requestId);
+    }
+    broadcastChat(taskId, {
       type: "acp-event",
       event: event.type,
       requestId: event.requestId ?? null,
@@ -473,316 +432,37 @@ onAcpEvent((event) => {
       detail: event.detail ?? null,
       options: event.options ?? [],
       questions: event.questions ?? [],
-      sessionId: event.sessionId ?? null,
+      sessionId: event.sessionId ?? chatId ?? null,
       reason: event.reason ?? null,
     });
     return;
   }
 
-  if (
-    event.type === "cursor-update-todos" ||
-    event.type === "cursor-create-plan"
-  ) {
-    broadcastToTask(taskId, {
+  if (event.type === "cursor-update-todos") {
+    if (chatId) {
+      projectCursorUpdateTodos(taskId, chatId, event.params ?? null);
+    }
+    broadcastChat(taskId, {
       type: "acp-event",
       event: event.type,
-      sessionId: event.sessionId ?? null,
+      sessionId: event.sessionId ?? chatId ?? null,
+      params: event.params ?? null,
+    });
+    return;
+  }
+
+  if (event.type === "cursor-create-plan") {
+    if (chatId) {
+      projectCursorCreatePlan(taskId, chatId, event.params ?? null);
+    }
+    broadcastChat(taskId, {
+      type: "acp-event",
+      event: event.type,
+      sessionId: event.sessionId ?? chatId ?? null,
       params: event.params ?? null,
     });
   }
 });
-
-/**
- * Build argv for Cursor Agent inside a Herdr pane.
- * Chat owns turns via ACP; Terminal resumes the same session id after we link
- * the CLI chats path to the ACP store (`ensureAcpSessionCliLink`).
- * @param {string} chatId
- * @param {string | null | undefined} prompt
- * @param {string | null | undefined} model
- * @param {string | null | undefined} mode
- */
-function cursorAgentArgv(chatId, prompt, model, mode) {
-  const id = chatId.trim();
-  const text = typeof prompt === "string" ? prompt.trim() : "";
-  const modelId =
-    typeof model === "string" && model.trim() && model.trim() !== "auto"
-      ? model.trim()
-      : null;
-  const modeId = normalizeCursorModeId(mode);
-  /** @type {string[]} */
-  const argv = ["agent", "--trust", "--force"];
-  if (modelId) {
-    argv.push("--model", modelId);
-  }
-  if (modeId && modeId !== "agent") {
-    argv.push("--mode", modeId);
-  }
-  argv.push("--resume", id);
-  if (text) argv.push(text);
-  return argv;
-}
-
-/**
- * Ensure a Herdr agent pane exists for this task.
- * @param {{
- *   taskId: string,
- *   cwd: string,
- *   chatId: string,
- *   prompt?: string | null,
- *   model?: string | null,
- *   mode?: string | null,
- *   label?: string | null,
- *   tabLabel?: string | null,
- *   replace?: boolean,
- * }} options
- */
-async function ensureHerdrAgentForTask(options) {
-  const taskId = options.taskId.trim();
-  const chatId = options.chatId.trim().toLowerCase();
-  const cwd = options.cwd;
-  const prompt = options.prompt?.trim() || null;
-  const model = options.model?.trim() || null;
-  const mode = options.mode?.trim() || null;
-  const label = options.label?.trim() || null;
-  const tabLabelRaw = options.tabLabel?.trim() || null;
-  if (!taskId) throw new Error("taskId is required");
-  if (!chatId) throw new Error("chatId is required");
-  if (!cwd) throw new Error("cwd is required");
-  if (!herdrAvailable) {
-    throw new Error(
-      `Herdr is not available (\`${HERDR_BIN}\`). Install from https://herdr.dev and run \`herdr integration install cursor\`.`,
-    );
-  }
-
-  // So interactive `agent --resume` reads the ACP conversation store.
-  try {
-    ensureAcpSessionCliLink(chatId, cwd);
-  } catch (error) {
-    console.warn(
-      "[pty] ACP→CLI session link failed:",
-      error instanceof Error ? error.message : error,
-    );
-  }
-
-  const name = herdrAgentNameForTask(taskId);
-  const sessionId = herdrSessionIdForTask(taskId);
-  let existing = await herdrAgentGet(name);
-  const cached = herdrByTaskId.get(taskId);
-
-  const chatChanged =
-    Boolean(cached?.chatId) && cached.chatId !== chatId;
-  const runtimeStale = cached?.runtime !== "agent-resume";
-  // After pty restart (or an agent started outside the sidecar) we have no
-  // BACKSTEROS_AGENT_* env — Chat hooks stay silent until we replace once.
-  const missingHookEnv = Boolean(existing) && !cached?.hookEnv;
-  const wantsReplace =
-    options.replace === true ||
-    Boolean(prompt) ||
-    chatChanged ||
-    (Boolean(existing) && runtimeStale) ||
-    missingHookEnv;
-
-  if (existing && wantsReplace) {
-    await herdrPaneClose(existing.paneId || cached?.paneId || "");
-    disposeAgentViewers(sessionId, { closeSockets: true });
-    herdrByTaskId.delete(taskId);
-    lastActivityBySession.delete(sessionId);
-    sessionEndedBySession.delete(sessionId);
-    existing = null;
-  }
-
-  if (existing) {
-    const entry = {
-      taskId,
-      name: existing.name || name,
-      sessionId,
-      paneId: existing.paneId,
-      terminalId: existing.terminalId,
-      cwd: existing.cwd || cwd,
-      chatId: cached?.chatId || chatId,
-      label: label || cached?.label || null,
-      tabLabel: tabLabelRaw || cached?.tabLabel || null,
-      workspaceId: existing.workspaceId || cached?.workspaceId || null,
-      tabId: existing.tabId || cached?.tabId || null,
-      createdAt: cached?.createdAt || new Date().toISOString(),
-      lastActivity:
-        cached?.lastActivity ??
-        mapHerdrStatusToActivity(existing.status) ??
-        lastActivityBySession.get(sessionId) ??
-        null,
-      herdrStatus: existing.status,
-      runtime: cached?.runtime || "agent-resume",
-      hookEnv: cached?.hookEnv === true,
-      lastModeId: cached?.lastModeId ?? null,
-    };
-    herdrByTaskId.set(taskId, entry);
-    if (entry.lastActivity) {
-      lastActivityBySession.set(sessionId, entry.lastActivity);
-    }
-    return { entry, started: false };
-  }
-
-  const workspaceLabel = herdrSanitizeLabel(label || "BacksterOS", "BacksterOS");
-  const tabLabel = herdrSanitizeLabel(
-    tabLabelRaw || taskId.slice(0, 8),
-    "task",
-  );
-  const placement = await herdrEnsureAgentPlacement({
-    workspaceLabel,
-    tabLabel,
-    cwd,
-  });
-
-  beginMcpIsolation();
-  let started;
-  try {
-    started = await herdrAgentStart({
-      name,
-      cwd,
-      workspaceId: placement.workspaceId,
-      tabId: placement.tabId,
-      argv: cursorAgentArgv(chatId, prompt, model, mode),
-      env: {
-        BACKSTEROS_PTY: "1",
-        BACKSTEROS_AGENT_SESSION_ID: sessionId,
-        BACKSTEROS_AGENT_HOOK_URL: `http://${HOOK_HOST}:${PORT}/agent-hook`,
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        FORCE_COLOR: "3",
-      },
-    });
-  } finally {
-    // Give the child a moment to read mcp.json, then restore the user's servers.
-    setTimeout(() => {
-      try {
-        endMcpIsolation();
-      } catch {
-        /* ignore */
-      }
-    }, 1500);
-  }
-
-  // Herdr creates a shell pane with the tab; close it so the tab is agent-only.
-  if (
-    placement.shellPaneId &&
-    placement.shellPaneId !== started.paneId
-  ) {
-    await herdrPaneClose(placement.shellPaneId);
-  }
-
-  // Only mark working when a prompt was injected into argv. A bare
-  // `agent --resume` (reattach, /clear, Start without bootstrap) is idle
-  // until ACP/hooks report a real turn — otherwise Chat shows "Working…".
-  const activity = prompt ? "working" : "idle";
-  const entry = {
-    taskId,
-    name: started.name || name,
-    sessionId,
-    paneId: started.paneId,
-    terminalId: started.terminalId,
-    cwd: started.cwd || cwd,
-    chatId,
-    label: workspaceLabel,
-    tabLabel,
-    workspaceId: started.workspaceId || placement.workspaceId,
-    tabId: started.tabId || placement.tabId,
-    createdAt: new Date().toISOString(),
-    lastActivity: activity,
-    herdrStatus: started.status,
-    runtime: "agent-resume",
-    hookEnv: true,
-    lastModeId: normalizeCursorModeId(mode) || null,
-  };
-  herdrByTaskId.set(taskId, entry);
-  lastActivityBySession.set(sessionId, activity);
-  sessionEndedBySession.delete(sessionId);
-  if (prompt?.trim()) {
-    appendChatTranscriptMessage(chatId, {
-      role: "user",
-      text: prompt.trim(),
-    });
-  }
-  console.log(
-    `[pty] herdr started name=${entry.name} task=${taskId} session=${sessionId} workspace=${entry.workspaceId ?? "-"} tab=${entry.tabId ?? "-"} (${workspaceLabel} / ${tabLabel}) pane=${entry.paneId ?? "-"} runtime=agent-resume`,
-  );
-  return { entry, started: true };
-}
-
-/**
- * Restart the Herdr Cursor TUI with `agent --resume` so it reloads ACP history.
- * @param {string} taskId
- */
-async function refreshHerdrAgentResume(taskId) {
-  const id = taskId.trim();
-  if (!id) return null;
-  const entry = findHerdrByTaskId(id);
-  const acp = getAcpSession(id);
-  const chatId = entry?.chatId || acp?.sessionId || null;
-  const cwd = entry?.cwd || acp?.cwd || null;
-  if (!chatId || !cwd) return null;
-  const result = await ensureHerdrAgentForTask({
-    taskId: id,
-    chatId,
-    cwd,
-    prompt: null,
-    label: entry?.label || null,
-    tabLabel: entry?.tabLabel || null,
-    replace: true,
-  });
-  broadcastToTask(id, {
-    type: "herdr-restarted",
-    sessionId: result.entry.sessionId,
-    chatId,
-  });
-  return result;
-}
-
-/** @type {Map<string, ReturnType<typeof setTimeout>>} */
-const herdrResumeRefreshTimers = new Map();
-
-/**
- * Debounce TUI reloads after ACP turns so rapid prompts do not thrash Herdr.
- * @param {string} taskId
- */
-function scheduleHerdrResumeRefresh(taskId) {
-  const id = taskId.trim();
-  if (!id) return;
-  const prev = herdrResumeRefreshTimers.get(id);
-  if (prev) clearTimeout(prev);
-  herdrResumeRefreshTimers.set(
-    id,
-    setTimeout(() => {
-      herdrResumeRefreshTimers.delete(id);
-      void refreshHerdrAgentResume(id).catch((error) => {
-        console.warn(
-          "[pty] herdr resume refresh after ACP turn failed:",
-          error instanceof Error ? error.message : error,
-        );
-      });
-    }, 1200),
-  );
-}
-
-async function destroyHerdrAgent(taskId, reason = "kill") {
-  const entry = herdrByTaskId.get(taskId);
-  if (!entry) return false;
-  herdrByTaskId.delete(taskId);
-  lastActivityBySession.delete(entry.sessionId);
-  sessionEndedBySession.delete(entry.sessionId);
-  forgetAcpSession(taskId);
-  disposeAgentViewers(entry.sessionId, { closeSockets: true });
-  closeSessionSockets(entry.sessionId);
-  if (entry.paneId) {
-    await herdrPaneClose(entry.paneId);
-  } else {
-    const live = await herdrAgentGet(entry.name);
-    if (live?.paneId) await herdrPaneClose(live.paneId);
-  }
-  console.log(
-    `[pty] herdr destroyed task=${taskId} session=${entry.sessionId} reason=${reason}`,
-  );
-  return true;
-}
 
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
@@ -1239,8 +919,6 @@ function handleAgentHook(sessionId, payloadText) {
     lastActivityBySession.set(sessionId, activity);
     const entry = ptysById.get(sessionId);
     if (entry) entry.lastActivity = activity;
-    const herdr = findHerdrBySessionId(sessionId);
-    if (herdr) herdr.lastActivity = activity;
   }
   if (event === "sessionEnd") {
     sessionEndedBySession.set(sessionId, true);
@@ -1259,8 +937,8 @@ function handleAgentHook(sessionId, payloadText) {
   const turnDetails = extractHookTurnDetails(payload, event);
 
   // Shared Chat-tab history (desktop + iPad): record turns on the laptop.
-  const herdr = findHerdrBySessionId(sessionId);
-  const chatId = herdr?.chatId || null;
+  const chatId = resolveChatIdForHookSession(sessionId);
+  const hookTaskId = resolveTaskIdForHookSession(sessionId);
   if (chatId) {
     if (event === "beforeSubmitPrompt") {
       const prompt = extractHookUserPrompt(payload);
@@ -1281,7 +959,7 @@ function handleAgentHook(sessionId, payloadText) {
     }
   }
 
-  if (sessionSocketCount(sessionId) === 0) {
+  if (sessionSocketCount(sessionId) === 0 && !hookTaskId) {
     // Detached UI — keep lastActivity / sessionEnded for reattach; still accept.
     // Tool chrome cannot render without a viewer, but log so we can diagnose
     // "hooks fire but Chat shows nothing" cases.
@@ -1299,7 +977,7 @@ function handleAgentHook(sessionId, payloadText) {
     );
   }
 
-  broadcast(sessionId, {
+  const hookMessage = {
     type: "agent-hook",
     event,
     activity,
@@ -1310,7 +988,14 @@ function handleAgentHook(sessionId, payloadText) {
     ...(turnDetails.thoughtText && event === "afterAgentThought"
       ? { text: turnDetails.thoughtText }
       : {}),
-  });
+  };
+
+  if (hookTaskId) {
+    broadcastChat(hookTaskId, hookMessage);
+  }
+  if (sessionSocketCount(sessionId) > 0) {
+    broadcast(sessionId, hookMessage);
+  }
   return true;
 }
 
@@ -1444,6 +1129,76 @@ const httpServer = createServer(async (req, res) => {
     }
   }
 
+  const timelineMatch = /^\/agent\/chats\/([^/]+)\/transcript\/timeline$/.exec(
+    url.pathname,
+  );
+  if (timelineMatch) {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    const chatId = decodeURIComponent(timelineMatch[1] || "").trim();
+    if (!chatId) {
+      res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ error: "chatId is required." }));
+      return;
+    }
+    if (req.method === "POST") {
+      try {
+        const bodyText = await readRequestBody(req);
+        let body = {};
+        try {
+          body = JSON.parse(bodyText || "{}");
+        } catch {
+          body = {};
+        }
+        const result = upsertAssistantTurnTimeline(chatId, {
+          id: typeof body.id === "string" ? body.id : undefined,
+          text: typeof body.text === "string" ? body.text : undefined,
+          createdAt:
+            typeof body.createdAt === "number" ? body.createdAt : undefined,
+          activities: Array.isArray(body.activities)
+            ? body.activities
+            : undefined,
+          segments: Array.isArray(body.segments) ? body.segments : undefined,
+          planSteps: Array.isArray(body.planSteps) ? body.planSteps : undefined,
+          proposedPlanMarkdown:
+            typeof body.proposedPlanMarkdown === "string"
+              ? body.proposedPlanMarkdown
+              : body.proposedPlanMarkdown === null
+                ? null
+                : undefined,
+          workedStartedAt:
+            typeof body.workedStartedAt === "number"
+              ? body.workedStartedAt
+              : body.workedStartedAt === null
+                ? null
+                : undefined,
+        });
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            chatId: chatId.toLowerCase(),
+            message: result.message,
+            messages: result.messages,
+          }),
+        );
+        return;
+      } catch (error) {
+        res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to upsert transcript timeline.",
+          }),
+        );
+        return;
+      }
+    }
+  }
+
   const transcriptMatch = /^\/agent\/chats\/([^/]+)\/transcript$/.exec(
     url.pathname,
   );
@@ -1520,6 +1275,20 @@ const httpServer = createServer(async (req, res) => {
           activities: Array.isArray(body.activities)
             ? body.activities
             : undefined,
+          segments: Array.isArray(body.segments) ? body.segments : undefined,
+          planSteps: Array.isArray(body.planSteps) ? body.planSteps : undefined,
+          proposedPlanMarkdown:
+            typeof body.proposedPlanMarkdown === "string"
+              ? body.proposedPlanMarkdown
+              : body.proposedPlanMarkdown === null
+                ? null
+                : undefined,
+          workedStartedAt:
+            typeof body.workedStartedAt === "number"
+              ? body.workedStartedAt
+              : body.workedStartedAt === null
+                ? null
+                : undefined,
         });
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(
@@ -1652,10 +1421,6 @@ const httpServer = createServer(async (req, res) => {
         );
       }
 
-      // Keep Herdr chatId aligned when the pane already exists.
-      const herdr = findHerdrByTaskId(taskId);
-      if (herdr) herdr.chatId = ensured.sessionId;
-
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
@@ -1712,18 +1477,14 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
-      // Chat is ACP-only (T3-style). Herdr remains a Terminal viewer of the
-      // shared session — never type Chat prompts into the TUI.
-      const herdr = findHerdrByTaskId(taskId);
+      // Chat is ACP-only (T3-style).
       const cwd =
-        (typeof body.cwd === "string" && body.cwd.trim()) ||
-        herdr?.cwd ||
-        DEFAULT_CWD;
+        (typeof body.cwd === "string" && body.cwd.trim()) || DEFAULT_CWD;
       const preferredSession =
         (typeof body.chatId === "string" && body.chatId.trim().toLowerCase()) ||
         (typeof body.sessionId === "string" &&
           body.sessionId.trim().toLowerCase()) ||
-        herdr?.chatId ||
+        getAcpSession(taskId)?.sessionId ||
         null;
       const modeId =
         normalizeCursorModeId(
@@ -1766,20 +1527,7 @@ const httpServer = createServer(async (req, res) => {
         );
       }
 
-      const liveHerdr = findHerdrByTaskId(taskId);
-      if (liveHerdr) {
-        liveHerdr.chatId = ensured.sessionId;
-        // Keep Terminal Working… aligned while ACP runs the turn.
-        lastActivityBySession.set(liveHerdr.sessionId, "working");
-        liveHerdr.lastActivity = "working";
-        broadcast(liveHerdr.sessionId, {
-          type: "agent-hook",
-          event: "beforeSubmitPrompt",
-          activity: "working",
-          source: "acp",
-          text: trimmed || (images.length > 0 ? "(image)" : ""),
-        });
-      }
+      beginAcpProjectedTurn(taskId, ensured.sessionId);
 
       // Belt-and-suspenders: never block Chat on a stale busy lock.
       clearAcpBusy(taskId);
@@ -1789,6 +1537,14 @@ const httpServer = createServer(async (req, res) => {
         text: trimmed || (images.length > 0 ? "(image)" : ""),
       });
       acpAssistantDraftByTask.set(taskId, "");
+
+      broadcastChat(taskId, {
+        type: "agent-hook",
+        event: "beforeSubmitPrompt",
+        activity: "working",
+        source: "acp",
+        text: trimmed || (images.length > 0 ? "(image)" : ""),
+      });
 
       const result = await acpPrompt({
         taskId,
@@ -2025,7 +1781,7 @@ const httpServer = createServer(async (req, res) => {
         res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
         res.end(
           JSON.stringify({
-            error: "taskId and mode (build|plan|ask|debug|agent) are required.",
+            error: "taskId and mode (build|plan|ask|agent) are required.",
           }),
         );
         return;
@@ -2039,13 +1795,8 @@ const httpServer = createServer(async (req, res) => {
         });
       }
 
-      // Chat mode is ACP-only (T3-style). Do not slash into the Herdr TUI.
+      // Chat mode is ACP-only (T3-style).
       const result = await acpSetMode({ taskId, modeId });
-      const herdr = findHerdrByTaskId(taskId);
-      if (herdr) {
-        // Cache for diagnostics / Terminal chrome only — not used to drive Chat.
-        herdr.lastModeId = result.modeId;
-      }
 
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
@@ -2055,7 +1806,7 @@ const httpServer = createServer(async (req, res) => {
           modeId: result.modeId,
           sessionId: result.sessionId,
           unchanged: result.unchanged === true,
-          herdrApplied: false,
+          
         }),
       );
       return;
@@ -2166,7 +1917,8 @@ const httpServer = createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "POST" && url.pathname === "/agent/keys") {
+
+  if (req.method === "POST" && url.pathname === "/agent/stop") {
     if (!isAuthorized(req, url)) {
       rejectUnauthorized(res);
       return;
@@ -2181,46 +1933,21 @@ const httpServer = createServer(async (req, res) => {
       }
       const taskId =
         typeof body.taskId === "string" ? body.taskId.trim() : "";
-      const keys = Array.isArray(body.keys)
-        ? body.keys.map((key) => String(key ?? "").trim()).filter(Boolean)
-        : [];
-      if (!taskId || keys.length === 0) {
+      if (!taskId) {
         res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ error: "taskId and keys are required." }));
+        res.end(JSON.stringify({ error: "taskId is required." }));
         return;
       }
-
-      let entry = findHerdrByTaskId(taskId);
-      if (!entry?.paneId) {
-        const name = herdrAgentNameForTask(taskId);
-        const live = await herdrAgentGet(name);
-        if (!live?.paneId) {
-          res.writeHead(404, {
-            "Content-Type": "application/json; charset=utf-8",
-          });
-          res.end(
-            JSON.stringify({
-              error:
-                "No live Herdr agent for this task. Start the agent first.",
-            }),
-          );
-          return;
-        }
-        entry = { paneId: live.paneId, name: live.name || name };
-      }
-
-      await herdrPaneSendKeys(entry.paneId, keys);
+      await stopAgentTask(taskId, "http-stop");
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ ok: true, taskId, paneId: entry.paneId }));
+      res.end(JSON.stringify({ ok: true }));
       return;
     } catch (error) {
       res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
           error:
-            error instanceof Error
-              ? error.message
-              : "Failed to send keys to agent pane.",
+            error instanceof Error ? error.message : "Failed to stop agent.",
         }),
       );
       return;
@@ -2242,23 +1969,12 @@ const httpServer = createServer(async (req, res) => {
       }
       const taskId =
         typeof body.taskId === "string" ? body.taskId.trim() : "";
-      const chatId =
+      const chatIdRaw =
         typeof body.chatId === "string" ? body.chatId.trim().toLowerCase() : "";
-      const label =
-        typeof body.label === "string" ? body.label.trim() : null;
-      const tabLabel =
-        typeof body.tabLabel === "string" ? body.tabLabel.trim() : null;
-      const prompt =
-        typeof body.prompt === "string" ? body.prompt : null;
-      const model =
-        typeof body.model === "string" ? body.model.trim() : null;
-      const mode =
-        typeof body.mode === "string"
-          ? body.mode.trim()
-          : typeof body.modeId === "string"
-            ? body.modeId.trim()
-            : null;
-      const replace = body.replace === true;
+      const forceNew =
+        body.forceNew === true ||
+        body.replace === true ||
+        body.clear === true;
       let cwd = DEFAULT_CWD;
       const cwdRaw = typeof body.cwd === "string" ? body.cwd.trim() : "";
       if (cwdRaw === "~") cwd = os.homedir();
@@ -2272,35 +1988,37 @@ const httpServer = createServer(async (req, res) => {
         return;
       }
 
-      if (!taskId || !chatId) {
+      if (!taskId) {
         res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(
-          JSON.stringify({ error: "taskId and chatId are required." }),
-        );
+        res.end(JSON.stringify({ error: "taskId is required." }));
         return;
       }
 
-      const { entry, started } = await ensureHerdrAgentForTask({
+      const ensured = await ensureAcpSession({
         taskId,
         cwd,
-        chatId,
-        prompt,
-        model,
-        mode,
-        label,
-        tabLabel,
-        replace,
+        sessionId: forceNew ? null : chatIdRaw || null,
+        forceNew,
       });
+
+      try {
+        ensureAcpSessionCliLink(ensured.sessionId, ensured.cwd || cwd);
+      } catch (error) {
+        console.warn(
+          "[pty] ACP→CLI link on ensure failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+
+      const acp = getAcpSession(taskId);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
-          sessionId: entry.sessionId,
-          taskId: entry.taskId,
-          herdrName: entry.name,
-          paneId: entry.paneId,
-          started,
-          herdrManaged: true,
-          lastActivity: entry.lastActivity,
+          sessionId: ensured.sessionId,
+          chatId: ensured.sessionId,
+          taskId,
+          started: ensured.created,
+          lastActivity: acp?.busy ? "working" : "idle",
         }),
       );
       return;
@@ -2311,36 +2029,13 @@ const httpServer = createServer(async (req, res) => {
           error:
             error instanceof Error
               ? error.message
-              : "Failed to ensure Herdr agent.",
+              : "Failed to ensure ACP agent session.",
         }),
       );
       return;
     }
   }
 
-  if (req.method === "POST" && url.pathname === "/herdr/system-shell") {
-    if (!isAuthorized(req, url)) {
-      rejectUnauthorized(res);
-      return;
-    }
-    try {
-      const result = await ensureSystemHerdrShell();
-      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(result));
-      return;
-    } catch (error) {
-      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
-      res.end(
-        JSON.stringify({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to ensure Herdr system shell.",
-        }),
-      );
-      return;
-    }
-  }
 
   if (req.method === "GET" && url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
@@ -2365,9 +2060,17 @@ const httpServer = createServer(async (req, res) => {
       if (kindFilter && entry.kind !== kindFilter) continue;
       sessions.push(serializeSession(sessionId, entry));
     }
-    for (const entry of herdrByTaskId.values()) {
+    for (const s of listAcpSessions()) {
       if (kindFilter && kindFilter !== "agent") continue;
-      sessions.push(serializeHerdrSession(entry));
+      sessions.push({
+        sessionId: s.sessionId,
+        kind: "agent",
+        taskId: s.taskId,
+        cwd: s.cwd,
+        lastActivity: s.busy ? "working" : "idle",
+        uiAttached: chatSubscriberCount(s.taskId) > 0,
+        createdAt: null,
+      });
     }
     sessions.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
@@ -2382,9 +2085,9 @@ const httpServer = createServer(async (req, res) => {
       return;
     }
     const sessionId = decodeURIComponent(deleteMatch[1] ?? "");
-    const herdr = findHerdrBySessionId(sessionId);
-    if (herdr) {
-      await destroyHerdrAgent(herdr.taskId, "http-delete");
+    const acpTaskId = findAcpTaskBySessionId(sessionId);
+    if (acpTaskId) {
+      await stopAgentTask(acpTaskId, "http-delete");
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, sessionId }));
       return;
@@ -2428,228 +2131,35 @@ function serializeSession(sessionId, entry) {
     lastActivity:
       entry.lastActivity ?? lastActivityBySession.get(sessionId) ?? null,
     uiAttached: sessionSocketCount(sessionId) > 0,
-    herdrManaged: false,
   };
 }
 
 /**
- * Env for a top-level Herdr *client* attach. The PTY sidecar is often launched
- * from inside a Herdr pane (`pnpm pty` in backster-system), which inherits
- * HERDR_ENV / HERDR_PANE_ID / … — spawning `herdr` with those set makes the
- * child think it is already nested and show an empty/wrong space.
- * @returns {Record<string, string>}
- */
-function buildHerdrClientEnv() {
-  /** @type {Record<string, string>} */
-  const env = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value !== "string") continue;
-    // Pane-nesting markers — must not leak into the client attach.
-    if (
-      key === "HERDR_ENV" ||
-      key === "HERDR_PANE_ID" ||
-      key === "HERDR_TAB_ID" ||
-      key === "HERDR_WORKSPACE_ID" ||
-      key === "HERDR_TERMINAL_ID"
-    ) {
-      continue;
-    }
-    env[key] = value;
-  }
-  env.TERM = "xterm-256color";
-  env.COLORTERM = "truecolor";
-  env.FORCE_COLOR = "3";
-  env.BACKSTEROS_PTY = "1";
-  env.BACKSTEROS_HERDR_SYSTEM = "1";
-  delete env.NO_COLOR;
-  delete env.NODE_DISABLE_COLORS;
-  return env;
-}
-
-function destroySystemHerdrShell(reason = "replace") {
-  const existing = ptysById.get(SYSTEM_HERDR_SESSION_ID);
-  if (!existing) return;
-  console.log(
-    `[pty] herdr system-shell destroy session=${SYSTEM_HERDR_SESSION_ID} reason=${reason}`,
-  );
-  try {
-    existing.dataDisposable?.dispose?.();
-  } catch {
-    /* ignore */
-  }
-  try {
-    existing.exitDisposable?.dispose?.();
-  } catch {
-    /* ignore */
-  }
-  try {
-    existing.pty.kill();
-  } catch {
-    /* ignore */
-  }
-  closeSessionSockets(SYSTEM_HERDR_SESSION_ID);
-  ptysById.delete(SYSTEM_HERDR_SESSION_ID);
-  lastActivityBySession.delete(SYSTEM_HERDR_SESSION_ID);
-  sessionEndedBySession.delete(SYSTEM_HERDR_SESSION_ID);
-}
-
-/**
- * Ensure a reusable shell PTY running the Herdr TUI, focused on the
- * `backster-system` workspace (tabs / panes for laptop setup).
- * @returns {Promise<{
- *   sessionId: string,
- *   workspaceId: string,
- *   workspaceLabel: string,
- *   created: boolean,
- * }>}
- */
-async function ensureSystemHerdrShell() {
-  if (!herdrAvailable) {
-    throw new Error(
-      `Herdr is not available (${HERDR_BIN}). Install from https://herdr.dev and run \`herdr integration install cursor\`.`,
-    );
-  }
-
-  const workspace = await herdrEnsureSystemWorkspace(DEFAULT_CWD);
-  const existing = ptysById.get(SYSTEM_HERDR_SESSION_ID);
-  // Only reuse clients spawned with a cleaned env (see buildHerdrClientEnv).
-  if (existing?.herdrClientClean) {
-    console.log(
-      `[pty] herdr system-shell reuse session=${SYSTEM_HERDR_SESSION_ID} workspace=${workspace.workspaceId}`,
-    );
-    return {
-      sessionId: SYSTEM_HERDR_SESSION_ID,
-      workspaceId: workspace.workspaceId,
-      workspaceLabel: HERDR_SYSTEM_WORKSPACE_LABEL,
-      created: false,
-    };
-  }
-  if (existing) {
-    destroySystemHerdrShell("unclean-env");
-  }
-
-  const cols = 80;
-  const rows = 24;
-  const env = buildHerdrClientEnv();
-
-  let ptyProcess;
-  try {
-    // Attach to the running default session as a real client (not nested in a pane).
-    // Workspace focus already ran above so backster-system is the active space.
-    ptyProcess = pty.spawn(
-      HERDR_BIN,
-      ["session", "attach", "default"],
-      {
-        name: "xterm-256color",
-        cols,
-        rows,
-        cwd: DEFAULT_CWD,
-        env,
-      },
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to spawn Herdr client.";
-    throw new Error(message);
-  }
-
-  const sessionId = SYSTEM_HERDR_SESSION_ID;
-  /** @type {{
-   *   pty: import("node-pty").IPty,
-   *   cwd: string,
-   *   kind: "shell",
-   *   taskId: null,
-   *   label: string,
-   *   createdAt: string,
-   *   lastActivity: null,
-   *   scrollback: string,
-   *   herdrClientClean: boolean,
-   *   dataDisposable: { dispose: () => void },
-   *   exitDisposable: { dispose: () => void },
-   * }} */
-  const entry = {
-    pty: ptyProcess,
-    cwd: DEFAULT_CWD,
-    kind: "shell",
-    taskId: null,
-    label: HERDR_SYSTEM_WORKSPACE_LABEL,
-    createdAt: new Date().toISOString(),
-    lastActivity: null,
-    scrollback: "",
-    herdrClientClean: true,
-    dataDisposable: ptyProcess.onData((data) => {
-      appendScrollback(entry, data);
-      broadcast(sessionId, { type: "output", data });
-    }),
-    exitDisposable: ptyProcess.onExit(({ exitCode }) => {
-      broadcast(sessionId, { type: "exit", code: exitCode ?? null });
-      closeSessionSockets(sessionId);
-      ptysById.delete(sessionId);
-      lastActivityBySession.delete(sessionId);
-      sessionEndedBySession.delete(sessionId);
-      console.log(
-        `[pty] herdr system-shell exited session=${sessionId} code=${exitCode}`,
-      );
-    }),
-  };
-
-  ptysById.set(sessionId, entry);
-  console.log(
-    `[pty] herdr system-shell spawned session=${sessionId} workspace=${workspace.workspaceId} (${HERDR_SYSTEM_WORKSPACE_LABEL}) clean-env`,
-  );
-
-  return {
-    sessionId,
-    workspaceId: workspace.workspaceId,
-    workspaceLabel: HERDR_SYSTEM_WORKSPACE_LABEL,
-    created: true,
-  };
-}
-
-function serializeHerdrSession(entry) {
-  return {
-    sessionId: entry.sessionId,
-    kind: "agent",
-    taskId: entry.taskId,
-    label: entry.label,
-    cwd: entry.cwd,
-    createdAt: entry.createdAt,
-    lastActivity:
-      entry.lastActivity ?? lastActivityBySession.get(entry.sessionId) ?? null,
-    uiAttached: sessionSocketCount(entry.sessionId) > 0,
-    herdrManaged: true,
-    herdrName: entry.name,
-    herdrStatus: entry.herdrStatus,
-  };
-}
-
-/**
- * Agent sessions are 1:1 with a task via Herdr. Prefer the in-memory Herdr
- * registry, then any leftover shell-era PTY entry.
+ * Agent sessions are 1:1 with a task via in-process ACP, then legacy shell PTYs.
  */
 function findAgentSessionForTask(taskId) {
   if (!taskId) return null;
-  const herdr = findHerdrByTaskId(taskId);
-  if (herdr) {
-    return { sessionId: herdr.sessionId, entry: herdr, herdr: true };
+  const acp = getAcpSession(taskId);
+  if (acp?.sessionId) {
+    return { sessionId: acp.sessionId, entry: acp, acp: true };
   }
   let best = null;
   for (const [id, entry] of ptysById) {
     if ((entry.kind ?? "shell") !== "agent") continue;
     if (entry.taskId !== taskId) continue;
     if (!best) {
-      best = { sessionId: id, entry, herdr: false };
+      best = { sessionId: id, entry, acp: false };
       continue;
     }
     const bestAttached = sessionSocketCount(best.sessionId) > 0;
     const curAttached = sessionSocketCount(id) > 0;
     if (curAttached && !bestAttached) {
-      best = { sessionId: id, entry, herdr: false };
+      best = { sessionId: id, entry, acp: false };
       continue;
     }
     if (curAttached === bestAttached) {
       if (String(entry.createdAt ?? "") > String(best.entry.createdAt ?? "")) {
-        best = { sessionId: id, entry, herdr: false };
+        best = { sessionId: id, entry, acp: false };
       }
     }
   }
@@ -2715,122 +2225,45 @@ function appendScrollback(entry, data) {
       : next;
 }
 
-function ensureHerdrAttach(herdrEntry, { cols, rows }) {
-  const sessionId = herdrEntry.sessionId;
-  const existing = herdrAttachBySession.get(sessionId);
-  if (existing) return existing;
-
-  const nextCols = Math.max(2, cols);
-  const nextRows = Math.max(1, rows);
-  let attachPty;
-  try {
-    attachPty = pty.spawn(HERDR_BIN, ["agent", "attach", herdrEntry.name], {
-      name: "xterm-256color",
-      cols: nextCols,
-      rows: nextRows,
-      cwd: herdrEntry.cwd || DEFAULT_CWD,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        FORCE_COLOR: "3",
-        BACKSTEROS_PTY: "1",
-        BACKSTEROS_AGENT_SESSION_ID: sessionId,
-        BACKSTEROS_AGENT_HOOK_URL: `http://${HOOK_HOST}:${PORT}/agent-hook`,
-      },
-    });
-  } catch (error) {
-    throw error instanceof Error
-      ? error
-      : new Error("Failed to attach Herdr agent.");
-  }
-
-  /** @type {{
-   *   pty: import("node-pty").IPty,
-   *   name: string,
-   *   scrollback: string,
-   *   cols: number,
-   *   rows: number,
-   *   dataDisposable: { dispose: () => void },
-   *   exitDisposable: { dispose: () => void },
-   * }} */
-  const attach = {
-    pty: attachPty,
-    name: herdrEntry.name,
-    scrollback: "",
-    cols: nextCols,
-    rows: nextRows,
-    dataDisposable: attachPty.onData((data) => {
-      appendScrollback(attach, data);
-      broadcast(sessionId, { type: "output", data });
-    }),
-    exitDisposable: attachPty.onExit(({ exitCode }) => {
-      herdrAttachBySession.delete(sessionId);
-      broadcast(sessionId, { type: "exit", code: exitCode ?? null });
-      // Detach UIs only — Herdr agent pane stays alive for a later reattach.
-      const sockets = getSessionSockets(sessionId);
-      if (sockets) {
-        for (const socket of [...sockets]) {
-          try {
-            socket.close();
-          } catch {
-            /* ignore */
-          }
-        }
-        sessionsById.delete(sessionId);
-      }
-      console.log(
-        `[pty] herdr shared attach exited session=${sessionId} code=${exitCode}`,
-      );
-    }),
-  };
-  herdrAttachBySession.set(sessionId, attach);
+/**
+ * Chat WebSocket viewer — subscribes to ACP/chat bus for a task (no PTY attach).
+ * @param {import("ws").WebSocket} ws
+ * @param {string} taskId
+ * @param {string | null} chatIdParam
+ * @param {string | null} sessionIdParam
+ */
+function bindAgentChatSubscriber(ws, taskId, chatIdParam, sessionIdParam) {
+  const acp = getAcpSession(taskId);
+  const chatId =
+    chatIdParam || acp?.sessionId || sessionIdParam || null;
+  registerChatSubscriber(taskId, ws);
+  const viewers = chatSubscriberCount(taskId);
   console.log(
-    `[pty] herdr shared attach started session=${sessionId} name=${herdrEntry.name}`,
+    `[acp] chat subscriber task=${taskId} chat=${chatId ?? "-"} viewers=${viewers}`,
   );
-  return attach;
-}
-
-function bindAgentViewer(ws, herdrEntry, { reattached, cols, rows, started }) {
-  const sessionId = herdrEntry.sessionId;
-  let attach;
-  try {
-    attach = ensureHerdrAttach(herdrEntry, { cols, rows });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to attach Herdr agent.";
-    send(ws, { type: "error", message });
-    ws.close();
-    return;
-  }
-
-  addSessionSocket(sessionId, ws);
-  const viewers = sessionSocketCount(sessionId);
-  const joiningExisting = viewers > 1;
-  console.log(
-    `[pty] herdr viewer session=${sessionId} name=${herdrEntry.name} viewers=${viewers}${reattached || joiningExisting ? " (reattach)" : ""}${started ? " (started)" : ""}`,
-  );
-
-  const sessionEnded = Boolean(sessionEndedBySession.get(sessionId));
-  const lastActivity =
-    herdrEntry.lastActivity ?? lastActivityBySession.get(sessionId) ?? null;
   send(ws, {
     type: "ready",
-    shell: HERDR_BIN,
-    cwd: herdrEntry.cwd,
-    sessionId,
-    reattached: reattached || !started || joiningExisting,
-    herdrManaged: true,
+    sessionId: chatId || sessionIdParam || taskId,
+    taskId,
+    kind: "agent",
+    reattached: true,
+    lastActivity: acp?.busy ? "working" : "idle",
     viewers,
-    ...(lastActivity ? { lastActivity } : {}),
-    ...(sessionEnded ? { agentSessionEnded: true } : {}),
   });
-  // Replay so a second viewer (iPad/desktop) isn't blank.
-  if (attach.scrollback) {
-    send(ws, { type: "output", data: attach.scrollback });
-  }
-  if (sessionEnded) {
-    sessionEndedBySession.delete(sessionId);
+
+  // T3-style: replay open ask/permission so remount/reconnect still shows the panel.
+  for (const pending of listPendingUiRequests(taskId)) {
+    send(ws, {
+      type: "acp-event",
+      event: pending.kind === "ask_question" ? "ask-question" : "permission",
+      requestId: pending.requestId,
+      auto: false,
+      title: pending.title,
+      detail: pending.detail,
+      options: pending.options,
+      questions: pending.questions,
+      sessionId: pending.sessionId ?? chatId ?? null,
+    });
   }
 
   ws.on("message", (raw) => {
@@ -2840,51 +2273,16 @@ function bindAgentViewer(ws, herdrEntry, { reattached, cols, rows, started }) {
     } catch {
       return;
     }
-
     if (message?.type === "kill") {
-      void destroyHerdrAgent(herdrEntry.taskId, "client-kill");
-      return;
-    }
-
-    const live = herdrAttachBySession.get(sessionId);
-    if (!live) return;
-
-    if (message?.type === "input" && typeof message.data === "string") {
-      try {
-        live.pty.write(message.data);
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-
-    if (
-      message?.type === "resize" &&
-      Number.isFinite(message.cols) &&
-      Number.isFinite(message.rows)
-    ) {
-      const nextCols = Math.max(2, Math.floor(message.cols));
-      const nextRows = Math.max(1, Math.floor(message.rows));
-      live.cols = nextCols;
-      live.rows = nextRows;
-      try {
-        live.pty.resize(nextCols, nextRows);
-      } catch {
-        /* ignore */
-      }
+      void stopAgentTask(taskId, "client-kill");
     }
   });
 
   ws.on("close", () => {
-    removeSessionSocket(sessionId, ws);
-    const remaining = sessionSocketCount(sessionId);
+    unregisterChatSubscriber(taskId, ws);
     console.log(
-      `[pty] herdr detach session=${sessionId} viewers=${remaining} (agent kept alive)`,
+      `[acp] chat detach task=${taskId} viewers=${chatSubscriberCount(taskId)}`,
     );
-    // Drop the exclusive attach when nobody is watching — next open respawns it.
-    if (remaining === 0) {
-      disposeHerdrAttach(sessionId);
-    }
   });
 }
 
@@ -2911,7 +2309,6 @@ function bindSocketToPty(ws, sessionId, entry, { reattached, cols, rows }) {
     cwd: entry.cwd,
     sessionId,
     reattached,
-    herdrManaged: false,
     viewers,
     ...(reattached && lastActivityBySession.has(sessionId)
       ? { lastActivity: lastActivityBySession.get(sessionId) }
@@ -3025,70 +2422,13 @@ wss.on("connection", (ws, req) => {
           ws.close();
           return;
         }
-        if (!herdrAvailable) {
-          send(ws, {
-            type: "error",
-            message: `Herdr is not available (${HERDR_BIN}). Install from https://herdr.dev.`,
-          });
-          ws.close();
-          return;
-        }
 
-        let herdrEntry = findHerdrByTaskId(taskId);
-        let started = false;
-        if (!herdrEntry) {
-          const live = await herdrAgentGet(herdrAgentNameForTask(taskId));
-          if (live) {
-            herdrEntry = {
-              taskId,
-              name: live.name || herdrAgentNameForTask(taskId),
-              sessionId: herdrSessionIdForTask(taskId),
-              paneId: live.paneId,
-              terminalId: live.terminalId,
-              cwd: live.cwd || cwd,
-              chatId,
-              label,
-              tabLabel,
-              workspaceId: live.workspaceId,
-              tabId: live.tabId,
-              createdAt: new Date().toISOString(),
-              lastActivity: mapHerdrStatusToActivity(live.status),
-              herdrStatus: live.status,
-            };
-            herdrByTaskId.set(taskId, herdrEntry);
-          } else if (chatId) {
-            const ensured = await ensureHerdrAgentForTask({
-              taskId,
-              cwd,
-              chatId,
-              prompt,
-              label,
-              tabLabel,
-            });
-            herdrEntry = ensured.entry;
-            started = ensured.started;
-          } else {
-            send(ws, {
-              type: "error",
-              message:
-                "No Herdr agent for this task. Call POST /agent/ensure (or Start Agent) first.",
-            });
-            ws.close();
-            return;
-          }
-        }
-
-        sessionId = herdrEntry.sessionId;
-        dedupeAgentSessionsForTask(taskId, sessionId);
-        bindAgentViewer(ws, herdrEntry, {
-          reattached: !started,
-          cols,
-          rows,
-          started,
-        });
+        const resolvedChatId =
+          chatId || getAcpSession(taskId)?.sessionId || null;
+        bindAgentChatSubscriber(ws, taskId, resolvedChatId, sessionId);
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Failed to attach agent.";
+          error instanceof Error ? error.message : "Failed to attach agent chat.";
         send(ws, { type: "error", message });
         ws.close();
       }
@@ -3191,53 +2531,6 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-async function pollHerdrStatuses() {
-  if (!herdrAvailable || herdrByTaskId.size === 0) return;
-  for (const entry of [...herdrByTaskId.values()]) {
-    try {
-      const live = await herdrAgentGet(entry.name);
-      if (!live) {
-        // Pane gone — clear registry; viewers will exit on their own.
-        herdrByTaskId.delete(entry.taskId);
-        lastActivityBySession.delete(entry.sessionId);
-        continue;
-      }
-      entry.paneId = live.paneId ?? entry.paneId;
-      entry.terminalId = live.terminalId ?? entry.terminalId;
-      entry.herdrStatus = live.status;
-      const activity = mapHerdrStatusToActivity(live.status);
-      if (!activity) continue;
-      // Chat owns turns via ACP; Herdr is often idle/unknown while ACP is busy.
-      // Never let Herdr idle stomp ACP working (lastActivity + UI pulses).
-      if (activity === "idle") {
-        const acp = getAcpSession(entry.taskId);
-        if (acp?.busy) continue;
-      }
-      const previous =
-        entry.lastActivity ?? lastActivityBySession.get(entry.sessionId) ?? null;
-      if (previous === activity) continue;
-      entry.lastActivity = activity;
-      lastActivityBySession.set(entry.sessionId, activity);
-      if (activity === "idle") {
-        // Don't force sessionEnd — Cursor hooks still own turn completion text.
-      }
-      broadcast(entry.sessionId, {
-        type: "agent-hook",
-        event:
-          activity === "attention"
-            ? "herdr-blocked"
-            : activity === "working"
-              ? "preToolUse"
-              : "stop",
-        activity,
-        source: "herdr",
-      });
-    } catch {
-      /* ignore poll errors */
-    }
-  }
-}
-
 try {
   ensureCursorAgentHooks();
 } catch (error) {
@@ -3246,8 +2539,6 @@ try {
     error instanceof Error ? error.message : error,
   );
 }
-
-herdrAvailable = await herdrIsAvailable();
 
 /**
  * macOS allows both `0.0.0.0:PORT` and `127.0.0.1:PORT` to bind at once.
@@ -3288,30 +2579,23 @@ httpServer.listen(PORT, HOST, () => {
   );
   console.log(`[pty] agent hooks POST http://${HOOK_HOST}:${PORT}/agent-hook`);
   console.log(`[pty] sessions GET/DELETE http://${HOST}:${PORT}/sessions`);
-  console.log(`[pty] agent ensure POST http://${HOST}:${PORT}/agent/ensure`);
+  console.log(`[pty] agent ensure POST http://${HOST}:${PORT}/agent/ensure (ACP)`);
+  console.log(`[pty] agent stop POST http://${HOST}:${PORT}/agent/stop`);
   console.log(`[pty] agent models GET http://${HOST}:${PORT}/agent/models`);
   console.log(
     `[pty] agent transcript GET/PUT/POST http://${HOST}:${PORT}/agent/chats/:chatId/transcript`,
+  );
+  console.log(
+    `[pty] agent transcript timeline POST http://${HOST}:${PORT}/agent/chats/:chatId/transcript/timeline`,
   );
   console.log(`[pty] agent prompt POST http://${HOST}:${PORT}/agent/prompt (ACP-only Chat)`);
   console.log(`[pty] agent acp ensure POST http://${HOST}:${PORT}/agent/acp/ensure`);
   console.log(`[pty] agent acp mode POST http://${HOST}:${PORT}/agent/acp/mode`);
   console.log(`[pty] agent acp cancel POST http://${HOST}:${PORT}/agent/acp/cancel`);
   console.log(`[pty] agent acp respond POST http://${HOST}:${PORT}/agent/acp/respond`);
-  console.log(`[pty] agent keys POST http://${HOST}:${PORT}/agent/keys`);
   console.log(
-    `[pty] herdr system-shell POST http://${HOST}:${PORT}/herdr/system-shell`,
+    "[pty] ACP agent sessions in-process — Chat WebSocket kind=agent uses taskId subscribers",
   );
-  if (herdrAvailable) {
-    console.log(`[pty] Herdr agent multiplexer enabled (${HERDR_BIN})`);
-    setInterval(() => {
-      void pollHerdrStatuses();
-    }, 1500);
-  } else {
-    console.warn(
-      `[pty] WARNING: Herdr not found (${HERDR_BIN}) — agent sessions require Herdr. Install from https://herdr.dev`,
-    );
-  }
   if (AUTH_TOKEN) {
     console.log("[pty] auth required (PTY_AUTH_TOKEN) for HTTP/WS clients");
   } else if (HOST !== "127.0.0.1" && HOST !== "localhost") {
@@ -3319,5 +2603,5 @@ httpServer.listen(PORT, HOST, () => {
       "[pty] WARNING: bound beyond loopback without PTY_AUTH_TOKEN — set a token for Tailscale use",
     );
   }
-  console.log("[pty] detach-on-close enabled — Herdr agents survive UI navigation");
+  console.log("[pty] detach-on-close enabled — shell PTYs survive UI navigation");
 });

@@ -43,7 +43,7 @@ describe("applyAcpSessionUpdate", () => {
       rawInput: { pattern: "ios", path: "/repo/mobile" },
     });
     assert.equal(items[0]?.title, "Grepped");
-    assert.equal(items[0]?.detail, '"ios" in mobile');
+    assert.equal(items[0]?.detail, '"ios" in repo/mobile');
 
     items = applyAcpSessionUpdate(items, {
       sessionUpdate: "tool_call_update",
@@ -51,7 +51,7 @@ describe("applyAcpSessionUpdate", () => {
       status: "completed",
     });
     assert.equal(items[0]?.title, "Grepped");
-    assert.equal(items[0]?.detail, '"ios" in mobile');
+    assert.equal(items[0]?.detail, '"ios" in repo/mobile');
     assert.equal(items[0]?.status, "completed");
     assert.equal(items[0]?.toolKind, "search");
   });

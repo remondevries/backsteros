@@ -403,13 +403,55 @@ function mergeTranscriptMessages(
   a: readonly AgentChatMessage[],
   b: readonly AgentChatMessage[],
 ): AgentChatMessage[] {
+  const byId = new Map<string, AgentChatMessage>();
   const byKey = new Map<string, AgentChatMessage>();
-  for (const message of [...a, ...b]) {
+
+  function mergeOne(message: AgentChatMessage) {
+    const existingById = byId.get(message.id);
+    if (existingById) {
+      const existingActivityCount = existingById.activities?.length ?? 0;
+      const nextActivityCount = message.activities?.length ?? 0;
+      const preferNewerActivities = nextActivityCount > existingActivityCount;
+      const existingSegmentCount = existingById.segments?.length ?? 0;
+      const nextSegmentCount = message.segments?.length ?? 0;
+      const preferNewerSegments = nextSegmentCount > existingSegmentCount;
+      const existingPlanCount = existingById.planSteps?.length ?? 0;
+      const nextPlanCount = message.planSteps?.length ?? 0;
+      const preferNewerPlans = nextPlanCount > existingPlanCount;
+      const merged: AgentChatMessage = {
+        ...existingById,
+        ...message,
+        text: message.text.trim() || existingById.text,
+        activities: preferNewerActivities
+          ? message.activities
+          : existingById.activities ?? message.activities,
+        segments: preferNewerSegments
+          ? message.segments
+          : existingById.segments ?? message.segments,
+        planSteps: preferNewerPlans
+          ? message.planSteps
+          : existingById.planSteps ?? message.planSteps,
+        proposedPlanMarkdown:
+          message.proposedPlanMarkdown?.trim() ||
+          existingById.proposedPlanMarkdown ||
+          message.proposedPlanMarkdown,
+        workedStartedAt:
+          existingById.workedStartedAt ?? message.workedStartedAt ?? null,
+        id: existingById.id,
+        createdAt: Math.min(existingById.createdAt, message.createdAt),
+      };
+      byId.set(message.id, merged);
+      const key = `${merged.role}:${merged.text}`;
+      byKey.set(key, merged);
+      return;
+    }
+
     const key = `${message.role}:${message.text}`;
     const existing = byKey.get(key);
     if (!existing) {
+      byId.set(message.id, message);
       byKey.set(key, message);
-      continue;
+      return;
     }
     const existingActivityCount = existing.activities?.length ?? 0;
     const nextActivityCount = message.activities?.length ?? 0;
@@ -420,9 +462,10 @@ function mergeTranscriptMessages(
     const existingPlanCount = existing.planSteps?.length ?? 0;
     const nextPlanCount = message.planSteps?.length ?? 0;
     const preferNewerPlans = nextPlanCount > existingPlanCount;
-    byKey.set(key, {
+    const merged: AgentChatMessage = {
       ...existing,
       ...message,
+      text: message.text.trim() || existing.text,
       // Never drop a richer activity timeline — sync/hooks often race without it.
       activities: preferNewerActivities
         ? message.activities
@@ -446,9 +489,16 @@ function mergeTranscriptMessages(
           ? message.id || existing.id
           : existing.id,
       createdAt: Math.min(existing.createdAt, message.createdAt),
-    });
+    };
+    byId.delete(existing.id);
+    byId.set(merged.id, merged);
+    byKey.set(key, merged);
   }
-  return [...byKey.values()].sort((x, y) => x.createdAt - y.createdAt);
+
+  for (const message of [...a, ...b]) {
+    mergeOne(message);
+  }
+  return [...byId.values()].sort((x, y) => x.createdAt - y.createdAt);
 }
 
 /** Merge two transcript histories, keeping the richer activity timeline per turn. */
@@ -486,6 +536,27 @@ export function publishAgentChatTranscriptMessage(
   if (!id) return;
   void import("../pty").then(({ appendAgentChatTranscriptMessage }) => {
     void appendAgentChatTranscriptMessage(id, message);
+  });
+}
+
+/** Upsert in-progress / sealed assistant timeline to the sidecar (best-effort). */
+export function publishAgentChatTranscriptTimeline(
+  chatId: string | null | undefined,
+  patch: {
+    id?: string;
+    text?: string;
+    createdAt?: number;
+    activities?: AgentChatMessage["activities"];
+    segments?: AgentChatMessage["segments"];
+    planSteps?: AgentChatMessage["planSteps"];
+    proposedPlanMarkdown?: string | null;
+    workedStartedAt?: number | null;
+  },
+): void {
+  const id = chatId?.trim().toLowerCase();
+  if (!id) return;
+  void import("../pty").then(({ upsertAgentChatTranscriptTimeline }) => {
+    void upsertAgentChatTranscriptTimeline(id, patch);
   });
 }
 

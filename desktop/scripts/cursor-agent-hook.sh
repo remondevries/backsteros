@@ -13,7 +13,7 @@ fi
 
 # Truncate huge fields (file contents / tool stdout) so the POST finishes
 # quickly — a 1s curl timeout previously dropped most postToolUse/beforeReadFile
-# events, which is why Chat lost Read/Edit activity chrome on Herdr turns.
+# events, which is why Chat lost Read/Edit activity chrome on TUI-only turns.
 if command -v python3 >/dev/null 2>&1; then
   payload=$(printf '%s' "$payload" | python3 -c '
 import json, sys

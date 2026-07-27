@@ -2,6 +2,9 @@
  * Shared agent chat transcript store (desktop + iPad).
  * Persists under ~/.backsteros/agent-chat-transcripts/<chatId>.json
  * so both clients see the same Chat-tab history for a Cursor chat id.
+ *
+ * Tool timelines (Read/Edit) are upserted while the turn streams — same idea
+ * as T3's projection_thread_activities — so leave/return keeps work rows.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -27,12 +30,27 @@ const TRANSCRIPT_DIR = path.join(
  *     lines: Array<{ type: "add" | "del" | "ctx", text: string }>,
  *   },
  * }} AgentChatActivityItem */
+
+/** @typedef {{
+ *   id: string,
+ *   kind: "work",
+ *   activities: AgentChatActivityItem[],
+ * } | {
+ *   id: string,
+ *   kind: "text",
+ *   text: string,
+ * }} AgentChatTurnSegment */
+
 /** @typedef {{
  *   id: string,
  *   role: "user" | "assistant",
  *   text: string,
  *   createdAt: number,
  *   activities?: AgentChatActivityItem[],
+ *   segments?: AgentChatTurnSegment[],
+ *   planSteps?: Array<{ step: string, status: "completed" | "inProgress" | "pending" }>,
+ *   proposedPlanMarkdown?: string,
+ *   workedStartedAt?: number | null,
  * }} AgentChatMessage */
 
 /** @type {Map<string, AgentChatMessage[]>} */
@@ -134,32 +152,173 @@ function normalizeActivities(raw) {
 }
 
 /**
+ * @param {unknown} raw
+ * @returns {AgentChatTurnSegment[] | undefined}
+ */
+function normalizeSegments(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  /** @type {AgentChatTurnSegment[]} */
+  const out = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = /** @type {Record<string, unknown>} */ (entry);
+    if (typeof item.id !== "string" || !item.id.trim()) continue;
+    if (item.kind === "text") {
+      if (typeof item.text !== "string" || !item.text.trim()) continue;
+      out.push({
+        id: item.id.trim(),
+        kind: "text",
+        text: item.text,
+      });
+      continue;
+    }
+    if (item.kind === "work") {
+      const activities = normalizeActivities(item.activities);
+      if (!activities || activities.length === 0) continue;
+      out.push({
+        id: item.id.trim(),
+        kind: "work",
+        activities,
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {AgentChatMessage["planSteps"]}
+ */
+function normalizePlanSteps(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  /** @type {NonNullable<AgentChatMessage["planSteps"]>} */
+  const out = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = /** @type {Record<string, unknown>} */ (entry);
+    const step = typeof item.step === "string" ? item.step.trim() : "";
+    if (!step) continue;
+    const status =
+      item.status === "completed" ||
+      item.status === "inProgress" ||
+      item.status === "pending"
+        ? item.status
+        : "pending";
+    out.push({ step, status });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
  * @param {unknown} entry
+ * @param {{ allowEmptyAssistantText?: boolean }} [options]
  * @returns {AgentChatMessage | null}
  */
-function normalizeMessage(entry) {
+function normalizeMessage(entry, options = {}) {
   if (!entry || typeof entry !== "object") return null;
   const role = /** @type {{ role?: unknown }} */ (entry).role;
-  const text = /** @type {{ text?: unknown }} */ (entry).text;
+  const textRaw = /** @type {{ text?: unknown }} */ (entry).text;
   if (role !== "user" && role !== "assistant") return null;
-  if (typeof text !== "string" || !text.trim()) return null;
-  const idRaw = /** @type {{ id?: unknown }} */ (entry).id;
-  const createdRaw = /** @type {{ createdAt?: unknown }} */ (entry).createdAt;
+  if (typeof textRaw !== "string") return null;
   const activities = normalizeActivities(
     /** @type {{ activities?: unknown }} */ (entry).activities,
   );
-  return {
+  const segments = normalizeSegments(
+    /** @type {{ segments?: unknown }} */ (entry).segments,
+  );
+  const text = textRaw.trim();
+  const hasTimeline =
+    Boolean(activities?.length) || Boolean(segments?.length);
+  // In-progress assistant turns may have tools before any reply text.
+  if (
+    !text &&
+    !(
+      role === "assistant" &&
+      hasTimeline &&
+      options.allowEmptyAssistantText === true
+    )
+  ) {
+    return null;
+  }
+  const idRaw = /** @type {{ id?: unknown }} */ (entry).id;
+  const createdRaw = /** @type {{ createdAt?: unknown }} */ (entry).createdAt;
+  const planSteps = normalizePlanSteps(
+    /** @type {{ planSteps?: unknown }} */ (entry).planSteps,
+  );
+  const proposedRaw =
+    /** @type {{ proposedPlanMarkdown?: unknown }} */ (entry)
+      .proposedPlanMarkdown;
+  const proposedPlanMarkdown =
+    typeof proposedRaw === "string" && proposedRaw.trim()
+      ? proposedRaw
+      : undefined;
+  const workedRaw =
+    /** @type {{ workedStartedAt?: unknown }} */ (entry).workedStartedAt;
+  /** @type {AgentChatMessage} */
+  const message = {
     id:
       typeof idRaw === "string" && idRaw.trim()
         ? idRaw.trim()
         : newMessageId(),
     role,
-    text: text.trim(),
+    text,
     createdAt:
       typeof createdRaw === "number" && Number.isFinite(createdRaw)
         ? createdRaw
         : Date.now(),
     ...(activities ? { activities } : {}),
+    ...(segments ? { segments } : {}),
+    ...(planSteps ? { planSteps } : {}),
+    ...(proposedPlanMarkdown ? { proposedPlanMarkdown } : {}),
+    ...(typeof workedRaw === "number" && Number.isFinite(workedRaw)
+      ? { workedStartedAt: workedRaw }
+      : workedRaw === null
+        ? { workedStartedAt: null }
+        : {}),
+  };
+  return message;
+}
+
+/**
+ * Prefer richer timeline fields when merging two assistant turns.
+ * @param {AgentChatMessage} existing
+ * @param {AgentChatMessage} incoming
+ * @returns {AgentChatMessage}
+ */
+function mergeAssistantTimeline(existing, incoming) {
+  const existingActivityCount = existing.activities?.length ?? 0;
+  const nextActivityCount = incoming.activities?.length ?? 0;
+  const preferNewerActivities = nextActivityCount > existingActivityCount;
+  const existingSegmentCount = existing.segments?.length ?? 0;
+  const nextSegmentCount = incoming.segments?.length ?? 0;
+  const preferNewerSegments = nextSegmentCount > existingSegmentCount;
+  const existingPlanCount = existing.planSteps?.length ?? 0;
+  const nextPlanCount = incoming.planSteps?.length ?? 0;
+  const preferNewerPlans = nextPlanCount > existingPlanCount;
+  const nextText = incoming.text.trim();
+  const existingText = existing.text.trim();
+  return {
+    ...existing,
+    ...incoming,
+    text: nextText || existingText,
+    activities: preferNewerActivities
+      ? incoming.activities
+      : existing.activities ?? incoming.activities,
+    segments: preferNewerSegments
+      ? incoming.segments
+      : existing.segments ?? incoming.segments,
+    planSteps: preferNewerPlans
+      ? incoming.planSteps
+      : existing.planSteps ?? incoming.planSteps,
+    proposedPlanMarkdown:
+      (typeof incoming.proposedPlanMarkdown === "string" &&
+        incoming.proposedPlanMarkdown.trim()) ||
+      existing.proposedPlanMarkdown ||
+      incoming.proposedPlanMarkdown,
+    workedStartedAt:
+      existing.workedStartedAt ?? incoming.workedStartedAt ?? null,
+    id: existing.id || incoming.id,
+    createdAt: Math.min(existing.createdAt, incoming.createdAt),
   };
 }
 
@@ -189,7 +348,7 @@ export function loadChatTranscript(chatId) {
     /** @type {AgentChatMessage[]} */
     const messages = [];
     for (const entry of list) {
-      const msg = normalizeMessage(entry);
+      const msg = normalizeMessage(entry, { allowEmptyAssistantText: true });
       if (msg) messages.push(msg);
     }
     memoryByChatId.set(id, messages);
@@ -213,7 +372,7 @@ export function saveChatTranscript(chatId, messages) {
   /** @type {AgentChatMessage[]} */
   const next = [];
   for (const entry of messages) {
-    const msg = normalizeMessage(entry);
+    const msg = normalizeMessage(entry, { allowEmptyAssistantText: true });
     if (msg) next.push(msg);
   }
   memoryByChatId.set(id, next);
@@ -237,6 +396,7 @@ export function saveChatTranscript(chatId, messages) {
 
 /**
  * Append a message if it is not an immediate duplicate of the last turn.
+ * Never drops a richer activity timeline when a bare text duplicate arrives.
  * @param {string} chatId
  * @param {{
  *   role: "user" | "assistant",
@@ -244,13 +404,17 @@ export function saveChatTranscript(chatId, messages) {
  *   id?: string,
  *   createdAt?: number,
  *   activities?: AgentChatActivityItem[],
+ *   segments?: AgentChatTurnSegment[],
+ *   planSteps?: AgentChatMessage["planSteps"],
+ *   proposedPlanMarkdown?: string | null,
+ *   workedStartedAt?: number | null,
  * }} input
  * @returns {{ appended: boolean, messages: AgentChatMessage[] }}
  */
 export function appendChatTranscriptMessage(chatId, input) {
   const id = normalizeChatId(chatId);
   if (!id) return { appended: false, messages: [] };
-  const msg = normalizeMessage(input);
+  const msg = normalizeMessage(input, { allowEmptyAssistantText: true });
   if (!msg) {
     return { appended: false, messages: loadChatTranscript(id) };
   }
@@ -260,17 +424,15 @@ export function appendChatTranscriptMessage(chatId, input) {
   if (
     last &&
     last.role === msg.role &&
-    last.text === msg.text &&
-    Math.abs(last.createdAt - msg.createdAt) < 60_000
+    (last.id === msg.id ||
+      (last.text === msg.text &&
+        Math.abs(last.createdAt - msg.createdAt) < 60_000))
   ) {
-    // Upgrade a duplicate assistant turn with activities if the first write
-    // arrived without the timeline (race with streaming finalize).
-    if (
-      msg.role === "assistant" &&
-      msg.activities?.length &&
-      !(last.activities && last.activities.length > 0)
-    ) {
-      const upgraded = [...current.slice(0, -1), { ...last, activities: msg.activities }];
+    if (msg.role === "assistant") {
+      const upgraded = [
+        ...current.slice(0, -1),
+        mergeAssistantTimeline(last, msg),
+      ];
       saveChatTranscript(id, upgraded);
       return { appended: false, messages: upgraded };
     }
@@ -280,6 +442,82 @@ export function appendChatTranscriptMessage(chatId, input) {
   const next = [...current, msg];
   saveChatTranscript(id, next);
   return { appended: true, messages: next };
+}
+
+/**
+ * Upsert the in-progress / finalizing assistant turn timeline (T3-style).
+ * Creates a new assistant message when needed; never shrinks a richer timeline.
+ * @param {string} chatId
+ * @param {{
+ *   id?: string,
+ *   text?: string,
+ *   createdAt?: number,
+ *   activities?: AgentChatActivityItem[],
+ *   segments?: AgentChatTurnSegment[],
+ *   planSteps?: AgentChatMessage["planSteps"],
+ *   proposedPlanMarkdown?: string | null,
+ *   workedStartedAt?: number | null,
+ * }} patch
+ * @returns {{ messages: AgentChatMessage[], message: AgentChatMessage | null }}
+ */
+export function upsertAssistantTurnTimeline(chatId, patch) {
+  const id = normalizeChatId(chatId);
+  if (!id) return { messages: [], message: null };
+
+  const incoming = normalizeMessage(
+    {
+      role: "assistant",
+      text: typeof patch.text === "string" ? patch.text : "",
+      id: typeof patch.id === "string" ? patch.id : undefined,
+      createdAt:
+        typeof patch.createdAt === "number" ? patch.createdAt : Date.now(),
+      activities: patch.activities,
+      segments: patch.segments,
+      planSteps: patch.planSteps,
+      proposedPlanMarkdown: patch.proposedPlanMarkdown,
+      workedStartedAt: patch.workedStartedAt,
+    },
+    { allowEmptyAssistantText: true },
+  );
+  if (!incoming) {
+    return { messages: loadChatTranscript(id), message: null };
+  }
+
+  const current = loadChatTranscript(id);
+  const last = current[current.length - 1];
+  const patchId =
+    typeof patch.id === "string" && patch.id.trim() ? patch.id.trim() : null;
+
+  if (last?.role === "assistant") {
+    const sameTurn =
+      (patchId && last.id === patchId) ||
+      (!patchId &&
+        (Boolean(last.activities?.length) ||
+          Boolean(last.segments?.length) ||
+          !last.text.trim() ||
+          (incoming.text && last.text === incoming.text)));
+    if (sameTurn) {
+      const merged = mergeAssistantTimeline(last, incoming);
+      const next = [...current.slice(0, -1), merged];
+      saveChatTranscript(id, next);
+      return { messages: next, message: merged };
+    }
+  }
+
+  // Prefer matching by explicit id deeper in the list (rare remount race).
+  if (patchId) {
+    const index = current.findIndex((entry) => entry.id === patchId);
+    if (index >= 0 && current[index]?.role === "assistant") {
+      const merged = mergeAssistantTimeline(current[index], incoming);
+      const next = [...current.slice(0, index), merged, ...current.slice(index + 1)];
+      saveChatTranscript(id, next);
+      return { messages: next, message: merged };
+    }
+  }
+
+  const next = [...current, incoming];
+  saveChatTranscript(id, next);
+  return { messages: next, message: incoming };
 }
 
 /**

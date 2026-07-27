@@ -4,7 +4,8 @@
  * Spawns a long-lived `agent acp` process and speaks JSON-RPC over stdio.
  * Chat turns use structured session/prompt + session/update — not PTY keystrokes.
  *
- * Terminal/Herdr remains separate for the interactive TUI viewer.
+ * Optional CLI `agent --resume` can open the same session externally;
+ * Chat itself never drives a TTY.
  *
  * MCP note: Cursor CLI loads ~/.cursor/mcp.json at process start and can hit
  * "Too many MCP tools". We briefly swap in an empty mcp.json for ACP spawn +
@@ -16,6 +17,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+
+import {
+  isWritableIterableClosedError,
+  stripTransientAgentStreamError,
+} from "./agent-stream-errors.mjs";
+import { summarizeAskQuestion } from "./agent-acp-ask.mjs";
+
+export { summarizeAskQuestion } from "./agent-acp-ask.mjs";
 
 const AGENT_BIN = process.env.CURSOR_AGENT_BIN?.trim() || "agent";
 /** Bump when spawn/isolation behavior changes so old ACP processes are restarted. */
@@ -342,13 +351,26 @@ function formatRpcError(error) {
   const e = /** @type {{ message?: unknown, data?: unknown, code?: unknown }} */ (
     error
   );
+  const details =
+    e.data && typeof e.data === "object" && !Array.isArray(e.data)
+      ? /** @type {{ details?: unknown }} */ (e.data).details
+      : null;
+  const detailText =
+    typeof details === "string" && details.trim()
+      ? details.trim()
+      : typeof e.data === "string" && e.data.trim()
+        ? e.data.trim()
+        : null;
   const message =
-    typeof e.message === "string"
-      ? e.message
-      : typeof e.data === "string"
-        ? e.data
-        : JSON.stringify(error);
-  return message;
+    typeof e.message === "string" && e.message.trim()
+      ? e.message.trim()
+      : null;
+  if (detailText && message && detailText !== message) {
+    return `${message}: ${detailText}`;
+  }
+  if (detailText) return detailText;
+  if (message) return message;
+  return JSON.stringify(error);
 }
 
 /**
@@ -535,75 +557,6 @@ function summarizePermission(params) {
 }
 
 /**
- * @param {unknown} params
- */
-function summarizeAskQuestion(params) {
-  const p = params && typeof params === "object" ? params : {};
-  const questions = Array.isArray(
-    /** @type {{ questions?: unknown }} */ (p).questions,
-  )
-    ? /** @type {unknown[]} */ (
-        /** @type {{ questions?: unknown }} */ (p).questions
-      )
-    : [];
-  const first =
-    questions[0] && typeof questions[0] === "object"
-      ? /** @type {Record<string, unknown>} */ (questions[0])
-      : null;
-  const title = String(
-    first?.prompt || first?.question || first?.text || "Agent question",
-  );
-  const optionsRaw = Array.isArray(first?.options) ? first.options : [];
-  const options = optionsRaw
-    .map((o) => {
-      if (!o || typeof o !== "object") return null;
-      const opt = /** @type {Record<string, unknown>} */ (o);
-      const id = String(opt.id || opt.optionId || opt.value || "");
-      if (!id) return null;
-      return {
-        id,
-        label: String(opt.label || opt.name || opt.text || id),
-      };
-    })
-    .filter(Boolean);
-  return {
-    title,
-    detail:
-      questions.length > 1 ? `${questions.length} questions` : null,
-    options,
-    questions: questions.map((entry, index) => {
-      if (!entry || typeof entry !== "object") {
-        return {
-          id: `q-${index}`,
-          prompt: "Question",
-          options: [],
-          multiSelect: false,
-        };
-      }
-      const q = /** @type {Record<string, unknown>} */ (entry);
-      const optionsRaw = Array.isArray(q.options) ? q.options : [];
-      return {
-        id: String(q.id ?? q.questionId ?? `q-${index}`),
-        prompt: String(q.prompt ?? q.question ?? q.text ?? "Question"),
-        multiSelect: q.multiSelect === true || q.allow_multiple === true,
-        options: optionsRaw
-          .map((o) => {
-            if (!o || typeof o !== "object") return null;
-            const opt = /** @type {Record<string, unknown>} */ (o);
-            const id = String(opt.id || opt.optionId || opt.value || "");
-            if (!id) return null;
-            return {
-              id,
-              label: String(opt.label || opt.name || opt.text || id),
-            };
-          })
-          .filter(Boolean),
-      };
-    }),
-  };
-}
-
-/**
  * @param {string} requestId
  * @param {"permission" | "ask_question"} kind
  * @param {number} rpcId
@@ -646,6 +599,97 @@ function enqueueUiRequest(
 }
 
 /**
+ * Pending permission / ask_question rows for a task (T3-style replay).
+ * @param {string} taskId
+ * @returns {Array<{
+ *   requestId: string,
+ *   kind: "permission" | "ask_question",
+ *   title: string,
+ *   detail: string | null,
+ *   options: { id: string, label: string }[],
+ *   questions: unknown[],
+ *   sessionId: string | null,
+ *   auto: false,
+ * }>}
+ */
+export function listPendingUiRequests(taskId) {
+  const id = typeof taskId === "string" ? taskId.trim() : "";
+  if (!id) return [];
+  /** @type {ReturnType<typeof listPendingUiRequests>} */
+  const out = [];
+  for (const [requestId, pendingReq] of pendingUiRequests) {
+    if ((pendingReq.taskId || "").trim() !== id) continue;
+    if (pendingReq.kind === "ask_question") {
+      const summary = summarizeAskQuestion(pendingReq.params);
+      out.push({
+        requestId,
+        kind: "ask_question",
+        title: summary.title,
+        detail: summary.detail,
+        options: summary.options,
+        questions: summary.questions,
+        sessionId: pendingReq.sessionId,
+        auto: false,
+      });
+      continue;
+    }
+    const summary = summarizePermission(pendingReq.params);
+    out.push({
+      requestId,
+      kind: "permission",
+      title: summary.title,
+      detail: summary.detail,
+      options: summary.options,
+      questions: [],
+      sessionId: pendingReq.sessionId,
+      auto: false,
+    });
+  }
+  return out;
+}
+
+/**
+ * Test helper: enqueue without an ACP child (no timeout RPC send).
+ * @param {{
+ *   requestId: string,
+ *   kind: "permission" | "ask_question",
+ *   taskId: string,
+ *   sessionId?: string | null,
+ *   params?: unknown,
+ * }} input
+ */
+export function __testEnqueuePendingUiRequest(input) {
+  const requestId = input.requestId.trim();
+  if (!requestId) throw new Error("requestId required");
+  const existing = pendingUiRequests.get(requestId);
+  if (existing) clearTimeout(existing.timer);
+  pendingUiRequests.set(requestId, {
+    rpcId: -1,
+    kind: input.kind,
+    taskId: input.taskId.trim(),
+    sessionId: input.sessionId ?? null,
+    params: input.params ?? {},
+    timer: setTimeout(() => {}, 24 * 60 * 60 * 1000),
+  });
+}
+
+/** @param {string} [requestId] */
+export function __testClearPendingUiRequests(requestId) {
+  if (requestId) {
+    const pending = pendingUiRequests.get(requestId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pendingUiRequests.delete(requestId);
+    }
+    return;
+  }
+  for (const [id, pending] of pendingUiRequests) {
+    clearTimeout(pending.timer);
+    pendingUiRequests.delete(id);
+  }
+}
+
+/**
  * Resolve a pending permission / ask_question from Chat UI.
  * @param {{
  *   requestId: string,
@@ -683,6 +727,13 @@ export function respondAcpUiRequest(options) {
         permissionOutcome(pendingReq.params, preference),
       );
     }
+    emit({
+      type: "ui-request-cleared",
+      requestId,
+      taskId: pendingReq.taskId,
+      sessionId: pendingReq.sessionId,
+      reason: "answered",
+    });
     return { ok: true, kind: pendingReq.kind, requestId };
   }
 
@@ -722,6 +773,13 @@ export function respondAcpUiRequest(options) {
       },
     });
   }
+  emit({
+    type: "ui-request-cleared",
+    requestId,
+    taskId: pendingReq.taskId,
+    sessionId: pendingReq.sessionId,
+    reason: options.skipped ? "skipped" : "answered",
+  });
   return { ok: true, kind: pendingReq.kind, requestId };
 }
 
@@ -1373,7 +1431,9 @@ export async function acpPrompt(options) {
       10 * 60_000,
       { sessionId: session.sessionId },
     );
-    const draft = (assistantDraftBySession.get(session.sessionId) || "").trim();
+    const draft = stripTransientAgentStreamError(
+      assistantDraftBySession.get(session.sessionId) || "",
+    ).trim();
     if (PROVIDER_FATAL_RE.test(draft)) {
       throw new Error(draft.slice(0, 500));
     }
@@ -1385,13 +1445,33 @@ export async function acpPrompt(options) {
     });
     return result;
   } catch (error) {
+    const formatted = formatRpcError(error);
+    // Cursor stream teardown is retriable and often fires after a good turn.
+    // Prefer completing with whatever draft we already have over surfacing it.
+    if (isWritableIterableClosedError(formatted)) {
+      const draft = stripTransientAgentStreamError(
+        assistantDraftBySession.get(session.sessionId) || "",
+      ).trim();
+      if (draft && !PROVIDER_FATAL_RE.test(draft)) {
+        console.warn(
+          `[acp] ignoring WritableIterable teardown after draft (${draft.length} chars)`,
+        );
+        emit({
+          type: "prompt-complete",
+          taskId,
+          sessionId: session.sessionId,
+          result: null,
+        });
+        return null;
+      }
+    }
     emit({
       type: "prompt-error",
       taskId,
       sessionId: session.sessionId,
-      error: formatRpcError(error),
+      error: formatted,
     });
-    throw new Error(formatRpcError(error));
+    throw new Error(formatted);
   } finally {
     session.busy = false;
     assistantDraftBySession.delete(session.sessionId);
@@ -1406,8 +1486,9 @@ export async function acpPrompt(options) {
 
 /**
  * Normalize UI / CLI mode aliases to Cursor ACP mode ids.
+ * Cursor reports valid modes: agent, plan, ask (no debug over ACP).
  * @param {string | null | undefined} value
- * @returns {"agent" | "ask" | "plan" | "debug" | null}
+ * @returns {"agent" | "ask" | "plan" | null}
  */
 export function normalizeCursorModeId(value) {
   const trimmed = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -1417,7 +1498,6 @@ export function normalizeCursorModeId(value) {
   }
   if (trimmed === "ask") return "ask";
   if (trimmed === "plan") return "plan";
-  if (trimmed === "debug") return "debug";
   return null;
 }
 
@@ -1432,7 +1512,7 @@ export async function acpSetMode(options) {
   const taskId = options.taskId.trim();
   const modeId = normalizeCursorModeId(options.modeId);
   if (!taskId) throw new Error("taskId is required");
-  if (!modeId) throw new Error("modeId must be agent, ask, plan, or debug");
+  if (!modeId) throw new Error("modeId must be agent, ask, or plan");
 
   const session = sessionsByTaskId.get(taskId);
   if (!session) {
@@ -1443,11 +1523,15 @@ export async function acpSetMode(options) {
   }
 
   await ensureAcpProcess();
-  await sendRequest(
-    "session/set_mode",
-    { sessionId: session.sessionId, modeId },
-    15_000,
-  );
+  try {
+    await sendRequest(
+      "session/set_mode",
+      { sessionId: session.sessionId, modeId },
+      15_000,
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(formatRpcError(error));
+  }
   session.modeId = modeId;
   emit({
     type: "mode-changed",

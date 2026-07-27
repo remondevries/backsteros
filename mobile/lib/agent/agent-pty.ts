@@ -16,22 +16,7 @@ export type PtySessionInfo = {
   createdAt: string | null;
   lastActivity: "working" | "idle" | null;
   uiAttached: boolean;
-  herdrManaged?: boolean;
-  herdrName?: string | null;
-  herdrStatus?: string | null;
 };
-
-export type EnsurePtyAgentResult =
-  | {
-      ok: true;
-      sessionId: string;
-      taskId: string;
-      herdrName: string | null;
-      started: boolean;
-      herdrManaged: boolean;
-      lastActivity: "working" | "idle" | null;
-    }
-  | { ok: false; error: string };
 
 const SESSION_MAP_KEY = "backsteros.mobile.pty-session-ids-v1";
 
@@ -194,72 +179,6 @@ export async function createCursorAgentChat(
   }
 }
 
-export type EnsureSystemHerdrShellResult =
-  | {
-      ok: true;
-      sessionId: string;
-      workspaceId: string;
-      workspaceLabel: string;
-      created: boolean;
-    }
-  | { ok: false; error: string };
-
-/**
- * Ensure the laptop PTY runs a Herdr TUI shell focused on workspace
- * `backster-system` (iOS Settings → Server).
- */
-export async function ensureSystemHerdrShell(
-  connection: AgentPtyConnection,
-): Promise<EnsureSystemHerdrShellResult> {
-  try {
-    const response = await fetch(
-      `${connection.httpOrigin}/herdr/system-shell`,
-      {
-        method: "POST",
-        headers: {
-          ...ptyAuthHeaders(connection.token),
-          Accept: "application/json",
-        },
-      },
-    );
-    const body = (await response.json().catch(() => null)) as {
-      sessionId?: string;
-      workspaceId?: string;
-      workspaceLabel?: string;
-      created?: boolean;
-      error?: string;
-    } | null;
-    if (!response.ok || !body?.sessionId) {
-      return {
-        ok: false,
-        error:
-          body?.error ||
-          "Could not open Herdr system shell. Is `pnpm pty` running with Herdr installed?",
-      };
-    }
-    return {
-      ok: true,
-      sessionId: body.sessionId,
-      workspaceId: body.workspaceId ?? "",
-      workspaceLabel: body.workspaceLabel ?? "backster-system",
-      created: Boolean(body.created),
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Could not reach PTY server over Tailscale.";
-    return {
-      ok: false,
-      error: /network request failed|failed to fetch|could not connect/i.test(
-        message,
-      )
-        ? `${message} — PTY at ${connection.httpOrigin} unreachable. On the laptop run: pnpm --filter @backsteros/desktop pty:tailscale`
-        : message,
-    };
-  }
-}
-
 export type CursorAgentModelOption = {
   id: string;
   displayName: string;
@@ -309,93 +228,6 @@ export async function listCursorAgentModels(
         ? error.message
         : "Could not reach PTY server over Tailscale.";
     return { ok: false, error: message };
-  }
-}
-
-/** Create or reuse the Herdr agent pane for a task on the laptop sidecar. */
-export async function ensurePtyAgent(
-  connection: AgentPtyConnection,
-  options: {
-    taskId: string;
-    chatId: string;
-    cwd: string;
-    prompt?: string | null;
-    /** Cursor Agent `--model` id (omit / `auto` = CLI default). */
-    model?: string | null;
-    /** Herdr workspace label (project name). */
-    label?: string | null;
-    /** Herdr tab label (task display id). */
-    tabLabel?: string | null;
-    replace?: boolean;
-  },
-): Promise<EnsurePtyAgentResult> {
-  const taskId = options.taskId.trim();
-  const chatId = options.chatId.trim().toLowerCase();
-  const cwd = options.cwd.trim();
-  if (!taskId || !chatId || !cwd) {
-    return { ok: false, error: "taskId, chatId, and cwd are required." };
-  }
-  try {
-    const response = await fetch(`${connection.httpOrigin}/agent/ensure`, {
-      method: "POST",
-      headers: {
-        ...ptyAuthHeaders(connection.token),
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        taskId,
-        chatId,
-        cwd,
-        prompt: options.prompt?.trim() || null,
-        model: options.model?.trim() || null,
-        label: options.label?.trim() || null,
-        tabLabel: options.tabLabel?.trim() || null,
-        replace: options.replace === true,
-      }),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      sessionId?: string;
-      taskId?: string;
-      herdrName?: string | null;
-      started?: boolean;
-      herdrManaged?: boolean;
-      lastActivity?: "working" | "idle" | null;
-      error?: string;
-    } | null;
-    if (!response.ok || !body?.sessionId) {
-      return {
-        ok: false,
-        error:
-          body?.error ||
-          "Could not ensure Herdr agent. Is `pnpm pty` running with Herdr installed?",
-      };
-    }
-    return {
-      ok: true,
-      sessionId: body.sessionId,
-      taskId: body.taskId ?? taskId,
-      herdrName: body.herdrName ?? null,
-      started: Boolean(body.started),
-      herdrManaged: body.herdrManaged !== false,
-      lastActivity:
-        body.lastActivity === "working" || body.lastActivity === "idle"
-          ? body.lastActivity
-          : null,
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Could not reach PTY server over Tailscale.";
-    return {
-      ok: false,
-      error: /network request failed|failed to fetch|could not connect/i.test(
-        message,
-      )
-        ? `${message} — PTY at ${connection.httpOrigin} unreachable. On the laptop run: pnpm --filter @backsteros/desktop pty:tailscale`
-        : message,
-    };
   }
 }
 
@@ -451,11 +283,7 @@ export async function findPtySessionForTask(
   if (listed.ok) {
     const matches = listed.sessions.filter((s) => s.taskId === taskId);
     if (matches.length > 0) {
-      // Prefer Herdr-managed, then attached, then newest.
       matches.sort((a, b) => {
-        if (Boolean(a.herdrManaged) !== Boolean(b.herdrManaged)) {
-          return a.herdrManaged ? -1 : 1;
-        }
         if (a.uiAttached !== b.uiAttached) return a.uiAttached ? -1 : 1;
         return String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""));
       });
@@ -756,9 +584,9 @@ export async function ensurePtyAcpSession(
     return {
       ok: true,
       sessionId,
-      chatId: (body.chatId || sessionId).toLowerCase(),
-      created: body.created === true,
-      resumed: body.resumed === true,
+      chatId: (body?.chatId || sessionId).toLowerCase(),
+      created: body?.created === true,
+      resumed: body?.resumed === true,
     };
   } catch (error) {
     return {
@@ -794,50 +622,6 @@ export async function cancelPtyAcpTurn(
       return {
         ok: false,
         error: body?.error || `ACP cancel failed (${response.status}).`,
-      };
-    }
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach PTY server over Tailscale.",
-    };
-  }
-}
-
-/** Send named keys into the Herdr agent pane (`esc`, `enter`, …). */
-export async function sendPtyAgentKeys(
-  connection: AgentPtyConnection,
-  options: {
-    taskId: string;
-    keys: string[];
-  },
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const taskId = options.taskId.trim();
-  const keys = options.keys.map((key) => key.trim()).filter(Boolean);
-  if (!taskId || keys.length === 0) {
-    return { ok: false, error: "taskId and keys are required." };
-  }
-  try {
-    const response = await fetch(`${connection.httpOrigin}/agent/keys`, {
-      method: "POST",
-      headers: {
-        ...ptyAuthHeaders(connection.token),
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ taskId, keys }),
-    });
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: body?.error || `Agent keys failed (${response.status}).`,
       };
     }
     return { ok: true };

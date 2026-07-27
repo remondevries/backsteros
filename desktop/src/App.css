@@ -603,16 +603,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
   pointer-events: auto;
 }
 
-.desktop-terminal-panel__error {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 8px 12px;
-  border-bottom: 0.5px solid rgb(248 81 73 / 0.35);
-  background: rgb(248 81 73 / 0.12);
-  color: rgb(255 200 196);
-  font-size: 12px;
-  line-height: 1.4;
-}
 
 .desktop-agent-chat__tabs {
   display: inline-flex;
@@ -1173,7 +1163,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__scroll-end {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  /* Default; transcript sets bottom via composerOverlayHeight + 4 (T3). */
+  bottom: 4px;
   z-index: 4;
   transform: translateX(-50%);
   appearance: none;
@@ -2697,13 +2688,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   }
 }
 
-.desktop-agent-chat__body .desktop-terminal-panel--chat {
-  background: transparent;
-}
 
-.desktop-agent-chat__body .desktop-terminal-panel__host--chat {
-  padding: 44px 6px 0;
-}
 
 .desktop-agent-chat__footer {
   display: flex;
@@ -3370,85 +3355,18 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 
-.desktop-terminal-panel {
-  position: relative;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
 
-.desktop-terminal-panel__header {
-  flex: 0 0 auto;
-  padding: 4px 10px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgb(255 255 255 / 0.45);
-}
 
-.desktop-terminal-panel__host {
-  flex: 1;
-  min-height: 0;
-  padding: 0 8px 8px;
-}
 
-.desktop-terminal-panel__host .xterm {
-  height: 100%;
-}
 
-/* Never show the helper textarea's native caret (xterm owns input). */
-.desktop-terminal-panel__host .xterm-helper-textarea {
-  caret-color: transparent !important;
-}
 
-.desktop-terminal-panel__host--agent {
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  transition: border-color 0.15s ease;
-}
 
-/* Focus cue: slightly lighter border (no orange / glow). */
-.desktop-terminal-panel__host--agent:focus-within {
-  border-color: rgb(255 255 255 / 0.22);
-}
 
-/* Agent: hide xterm's block caret. */
-.desktop-terminal-panel__host--agent .xterm-cursor-layer,
-.desktop-terminal-panel__host--agent .xterm-cursor {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  animation: none !important;
-  background-color: transparent !important;
-}
 
-.desktop-terminal-panel--empty {
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  color: rgb(255 255 255 / 0.45);
-  font-size: 12px;
-}
 
-.desktop-terminal-panel__placeholder {
-  display: grid;
-  flex: 1;
-  place-items: center;
-  padding: 24px 16px;
-  color: rgb(255 255 255 / 0.45);
-  font-size: 12px;
-  text-align: center;
-}
 
-.desktop-terminal-panel__placeholder p {
-  margin: 0;
-  max-width: 26ch;
-  line-height: 1.45;
-}
 
-.desktop-terminal-panel__start {
+.desktop-agent-chat__start {
   display: grid;
   flex: 1;
   place-items: center;
@@ -3465,34 +3383,30 @@ html:has(.desktop-overlay-root--palette) .command-list {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.desktop-terminal-panel__start:hover:not(:disabled) {
+.desktop-agent-chat__start:hover:not(:disabled) {
   background: var(--surface);
   color: var(--foreground);
 }
 
-.desktop-terminal-panel__start:disabled {
+.desktop-agent-chat__start:disabled {
   cursor: progress;
   opacity: 0.7;
 }
 
-.desktop-terminal-panel__start-label {
+.desktop-agent-chat__start-label {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.desktop-terminal-panel__chrome {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 2;
-  display: flex;
+
+.desktop-agent-chat__header-agent-actions {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  pointer-events: none;
+  gap: 6px;
 }
 
-.desktop-terminal-panel__stop {
+.desktop-agent-chat__stop {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -3510,13 +3424,13 @@ html:has(.desktop-overlay-root--palette) .command-list {
   backdrop-filter: blur(8px);
 }
 
-.desktop-agent-chat__body-main .desktop-terminal-panel__stop {
+.desktop-agent-chat__body-main .desktop-agent-chat__stop {
   padding: 3px 10px;
   font-size: 11px;
   border-radius: 6px;
 }
 
-.desktop-terminal-panel__stop:hover {
+.desktop-agent-chat__stop:hover {
   opacity: 0.92;
 }
 

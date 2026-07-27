@@ -51,3 +51,18 @@ export function syncDefaultAssigneeIdFromSettings(
   setDefaultAssigneeId(parsed);
   return parsed;
 }
+
+/**
+ * Resolve assignee for a newly created task.
+ * - `undefined` (omitted) → settings default
+ * - `null` (explicitly cleared) → unassigned
+ * - string → that contact id
+ */
+export function resolveCreateAssigneeId(
+  assigneeId: string | null | undefined,
+): string | null {
+  if (assigneeId !== undefined) {
+    return assigneeId;
+  }
+  return getDefaultAssigneeId();
+}

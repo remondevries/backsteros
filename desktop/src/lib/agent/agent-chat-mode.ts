@@ -1,17 +1,17 @@
 /**
- * Agent interaction mode for desktop chat (Build / Plan / Ask / Debug).
+ * Agent interaction mode for desktop chat (Build / Plan / Ask).
  *
- * Maps to Cursor IDE/ACP modes:
+ * Maps to Cursor ACP `session/set_mode` ids (Cursor reports:
+ * Valid modes: agent, plan, ask — no debug over ACP).
  * - build → agent (full tools)
  * - plan → plan (planning before edits)
  * - ask → ask (read-only Q&A)
- * - debug → debug (investigate with runtime evidence)
  */
 
-export type AgentChatMode = "build" | "plan" | "ask" | "debug";
+export type AgentChatMode = "build" | "plan" | "ask";
 
 /** Cursor ACP / CLI `--mode` id. */
-export type CursorAgentModeId = "agent" | "plan" | "ask" | "debug";
+export type CursorAgentModeId = "agent" | "plan" | "ask";
 
 export type AgentChatModeOption = {
   id: AgentChatMode;
@@ -19,10 +19,10 @@ export type AgentChatModeOption = {
   description: string;
   cursorModeId: CursorAgentModeId;
   /** CSS modifier for the active chip color. */
-  color: "green" | "yellow" | "blue" | "red";
+  color: "green" | "yellow" | "blue";
 };
 
-/** Cycle order for Shift+Tab (matches Cursor mode rotation). */
+/** Cycle order for Shift+Tab (matches Cursor ACP modes). */
 export const AGENT_CHAT_MODE_OPTIONS: readonly AgentChatModeOption[] = [
   {
     id: "build",
@@ -45,13 +45,6 @@ export const AGENT_CHAT_MODE_OPTIONS: readonly AgentChatModeOption[] = [
     cursorModeId: "ask",
     color: "blue",
   },
-  {
-    id: "debug",
-    label: "Debug",
-    description: "Debug — investigate bugs with runtime evidence",
-    cursorModeId: "debug",
-    color: "red",
-  },
 ] as const;
 
 const STORAGE_KEY = "backsteros-desktop.agent-chat-mode";
@@ -60,12 +53,7 @@ const DEFAULT_MODE: AgentChatMode = "build";
 let cachedMode: AgentChatMode | null = null;
 
 export function isAgentChatMode(value: unknown): value is AgentChatMode {
-  return (
-    value === "build" ||
-    value === "plan" ||
-    value === "ask" ||
-    value === "debug"
-  );
+  return value === "build" || value === "plan" || value === "ask";
 }
 
 export function normalizeAgentChatMode(
@@ -77,7 +65,8 @@ export function normalizeAgentChatMode(
   }
   if (trimmed === "plan") return "plan";
   if (trimmed === "ask") return "ask";
-  if (trimmed === "debug") return "debug";
+  // Legacy stored "debug" — Cursor ACP does not support it.
+  if (trimmed === "debug") return DEFAULT_MODE;
   return DEFAULT_MODE;
 }
 
@@ -127,7 +116,7 @@ export function getAgentChatModeOption(
   );
 }
 
-/** Next mode in the Shift+Tab cycle (Build → Plan → Ask → Debug → …). */
+/** Next mode in the Shift+Tab cycle (Build → Plan → Ask → …). */
 export function cycleAgentChatMode(
   current: AgentChatMode,
   direction: 1 | -1 = 1,
@@ -149,34 +138,27 @@ export function agentChatModeSlashCommand(mode: AgentChatMode): string | null {
       return "/ask";
     case "plan":
       return "/plan";
-    case "debug":
-      return "/debug";
     case "build":
     default:
-      // Cursor has no `/agent` slash — Build/Agent is the default. Exit Ask/Debug
-      // by re-sending their toggle; exit Plan via `/ask` then `/ask`.
+      // Cursor has no `/agent` slash — Build/Agent is the default.
       return null;
   }
 }
 
 /**
  * Cursor TUI slash sequence from one mode to another.
- * Mirrors `cursorModeSlashSequence` in `scripts/herdr-agent.mjs`.
+ * Mirrors Cursor ACP mode ids used by Chat (`session/set_mode`).
  */
 export function cursorModeSlashSequence(
   from: CursorAgentModeId | null | undefined,
   to: CursorAgentModeId,
 ): string[] {
-  const current =
-    from === "ask" || from === "plan" || from === "debug" ? from : "agent";
-  const target =
-    to === "ask" || to === "plan" || to === "debug" ? to : "agent";
+  const current = from === "ask" || from === "plan" ? from : "agent";
+  const target = to === "ask" || to === "plan" ? to : "agent";
   if (current === target) return [];
   if (target === "ask") return ["/ask"];
   if (target === "plan") return ["/plan"];
-  if (target === "debug") return ["/debug"];
   if (current === "ask") return ["/ask"];
-  if (current === "debug") return ["/debug"];
   if (current === "plan") return ["/ask", "/ask"];
   return [];
 }

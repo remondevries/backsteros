@@ -308,7 +308,7 @@ fork of the Next deployment pipeline.
 
 ## ADR-023: Herdr for shared agent TTY (desktop + iPad)
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-025 (agent path)  
 **Context:** Custom multi-viewer fan-out on raw `node-pty` could not keep desktop and iPad on one live Cursor Agent conversation. tmux would share a TTY but not agent state.  
 **Decision:**
 
@@ -323,13 +323,13 @@ fork of the Next deployment pipeline.
 
 **Alternatives rejected:** tmux-only multiplexer; custom byte fan-out; embedding the full Herdr TUI in-app.
 
-**Consequences:** Laptop needs Herdr + `herdr integration install cursor`. Agent sessions require Herdr; shell PTYs remain plain `node-pty`.
+**Consequences:** Laptop needs Herdr + `herdr integration install cursor`. Agent sessions require Herdr; shell PTYs remain plain `node-pty`. **Superseded by ADR-025** for agent Chat.
 
 ---
 
 ## ADR-024: Chat via Cursor ACP; Terminal via Herdr
 
-**Status:** Accepted (ACP-first Chat, 2026-07)  
+**Status:** Superseded by ADR-025  
 **Context:** Driving the Cursor Agent TUI with PTY/Herdr keystrokes (`agent send` + Enter) is brittle — Cursor CLI has known paste/Enter chunk bugs, and Chat history was not a first-class protocol. T3 Code’s reliable pattern is a structured agent protocol (ACP) under a React chat UI — not hybrid Chat→Herdr typing.  
 **Decision:**
 
@@ -345,5 +345,28 @@ fork of the Next deployment pipeline.
 
 **Alternatives rejected:** Hybrid Chat text via Herdr + ACP fallback (previous ADR-024); polish PTY chat injection only; adopt T3/Codex stack wholesale; drop Terminal/Herdr entirely; dual-run ACP + Herdr prompts on every Chat send.
 
-**Consequences:** Laptop needs a logged-in `agent` CLI (`agent login`) and Herdr for Terminal attach. Prefer Chat for sends — ACP is the agent. Restart `pnpm pty` after sidecar changes.
+**Consequences:** Prefer Chat for sends — ACP is the agent. **Superseded by ADR-025** (Herdr removed from agent path).
+
+---
+
+## ADR-025: Agent Chat = Cursor ACP + server projection (no Herdr)
+
+**Status:** Accepted (2026-07)  
+**Supersedes:** ADR-023 (agent path), ADR-024 Terminal/Herdr half  
+**Context:** Herdr shared-TTY made Chat leave/return unreliable. Streaming timelines were UI-owned and filtered to the selected task, so background conversations did not project like T3 Code. T3’s solid model is: durable threads + live provider sessions + server-side runtime ingestion; the UI is a disposable viewer.
+
+**Decision:**
+
+- **Agent Chat is ACP-only** (Cursor `agent acp`): ensure / prompt / mode / cancel / permissions
+- **Server projects** ACP `session/update` into `~/.backsteros/agent-chat-transcripts/<chatId>.json` while the turn runs — independent of which task is focused
+- **Chat event bus** fans `acp-event` frames to WebSocket subscribers by `taskId`; closing the socket does not stop ACP
+- **No Herdr** for agent sessions: remove Herdr ensure/attach/poll from the agent path
+- **Reference checkout:** `tmp/t3-code` (gitignored) — prefer matching ProviderService / RuntimeIngestion patterns when fixing agent Chat
+- Shell `node-pty` remains for non-agent terminals if needed later
+
+**Alternatives rejected:** Keep Herdr as Terminal viewer alongside ACP; hybrid Chat→Herdr typing; full Effect/orchestration port of T3.
+
+**Consequences:** Restart `pnpm pty` after sidecar changes. External `agent --resume <chatId>` may still work via ACP↔CLI session link, but is not required for Chat. iPad shared live TUI via Herdr is retired; iPad should use ACP Chat + transcript sync.
+
+---
 

@@ -1570,10 +1570,10 @@ export function SettingsScreen() {
   }, [isServerTab]);
 
   // Floating tab bar uses FullWindowOverlay — hide it on Server so it cannot
-  // sit above the Herdr terminal and steal taps.
+  // sit above the server pane and steal taps.
   useHideTabBar(isServerTab);
   // Go / Escape stay registered under Settings (tabs stay mounted) — suspend
-  // them so Magic Keyboard keys reach the Herdr PTY instead of navigating.
+  // them so Magic Keyboard keys are not swallowed by navigation shortcuts.
   useSuspendNavigationShortcuts(isServerTab);
 
   const [timezone, setTimezone] = useState(() =>

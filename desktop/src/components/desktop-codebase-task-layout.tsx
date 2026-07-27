@@ -6,7 +6,6 @@ import {
 } from "@backsteros/ui";
 
 import { DesktopAgentChatPanel } from "./desktop-agent-chat-panel";
-import { hasAgentViewport } from "./desktop-terminal-panel";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import { normalizeWorkingDirectory } from "../lib/agent/project-workspace";
 import {
@@ -177,15 +176,14 @@ export function DesktopCodebaseTaskLayout({
     workingDirectory,
   ]);
 
-  // Auto-focus the terminal once the layout is ready so the user can type.
+  // Auto-focus Chat once the layout is ready.
   useEffect(() => {
     if (!layoutReady || !workingDirectory) return;
     if (!agentChatId?.trim()) return;
     bumpFocusRequest();
   }, [agentChatId, bumpFocusRequest, layoutReady, taskId, workingDirectory]);
 
-  // Return to a bound task with no UI viewer: recreate viewer + reattach.
-  // Skip when a viewer already exists (e.g. Start agent just opened one).
+  // Return to a bound task: re-subscribe the ACP chat event bridge.
   useEffect(() => {
     if (!layoutReady || !workingDirectory) return;
     const chatId = agentChatId?.trim();
@@ -195,10 +193,6 @@ export function DesktopCodebaseTaskLayout({
     }
     const key = `${taskId}:${chatId.toLowerCase()}`;
     if (reconcileKeyRef.current === key) return;
-    if (hasAgentViewport(taskId)) {
-      reconcileKeyRef.current = key;
-      return;
-    }
     reconcileKeyRef.current = key;
     requestAttach({
       taskId,
