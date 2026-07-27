@@ -136,6 +136,17 @@ async function authorizationHeaders(options: ApiClientOptions): Promise<Headers>
   return headers;
 }
 
+function throwIfAborted(signal: AbortSignal | null | undefined): void {
+  if (!signal?.aborted) return;
+  // Prefer DOMException so callers can treat this like fetch's AbortError.
+  if (typeof DOMException === "function") {
+    throw new DOMException("Aborted", "AbortError");
+  }
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  throw error;
+}
+
 function createFetcher(options: ApiClientOptions): ApiFetcher {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
@@ -147,6 +158,9 @@ function createFetcher(options: ApiClientOptions): ApiFetcher {
     }
 
     const body = isBinaryBody(args.rawBody) ? args.rawBody : args.body;
+    // Token resolve can outlive a React effect cleanup; bail before fetch so
+    // aborted loads reject as AbortError instead of WebKit's opaque "Load failed".
+    throwIfAborted(args.fetchOptions?.signal);
     const response = await fetchImpl(args.path, {
       ...args.fetchOptions,
       method: args.method,
@@ -167,7 +181,10 @@ async function rawRequest(
 ): Promise<unknown> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
+  // Token resolve can outlive a React effect cleanup; bail before fetch so
+  // aborted loads reject as AbortError instead of WebKit's opaque "Load failed".
   const headers = await authorizationHeaders(options);
+  throwIfAborted(init.signal);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
     ...init,
@@ -187,6 +204,7 @@ async function rawBinaryRequest(
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
   const headers = await authorizationHeaders(options);
+  throwIfAborted(init.signal);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
     ...init,

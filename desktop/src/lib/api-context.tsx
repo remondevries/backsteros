@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 
@@ -27,15 +28,23 @@ export function ApiProvider({
   apiUrl: string;
   getToken?: TokenProvider;
 }) {
+  // Clerk often returns a new getToken identity each render. Keep the client
+  // stable so dependents (e.g. task comments) do not refetch and flash errors.
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  const hasTokenProvider = getToken != null;
+
   const value = useMemo(
     () => ({
       apiUrl,
       client: createApiClient({
         baseUrl: apiUrl,
-        getToken,
+        getToken: hasTokenProvider
+          ? () => getTokenRef.current?.()
+          : undefined,
       }),
     }),
-    [apiUrl, getToken],
+    [apiUrl, hasTokenProvider],
   );
 
   return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;

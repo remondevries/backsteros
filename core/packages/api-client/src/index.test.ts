@@ -179,3 +179,31 @@ test("PowerSync writes use JSON and the current token", async () => {
     }),
   });
 });
+
+test("rejects with AbortError when the signal aborts while resolving the token", async () => {
+  const controller = new AbortController();
+  let fetchCalled = false;
+  const client = createApiClient({
+    baseUrl: "https://api.example.test",
+    getToken: async () => {
+      controller.abort();
+      return "session-token";
+    },
+    fetch: async () => {
+      fetchCalled = true;
+      return Response.json({ comments: [] });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.requestJson("/api/v1/tasks/task-1/comments", {
+        signal: controller.signal,
+      }),
+    (error: unknown) => {
+      assert.equal((error as { name?: string }).name, "AbortError");
+      return true;
+    },
+  );
+  assert.equal(fetchCalled, false);
+});

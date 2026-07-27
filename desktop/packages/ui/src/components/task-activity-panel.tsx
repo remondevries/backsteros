@@ -50,6 +50,40 @@ import { TaskStatusIcon } from "./task-status-icon.js";
 
 const COMMENT_FOCUS_ATTR = "data-task-comment-focus";
 
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  return false;
+}
+
+/** WebKit often surfaces cancelled fetches as opaque "Load failed" TypeErrors. */
+function isTransientNetworkError(err: unknown): boolean {
+  if (isAbortError(err)) return true;
+  if (!(err instanceof Error)) return false;
+  if (err.name === "NetworkError" || err.name === "TypeError") {
+    const message = err.message.trim();
+    return (
+      message === "Load failed" ||
+      message === "Failed to fetch" ||
+      message === "NetworkError when attempting to fetch resource." ||
+      message === "cancelled" ||
+      message === "The operation was aborted."
+    );
+  }
+  const message = err.message.trim();
+  return (
+    message === "Load failed" ||
+    message === "Failed to fetch" ||
+    message === "NetworkError when attempting to fetch resource."
+  );
+}
+
+function feedLoadErrorMessage(err: unknown): string {
+  if (isTransientNetworkError(err)) return "Could not load activity.";
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  return "Could not load activity.";
+}
+
 function isVisibleFocusTarget(el: HTMLElement): boolean {
   return el.getClientRects().length > 0;
 }
@@ -635,6 +669,8 @@ export function TaskActivityPanel({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [loadingFeed, setLoadingFeed] = useState(true);
   const hasLoadedFeedRef = useRef(false);
+  /** Bumps on each load / task switch so stale responses never paint. */
+  const feedLoadIdRef = useRef(0);
   const [posting, setPosting] = useState(false);
   const [postingReplyTo, setPostingReplyTo] = useState<string | null>(null);
   const [holdActionCommentId, setHoldActionCommentId] = useState<string | null>(
@@ -684,9 +720,18 @@ export function TaskActivityPanel({
     inputs.forEach((input) => resizeComposer(input));
   }, [replyDrafts, resizeComposer]);
 
+  const requestJsonRef = useRef(requestJson);
+  requestJsonRef.current = requestJson;
+
   useEffect(() => {
+    // Invalidate in-flight loads before paint so a late reject cannot flash
+    // "Load failed" into the next task's comments section.
+    feedLoadIdRef.current += 1;
     hasLoadedFeedRef.current = false;
     setLoadingFeed(true);
+    setError(null);
+    setComments([]);
+    setActivities([]);
     setActivitiesExpanded(false);
     setExpandedAgentGroups({});
     setReplyDrafts({});
@@ -696,40 +741,82 @@ export function TaskActivityPanel({
     setExpandedResolvedIds({});
   }, [taskId]);
 
-  const loadFeed = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadId = ++feedLoadIdRef.current;
     const isInitialLoad = !hasLoadedFeedRef.current;
     if (isInitialLoad) {
       setLoadingFeed(true);
     }
     setError(null);
-    try {
-      const [commentsResult, activitiesResult] = await Promise.all([
-        requestJson<{ comments: TaskComment[] }>(
+
+    const isStale = () =>
+      loadId !== feedLoadIdRef.current || controller.signal.aborted;
+
+    const fetchFeed = () =>
+      Promise.all([
+        requestJsonRef.current<{ comments: TaskComment[] }>(
           `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+          { signal: controller.signal },
         ),
-        requestJson<{ activities: TaskActivity[] }>(
+        requestJsonRef.current<{ activities: TaskActivity[] }>(
           `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
+          { signal: controller.signal },
         ),
       ]);
-      setComments(commentsResult.comments ?? []);
-      setActivities(activitiesResult.activities ?? []);
-      hasLoadedFeedRef.current = true;
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not load activity.",
-      );
-      if (isInitialLoad) {
-        setComments([]);
-        setActivities([]);
-      }
-    } finally {
-      setLoadingFeed(false);
-    }
-  }, [requestJson, taskId]);
 
-  useEffect(() => {
-    void loadFeed();
-  }, [loadFeed, taskUpdatedAt, feedRevision]);
+    void (async () => {
+      try {
+        let commentsResult: { comments: TaskComment[] };
+        let activitiesResult: { activities: TaskActivity[] };
+        try {
+          [commentsResult, activitiesResult] = await fetchFeed();
+        } catch (firstErr) {
+          // Task switches abort the prior request; WebKit often reports that as
+          // "Load failed". Wait out one transient miss instead of painting red.
+          if (isStale() || isAbortError(firstErr)) return;
+          if (!isTransientNetworkError(firstErr)) throw firstErr;
+          await new Promise<void>((resolve, reject) => {
+            if (controller.signal.aborted) {
+              reject(new DOMException("Aborted", "AbortError"));
+              return;
+            }
+            const timer = setTimeout(resolve, 120);
+            controller.signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(new DOMException("Aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          });
+          if (isStale()) return;
+          [commentsResult, activitiesResult] = await fetchFeed();
+        }
+        if (isStale()) return;
+        setComments(commentsResult.comments ?? []);
+        setActivities(activitiesResult.activities ?? []);
+        hasLoadedFeedRef.current = true;
+        setError(null);
+        setLoadingFeed(false);
+      } catch (err) {
+        // Superseded / aborted loads must not paint — WebKit may label those
+        // "Load failed" instead of AbortError; isStale covers that case.
+        if (isStale() || isAbortError(err)) return;
+        setError(feedLoadErrorMessage(err));
+        if (isInitialLoad) {
+          setComments([]);
+          setActivities([]);
+        }
+        setLoadingFeed(false);
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [taskId, taskUpdatedAt, feedRevision]);
 
   const activityTimeline = useMemo((): ActivityTimelineItem[] => {
     // Coalesce + agent grouping need chronological order; display is newest-first.
@@ -1617,7 +1704,7 @@ export function TaskActivityPanel({
         })}
       </div>
 
-      {error ? (
+      {error && !loadingFeed ? (
         <p className="task-activity__error" role="alert">
           {error}
         </p>
