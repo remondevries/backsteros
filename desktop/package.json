@@ -26,6 +26,7 @@
     "@briangaoo/totem": "git+https://github.com/briangaoo/totem.git#586ee89d0ec8f8ba4a142c824ecaeea7faaa200b",
     "@clerk/clerk-react": "^5.31.4",
     "@journeyapps/wa-sqlite": "^1.7.2",
+    "@legendapp/list": "3.2.0",
     "@lexical/react": "^0.41.0",
     "@pierre/diffs": "^1.2.12",
     "@pierre/trees": "1.0.0-beta.4",

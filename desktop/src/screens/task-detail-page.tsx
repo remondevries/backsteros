@@ -495,7 +495,7 @@ export function TaskDetailPage({
           taskId={task.id}
           projectId={project.id}
           projectLabel={project.name ?? task.projectName ?? "Task"}
-          taskDisplayId={task.displayId}
+          taskDisplayId={task.displayId ?? null}
           cwd={workingDirectory}
           agentChatId={base?.agentChatId ?? null}
           taskStatus={task.status}
@@ -514,7 +514,7 @@ export function TaskDetailPage({
           taskId={task.id}
           projectId={project?.id ?? null}
           projectLabel={project?.name ?? task.projectName ?? "Task"}
-          taskDisplayId={task.displayId}
+          taskDisplayId={task.displayId ?? null}
           cwd={workingDirectory?.trim() || "~"}
           agentChatId={base?.agentChatId ?? null}
           taskStatus={task.status}

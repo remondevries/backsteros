@@ -145,7 +145,7 @@ export function InboxPage() {
         taskId={selectedTask.id}
         projectId={project?.id ?? null}
         projectLabel={project?.name ?? selectedTask.projectName ?? "Task"}
-        taskDisplayId={getInboxItemDisplayId(selectedTask)}
+        taskDisplayId={displayId}
         cwd={workingDirectory?.trim() || "~"}
         agentChatId={selectedTaskRecord?.agentChatId ?? null}
         taskSummary={{

@@ -26,6 +26,9 @@
   --chat-composer-glass-surface: color-mix(in srgb, var(--background) 96%, white);
   --chat-composer-outline: color-mix(in srgb, white 5%, transparent);
   --chat-composer-highlight: rgb(255 255 255 / 3%);
+  /* t3 dropdown-glass / model-picker-surface — elevated menus (denser than ambient glass) */
+  --dropdown-glass-surface: color-mix(in srgb, var(--background) 92%, white);
+  --dropdown-glass-border: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 * {
@@ -571,77 +574,545 @@ html:has(.desktop-overlay-root--palette) .command-list {
   color: var(--foreground);
 }
 
-.desktop-agent-chat__header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 6;
+/* In-flow agent surface tabs (file-editor style, not floating overlay) */
+.desktop-agent-surface-tab-bar {
   display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 0;
-  pointer-events: none;
+  flex-shrink: 0;
+  align-items: stretch;
+  min-height: 32px;
+  max-height: 32px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
 }
 
-.desktop-agent-chat__header-main {
-  display: inline-flex;
+.desktop-agent-surface-tab-list {
+  display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
+  flex: 1 1 auto;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-.desktop-agent-chat__header-actions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
+.desktop-agent-surface-tab-width {
+  display: flex;
+  min-width: 88px;
+  max-width: 220px;
+  flex: 1 1 140px;
 }
 
-
-.desktop-agent-chat__tabs {
-  display: inline-flex;
+.desktop-agent-surface-tab {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 0.05);
-}
-
-.desktop-agent-chat__tab {
-  margin: 0;
-  padding: 3px 10px;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgb(255 255 255 / 0.5);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.desktop-agent-surface-tab.has-border-right {
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.desktop-agent-surface-tab:hover {
+  color: var(--foreground);
+}
+
+.desktop-agent-surface-tab.is-active {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  color: var(--foreground);
+}
+
+.desktop-agent-surface-tab-active-bar {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 2px;
+  background: color-mix(in srgb, var(--foreground) 60%, var(--background));
+}
+
+.desktop-agent-surface-tab-icon {
+  flex: none;
+  opacity: 0.85;
+}
+
+.desktop-agent-surface-tab-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-agent-surface-tab-trailing {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.desktop-agent-surface-tab-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
   cursor: pointer;
 }
 
-.desktop-agent-chat__tab:hover {
-  color: rgb(255 255 255 / 0.8);
+.desktop-agent-surface-tab-close.is-active-tab {
+  display: inline-flex;
 }
 
-.desktop-agent-chat__tab.is-active {
-  background: rgb(255 255 255 / 0.1);
-  color: rgb(255 255 255 / 0.92);
+.desktop-agent-surface-tab:hover .desktop-agent-surface-tab-close,
+.desktop-agent-surface-tab:focus-within .desktop-agent-surface-tab-close {
+  display: inline-flex;
 }
 
-.desktop-agent-chat__title {
-  font-size: 11px;
+.desktop-agent-surface-tab-close:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.desktop-agent-surface-tab-add {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.desktop-agent-surface-tab-add:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.desktop-agent-surface-tab-add-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  height: 100%;
+}
+
+.desktop-agent-surface-add-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 10px;
+  background: var(--surface, var(--background));
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+}
+
+.desktop-agent-surface-add-menu__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.desktop-agent-surface-add-menu__item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.desktop-agent-surface-add-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.desktop-agent-surface-add-menu__text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.desktop-agent-surface-add-menu__label {
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgb(255 255 255 / 0.55);
+}
+
+.desktop-agent-surface-add-menu__desc {
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.desktop-agent-surface-tab-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* Agent surface panes (Browser / Terminal / Files / Plan / Diff) */
+.agent-surface-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.agent-surface-empty {
+  margin: 24px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.agent-surface-empty--centered {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+}
+
+.agent-surface-empty--centered h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.agent-surface-empty--centered p {
+  margin: 0;
+  max-width: 28rem;
+}
+
+.agent-surface-browser-chrome {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.agent-surface-browser-nav {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.agent-surface-browser-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  cursor: pointer;
+}
+
+.agent-surface-browser-nav-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.agent-surface-browser-nav-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.agent-surface-browser-nav-btn .is-spinning {
+  animation: agent-surface-spin 0.8s linear infinite;
+}
+
+@keyframes agent-surface-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.agent-surface-browser-url {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+}
+
+.agent-surface-browser-url:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.agent-surface-browser-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.agent-surface-browser-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.agent-surface-browser-empty h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.agent-surface-browser-empty p {
+  margin: 0 0 8px;
+  max-width: 28rem;
+  font-size: 13px;
+}
+
+.agent-surface-browser-empty__form {
+  display: flex;
+  width: min(100%, 420px);
+  gap: 8px;
+}
+
+.agent-surface-browser-go {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-surface-terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 4px;
+  background: #0c0e12;
+}
+
+.agent-surface-terminal-host .xterm {
+  height: 100%;
+}
+
+.agent-surface-files-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.agent-surface-files-cwd {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 11px;
+}
+
+.agent-surface-files-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.agent-surface-files-refresh:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.agent-surface-files-tree {
+  flex: 1;
+  margin: 0;
+  padding: 6px 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.agent-surface-files-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-surface-files-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-surface-files-row:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.agent-surface-files-row .is-open {
+  transform: rotate(90deg);
+}
+
+.agent-surface-files-spacer {
+  display: inline-block;
+  width: 12px;
+}
+
+.agent-surface-plan-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.agent-surface-diff-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.agent-surface-diff-list {
+  flex: 0 0 180px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  list-style: none;
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.agent-surface-diff-file {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 4px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-surface-diff-file:hover,
+.agent-surface-diff-file.is-active {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.agent-surface-diff-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-surface-diff-file-stats {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.agent-surface-diff-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.desktop-agent-chat__footer.is-surface-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .desktop-agent-chat__hide {
@@ -651,15 +1122,15 @@ html:has(.desktop-overlay-root--palette) .command-list {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: rgb(255 255 255 / 0.45);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
   font: inherit;
   font-size: 11px;
   cursor: pointer;
 }
 
 .desktop-agent-chat__hide:hover {
-  color: rgb(255 255 255 / 0.85);
-  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .desktop-agent-chat__body {
@@ -771,11 +1242,14 @@ html:has(.desktop-overlay-root--palette) .command-list {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  height: 100%;
   overflow: auto;
-  /* Top padding clears the floating Chat/Terminal + Stop overlay. */
-  padding: 44px 20px 12px;
+  overflow-x: hidden;
+  padding: 16px 20px 12px;
   overscroll-behavior-y: contain;
   overflow-anchor: none;
+  scrollbar-gutter: stable both-edges;
 }
 
 .desktop-agent-chat__transcript--top-fade {
@@ -834,23 +1308,203 @@ html:has(.desktop-overlay-root--palette) .command-list {
   min-width: 0;
 }
 
-.desktop-agent-chat__draft-hero {
+/* T3 TimelineMinimap — left-rail question ticks + hover Q/A preview. */
+.desktop-agent-chat__minimap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: none;
+  width: 4.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.desktop-agent-chat__minimap.is-persistent,
+.desktop-agent-chat__minimap:hover,
+.desktop-agent-chat__minimap:focus-within {
+  opacity: 1;
+}
+
+@media (pointer: fine) {
+  .desktop-agent-chat__minimap {
+    display: block;
+  }
+}
+
+.desktop-agent-chat__minimap-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.desktop-agent-chat__minimap-hit {
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.desktop-agent-chat__minimap-hit.is-interactive {
+  pointer-events: auto;
+}
+
+.desktop-agent-chat__minimap-hit:focus-visible {
+  outline: 2px solid rgb(96 165 250 / 0.7);
+  outline-offset: 2px;
+}
+
+.desktop-agent-chat__minimap-rail {
+  position: absolute;
+  top: 0;
+  left: 0.75rem;
+  width: 1px;
+  height: 100%;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.desktop-agent-chat__minimap-tick {
+  position: absolute;
+  left: 0;
+  width: 0.5rem;
+  height: 2px;
+  border-radius: 999px;
+  background: rgb(163 163 163 / 0.35);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition:
+    background-color 150ms ease,
+    width 150ms ease;
+}
+
+.desktop-agent-chat__minimap-tick[data-in-view="true"] {
+  background: rgb(247 249 255 / 0.9);
+}
+
+.desktop-agent-chat__minimap-tick.is-mid {
+  width: 0.625rem;
+}
+
+.desktop-agent-chat__minimap-tick.is-near {
+  width: 1rem;
+}
+
+.desktop-agent-chat__minimap-tick.is-active {
+  width: 1.5rem;
+  background: rgb(163 163 163 / 0.75);
+}
+
+.desktop-agent-chat__minimap-tick.is-active[data-in-view="true"] {
+  background: rgb(247 249 255 / 0.95);
+}
+
+.desktop-agent-chat__minimap-preview {
+  position: absolute;
+  left: 2rem;
+  width: 20rem;
+  cursor: text;
+  user-select: text;
+  pointer-events: auto;
+}
+
+.desktop-agent-chat__minimap-preview-card {
+  display: block;
+  padding: 0.75rem;
+  border: 1px solid var(--dropdown-glass-border);
+  border-radius: 0.75rem;
+  background: color-mix(
+    in srgb,
+    var(--dropdown-glass-surface) 18%,
+    color-mix(
+      in srgb,
+      var(--dropdown-glass-surface) var(--glass-opacity),
+      transparent
+    )
+  );
+  box-shadow: 0 16px 40px -18px rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  color: rgb(247 249 255 / 0.96);
+  text-align: left;
+}
+
+.desktop-agent-chat__minimap-preview-user {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-agent-chat__minimap-preview-assistant {
+  display: -webkit-box;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  max-height: 3.75rem;
+  color: rgb(163 163 163 / 0.95);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* T3 DraftHero: headline sits above the vertically centered composer. */
+.desktop-agent-chat__footer.is-draft-hero {
+  inset: 0;
+  bottom: auto;
+  justify-content: center;
+  padding: 0 20px;
+}
+
+.desktop-agent-chat__draft-hero-slot {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  z-index: 0;
+  padding-bottom: 2rem;
+  pointer-events: none;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
-  max-width: 768px;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.desktop-agent-chat__draft-hero-eyebrow {
+  margin: 0;
+  color: rgb(163 163 163 / 0.88);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.desktop-agent-chat__draft-hero-headline {
   margin: 0 auto;
-  padding: 2.75rem 0.5rem 1.25rem;
-  width: 100%;
+  max-width: 64rem;
+  color: rgb(247 249 255 / 0.96);
+  font-size: clamp(1.35rem, 2.4vw, 1.875rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  text-align: center;
   animation: desktop-agent-chat-draft-hero-in 360ms cubic-bezier(0.22, 1, 0.36, 1)
     both;
 }
 
-.desktop-agent-chat__draft-hero.is-exiting {
-  animation: desktop-agent-chat-draft-hero-out 200ms cubic-bezier(0.4, 0, 1, 1)
-    both;
-  pointer-events: none;
+.desktop-agent-chat__draft-hero-project {
+  border-bottom: 1px dotted currentColor;
+  text-underline-offset: 0.35em;
 }
 
 @keyframes desktop-agent-chat-draft-hero-in {
@@ -862,42 +1516,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
     opacity: 1;
     transform: translate3d(0, 0, 0);
   }
-}
-
-@keyframes desktop-agent-chat-draft-hero-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(0, -8px, 0);
-  }
-}
-
-.desktop-agent-chat__draft-hero-eyebrow {
-  margin: 0;
-  color: rgb(163 163 163 / 0.9);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.desktop-agent-chat__draft-hero-title {
-  margin: 0;
-  color: rgb(247 249 255 / 0.96);
-  font-size: 1.55rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.desktop-agent-chat__draft-hero-hint {
-  margin: 0.35rem 0 0;
-  color: rgb(163 163 163 / 0.88);
-  font-size: 0.875rem;
-  line-height: 1.45;
 }
 
 .desktop-agent-chat__activity-lucide {
@@ -941,33 +1559,14 @@ html:has(.desktop-overlay-root--palette) .command-list {
   font-size: 0.72rem;
 }
 
-.desktop-agent-chat__transcript-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+/* LegendList row wrapper — matches t3code max-w-3xl (768px at 16px root). */
+.desktop-agent-chat__timeline-row {
   width: 100%;
-  /*
-   * Match t3code `max-w-3xl` in pixels. Our :root font-size is 14px, so
-   * `48rem` would be 672px — t3 uses a 16px root, so 48rem = 768px.
-   */
   max-width: 768px;
+  min-width: 0;
   margin-inline: auto;
-  /* Top-anchored like T3 — do not push content to the bottom. */
-  margin-top: 0;
-  min-height: min-content;
-}
-
-.desktop-agent-chat__content-end {
-  width: 100%;
-  height: 0;
-}
-
-.desktop-agent-chat__end-space {
-  flex: 0 0 auto;
-  width: 100%;
-  pointer-events: none;
-  /* Always animate spacer growth — chat intentionally ignores reduced-motion. */
-  transition: height 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  padding-bottom: 18px;
+  overflow-x: clip;
 }
 
 .desktop-agent-chat__turn {
@@ -1004,21 +1603,25 @@ html:has(.desktop-overlay-root--palette) .command-list {
   align-items: stretch;
 }
 
-/* T3-style user bubble: soft accent pill, fully rounded (`max-w-[80%]`). */
+/* T3 UserTimelineRow: `relative max-w-[80%] rounded-2xl bg-accent p-3` */
 .desktop-agent-chat__bubble {
+  position: relative;
+  box-sizing: border-box;
+  width: fit-content;
   max-width: 80%;
-  padding: 12px 14px;
+  padding: 12px;
   border-radius: 16px;
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.625;
 }
 
-.desktop-agent-chat__turn--user .desktop-agent-chat__bubble {
-  /* t3 `bg-accent` ≈ white @ 4% on dark background */
+.desktop-agent-chat__turn--user .desktop-agent-chat__bubble,
+.desktop-agent-chat__bubble-wrap--user .desktop-agent-chat__bubble {
+  /* T3 dark `--accent: --alpha(white / 4%)` */
   background: rgb(255 255 255 / 0.04);
   color: var(--foreground);
-  border: 1px solid var(--chat-composer-outline);
-  box-shadow: inset 0 1px var(--chat-composer-highlight);
+  border: 0;
+  box-shadow: none;
 }
 
 /* T3-style assistant: no bubble — plain reading stream */
@@ -1032,20 +1635,15 @@ html:has(.desktop-overlay-root--palette) .command-list {
   box-shadow: none;
 }
 
-.desktop-agent-chat__bubble--working {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 6px 4px;
-  background: transparent;
-}
-
 .desktop-agent-chat__bubble-text {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: inherit;
   font-weight: 400;
-  letter-spacing: 0.01em;
+  line-height: inherit;
+  letter-spacing: normal;
 }
 
 .desktop-agent-chat__bubble-text.is-collapsed {
@@ -1381,7 +1979,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__activity--nested .desktop-agent-chat__activity-toggle {
-  padding: 5px 10px;
+  padding: 2px;
 }
 
 .desktop-agent-chat__activity--nested .desktop-agent-chat__activity-title {
@@ -1479,10 +2077,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border: 1px solid var(--border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--background) 94%, white);
-  box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
 }
 
 .desktop-agent-chat__proposed-plan-menu-item {
@@ -1557,33 +2152,20 @@ html:has(.desktop-overlay-root--palette) .command-list {
   background: rgb(255 255 255 / 0.06);
 }
 
-.desktop-agent-chat__phase {
-  display: flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 0 4px;
-}
-
-.desktop-agent-chat__phase-label {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: rgb(163 163 163 / 0.95);
-}
-
+/* T3 tool/work rows: flat text rows, not bordered cards. */
 .desktop-agent-chat__activity {
   display: flex;
   flex-direction: column;
   width: 100%;
   min-width: 0;
   gap: 0;
-  padding: 0;
-  border-radius: 10px;
-  border: 1px solid rgb(255 255 255 / 0.06);
-  background: rgb(255 255 255 / 0.025);
+  padding: 2px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
   font-size: 12px;
   line-height: 1.4;
-  color: rgb(247 249 255 / 0.82);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
   overflow: hidden;
 }
 
@@ -1607,12 +2189,11 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-agent-chat__activity--thought,
 .desktop-agent-chat__activity--info {
-  border-style: dashed;
-  color: rgb(247 249 255 / 0.55);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
 .desktop-agent-chat__activity--plan {
-  border-color: rgb(96 165 250 / 0.18);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
 }
 
 .desktop-agent-chat__activity-toggle {
@@ -1623,8 +2204,9 @@ html:has(.desktop-overlay-root--palette) .command-list {
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 8px 10px;
+  padding: 2px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -1637,7 +2219,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__activity.is-collapsible .desktop-agent-chat__activity-toggle:hover {
-  background: rgb(255 255 255 / 0.03);
+  /* T3 tool row: hover:bg-accent/20 */
+  background: rgb(255 255 255 / 0.04);
 }
 
 .desktop-agent-chat__activity-toggle.is-static {
@@ -1708,9 +2291,21 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__activity-overflow-chevron {
-  width: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
   color: rgb(163 163 163 / 0.7);
-  font-size: 0.7rem;
+}
+
+.desktop-agent-chat__chevron-icon {
+  display: block;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.desktop-agent-chat__chevron-icon.is-open {
+  transform: rotate(180deg);
 }
 
 .desktop-agent-chat__activity-glyph {
@@ -1736,26 +2331,20 @@ html:has(.desktop-overlay-root--palette) .command-list {
   line-height: 1.4;
 }
 
-.desktop-agent-chat__activity-status {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgb(163 163 163 / 0.75);
-}
-
 .desktop-agent-chat__activity-chevron {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
   color: rgb(163 163 163 / 0.55);
-  font-size: 10px;
   line-height: 1;
-  transform: rotate(0deg);
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .desktop-agent-chat__activity-chevron.is-open {
-  transform: rotate(90deg);
+  transform: rotate(180deg);
 }
 
 .desktop-agent-chat__activity-detail {
@@ -1771,23 +2360,10 @@ html:has(.desktop-overlay-root--palette) .command-list {
   font-size: 11px;
 }
 
-.desktop-agent-chat__activity.is-in_progress .desktop-agent-chat__activity-status,
-.desktop-agent-chat__activity.is-pending .desktop-agent-chat__activity-status {
-  color: rgb(96 165 250 / 0.9);
-}
-
-.desktop-agent-chat__activity.is-completed .desktop-agent-chat__activity-status {
-  color: rgb(74 222 128 / 0.85);
-}
-
-.desktop-agent-chat__activity.is-failed .desktop-agent-chat__activity-status {
-  color: rgb(248 113 113 / 0.9);
-}
-
 .desktop-agent-chat__activity-body {
   display: grid;
   grid-template-rows: 0fr;
-  padding: 0 10px 0 calc(1rem + 18px);
+  padding: 0 2px 0 calc(1rem + 18px);
   transition: grid-template-rows 200ms ease-out;
 }
 
@@ -1902,8 +2478,47 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-agent-chat__bubble-md .content-markdown-preview-body {
   font-size: 0.875rem;
-  line-height: 1.55;
-  color: rgb(247 249 255 / 0.92);
+  line-height: 1.625;
+  color: var(--foreground);
+}
+
+/* T3 user bubble: ChatMarkdown with lineBreaks — compact blocks inside accent chip. */
+.desktop-agent-chat__bubble-md--user {
+  min-width: 0;
+  width: 100%;
+}
+
+.desktop-agent-chat__bubble-md--user > .desktop-agent-chat__file-chip {
+  margin-inline: 0.15em;
+  vertical-align: middle;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body {
+  width: 100%;
+  max-width: 100%;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body--rendered > :first-child {
+  margin-top: 0;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body--rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body--rendered p {
+  margin: 0.35em 0;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body--rendered p:first-child {
+  margin-top: 0;
+}
+
+.desktop-agent-chat__bubble-md--user .content-markdown-preview-body--rendered p:last-child {
+  margin-bottom: 0;
 }
 
 .desktop-agent-chat__bubble-md .content-markdown-preview-body--rendered pre {
@@ -1911,8 +2526,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
   padding: 0.65em 0.75em;
   overflow-x: auto;
   border-radius: 8px;
-  background: rgb(10 12 18 / 0.55);
-  border: 1px solid rgb(255 255 255 / 0.06);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   font-size: 0.8rem;
 }
 
@@ -1940,13 +2555,13 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-agent-chat__bubble-wrap--user {
   align-items: flex-end;
+  gap: 4px; /* T3 group gap-1 */
 }
 
 .desktop-agent-chat__bubble-wrap--assistant {
   align-items: stretch;
 }
 
-.desktop-agent-chat__bubble-actions,
 .desktop-agent-chat__meta {
   display: flex;
   align-items: center;
@@ -1970,10 +2585,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__bubble-wrap:hover .desktop-agent-chat__meta,
-.desktop-agent-chat__bubble-wrap:focus-within .desktop-agent-chat__meta,
-.desktop-agent-chat__bubble--assistant:hover .desktop-agent-chat__bubble-actions,
-.desktop-agent-chat__bubble--assistant:focus-within
-  .desktop-agent-chat__bubble-actions {
+.desktop-agent-chat__bubble-wrap:focus-within .desktop-agent-chat__meta {
   opacity: 1;
 }
 
@@ -2054,17 +2666,14 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__fold-chevron {
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 0.7rem;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
   color: rgb(163 163 163 / 0.7);
-  font-size: 0.7rem;
   line-height: 1;
-  transform: rotate(0deg);
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.desktop-agent-chat__fold-chevron.is-open {
-  transform: rotate(90deg);
 }
 
 .desktop-agent-chat__fold-label {
@@ -2084,10 +2693,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__fold-panel-inner {
   overflow: hidden;
   min-height: 0;
-}
-
-.desktop-agent-chat__changed {
-  display: none;
 }
 
 .desktop-agent-chat__cf-card {
@@ -2133,10 +2738,13 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__cf-chevron {
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 0.7rem;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
   color: rgb(163 163 163 / 0.75);
-  font-size: 0.7rem;
 }
 
 .desktop-agent-chat__cf-title {
@@ -2262,15 +2870,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__cf-file-name {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: rgb(247 249 255 / 0.94);
-}
-
-.desktop-agent-chat__cf-file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgb(163 163 163 / 0.75);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.68rem;
 }
 
 .desktop-agent-chat__cf-preview {
@@ -2494,55 +3093,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   line-height: 1.45;
 }
 
-.desktop-agent-chat__changed-label {
-  color: rgb(163 163 163 / 0.85);
-  font-size: 0.72rem;
-  letter-spacing: 0.01em;
-}
-
-.desktop-agent-chat__changed-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.desktop-agent-chat__changed-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.04);
-  border: 1px solid rgb(255 255 255 / 0.05);
-  color: rgb(214 219 232 / 0.92);
-  font-size: 0.72rem;
-}
-
-.desktop-agent-chat__changed-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.desktop-agent-chat__changed-stat {
-  display: inline-flex;
-  gap: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-.desktop-agent-chat__changed-stat .is-add {
-  color: rgb(134 239 172 / 0.9);
-}
-
-.desktop-agent-chat__changed-stat .is-del {
-  color: rgb(252 165 165 / 0.9);
-}
-
+/* T3 pending ask/approval: muted strip chrome (not a separate slate/indigo palette). */
 .desktop-agent-chat__approval {
   display: flex;
   flex-direction: column;
@@ -2551,42 +3102,193 @@ html:has(.desktop-overlay-root--palette) .command-list {
   max-width: 768px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(255 255 255 / 0.04);
-  color: rgb(247 249 255 / 0.94);
-  box-shadow: inset 0 1px rgb(255 255 255 / 0.03);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  box-shadow: inset 0 1px var(--chat-composer-highlight);
 }
 
-.desktop-agent-chat__approval--terminal {
-  border-color: rgb(251 191 36 / 0.35);
-  background: rgb(251 191 36 / 0.08);
+.desktop-agent-chat__approval--ask {
+  padding: 14px 16px;
 }
 
-.desktop-agent-chat__approval-title {
-  margin: 0;
-  font-size: 0.82rem;
+.desktop-agent-chat__approval--permission {
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.desktop-agent-chat__ask-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-agent-chat__ask-eyebrow {
+  font-size: 0.68rem;
   font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
+}
+
+.desktop-agent-chat__ask-count {
+  display: inline-flex;
+  align-items: center;
+  height: 1.25rem;
+  padding: 0 0.4rem;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--muted) 95%, transparent);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.desktop-agent-chat__ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desktop-agent-chat__ask-option {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.desktop-agent-chat__ask-option:hover {
+  border-color: var(--border);
+  background: rgb(255 255 255 / 0.07);
+}
+
+.desktop-agent-chat__ask-option.is-selected {
+  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  background: rgb(255 255 255 / 0.08);
+}
+
+.desktop-agent-chat__ask-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.desktop-agent-chat__ask-option-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.desktop-agent-chat__ask-check {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.desktop-agent-chat__ask-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.desktop-agent-chat__ask-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.desktop-agent-chat__ask-custom-label {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
+}
+
+.desktop-agent-chat__ask-custom-input {
+  appearance: none;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.desktop-agent-chat__ask-custom-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.desktop-agent-chat__approval-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-agent-chat__approval-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+
+.desktop-agent-chat__approval-summary {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+}
+
+.desktop-agent-chat__approval-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+}
+
+.desktop-agent-chat__approval-detail-label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--muted) 95%, transparent);
 }
 
 .desktop-agent-chat__approval-detail {
   margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgb(10 12 18 / 0.45);
-  border: 1px solid rgb(255 255 255 / 0.06);
-  color: rgb(214 219 232 / 0.88);
+  max-height: 10rem;
+  overflow: auto;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.74rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow: auto;
-  max-height: 10rem;
 }
 
 .desktop-agent-chat__approval-options {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -2594,9 +3296,9 @@ html:has(.desktop-overlay-root--palette) .command-list {
   appearance: none;
   margin: 0;
   padding: 6px 10px;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgb(10 12 18 / 0.45);
+  background: color-mix(in srgb, var(--background) 70%, transparent);
   color: inherit;
   font: inherit;
   font-size: 0.78rem;
@@ -2608,8 +3310,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-agent-chat__approval-option.is-primary {
-  border-color: rgb(251 191 36 / 0.45);
-  background: rgb(251 191 36 / 0.18);
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  background: rgb(255 255 255 / 0.1);
 }
 
 .desktop-agent-chat__approval-option:disabled {
@@ -2629,29 +3331,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
   color: rgb(247 249 255 / 0.9);
   border: 0;
   box-shadow: none;
-}
-
-.desktop-agent-chat__draft-caret {
-  display: inline-block;
-  margin-left: 1px;
-  color: rgb(163 163 163 / 0.7);
-  animation: desktop-agent-chat-caret-blink 1s steps(1, end) infinite;
-}
-
-@keyframes desktop-agent-chat-caret-blink {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.desktop-agent-chat__live-footer {
-  display: flex;
-  padding: 2px 4px 0;
 }
 
 .desktop-agent-chat__working-dot {
@@ -2691,20 +3370,38 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 
 .desktop-agent-chat__footer {
+  /* T3 ChatView: absolute bottom overlay so the transcript scrollbar
+     fills the full chat column under the composer. No solid fill —
+     glass shell samples the scrolling transcript (backdrop-filter). */
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
-  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  /* Match t3 `chat-composer-horizontal-inset` sm: 1.25rem @ 16px = 20px. */
+  padding: 6px 20px 14px;
+  border-top: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.desktop-agent-chat__footer-inner {
+  position: relative;
+  z-index: 10;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  /* Match t3 `chat-composer-horizontal-inset` sm: 1.25rem @ 16px = 20px. */
-  padding: 10px 20px 14px;
-  border-top: 0;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--background) 98%, transparent) 55%,
-    color-mix(in srgb, var(--background) 55%, transparent) 85%,
-    transparent
-  );
+  width: 100%;
+  max-width: 768px;
+  pointer-events: auto;
+}
+
+.desktop-agent-chat__footer.is-draft-hero .desktop-agent-chat__footer-inner {
+  /* Headline uses bottom:100% against this box (T3 draft hero). */
+  margin-block: 0;
 }
 
 .desktop-agent-chat__error {
@@ -2725,13 +3422,20 @@ html:has(.desktop-overlay-root--palette) .command-list {
   max-width: 768px;
 }
 
-/* t3 chat-composer-glass-shell — lift from --background, not a separate gray palette */
-.desktop-agent-chat__input-shell {
+/*
+ * T3 `chat-composer-glass-shell` / `chat-composer-glass-host`.
+ * Do NOT set transform/isolation on the blurred element — in WKWebView those
+ * create a containing block and backdrop-filter samples an empty layer (looks solid).
+ */
+.desktop-agent-chat__glass-shell {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  isolation: isolate;
-  border: 1px solid var(--chat-composer-outline);
+  width: 100%;
+}
+
+.desktop-agent-chat__glass-host {
+  position: relative;
+  z-index: 10;
+  width: 100%;
   border-radius: 22px;
   background: color-mix(
     in srgb,
@@ -2740,35 +3444,75 @@ html:has(.desktop-overlay-root--palette) .command-list {
   );
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  box-shadow: inset 0 1px var(--chat-composer-highlight);
-  overflow: visible;
-  transition:
-    opacity 0.2s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    background 0.18s ease;
+  box-shadow: none;
+  transition: opacity 0.2s ease;
 }
 
-.desktop-agent-chat__input-shell:focus-within {
+.desktop-agent-chat__glass-host::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--chat-composer-outline);
+  box-shadow: inset 0 1px var(--chat-composer-highlight);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.desktop-agent-chat__glass-host:focus-within::after {
   border-color: color-mix(in srgb, white 10%, transparent);
-  background: color-mix(in srgb, var(--background) 94%, white);
   box-shadow:
     inset 0 1px color-mix(in srgb, white 5%, transparent),
     0 0 0 1px color-mix(in srgb, white 4%, transparent);
 }
 
-.desktop-agent-chat__input-shell--inactive {
+.desktop-agent-chat__glass-host--inactive {
   opacity: 0.72;
 }
 
-.desktop-agent-chat__input-shell--inactive:focus-within {
+.desktop-agent-chat__glass-host--inactive:focus-within::after {
   border-color: var(--chat-composer-outline);
-  background: color-mix(
-    in srgb,
-    var(--chat-composer-glass-surface) var(--glass-opacity),
-    transparent
-  );
   box-shadow: inset 0 1px var(--chat-composer-highlight);
+}
+
+/* Inner content — transparent so host glass shows through (T3 rounded-[20px] inside p-px).
+ * Keep overflow visible so the command menu can escape above the editor. */
+.desktop-agent-chat__input-shell {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  margin: 1px;
+  border-radius: 20px;
+  overflow: visible;
+  background: transparent;
+}
+
+/* T3 ChatComposer pending strip: rounded-t-[19px] border-b border-border/65 bg-muted/20 */
+.desktop-agent-chat__composer-pending {
+  flex: 0 0 auto;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  border-radius: 19px 19px 0 0;
+}
+
+.desktop-agent-chat__composer-pending .desktop-agent-chat__approval {
+  max-width: none;
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .desktop-agent-chat__glass-host {
+    background: var(--chat-composer-glass-surface);
+  }
 }
 
 .desktop-agent-chat__input-row {
@@ -2919,10 +3663,10 @@ html:has(.desktop-overlay-root--palette) .command-list {
   max-width: min(100%, 320px);
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(255 255 255 / 0.05);
-  color: rgb(247 249 255 / 0.92);
-  box-shadow: inset 0 1px rgb(255 255 255 / 0.03);
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--foreground);
+  box-shadow: inset 0 1px var(--chat-composer-highlight);
 }
 
 .desktop-agent-chat__followup-header {
@@ -2938,7 +3682,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: rgb(165 180 252 / 0.95);
+  color: color-mix(in srgb, var(--muted) 95%, transparent);
 }
 
 .desktop-agent-chat__followup-remove {
@@ -2952,7 +3696,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgb(214 219 232 / 0.7);
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
@@ -2960,7 +3704,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-agent-chat__followup-remove:hover {
   background: rgb(255 255 255 / 0.08);
-  color: rgb(247 249 255 / 0.95);
+  color: var(--foreground);
 }
 
 .desktop-agent-chat__followup-text {
@@ -2969,7 +3713,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
-  color: rgb(226 232 240 / 0.92);
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
 }
 
 .desktop-agent-chat__followup-images {
@@ -3056,9 +3800,24 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__editor {
   display: block;
   width: 100%;
+  /* T3 ComposerPromptEditor: min-h-17.5 max-h-50 text-[16px] sm:text-[14px] leading-relaxed */
+  min-height: 4.375rem;
+  max-height: 12.5rem;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 16px;
+  line-height: 1.625;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+  outline: none;
+}
+
+@media (min-width: 640px) {
+  .desktop-agent-chat__editor {
+    font-size: 14px;
+  }
 }
 
 .desktop-agent-chat__editor-placeholder {
@@ -3120,16 +3879,41 @@ html:has(.desktop-overlay-root--palette) .command-list {
   z-index: 20;
 }
 
-.desktop-agent-chat__command-menu {
+/*
+ * T3 `dropdown-glass` / `model-picker-surface`.
+ * Nested popover tint keeps menus denser than ambient composer glass.
+ * No transform/isolation on these nodes — WKWebView would empty the backdrop.
+ */
+.desktop-agent-chat__command-menu,
+.desktop-agent-chat__model-popover,
+.desktop-agent-chat__proposed-plan-menu-pop {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--background) 94%, white);
+  border: 1px solid var(--dropdown-glass-border);
+  background: color-mix(
+    in srgb,
+    var(--dropdown-glass-surface) 18%,
+    color-mix(
+      in srgb,
+      var(--dropdown-glass-surface) var(--glass-opacity),
+      transparent
+    )
+  );
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
-  box-shadow:
-    0 12px 40px rgb(0 0 0 / 0.45),
-    inset 0 1px var(--chat-composer-highlight);
+  box-shadow: 0 18px 44px -18px rgb(0 0 0 / 80%);
+  color: var(--foreground);
+}
+
+.desktop-agent-chat__command-menu {
+  border-radius: 20px;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .desktop-agent-chat__command-menu,
+  .desktop-agent-chat__model-popover,
+  .desktop-agent-chat__proposed-plan-menu-pop {
+    background: var(--dropdown-glass-surface);
+  }
 }
 
 .desktop-agent-chat__command-menu-list {
@@ -3149,7 +3933,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: rgb(247 249 255 / 0.9);
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
   font: inherit;
   font-size: 13px;
   line-height: 1.3;
@@ -3181,7 +3965,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: rgb(163 163 163 / 0.85);
+  color: color-mix(in srgb, var(--muted) 90%, transparent);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3190,7 +3974,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__command-menu-empty {
   margin: 0;
   padding: 12px 14px;
-  color: rgb(163 163 163 / 0.8);
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -3262,13 +4046,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
   max-width: min(24rem, 86vw);
   max-height: min(22rem, 50vh);
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--background) 94%, white);
-  box-shadow:
-    0 18px 40px -20px rgb(0 0 0 / 0.75),
-    inset 0 1px var(--chat-composer-highlight);
+  /* T3 ModelPickerContent: rounded-lg */
+  border-radius: 10px;
 }
 
 .desktop-agent-chat__model-search {
@@ -3400,34 +4179,20 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 
-.desktop-agent-chat__header-agent-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .desktop-agent-chat__stop {
-  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 7px 12px;
+  padding: 3px 10px;
   border: 0.5px solid rgb(248 81 73 / 0.5);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgb(248 81 73 / 0.28);
   color: rgb(255 255 255 / 0.92);
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-}
-
-.desktop-agent-chat__body-main .desktop-agent-chat__stop {
-  padding: 3px 10px;
-  font-size: 11px;
-  border-radius: 6px;
 }
 
 .desktop-agent-chat__stop:hover {

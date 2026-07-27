@@ -634,11 +634,10 @@ export function presentAcpToolActivity(update, existing) {
     : existing && !isGenericToolTitle(existing.title)
       ? existing.title
       : "";
+  // T3 keeps path-bearing Cursor titles in the heading. Only collapse exact
+  // generic verbs — do not peel the path out of the title first.
   const peeled = peelToolTitle(titleFromAgent);
-  const title = presentToolTitle(
-    peeled.title || titleFromAgent,
-    toolKind,
-  );
+  const title = presentToolTitle(titleFromAgent, toolKind);
   const detail =
     toolDetailFromUpdate(update, toolKind) ??
     peeled.detailHint ??

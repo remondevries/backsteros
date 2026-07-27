@@ -1,3 +1,8 @@
+/**
+ * T3-aligned pending user-input helpers (see pendingUserInput.ts / ComposerPendingUserInputPanel).
+ * Answers sent to Cursor ACP are label maps: Record<questionId, label | labels>.
+ */
+
 export type AskQuestionOption = {
   id: string;
   label: string;
@@ -6,23 +11,38 @@ export type AskQuestionOption = {
 export type AskQuestionItem = {
   id: string;
   prompt: string;
+  /** Optional ACP/T3 section header shown above the prompt. */
+  header?: string;
   options: AskQuestionOption[];
   multiSelect?: boolean;
 };
 
+/** T3 PendingUserInputDraftAnswer — labels + optional free-text. */
 export type AskQuestionDraft = {
-  selectedOptionIds: string[];
+  selectedOptionLabels?: string[];
+  customAnswer?: string;
 };
 
 export type AskQuestionProgress = {
   questionIndex: number;
   activeQuestion: AskQuestionItem | null;
-  selectedOptionIds: string[];
+  selectedOptionLabels: string[];
+  customAnswer: string;
   answeredCount: number;
   isLastQuestion: boolean;
   isComplete: boolean;
   canAdvance: boolean;
 };
+
+function normalizeLabels(labels: readonly string[] | undefined): string[] {
+  if (!labels || labels.length === 0) return [];
+  const out: string[] = [];
+  for (const label of labels) {
+    const trimmed = label.trim();
+    if (trimmed.length > 0) out.push(trimmed);
+  }
+  return Array.from(new Set(out));
+}
 
 export function normalizeAskQuestions(raw: unknown): AskQuestionItem[] {
   if (!Array.isArray(raw)) return [];
@@ -33,16 +53,18 @@ export function normalizeAskQuestions(raw: unknown): AskQuestionItem[] {
     const id = String(q.id ?? q.questionId ?? `q-${out.length}`);
     const prompt = String(q.prompt ?? q.question ?? q.text ?? "").trim();
     if (!prompt) continue;
+    const header = String(q.header ?? q.title ?? "").trim();
     const optionsRaw = Array.isArray(q.options) ? q.options : [];
     const options: AskQuestionOption[] = [];
     for (const opt of optionsRaw) {
       if (!opt || typeof opt !== "object") continue;
       const o = opt as Record<string, unknown>;
-      const optionId = String(o.id ?? o.optionId ?? o.value ?? "").trim();
-      if (!optionId) continue;
+      const label = String(o.label ?? o.name ?? o.text ?? "").trim();
+      const optionId = String(o.id ?? o.optionId ?? o.value ?? label).trim();
+      if (!optionId && !label) continue;
       options.push({
-        id: optionId,
-        label: String(o.label ?? o.name ?? o.text ?? optionId).trim() || optionId,
+        id: optionId || label,
+        label: label || optionId,
       });
     }
     if (options.length === 0) {
@@ -51,6 +73,7 @@ export function normalizeAskQuestions(raw: unknown): AskQuestionItem[] {
     out.push({
       id,
       prompt,
+      ...(header ? { header } : {}),
       options,
       multiSelect:
         q.multiSelect === true ||
@@ -61,19 +84,62 @@ export function normalizeAskQuestions(raw: unknown): AskQuestionItem[] {
   return out;
 }
 
+export function resolveAskAnswer(
+  question: AskQuestionItem,
+  draft: AskQuestionDraft | undefined,
+): string | string[] | null {
+  const custom = (draft?.customAnswer ?? "").trim();
+  if (custom) return custom;
+  const selected = normalizeLabels(draft?.selectedOptionLabels);
+  if (question.multiSelect) {
+    return selected.length > 0 ? selected : null;
+  }
+  return selected[0] ?? null;
+}
+
+/** Toggle an option by label (T3). Clears customAnswer. */
 export function toggleAskOption(
   question: AskQuestionItem,
   draft: AskQuestionDraft | undefined,
-  optionId: string,
+  optionLabel: string,
 ): AskQuestionDraft {
-  const selected = draft?.selectedOptionIds ?? [];
-  if (question.multiSelect) {
-    const next = selected.includes(optionId)
-      ? selected.filter((id) => id !== optionId)
-      : [...selected, optionId];
-    return { selectedOptionIds: next };
+  const label = optionLabel.trim();
+  if (!label) {
+    return {
+      customAnswer: "",
+      selectedOptionLabels: normalizeLabels(draft?.selectedOptionLabels),
+    };
   }
-  return { selectedOptionIds: [optionId] };
+  if (question.multiSelect) {
+    const selected = normalizeLabels(draft?.selectedOptionLabels);
+    const next = selected.includes(label)
+      ? selected.filter((entry) => entry !== label)
+      : [...selected, label];
+    return {
+      customAnswer: "",
+      ...(next.length > 0 ? { selectedOptionLabels: next } : {}),
+    };
+  }
+  return {
+    customAnswer: "",
+    selectedOptionLabels: [label],
+  };
+}
+
+/** Typing a custom answer clears option selection (T3). */
+export function setAskCustomAnswer(
+  draft: AskQuestionDraft | undefined,
+  customAnswer: string,
+): AskQuestionDraft {
+  const trimmed = customAnswer;
+  if (trimmed.trim().length > 0) {
+    return { customAnswer: trimmed };
+  }
+  const selected = normalizeLabels(draft?.selectedOptionLabels);
+  return {
+    customAnswer: "",
+    ...(selected.length > 0 ? { selectedOptionLabels: selected } : {}),
+  };
 }
 
 export function deriveAskProgress(
@@ -86,37 +152,44 @@ export function deriveAskProgress(
       ? 0
       : Math.max(0, Math.min(questionIndex, questions.length - 1));
   const activeQuestion = questions[bounded] ?? null;
-  const selectedOptionIds = activeQuestion
-    ? (drafts[activeQuestion.id]?.selectedOptionIds ?? [])
+  const activeDraft = activeQuestion ? drafts[activeQuestion.id] : undefined;
+  const selectedOptionLabels = activeQuestion
+    ? normalizeLabels(activeDraft?.selectedOptionLabels)
     : [];
+  const customAnswer = activeDraft?.customAnswer ?? "";
   const answeredCount = questions.reduce((count, question) => {
-    const selected = drafts[question.id]?.selectedOptionIds ?? [];
-    return selected.length > 0 ? count + 1 : count;
+    return resolveAskAnswer(question, drafts[question.id]) ? count + 1 : count;
   }, 0);
   const isComplete =
     questions.length > 0 &&
-    questions.every((question) => (drafts[question.id]?.selectedOptionIds.length ?? 0) > 0);
+    questions.every((question) => resolveAskAnswer(question, drafts[question.id]));
+  const canAdvance = activeQuestion
+    ? resolveAskAnswer(activeQuestion, activeDraft) != null
+    : false;
 
   return {
     questionIndex: bounded,
     activeQuestion,
-    selectedOptionIds,
+    selectedOptionLabels,
+    customAnswer,
     answeredCount,
-    isLastQuestion: questions.length === 0 ? true : bounded >= questions.length - 1,
+    isLastQuestion:
+      questions.length === 0 ? true : bounded >= questions.length - 1,
     isComplete,
-    canAdvance: selectedOptionIds.length > 0,
+    canAdvance,
   };
 }
 
+/** T3 buildPendingUserInputAnswers → ACP `{ answers }` record of labels. */
 export function buildAskAnswersPayload(
   questions: readonly AskQuestionItem[],
   drafts: Record<string, AskQuestionDraft>,
-): { questionId: string; selectedOptionIds: string[] }[] | null {
-  const answers: { questionId: string; selectedOptionIds: string[] }[] = [];
+): Record<string, string | string[]> | null {
+  const answers: Record<string, string | string[]> = {};
   for (const question of questions) {
-    const selected = drafts[question.id]?.selectedOptionIds ?? [];
-    if (selected.length === 0) return null;
-    answers.push({ questionId: question.id, selectedOptionIds: selected });
+    const answer = resolveAskAnswer(question, drafts[question.id]);
+    if (answer == null) return null;
+    answers[question.id] = answer;
   }
-  return answers;
+  return Object.keys(answers).length > 0 ? answers : null;
 }

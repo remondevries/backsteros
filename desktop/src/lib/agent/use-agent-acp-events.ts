@@ -193,14 +193,17 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- publishStatus reads refs
   }, [enabled, projectId, projectLabel]);
 
-  // Attach request: mark open + working; session already ensured by Start.
+  // Attach request: mark open. Only mark working for Start-agent bootstrap
+  // (sessionIsNew) — /clear and return-to-task reattach must not flash Working…
   useEffect(() => {
     if (!agentAttachRequest) return;
     const id = agentAttachRequest.taskId.trim();
     if (id) {
       openRef.current.add(id);
-      workingRef.current.add(id);
-      markLiveAgentWorkingForTask(id);
+      if (agentAttachRequest.sessionIsNew) {
+        workingRef.current.add(id);
+        markLiveAgentWorkingForTask(id);
+      }
       publishStatus();
     }
     callbacksRef.current.onAgentAttachRequestHandled?.();
@@ -370,6 +373,9 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
                 const q = entry as {
                   id?: unknown;
                   prompt?: unknown;
+                  question?: unknown;
+                  header?: unknown;
+                  title?: unknown;
                   multiSelect?: unknown;
                   allowMultiple?: unknown;
                   allow_multiple?: unknown;
@@ -380,8 +386,18 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
                     ? q.id.trim()
                     : `q-${index}`;
                 const prompt =
-                  typeof q.prompt === "string" ? q.prompt.trim() : "";
+                  typeof q.prompt === "string"
+                    ? q.prompt.trim()
+                    : typeof q.question === "string"
+                      ? q.question.trim()
+                      : "";
                 if (!prompt) return null;
+                const header =
+                  typeof q.header === "string" && q.header.trim()
+                    ? q.header.trim()
+                    : typeof q.title === "string" && q.title.trim()
+                      ? q.title.trim()
+                      : undefined;
                 const qOptions = Array.isArray(q.options)
                   ? q.options
                       .map((opt) => {
@@ -406,6 +422,7 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
                 return {
                   id: qid,
                   prompt,
+                  ...(header ? { header } : {}),
                   options:
                     qOptions.length > 0
                       ? qOptions
@@ -422,6 +439,7 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
                 ): q is {
                   id: string;
                   prompt: string;
+                  header?: string;
                   options: { id: string; label: string }[];
                   multiSelect: boolean;
                 } => q != null,

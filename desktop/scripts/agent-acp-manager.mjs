@@ -89,6 +89,64 @@ const pendingUiRequests = new Map();
 /** How long to wait for Chat UI before auto-resolving. */
 const UI_REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * Resolve task + session for interactive ACP UI requests.
+ * `cursor/ask_question` often omits sessionId (T3 CursorAskQuestionRequest);
+ * fall back to the busy/in-flight prompt session, then a sole active session.
+ * @param {unknown} params
+ * @returns {{ taskId: string | null, sessionId: string | null, source: string }}
+ */
+export function resolveTaskAndSessionForUiRequest(params) {
+  const fromParams =
+    params && typeof params === "object" && "sessionId" in params
+      ? String(
+          /** @type {{ sessionId?: unknown }} */ (params).sessionId ?? "",
+        )
+          .trim()
+          .toLowerCase()
+      : "";
+  if (fromParams) {
+    const taskId = taskIdBySessionId.get(fromParams) || null;
+    if (taskId) {
+      return { taskId, sessionId: fromParams, source: "params" };
+    }
+  }
+
+  for (const [sessionId, taskId] of taskIdBySessionId) {
+    const session = sessionsByTaskId.get(taskId);
+    if (session?.busy || promptRequestBySession.has(sessionId)) {
+      console.log(
+        `[acp] ui-request session fallback source=busy session=${sessionId} task=${taskId}`,
+      );
+      return { taskId, sessionId, source: "busy" };
+    }
+  }
+
+  const sessions = [...sessionsByTaskId.values()];
+  if (sessions.length === 1) {
+    const session = sessions[0];
+    console.log(
+      `[acp] ui-request session fallback source=sole session=${session.sessionId} task=${session.taskId}`,
+    );
+    return {
+      taskId: session.taskId,
+      sessionId: session.sessionId,
+      source: "sole",
+    };
+  }
+
+  if (fromParams || sessions.length > 1) {
+    console.warn(
+      `[acp] ui-request could not resolve task (paramsSession=${fromParams || "-"} sessions=${sessions.length})`,
+    );
+  }
+  return {
+    taskId: null,
+    sessionId: fromParams || null,
+    source: "none",
+  };
+}
+
 function ensureEmptyMcpFile() {
   fs.mkdirSync(path.dirname(EMPTY_MCP_PATH), { recursive: true });
   fs.writeFileSync(EMPTY_MCP_PATH, `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`);
@@ -690,13 +748,116 @@ export function __testClearPendingUiRequests(requestId) {
 }
 
 /**
+ * Test helper: bind a fake ACP session for routing tests.
+ * @param {{ taskId: string, sessionId: string, busy?: boolean }} input
+ */
+export function __testRegisterSession(input) {
+  const taskId = input.taskId.trim();
+  const sessionId = input.sessionId.trim().toLowerCase();
+  sessionsByTaskId.set(taskId, {
+    taskId,
+    sessionId,
+    cwd: "/tmp",
+    busy: input.busy === true,
+    modeId: null,
+  });
+  taskIdBySessionId.set(sessionId, taskId);
+  if (input.busy === true) {
+    promptRequestBySession.set(sessionId, -1);
+  }
+}
+
+export function __testClearSessions() {
+  sessionsByTaskId.clear();
+  taskIdBySessionId.clear();
+  promptRequestBySession.clear();
+}
+
+/**
+ * Normalize Chat UI answers into T3/Cursor `{ answers: Record<id, label|labels> }`.
+ * Accepts either the T3 record shape or a legacy `{ questionId, selectedOptionIds }[]`.
+ * @param {unknown} answers
+ * @param {unknown} params
+ * @returns {Record<string, string | string[]> | null}
+ */
+function normalizeAskAnswersForAcp(answers, params) {
+  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+    /** @type {Record<string, string | string[]>} */
+    const out = {};
+    for (const [key, value] of Object.entries(
+      /** @type {Record<string, unknown>} */ (answers),
+    )) {
+      const id = String(key ?? "").trim();
+      if (!id) continue;
+      if (typeof value === "string" && value.trim()) {
+        out[id] = value.trim();
+        continue;
+      }
+      if (Array.isArray(value)) {
+        const labels = value
+          .map((entry) => String(entry ?? "").trim())
+          .filter(Boolean);
+        if (labels.length === 1) out[id] = labels[0];
+        else if (labels.length > 1) out[id] = labels;
+      }
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }
+
+  if (!Array.isArray(answers) || answers.length === 0) return null;
+  const summary = summarizeAskQuestion(params);
+  /** @type {Map<string, { id: string, label: string }[]>} */
+  const optionsByQuestion = new Map();
+  for (const question of summary.questions) {
+    optionsByQuestion.set(
+      String(question.id),
+      Array.isArray(question.options) ? question.options : [],
+    );
+  }
+
+  /** @type {Record<string, string | string[]>} */
+  const out = {};
+  for (const entry of answers) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = /** @type {Record<string, unknown>} */ (entry);
+    const questionId = String(row.questionId ?? "").trim();
+    if (!questionId) continue;
+    const selectedIds = Array.isArray(row.selectedOptionIds)
+      ? row.selectedOptionIds.map((id) => String(id ?? "").trim()).filter(Boolean)
+      : [];
+    const selectedLabels = Array.isArray(row.selectedOptionLabels)
+      ? row.selectedOptionLabels
+          .map((label) => String(label ?? "").trim())
+          .filter(Boolean)
+      : [];
+    if (typeof row.customAnswer === "string" && row.customAnswer.trim()) {
+      out[questionId] = row.customAnswer.trim();
+      continue;
+    }
+    if (selectedLabels.length > 0) {
+      out[questionId] =
+        selectedLabels.length === 1 ? selectedLabels[0] : selectedLabels;
+      continue;
+    }
+    if (selectedIds.length === 0) continue;
+    const options = optionsByQuestion.get(questionId) ?? [];
+    const labels = selectedIds.map((optionId) => {
+      const match = options.find((opt) => opt.id === optionId);
+      return match?.label || optionId;
+    });
+    out[questionId] = labels.length === 1 ? labels[0] : labels;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
  * Resolve a pending permission / ask_question from Chat UI.
  * @param {{
  *   requestId: string,
  *   optionId?: string | null,
  *   preference?: "once" | "always" | "reject" | null,
  *   skipped?: boolean,
- *   answers?: { questionId: string, selectedOptionIds: string[] }[] | null,
+ *   answers?: Record<string, string | string[]> | { questionId: string, selectedOptionIds?: string[], selectedOptionLabels?: string[], customAnswer?: string }[] | null,
  * }} options
  */
 export function respondAcpUiRequest(options) {
@@ -708,6 +869,37 @@ export function respondAcpUiRequest(options) {
   if (!pendingReq) {
     return { ok: false, error: "No pending request for that id." };
   }
+
+  if (pendingReq.kind === "ask_question" && !options.skipped) {
+    let answerMap = normalizeAskAnswersForAcp(
+      options.answers,
+      pendingReq.params,
+    );
+    if (!answerMap && options.optionId?.trim()) {
+      const summary = summarizeAskQuestion(pendingReq.params);
+      const first = summary.questions[0] ?? null;
+      const questionId = String(first?.id || "0");
+      const optionId = options.optionId.trim();
+      const match = first?.options?.find((opt) => opt.id === optionId);
+      answerMap = { [questionId]: match?.label || optionId };
+    }
+    if (!answerMap) {
+      return { ok: false, error: "Ask answers are required." };
+    }
+    clearTimeout(pendingReq.timer);
+    pendingUiRequests.delete(requestId);
+    // T3 CursorAdapter: return { answers: Record<questionId, label|labels> }.
+    sendResponse(pendingReq.rpcId, { answers: answerMap });
+    emit({
+      type: "ui-request-cleared",
+      requestId,
+      taskId: pendingReq.taskId,
+      sessionId: pendingReq.sessionId,
+      reason: "answered",
+    });
+    return { ok: true, kind: pendingReq.kind, requestId };
+  }
+
   clearTimeout(pendingReq.timer);
   pendingUiRequests.delete(requestId);
 
@@ -737,48 +929,16 @@ export function respondAcpUiRequest(options) {
     return { ok: true, kind: pendingReq.kind, requestId };
   }
 
-  if (options.skipped) {
-    sendResponse(pendingReq.rpcId, {
-      outcome: { outcome: "skipped", reason: "Skipped in BacksterOS Chat" },
-    });
-  } else if (Array.isArray(options.answers) && options.answers.length > 0) {
-    sendResponse(pendingReq.rpcId, {
-      outcome: {
-        outcome: "answered",
-        answers: options.answers.map((answer) => ({
-          questionId: String(answer.questionId ?? ""),
-          selectedOptionIds: Array.isArray(answer.selectedOptionIds)
-            ? answer.selectedOptionIds.map((id) => String(id))
-            : [],
-        })),
-      },
-    });
-  } else {
-    const optionId = options.optionId?.trim();
-    const summary = summarizeAskQuestion(pendingReq.params);
-    const first =
-      Array.isArray(summary.questions) && summary.questions[0]
-        ? /** @type {Record<string, unknown>} */ (summary.questions[0])
-        : null;
-    const questionId = String(first?.id || "0");
-    sendResponse(pendingReq.rpcId, {
-      outcome: {
-        outcome: "answered",
-        answers: [
-          {
-            questionId,
-            selectedOptionIds: optionId ? [optionId] : [],
-          },
-        ],
-      },
-    });
-  }
+  // ask_question skipped
+  sendResponse(pendingReq.rpcId, {
+    outcome: { outcome: "skipped", reason: "Skipped in BacksterOS Chat" },
+  });
   emit({
     type: "ui-request-cleared",
     requestId,
     taskId: pendingReq.taskId,
     sessionId: pendingReq.sessionId,
-    reason: options.skipped ? "skipped" : "answered",
+    reason: "skipped",
   });
   return { ok: true, kind: pendingReq.kind, requestId };
 }
@@ -918,13 +1078,9 @@ function handleStdoutMessage(msg) {
   }
 
   if (method === "session/request_permission" && rpcId != null) {
-    const sessionId =
-      params && typeof params === "object" && "sessionId" in params
-        ? String(/** @type {{ sessionId?: unknown }} */ (params).sessionId ?? "")
-            .trim()
-            .toLowerCase()
-        : "";
-    const taskId = sessionId ? taskIdBySessionId.get(sessionId) || null : null;
+    const resolved = resolveTaskAndSessionForUiRequest(params);
+    const sessionId = resolved.sessionId;
+    const taskId = resolved.taskId;
     const summary = summarizePermission(params);
 
     // Keep chat moving for read/search tools; prompt for write/exec/etc.
@@ -981,17 +1137,9 @@ function handleStdoutMessage(msg) {
   }
 
   if (method.startsWith("cursor/")) {
-    const sessionId =
-      params && typeof params === "object" && "sessionId" in params
-        ? String(
-            /** @type {{ sessionId?: unknown }} */ (params).sessionId ?? "",
-          )
-            .trim()
-            .toLowerCase()
-        : "";
-    const taskId = sessionId
-      ? taskIdBySessionId.get(sessionId) || null
-      : null;
+    const resolved = resolveTaskAndSessionForUiRequest(params);
+    const sessionId = resolved.sessionId;
+    const taskId = resolved.taskId;
 
     emit({
       type: "cursor-extension",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Check } from "lucide-react";
 
 import {
   applyAcpSessionUpdateToTurn,
@@ -85,6 +86,7 @@ import {
   buildAskAnswersPayload,
   deriveAskProgress,
   normalizeAskQuestions,
+  setAskCustomAnswer,
   toggleAskOption,
   type AskQuestionDraft,
   type AskQuestionItem,
@@ -93,6 +95,19 @@ import {
   resolveTurnDiffFiles,
   type AgentChatTurnDiffSelection,
 } from "../lib/agent/agent-chat-timeline";
+import {
+  addAgentSurfaceTab,
+  closeAgentSurfaceTab,
+  createDefaultAgentSurfaceTabs,
+  updateAgentSurfaceTab,
+  type AgentSurfaceAddableKind,
+} from "../lib/agent/agent-surface-tabs";
+import { DesktopAgentSurfaceTabBar } from "./desktop-agent-surface-tab-bar";
+import { AgentSurfaceBrowserPane } from "./agent-surface/agent-surface-browser-pane";
+import { AgentSurfaceTerminalPane } from "./agent-surface/agent-surface-terminal-pane";
+import { AgentSurfaceFilesPane } from "./agent-surface/agent-surface-files-pane";
+import { AgentSurfacePlanPane } from "./agent-surface/agent-surface-plan-pane";
+import { AgentSurfaceDiffPane } from "./agent-surface/agent-surface-diff-pane";
 
 type AgentChatUiRequest = {
   kind: "permission" | "ask_question";
@@ -108,6 +123,51 @@ type AgentChatFollowUpDraft = {
   text: string;
   images: AgentChatImageAttachment[];
 };
+
+/** T3 ComposerPendingApprovalPanel summary labels. */
+function permissionApprovalCopy(
+  title: string,
+  detail: string | null,
+): { summary: string; detailLabel: string } {
+  const hay = `${title} ${detail ?? ""}`.toLowerCase();
+  if (/\b(exec|shell|command|bash|terminal|run)\b/.test(hay)) {
+    return {
+      summary: "Command approval requested",
+      detailLabel: "Command",
+    };
+  }
+  if (/\b(read|search|grep|glob|list|fetch)\b/.test(hay)) {
+    return {
+      summary: "File-read approval requested",
+      detailLabel: "File to read",
+    };
+  }
+  return {
+    summary: "File-change approval requested",
+    detailLabel: "File change",
+  };
+}
+
+function permissionOptionLabel(label: string): string {
+  const normalized = label.trim().toLowerCase();
+  if (normalized === "allow once" || normalized === "approve once") {
+    return "Approve once";
+  }
+  if (
+    normalized === "always allow" ||
+    normalized === "always allow this session" ||
+    normalized === "allow for session"
+  ) {
+    return "Always allow this session";
+  }
+  if (normalized === "reject" || normalized === "decline" || normalized === "deny") {
+    return "Decline";
+  }
+  if (normalized === "cancel" || normalized === "cancel turn") {
+    return "Cancel turn";
+  }
+  return label;
+}
 
 function newFollowUpId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -148,6 +208,7 @@ export type DesktopAgentChatPanelProps = {
   taskId: string;
   projectId?: string | null;
   projectLabel?: string;
+  /** Human-facing task id (e.g. BACK-12) for empty-state chrome. */
   taskDisplayId?: string | null;
   cwd?: string | null;
   agentChatId?: string | null;
@@ -223,6 +284,10 @@ export function DesktopAgentChatPanel({
   const [viewMode, setViewMode] = useState<AgentChatViewMode>(() =>
     readAgentChatViewMode(viewScope),
   );
+  const [surfaceTabState, setSurfaceTabState] = useState(() =>
+    createDefaultAgentSurfaceTabs(),
+  );
+  const { tabs: surfaceTabs, activeId: activeSurfaceTabId } = surfaceTabState;
   const [messages, setMessages] = useState<AgentChatMessage[]>(() =>
     loadAgentChatTranscript(agentChatId),
   );
@@ -344,13 +409,10 @@ export function DesktopAgentChatPanel({
     [schedulePersistLiveTurnTimeline],
   );
 
-  const statusWorking = isTaskAgentWorkingForUi(
-    { id: taskId, status: taskStatus },
-    agentStatus,
-  );
-  // Chat "Working…" follows the live turn. List/board still use statusWorking
-  // via agentStatus; OR keeps the row lit for ACP turns with no local UI.
-  const working = localTurnWorking || statusWorking;
+  // Chat "Working…" follows the live turn only. List/board still use
+  // agentStatus / PTY marks — OR'ing them here flashed bare "Working…" on an
+  // empty chat before the user sent anything.
+  const working = localTurnWorking;
   const sessionReady =
     Boolean(agentChatId?.trim()) || Boolean(agentAttachRequest);
 
@@ -574,6 +636,8 @@ export function DesktopAgentChatPanel({
   }, [collapsed, viewMode]);
 
   // Record the Start-agent bootstrap prompt as the first user message once.
+  // sessionIsNew means a bootstrap turn is already in flight (Start agent) —
+  // not merely a fresh chat id (/clear).
   useEffect(() => {
     const request = agentAttachRequest;
     if (!request || request.taskId !== taskId) return;
@@ -1064,7 +1128,7 @@ export function DesktopAgentChatPanel({
       optionId?: string | null;
       preference?: "once" | "always" | "reject" | null;
       skipped?: boolean;
-      answers?: { questionId: string; selectedOptionIds: string[] }[] | null;
+      answers?: Record<string, string | string[]> | null;
     }) => {
       const pending = uiRequest;
       if (!pending || uiRequestBusy) return;
@@ -1089,18 +1153,6 @@ export function DesktopAgentChatPanel({
     [uiRequest, uiRequestBusy],
   );
 
-  const handleAskOptionToggle = useCallback(
-    (optionId: string) => {
-      const question = askProgress.activeQuestion;
-      if (!question) return;
-      setAskDrafts((prev) => ({
-        ...prev,
-        [question.id]: toggleAskOption(question, prev[question.id], optionId),
-      }));
-    },
-    [askProgress.activeQuestion],
-  );
-
   const handleAskAdvance = useCallback(() => {
     if (!askProgress.canAdvance) return;
     if (!askProgress.isLastQuestion) {
@@ -1111,6 +1163,70 @@ export function DesktopAgentChatPanel({
     if (!answers) return;
     void answerUiRequest({ answers });
   }, [answerUiRequest, askDrafts, askProgress, askQuestions]);
+
+  const handleAskAdvanceRef = useRef(handleAskAdvance);
+  handleAskAdvanceRef.current = handleAskAdvance;
+  const askAutoAdvanceTimerRef = useRef<number | null>(null);
+
+  const handleAskOptionToggle = useCallback(
+    (optionLabel: string) => {
+      const question = askProgress.activeQuestion;
+      if (!question || uiRequestBusy) return;
+      setAskDrafts((prev) => ({
+        ...prev,
+        [question.id]: toggleAskOption(
+          question,
+          prev[question.id],
+          optionLabel,
+        ),
+      }));
+      if (question.multiSelect) return;
+      if (askAutoAdvanceTimerRef.current != null) {
+        window.clearTimeout(askAutoAdvanceTimerRef.current);
+      }
+      askAutoAdvanceTimerRef.current = window.setTimeout(() => {
+        askAutoAdvanceTimerRef.current = null;
+        handleAskAdvanceRef.current();
+      }, 200);
+    },
+    [askProgress.activeQuestion, uiRequestBusy],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (askAutoAdvanceTimerRef.current != null) {
+        window.clearTimeout(askAutoAdvanceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // T3 digit shortcuts 1–9 for option selection.
+  useEffect(() => {
+    if (!uiRequest || uiRequest.kind !== "ask_question" || uiRequestBusy) {
+      return;
+    }
+    const question = askProgress.activeQuestion;
+    if (!question) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isEditableFocusTarget(event.target)) return;
+      const digit = Number.parseInt(event.key, 10);
+      if (Number.isNaN(digit) || digit < 1 || digit > 9) return;
+      const option = question.options[digit - 1];
+      if (!option) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleAskOptionToggle(option.label);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    askProgress.activeQuestion,
+    handleAskOptionToggle,
+    uiRequest,
+    uiRequestBusy,
+  ]);
 
   const handleRevertToMessage = useCallback(
     (messageId: string) => {
@@ -1428,10 +1544,12 @@ export function DesktopAgentChatPanel({
         }
       }
 
+      // Fresh session only — no bootstrap prompt. Do not set sessionIsNew:
+      // that flag means "Start agent turn already in flight" and would flash
+      // Thinking / Working for… chrome on an empty cleared chat.
       requestAttach({
         taskId,
         chatId: nextChatId,
-        sessionIsNew: true,
         forceReattach: true,
         focusUi: true,
       });
@@ -1452,6 +1570,54 @@ export function DesktopAgentChatPanel({
     clearLocalTurnWorking();
     onStopAgent?.();
   }, [clearLocalTurnWorking, onStopAgent, taskId]);
+
+  const handleActivateSurfaceTab = useCallback((id: string) => {
+    setSurfaceTabState((current) =>
+      current.activeId === id ? current : { ...current, activeId: id },
+    );
+  }, []);
+
+  const handleAddSurface = useCallback((kind: AgentSurfaceAddableKind) => {
+    setSurfaceTabState((current) => addAgentSurfaceTab(current.tabs, kind));
+  }, []);
+
+  const handleCloseSurfaceTab = useCallback((id: string) => {
+    setSurfaceTabState((current) =>
+      closeAgentSurfaceTab(current.tabs, id, current.activeId),
+    );
+  }, []);
+
+  const handleBrowserUrlChange = useCallback(
+    (tabId: string, url: string, title: string) => {
+      setSurfaceTabState((current) => ({
+        ...current,
+        tabs: updateAgentSurfaceTab(current.tabs, tabId, {
+          resourceId: url,
+          title,
+        }),
+      }));
+    },
+    [],
+  );
+
+  const activeSurfaceTab =
+    surfaceTabs.find((tab) => tab.id === activeSurfaceTabId) ?? surfaceTabs[0];
+  const activeSurfaceKind = activeSurfaceTab?.kind ?? "chat";
+  const cwdAvailable = Boolean(cwd?.trim());
+  const planMarkdownForSurface =
+    turnUi.proposedPlanMarkdown?.trim() ||
+    [...messages]
+      .reverse()
+      .find((message) => message.proposedPlanMarkdown?.trim())
+      ?.proposedPlanMarkdown ||
+    null;
+  const planStepsForSurface =
+    turnUi.planSteps.length > 0
+      ? turnUi.planSteps
+      : [...messages]
+          .reverse()
+          .find((message) => message.planSteps && message.planSteps.length > 0)
+          ?.planSteps ?? [];
 
   const handleModelChange = useCallback((_modelId: string) => {
       // Model is applied on the next ACP prompt via readAgentChatModelId().
@@ -1504,17 +1670,31 @@ export function DesktopAgentChatPanel({
     setViewMode(readAgentChatViewMode(viewScope));
   }, [viewScope]);
 
+  // T3 ChatView: draft hero vertically centers the composer; timeline inset is 0.
+  const isDraftHeroState =
+    messages.length === 0 && !working && !uiRequest;
+
   useEffect(() => {
     const footer = footerRef.current;
     if (!footer || typeof ResizeObserver === "undefined") return;
     const update = () => {
+      if (isDraftHeroState) {
+        setComposerOverlayHeight(0);
+        return;
+      }
       setComposerOverlayHeight(Math.ceil(footer.getBoundingClientRect().height));
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(footer);
     return () => observer.disconnect();
-  }, [uiRequest, sendError, viewMode, queuedFollowUps.length]);
+  }, [
+    isDraftHeroState,
+    uiRequest,
+    sendError,
+    viewMode,
+    queuedFollowUps.length,
+  ]);
 
   // Keep viewMode forced to chat (ACP-only — ADR-025).
   useEffect(() => {
@@ -1574,43 +1754,24 @@ export function DesktopAgentChatPanel({
         }
       >
         <div className="desktop-agent-chat__body-main">
-          <header className="desktop-agent-chat__header">
-            <div className="desktop-agent-chat__header-main">
-              <div className="desktop-agent-chat__tabs" aria-label="Agent chat">
-                <span className="desktop-agent-chat__tab is-active">Chat</span>
-              </div>
-              {onStopAgent ? (
-                <div className="desktop-agent-chat__header-agent-actions">
-                  <button
-                    type="button"
-                    className="desktop-agent-chat__stop"
-                    aria-label="Stop agent"
-                    title="Stop agent — end the ACP session and clear this task's agent chat"
-                    onClick={() => handleStopAgent()}
-                  >
-                    Stop
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            {onHide ? (
-              <div className="desktop-agent-chat__header-actions">
-                <button
-                  type="button"
-                  className="desktop-agent-chat__hide"
-                  onClick={onHide}
-                  title="Hide agent chat"
-                >
-                  Hide
-                </button>
-              </div>
-            ) : null}
-          </header>
+          <DesktopAgentSurfaceTabBar
+            tabs={surfaceTabs}
+            activeId={activeSurfaceTabId}
+            cwdAvailable={cwdAvailable}
+            onActivate={handleActivateSurfaceTab}
+            onClose={handleCloseSurfaceTab}
+            onAddSurface={handleAddSurface}
+            onStopAgent={onStopAgent ? handleStopAgent : undefined}
+            onHide={onHide}
+          />
 
           <div className="desktop-agent-chat__body-main-content">
             <div
-              className="desktop-agent-chat__pane desktop-agent-chat__pane--chat is-active"
+              className={`desktop-agent-chat__pane desktop-agent-chat__pane--chat${
+                activeSurfaceKind === "chat" ? " is-active" : " is-inactive"
+              }`}
               aria-label="Chat"
+              aria-hidden={activeSurfaceKind !== "chat"}
             >
             <DesktopAgentChatTranscript
               messages={messages}
@@ -1619,176 +1780,51 @@ export function DesktopAgentChatPanel({
               planSteps={turnUi.planSteps}
               proposedPlanMarkdown={turnUi.proposedPlanMarkdown}
               assistantDraft={turnUi.assistantDraft}
-              turnPhase={turnUi.phase}
               working={working}
               liveTurnMessageId={liveTurnMessageId}
               turnStartedAt={turnStartedAt}
-              composerOverlayHeight={composerOverlayHeight}
-              projectLabel={projectLabel}
-              taskDisplayId={taskDisplayId}
-              emptyHint="Send a message to talk to the agent."
+              composerOverlayHeight={
+                isDraftHeroState ? 0 : composerOverlayHeight
+              }
               onOpenTurnDiff={handleOpenTurnDiff}
               onRevertToMessage={handleRevertToMessage}
             />
-          </div>
-          </div>
+            </div>
 
-          <div ref={footerRef} className="desktop-agent-chat__footer">
+            {/* T3 ChatView: composer overlays the timeline so the scrollbar
+                fills the full column; height is measured for end inset.
+                Draft hero centers the composer + headline (T3 isDraftHeroState). */}
+            <div
+              ref={footerRef}
+              className={`desktop-agent-chat__footer${
+                isDraftHeroState ? " is-draft-hero" : ""
+              }${
+                activeSurfaceKind !== "chat" ? " is-surface-hidden" : ""
+              }`}
+              data-chat-composer-overlay="true"
+              aria-hidden={activeSurfaceKind !== "chat"}
+            >
+              <div className="desktop-agent-chat__footer-inner">
+            {isDraftHeroState ? (
+              <div className="desktop-agent-chat__draft-hero-slot">
+                {taskDisplayId?.trim() ? (
+                  <p className="desktop-agent-chat__draft-hero-eyebrow">
+                    {taskDisplayId.trim()}
+                  </p>
+                ) : null}
+                <h1 className="desktop-agent-chat__draft-hero-headline">
+                  What should we build in{" "}
+                  <span className="desktop-agent-chat__draft-hero-project">
+                    {projectLabel.trim() || "this project"}
+                  </span>
+                  ?
+                </h1>
+              </div>
+            ) : null}
             {sendError ? (
               <p className="desktop-agent-chat__error" role="alert">
                 {sendError}
               </p>
-            ) : null}
-            {uiRequest ? (
-              <div
-                className="desktop-agent-chat__approval"
-                role="alertdialog"
-                aria-label={uiRequest.title}
-              >
-                <p className="desktop-agent-chat__approval-title">
-                  {uiRequest.kind === "ask_question"
-                    ? askQuestions.length > 1
-                      ? `Agent question ${askProgress.questionIndex + 1} of ${askQuestions.length}`
-                      : "Agent question"
-                    : "Permission required"}
-                  {" · "}
-                  {uiRequest.title}
-                </p>
-                {uiRequest.kind === "ask_question" &&
-                askProgress.activeQuestion ? (
-                  <>
-                    <p className="desktop-agent-chat__approval-prompt">
-                      {askProgress.activeQuestion.prompt}
-                    </p>
-                    {askQuestions.length > 1 ? (
-                      <p className="desktop-agent-chat__approval-progress">
-                        {askProgress.answeredCount} of {askQuestions.length}{" "}
-                        answered
-                      </p>
-                    ) : null}
-                    <div className="desktop-agent-chat__approval-options">
-                      {askProgress.activeQuestion.options.map((option) => {
-                        const selected = askProgress.selectedOptionIds.includes(
-                          option.id,
-                        );
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            className={`desktop-agent-chat__approval-option${
-                              selected ? " is-primary" : ""
-                            }`}
-                            disabled={uiRequestBusy}
-                            aria-pressed={selected}
-                            onClick={() => handleAskOptionToggle(option.id)}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="desktop-agent-chat__approval-options">
-                      {askProgress.questionIndex > 0 ? (
-                        <button
-                          type="button"
-                          className="desktop-agent-chat__approval-option"
-                          disabled={uiRequestBusy}
-                          onClick={() =>
-                            setAskQuestionIndex((index) => Math.max(0, index - 1))
-                          }
-                        >
-                          Back
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="desktop-agent-chat__approval-option is-primary"
-                        disabled={uiRequestBusy || !askProgress.canAdvance}
-                        onClick={() => handleAskAdvance()}
-                      >
-                        {askProgress.isLastQuestion ? "Submit" : "Next"}
-                      </button>
-                      <button
-                        type="button"
-                        className="desktop-agent-chat__approval-option"
-                        disabled={uiRequestBusy}
-                        onClick={() => void answerUiRequest({ skipped: true })}
-                      >
-                        Skip
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {uiRequest.detail ? (
-                      <pre className="desktop-agent-chat__approval-detail">
-                        {uiRequest.detail}
-                      </pre>
-                    ) : null}
-                    <div className="desktop-agent-chat__approval-options">
-                      {uiRequest.options.length > 0 ? (
-                        uiRequest.options.map((option, index) => (
-                          <button
-                            key={option.id}
-                            type="button"
-                            className={`desktop-agent-chat__approval-option${
-                              index === 0 ? " is-primary" : ""
-                            }`}
-                            disabled={uiRequestBusy}
-                            onClick={() =>
-                              void answerUiRequest({ optionId: option.id })
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        ))
-                      ) : uiRequest.kind === "permission" ? (
-                        <>
-                          <button
-                            type="button"
-                            className="desktop-agent-chat__approval-option is-primary"
-                            disabled={uiRequestBusy}
-                            onClick={() =>
-                              void answerUiRequest({ preference: "once" })
-                            }
-                          >
-                            Allow once
-                          </button>
-                          <button
-                            type="button"
-                            className="desktop-agent-chat__approval-option"
-                            disabled={uiRequestBusy}
-                            onClick={() =>
-                              void answerUiRequest({ preference: "always" })
-                            }
-                          >
-                            Always allow
-                          </button>
-                          <button
-                            type="button"
-                            className="desktop-agent-chat__approval-option"
-                            disabled={uiRequestBusy}
-                            onClick={() =>
-                              void answerUiRequest({ preference: "reject" })
-                            }
-                          >
-                            Reject
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className="desktop-agent-chat__approval-option"
-                          disabled={uiRequestBusy}
-                          onClick={() => void answerUiRequest({ skipped: true })}
-                        >
-                          Skip
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
             ) : null}
             {queuedFollowUps.length > 0 ? (
               <div
@@ -1854,13 +1890,336 @@ export function DesktopAgentChatPanel({
               running={working}
               disabled={!sessionReady && !working}
               placeholder={
-                !sessionReady
-                  ? "Start an agent to chat…"
-                  : working
-                    ? "Add a follow-up to send next…"
-                    : "Message the agent… (@ files, / commands, paste images)"
+                uiRequest
+                  ? uiRequest.kind === "ask_question"
+                    ? "Type your own answer, or leave this blank to use the selected option"
+                    : (uiRequest.detail ??
+                      "Resolve this approval request to continue")
+                  : !sessionReady
+                    ? "Start an agent to chat…"
+                    : working
+                      ? "Add a follow-up to send next…"
+                      : "Message the agent… (@ files, / commands, paste images)"
+              }
+              pendingBanner={
+                uiRequest ? (
+                  <div
+                    className={`desktop-agent-chat__approval${
+                      uiRequest.kind === "ask_question"
+                        ? " desktop-agent-chat__approval--ask"
+                        : " desktop-agent-chat__approval--permission"
+                    }`}
+                    role="alertdialog"
+                    aria-label={uiRequest.title}
+                  >
+                    {uiRequest.kind === "ask_question" &&
+                    askProgress.activeQuestion ? (
+                      <>
+                        <div className="desktop-agent-chat__ask-header">
+                          <span className="desktop-agent-chat__ask-eyebrow">
+                            {askProgress.activeQuestion.header?.trim() ||
+                              "Question"}
+                          </span>
+                          {askQuestions.length > 1 ? (
+                            <span className="desktop-agent-chat__ask-count">
+                              {askProgress.questionIndex + 1}/
+                              {askQuestions.length}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="desktop-agent-chat__approval-prompt">
+                          {askProgress.activeQuestion.prompt}
+                        </p>
+                        {askProgress.activeQuestion.multiSelect ? (
+                          <p className="desktop-agent-chat__approval-progress">
+                            Select one or more options.
+                          </p>
+                        ) : null}
+                        <div className="desktop-agent-chat__ask-options">
+                          {askProgress.activeQuestion.options.map(
+                            (option, index) => {
+                              const customActive =
+                                askProgress.customAnswer.trim().length > 0;
+                              const selected =
+                                !customActive &&
+                                askProgress.selectedOptionLabels.includes(
+                                  option.label,
+                                );
+                              const shortcutKey = index < 9 ? index + 1 : null;
+                              return (
+                                <button
+                                  key={`${askProgress.activeQuestion?.id}:${option.label}`}
+                                  type="button"
+                                  className={`desktop-agent-chat__ask-option${
+                                    selected ? " is-selected" : ""
+                                  }`}
+                                  disabled={uiRequestBusy}
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    handleAskOptionToggle(option.label)
+                                  }
+                                >
+                                  <span className="desktop-agent-chat__ask-option-label">
+                                    {option.label}
+                                  </span>
+                                  {selected ? (
+                                    <Check
+                                      className="desktop-agent-chat__ask-check"
+                                      size={14}
+                                      strokeWidth={2.2}
+                                      aria-hidden
+                                    />
+                                  ) : shortcutKey != null ? (
+                                    <kbd className="desktop-agent-chat__ask-kbd">
+                                      {shortcutKey}
+                                    </kbd>
+                                  ) : null}
+                                </button>
+                              );
+                            },
+                          )}
+                        </div>
+                        <label className="desktop-agent-chat__ask-custom">
+                          <span className="desktop-agent-chat__ask-custom-label">
+                            Or type an answer
+                          </span>
+                          <input
+                            type="text"
+                            className="desktop-agent-chat__ask-custom-input"
+                            value={askProgress.customAnswer}
+                            disabled={uiRequestBusy}
+                            placeholder="Custom answer…"
+                            onChange={(event) => {
+                              const question = askProgress.activeQuestion;
+                              if (!question) return;
+                              if (askAutoAdvanceTimerRef.current != null) {
+                                window.clearTimeout(
+                                  askAutoAdvanceTimerRef.current,
+                                );
+                                askAutoAdvanceTimerRef.current = null;
+                              }
+                              const value = event.target.value;
+                              setAskDrafts((prev) => ({
+                                ...prev,
+                                [question.id]: setAskCustomAnswer(
+                                  prev[question.id],
+                                  value,
+                                ),
+                              }));
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter") return;
+                              event.preventDefault();
+                              if (askProgress.canAdvance) handleAskAdvance();
+                            }}
+                          />
+                        </label>
+                        <div className="desktop-agent-chat__approval-options">
+                          {askProgress.questionIndex > 0 ? (
+                            <button
+                              type="button"
+                              className="desktop-agent-chat__approval-option"
+                              disabled={uiRequestBusy}
+                              onClick={() => {
+                                if (askAutoAdvanceTimerRef.current != null) {
+                                  window.clearTimeout(
+                                    askAutoAdvanceTimerRef.current,
+                                  );
+                                  askAutoAdvanceTimerRef.current = null;
+                                }
+                                setAskQuestionIndex((index) =>
+                                  Math.max(0, index - 1),
+                                );
+                              }}
+                            >
+                              Back
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="desktop-agent-chat__approval-option is-primary"
+                            disabled={uiRequestBusy || !askProgress.canAdvance}
+                            onClick={() => {
+                              if (askAutoAdvanceTimerRef.current != null) {
+                                window.clearTimeout(
+                                  askAutoAdvanceTimerRef.current,
+                                );
+                                askAutoAdvanceTimerRef.current = null;
+                              }
+                              handleAskAdvance();
+                            }}
+                          >
+                            {askProgress.isLastQuestion ? "Submit" : "Next"}
+                          </button>
+                          <button
+                            type="button"
+                            className="desktop-agent-chat__approval-option"
+                            disabled={uiRequestBusy}
+                            onClick={() =>
+                              void answerUiRequest({ skipped: true })
+                            }
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {(() => {
+                          const copy = permissionApprovalCopy(
+                            uiRequest.title,
+                            uiRequest.detail,
+                          );
+                          return (
+                            <>
+                              <div className="desktop-agent-chat__approval-header">
+                                <span className="desktop-agent-chat__approval-eyebrow">
+                                  Pending approval
+                                </span>
+                                <span className="desktop-agent-chat__approval-summary">
+                                  {copy.summary}
+                                </span>
+                              </div>
+                              {uiRequest.detail ? (
+                                <div className="desktop-agent-chat__approval-detail-card">
+                                  <p className="desktop-agent-chat__approval-detail-label">
+                                    {copy.detailLabel}
+                                  </p>
+                                  <pre className="desktop-agent-chat__approval-detail">
+                                    {uiRequest.detail}
+                                  </pre>
+                                </div>
+                              ) : uiRequest.title ? (
+                                <div className="desktop-agent-chat__approval-detail-card">
+                                  <p className="desktop-agent-chat__approval-detail-label">
+                                    {copy.detailLabel}
+                                  </p>
+                                  <pre className="desktop-agent-chat__approval-detail">
+                                    {uiRequest.title}
+                                  </pre>
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                        <div className="desktop-agent-chat__approval-options">
+                          {uiRequest.options.length > 0 ? (
+                            uiRequest.options.map((option, index) => (
+                              <button
+                                key={option.id}
+                                type="button"
+                                className={`desktop-agent-chat__approval-option${
+                                  index === 0 ? " is-primary" : ""
+                                }`}
+                                disabled={uiRequestBusy}
+                                onClick={() =>
+                                  void answerUiRequest({ optionId: option.id })
+                                }
+                              >
+                                {permissionOptionLabel(option.label)}
+                              </button>
+                            ))
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="desktop-agent-chat__approval-option"
+                                disabled={uiRequestBusy}
+                                onClick={() =>
+                                  void answerUiRequest({ preference: "reject" })
+                                }
+                              >
+                                Decline
+                              </button>
+                              <button
+                                type="button"
+                                className="desktop-agent-chat__approval-option"
+                                disabled={uiRequestBusy}
+                                onClick={() =>
+                                  void answerUiRequest({
+                                    preference: "always",
+                                  })
+                                }
+                              >
+                                Always allow this session
+                              </button>
+                              <button
+                                type="button"
+                                className="desktop-agent-chat__approval-option is-primary"
+                                disabled={uiRequestBusy}
+                                onClick={() =>
+                                  void answerUiRequest({ preference: "once" })
+                                }
+                              >
+                                Approve once
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : null
               }
             />
+              </div>
+            </div>
+
+            {surfaceTabs.map((tab) => {
+              if (tab.kind === "chat") return null;
+              const active = tab.id === activeSurfaceTabId;
+              return (
+                <div
+                  key={tab.id}
+                  className={`desktop-agent-chat__pane desktop-agent-chat__pane--${tab.kind}${
+                    active ? " is-active" : " is-inactive"
+                  }`}
+                  aria-label={tab.title}
+                  aria-hidden={!active}
+                >
+                  {tab.kind === "browser" ? (
+                    <AgentSurfaceBrowserPane
+                      initialUrl={tab.resourceId}
+                      onUrlChange={(url, title) =>
+                        handleBrowserUrlChange(tab.id, url, title)
+                      }
+                    />
+                  ) : null}
+                  {tab.kind === "terminal" && cwdAvailable && cwd ? (
+                    <AgentSurfaceTerminalPane
+                      cwd={cwd}
+                      sessionKey={tab.id}
+                      label={tab.title}
+                    />
+                  ) : null}
+                  {tab.kind === "terminal" && !cwdAvailable ? (
+                    <p className="agent-surface-empty">
+                      Set a project working directory to open a terminal.
+                    </p>
+                  ) : null}
+                  {tab.kind === "files" && cwdAvailable && cwd ? (
+                    <AgentSurfaceFilesPane cwd={cwd} />
+                  ) : null}
+                  {tab.kind === "files" && !cwdAvailable ? (
+                    <p className="agent-surface-empty">
+                      Set a project working directory to browse files.
+                    </p>
+                  ) : null}
+                  {tab.kind === "plan" ? (
+                    <AgentSurfacePlanPane
+                      proposedPlanMarkdown={planMarkdownForSurface}
+                      planSteps={planStepsForSurface}
+                    />
+                  ) : null}
+                  {tab.kind === "diff" ? (
+                    <AgentSurfaceDiffPane
+                      messages={messages}
+                      liveActivities={turnUi.activities}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
 

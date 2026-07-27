@@ -339,21 +339,6 @@ export function createOptimisticTurnUiState(): AgentChatTurnUiState {
   };
 }
 
-export function turnPhaseLabel(phase: AgentChatTurnPhase): string {
-  switch (phase) {
-    case "starting":
-      return "Starting…";
-    case "thinking":
-      return "Thinking…";
-    case "tooling":
-      return "Working…";
-    case "responding":
-      return "Writing…";
-    default:
-      return "";
-  }
-}
-
 function parseActivityStatus(value: unknown): AgentChatActivityStatus | undefined {
   if (value === "pending") return "pending";
   if (value === "in_progress" || value === "inProgress") return "in_progress";
@@ -812,29 +797,6 @@ function planSummary(update: Record<string, unknown>): string | undefined {
   return `${entries.length} step${entries.length === 1 ? "" : "s"}`;
 }
 
-function upsertItem(
-  items: readonly AgentChatActivityItem[],
-  next: AgentChatActivityItem,
-): AgentChatActivityItem[] {
-  const withoutPending =
-    next.id === PENDING_TURN_ID
-      ? items
-      : items.filter((item) => item.id !== PENDING_TURN_ID);
-  const index = withoutPending.findIndex((item) => item.id === next.id);
-  if (index < 0) return [...withoutPending, next];
-  const copy = [...withoutPending];
-  const previous = copy[index];
-  copy[index] = {
-    ...previous,
-    ...next,
-    detail: next.detail ?? previous.detail,
-    status: next.status ?? previous.status,
-    toolKind: next.toolKind ?? previous.toolKind,
-    diff: next.diff ?? previous.diff,
-  };
-  return copy;
-}
-
 /** Mark open rows complete so the timeline freezes with the answer. */
 export function finalizeTurnActivities(
   items: readonly AgentChatActivityItem[],
@@ -947,8 +909,12 @@ export function applyAcpSessionUpdateToTurn(
         : existing && !isGenericToolTitle(existing.title)
           ? existing.title
           : "";
+      // T3 keeps path-bearing Cursor titles in the heading (toolWorkEntryHeading
+      // uses toolTitle as-is). Only collapse exact generic verbs via
+      // presentToolTitle — do not peel the path out of the title first, or a
+      // missing rawInput/locations frame leaves a bare "Read" with no file.
       const peeled = peelToolTitle(titleFromAgent);
-      const title = presentToolTitle(peeled.title || titleFromAgent, toolKind);
+      const title = presentToolTitle(titleFromAgent, toolKind);
       const diff = toolDiffFromUpdate(u);
       const detail =
         toolDetailFromUpdate(u, toolKind) ??
@@ -1099,32 +1065,6 @@ export function applyAcpSessionUpdate(
     },
     update,
   ).activities;
-}
-
-export function statusLabel(status: AgentChatActivityStatus | undefined): string {
-  switch (status) {
-    case "pending":
-      return "Pending";
-    case "in_progress":
-      return "Running";
-    case "completed":
-      return "Done";
-    case "failed":
-      return "Failed";
-    default:
-      return "";
-  }
-}
-
-export function activityGlyph(item: AgentChatActivityItem): string {
-  if (item.kind === "thought" || item.kind === "info") return "◆";
-  if (item.kind === "plan") return "☰";
-  const kind = item.toolKind?.toLowerCase();
-  if (kind === "read") return "○";
-  if (kind === "edit" || kind === "write") return "✎";
-  if (kind === "execute" || kind === "shell") return "›";
-  if (kind === "search" || kind === "grep") return "⌕";
-  return "•";
 }
 
 export function formatDiffStat(diff: AgentChatActivityDiff): string {

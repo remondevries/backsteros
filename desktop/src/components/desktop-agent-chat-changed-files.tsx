@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { formatDiffStat } from "../lib/agent/agent-acp-activity";
 import {
@@ -94,7 +95,11 @@ function TreeNodes({
               onClick={() => onToggleDir(node.path)}
             >
               <span className="desktop-agent-chat__cf-chevron" aria-hidden>
-                {open ? "▾" : "▸"}
+                {open ? (
+                  <ChevronDown size={12} strokeWidth={2} />
+                ) : (
+                  <ChevronRight size={12} strokeWidth={2} />
+                )}
               </span>
               <span className="desktop-agent-chat__cf-file-name">{node.name}</span>
               <DiffStat additions={node.additions} deletions={node.deletions} />
@@ -148,7 +153,11 @@ export function DesktopAgentChatChangedFiles({
           onClick={() => setExpanded((value) => !value)}
         >
           <span className="desktop-agent-chat__cf-chevron" aria-hidden>
-            {expanded ? "▾" : "▸"}
+            {expanded ? (
+              <ChevronDown size={12} strokeWidth={2} />
+            ) : (
+              <ChevronRight size={12} strokeWidth={2} />
+            )}
           </span>
           <span className="desktop-agent-chat__cf-title">
             {files.length} changed file{files.length === 1 ? "" : "s"}

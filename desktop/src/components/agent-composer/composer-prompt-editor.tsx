@@ -502,7 +502,7 @@ export function ComposerPromptEditor(props: ComposerPromptEditorProps) {
   const initialValueRef = useRef(props.value);
   const initialConfig = useMemo<InitialConfigType>(
     () => ({
-      namespace: "backsteros-agent-composer",
+      namespace: "desktop-agent-composer",
       editable: true,
       nodes: [ComposerMentionNode],
       editorState: () => {

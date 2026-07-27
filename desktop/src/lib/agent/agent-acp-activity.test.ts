@@ -27,7 +27,7 @@ describe("applyAcpSessionUpdate", () => {
       rawInput: { file_path: "/tmp/proj/NOTES.md" },
     });
     assert.equal(items.length, 1);
-    assert.equal(items[0]?.title, "Edited");
+    assert.equal(items[0]?.title, "Write NOTES.md");
     assert.equal(items[0]?.detail, "tmp/proj/NOTES.md");
     assert.equal(items[0]?.status, "completed");
   });
@@ -78,7 +78,7 @@ describe("applyAcpSessionUpdate", () => {
     assert.equal(items[1]?.detail, "repo/STRUCTURE.md");
   });
 
-  it("peels file paths out of Reading/Grepping titles when rawInput is empty", () => {
+  it("keeps path-bearing Reading titles in the heading (T3-style) and still extracts detail", () => {
     let items: AgentChatActivityItem[] = [];
     items = applyAcpSessionUpdate(items, {
       sessionUpdate: "tool_call",
@@ -88,7 +88,7 @@ describe("applyAcpSessionUpdate", () => {
       status: "in_progress",
       rawInput: {},
     });
-    assert.equal(items[0]?.title, "Read");
+    assert.equal(items[0]?.title, "Reading src/lib/agent/agent-acp-activity.ts");
     assert.equal(items[0]?.detail, "lib/agent/agent-acp-activity.ts");
 
     items = applyAcpSessionUpdate(items, {

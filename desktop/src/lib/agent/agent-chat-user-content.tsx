@@ -1,3 +1,5 @@
+import { DocumentMarkdownPreview } from "@backsteros/ui";
+
 import {
   basenameOfPath,
   splitPromptIntoComposerSegments,
@@ -21,6 +23,10 @@ export function AgentChatFileChip({ path }: { path: string }) {
   );
 }
 
+/**
+ * T3 UserMessageBody: ChatMarkdown with lineBreaks, plus our file-mention chips.
+ * Text segments render through DocumentMarkdownPreview (same as assistant).
+ */
 export function AgentChatUserMessageContent({
   text,
   images,
@@ -29,6 +35,8 @@ export function AgentChatUserMessageContent({
   images?: readonly AgentChatImageAttachment[];
 }) {
   const segments = splitPromptIntoComposerSegments(text);
+  const hasMentions = segments.some((segment) => segment.type === "mention");
+
   return (
     <div className="desktop-agent-chat__user-content">
       {images && images.length > 0 ? (
@@ -48,14 +56,32 @@ export function AgentChatUserMessageContent({
           ))}
         </div>
       ) : null}
-      <p className="desktop-agent-chat__bubble-text">
-        {segments.map((segment, index) => {
-          if (segment.type === "mention") {
-            return <AgentChatFileChip key={`m-${index}`} path={segment.path} />;
-          }
-          return <span key={`t-${index}`}>{segment.text}</span>;
-        })}
-      </p>
+      {hasMentions ? (
+        <div className="desktop-agent-chat__bubble-md desktop-agent-chat__bubble-md--user">
+          {segments.map((segment, index) => {
+            if (segment.type === "mention") {
+              return <AgentChatFileChip key={`m-${index}`} path={segment.path} />;
+            }
+            if (!segment.text.trim()) {
+              return (
+                <span key={`t-${index}`} aria-hidden="true">
+                  {segment.text}
+                </span>
+              );
+            }
+            return (
+              <DocumentMarkdownPreview
+                key={`t-${index}`}
+                body={segment.text}
+              />
+            );
+          })}
+        </div>
+      ) : text.trim() ? (
+        <div className="desktop-agent-chat__bubble-md desktop-agent-chat__bubble-md--user">
+          <DocumentMarkdownPreview body={text} />
+        </div>
+      ) : null}
     </div>
   );
 }

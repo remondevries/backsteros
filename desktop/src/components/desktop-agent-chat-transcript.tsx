@@ -1,15 +1,27 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { DocumentMarkdownPreview, ShimmerText } from "@backsteros/ui";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { DocumentMarkdownPreview } from "@backsteros/ui";
+import {
+  LegendList,
+  type LegendListRef,
+  type LegendListRenderItemProps,
+} from "@legendapp/list/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import {
   activityIsCollapsible,
   defaultActivityExpanded,
   formatDiffStat,
   segmentsFromActivitiesAndText,
-  turnPhaseLabel,
   type AgentChatActivityDiff,
   type AgentChatActivityItem,
-  type AgentChatTurnPhase,
   type AgentChatTurnSegment,
 } from "../lib/agent/agent-acp-activity";
 import {
@@ -20,16 +32,19 @@ import {
   ANCHOR_SCROLL_SETTLE_FALLBACK_MS,
   CHAT_LIST_ANCHOR_OFFSET,
   createShowDebouncer,
-  isNearScrollEnd,
-  measureAnchoredTurn,
-  scrollAnchorToTop,
-  shouldRevealAnchoredEnd,
   type AgentChatScrollMode,
 } from "../lib/agent/agent-chat-scroll";
 import {
   collectChangedFilesFromActivities,
   turnWorkedLabel,
 } from "../lib/agent/agent-chat-timeline";
+import {
+  agentChatTimelineRowAnchorId,
+  agentChatTimelineRowKey,
+  agentChatTimelineRowType,
+  deriveAgentChatTimelineRows,
+  type AgentChatTimelineRow,
+} from "../lib/agent/agent-chat-timeline-rows";
 import {
   activityCompactPreview,
   activityTrailingIndicator,
@@ -39,17 +54,26 @@ import {
   splitWorkLogEntries,
 } from "../lib/agent/agent-chat-work-ui";
 import type { AgentChatMessage } from "../lib/agent/agent-chat-transcript";
-import { shouldSuppressSettledAssistantForLiveTurn } from "../lib/agent/agent-chat-live-timeline";
 import { AgentChatUserMessageContent } from "../lib/agent/agent-chat-user-content";
-import { pairAgentChatTurns } from "../lib/agent/agent-chat-turns";
 import { toolActivityHeading } from "../lib/agent/t3-port/work-entry-labels";
+import {
+  resolveChatListAnchoredEndSpace,
+} from "../lib/agent/t3-port/chat-list";
 import type { AgentChatPlanStep } from "../lib/agent/t3-port/cursor-todos";
+import {
+  deriveTimelineMinimapItems,
+  resolveTimelineMinimapHasPersistentGutter,
+  resolveTimelineMinimapHitStripWidth,
+  resolveTimelineRowHeight,
+  resolveTimelineRowTop,
+} from "../lib/agent/t3-port/timeline-minimap";
 import {
   aggregateToolActivities,
   type AggregatedActivityGroup,
 } from "../lib/agent/tool-activity-aggregate";
 import { PlanTodoList } from "./agent-chat/plan-todo-list";
 import { ProposedPlanCard } from "./agent-chat/proposed-plan-card";
+import { AgentChatTimelineMinimap } from "./agent-chat/timeline-minimap";
 import { DesktopAgentChatChangedFiles } from "./desktop-agent-chat-changed-files";
 
 export type DesktopAgentChatTranscriptProps = {
@@ -63,8 +87,6 @@ export type DesktopAgentChatTranscriptProps = {
   proposedPlanMarkdown?: string | null;
   /** Streaming assistant text for the in-flight turn (ACP chunks). */
   assistantDraft?: string;
-  /** High-level turn phase for the status line. */
-  turnPhase?: AgentChatTurnPhase;
   working?: boolean;
   /**
    * When set and `working`, the matching settled assistant row is suppressed
@@ -75,9 +97,6 @@ export type DesktopAgentChatTranscriptProps = {
   turnStartedAt?: number | null;
   /** Footer height so anchored turns clear the composer (T3 composerOverlayHeight). */
   composerOverlayHeight?: number;
-  projectLabel?: string;
-  taskDisplayId?: string | null;
-  emptyHint?: string;
   /** Open the turn Diff panel (T3-style). */
   onOpenTurnDiff?: (turnId: string, filePath?: string) => void;
   /** Truncate transcript after this user message (local revert checkpoint). */
@@ -200,7 +219,7 @@ function AssistantMessageBubble({
   streaming?: boolean;
 }) {
   const trimmed = text.trim();
-  if (!trimmed && !streaming) return null;
+  if (!trimmed) return null;
 
   return (
     <div className="desktop-agent-chat__bubble-wrap desktop-agent-chat__bubble-wrap--assistant">
@@ -209,18 +228,11 @@ function AssistantMessageBubble({
           streaming ? " desktop-agent-chat__bubble--draft" : ""
         }`}
       >
-        {trimmed ? (
-          <div className="desktop-agent-chat__bubble-md">
-            <DocumentMarkdownPreview body={trimmed} />
-          </div>
-        ) : null}
-        {streaming ? (
-          <span className="desktop-agent-chat__draft-caret" aria-hidden>
-            ▍
-          </span>
-        ) : null}
+        <div className="desktop-agent-chat__bubble-md">
+          <DocumentMarkdownPreview body={trimmed} />
+        </div>
       </div>
-      {!streaming && trimmed ? (
+      {!streaming ? (
         <MessageMeta createdAt={createdAt} text={trimmed} align="start" />
       ) : null}
     </div>
@@ -249,13 +261,7 @@ function WorkingTimer({ startedAt }: { startedAt: number }) {
   );
 }
 
-function WorkingRow({
-  startedAt,
-  phaseLabel,
-}: {
-  startedAt?: number | null;
-  phaseLabel?: string;
-}) {
+function WorkingRow({ startedAt }: { startedAt?: number | null }) {
   return (
     <div className="desktop-agent-chat__working-row">
       <span className="desktop-agent-chat__working-dots" aria-hidden>
@@ -268,8 +274,6 @@ function WorkingRow({
           <>
             Working for <WorkingTimer startedAt={startedAt} />
           </>
-        ) : phaseLabel ? (
-          <ShimmerText>{phaseLabel}</ShimmerText>
         ) : (
           "Working…"
         )}
@@ -359,22 +363,13 @@ function ActivityRow({
   onToggle: () => void;
 }) {
   const collapsible = activityIsCollapsible(item);
-  const active =
-    live &&
-    (item.status === "in_progress" ||
-      item.status === "pending" ||
-      item.kind === "info");
   const preview = activityCompactPreview(item);
   const flag = activityTrailingIndicator(item, live);
   const heading =
     item.kind === "tool"
       ? toolActivityHeading({ title: item.title, toolKind: item.toolKind })
       : item.title;
-  const title = active ? (
-    <ShimmerText className="desktop-agent-chat__activity-title">
-      {heading}
-    </ShimmerText>
-  ) : (
+  const title = (
     <span className="desktop-agent-chat__activity-title">{heading}</span>
   );
 
@@ -408,7 +403,7 @@ function ActivityRow({
           }`}
           aria-hidden
         >
-          ▸
+          <ChevronDown size={12} strokeWidth={2} />
         </span>
       ) : null}
     </div>
@@ -544,7 +539,7 @@ function AggregatedActivityRow({
             }`}
             aria-hidden
           >
-            ▸
+            <ChevronDown size={12} strokeWidth={2} />
           </span>
         </div>
       </button>
@@ -632,11 +627,19 @@ function ActivityList({
           onClick={() => setShowEarlier((value) => !value)}
         >
           <span className="desktop-agent-chat__activity-overflow-chevron" aria-hidden>
-            {showEarlier ? "▾" : "▸"}
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              className={
+                showEarlier
+                  ? "desktop-agent-chat__chevron-icon is-open"
+                  : "desktop-agent-chat__chevron-icon"
+              }
+            />
           </span>
           {showEarlier
             ? "Show fewer tool calls"
-            : `… ${hiddenCount} earlier item${hiddenCount === 1 ? "" : "s"} hidden`}
+            : `+${hiddenCount} previous tool call${hiddenCount === 1 ? "" : "s"}`}
         </button>
       ) : null}
       <ul className="desktop-agent-chat__activity-list" aria-label={label}>
@@ -800,12 +803,14 @@ function SettledAssistantTurn({
               onClick={() => setExpanded((value) => !value)}
             >
               <span
-                className={`desktop-agent-chat__fold-chevron${
-                  expanded ? " is-open" : ""
-                }`}
+                className="desktop-agent-chat__fold-chevron"
                 aria-hidden
               >
-                ▸
+                {expanded ? (
+                  <ChevronDown size={14} strokeWidth={2} />
+                ) : (
+                  <ChevronRight size={14} strokeWidth={2} />
+                )}
               </span>
               <span className="desktop-agent-chat__fold-label">{foldLabel}</span>
             </button>
@@ -871,42 +876,38 @@ export function DesktopAgentChatTranscript({
   planSteps = [],
   proposedPlanMarkdown = null,
   assistantDraft = "",
-  turnPhase = "idle",
   working = false,
   liveTurnMessageId = null,
   turnStartedAt = null,
   composerOverlayHeight = 0,
-  projectLabel = "Task",
-  taskDisplayId = null,
-  emptyHint = "Send a message to talk to the agent.",
   onOpenTurnDiff,
   onRevertToMessage,
 }: DesktopAgentChatTranscriptProps) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const anchorElRef = useRef<HTMLDivElement | null>(null);
-  const contentEndRef = useRef<HTMLDivElement | null>(null);
-  const endSpaceRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<LegendListRef | null>(null);
   const scrollModeRef = useRef<AgentChatScrollMode>("following-end");
   const userScrollGenRef = useRef(0);
   const liveFollowGenRef = useRef<number | null>(0);
   const pendingAnchorIdRef = useRef<string | null>(null);
   const positionedAnchorIdRef = useRef<string | null>(null);
   const settledAnchorIdRef = useRef<string | null>(null);
-  const pendingScrollRestoreRef = useRef<{
-    messageId: string;
-    offset: number;
-    userScrollGeneration: number;
-  } | null>(null);
-  const restoreFrameRef = useRef<number | null>(null);
   const settleCleanupRef = useRef<(() => void) | null>(null);
-  const [endSpacePx, setEndSpacePx] = useState(0);
-  const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
   const previousMessageIdsRef = useRef<string[] | null>(null);
+  const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
+  const [timelineViewportElement, setTimelineViewportElement] =
+    useState<HTMLDivElement | null>(null);
+  const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] =
+    useState(false);
+  const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [freshMessageIds, setFreshMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
   const [liveEnter, setLiveEnter] = useState(false);
   const wasShowingLiveRef = useRef(false);
+  const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const showScrollDebouncerRef = useRef(
+    createShowDebouncer(() => setShowScrollToBottom(true)),
+  );
 
   const showActivities = activities.length > 0;
   const resolvedLiveSegments =
@@ -918,7 +919,6 @@ export function DesktopAgentChatTranscript({
   const showProposedPlan = Boolean(proposedPlanMarkdown?.trim());
   const draft = assistantDraft.trimEnd();
   const showDraft = draft.length > 0 && !showLiveSegments;
-  const phaseLabel = working ? turnPhaseLabel(turnPhase) : "";
   const showTurnChrome =
     working ||
     showActivities ||
@@ -927,40 +927,30 @@ export function DesktopAgentChatTranscript({
     showPlanTodos ||
     showProposedPlan;
   const liveChangedFiles = collectChangedFilesFromActivities(activities);
-  const showDraftHero = messages.length === 0 && !showTurnChrome;
-  const [draftHeroVisible, setDraftHeroVisible] = useState(showDraftHero);
-  const [draftHeroExiting, setDraftHeroExiting] = useState(false);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const showScrollDebouncerRef = useRef(
-    createShowDebouncer(() => setShowScrollToBottom(true)),
+
+  const rows = useMemo(
+    () =>
+      deriveAgentChatTimelineRows({
+        messages,
+        showTurnChrome,
+        working: Boolean(working),
+        liveTurnMessageId,
+      }),
+    [liveTurnMessageId, messages, showTurnChrome, working],
   );
-  const turns = pairAgentChatTurns(messages);
 
-  useEffect(() => {
-    if (showDraftHero) {
-      setDraftHeroVisible(true);
-      setDraftHeroExiting(false);
-      return;
-    }
-    if (!draftHeroVisible) return;
-    setDraftHeroExiting(true);
-    const timer = window.setTimeout(() => {
-      setDraftHeroVisible(false);
-      setDraftHeroExiting(false);
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [draftHeroVisible, showDraftHero]);
+  const minimapItems = useMemo(
+    () => deriveTimelineMinimapItems(rows),
+    [rows],
+  );
 
-  const latestUserMessageId = (() => {
+  const latestUserMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]?.role === "user") return messages[i]!.id;
     }
     return null;
-  })();
+  }, [messages]);
 
-  // Animate only newly appended turns (skip initial history hydrate).
-  // When a live turn settles into a message, skip the enter flash — T3 keeps
-  // that handoff quiet so the fold/label just appears in place.
   useEffect(() => {
     const ids = messages.map((message) => message.id);
     const previous = previousMessageIdsRef.current;
@@ -1007,7 +997,6 @@ export function DesktopAgentChatTranscript({
     pendingAnchorIdRef.current = latestUserMessageId;
     positionedAnchorIdRef.current = null;
     settledAnchorIdRef.current = null;
-    pendingScrollRestoreRef.current = null;
     settleCleanupRef.current?.();
     settleCleanupRef.current = null;
     showScrollDebouncerRef.current.cancel();
@@ -1016,167 +1005,213 @@ export function DesktopAgentChatTranscript({
 
   useEffect(() => {
     if (working) return;
-    // After the turn settles, keep following the end until the user scrolls away.
     if (scrollModeRef.current === "anchoring-new-turn") {
       scrollModeRef.current = "following-end";
       liveFollowGenRef.current = userScrollGenRef.current;
     }
   }, [working]);
 
-  const cancelLiveFollowForUserNavigation = () => {
+  const cancelLiveFollowForUserNavigation = useCallback(() => {
     userScrollGenRef.current += 1;
     scrollModeRef.current = "free-scrolling";
     liveFollowGenRef.current = null;
     pendingAnchorIdRef.current = null;
-    // If the user interrupted mid-pin, treat the turn as settled so later
-    // expand/collapse can still restore scroll without jumping.
     if (
       positionedAnchorIdRef.current != null &&
       settledAnchorIdRef.current !== positionedAnchorIdRef.current
     ) {
       settledAnchorIdRef.current = positionedAnchorIdRef.current;
     }
-    pendingScrollRestoreRef.current = null;
     settleCleanupRef.current?.();
     settleCleanupRef.current = null;
-    if (restoreFrameRef.current != null) {
-      cancelAnimationFrame(restoreFrameRef.current);
-      restoreFrameRef.current = null;
-    }
-  };
+  }, []);
 
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
+  const finishAnimatedPositioning = useCallback((messageId: string) => {
+    if (positionedAnchorIdRef.current !== messageId) return;
+    settledAnchorIdRef.current = messageId;
+    settleCleanupRef.current = null;
+  }, []);
 
-    const updateScrollChrome = () => {
-      const atEnd = isNearScrollEnd(scrollEl);
-      if (atEnd) {
-        if (scrollModeRef.current !== "anchoring-new-turn") {
-          scrollModeRef.current = "following-end";
-          liveFollowGenRef.current = userScrollGenRef.current;
+  const positionAnchorAtIndex = useCallback(
+    (messageId: string, anchorIndex: number, remainingAttempts: number) => {
+      requestAnimationFrame(() => {
+        if (positionedAnchorIdRef.current !== messageId) return;
+        const list = listRef.current;
+        if (!list) {
+          if (remainingAttempts > 0) {
+            positionAnchorAtIndex(messageId, anchorIndex, remainingAttempts - 1);
+          }
+          return;
         }
-        showScrollDebouncerRef.current.cancel();
-        setShowScrollToBottom(false);
-        return;
+
+        let finished = false;
+        const scrollNode = list.getScrollableNode();
+        const onDone = () => {
+          if (finished) return;
+          finished = true;
+          window.clearTimeout(fallbackTimer);
+          scrollNode.removeEventListener("scrollend", onDone);
+          finishAnimatedPositioning(messageId);
+        };
+        const fallbackTimer = window.setTimeout(
+          onDone,
+          ANCHOR_SCROLL_SETTLE_FALLBACK_MS,
+        );
+        scrollNode.addEventListener("scrollend", onDone, { once: true });
+        settleCleanupRef.current = () => {
+          finished = true;
+          window.clearTimeout(fallbackTimer);
+          scrollNode.removeEventListener("scrollend", onDone);
+        };
+
+        void list.scrollToIndex({
+          index: anchorIndex,
+          animated: true,
+          viewOffset: CHAT_LIST_ANCHOR_OFFSET,
+        });
+      });
+    },
+    [finishAnimatedPositioning],
+  );
+
+  const handleAnchorReady = useCallback(
+    (info: { anchorIndex: number | undefined }) => {
+      if (anchorMessageId == null || info.anchorIndex === undefined) return;
+      if (pendingAnchorIdRef.current === anchorMessageId) {
+        pendingAnchorIdRef.current = null;
       }
-      if (
-        liveFollowGenRef.current === userScrollGenRef.current &&
-        scrollModeRef.current !== "free-scrolling"
-      ) {
-        // Programmatic follow scroll — don't flash the pill.
-        showScrollDebouncerRef.current.cancel();
-        setShowScrollToBottom(false);
-        return;
-      }
-      scrollModeRef.current = "free-scrolling";
-      liveFollowGenRef.current = null;
-      showScrollDebouncerRef.current.maybeExecute();
-    };
-
-    const markManualNavigation = () => {
-      cancelLiveFollowForUserNavigation();
-      updateScrollChrome();
-    };
-
-    scrollEl.addEventListener("wheel", markManualNavigation, { passive: true });
-    scrollEl.addEventListener("touchmove", markManualNavigation, {
-      passive: true,
-    });
-    scrollEl.addEventListener("pointerdown", markManualNavigation, {
-      passive: true,
-    });
-    scrollEl.addEventListener("scroll", updateScrollChrome, { passive: true });
-    updateScrollChrome();
-    return () => {
-      scrollEl.removeEventListener("wheel", markManualNavigation);
-      scrollEl.removeEventListener("touchmove", markManualNavigation);
-      scrollEl.removeEventListener("pointerdown", markManualNavigation);
-      scrollEl.removeEventListener("scroll", updateScrollChrome);
-    };
-  }, [messages.length, showTurnChrome, endSpacePx]);
-
-  // Apply end spacer + pin new anchor (pending → positioned → settled via scrollend).
-  useLayoutEffect(() => {
-    const scrollEl = scrollRef.current;
-    const anchorEl = anchorElRef.current;
-    const contentEndEl = contentEndRef.current;
-    if (!scrollEl || !anchorEl || !contentEndEl || !anchorMessageId) {
-      if (endSpaceRef.current) endSpaceRef.current.style.height = "0px";
-      setEndSpacePx(0);
-      return;
-    }
-
-    const metrics = measureAnchoredTurn({
-      scrollEl,
-      anchorEl,
-      contentEndEl,
-      composerOverlayHeight,
-      anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
-    });
-    if (!metrics) return;
-
-    if (endSpaceRef.current) {
-      endSpaceRef.current.style.height = `${metrics.endSpace}px`;
-    }
-    setEndSpacePx((prev) =>
-      prev === metrics.endSpace ? prev : metrics.endSpace,
-    );
-
-    if (pendingAnchorIdRef.current === anchorMessageId) {
-      pendingAnchorIdRef.current = null;
-    }
-
-    if (
-      scrollModeRef.current === "anchoring-new-turn" &&
-      positionedAnchorIdRef.current !== anchorMessageId
-    ) {
+      if (positionedAnchorIdRef.current === anchorMessageId) return;
       positionedAnchorIdRef.current = anchorMessageId;
       settledAnchorIdRef.current = null;
       settleCleanupRef.current?.();
+      positionAnchorAtIndex(anchorMessageId, info.anchorIndex, 12);
+    },
+    [anchorMessageId, positionAnchorAtIndex],
+  );
 
-      let finished = false;
-      const finishAnimatedPositioning = () => {
-        if (finished) return;
-        finished = true;
-        window.clearTimeout(fallbackTimer);
-        scrollEl.removeEventListener("scrollend", finishAnimatedPositioning);
-        if (positionedAnchorIdRef.current !== anchorMessageId) return;
-        // Freeze animated offset (T3 finishAnimatedPositioning).
-        scrollEl.scrollTop = scrollEl.scrollTop;
-        settledAnchorIdRef.current = anchorMessageId;
-        settleCleanupRef.current = null;
-      };
-      const fallbackTimer = window.setTimeout(
-        finishAnimatedPositioning,
-        ANCHOR_SCROLL_SETTLE_FALLBACK_MS,
-      );
-      scrollEl.addEventListener("scrollend", finishAnimatedPositioning, {
-        once: true,
-      });
-      settleCleanupRef.current = () => {
-        finished = true;
-        window.clearTimeout(fallbackTimer);
-        scrollEl.removeEventListener("scrollend", finishAnimatedPositioning);
-      };
+  const anchoredEndSpace = useMemo(() => {
+    const config = resolveChatListAnchoredEndSpace(
+      rows,
+      anchorMessageId,
+      agentChatTimelineRowAnchorId,
+    );
+    if (!config) return undefined;
+    return {
+      ...config,
+      onReady: handleAnchorReady,
+    };
+  }, [anchorMessageId, handleAnchorReady, rows]);
 
-      scrollAnchorToTop({
-        scrollEl,
-        anchorEl,
-        anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
-        behavior: "smooth",
+  // Attach manual-navigation listeners to LegendList's scroll node (T3 ChatView).
+  useEffect(() => {
+    let removeListeners: (() => void) | null = null;
+    const frame = requestAnimationFrame(() => {
+      const scrollNode = listRef.current?.getScrollableNode();
+      if (!scrollNode) return;
+      const handleManualNavigation = () => {
+        cancelLiveFollowForUserNavigation();
+      };
+      scrollNode.addEventListener("wheel", handleManualNavigation, {
+        passive: true,
       });
+      scrollNode.addEventListener("touchmove", handleManualNavigation, {
+        passive: true,
+      });
+      scrollNode.addEventListener("pointerdown", handleManualNavigation, {
+        passive: true,
+      });
+      removeListeners = () => {
+        scrollNode.removeEventListener("wheel", handleManualNavigation);
+        scrollNode.removeEventListener("touchmove", handleManualNavigation);
+        scrollNode.removeEventListener("pointerdown", handleManualNavigation);
+      };
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      removeListeners?.();
+    };
+  }, [cancelLiveFollowForUserNavigation, rows.length]);
+
+  const updateMinimapInView = useCallback(() => {
+    const state = listRef.current?.getState();
+    if (!state || minimapItems.length === 0) return;
+
+    const scrollTop = state.scroll ?? 0;
+    const scrollBottom = scrollTop + (state.scrollLength ?? 0);
+
+    for (const item of minimapItems) {
+      const strip = minimapStripMap.get(item.id);
+      if (!strip) continue;
+
+      const rowTop = resolveTimelineRowTop(state, item.rowIndex);
+      const rowHeight = resolveTimelineRowHeight(state, item.rowIndex);
+      const inView =
+        rowTop !== null &&
+        rowTop < scrollBottom &&
+        rowTop + Math.max(1, rowHeight ?? 1) > scrollTop;
+
+      strip.dataset.inView = inView ? "true" : "false";
     }
-  }, [
-    anchorMessageId,
-    messages.length,
-    activities.length,
-    draft.length,
-    turnPhase,
-    working,
-    showTurnChrome,
-    composerOverlayHeight,
-  ]);
+  }, [minimapItems, minimapStripMap]);
+
+  const handleListScroll = useCallback(() => {
+    updateMinimapInView();
+    const state = listRef.current?.getState();
+    const atEnd = state?.isAtEnd === true || state?.isNearEnd === true;
+    if (atEnd) {
+      if (scrollModeRef.current !== "anchoring-new-turn") {
+        scrollModeRef.current = "following-end";
+        liveFollowGenRef.current = userScrollGenRef.current;
+      }
+      showScrollDebouncerRef.current.cancel();
+      setShowScrollToBottom(false);
+      return;
+    }
+    if (
+      liveFollowGenRef.current === userScrollGenRef.current &&
+      scrollModeRef.current !== "free-scrolling"
+    ) {
+      showScrollDebouncerRef.current.cancel();
+      setShowScrollToBottom(false);
+      return;
+    }
+    scrollModeRef.current = "free-scrolling";
+    liveFollowGenRef.current = null;
+    showScrollDebouncerRef.current.maybeExecute();
+  }, [updateMinimapInView]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(updateMinimapInView);
+    return () => cancelAnimationFrame(frame);
+  }, [rows.length, updateMinimapInView]);
+
+  useEffect(() => {
+    if (!timelineViewportElement) return;
+
+    const measure = () => {
+      const viewportWidth =
+        timelineViewportElement.getBoundingClientRect().width;
+      const nextHasPersistentGutter =
+        resolveTimelineMinimapHasPersistentGutter(viewportWidth);
+      setMinimapHasPersistentGutter((current) =>
+        current === nextHasPersistentGutter
+          ? current
+          : nextHasPersistentGutter,
+      );
+      setMinimapHitStripWidth(
+        resolveTimelineMinimapHitStripWidth(viewportWidth),
+      );
+    };
+
+    const frame = requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(timelineViewportElement);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [rows.length, timelineViewportElement]);
 
   // T3 double-rAF live follow while anchoring / following-end.
   useEffect(() => {
@@ -1188,42 +1223,51 @@ export function DesktopAgentChatTranscript({
       secondFrame = requestAnimationFrame(() => {
         if (liveFollowGenRef.current !== userScrollGenRef.current) return;
         if (pendingAnchorIdRef.current != null) return;
-
-        const scrollEl = scrollRef.current;
-        const anchorEl = anchorElRef.current;
-        const contentEndEl = contentEndRef.current;
-        if (!scrollEl || !anchorEl || !contentEndEl || !anchorMessageId) return;
+        const list = listRef.current;
+        if (!list) return;
 
         if (
           positionedAnchorIdRef.current != null &&
           settledAnchorIdRef.current !== positionedAnchorIdRef.current &&
           scrollModeRef.current === "anchoring-new-turn"
         ) {
-          // Still animating the initial pin.
           return;
         }
 
-        const metrics = measureAnchoredTurn({
-          scrollEl,
-          anchorEl,
-          contentEndEl,
-          composerOverlayHeight,
-          anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
-        });
-        if (!metrics) return;
-
         if (scrollModeRef.current === "anchoring-new-turn") {
-          if (shouldRevealAnchoredEnd(metrics)) {
-            scrollEl.scrollTop += metrics.scrollDeltaToRevealEnd;
+          const state = list.getState();
+          const anchorIndex = anchoredEndSpace?.anchorIndex;
+          if (anchorIndex == null) return;
+          const anchorTop = state.positionAtIndex(anchorIndex);
+          const lastIndex = rows.length - 1;
+          if (lastIndex < 0) return;
+          const lastTop = state.positionAtIndex(lastIndex);
+          const lastSize = state.sizeAtIndex(lastIndex);
+          if (
+            !Number.isFinite(anchorTop) ||
+            !Number.isFinite(lastTop) ||
+            !Number.isFinite(lastSize)
+          ) {
+            return;
+          }
+          const lastBottom = lastTop + Math.max(1, lastSize);
+          const usable =
+            state.scrollLength -
+            composerOverlayHeight -
+            CHAT_LIST_ANCHOR_OFFSET;
+          const target = Math.max(0, lastBottom - Math.max(0, usable));
+          const delta = target - state.scroll;
+          if (delta > 1) {
+            void list.scrollToOffset({
+              offset: state.scroll + delta,
+              animated: false,
+            });
           }
           return;
         }
 
         if (scrollModeRef.current !== "following-end") return;
-        const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
-        if (maxScroll > 0 && scrollEl.scrollTop < maxScroll - 2) {
-          scrollEl.scrollTop = maxScroll;
-        }
+        void list.scrollToEnd?.({ animated: false });
       });
     });
 
@@ -1232,67 +1276,15 @@ export function DesktopAgentChatTranscript({
       if (secondFrame != null) cancelAnimationFrame(secondFrame);
     };
   }, [
-    anchorMessageId,
-    messages.length,
+    anchoredEndSpace?.anchorIndex,
+    composerOverlayHeight,
+    rows,
+    showTurnChrome,
+    working,
     activities.length,
     draft.length,
-    turnPhase,
-    working,
-    showTurnChrome,
-    composerOverlayHeight,
-    endSpacePx,
     liveSegments.length,
   ]);
-
-  // T3: when settled content resizes (expand/collapse) and user is not live-following,
-  // restore scrollTop so the viewport does not jump.
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    const anchorEl = anchorElRef.current;
-    if (!scrollEl || !anchorEl || !anchorMessageId) return;
-    if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(() => {
-      if (settledAnchorIdRef.current !== anchorMessageId) return;
-      if (liveFollowGenRef.current === userScrollGenRef.current) return;
-
-      const scrollOffset = scrollEl.scrollTop;
-      if (pendingScrollRestoreRef.current == null) {
-        pendingScrollRestoreRef.current = {
-          messageId: anchorMessageId,
-          offset: scrollOffset,
-          userScrollGeneration: userScrollGenRef.current,
-        };
-      }
-      if (restoreFrameRef.current != null) return;
-      restoreFrameRef.current = requestAnimationFrame(() => {
-        restoreFrameRef.current = null;
-        const pending = pendingScrollRestoreRef.current;
-        pendingScrollRestoreRef.current = null;
-        if (
-          pending &&
-          settledAnchorIdRef.current === pending.messageId &&
-          pending.userScrollGeneration === userScrollGenRef.current
-        ) {
-          if (Math.abs(scrollEl.scrollTop - pending.offset) <= 2) {
-            scrollEl.scrollTop = pending.offset;
-          }
-        }
-      });
-    });
-    observer.observe(anchorEl);
-    // Also observe the live turn / transcript inner so activity expands are caught.
-    const inner = scrollEl.querySelector(".desktop-agent-chat__transcript-inner");
-    if (inner) observer.observe(inner);
-
-    return () => {
-      observer.disconnect();
-      if (restoreFrameRef.current != null) {
-        cancelAnimationFrame(restoreFrameRef.current);
-        restoreFrameRef.current = null;
-      }
-    };
-  }, [anchorMessageId, messages.length, showTurnChrome]);
 
   useEffect(() => {
     return () => {
@@ -1301,152 +1293,184 @@ export function DesktopAgentChatTranscript({
     };
   }, []);
 
-  return (
-    <div className="desktop-agent-chat__transcript-shell">
-      <div
-        ref={scrollRef}
-        className="desktop-agent-chat__transcript desktop-agent-chat__transcript--top-fade"
-        role="log"
-        aria-live="polite"
-      >
-        {draftHeroVisible ? (
+  const renderItem = useCallback(
+    ({ item }: LegendListRenderItemProps<AgentChatTimelineRow>) => {
+      let body: ReactNode;
+      if (item.kind === "user") {
+        const canRevert =
+          onRevertToMessage &&
+          (item.turnEndIndex < messages.length - 1 || showTurnChrome);
+        body = (
           <div
-            className={`desktop-agent-chat__draft-hero${
-              draftHeroExiting ? " is-exiting" : ""
+            data-chat-anchor={
+              item.message.id === anchorMessageId ? "true" : undefined
+            }
+            data-chat-turn-id={item.message.id}
+            className={`desktop-agent-chat__turn desktop-agent-chat__turn--user${
+              freshMessageIds.has(item.message.id)
+                ? " desktop-agent-chat__turn--enter"
+                : ""
             }`}
           >
-            <p className="desktop-agent-chat__draft-hero-eyebrow">
-              {taskDisplayId?.trim() || "Agent"}
-            </p>
-            <h2 className="desktop-agent-chat__draft-hero-title">
-              {projectLabel.trim() || "BacksterOS"}
-            </h2>
-            <p className="desktop-agent-chat__draft-hero-hint">{emptyHint}</p>
+            <UserMessageBubble
+              text={item.message.text}
+              createdAt={item.message.createdAt}
+              images={item.message.images}
+              onRevert={
+                canRevert
+                  ? () => onRevertToMessage(item.message.id)
+                  : undefined
+              }
+            />
           </div>
-        ) : null}
-        <div className="desktop-agent-chat__transcript-inner">
-          {turns.map((turn) => (
-            <div key={turn.turnId}>
-              {turn.user ? (
-                <div
-                  ref={
-                    turn.user.id === anchorMessageId ? anchorElRef : undefined
-                  }
-                  data-chat-anchor={
-                    turn.user.id === anchorMessageId ? "true" : undefined
-                  }
-                  data-chat-turn-id={turn.user.id}
-                  className={`desktop-agent-chat__turn desktop-agent-chat__turn--user${
-                    freshMessageIds.has(turn.user.id)
-                      ? " desktop-agent-chat__turn--enter"
-                      : ""
-                  }`}
-                >
-                  <UserMessageBubble
-                    text={turn.user.text}
-                    createdAt={turn.user.createdAt}
-                    images={turn.user.images}
-                    onRevert={
-                      onRevertToMessage &&
-                      (turn.endIndex < messages.length - 1 || showTurnChrome)
-                        ? () => onRevertToMessage(turn.user!.id)
-                        : undefined
-                    }
-                  />
-                </div>
-              ) : null}
-              {turn.assistant &&
-              !shouldSuppressSettledAssistantForLiveTurn(
-                turn.assistant,
-                liveTurnMessageId,
-                Boolean(working),
-              ) ? (
-                <SettledAssistantTurn
-                  message={turn.assistant}
-                  startedAt={turn.user?.createdAt ?? null}
-                  enterClass={
-                    freshMessageIds.has(turn.assistant.id)
-                      ? " desktop-agent-chat__turn--enter"
-                      : ""
-                  }
-                  isLatestTurn={
-                    !showTurnChrome && turn.endIndex === messages.length - 1
-                  }
-                  onOpenTurnDiff={onOpenTurnDiff}
-                />
-              ) : null}
-            </div>
-          ))}
-
-          {showTurnChrome ? (
-            <div
-              className={`desktop-agent-chat__turn desktop-agent-chat__turn--assistant desktop-agent-chat__turn--live${
-                liveEnter ? " desktop-agent-chat__turn--enter" : ""
-              }`}
-            >
-              {showLiveSegments ? (
-                <TurnSegmentList
-                  segments={resolvedLiveSegments}
-                  live
-                  streamingLastText={working}
-                />
-              ) : (
-                <>
-                  {showActivities ? (
-                    <ActivityList items={activities} live />
-                  ) : null}
-                  {showDraft ? (
-                    <AssistantMessageBubble text={draft} streaming={working} />
-                  ) : null}
-                </>
-              )}
-              {showProposedPlan && proposedPlanMarkdown ? (
-                <ProposedPlanCard planMarkdown={proposedPlanMarkdown} />
-              ) : null}
-              {showPlanTodos ? <PlanTodoList steps={planSteps} /> : null}
-
-              {onOpenTurnDiff ? (
-                <DesktopAgentChatChangedFiles
-                  turnId="live"
-                  files={liveChangedFiles}
-                  isLatestTurn
-                  onOpenTurnDiff={onOpenTurnDiff}
-                />
-              ) : null}
-
-              {working ? (
-                <WorkingRow
-                  startedAt={turnStartedAt}
-                  phaseLabel={phaseLabel || undefined}
-                />
-              ) : null}
-            </div>
-          ) : null}
-
-          <div ref={contentEndRef} className="desktop-agent-chat__content-end" />
-          <div
-            ref={endSpaceRef}
-            className="desktop-agent-chat__end-space"
-            style={{ height: endSpacePx }}
-            aria-hidden
+        );
+      } else if (item.kind === "assistant") {
+        body = (
+          <SettledAssistantTurn
+            message={item.message}
+            startedAt={item.startedAt}
+            enterClass={
+              freshMessageIds.has(item.message.id)
+                ? " desktop-agent-chat__turn--enter"
+                : ""
+            }
+            isLatestTurn={item.isLatestTurn}
+            onOpenTurnDiff={onOpenTurnDiff}
           />
+        );
+      } else {
+        body = (
+          <div
+            className={`desktop-agent-chat__turn desktop-agent-chat__turn--assistant desktop-agent-chat__turn--live${
+              liveEnter ? " desktop-agent-chat__turn--enter" : ""
+            }`}
+          >
+            {showLiveSegments ? (
+              <TurnSegmentList
+                segments={resolvedLiveSegments}
+                live
+                streamingLastText={working}
+              />
+            ) : (
+              <>
+                {showActivities ? (
+                  <ActivityList items={activities} live />
+                ) : null}
+                {showDraft ? (
+                  <AssistantMessageBubble text={draft} streaming={working} />
+                ) : null}
+              </>
+            )}
+            {showProposedPlan && proposedPlanMarkdown ? (
+              <ProposedPlanCard planMarkdown={proposedPlanMarkdown} />
+            ) : null}
+            {showPlanTodos ? <PlanTodoList steps={planSteps} /> : null}
+            {onOpenTurnDiff ? (
+              <DesktopAgentChatChangedFiles
+                turnId="live"
+                files={liveChangedFiles}
+                isLatestTurn
+                onOpenTurnDiff={onOpenTurnDiff}
+              />
+            ) : null}
+            {working ? <WorkingRow startedAt={turnStartedAt} /> : null}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className="desktop-agent-chat__timeline-row"
+          data-timeline-root="true"
+        >
+          {body}
         </div>
-      </div>
+      );
+    },
+    [
+      activities,
+      anchorMessageId,
+      draft,
+      freshMessageIds,
+      liveChangedFiles,
+      liveEnter,
+      messages.length,
+      onOpenTurnDiff,
+      onRevertToMessage,
+      planSteps,
+      proposedPlanMarkdown,
+      resolvedLiveSegments,
+      showActivities,
+      showDraft,
+      showLiveSegments,
+      showPlanTodos,
+      showProposedPlan,
+      showTurnChrome,
+      turnStartedAt,
+      working,
+    ],
+  );
+
+  return (
+    <div
+      ref={setTimelineViewportElement}
+      className="desktop-agent-chat__transcript-shell"
+    >
+      <LegendList
+        ref={listRef}
+        data={rows}
+        keyExtractor={agentChatTimelineRowKey}
+        getItemType={(item) => agentChatTimelineRowType(item)}
+        renderItem={renderItem}
+        estimatedItemSize={90}
+        initialScrollAtEnd
+        contentInsetEndAdjustment={composerOverlayHeight}
+        {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
+        maintainScrollAtEnd={
+          anchoredEndSpace
+            ? false
+            : {
+                animated: false,
+                on: {
+                  dataChange: true,
+                  itemLayout: true,
+                  layout: true,
+                },
+              }
+        }
+        maintainVisibleContentPosition={{
+          data: true,
+          size: false,
+        }}
+        onScroll={handleListScroll}
+        className="desktop-agent-chat__transcript desktop-agent-chat__transcript--top-fade"
+        style={{ height: "100%", minHeight: 0 }}
+      />
+      <AgentChatTimelineMinimap
+        items={minimapItems}
+        bottomInset={composerOverlayHeight}
+        hasPersistentGutter={minimapHasPersistentGutter}
+        hitStripWidth={minimapHitStripWidth}
+        stripMap={minimapStripMap}
+        onSelect={(item) => {
+          cancelLiveFollowForUserNavigation();
+          void listRef.current?.scrollToIndex({
+            index: item.rowIndex,
+            animated: true,
+            viewOffset: 24,
+          });
+        }}
+      />
       {showScrollToBottom ? (
         <button
           type="button"
           className="desktop-agent-chat__scroll-end"
           style={{ bottom: composerOverlayHeight + 4 }}
           onClick={() => {
-            const scrollEl = scrollRef.current;
-            if (!scrollEl) return;
             scrollModeRef.current = "following-end";
             liveFollowGenRef.current = userScrollGenRef.current;
             showScrollDebouncerRef.current.cancel();
-            scrollEl.scrollTo({
-              top: scrollEl.scrollHeight,
-              behavior: "smooth",
-            });
+            void listRef.current?.scrollToEnd?.({ animated: true });
             setShowScrollToBottom(false);
           }}
         >

@@ -822,7 +822,8 @@ export async function respondPtyAcpUiRequest(options: {
   optionId?: string | null;
   preference?: "once" | "always" | "reject" | null;
   skipped?: boolean;
-  answers?: { questionId: string; selectedOptionIds: string[] }[] | null;
+  /** T3 shape: questionId → option label(s) or custom text. */
+  answers?: Record<string, string | string[]> | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const requestId = options.requestId.trim();
   if (!requestId) return { ok: false, error: "requestId is required." };

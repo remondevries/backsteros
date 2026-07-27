@@ -46,7 +46,7 @@ test("presentAcpToolActivity: Find/glob pattern from rawInput", () => {
   assert.equal(activity.detail, '"**/*.swift"');
 });
 
-test("presentAcpToolActivity: peels Reading title path when rawInput empty", () => {
+test("presentAcpToolActivity: keeps path-bearing Reading title (T3-style)", () => {
   const activity = presentAcpToolActivity(
     {
       toolCallId: "read-title",
@@ -56,7 +56,10 @@ test("presentAcpToolActivity: peels Reading title path when rawInput empty", () 
     },
     undefined,
   );
-  assert.equal(activity.title, "Read");
+  assert.equal(
+    activity.title,
+    "Reading src/lib/agent/agent-acp-activity.ts",
+  );
   assert.equal(activity.detail, "lib/agent/agent-acp-activity.ts");
 });
 

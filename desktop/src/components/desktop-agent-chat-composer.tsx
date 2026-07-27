@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 import {
@@ -110,6 +111,11 @@ export type DesktopAgentChatComposerProps = {
   onModeChange?: (mode: AgentChatMode) => void;
   /** Fired for /clear — wipe transcript and reset the agent session. */
   onClearChat?: () => void;
+  /**
+   * T3 pending ask/approval banner — rendered as a muted strip at the top of
+   * the glass host (`rounded-t` + bottom border), above the editor.
+   */
+  pendingBanner?: ReactNode;
 };
 
 const MAX_COMPOSER_IMAGES = 4;
@@ -160,6 +166,7 @@ export const DesktopAgentChatComposer = forwardRef<
     onModelChange,
     onModeChange,
     onClearChat,
+    pendingBanner,
   },
   ref,
 ) {
@@ -467,36 +474,44 @@ export const DesktopAgentChatComposer = forwardRef<
 
   return (
     <div className="desktop-agent-chat__composer">
-      <div
-        ref={shellRef}
-        className={[
-          "desktop-agent-chat__input-shell",
-          disabled ? "desktop-agent-chat__input-shell--inactive" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onDragOver={(event) => {
-          if (!onImagesChange) return;
-          event.preventDefault();
-        }}
-        onDrop={(event) => {
-          if (!onImagesChange) return;
-          event.preventDefault();
-          const files = [...(event.dataTransfer.files ?? [])].filter((file) =>
-            file.type.startsWith("image/"),
-          );
-          if (files.length > 0) void addImageFiles(files);
-        }}
-        onPaste={(event) => {
-          if (!onImagesChange) return;
-          const files = [...(event.clipboardData?.files ?? [])].filter((file) =>
-            file.type.startsWith("image/"),
-          );
-          if (files.length === 0) return;
-          event.preventDefault();
-          void addImageFiles(files);
-        }}
-      >
+      {/* T3 ChatView: glass-shell (::before blur) → glass-host (::after border). */}
+      <div className="desktop-agent-chat__glass-shell">
+        <div
+          ref={shellRef}
+          className={[
+            "desktop-agent-chat__glass-host",
+            disabled ? "desktop-agent-chat__glass-host--inactive" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onDragOver={(event) => {
+            if (!onImagesChange) return;
+            event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (!onImagesChange) return;
+            event.preventDefault();
+            const files = [...(event.dataTransfer.files ?? [])].filter((file) =>
+              file.type.startsWith("image/"),
+            );
+            if (files.length > 0) void addImageFiles(files);
+          }}
+          onPaste={(event) => {
+            if (!onImagesChange) return;
+            const files = [...(event.clipboardData?.files ?? [])].filter(
+              (file) => file.type.startsWith("image/"),
+            );
+            if (files.length === 0) return;
+            event.preventDefault();
+            void addImageFiles(files);
+          }}
+        >
+          <div className="desktop-agent-chat__input-shell">
+        {pendingBanner ? (
+          <div className="desktop-agent-chat__composer-pending">
+            {pendingBanner}
+          </div>
+        ) : null}
         {menuOpen ? (
           <div className="desktop-agent-chat__command-menu-anchor">
             <ComposerCommandMenu
@@ -517,7 +532,7 @@ export const DesktopAgentChatComposer = forwardRef<
           </div>
         ) : null}
 
-        {images.length > 0 ? (
+        {!pendingBanner && images.length > 0 ? (
           <div className="desktop-agent-chat__composer-images">
             {images.map((image) => (
               <div key={image.id} className="desktop-agent-chat__composer-image">
@@ -594,6 +609,8 @@ export const DesktopAgentChatComposer = forwardRef<
                 <ComposerSendIcon />
               </button>
             )}
+          </div>
+        </div>
           </div>
         </div>
       </div>

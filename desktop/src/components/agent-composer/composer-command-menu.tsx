@@ -59,24 +59,6 @@ function PathGlyph({ kind }: { kind: "file" | "directory" }) {
   );
 }
 
-function SlashGlyph() {
-  return (
-    <svg
-      className="desktop-agent-chat__command-item-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
-      <path
-        d="M6 13 10 3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 export function ComposerCommandMenu({
   items,
   isLoading,
@@ -131,9 +113,7 @@ export function ComposerCommandMenu({
               >
                 {item.type === "path" ? (
                   <PathGlyph kind={item.pathKind} />
-                ) : (
-                  <SlashGlyph />
-                )}
+                ) : null}
                 <span className="desktop-agent-chat__command-item-label">
                   {item.label}
                 </span>

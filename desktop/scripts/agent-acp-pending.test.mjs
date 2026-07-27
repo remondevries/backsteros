@@ -5,12 +5,16 @@ const {
   listPendingUiRequests,
   __testEnqueuePendingUiRequest,
   __testClearPendingUiRequests,
+  __testRegisterSession,
+  __testClearSessions,
+  resolveTaskAndSessionForUiRequest,
   respondAcpUiRequest,
   onAcpEvent,
 } = await import("./agent-acp-manager.mjs");
 
 afterEach(() => {
   __testClearPendingUiRequests();
+  __testClearSessions();
 });
 
 test("listPendingUiRequests returns summarized ask for a task", () => {
@@ -40,6 +44,45 @@ test("listPendingUiRequests returns summarized ask for a task", () => {
   assert.deepEqual(pending[0]?.options, [{ id: "ok", label: "OK" }]);
   assert.equal(listPendingUiRequests("task-b").length, 1);
   assert.equal(listPendingUiRequests("missing").length, 0);
+});
+
+test("resolveTaskAndSessionForUiRequest prefers params then busy session", () => {
+  __testRegisterSession({
+    taskId: "task-busy",
+    sessionId: "sess-busy",
+    busy: true,
+  });
+  __testRegisterSession({
+    taskId: "task-idle",
+    sessionId: "sess-idle",
+    busy: false,
+  });
+
+  const fromParams = resolveTaskAndSessionForUiRequest({
+    sessionId: "sess-idle",
+  });
+  assert.equal(fromParams.source, "params");
+  assert.equal(fromParams.taskId, "task-idle");
+  assert.equal(fromParams.sessionId, "sess-idle");
+
+  const fromBusy = resolveTaskAndSessionForUiRequest({
+    toolCallId: "tc-1",
+    questions: [],
+  });
+  assert.equal(fromBusy.source, "busy");
+  assert.equal(fromBusy.taskId, "task-busy");
+  assert.equal(fromBusy.sessionId, "sess-busy");
+});
+
+test("resolveTaskAndSessionForUiRequest falls back to sole session", () => {
+  __testRegisterSession({
+    taskId: "only",
+    sessionId: "sess-only",
+    busy: false,
+  });
+  const resolved = resolveTaskAndSessionForUiRequest({ questions: [] });
+  assert.equal(resolved.source, "sole");
+  assert.equal(resolved.taskId, "only");
 });
 
 test("respondAcpUiRequest emits ui-request-cleared", () => {
@@ -75,4 +118,30 @@ test("respondAcpUiRequest emits ui-request-cleared", () => {
   assert.equal(cleared?.taskId, "task-clear");
   assert.equal(cleared?.reason, "skipped");
   stop();
+});
+
+test("respondAcpUiRequest accepts T3 answers record of labels", () => {
+  __testEnqueuePendingUiRequest({
+    requestId: "ask-answers",
+    kind: "ask_question",
+    taskId: "task-answers",
+    params: {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick",
+          options: [
+            { id: "a", label: "Alpha" },
+            { id: "b", label: "Beta" },
+          ],
+        },
+      ],
+    },
+  });
+  const result = respondAcpUiRequest({
+    requestId: "ask-answers",
+    answers: { q1: "Alpha" },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(listPendingUiRequests("task-answers").length, 0);
 });

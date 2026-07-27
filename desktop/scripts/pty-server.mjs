@@ -1887,7 +1887,10 @@ const httpServer = createServer(async (req, res) => {
           ? body.preference
           : null;
       const skipped = body.skipped === true;
-      const answers = Array.isArray(body.answers) ? body.answers : null;
+      const answers =
+        body.answers && typeof body.answers === "object"
+          ? body.answers
+          : null;
       const result = respondAcpUiRequest({
         requestId,
         optionId,

@@ -61,7 +61,11 @@ export function activityCompactPreview(item: AgentChatActivityItem): string | nu
   const detail = item.detail?.trim();
   if (!detail) return null;
   const title = item.title.trim().toLowerCase();
-  if (detail.toLowerCase() === title) return null;
+  const detailLower = detail.toLowerCase();
+  if (detailLower === title) return null;
+  // Path already visible in a path-bearing heading (T3-style) — avoid
+  // "Reading foo.ts" + "foo.ts".
+  if (title.includes(detailLower)) return null;
   return detail;
 }
 
