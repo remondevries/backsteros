@@ -1448,9 +1448,9 @@ function StorageTab() {
       {reason ? <Text style={styles.hint}>{reason}</Text> : null}
       {configured ? (
         <Text style={styles.hint}>
-          Project folders get Codebase, Documents, and Updates when a project is
-          created. Choose or change the vault folder from desktop Settings →
-          Storage.
+          Project folders get Documents, Updates, and .cursor skills; Codebase
+          is added only for codebase projects. Choose or change the vault folder
+          from desktop Settings → Storage.
         </Text>
       ) : null}
       {testMessage ? (

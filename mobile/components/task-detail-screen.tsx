@@ -1,14 +1,16 @@
 import type { Task } from "@backsteros/contracts";
 import { useUser } from "@clerk/clerk-expo";
-import { Stack, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
+import { noteLocalTaskStatusPatch } from "../lib/agent-status-notifications";
 import { isPadDevice } from "../lib/device";
 import { projectDetailHref } from "../lib/detail-href";
 import { useMobilePowerSync } from "../lib/powersync-context";
@@ -103,6 +105,7 @@ function asTaskStatus(value: string | null | undefined): TaskStatus {
 
 export function TaskDetailScreen({ taskId }: Props) {
   const segments = useSegments();
+  const router = useRouter();
   const powerSync = useMobilePowerSync();
   const { user } = useUser();
 
@@ -148,6 +151,10 @@ export function TaskDetailScreen({ taskId }: Props) {
   const [picker, setPicker] = useState<PickerKind>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
   const [activityFeedRevision, setActivityFeedRevision] = useState(0);
+  const [movedToProject, setMovedToProject] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     setLocalTitle(null);
@@ -158,6 +165,7 @@ export function TaskDetailScreen({ taskId }: Props) {
     setDraftDescription("");
     setPicker(null);
     setPropertyError(null);
+    setMovedToProject(null);
   }, [taskId]);
 
   useEffect(() => {
@@ -260,6 +268,9 @@ export function TaskDetailScreen({ taskId }: Props) {
   ) {
     if (!task) return;
     setPropertyError(null);
+    if (typeof values.status === "string") {
+      noteLocalTaskStatusPatch(task.id);
+    }
     const sqliteValues: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (key === "dueDate") sqliteValues.due_date = value;
@@ -393,12 +404,15 @@ export function TaskDetailScreen({ taskId }: Props) {
   const projectLabel =
     selectedProject?.name?.trim() || task?.project_name?.trim() || null;
 
+  const statusDisabled = !projectId;
+
   const propertyRows = [
     {
       key: "status",
       label: "Status",
       value: getTaskStatusLabel(status),
       icon: <TaskStatusIcon status={status} size={16} />,
+      editable: !statusDisabled,
     },
     {
       key: "priority",
@@ -479,22 +493,44 @@ export function TaskDetailScreen({ taskId }: Props) {
       : []),
   ];
 
+  const detailScreenOptions = useMemo(
+    () => ({
+      ...tabDetailScreenOptions(),
+      // Native back chevron + task id as left-aligned title (no custom headerLeft).
+      title: task?.display_id ?? "",
+      headerTitleAlign: "left" as const,
+      headerTitleStyle: DETAIL_HEADER_TITLE_STYLE,
+      // Always keep the native header — property sheets must not leave it hidden.
+      headerShown: true,
+      ...(inPadInboxSplit ? { headerBackVisible: false } : null),
+    }),
+    // Only re-apply when the visible header chrome actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- task?.display_id
+    [inPadInboxSplit, task?.display_id],
+  );
+
   if (loading) {
     return (
-      <View style={ui.centered}>
-        <ActivityIndicator color={colors.muted} />
-      </View>
+      <>
+        <Stack.Screen options={detailScreenOptions} />
+        <View style={ui.centered}>
+          <ActivityIndicator color={colors.muted} />
+        </View>
+      </>
     );
   }
 
   if (error || !task) {
     return (
-      <View style={ui.screen}>
-        <Text style={ui.error}>{error ?? "Task not found."}</Text>
-        <Text style={ui.hint} onPress={() => void retry()}>
-          Tap to retry
-        </Text>
-      </View>
+      <>
+        <Stack.Screen options={detailScreenOptions} />
+        <View style={ui.screen}>
+          <Text style={ui.error}>{error ?? "Task not found."}</Text>
+          <Text style={ui.hint} onPress={() => void retry()}>
+            Tap to retry
+          </Text>
+        </View>
+      </>
     );
   }
 
@@ -604,19 +640,36 @@ export function TaskDetailScreen({ taskId }: Props) {
         selected={projectId}
         onSelect={(value) => {
           setProjectId(value);
-          const nextStatus = value ? "ready_to_start" : "triage";
-          setStatus(nextStatus);
           setPicker(null);
           const projectName =
             projects.find((entry) => entry.id === value)?.name?.trim() || null;
-          void patchProperty(
-            {
-              projectId: value,
-              inbox: !value,
-              status: nextStatus,
-            },
-            { project_name: projectName },
-          );
+          if (value) {
+            // Keep triage until the user changes status; leave inbox capture.
+            void patchProperty(
+              {
+                projectId: value,
+                inbox: false,
+              },
+              { project_name: projectName },
+            );
+            if (inPadInboxSplit || (segments as string[]).includes("inbox")) {
+              setMovedToProject({
+                id: value,
+                name: projectName || "project",
+              });
+            }
+          } else {
+            setStatus("triage");
+            setMovedToProject(null);
+            void patchProperty(
+              {
+                projectId: null,
+                inbox: true,
+                status: "triage",
+              },
+              { project_name: null },
+            );
+          }
         }}
         onClose={() => setPicker(null)}
       />
@@ -626,6 +679,19 @@ export function TaskDetailScreen({ taskId }: Props) {
   /** Title/description stay editable inline — save on blur, no header Edit/Save. */
   const titleDescriptionEditors = (
     <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
+      {movedToProject ? (
+        <Pressable
+          onPress={() => router.push(projectDetailHref(movedToProject.id))}
+          style={styles.movedBanner}
+          accessibilityRole="link"
+          accessibilityLabel={`Moved into ${movedToProject.name}`}
+        >
+          <Text style={styles.movedBannerText}>
+            Moved into{" "}
+            <Text style={styles.movedBannerLink}>{movedToProject.name}</Text>.
+          </Text>
+        </Pressable>
+      ) : null}
       <TextInput
         value={draftTitle}
         onChangeText={setDraftTitle}
@@ -712,20 +778,6 @@ export function TaskDetailScreen({ taskId }: Props) {
     </KeyboardAwareScrollView>
   );
 
-  const detailScreenOptions = useMemo(
-    () => ({
-      ...tabDetailScreenOptions(),
-      // Native back chevron + task id as left-aligned title (no custom headerLeft).
-      title: task.display_id ?? "",
-      headerTitleAlign: "left" as const,
-      headerTitleStyle: DETAIL_HEADER_TITLE_STYLE,
-      ...(inPadInboxSplit ? { headerBackVisible: false } : null),
-    }),
-    // Only re-apply when the visible header chrome actually changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- task.display_id
-    [inPadInboxSplit, task.display_id],
-  );
-
   return (
     <>
       <Stack.Screen options={detailScreenOptions} />
@@ -768,5 +820,23 @@ const styles = StyleSheet.create({
   detailScrollContent: {
     width: "100%",
     flexGrow: 1,
+  },
+  movedBanner: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  movedBannerText: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  movedBannerLink: {
+    color: colors.foreground,
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
 });

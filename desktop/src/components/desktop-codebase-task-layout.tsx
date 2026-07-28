@@ -6,16 +6,23 @@ import {
 } from "@backsteros/ui";
 
 import { DesktopAgentChatPanel } from "./desktop-agent-chat-panel";
+import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import { normalizeWorkingDirectory } from "../lib/agent/project-workspace";
 import {
   useDesktopTaskAgentSession,
   type DesktopTaskAgentSessionSummary,
 } from "../lib/agent/use-desktop-task-agent-session";
+import {
+  CODEBASE_SIDE_PANEL_MAX_WIDTH,
+  CODEBASE_SIDE_PANEL_MIN_WIDTH,
+  useCodebaseSidePanelWidth,
+} from "../lib/codebase-side-panel-layout";
 import { projectFs } from "../lib/project-fs";
 
 const LAYOUT_READY_DELAY_MS = 220;
 const DETAIL_COLLAPSED_WIDTH_PX = 46;
+const AGENT_COLLAPSED_WIDTH_PX = 46;
 
 /** ⇧[ collapses/expands the task detail column so chat can grow. */
 function isCodebaseDetailPanelToggleShortcut(event: KeyboardEvent): boolean {
@@ -44,10 +51,11 @@ export type DesktopCodebaseTaskLayoutProps = {
  *
  * The agent runs in a sidecar PTY and is never stopped by navigation. Leaving
  * only tears down the disposable viewer; returning reconnects to the same
- * session (resume only if the agent is no longer live in that PTY). Terminal
- * remains the default tab while the chat UI is experimental.
+ * session (resume only if the agent is no longer live in that PTY).
  *
  * ⇧[ toggles the left task-detail column so the chat pane can go wider.
+ * ] toggles the agent content panel so task details can grow (like the
+ * default-project workbench rail), keeping stacked codebase properties.
  */
 export function DesktopCodebaseTaskLayout({
   children,
@@ -73,14 +81,13 @@ export function DesktopCodebaseTaskLayout({
     setStatusItems,
     setWorkingTaskIds,
     setOpenTaskIds,
-    bumpFocusRequest,
     requestAttach,
   } = useDesktopAgentStatus();
 
   const {
     creatingAgent,
     agentError,
-    startAgentSession,
+    startAgentSession: startAgentSessionBase,
     endAgentSession,
   } = useDesktopTaskAgentSession({
     taskId,
@@ -92,32 +99,78 @@ export function DesktopCodebaseTaskLayout({
 
   const [layoutReady, setLayoutReady] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [agentCollapsed, setAgentCollapsed] = useState(false);
+  const [skipGridTransition, setSkipGridTransition] = useState(false);
   const previousTaskIdRef = useRef<string | null>(null);
   /** Tracks last observed status so Ready to Start auto-start is a transition. */
   const previousStatusRef = useRef<string | null>(null);
   /** One viewer-reconcile attach per task/chat visit. */
   const reconcileKeyRef = useRef<string | null>(null);
+  const {
+    containerRef,
+    panelWidth: detailPanelWidth,
+    beginResize: beginDetailResize,
+    isResizing: isDetailResizing,
+  } = useCodebaseSidePanelWidth();
+
+  const startAgentSession = useCallback(
+    (options?: Parameters<typeof startAgentSessionBase>[0]) => {
+      setSkipGridTransition(true);
+      setAgentCollapsed(false);
+      setDetailCollapsed(false);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setSkipGridTransition(false));
+      });
+      return startAgentSessionBase(options);
+    },
+    [startAgentSessionBase],
+  );
 
   const toggleDetailCollapsed = useCallback(() => {
-    setDetailCollapsed((current) => !current);
+    setDetailCollapsed((current) => {
+      const next = !current;
+      if (next) setAgentCollapsed(false);
+      return next;
+    });
+  }, []);
+
+  const toggleAgentCollapsed = useCallback(() => {
+    // Snap the grid (skip column transition) so LegendList never measures the
+    // strip width mid-animation and sticks messages at ~30px after reopen.
+    setSkipGridTransition(true);
+    setAgentCollapsed((current) => {
+      const next = !current;
+      if (next) setDetailCollapsed(false);
+      return next;
+    });
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setSkipGridTransition(false));
+    });
   }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!isCodebaseDetailPanelToggleShortcut(event)) return;
+      if (isCodebaseDetailPanelToggleShortcut(event)) {
+        if (!shouldHandleGlobalShortcut(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        toggleDetailCollapsed();
+        return;
+      }
+      if (!isAgentPanelToggleShortcut(event)) return;
       if (!shouldHandleGlobalShortcut(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      toggleDetailCollapsed();
+      toggleAgentCollapsed();
     }
 
     // Capture so we win over the global content-side-panel ⇧[ handler.
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [toggleDetailCollapsed]);
+  }, [toggleAgentCollapsed, toggleDetailCollapsed]);
 
   useEffect(() => {
-    if (!workingDirectory) {
+    if (!workingDirectory || agentCollapsed) {
       setLayoutReady(false);
       return;
     }
@@ -127,7 +180,7 @@ export function DesktopCodebaseTaskLayout({
       LAYOUT_READY_DELAY_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [taskId, workingDirectory]);
+  }, [agentCollapsed, taskId, workingDirectory]);
 
   useEffect(() => {
     const taskChanged = previousTaskIdRef.current !== taskId;
@@ -136,6 +189,7 @@ export function DesktopCodebaseTaskLayout({
       reconcileKeyRef.current = null;
       previousStatusRef.current = null;
       setDetailCollapsed(false);
+      setAgentCollapsed(false);
     }
   }, [taskId]);
 
@@ -176,14 +230,8 @@ export function DesktopCodebaseTaskLayout({
     workingDirectory,
   ]);
 
-  // Auto-focus Chat once the layout is ready.
-  useEffect(() => {
-    if (!layoutReady || !workingDirectory) return;
-    if (!agentChatId?.trim()) return;
-    bumpFocusRequest();
-  }, [agentChatId, bumpFocusRequest, layoutReady, taskId, workingDirectory]);
-
   // Return to a bound task: re-subscribe the ACP chat event bridge.
+  // Do not focus the composer — Tab is the only keyboard entry into the box.
   useEffect(() => {
     if (!layoutReady || !workingDirectory) return;
     const chatId = agentChatId?.trim();
@@ -198,20 +246,34 @@ export function DesktopCodebaseTaskLayout({
       taskId,
       chatId,
       forceReattach: true,
-      focusUi: true,
+      focusUi: false,
     });
   }, [agentChatId, layoutReady, requestAttach, taskId, workingDirectory]);
 
+  const gridTemplateColumns = detailCollapsed
+    ? `${DETAIL_COLLAPSED_WIDTH_PX}px minmax(0, 1fr)`
+    : agentCollapsed
+      ? `minmax(0, 1fr) ${AGENT_COLLAPSED_WIDTH_PX}px`
+      : `${detailPanelWidth}px minmax(0, 1fr)`;
+
   return (
     <div
+      ref={containerRef}
       className={[
         "desktop-codebase-task-layout",
         detailCollapsed ? "is-detail-collapsed" : null,
+        agentCollapsed ? "is-agent-collapsed" : null,
+        skipGridTransition || isDetailResizing
+          ? "is-skip-grid-transition"
+          : null,
+        isDetailResizing ? "is-resizing" : null,
       ]
         .filter(Boolean)
         .join(" ")}
+      style={{ gridTemplateColumns }}
       data-content-detail
       data-detail-collapsed={detailCollapsed ? "true" : "false"}
+      data-agent-collapsed={agentCollapsed ? "true" : "false"}
     >
       <div
         className={[
@@ -246,13 +308,59 @@ export function DesktopCodebaseTaskLayout({
         >
           {children}
         </div>
+        {!detailCollapsed && !agentCollapsed ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize task panel"
+            aria-valuemin={CODEBASE_SIDE_PANEL_MIN_WIDTH}
+            aria-valuemax={CODEBASE_SIDE_PANEL_MAX_WIDTH}
+            aria-valuenow={detailPanelWidth}
+            title="Drag to resize"
+            className="desktop-codebase-side-panel-resize"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              beginDetailResize(event.clientX);
+            }}
+          />
+        ) : null}
       </div>
       <aside
-        className="desktop-codebase-task-layout__terminal"
+        className={[
+          "desktop-codebase-task-layout__terminal",
+          agentCollapsed ? "is-collapsed" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={
+          agentCollapsed ? { width: AGENT_COLLAPSED_WIDTH_PX } : undefined
+        }
         aria-label="Task agent"
       >
+        {agentCollapsed ? (
+          <button
+            type="button"
+            className="desktop-terminal-strip"
+            title="Show agent panel (])"
+            aria-label="Show agent panel"
+            onClick={() => {
+              setSkipGridTransition(true);
+              setAgentCollapsed(false);
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() =>
+                  setSkipGridTransition(false),
+                );
+              });
+            }}
+          >
+            <span className="desktop-terminal-strip__label">Agent</span>
+          </button>
+        ) : null}
         {workingDirectory ? (
-          <div className="desktop-codebase-task-layout__terminal-body">
+          <div
+            className="desktop-codebase-task-layout__terminal-body"
+            aria-hidden={agentCollapsed || undefined}
+          >
             <DesktopAgentChatPanel
               key={taskId}
               taskId={taskId}
@@ -262,7 +370,7 @@ export function DesktopCodebaseTaskLayout({
               cwd={workingDirectory}
               agentChatId={agentChatId}
               taskStatus={taskStatus}
-              collapsed={false}
+              collapsed={agentCollapsed}
               layoutReady={layoutReady}
               viewScope="codebase"
               agentAttachRequest={agentAttachRequest}
@@ -274,14 +382,24 @@ export function DesktopCodebaseTaskLayout({
               onAgentStatusItemsChange={setStatusItems}
               onAgentOpenTaskIdsChange={setOpenTaskIds}
               focusRequest={focusRequest}
-              onStartAgent={() => void startAgentSession()}
+              onHide={() => {
+                setSkipGridTransition(true);
+                setAgentCollapsed(true);
+                setDetailCollapsed(false);
+                window.requestAnimationFrame(() => {
+                  window.requestAnimationFrame(() =>
+                    setSkipGridTransition(false),
+                  );
+                });
+              }}
+              onStartAgent={(options) => void startAgentSession(options)}
               startingAgent={creatingAgent}
               onStopAgent={endAgentSession}
               agentError={agentError}
               patchTaskValues={patchTaskValues}
             />
           </div>
-        ) : (
+        ) : agentCollapsed ? null : (
           <TerminalDirectoryGate
             fs={projectFs}
             showHeader={false}

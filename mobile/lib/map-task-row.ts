@@ -38,6 +38,7 @@ export function mapApiTaskToRow(
     status: task.status,
     priority: task.priority,
     due_date: task.dueDate,
+    inbox: task.inbox ?? null,
     project_name: project?.name ?? null,
     project_key: project?.key ?? null,
     project_icon: project?.icon ?? null,

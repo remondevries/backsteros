@@ -28,13 +28,16 @@ export function useLocalQuery<T extends Record<string, unknown>>(
   dataRef.current = data;
   const boundParams = useStableParams(params);
 
+  // When there is no DB yet, mirror auth/open status into isLoading without
+  // touching an active watch (status ticks must not abort/restart watches).
   useEffect(() => {
-    if (!database) {
-      setData([]);
-      // Stay loading while auth/connect is in progress; stop on terminal states.
-      setIsLoading(status !== "error" && status !== "unauthenticated");
-      return;
-    }
+    if (database) return;
+    setData([]);
+    setIsLoading(status !== "error" && status !== "unauthenticated");
+  }, [database, status]);
+
+  useEffect(() => {
+    if (!database) return;
 
     const controller = new AbortController();
     if (dataRef.current.length === 0) {
@@ -62,7 +65,7 @@ export function useLocalQuery<T extends Record<string, unknown>>(
     return () => {
       controller.abort();
     };
-  }, [boundParams, database, sql, status]);
+  }, [boundParams, database, sql]);
 
   return { data, isLoading };
 }

@@ -18,6 +18,7 @@ import {
 import { ProjectIcon } from "../../components/project-icon";
 import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
 import { isPadDevice } from "../../lib/device";
+import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
 import { useGoNavigationShortcuts } from "../../lib/use-go-navigation-shortcuts";
 import { colors } from "../../lib/theme";
 import { ui } from "../../lib/ui";
@@ -44,6 +45,7 @@ function tabOverflowOptions(routeName: string) {
 
 function SignedInTabs() {
   useGoNavigationShortcuts(true);
+  useAgentAttentionNotifications();
 
   return (
     <View style={ui.screen}>

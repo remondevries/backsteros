@@ -37,6 +37,29 @@ const CURSOR_SUB_TABS: { value: CursorSubTab; label: string }[] = [
   { value: "agents", label: "Agents" },
 ];
 
+/** Always offered in spellcheck/research model pickers (catalog may omit it). */
+const COMPOSER_2_5_FAST: CursorModelOption = {
+  id: "composer-2.5-fast",
+  displayName: "Composer 2.5 Fast",
+};
+
+function withPinnedCursorModels(
+  models: CursorModelOption[],
+): CursorModelOption[] {
+  const list = [...models];
+  if (!list.some((m) => m.id === "auto")) {
+    list.unshift({ id: "auto", displayName: "Auto" });
+  }
+  if (!list.some((m) => m.id === COMPOSER_2_5_FAST.id)) {
+    const after = list.findIndex(
+      (m) => m.id === "composer-2.5" || m.id.startsWith("composer-2.5:"),
+    );
+    if (after >= 0) list.splice(after + 1, 0, COMPOSER_2_5_FAST);
+    else list.push(COMPOSER_2_5_FAST);
+  }
+  return list;
+}
+
 export function SettingsCursorTab() {
   const { client } = useDesktopApi();
   const [subTab, setSubTab] = useState<CursorSubTab>("api-key");
@@ -44,7 +67,9 @@ export function SettingsCursorTab() {
   const [cursorSettings, setCursorSettings] = useState<CursorSettings | null>(
     null,
   );
-  const [models, setModels] = useState<CursorModelOption[]>([]);
+  const [models, setModels] = useState<CursorModelOption[]>(() =>
+    withPinnedCursorModels([]),
+  );
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [researchInstructionsDraft, setResearchInstructionsDraft] = useState("");
@@ -83,22 +108,16 @@ export function SettingsCursorTab() {
   const loadModels = useCallback(
     async (configured: boolean) => {
       if (!configured) {
-        setModels([{ id: "auto", displayName: "Auto" }]);
+        setModels(withPinnedCursorModels([]));
         return;
       }
       try {
         const body = await client.requestJson<{ models: CursorModelOption[] }>(
           "/api/v1/settings/cursor/models",
         );
-        const list = body.models.length
-          ? body.models
-          : [{ id: "auto", displayName: "Auto" }];
-        if (!list.some((m) => m.id === "auto")) {
-          list.unshift({ id: "auto", displayName: "Auto" });
-        }
-        setModels(list);
+        setModels(withPinnedCursorModels(body.models));
       } catch {
-        setModels([{ id: "auto", displayName: "Auto" }]);
+        setModels(withPinnedCursorModels([]));
       }
     },
     [client],

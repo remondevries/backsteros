@@ -387,6 +387,8 @@ export const DesktopAgentChatComposer = forwardRef<
       }
       if (key === "Enter" || key === "Tab") {
         if (menuOpen) return acceptHighlighted();
+        // Swallow plain Tab while composing — Escape unfocuses for system hotkeys.
+        if (key === "Tab") return true;
         return false;
       }
       return false;

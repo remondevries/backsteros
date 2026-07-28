@@ -796,6 +796,53 @@ export const avatarSchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+/** Inline image pasted into a task description (blob fetched on demand). */
+export const taskImageSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  taskId: z.string(),
+  contentType: z.string(),
+  byteSize: z.number().int().nonnegative(),
+  originalFilename: z.string(),
+  checksum: z.string().nullable(),
+  /** Relative API path for markdown embeds: `/api/v1/tasks/:id/images/:imageId`. */
+  url: z.string(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+});
+export const taskImageParamsSchema = z.object({
+  id: z.string(),
+  imageId: z.string(),
+});
+
+/** Build the markdown-safe content path for a task image. */
+export function taskImageContentPath(taskId: string, imageId: string): string {
+  return `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`;
+}
+
+/** Parse a relative or absolute task-image content URL. */
+export function parseTaskImageContentPath(
+  src: string,
+): { taskId: string; imageId: string } | null {
+  let path = src.trim();
+  if (!path) return null;
+  try {
+    if (/^https?:\/\//i.test(path)) {
+      path = new URL(path).pathname;
+    }
+  } catch {
+    return null;
+  }
+  const match = path.match(
+    /^\/api\/v1\/tasks\/([^/]+)\/images\/([^/]+)\/?$/,
+  );
+  if (!match?.[1] || !match[2]) return null;
+  return {
+    taskId: decodeURIComponent(match[1]),
+    imageId: decodeURIComponent(match[2]),
+  };
+}
+
 export const settingsSchema = z.record(z.unknown());
 export const settingsResponseSchema = z.object({ settings: settingsSchema });
 
@@ -837,6 +884,17 @@ export const vaultStorageSettingsSchema = z.object({
 });
 export const updateVaultStorageSettingsSchema = z.object({
   vaultPath: z.string().min(1).max(4096),
+});
+/** Response from ensuring a project's on-disk vault folder + `.cursor` skills. */
+export const projectVaultEnsureSchema = z.object({
+  projectId: z.string(),
+  projectKey: z.string(),
+  projectVaultPath: z.string(),
+  localWorkingDirectory: z.string().nullable(),
+  assignedWorkingDirectory: z.boolean(),
+  createdSkill: z.boolean(),
+  /** False when the vault path is not configured yet. */
+  configured: z.boolean(),
 });
 export const cursorModelSchema = z.object({
   id: z.string(),
@@ -1169,11 +1227,13 @@ export type AreaInput = z.infer<typeof areaInputSchema>;
 export type Letter = z.infer<typeof letterSchema>;
 export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
+export type TaskImage = z.infer<typeof taskImageSchema>;
 export type Mention = z.infer<typeof mentionSchema>;
 export type CursorSettings = z.infer<typeof cursorSettingsSchema>;
 export type AgentPtyConnection = z.infer<typeof agentPtyConnectionSchema>;
 export type UpdateCursorSettingsInput = z.infer<typeof updateCursorSettingsSchema>;
 export type VaultStorageSettings = z.infer<typeof vaultStorageSettingsSchema>;
+export type ProjectVaultEnsure = z.infer<typeof projectVaultEnsureSchema>;
 export type UpdateVaultStorageSettingsInput = z.infer<
   typeof updateVaultStorageSettingsSchema
 >;

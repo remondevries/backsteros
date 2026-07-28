@@ -144,11 +144,12 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
         .select_all()
         .build()?;
 
+    // Do not add Close Window — its default accelerator is ⌘W, which must
+    // close product tabs in the webview (including while the agent chat
+    // composer is focused). Quit the app with ⌘Q via the app menu above.
     let window_submenu = SubmenuBuilder::new(handle, "Window")
         .minimize()
         .maximize()
-        .separator()
-        .close_window()
         .build()?;
 
     let menu = MenuBuilder::new(handle)

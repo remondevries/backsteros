@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { shouldHandleGlobalShortcut } from "@backsteros/ui";
 
 import { DesktopAgentChatPanel } from "./desktop-agent-chat-panel";
+import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import {
   useDesktopTaskAgentSession,
@@ -29,8 +31,9 @@ export type DesktopTaskWorkbenchProps = {
 /**
  * Task detail + agent chat rail (non-codebase).
  *
- * The rail stays available as a Start agent square until a session is bound;
- * Hide collapses to a strip only while an agent is still present.
+ * Idle tasks show the draft-hero empty chat (same as after /clear) with an
+ * extra Implement-ticket action. ] toggles the chat rail whenever a task is
+ * selected (left content list uses ⇧[).
  */
 export function DesktopTaskWorkbench({
   children,
@@ -48,7 +51,6 @@ export function DesktopTaskWorkbench({
     terminalCollapsed,
     setTerminalCollapsed,
     expandTerminal,
-    bumpFocusRequest,
     focusRequest,
     agentAttachRequest,
     clearAttachRequest,
@@ -77,17 +79,37 @@ export function DesktopTaskWorkbench({
 
   // Rail is always present for a selected task (Start agent square when idle).
   const railVisible = Boolean(taskId);
-  const sessionActive =
-    hasBoundAgent || Boolean(agentAttachRequest) || agentRailPinned;
-  // Idle Start square cannot collapse — only a live/pinned session may hide.
-  const allowCollapse = sessionActive;
 
   const [layoutReady, setLayoutReady] = useState(
     () => railVisible && !terminalCollapsed,
   );
 
+  const toggleAgentCollapsed = useCallback(() => {
+    if (terminalCollapsed) {
+      expandTerminal();
+      return;
+    }
+    setTerminalCollapsed(true);
+  }, [expandTerminal, setTerminalCollapsed, terminalCollapsed]);
+
   useEffect(() => {
-    if (!railVisible || (terminalCollapsed && allowCollapse)) {
+    if (!railVisible) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!isAgentPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleAgentCollapsed();
+    }
+
+    // Capture so editor/global handlers don't swallow ].
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [railVisible, toggleAgentCollapsed]);
+
+  useEffect(() => {
+    if (!railVisible || terminalCollapsed) {
       setLayoutReady(false);
       return;
     }
@@ -97,14 +119,7 @@ export function DesktopTaskWorkbench({
       LAYOUT_READY_DELAY_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [allowCollapse, railVisible, terminalCollapsed, taskId]);
-
-  // No active session → keep the Start agent square expanded.
-  useEffect(() => {
-    if (!taskId) return;
-    if (sessionActive) return;
-    if (terminalCollapsed) setTerminalCollapsed(false);
-  }, [sessionActive, setTerminalCollapsed, taskId, terminalCollapsed]);
+  }, [railVisible, terminalCollapsed, taskId]);
 
   // Bound agent on this task → slide the rail open (unless user hid it).
   useEffect(() => {
@@ -125,28 +140,13 @@ export function DesktopTaskWorkbench({
     terminalCollapsed,
   ]);
 
-  // Auto-focus the agent terminal once the rail is open and laid out.
-  useEffect(() => {
-    if (!layoutReady || !railVisible || terminalCollapsed) return;
-    if (!hasBoundAgent && !agentAttachRequest) return;
-    bumpFocusRequest();
-  }, [
-    agentAttachRequest,
-    bumpFocusRequest,
-    hasBoundAgent,
-    layoutReady,
-    railVisible,
-    taskId,
-    terminalCollapsed,
-  ]);
-
   const railWidth = !railVisible
     ? 0
-    : terminalCollapsed && allowCollapse
+    : terminalCollapsed
       ? TERMINAL_COLLAPSED_WIDTH
       : TERMINAL_EXPANDED_WIDTH;
 
-  const panelCollapsed = !railVisible || (terminalCollapsed && allowCollapse);
+  const panelCollapsed = !railVisible || terminalCollapsed;
 
   return (
     <div className="desktop-task-workbench">
@@ -156,9 +156,7 @@ export function DesktopTaskWorkbench({
           "desktop-task-workbench__terminal",
           "desktop-task-workbench__chat",
           !railVisible ? "is-absent" : null,
-          railVisible && terminalCollapsed && allowCollapse
-            ? "is-collapsed"
-            : null,
+          railVisible && terminalCollapsed ? "is-collapsed" : null,
         ]
           .filter(Boolean)
           .join(" ")}
@@ -166,11 +164,11 @@ export function DesktopTaskWorkbench({
         aria-label="Agent chat"
         aria-hidden={!railVisible || undefined}
       >
-        {railVisible && terminalCollapsed && allowCollapse ? (
+        {railVisible && terminalCollapsed ? (
           <button
             type="button"
             className="desktop-terminal-strip"
-            title="Agent session available"
+            title="Show agent panel (])"
             onClick={() => expandTerminal()}
           >
             <span className="desktop-terminal-strip__label">Agent</span>
@@ -179,7 +177,7 @@ export function DesktopTaskWorkbench({
         {railVisible && taskId ? (
           <div
             className="desktop-task-workbench__terminal-body"
-            hidden={panelCollapsed}
+            aria-hidden={panelCollapsed || undefined}
           >
             <DesktopAgentChatPanel
               key={taskId}
@@ -201,10 +199,8 @@ export function DesktopTaskWorkbench({
               onAgentStatusItemsChange={setStatusItems}
               onAgentOpenTaskIdsChange={setOpenTaskIds}
               focusRequest={focusRequest}
-              onHide={
-                allowCollapse ? () => setTerminalCollapsed(true) : undefined
-              }
-              onStartAgent={() => void startAgentSession()}
+              onHide={() => setTerminalCollapsed(true)}
+              onStartAgent={(options) => void startAgentSession(options)}
               startingAgent={creatingAgent}
               onStopAgent={endAgentSession}
               agentError={agentError}

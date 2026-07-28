@@ -1,12 +1,21 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
+
 import {
   formatDueDateInputValue,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
 } from "../task-due-date.js";
 import { getTaskPriorityLabel } from "../task-priority.js";
-import { TaskDueDateIcon } from "./task-due-date-icon.js";
+import {
+  getPreferredColorSchemeSnapshot,
+  subscribeToPreferredColorScheme,
+} from "../task-status-color.js";
+import {
+  resolveTaskDueDateUrgencyColor,
+  TaskDueDateIcon,
+} from "./task-due-date-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 
 export function TaskListPriorityLabel({ priority }: { priority: number }) {
@@ -30,11 +39,22 @@ export function TaskListDueDateLabel({
   const ymd = formatDueDateInputValue(dueDate);
   const label = formatTaskDueMetaLabel(ymd) ?? ymd;
   const urgency = getTaskDueDateUrgency(ymd, new Date(), { status });
+  const colorScheme = useSyncExternalStore(
+    subscribeToPreferredColorScheme,
+    getPreferredColorSchemeSnapshot,
+    () => "dark" as const,
+  );
+  const lateLabelColor =
+    urgency === "overdue"
+      ? resolveTaskDueDateUrgencyColor(urgency, colorScheme)
+      : undefined;
 
   return (
     <span className="bos-property-label" title={label}>
       <TaskDueDateIcon active urgency={urgency} />
-      <span>{label}</span>
+      <span style={lateLabelColor ? { color: lateLabelColor } : undefined}>
+        {label}
+      </span>
     </span>
   );
 }

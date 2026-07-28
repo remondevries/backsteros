@@ -39,6 +39,8 @@ export type PropertyDropdownProps<T extends string> = {
   onTabFromSearch?: () => void;
   onShiftTabFromSearch?: () => void;
   triggerVariant?: PropertyDropdownTriggerVariant;
+  /** When true, the trigger shows only the icon; option labels still appear in the menu. */
+  hideTriggerLabel?: boolean;
 };
 
 export function PropertyDropdown<T extends string>({
@@ -65,6 +67,7 @@ export function PropertyDropdown<T extends string>({
   onTabFromSearch,
   onShiftTabFromSearch,
   triggerVariant = "default",
+  hideTriggerLabel = false,
 }: PropertyDropdownProps<T>) {
   if (options.length === 0) {
     return (
@@ -72,6 +75,7 @@ export function PropertyDropdown<T extends string>({
         className={[
           "property-dropdown-fallback",
           mutedFallback ? "is-muted" : null,
+          hideTriggerLabel ? "property-dropdown-fallback--icon-only" : null,
         ]
           .filter(Boolean)
           .join(" ")}
@@ -80,7 +84,9 @@ export function PropertyDropdown<T extends string>({
         <span className="property-dropdown-trigger__icon" aria-hidden="true">
           {fallbackIcon}
         </span>
-        <span className="property-dropdown-trigger__label">{fallbackLabel}</span>
+        {!hideTriggerLabel ? (
+          <span className="property-dropdown-trigger__label">{fallbackLabel}</span>
+        ) : null}
       </div>
     );
   }
@@ -130,6 +136,7 @@ export function PropertyDropdown<T extends string>({
               triggerVariant === "inlineChip"
                 ? "property-dropdown-trigger--inline-chip"
                 : null,
+              hideTriggerLabel ? "property-dropdown-trigger--icon-only" : null,
               open ? "is-open" : null,
               mutedTrigger ? "is-muted" : null,
             ]
@@ -150,7 +157,9 @@ export function PropertyDropdown<T extends string>({
                 {icon}
               </span>
             ) : null}
-            <span className="property-dropdown-trigger__label">{label}</span>
+            {!hideTriggerLabel ? (
+              <span className="property-dropdown-trigger__label">{label}</span>
+            ) : null}
           </button>
         );
       }}

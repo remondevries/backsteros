@@ -1,0 +1,18 @@
+---
+description: When finishing a BacksterOS task, move it to In Review
+alwaysApply: true
+---
+
+# Finish BacksterOS tasks → In Review
+
+When you were asked to implement or work a **BacksterOS task** (display id like `BSH-3`, or “implement this task”), do this as the **last step before saying you are done**:
+
+1. Set the task status to **`in_review`** (“In Review”).
+2. Prefer API: `PATCH /api/v1/tasks/{uuid}` with `{"status":"in_review","activityActor":"agent"}` (Bearer key with `tasks:write`).
+3. If you only have a display id (`KEY-number`), resolve project `key` + task `number` → UUID first, then PATCH.
+4. Fallback when the API key is unavailable: update Postgres (`tasks.status = 'in_review'`) for that row — PowerSync publication will pick up the UPDATE.
+5. In your final message, state clearly that the task is now **In Review**.
+
+Do **not** leave finished work in `in_progress` / `ready_to_start` — In Review is how the user knows the agent is done.
+
+Skip only if the user said not to change status, or the work is blocked / incomplete (then leave status alone, or On Hold if they asked).

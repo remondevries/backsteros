@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   mergeAgentChatTranscripts,
+  repairInvertedUserAssistantPairs,
   type AgentChatMessage,
 } from "./agent-chat-transcript.ts";
 
@@ -65,4 +66,124 @@ test("mergeAgentChatTranscripts does not drop activities when remote is newer", 
 
   const merged = mergeAgentChatTranscripts([newerWithout], [olderWithActivities]);
   assert.equal(merged[0]?.activities?.length, 1);
+});
+
+test("repairInvertedUserAssistantPairs swaps raced assistant-before-user", () => {
+  const assistant: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "",
+    createdAt: 10,
+    activities: [
+      { id: "t1", kind: "info", title: "Thinking", status: "in_progress" },
+    ],
+  };
+  const user: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "Please fix",
+    createdAt: 20,
+  };
+  const repaired = repairInvertedUserAssistantPairs([assistant, user]);
+  assert.equal(repaired[0]?.id, "u1");
+  assert.equal(repaired[1]?.id, "a1");
+  assert.ok((repaired[1]?.createdAt ?? 0) > (repaired[0]?.createdAt ?? 0));
+});
+
+test("repairInvertedUserAssistantPairs leaves sealed assistant before user", () => {
+  const assistant: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "Welcome.",
+    createdAt: 10,
+  };
+  const user: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "Hi",
+    createdAt: 20,
+  };
+  const repaired = repairInvertedUserAssistantPairs([assistant, user]);
+  assert.equal(repaired[0]?.id, "a1");
+  assert.equal(repaired[1]?.id, "u1");
+});
+
+test("repairInvertedUserAssistantPairs keeps follow-up user below prior agent turn", () => {
+  const user1: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "First",
+    createdAt: 10,
+  };
+  const assistant: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "",
+    createdAt: 20,
+    activities: [
+      { id: "t1", kind: "tool", title: "Read", status: "in_progress" },
+    ],
+    segments: [
+      { id: "s1", kind: "text", text: "Here is the answer." },
+    ],
+  };
+  const user2: AgentChatMessage = {
+    id: "u2",
+    role: "user",
+    text: "Thanks, next",
+    createdAt: 30,
+  };
+  const repaired = repairInvertedUserAssistantPairs([user1, assistant, user2]);
+  assert.deepEqual(
+    repaired.map((message) => message.id),
+    ["u1", "a1", "u2"],
+  );
+});
+
+test("merge keeps first-seen order and fuzzy-acks sidecar user ids", () => {
+  const localUser: AgentChatMessage = {
+    id: "local-u",
+    role: "user",
+    text: "Hi",
+    createdAt: 50,
+  };
+  const remoteUser: AgentChatMessage = {
+    id: "remote-u",
+    role: "user",
+    text: "Hi",
+    createdAt: 55,
+  };
+  const assistant: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "Hello",
+    createdAt: 60,
+  };
+  const merged = mergeAgentChatTranscripts(
+    [remoteUser, assistant],
+    [localUser, assistant],
+  );
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0]?.role, "user");
+  assert.equal(merged[0]?.id, "remote-u");
+  assert.equal(merged[1]?.role, "assistant");
+});
+
+test("merge does not collapse distinct repeated prompts outside fuzzy window", () => {
+  const first: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "ok",
+    createdAt: 1_000,
+  };
+  const second: AgentChatMessage = {
+    id: "u2",
+    role: "user",
+    text: "ok",
+    createdAt: 120_000,
+  };
+  const merged = mergeAgentChatTranscripts([first], [second]);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0]?.id, "u1");
+  assert.equal(merged[1]?.id, "u2");
 });

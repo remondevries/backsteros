@@ -15,7 +15,9 @@ function resolveColor(
   urgency: TaskDueDateUrgency | null | undefined,
 ): string {
   if (!active) return colors.muted;
-  if (urgency === "due_today") return TASK_STATUS_COLORS.on_hold;
+  if (urgency === "overdue" || urgency === "due_today") {
+    return TASK_STATUS_COLORS.on_hold;
+  }
   if (urgency === "due_soon") return TASK_STATUS_COLORS.triage;
   return colors.muted;
 }

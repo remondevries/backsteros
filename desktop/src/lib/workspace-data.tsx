@@ -19,6 +19,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
+  taskBelongsInInbox,
   type ContactListItem,
   type InboxListItem,
   type JournalListItem,
@@ -42,6 +43,7 @@ import {
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import { getDesktopPublicEnvironment } from "./env";
 import { rememberProjectTypes } from "./project-type-cache";
+import { noteLocalTaskStatusPatch } from "./agent/agent-status-notifications";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -275,6 +277,7 @@ export type DesktopWorkspaceData = {
     title: string;
     description?: string;
     status?: string;
+    priority?: number;
     assigneeId?: string | null;
     dueDate?: string | null;
   }) => Promise<{ id: string; number: number | null }>;
@@ -283,6 +286,7 @@ export type DesktopWorkspaceData = {
     title: string;
     description?: string;
     status?: string;
+    priority?: number;
     assigneeId?: string | null;
     dueDate?: string | null;
   }) => Promise<{ id: string; number: number | null }>;
@@ -363,7 +367,15 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   );
   const localInboxTasks = usePowerSyncQuery<Record<string, unknown>>(
     authenticated
-      ? "SELECT * FROM tasks WHERE deleted_at IS NULL AND inbox = 1 ORDER BY sort_order, updated_at DESC"
+      ? `SELECT * FROM tasks WHERE deleted_at IS NULL AND (
+           inbox = 1
+           OR status IN ('on_hold', 'in_review')
+           OR (
+             due_date IS NOT NULL
+             AND date(due_date) < date('now', 'localtime')
+             AND status NOT IN ('completed', 'canceled', 'duplicated')
+           )
+         ) ORDER BY sort_order, updated_at DESC`
       : null,
   );
   const localProjects = usePowerSyncQuery<Record<string, unknown>>(
@@ -600,26 +612,42 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     .map((document) => ({ dateSlug: document.journalDate as string }))
     .sort((a, b) => b.dateSlug.localeCompare(a.dateSlug));
 
-  const inboxTaskItems: InboxListItem[] = rawInboxTasks.map((task) => {
-    const project = task.projectId
-      ? projectsById.get(task.projectId) ?? null
-      : null;
-    return buildInboxTaskListItem({
-      id: task.id,
-      title: task.title,
-      number: task.number ?? 0,
-      status: task.status,
-      priority: task.priority,
-      dueDate: asEpoch(task.dueDate),
-      updatedAt: asEpoch(task.updatedAt) ?? Date.now(),
-      description: task.description,
-      projectId: task.projectId,
-      projectKey: project?.key ?? null,
-      projectName: project?.name ?? null,
-      projectIcon: project?.icon ?? null,
-      assigneeId: task.assigneeId ?? null,
+  const inboxTaskItems: InboxListItem[] = (() => {
+    const byId = new Map<string, ApiTask>();
+    for (const task of [...rawTasks, ...rawInboxTasks]) {
+      if (
+        !taskBelongsInInbox({
+          inbox: task.inbox,
+          status: task.status,
+          dueDate: task.dueDate,
+        })
+      ) {
+        continue;
+      }
+      byId.set(task.id, task);
+    }
+    return [...byId.values()].map((task) => {
+      const project = task.projectId
+        ? projectsById.get(task.projectId) ?? null
+        : null;
+      return buildInboxTaskListItem({
+        id: task.id,
+        title: task.title,
+        number: task.number ?? 0,
+        status: task.status,
+        priority: task.priority,
+        dueDate: asEpoch(task.dueDate),
+        updatedAt: asEpoch(task.updatedAt) ?? Date.now(),
+        description: task.description,
+        projectId: task.projectId,
+        projectKey: project?.key ?? null,
+        projectName: project?.name ?? null,
+        projectIcon: project?.icon ?? null,
+        assigneeId: task.assigneeId ?? null,
+        inbox: task.inbox ?? null,
+      });
     });
-  });
+  })();
 
   // Inbox is tasks-only (parity with Next). Letters live under /letters.
   const inboxItems = [...inboxTaskItems].sort(
@@ -858,6 +886,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
             // local SQLite gaps after restart.
             if (
               "type" in values ||
+              "key" in values ||
               "githubRepository" in values ||
               "localWorkingDirectory" in values
             ) {
@@ -1082,6 +1111,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
           "projects",
           toSnakeFields(body),
         );
+        // Vault folders are created on first open / agent start once the row
+        // has synced to the core API (PowerSync create skips POST /projects).
         return { id, key };
       }
       if (!authenticated) throw new Error("Sign in to create projects.");
@@ -1153,6 +1184,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       title: string;
       description?: string;
       status?: string;
+      priority?: number;
       assigneeId?: string | null;
       dueDate?: string | null;
     }) => {
@@ -1162,7 +1194,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         title,
         description: input.description?.trim() || null,
         status: input.status ?? "triage",
-        priority: 0,
+        priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
         dueDate: input.dueDate ?? null,
@@ -1196,6 +1228,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       title: string;
       description?: string;
       status?: string;
+      priority?: number;
       assigneeId?: string | null;
       dueDate?: string | null;
     }) => {
@@ -1207,7 +1240,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         title,
         description: input.description?.trim() || null,
         status: input.status ?? "ready_to_start",
-        priority: 0,
+        priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
         dueDate: input.dueDate ?? null,
@@ -1659,7 +1692,12 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     letterRecords: Object.fromEntries(
       rawLetters.map((letter) => [letter.id, letter]),
     ),
-    patchTask: (id, values) => patchViaPowerSyncOrApi("tasks", id, values),
+    patchTask: (id, values) => {
+      if (typeof values.status === "string") {
+        noteLocalTaskStatusPatch(id);
+      }
+      return patchViaPowerSyncOrApi("tasks", id, values);
+    },
     patchProject: (id, values) =>
       patchViaPowerSyncOrApi("projects", id, values),
     patchLetter: (id, values) => patchViaPowerSyncOrApi("letters", id, values),

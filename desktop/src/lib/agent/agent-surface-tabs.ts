@@ -163,3 +163,95 @@ export function closeAgentSurfaceTab(
   const neighbor = next[Math.max(0, index - 1)] ?? next[0]!;
   return { tabs: next, activeId: neighbor.id };
 }
+
+const SURFACE_TABS_STORAGE_PREFIX =
+  "backsteros-desktop.agent-surface-tabs.v1.";
+
+function surfaceTabsStorageKey(taskId: string): string {
+  return `${SURFACE_TABS_STORAGE_PREFIX}${taskId.trim().toLowerCase()}`;
+}
+
+function normalizeStoredTabsState(
+  raw: unknown,
+): AgentSurfaceTabsState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  if (!Array.isArray(record.tabs) || typeof record.activeId !== "string") {
+    return null;
+  }
+  const tabs: AgentSurfaceTab[] = [];
+  for (const entry of record.tabs) {
+    if (!entry || typeof entry !== "object") continue;
+    const tab = entry as Record<string, unknown>;
+    if (typeof tab.id !== "string" || !tab.id.trim()) continue;
+    if (typeof tab.kind !== "string" || !tab.kind.trim()) continue;
+    if (typeof tab.title !== "string" || !tab.title.trim()) continue;
+    const kind = tab.kind as AgentSurfaceTabKind;
+    if (
+      kind !== "chat" &&
+      kind !== "browser" &&
+      kind !== "terminal" &&
+      kind !== "files" &&
+      kind !== "plan" &&
+      kind !== "diff"
+    ) {
+      continue;
+    }
+    tabs.push({
+      id: tab.id.trim(),
+      kind,
+      title: tab.title.trim(),
+      resourceId:
+        typeof tab.resourceId === "string"
+          ? tab.resourceId
+          : tab.resourceId === null
+            ? null
+            : undefined,
+    });
+  }
+  if (tabs.length === 0) return null;
+  const activeId = record.activeId.trim();
+  const activeExists = tabs.some((tab) => tab.id === activeId);
+  return {
+    tabs,
+    activeId: activeExists ? activeId : tabs[0]!.id,
+  };
+}
+
+/** Load per-task surface tabs (Chat / Terminal / …). Missing → default Chat. */
+export function readAgentSurfaceTabs(
+  taskId: string | null | undefined,
+): AgentSurfaceTabsState {
+  const id = taskId?.trim();
+  if (!id || typeof window === "undefined") {
+    return createDefaultAgentSurfaceTabs();
+  }
+  try {
+    const raw = window.localStorage.getItem(surfaceTabsStorageKey(id));
+    if (!raw) return createDefaultAgentSurfaceTabs();
+    const parsed = normalizeStoredTabsState(JSON.parse(raw) as unknown);
+    return parsed ?? createDefaultAgentSurfaceTabs();
+  } catch {
+    return createDefaultAgentSurfaceTabs();
+  }
+}
+
+/** Persist per-task surface tabs until the user closes them. */
+export function writeAgentSurfaceTabs(
+  taskId: string | null | undefined,
+  state: AgentSurfaceTabsState,
+): void {
+  const id = taskId?.trim();
+  if (!id || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      surfaceTabsStorageKey(id),
+      JSON.stringify({
+        tabs: state.tabs,
+        activeId: state.activeId,
+      }),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}

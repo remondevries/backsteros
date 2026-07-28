@@ -41,6 +41,13 @@ import {
 import { requestCloseSearchableDropdowns } from "../searchable-dropdown-events.js";
 import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
 import { formatDueDateInputValue } from "../task-due-date.js";
+import {
+  getTaskPriorityLabel,
+  isTaskPriority,
+  isTaskPriorityNone,
+  TASK_PRIORITY_ORDER,
+  type TaskPriority,
+} from "../task-priority.js";
 import { getTaskStatusLabel, TASK_STATUS_ORDER, type TaskStatus } from "../task-status.js";
 import {
   focusAndSelectTitleInput,
@@ -55,6 +62,7 @@ import { getDisplayProjectIcon, ProjectOcticon } from "./project-octicon.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { KnowledgeBaseNavIcon } from "./sidebar-nav-icons.js";
+import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 const NO_PROJECT_VALUE = COMPOSE_NO_PROJECT_VALUE;
@@ -89,6 +97,17 @@ function buildComposeTaskStatusOptions(): SearchableDropdownOption<TaskStatus>[]
   });
 }
 
+function buildComposeTaskPriorityOptions(): SearchableDropdownOption<string>[] {
+  return TASK_PRIORITY_ORDER.map((value) => {
+    const label = getTaskPriorityLabel(value);
+    return {
+      value: String(value),
+      label,
+      icon: <TaskPriorityIcon priority={value} title={label} size={14} />,
+    };
+  });
+}
+
 function getDefaultStatus(): TaskStatus {
   return "triage";
 }
@@ -108,6 +127,7 @@ export type ComposeModalCreateTaskInput = {
   description: string;
   projectId: string | null;
   status?: string;
+  priority?: number;
   dueDate: string | null;
   assigneeId: string | null;
 };
@@ -185,6 +205,7 @@ export function ComposeModal({
   const breadcrumbTrackRef = useRef<HTMLDivElement>(null);
   const statusMenuRef = useRef<SearchableDropdownMenuApi | null>(null);
   const dueDateMenuRef = useRef<SearchableDropdownMenuApi | null>(null);
+  const priorityMenuRef = useRef<SearchableDropdownMenuApi | null>(null);
   const assigneeMenuRef = useRef<SearchableDropdownMenuApi | null>(null);
   const [kind, setKind] = useState<ComposeKind>("task");
   const [title, setTitle] = useState("");
@@ -195,6 +216,7 @@ export function ComposeModal({
     COMPOSE_DOCUMENT_ROOT_FOLDER_VALUE,
   );
   const [status, setStatus] = useState<TaskStatus>("triage");
+  const [priority, setPriority] = useState<TaskPriority>(0);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(defaultAssigneeId);
   const [error, setError] = useState<string | null>(null);
@@ -257,6 +279,7 @@ export function ComposeModal({
       ),
     );
     setStatus("triage");
+    setPriority(0);
     setDueDate(resolveComposeContextDueDate(pathname, projects));
     setAssigneeId(defaultAssigneeId);
     setError(null);
@@ -320,6 +343,13 @@ export function ComposeModal({
     [],
   );
 
+  const registerPriorityMenu = useCallback(
+    (api: SearchableDropdownMenuApi | null) => {
+      priorityMenuRef.current = api;
+    },
+    [],
+  );
+
   const registerAssigneeMenu = useCallback(
     (api: SearchableDropdownMenuApi | null) => {
       assigneeMenuRef.current = api;
@@ -337,6 +367,9 @@ export function ComposeModal({
         return;
       case "dueDate":
         dueDateMenuRef.current?.open();
+        return;
+      case "priority":
+        priorityMenuRef.current?.open();
         return;
       case "assignee":
         assigneeMenuRef.current?.open();
@@ -475,6 +508,7 @@ export function ComposeModal({
       description,
       projectId: resolvedProjectId,
       status: resolvedProjectId ? status : undefined,
+      priority,
       dueDate,
       assigneeId,
     })
@@ -494,6 +528,7 @@ export function ComposeModal({
     navigateAfterCompose,
     onCreateTask,
     pending,
+    priority,
     requireProject,
     status,
     taskProjectId,
@@ -827,6 +862,8 @@ export function ComposeModal({
     return allOptions;
   }, [taskProjectId]);
 
+  const priorityOptions = useMemo(() => buildComposeTaskPriorityOptions(), []);
+
   const documentFolderOptions = useMemo(() => {
     if (!documentProjectId) {
       return [];
@@ -951,6 +988,12 @@ export function ComposeModal({
 
   function handleStatusChange(nextStatus: TaskStatus) {
     setStatus(nextStatus);
+    setError(null);
+  }
+
+  function handlePriorityChange(nextValue: string) {
+    const parsed = Number(nextValue);
+    setPriority(isTaskPriority(parsed) ? parsed : 0);
     setError(null);
   }
 
@@ -1241,6 +1284,30 @@ export function ComposeModal({
                   disabled={pending || contextLoading}
                   registerOpenMenu={registerDueDateMenu}
                   triggerVariant="composePill"
+                />
+
+                <PropertyDropdown
+                  value={String(priority)}
+                  options={priorityOptions}
+                  onChange={handlePriorityChange}
+                  disabled={pending || contextLoading}
+                  searchPlaceholder="Change priority…"
+                  searchShortcutLabel="P"
+                  ariaLabel="Priority"
+                  registerOpenMenu={registerPriorityMenu}
+                  taskPropertyDropdownId="priority"
+                  fallbackIcon={
+                    <TaskPriorityIcon
+                      priority={priority}
+                      title={getTaskPriorityLabel(priority)}
+                      size={14}
+                    />
+                  }
+                  fallbackLabel={getTaskPriorityLabel(priority)}
+                  mutedSelected={isTaskPriorityNone(priority)}
+                  panelAlign="start"
+                  triggerVariant="composePill"
+                  hideTriggerLabel
                 />
 
                 <ComposeAssigneeDropdown

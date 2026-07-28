@@ -86,6 +86,9 @@ import {
   resolveHistoryEntryDisplay,
   shouldHandleGlobalShortcut,
   shouldShowContentSidePanel,
+  refreshOpenTabTaskStatuses,
+  resolveProductTabTaskMeta,
+  syncActiveTabTaskMeta,
   syncActiveTabToPath,
   useBlockBrowserTabFocus,
   useChromeHeader,
@@ -123,7 +126,10 @@ import {
 import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
-import { renderTaskAgentTitleTrailing } from "../lib/agent/agent-list-indicators";
+import {
+  isTaskAgentWorkingForUi,
+  renderTaskAgentTitleTrailing,
+} from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import { useCommandPaletteSearchFn } from "../lib/command-palette-search";
 import {
@@ -149,6 +155,7 @@ import { useDesktopResource } from "../lib/use-desktop-resource";
 import { buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useAgentAttentionNotifications } from "../lib/agent/use-agent-attention-notifications";
 import { useComposeGlobalShortcut } from "../lib/use-compose-global-shortcut";
 import { useCommandPaletteGlobalShortcut } from "../lib/use-command-palette-global-shortcut";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
@@ -883,6 +890,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
+  useAgentAttentionNotifications(workspace.allTasks);
   const settingsPage = isSettingsPath(location.pathname);
   const [tabsState, setTabsState] = useState<ProductTabsState>(() =>
     loadTabsState(location.pathname),
@@ -1231,8 +1239,75 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     setTabsState((current) => syncActiveTabToPath(current, location.pathname));
   }, [location.pathname]);
 
+  // Keep the active tab's task id/status so product tabs show status icons
+  // (and working pulse) instead of the generic tasks glyph. Inbox stays on
+  // the section glyph, so clear any leftover task meta there.
   useEffect(() => {
-    window.localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabsState));
+    if (isInboxPath(location.pathname)) {
+      setTabsState((current) =>
+        syncActiveTabTaskMeta(current, {
+          taskId: null,
+          taskStatus: null,
+        }),
+      );
+      return;
+    }
+    const meta = resolveProductTabTaskMeta(
+      { id: "active", href: location.pathname, title: "" },
+      workspace.allTasks,
+    );
+    setTabsState((current) =>
+      syncActiveTabTaskMeta(current, {
+        taskId: meta.taskId,
+        taskStatus: meta.taskStatus,
+      }),
+    );
+  }, [location.pathname, workspace.allTasks]);
+
+  // Background tabs: refresh stored status from live workspace data.
+  useEffect(() => {
+    const statusByTaskId = new Map(
+      workspace.allTasks.map((task) => [task.id, task.status] as const),
+    );
+    setTabsState((current) =>
+      refreshOpenTabTaskStatuses(current, statusByTaskId),
+    );
+  }, [workspace.allTasks]);
+
+  useEffect(() => {
+    const payload = JSON.stringify(tabsState);
+    try {
+      window.localStorage.setItem(TABS_STORAGE_KEY, payload);
+      return;
+    } catch (error) {
+      const isQuota =
+        error instanceof DOMException &&
+        (error.name === "QuotaExceededError" ||
+          error.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      if (!isQuota) return;
+
+      // Agent chat transcripts are the usual quota fillers; drop them so
+      // chrome prefs (tabs) can still persist and the shell stays mounted.
+      try {
+        const keys: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i += 1) {
+          const key = window.localStorage.key(i);
+          if (
+            key &&
+            (key.startsWith("backsteros-desktop.agent-chat-transcript.") ||
+              key.startsWith("backsteros-development.agent-chat-transcript."))
+          ) {
+            keys.push(key);
+          }
+        }
+        for (const key of keys) {
+          window.localStorage.removeItem(key);
+        }
+        window.localStorage.setItem(TABS_STORAGE_KEY, payload);
+      } catch {
+        /* ignore — prefer a live shell over persisted tabs */
+      }
+    }
   }, [tabsState]);
 
   const activateTab = useCallback(
@@ -1411,11 +1486,14 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               : null;
             void workspace.patchTask(taskId, {
               projectId: project?.id ?? null,
+              inbox: !project,
+              ...(project ? {} : { status: "triage" }),
             });
           }}
           onAssigneeChange={(taskId, assigneeId) => {
             void workspace.patchTask(taskId, { assigneeId });
           }}
+          groupByAttentionStatus
           renderTitleTrailing={(item) => {
             if (item.kind !== "task") return null;
             return renderTaskAgentTitleTrailing({
@@ -1697,6 +1775,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           canGoBack={history.canGoBack}
           canGoForward={history.canGoForward}
           onSearch={openSearch}
+          inboxHasItems={workspace.inboxItems.length > 0}
           recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
             const display = resolveHistoryEntryDisplay(page.href, page.title);
             return {
@@ -1742,12 +1821,34 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         onActivateTab={activateTab}
         onCloseTab={closeTab}
         onOpenNewTab={openNewTab}
-        renderTabIcon={(tab) =>
-          createElement(HistoryEntryIcon, {
+        renderTabIcon={(tab) => {
+          // Inbox tabs always keep the inbox glyph — status/working icons
+          // are for task detail tabs elsewhere (projects, tasks, etc.).
+          if (isInboxPath(tab.href)) {
+            return createElement(HistoryEntryIcon, {
+              display: {
+                kind: "navigate",
+                navId: "inbox",
+                badgeLabel: "Inbox",
+                title: tab.title,
+              },
+            });
+          }
+          const meta = resolveProductTabTaskMeta(tab, workspace.allTasks);
+          const working = Boolean(
+            meta.taskId &&
+              isTaskAgentWorkingForUi(
+                { id: meta.taskId, status: meta.taskStatus },
+                agentStatus,
+              ),
+          );
+          return createElement(HistoryEntryIcon, {
             display: resolveHistoryEntryDisplay(tab.href, tab.title),
             icon: tab.icon,
-          })
-        }
+            taskStatus: meta.taskStatus,
+            working,
+          });
+        }}
         showSidePanel={Boolean(sidePanel) && !sidePanelCollapsed}
         sidePanel={sidePanel}
         chromeHeader={
@@ -1786,6 +1887,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               title: input.title,
               description: input.description,
               status: input.status,
+              priority: input.priority,
               assigneeId: input.assigneeId,
               dueDate: input.dueDate,
             });
@@ -1800,6 +1902,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
             title: input.title,
             description: input.description,
             status: input.status,
+            priority: input.priority,
             assigneeId: input.assigneeId,
             dueDate: input.dueDate,
           });

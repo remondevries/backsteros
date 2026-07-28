@@ -311,6 +311,7 @@ function ComposerCommandKeyPlugin(props: {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         props.onEscape?.();
       }
     };

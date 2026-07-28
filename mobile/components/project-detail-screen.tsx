@@ -22,6 +22,7 @@ import {
 } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
@@ -58,6 +59,7 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
   const client = useMobileApiClient();
+  useEnsureProjectVault(projectId);
 
   const { data: typeRows } = useLocalQuery<ProjectTypeRow>(TYPE_SQL, [
     projectId,

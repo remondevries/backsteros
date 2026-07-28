@@ -10,8 +10,10 @@ export function normalizeWorkingDirectory(
 
 /**
  * Resolve the PTY cwd for an agent session.
- * Uses the project path when set; otherwise `null` so the PTY sidecar
- * starts in the user home directory (`~`).
+ *
+ * Prefer an explicit `localWorkingDirectory` (codebase checkout or vault
+ * project folder). When missing, callers should ensure the project vault and
+ * pass that path — agents should not start in `~` when a project exists.
  */
 export function resolveAgentWorkingDirectory(
   value: string | null | undefined,

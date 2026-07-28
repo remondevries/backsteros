@@ -17,6 +17,22 @@ export type TaskDueDateIconProps = {
   className?: string;
 };
 
+/** Same semantic color as the due-date icon (past due → on_hold red). */
+export function resolveTaskDueDateUrgencyColor(
+  urgency: TaskDueDateUrgency | null | undefined,
+  colorScheme: ReturnType<typeof getPreferredColorSchemeSnapshot>,
+): string | undefined {
+  if (urgency === "overdue" || urgency === "due_today") {
+    return resolveTaskStatusColor("on_hold", undefined, { colorScheme });
+  }
+
+  if (urgency === "due_soon") {
+    return resolveTaskStatusColor("triage", undefined, { colorScheme });
+  }
+
+  return undefined;
+}
+
 function resolveTaskDueDateIconColor(
   active: boolean,
   urgency: TaskDueDateUrgency | null | undefined,
@@ -26,15 +42,7 @@ function resolveTaskDueDateIconColor(
     return undefined;
   }
 
-  if (urgency === "due_today") {
-    return resolveTaskStatusColor("on_hold", undefined, { colorScheme });
-  }
-
-  if (urgency === "due_soon") {
-    return resolveTaskStatusColor("triage", undefined, { colorScheme });
-  }
-
-  return undefined;
+  return resolveTaskDueDateUrgencyColor(urgency, colorScheme);
 }
 
 export function TaskDueDateIcon({

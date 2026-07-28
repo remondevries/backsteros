@@ -17,8 +17,18 @@ const {
 
 const CHAT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
-test("upsertAssistantTurnTimeline creates in-progress turn with empty text", () => {
+function seedUser(text = "Go") {
   saveChatTranscript(CHAT_ID, []);
+  appendChatTranscriptMessage(CHAT_ID, {
+    id: "user-1",
+    role: "user",
+    text,
+    createdAt: 1,
+  });
+}
+
+test("upsertAssistantTurnTimeline creates in-progress turn with empty text", () => {
+  seedUser();
   const first = upsertAssistantTurnTimeline(CHAT_ID, {
     id: "assist-1",
     text: "",
@@ -53,11 +63,30 @@ test("upsertAssistantTurnTimeline creates in-progress turn with empty text", () 
   assert.equal(first.message?.text, "");
   assert.equal(first.message?.activities?.length, 1);
   assert.equal(first.message?.segments?.length, 1);
-  assert.equal(loadChatTranscript(CHAT_ID).length, 1);
+  assert.equal(loadChatTranscript(CHAT_ID).length, 2);
+  assert.equal(loadChatTranscript(CHAT_ID)[0]?.role, "user");
+});
+
+test("upsertAssistantTurnTimeline refuses assistant without trailing user", () => {
+  saveChatTranscript(CHAT_ID, []);
+  const result = upsertAssistantTurnTimeline(CHAT_ID, {
+    id: "assist-orphan",
+    text: "",
+    activities: [
+      {
+        id: "t1",
+        kind: "info",
+        title: "Thinking",
+        status: "in_progress",
+      },
+    ],
+  });
+  assert.equal(result.message, null);
+  assert.equal(loadChatTranscript(CHAT_ID).length, 0);
 });
 
 test("upsertAssistantTurnTimeline merges text without dropping activities", () => {
-  saveChatTranscript(CHAT_ID, []);
+  seedUser();
   upsertAssistantTurnTimeline(CHAT_ID, {
     id: "assist-2",
     text: "",
@@ -82,7 +111,7 @@ test("upsertAssistantTurnTimeline merges text without dropping activities", () =
 });
 
 test("append of bare assistant text cannot drop richer activities", () => {
-  saveChatTranscript(CHAT_ID, []);
+  seedUser();
   upsertAssistantTurnTimeline(CHAT_ID, {
     id: "assist-3",
     text: "Shipped.",
@@ -103,11 +132,11 @@ test("append of bare assistant text cannot drop richer activities", () => {
   });
 
   assert.equal(result.appended, false);
-  assert.equal(result.messages[0]?.activities?.length, 1);
+  assert.equal(result.messages[1]?.activities?.length, 1);
 });
 
 test("segments round-trip through save/load", () => {
-  saveChatTranscript(CHAT_ID, []);
+  seedUser();
   upsertAssistantTurnTimeline(CHAT_ID, {
     id: "assist-4",
     text: "Hello",
@@ -129,7 +158,7 @@ test("segments round-trip through save/load", () => {
     ],
   });
   const loaded = loadChatTranscript(CHAT_ID);
-  assert.equal(loaded[0]?.segments?.length, 2);
-  assert.equal(loaded[0]?.segments?.[0]?.kind, "work");
-  assert.equal(loaded[0]?.segments?.[1]?.kind, "text");
+  assert.equal(loaded[1]?.segments?.length, 2);
+  assert.equal(loaded[1]?.segments?.[0]?.kind, "work");
+  assert.equal(loaded[1]?.segments?.[1]?.kind, "text");
 });

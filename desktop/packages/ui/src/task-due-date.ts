@@ -1,3 +1,5 @@
+import { migrateLegacyTaskStatus } from "./task-status.js";
+
 const MONTH_NAMES = [
   "Jan",
   "Feb",
@@ -51,9 +53,15 @@ export function parseDueDateInputValue(ymd: string): Date | null {
   return parseYmdLocal(ymd.trim().slice(0, 10));
 }
 
-export type TaskDueDateUrgency = "due_today" | "due_soon";
+export type TaskDueDateUrgency = "overdue" | "due_today" | "due_soon";
 
-/** Completed work should not keep overdue / due-soon calendar colors. */
+const INACTIVE_DUE_DATE_STATUSES = new Set([
+  "completed",
+  "canceled",
+  "duplicated",
+]);
+
+/** Terminal statuses — no overdue / due-soon colors (keep due dates muted). */
 export function shouldShowTaskDueDateUrgency(
   status: string | null | undefined,
 ): boolean {
@@ -61,7 +69,7 @@ export function shouldShowTaskDueDateUrgency(
     return true;
   }
 
-  return status !== "completed";
+  return !INACTIVE_DUE_DATE_STATUSES.has(migrateLegacyTaskStatus(status));
 }
 
 export function getTaskDueDateUrgency(
@@ -95,7 +103,8 @@ export function getTaskDueDateUrgency(
     (parsed.getTime() - refStart.getTime()) / (24 * 60 * 60 * 1000),
   );
 
-  if (diffDays <= 0) return "due_today";
+  if (diffDays < 0) return "overdue";
+  if (diffDays === 0) return "due_today";
   if (diffDays <= 3) return "due_soon";
   return null;
 }

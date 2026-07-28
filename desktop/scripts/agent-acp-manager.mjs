@@ -10,6 +10,9 @@
  * MCP note: Cursor CLI loads ~/.cursor/mcp.json at process start and can hit
  * "Too many MCP tools". We briefly swap in an empty mcp.json for ACP spawn +
  * auth, then restore the user's file so the IDE keeps its MCP servers.
+ * Per-task sessions then inject only that project's `.cursor/mcp.json` via
+ * session/new|load, with mcp-approvals.json written for ACP (CLI --approve-mcps
+ * is not wired to ACP).
  */
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -23,12 +26,20 @@ import {
   stripTransientAgentStreamError,
 } from "./agent-stream-errors.mjs";
 import { summarizeAskQuestion } from "./agent-acp-ask.mjs";
+import {
+  permissionLooksLikeFileRead,
+  prepareSessionMcp,
+} from "./agent-acp-mcp.mjs";
 
 export { summarizeAskQuestion } from "./agent-acp-ask.mjs";
+export {
+  permissionLooksLikeFileRead,
+  prepareSessionMcp,
+} from "./agent-acp-mcp.mjs";
 
 const AGENT_BIN = process.env.CURSOR_AGENT_BIN?.trim() || "agent";
 /** Bump when spawn/isolation behavior changes so old ACP processes are restarted. */
-const ACP_RUNTIME_VERSION = 2;
+const ACP_RUNTIME_VERSION = 3;
 
 const USER_MCP_PATH = path.join(os.homedir(), ".cursor", "mcp.json");
 const USER_MCP_BACKUP_PATH = path.join(
@@ -481,26 +492,7 @@ function permissionOutcome(params, preference = "once") {
  * @returns {boolean}
  */
 function permissionLooksLikeRead(params) {
-  const p = params && typeof params === "object" ? params : {};
-  const toolCall =
-    /** @type {{ toolCall?: unknown, tool_call?: unknown }} */ (p).toolCall ||
-    /** @type {{ tool_call?: unknown }} */ (p).tool_call ||
-    null;
-  const kindRaw =
-    toolCall && typeof toolCall === "object"
-      ? /** @type {{ kind?: unknown, toolKind?: unknown }} */ (toolCall).kind ||
-        /** @type {{ toolKind?: unknown }} */ (toolCall).toolKind
-      : /** @type {{ kind?: unknown }} */ (p).kind;
-  const kind = typeof kindRaw === "string" ? kindRaw.toLowerCase() : "";
-  const title =
-    toolCall && typeof toolCall === "object"
-      ? String(
-          /** @type {{ title?: unknown, name?: unknown }} */ (toolCall).title ||
-            /** @type {{ name?: unknown }} */ (toolCall).name ||
-            "",
-        )
-      : "";
-  return /read|search|grep|glob|list|fetch|look/i.test(`${kind} ${title}`);
+  return permissionLooksLikeFileRead(params);
 }
 
 /**
@@ -544,6 +536,14 @@ function toolCallUpdateFromPermission(params) {
     update.rawInput = tc.input;
   } else if (tc.arguments !== undefined && tc.arguments !== null) {
     update.rawInput = tc.arguments;
+  } else if (tc.args !== undefined && tc.args !== null) {
+    update.rawInput = tc.args;
+  }
+  if (tc.content !== undefined && tc.content !== null) {
+    update.content = tc.content;
+  }
+  if (tc.rawOutput !== undefined && tc.rawOutput !== null) {
+    update.rawOutput = tc.rawOutput;
   }
   if (
     !update.title &&
@@ -1409,13 +1409,12 @@ export async function ensureAcpSession(options) {
 
   await ensureAcpProcess();
 
+  const mcp = prepareSessionMcp(cwd);
+  const sessionMcp = { cwd, mcpServers: mcp.mcpServers };
+
   if (options.forceNew) {
     forgetAcpSession(taskId);
-    const created = await sendRequest(
-      "session/new",
-      { cwd, mcpServers: [] },
-      30_000,
-    );
+    const created = await sendRequest("session/new", sessionMcp, 30_000);
     const sessionId =
       created &&
       typeof created === "object" &&
@@ -1425,7 +1424,9 @@ export async function ensureAcpSession(options) {
         : "";
     if (!sessionId) throw new Error("ACP session/new did not return sessionId");
     rememberSession(taskId, sessionId, cwd);
-    console.log(`[acp] session/new (force) task=${taskId} session=${sessionId}`);
+    console.log(
+      `[acp] session/new (force) task=${taskId} session=${sessionId} mcp=${mcp.serverNames.join(",") || "-"}`,
+    );
     return { sessionId, cwd, resumed: false, created: true };
   }
 
@@ -1448,7 +1449,7 @@ export async function ensureAcpSession(options) {
     try {
       const loaded = await sendRequest(
         "session/load",
-        { sessionId: wanted, cwd, mcpServers: [] },
+        { sessionId: wanted, ...sessionMcp },
         30_000,
       );
       const sessionId =
@@ -1459,7 +1460,9 @@ export async function ensureAcpSession(options) {
           ? /** @type {{ sessionId: string }} */ (loaded).sessionId.toLowerCase()
           : wanted;
       rememberSession(taskId, sessionId, cwd);
-      console.log(`[acp] session/load task=${taskId} session=${sessionId}`);
+      console.log(
+        `[acp] session/load task=${taskId} session=${sessionId} mcp=${mcp.serverNames.join(",") || "-"}`,
+      );
       return { sessionId, cwd, resumed: true, created: false };
     } catch (error) {
       console.warn(
@@ -1469,11 +1472,7 @@ export async function ensureAcpSession(options) {
     }
   }
 
-  const created = await sendRequest(
-    "session/new",
-    { cwd, mcpServers: [] },
-    30_000,
-  );
+  const created = await sendRequest("session/new", sessionMcp, 30_000);
   const sessionId =
     created &&
     typeof created === "object" &&
@@ -1483,7 +1482,9 @@ export async function ensureAcpSession(options) {
       : "";
   if (!sessionId) throw new Error("ACP session/new did not return sessionId");
   rememberSession(taskId, sessionId, cwd);
-  console.log(`[acp] session/new task=${taskId} session=${sessionId}`);
+  console.log(
+    `[acp] session/new task=${taskId} session=${sessionId} mcp=${mcp.serverNames.join(",") || "-"}`,
+  );
   return { sessionId, cwd, resumed: false, created: true };
 }
 

@@ -6,7 +6,7 @@ import {
   resolvePierreIconForEntry,
   syntheticFileNameForLanguageId,
   T3_PIERRE_ICONS,
-} from "./pierre-icons.ts";
+} from "../../../packages/ui/src/pierre-icons.ts";
 
 describe("pierre file icons", () => {
   it("uses Pierre exact filename and complete-set extension mappings", () => {

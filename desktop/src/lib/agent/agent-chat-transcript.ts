@@ -2,6 +2,7 @@ import type {
   AgentChatActivityItem,
   AgentChatTurnSegment,
 } from "./agent-acp-activity";
+import { preferPlanSteps } from "./t3-port/cursor-todos";
 
 export type AgentChatRole = "user" | "assistant";
 
@@ -256,9 +257,11 @@ export function loadAgentChatTranscript(chatId: string | null | undefined): Agen
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((entry) => normalizeMessage(entry))
-      .filter((entry): entry is AgentChatMessage => entry != null);
+    return repairInvertedUserAssistantPairs(
+      parsed
+        .map((entry) => normalizeMessage(entry))
+        .filter((entry): entry is AgentChatMessage => entry != null),
+    );
   } catch {
     return [];
   }
@@ -404,101 +407,132 @@ function mergeTranscriptMessages(
   b: readonly AgentChatMessage[],
 ): AgentChatMessage[] {
   const byId = new Map<string, AgentChatMessage>();
-  const byKey = new Map<string, AgentChatMessage>();
+  /** First-seen order — prefer transcript sequence over re-sorting by clock. */
+  const order: string[] = [];
+  /** Local ids that already absorbed a sidecar-minted duplicate. */
+  const fuzzyConsumed = new Set<string>();
 
-  function mergeOne(message: AgentChatMessage) {
-    const existingById = byId.get(message.id);
-    if (existingById) {
-      const existingActivityCount = existingById.activities?.length ?? 0;
-      const nextActivityCount = message.activities?.length ?? 0;
-      const preferNewerActivities = nextActivityCount > existingActivityCount;
-      const existingSegmentCount = existingById.segments?.length ?? 0;
-      const nextSegmentCount = message.segments?.length ?? 0;
-      const preferNewerSegments = nextSegmentCount > existingSegmentCount;
-      const existingPlanCount = existingById.planSteps?.length ?? 0;
-      const nextPlanCount = message.planSteps?.length ?? 0;
-      const preferNewerPlans = nextPlanCount > existingPlanCount;
-      const merged: AgentChatMessage = {
-        ...existingById,
-        ...message,
-        text: message.text.trim() || existingById.text,
-        activities: preferNewerActivities
-          ? message.activities
-          : existingById.activities ?? message.activities,
-        segments: preferNewerSegments
-          ? message.segments
-          : existingById.segments ?? message.segments,
-        planSteps: preferNewerPlans
-          ? message.planSteps
-          : existingById.planSteps ?? message.planSteps,
-        proposedPlanMarkdown:
-          message.proposedPlanMarkdown?.trim() ||
-          existingById.proposedPlanMarkdown ||
-          message.proposedPlanMarkdown,
-        workedStartedAt:
-          existingById.workedStartedAt ?? message.workedStartedAt ?? null,
-        id: existingById.id,
-        createdAt: Math.min(existingById.createdAt, message.createdAt),
-      };
-      byId.set(message.id, merged);
-      const key = `${merged.role}:${merged.text}`;
-      byKey.set(key, merged);
-      return;
-    }
-
-    const key = `${message.role}:${message.text}`;
-    const existing = byKey.get(key);
-    if (!existing) {
-      byId.set(message.id, message);
-      byKey.set(key, message);
-      return;
-    }
+  function mergeFields(
+    existing: AgentChatMessage,
+    message: AgentChatMessage,
+  ): AgentChatMessage {
     const existingActivityCount = existing.activities?.length ?? 0;
     const nextActivityCount = message.activities?.length ?? 0;
     const preferNewerActivities = nextActivityCount > existingActivityCount;
     const existingSegmentCount = existing.segments?.length ?? 0;
     const nextSegmentCount = message.segments?.length ?? 0;
     const preferNewerSegments = nextSegmentCount > existingSegmentCount;
-    const existingPlanCount = existing.planSteps?.length ?? 0;
-    const nextPlanCount = message.planSteps?.length ?? 0;
-    const preferNewerPlans = nextPlanCount > existingPlanCount;
-    const merged: AgentChatMessage = {
+    return {
       ...existing,
       ...message,
       text: message.text.trim() || existing.text,
-      // Never drop a richer activity timeline — sync/hooks often race without it.
       activities: preferNewerActivities
         ? message.activities
         : existing.activities ?? message.activities,
       segments: preferNewerSegments
         ? message.segments
         : existing.segments ?? message.segments,
-      planSteps: preferNewerPlans
-        ? message.planSteps
-        : existing.planSteps ?? message.planSteps,
+      planSteps: preferPlanSteps(existing.planSteps, message.planSteps),
       proposedPlanMarkdown:
         message.proposedPlanMarkdown?.trim() ||
         existing.proposedPlanMarkdown ||
         message.proposedPlanMarkdown,
       workedStartedAt:
         existing.workedStartedAt ?? message.workedStartedAt ?? null,
-      id:
-        preferNewerActivities ||
-        preferNewerSegments ||
-        existingActivityCount === 0
-          ? message.id || existing.id
-          : existing.id,
+      // Keep the first-seen id (T3 optimistic id stability).
+      id: existing.id,
       createdAt: Math.min(existing.createdAt, message.createdAt),
+      images: message.images ?? existing.images,
+      gitHeadSha:
+        message.gitHeadSha !== undefined
+          ? message.gitHeadSha
+          : existing.gitHeadSha,
+      checkpointPatches:
+        message.checkpointPatches ?? existing.checkpointPatches,
     };
-    byId.delete(existing.id);
-    byId.set(merged.id, merged);
-    byKey.set(key, merged);
+  }
+
+  function findFuzzyTwin(message: AgentChatMessage): AgentChatMessage | null {
+    // Only fuzzy-ack identical text within a short window (sidecar mint race).
+    // Do not key the whole transcript by role:text — that collapsed "ok"/"continue".
+    if (!message.text.trim()) return null;
+    for (const existing of byId.values()) {
+      if (existing.role !== message.role) continue;
+      if (fuzzyConsumed.has(existing.id)) continue;
+      if (existing.text !== message.text) continue;
+      if (Math.abs(existing.createdAt - message.createdAt) >= 60_000) continue;
+      return existing;
+    }
+    return null;
+  }
+
+  function mergeOne(message: AgentChatMessage) {
+    const existingById = byId.get(message.id);
+    if (existingById) {
+      byId.set(message.id, mergeFields(existingById, message));
+      return;
+    }
+
+    const fuzzy = findFuzzyTwin(message);
+    if (fuzzy) {
+      fuzzyConsumed.add(fuzzy.id);
+      byId.set(fuzzy.id, mergeFields(fuzzy, message));
+      return;
+    }
+
+    byId.set(message.id, message);
+    order.push(message.id);
   }
 
   for (const message of [...a, ...b]) {
     mergeOne(message);
   }
-  return [...byId.values()].sort((x, y) => x.createdAt - y.createdAt);
+  return repairInvertedUserAssistantPairs(
+    order
+      .map((id) => byId.get(id))
+      .filter((message): message is AgentChatMessage => message != null),
+  );
+}
+
+/**
+ * Fix raced transcripts where a live assistant row was persisted before its
+ * user prompt (reply rendered above the question).
+ *
+ * Only swap an orphan assistant that is not already paired with a preceding
+ * user. Never pull a follow-up user above a prior agent turn — that made new
+ * prompts jump to the top of the thread.
+ */
+export function repairInvertedUserAssistantPairs(
+  messages: readonly AgentChatMessage[],
+): AgentChatMessage[] {
+  if (messages.length < 2) return [...messages];
+  const next = [...messages];
+  let changed = false;
+  for (let i = 0; i < next.length - 1; i += 1) {
+    const current = next[i];
+    const following = next[i + 1];
+    if (!current || !following) continue;
+    if (current.role !== "assistant" || following.role !== "user") continue;
+    // [user, assistant, user2] is a normal next turn — do not swap.
+    const previous = i > 0 ? next[i - 1] : null;
+    if (previous?.role === "user") continue;
+    const assistantLooksOpen =
+      !current.text.trim() ||
+      Boolean(
+        current.activities?.some(
+          (item) =>
+            item.status === "pending" || item.status === "in_progress",
+        ),
+      );
+    if (!assistantLooksOpen) continue;
+    next[i] = following;
+    next[i + 1] = {
+      ...current,
+      createdAt: Math.max(current.createdAt, following.createdAt + 1),
+    };
+    changed = true;
+  }
+  return changed ? next : [...messages];
 }
 
 /** Merge two transcript histories, keeping the richer activity timeline per turn. */

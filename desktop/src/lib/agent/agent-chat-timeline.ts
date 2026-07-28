@@ -124,6 +124,9 @@ export function collectChangedFilesFromActivities(
     const additions = item.diff?.additions ?? 0;
     const deletions = item.diff?.deletions ?? 0;
     const lines = item.diff?.lines ?? [];
+    // Skip path-only edit rows with no captured lines/stats — opening them
+    // only shows "Stats only: diff." with nothing useful.
+    if (lines.length === 0 && additions === 0 && deletions === 0) continue;
     const existing = byPath.get(path);
     if (existing) {
       existing.additions += additions;

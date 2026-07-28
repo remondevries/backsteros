@@ -71,6 +71,7 @@ import {
   withAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
+import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
 import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
@@ -212,6 +213,8 @@ export function ProjectsPage({
       ) ?? null
     );
   }, [projects, routeSlug]);
+
+  useEnsureProjectVault(selected?.id);
 
   // Prefer pathname over :section — `/projects/:slug/documents/*` does not set
   // the section param, so parseProjectSectionId would wrongly fall back to overview.

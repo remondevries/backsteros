@@ -3,20 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { ComposeFolderIcon } from "../compose-folder-icon.js";
-
-function FileIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M2.75 1A1.75 1.75 0 0 0 1 2.75v10.5C1 14.216 1.784 15 2.75 15h10.5A1.75 1.75 0 0 0 15 13.25V6.5a.75.75 0 0 0-.22-.53l-4.75-4.75A.75.75 0 0 0 9.5 1H2.75Zm6.75 1.56L13.44 6.5H10.25A.75.75 0 0 1 9.5 5.75V2.56Z" />
-    </svg>
-  );
-}
+import { FileTypeIcon } from "../file-type-icon.js";
 
 export function FsTreeInlineCreate({
   kind,
@@ -72,7 +59,10 @@ export function FsTreeInlineCreate({
         {kind === "directory" ? (
           <ComposeFolderIcon className="console-fs-tree-icon" />
         ) : (
-          <FileIcon />
+          <FileTypeIcon
+            pathValue={name.trim() || "untitled"}
+            className="console-fs-tree-icon console-fs-tree-file-type-icon"
+          />
         )}
         <input
           ref={inputRef}

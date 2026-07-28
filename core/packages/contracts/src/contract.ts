@@ -123,6 +123,20 @@ export const apiContract = c.router(
       },
       summary: "Soft-delete project",
     },
+    ensureProjectVault: {
+      method: "POST",
+      path: "/api/v1/projects/:id/ensure-vault",
+      pathParams: z.object({ id: z.string() }),
+      body: null,
+      responses: {
+        200: s.projectVaultEnsureSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Ensure the project vault folder, .cursor skills, and default working directory exist",
+    },
     getGithubConnectionStatus: {
       method: "GET",
       path: "/api/v1/github/status",
@@ -445,6 +459,36 @@ export const apiContract = c.router(
         404: errorSchema,
       },
       summary: "Soft-delete task",
+    },
+    createTaskImage: {
+      method: "POST",
+      path: "/api/v1/tasks/:id/images",
+      pathParams: z.object({ id: z.string() }),
+      headers: z.object({
+        "x-filename": z.string().optional(),
+        "content-type": z.string().optional(),
+      }),
+      body: c.type<ArrayBuffer | Blob>(),
+      responses: {
+        201: s.taskImageSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Upload an image for embedding in a task description",
+    },
+    getTaskImage: {
+      method: "GET",
+      path: "/api/v1/tasks/:id/images/:imageId",
+      pathParams: s.taskImageParamsSchema,
+      responses: {
+        200: c.otherResponse({ contentType: "image/*", body: c.type<Blob>() }),
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary: "Download a task description image",
     },
     listApiKeys: {
       method: "GET",

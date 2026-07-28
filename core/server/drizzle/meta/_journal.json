@@ -169,6 +169,13 @@
       "when": 1785680000000,
       "tag": "0023_workspace_integration_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785760000000,
+      "tag": "0024_task_images",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,7 @@ import { TaskStatusIcon } from "./task-status-icon.js";
 export type TaskPropertiesInlineChipsProps = {
   task: TaskPropertiesDisplayTask | null;
   onStatusChange?: (status: TaskStatus) => void;
+  statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -90,6 +91,7 @@ function FallbackChipTrigger({
 export function TaskPropertiesInlineChips({
   task,
   onStatusChange,
+  statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
@@ -132,7 +134,7 @@ export function TaskPropertiesInlineChips({
           value={status}
           options={statusOptions}
           onChange={onStatusChange}
-          disabled={disabled}
+          disabled={disabled || statusDisabled || !onStatusChange}
           searchPlaceholder="Change status…"
           searchShortcutLabel="S"
           ariaLabel="Status"

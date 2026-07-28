@@ -2,6 +2,7 @@ export type ComposeTaskTabField =
   | "description"
   | "status"
   | "dueDate"
+  | "priority"
   | "assignee"
   | "submit";
 
@@ -14,6 +15,7 @@ const COMPOSE_TASK_TAB_SEQUENCE: ComposeTaskTabField[] = [
   "description",
   "status",
   "dueDate",
+  "priority",
   "assignee",
   "submit",
 ];

@@ -72,13 +72,19 @@ const NAVIGATION_ICONS: Record<
 type HistoryEntryIconProps = {
   display: HistoryEntryDisplay;
   icon?: string | null;
-  taskStatus?: TaskStatus | null;
+  taskStatus?: TaskStatus | string | null;
+  /**
+   * When true, show the agent-working pulse instead of the static status
+   * glyph (product tabs / history when an agent is active on the task).
+   */
+  working?: boolean;
 };
 
 export function HistoryEntryIcon({
   display,
   icon,
   taskStatus,
+  working = false,
 }: HistoryEntryIconProps) {
   if (display.kind === "document") {
     return (
@@ -120,10 +126,15 @@ export function HistoryEntryIcon({
     );
   }
 
-  if (display.kind === "task" && taskStatus) {
+  if (taskStatus || working) {
     return (
       <span className="app-side-panel-history-entry-icon" aria-hidden="true">
-        <TaskStatusIcon status={taskStatus} size={14} className="shrink-0" />
+        <TaskStatusIcon
+          status={taskStatus ?? "in_progress"}
+          working={working}
+          size={14}
+          className="shrink-0"
+        />
       </span>
     );
   }

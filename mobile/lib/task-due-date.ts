@@ -109,7 +109,7 @@ const MONTH_NAMES = [
   "Dec",
 ] as const;
 
-export type TaskDueDateUrgency = "due_today" | "due_soon";
+export type TaskDueDateUrgency = "overdue" | "due_today" | "due_soon";
 
 export function formatDueLabel(
   dueDate: Date | number | string | null | undefined,
@@ -143,7 +143,14 @@ export function getTaskDueDateUrgency(
   referenceDate: Date = new Date(),
   options?: { status?: string | null },
 ): TaskDueDateUrgency | null {
-  if (options?.status === "completed") return null;
+  const status = options?.status;
+  if (
+    status === "completed" ||
+    status === "canceled" ||
+    status === "duplicated"
+  ) {
+    return null;
+  }
   const ymd = getTaskDueDateYmd(dueDate);
   if (!ymd) return null;
 
@@ -159,7 +166,8 @@ export function getTaskDueDateUrgency(
     (dueStart.getTime() - refStart.getTime()) / (24 * 60 * 60 * 1000),
   );
 
-  if (diffDays <= 0) return "due_today";
+  if (diffDays < 0) return "overdue";
+  if (diffDays === 0) return "due_today";
   if (diffDays <= 3) return "due_soon";
   return null;
 }

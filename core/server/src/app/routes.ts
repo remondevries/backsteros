@@ -42,7 +42,7 @@ import {
   resolveAvatarContentType,
   sniffAvatarContentType,
 } from "../lib/avatar-content-type.js";
-import { MAX_AVATAR_BYTES } from "../lib/upload-limits.js";
+import { MAX_AVATAR_BYTES, MAX_TASK_IMAGE_BYTES } from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import * as circleService from "../services/circle-domain.js";
@@ -59,8 +59,10 @@ import {
 } from "../services/cursor-spellcheck.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
+import * as projectVaultService from "../services/project-vault.js";
 import * as taskActivityService from "../services/task-activities.js";
 import * as taskCommentService from "../services/task-comments.js";
+import * as taskImageService from "../services/task-images.js";
 import * as taskProjectService from "../services/tasks-projects.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
 import * as whoopService from "../services/whoop.js";
@@ -191,15 +193,59 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
+    const projectId = c.req.param("id");
+    // Safety: create vault folder + .cursor skills on open if missing.
+    await projectVaultService.ensureProjectVaultFoldersOnly(
+      auth.workspaceId,
+      projectId,
+    );
+
     const row = await taskProjectService.getProjectById(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!row) {
       return c.json(notFound("Project"), 404);
     }
 
     return c.json(toProject(row));
+  });
+
+  app.post("/api/v1/projects/:id/ensure-vault", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("projects:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+
+    const projectId = c.req.param("id");
+    const project = await taskProjectService.getProjectById(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!project) {
+      return c.json(notFound("Project"), 404);
+    }
+
+    const ensured = await projectVaultService.tryEnsureProjectVaultWorkspace(
+      auth.workspaceId,
+      projectId,
+    );
+    if (!ensured) {
+      return c.json({
+        projectId: project.id,
+        projectKey: project.key,
+        projectVaultPath: "",
+        localWorkingDirectory: project.localWorkingDirectory ?? null,
+        assignedWorkingDirectory: false,
+        createdSkill: false,
+        configured: false,
+      });
+    }
+
+    return c.json({
+      ...ensured,
+      configured: true,
+    });
   });
 
   app.get("/api/v1/projects/:id/relations", async (c) => {
@@ -271,6 +317,19 @@ export function registerApiRoutes(app: Hono) {
         if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
           return c.json(
             { error: "Project key already exists", code: "project_key_exists" },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "PROJECT_VAULT_TARGET_EXISTS"
+        ) {
+          return c.json(
+            {
+              error:
+                "Could not rename project folder — a non-empty vault folder already exists for the new key",
+              code: "project_vault_target_exists",
+            },
             400,
           );
         }
@@ -1400,6 +1459,73 @@ export function registerApiRoutes(app: Hono) {
     }
 
     return c.body(null, 204);
+  });
+
+  app.post(
+    "/api/v1/tasks/:id/images",
+    bodyLimit({
+      maxSize: MAX_TASK_IMAGE_BYTES,
+      onError: (c) =>
+        c.json(
+          {
+            error: "Image must be a JPG, PNG, WebP, or GIF up to 10 MB",
+            code: "bad_request",
+          },
+          413,
+        ),
+    }),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      const contentType =
+        sniffAvatarContentType(bytes) ??
+        normalizeAvatarMimeType(c.req.header("Content-Type"));
+      if (
+        !contentType ||
+        bytes.byteLength === 0 ||
+        bytes.byteLength > MAX_TASK_IMAGE_BYTES
+      ) {
+        return c.json(
+          {
+            error: "Image must be a JPG, PNG, WebP, or GIF up to 10 MB",
+            code: "bad_request",
+          },
+          400,
+        );
+      }
+      const image = await taskImageService.createTaskImage(
+        auth.workspaceId,
+        c.req.param("id"),
+        bytes,
+        contentType,
+        c.req.header("X-Filename") ?? undefined,
+      );
+      return image
+        ? c.json(image, 201)
+        : c.json(notFound("Task"), 404);
+    },
+  );
+
+  app.get("/api/v1/tasks/:id/images/:imageId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const result = await taskImageService.getTaskImage(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("imageId"),
+    );
+    if (!result) return c.json(notFound("Image"), 404);
+    const contentType = resolveAvatarContentType(
+      result.row.contentType,
+      result.bytes,
+    );
+    c.header("Content-Type", contentType);
+    c.header("Cache-Control", "private, max-age=300");
+    const body = Uint8Array.from(result.bytes);
+    return c.body(
+      body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+    );
   });
 
   app.get("/api/v1/documents", async (c) => {

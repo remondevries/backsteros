@@ -63,3 +63,14 @@ export function shouldHandleGlobalShortcut(event: KeyboardEvent): boolean {
 
   return true;
 }
+
+/**
+ * Product-tab chrome (⌘W / ⌘T / ⌘⇧T / ⌘⇧[ / ⌘⇧]) must run even when focus
+ * is in an editor, the agent chat composer, or the terminal. Otherwise ⌘W
+ * is left for the OS/menu and can close the window instead of a tab.
+ *
+ * Still yield while a blocking modal (compose, command palette, …) owns the UI.
+ */
+export function shouldHandleTabChromeShortcut(_event: KeyboardEvent): boolean {
+  return !isBlockingModalOpen();
+}

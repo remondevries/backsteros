@@ -115,6 +115,7 @@ export async function createDocument(
   executor: DbExecutor = db,
 ) {
   let projectKey: string | undefined;
+  let projectType: string | undefined;
 
   if (input.type === "project") {
     const project = await getProjectById(
@@ -126,6 +127,7 @@ export async function createDocument(
       throw new Error("PROJECT_NOT_FOUND");
     }
     projectKey = project.key;
+    projectType = project.type;
   }
 
   const existing = await findDocumentByPath(
@@ -147,7 +149,9 @@ export async function createDocument(
   );
   if (input.type === "project" && projectKey) {
     try {
-      await ensureProjectVaultFolders(projectKey);
+      await ensureProjectVaultFolders(projectKey, undefined, {
+        projectType,
+      });
     } catch {
       // Vault may be unset yet — document create still proceeds until putObject.
     }

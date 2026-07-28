@@ -20,6 +20,10 @@ import type {
   MentionSection,
 } from "../mentions/mention-menu-types.js";
 import type { TextRange } from "../text-diff-ranges.js";
+import {
+  createMarkdownImagePasteExtensions,
+  type UploadMarkdownImages,
+} from "../markdown-image-paste.js";
 import { DocumentMentionMenu } from "./document-mention-menu.js";
 
 export type DocumentMarkdownEditorProps = {
@@ -46,6 +50,11 @@ export type DocumentMarkdownEditorProps = {
   scrollWithContent?: boolean;
   /** Character ranges in `value` to highlight (e.g. spellcheck fixes). */
   highlightRanges?: readonly (TextRange & { active?: boolean })[];
+  /**
+   * When set, clipboard / drag-drop image files are uploaded and inserted as
+   * `![screenshot](url)` markdown at the cursor.
+   */
+  onUploadImages?: UploadMarkdownImages;
 };
 
 type EmptyCaretBox = {
@@ -243,6 +252,7 @@ export function DocumentMarkdownEditor({
   vimEnabled = true,
   scrollWithContent = false,
   highlightRanges,
+  onUploadImages,
 }: DocumentMarkdownEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -255,6 +265,8 @@ export function DocumentMarkdownEditor({
   const mentionCatalog = mentionCatalogProp ?? mentionCatalogFromContext;
   const mentionsEnabled = mentionCatalog != null;
   const isEmptyDoc = value.length === 0;
+  const onUploadImagesRef = useRef(onUploadImages);
+  onUploadImagesRef.current = onUploadImages;
 
   const highlightKey = highlightRanges
     ?.map((r) => `${r.start}:${r.end}:${r.active === false ? 0 : 1}`)
@@ -271,6 +283,7 @@ export function DocumentMarkdownEditor({
       EditorView.editable.of(!disabled),
       ...(mentionsEnabled ? createMentionExtensions(mentionController) : []),
       ...createSpellcheckHighlightExtensions(value, highlightRanges),
+      ...createMarkdownImagePasteExtensions(() => onUploadImagesRef.current),
     ],
     // highlightKey stands in for highlightRanges identity
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ranges encoded in highlightKey

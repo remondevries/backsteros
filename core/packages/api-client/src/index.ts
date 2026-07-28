@@ -12,6 +12,7 @@ import {
   type LetterAttachment,
   type PowerSyncCredentials,
   type PowerSyncWriteInput,
+  type TaskImage,
 } from "@backsteros/contracts";
 
 export type TokenProvider = () => string | null | undefined | Promise<string | null | undefined>;
@@ -401,6 +402,13 @@ export type BacksterosApiClient = {
   ): Promise<Avatar>;
   downloadAvatar(entityType: string, entityId: string): Promise<Blob>;
   deleteAvatar(entityType: string, entityId: string): Promise<Avatar>;
+  uploadTaskImage(
+    taskId: string,
+    image: Blob | ArrayBuffer,
+    filename?: string,
+    contentType?: string,
+  ): Promise<TaskImage>;
+  downloadTaskImage(taskId: string, imageId: string): Promise<Blob>;
 };
 
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
@@ -509,6 +517,22 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
       requestJson<Avatar>(
         `/api/v1/avatars/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`,
         { method: "DELETE" },
+      ),
+    uploadTaskImage: (taskId, image, filename, contentType) =>
+      requestJson<TaskImage>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/images`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": contentType ?? "application/octet-stream",
+            ...(filename ? { "x-filename": filename } : {}),
+          },
+          body: image,
+        },
+      ),
+    downloadTaskImage: (taskId, imageId) =>
+      requestBinary(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`,
       ),
   };
 }

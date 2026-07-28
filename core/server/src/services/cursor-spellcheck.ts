@@ -8,6 +8,10 @@ import type {
 } from "@backsteros/contracts";
 
 import {
+  cursorModelOptionsFromCatalog,
+  decodeModelSelection,
+} from "../lib/cursor-model-options.js";
+import {
   buildResearchPrompt,
   buildSpellcheckPrompt,
   extractSpellcheckJson,
@@ -28,10 +32,7 @@ export async function listCursorModels(workspaceId: string): Promise<
     );
   }
   const models = await Cursor.models.list({ apiKey });
-  return models.map((model) => ({
-    id: model.id,
-    displayName: model.displayName,
-  }));
+  return cursorModelOptionsFromCatalog(models);
 }
 
 async function runCursorTaskRewrite(input: {
@@ -45,7 +46,7 @@ async function runCursorTaskRewrite(input: {
   try {
     runResult = await Agent.prompt(input.prompt, {
       apiKey: input.apiKey,
-      model: { id: input.model || "auto" },
+      model: decodeModelSelection(input.model || "auto"),
       local: { cwd: tmpdir() },
     });
   } catch (error) {

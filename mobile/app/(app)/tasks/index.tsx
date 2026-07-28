@@ -15,7 +15,6 @@ import {
   type GroupedTaskRow,
 } from "../../../components/grouped-task-list";
 import { TasksHeader } from "../../../components/tasks-header";
-import { taskDetailHref } from "../../../lib/detail-href";
 import { getMobileEnvironment } from "../../../lib/env";
 import {
   contactsByIdFromList,
@@ -25,7 +24,10 @@ import {
 import { useMobilePowerSync } from "../../../lib/powersync-context";
 import { TASK_LIST_SELECT } from "../../../lib/task-list-query";
 import {
-  DEFAULT_TASKS_DUE_FILTER,
+  getRememberedTasksDueFilter,
+  rememberTasksDueFilter,
+} from "../../../lib/tasks-due-filter-memory";
+import {
   filterTasksByDueFilter,
   getTasksDueFilterEmptyMessage,
   TASKS_DUE_FILTERS,
@@ -43,15 +45,23 @@ export default function TasksScreen() {
   const navigation = useNavigation();
   const { apiUrl } = getMobileEnvironment();
   const powerSync = useMobilePowerSync();
-  const [dueFilter, setDueFilter] = useState<TasksDueFilter>(
-    DEFAULT_TASKS_DUE_FILTER,
+  const [dueFilter, setDueFilterState] = useState<TasksDueFilter>(
+    getRememberedTasksDueFilter,
   );
   const client = useMobileApiClient();
 
-  const onDueFilterTabIndex = useCallback((index: number) => {
-    const next = TASKS_DUE_FILTERS[index];
-    if (next) setDueFilter(next);
+  const setDueFilter = useCallback((filter: TasksDueFilter) => {
+    rememberTasksDueFilter(filter);
+    setDueFilterState(filter);
   }, []);
+
+  const onDueFilterTabIndex = useCallback(
+    (index: number) => {
+      const next = TASKS_DUE_FILTERS[index];
+      if (next) setDueFilter(next);
+    },
+    [setDueFilter],
+  );
 
   useSectionTabShortcuts({
     sectionCount: TASKS_DUE_FILTERS.length,
@@ -64,7 +74,7 @@ export default function TasksScreen() {
         <TasksHeader dueFilter={dueFilter} onDueFilterChange={setDueFilter} />
       ),
     });
-  }, [dueFilter, navigation]);
+  }, [dueFilter, navigation, setDueFilter]);
 
   const { data: syncedTasks, isLoading: syncLoading } = useLocalQuery<
     GroupedTaskRow & {
@@ -150,7 +160,8 @@ export default function TasksScreen() {
 
   const onPressRow = useCallback(
     (row: GroupedTaskRow) => {
-      router.push(taskDetailHref(row.id));
+      // Stay inside the Tasks tab stack so the due-filter tab + list state survive back.
+      router.push(`/(app)/tasks/${row.id}`);
     },
     [router],
   );

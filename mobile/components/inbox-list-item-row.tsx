@@ -5,12 +5,13 @@ import {
   getTaskDueDateUrgency,
 } from "../lib/task-due-date";
 import { getTaskPriorityLabel } from "../lib/task-priority";
+import { TASK_STATUS_COLORS } from "../lib/task-status";
 import { colors } from "../lib/theme";
 import { ListAssigneeAvatar } from "./list-assignee-avatar";
-import { TasksNavIcon } from "./nav-icons";
 import { ProjectOcticon } from "./project-octicon";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
+import { TaskStatusIcon } from "./task-status-icon";
 
 export type InboxListItemRowTask = {
   id: string;
@@ -36,7 +37,7 @@ type Props = {
 
 /**
  * Desktop inbox side-panel row — stacked primary + meta:
- * Tasks icon · title
+ * status icon · title
  * priority · due · project · assignee
  * (`InboxListItemRow` / `.app-side-panel-item-stacked`).
  */
@@ -62,7 +63,7 @@ export function InboxListItemRow({
     <>
       <View style={styles.primary}>
         <View style={styles.typeIcon} accessibilityElementsHidden>
-          <TasksNavIcon color="rgba(237, 237, 237, 0.7)" size={12} />
+          <TaskStatusIcon status={task.status} size={14} />
         </View>
         <Text style={styles.title} numberOfLines={1}>
           {title}
@@ -78,7 +79,13 @@ export function InboxListItemRow({
         {dueLabel ? (
           <View style={styles.metaItem}>
             <TaskDueDateIcon active urgency={urgency} size={12} />
-            <Text style={styles.metaLabel} numberOfLines={1}>
+            <Text
+              style={[
+                styles.metaLabel,
+                urgency === "overdue" ? styles.metaLabelLate : null,
+              ]}
+              numberOfLines={1}
+            >
               {dueLabel}
             </Text>
           </View>
@@ -159,8 +166,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   typeIcon: {
-    width: 12,
-    height: 12,
+    width: 14,
+    height: 14,
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
@@ -192,6 +199,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     flexShrink: 1,
+  },
+  metaLabelLate: {
+    color: TASK_STATUS_COLORS.on_hold,
   },
   assignee: {
     marginLeft: "auto",

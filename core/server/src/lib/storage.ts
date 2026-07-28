@@ -3,14 +3,40 @@ import {
   access,
   constants,
   mkdir,
+  readdir,
   readFile,
+  rename,
+  rm,
+  rmdir,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  PROJECT_VAULT_WORKFLOW_SKILL_ID,
+  PROJECT_VAULT_WORKFLOW_SKILL_MARKDOWN,
+} from "./project-vault-skill.js";
+
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 const SNIPPET_LENGTH = 500;
+
+/** Always created under every project vault folder. */
+export const PROJECT_VAULT_BASE_FOLDERS = ["Documents", "Updates"] as const;
+
+/** Only created when the project type is `codebase`. */
+export const PROJECT_VAULT_CODEBASE_FOLDER = "Codebase" as const;
+
+/** @deprecated Prefer PROJECT_VAULT_BASE_FOLDERS + optional Codebase. */
+export const PROJECT_VAULT_AREA_FOLDERS = [
+  PROJECT_VAULT_CODEBASE_FOLDER,
+  ...PROJECT_VAULT_BASE_FOLDERS,
+] as const;
+
+export type ProjectVaultFolderOptions = {
+  /** When `"codebase"`, also create the Codebase area folder. */
+  projectType?: string | null;
+};
 
 /** In-memory vault root (warmed from workspace settings or env). */
 let vaultPathCache: string | null = null;
@@ -22,6 +48,7 @@ export const VAULT_ROOT_FOLDERS = [
   "Knowledge Base",
   ".backsteros",
   path.join(".backsteros", "avatars"),
+  path.join(".backsteros", "attachments"),
 ] as const;
 
 export function setVaultPathCache(vaultPath: string | null): void {
@@ -156,7 +183,7 @@ export function buildLetterPdfStorageKey(input: {
 /** Private/system blobs stay under .backsteros (not for Obsidian browsing). */
 export function buildPrivateStorageKey(
   _workspaceId: string,
-  category: "pdfs" | "avatars",
+  category: "pdfs" | "avatars" | "attachments",
   entityId: string,
   fileName: string,
 ): string {
@@ -168,12 +195,36 @@ export function buildPrivateStorageKey(
       safeSegment(fileName),
     );
   }
+  if (category === "attachments") {
+    return path.posix.join(
+      ".backsteros",
+      "attachments",
+      "tasks",
+      safeSegment(entityId),
+      safeSegment(fileName),
+    );
+  }
   // Legacy pdf helper — prefer buildLetterPdfStorageKey for new letters.
   return path.posix.join(
     ".backsteros",
     "pdfs",
     safeSegment(entityId),
     safeSegment(fileName),
+  );
+}
+
+/** Task description images under `.backsteros/attachments/tasks/{taskId}/…`. */
+export function buildTaskImageStorageKey(
+  taskId: string,
+  imageId: string,
+  extension: string,
+): string {
+  const ext = safeSegment(extension.replace(/^\./, "") || "bin");
+  return buildPrivateStorageKey(
+    "",
+    "attachments",
+    taskId,
+    `${safeSegment(imageId)}.${ext}`,
   );
 }
 
@@ -241,15 +292,215 @@ export async function ensureVaultStructure(
   }
 }
 
+/** Vault-relative project root: `Projects/{KEY}`. */
+export function buildProjectVaultRelativeRoot(projectKey: string): string {
+  return path.posix.join("Projects", safeSegment(projectKey));
+}
+
+/** Absolute path to a project's vault folder under the configured vault root. */
+export function buildProjectVaultAbsolutePath(
+  vaultRoot: string,
+  projectKey: string,
+): string {
+  return path.join(
+    path.resolve(vaultRoot),
+    "Projects",
+    safeSegment(projectKey),
+  );
+}
+
+export type EnsureProjectVaultFoldersResult = {
+  projectVaultPath: string;
+  createdSkill: boolean;
+};
+
+export type RenameProjectVaultFolderResult = {
+  projectVaultPath: string;
+  renamed: boolean;
+  previousProjectVaultPath: string | null;
+};
+
+async function directoryHasFiles(dir: string): Promise<boolean> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolute = path.join(dir, entry.name);
+    if (entry.isFile()) return true;
+    if (entry.isDirectory()) {
+      if (await directoryHasFiles(absolute)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Rename `Projects/{fromKey}` → `Projects/{toKey}` after a project code change.
+ * No-op when the source folder is missing (caller should ensure the new path).
+ */
+export async function renameProjectVaultFolder(
+  fromKey: string,
+  toKey: string,
+  settingsVaultPath?: string | null,
+): Promise<RenameProjectVaultFolderResult> {
+  const root = await resolveVaultPath(settingsVaultPath);
+  const fromPath = buildProjectVaultAbsolutePath(root, fromKey);
+  const toPath = buildProjectVaultAbsolutePath(root, toKey);
+
+  if (fromPath === toPath) {
+    return {
+      projectVaultPath: toPath,
+      renamed: false,
+      previousProjectVaultPath: null,
+    };
+  }
+
+  try {
+    await access(fromPath, constants.F_OK);
+  } catch {
+    return {
+      projectVaultPath: toPath,
+      renamed: false,
+      previousProjectVaultPath: null,
+    };
+  }
+
+  let destinationExists = false;
+  try {
+    await access(toPath, constants.F_OK);
+    destinationExists = true;
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code?: string }).code === "ENOENT"
+      )
+    ) {
+      throw error;
+    }
+  }
+
+  if (destinationExists) {
+    if (await directoryHasFiles(toPath)) {
+      throw new Error("PROJECT_VAULT_TARGET_EXISTS");
+    }
+    await rm(toPath, { recursive: true, force: true });
+  }
+
+  await mkdir(path.dirname(toPath), { recursive: true });
+  await rename(fromPath, toPath);
+  return {
+    projectVaultPath: toPath,
+    renamed: true,
+    previousProjectVaultPath: fromPath,
+  };
+}
+
+/**
+ * Rewrite vault-relative document keys when a project code changes.
+ * `Projects/{from}/…` → `Projects/{to}/…`
+ */
+export function rewriteProjectStorageKeyPrefix(
+  storageKey: string,
+  fromProjectKey: string,
+  toProjectKey: string,
+): string | null {
+  const fromPrefix = `${buildProjectVaultRelativeRoot(fromProjectKey)}/`;
+  const toPrefix = `${buildProjectVaultRelativeRoot(toProjectKey)}/`;
+  if (!storageKey.startsWith(fromPrefix)) return null;
+  return `${toPrefix}${storageKey.slice(fromPrefix.length)}`;
+}
+
+/**
+ * Map an absolute local working directory under the old vault project root
+ * onto the renamed root (or return null when it is unrelated).
+ */
+export function rewriteProjectVaultWorkingDirectory(
+  localWorkingDirectory: string | null | undefined,
+  fromProjectVaultPath: string,
+  toProjectVaultPath: string,
+): string | null {
+  const current = localWorkingDirectory?.trim() || null;
+  if (!current) return null;
+  const fromRoot = path.resolve(fromProjectVaultPath);
+  const toRoot = path.resolve(toProjectVaultPath);
+  const resolved = path.resolve(current);
+  if (resolved === fromRoot) return toRoot;
+  const fromWithSep = fromRoot.endsWith(path.sep)
+    ? fromRoot
+    : `${fromRoot}${path.sep}`;
+  if (!resolved.startsWith(fromWithSep)) return null;
+  return path.join(toRoot, resolved.slice(fromWithSep.length));
+}
+
+/**
+ * Remove an empty Codebase area left over from older bootstraps that always
+ * created it. Non-empty folders are left alone.
+ */
+async function removeEmptyCodebaseFolder(projectRoot: string): Promise<void> {
+  const codebaseDir = path.join(projectRoot, PROJECT_VAULT_CODEBASE_FOLDER);
+  try {
+    const entries = await readdir(codebaseDir);
+    if (entries.length === 0) {
+      await rmdir(codebaseDir);
+    }
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: string }).code === "ENOENT"
+    ) {
+      return;
+    }
+    // Busy / permission / not a directory — leave as-is.
+  }
+}
+
+/**
+ * Ensure every project has a vault folder (even with no documents), plus a
+ * `.cursor/skills` seed so agent chats started in this folder pick up project
+ * rules/skills. `Codebase/` is only created for codebase projects.
+ */
 export async function ensureProjectVaultFolders(
   projectKey: string,
   settingsVaultPath?: string | null,
-): Promise<void> {
+  options?: ProjectVaultFolderOptions,
+): Promise<EnsureProjectVaultFoldersResult> {
   const root = await resolveVaultPath(settingsVaultPath);
-  const projectRoot = path.join(root, "Projects", safeSegment(projectKey));
-  for (const name of ["Codebase", "Documents", "Updates"] as const) {
+  const projectRoot = buildProjectVaultAbsolutePath(root, projectKey);
+  const isCodebase = options?.projectType === "codebase";
+
+  for (const name of PROJECT_VAULT_BASE_FOLDERS) {
     await mkdir(path.join(projectRoot, name), { recursive: true });
   }
+  if (isCodebase) {
+    await mkdir(
+      path.join(projectRoot, PROJECT_VAULT_CODEBASE_FOLDER),
+      { recursive: true },
+    );
+  } else {
+    await removeEmptyCodebaseFolder(projectRoot);
+  }
+
+  const skillDir = path.join(
+    projectRoot,
+    ".cursor",
+    "skills",
+    PROJECT_VAULT_WORKFLOW_SKILL_ID,
+  );
+  await mkdir(skillDir, { recursive: true });
+
+  const skillPath = path.join(skillDir, "SKILL.md");
+  let createdSkill = false;
+  try {
+    await access(skillPath, constants.F_OK);
+  } catch {
+    await writeFile(skillPath, PROJECT_VAULT_WORKFLOW_SKILL_MARKDOWN, "utf8");
+    createdSkill = true;
+  }
+
+  return { projectVaultPath: projectRoot, createdSkill };
 }
 
 export async function assertVaultPathUsable(vaultPath: string): Promise<void> {

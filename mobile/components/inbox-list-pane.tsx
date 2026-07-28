@@ -5,6 +5,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 
 import { isPadDevice } from "../lib/device";
 import { getMobileEnvironment } from "../lib/env";
+import { taskBelongsInInbox } from "../lib/inbox-attention";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -45,8 +46,17 @@ type Props = {
   autoSelectFirst?: boolean;
 };
 
+type InboxSyncedRow = GroupedTaskRow & {
+  number?: number | null;
+  project_id?: string | null;
+  contact_id?: string | null;
+  project_key?: string | null;
+  inbox?: boolean | number | null;
+};
+
 /**
  * Inbox task list — shared by phone full-screen and iPad left pane.
+ * Includes triage capture, On Hold / In Review, and overdue (past due).
  */
 export function InboxListPane({
   selectedId = null,
@@ -63,15 +73,18 @@ export function InboxListPane({
   const pathSelectedId = selectedId ?? inboxSelectedIdFromPathname(pathname);
 
   const { data: syncedTasks, isLoading: syncLoading } = useLocalQuery<
-    GroupedTaskRow & {
-      number?: number | null;
-      project_id?: string | null;
-      contact_id?: string | null;
-      project_key?: string | null;
-    }
+    InboxSyncedRow
   >(
     `${TASK_LIST_SELECT}
-     WHERE t.deleted_at IS NULL AND t.inbox = 1
+     WHERE t.deleted_at IS NULL AND (
+       t.inbox = 1
+       OR t.status IN ('on_hold', 'in_review')
+       OR (
+         t.due_date IS NOT NULL
+         AND date(t.due_date) < date('now', 'localtime')
+         AND t.status NOT IN ('completed', 'canceled', 'duplicated')
+       )
+     )
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
 
@@ -80,7 +93,16 @@ export function InboxListPane({
   const [restLoading, setRestLoading] = useState(false);
 
   const localRows = useMemo(
-    () => (syncedTasks ?? []).map((row) => withDisplayId(row)),
+    () =>
+      (syncedTasks ?? [])
+        .filter((row) =>
+          taskBelongsInInbox({
+            inbox: row.inbox,
+            status: row.status,
+            due_date: row.due_date,
+          }),
+        )
+        .map((row) => withDisplayId(row)),
     [syncedTasks],
   );
 
@@ -102,9 +124,15 @@ export function InboxListPane({
       );
       const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
       setRestRows(
-        (tasksBody.tasks ?? []).map((task) =>
-          mapApiTaskToRow(task, projectsById, contactsById),
-        ),
+        (tasksBody.tasks ?? [])
+          .filter((task) =>
+            taskBelongsInInbox({
+              inbox: task.inbox,
+              status: task.status,
+              dueDate: task.dueDate,
+            }),
+          )
+          .map((task) => mapApiTaskToRow(task, projectsById, contactsById)),
       );
     } catch (reason) {
       const detail =
@@ -199,7 +227,7 @@ export function InboxListPane({
     <GroupedTaskList
       rows={rows}
       emptyText="Inbox is empty."
-      groupByStatus={false}
+      groupByStatus="inbox"
       rowLayout="inbox"
       selectedId={pathSelectedId}
       refreshing={useRest ? restLoading : false}

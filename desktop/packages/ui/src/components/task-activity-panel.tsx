@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -40,6 +39,10 @@ import {
 import { AgentActivityIcon } from "./agent-activity-icon.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
+import {
+  TaskCommentEditor,
+  type TaskCommentEditorHandle,
+} from "./task-comment-editor.js";
 import { TaskStatusWorkingPulse } from "./task-status-working-pulse.js";
 import { EntityActionsMenu } from "./entity-actions/entity-actions-menu.js";
 import { EntityAvatarIcon } from "./entity-avatar-icon.js";
@@ -49,6 +52,28 @@ import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 const COMMENT_FOCUS_ATTR = "data-task-comment-focus";
+
+function isCommentEditorRoot(el: Element | null): el is HTMLElement {
+  return el instanceof HTMLElement && el.hasAttribute(COMMENT_FOCUS_ATTR);
+}
+
+function findCommentEditorRoot(
+  el: Element | null,
+): HTMLElement | null {
+  if (!el) return null;
+  if (isCommentEditorRoot(el)) return el;
+  return el.closest<HTMLElement>(`[${COMMENT_FOCUS_ATTR}]`);
+}
+
+function focusCommentEditorRoot(root: HTMLElement) {
+  root.scrollIntoView({ block: "nearest" });
+  const content = root.querySelector<HTMLElement>(".cm-content");
+  if (content) {
+    content.focus({ preventScroll: true });
+    return;
+  }
+  root.focus({ preventScroll: true });
+}
 
 function isAbortError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return true;
@@ -534,19 +559,17 @@ function CommentAuthorMeta({
 function CommentEditForm({
   draft,
   saving,
-  inputRef,
+  editorRef,
   onDraftChange,
   onCancel,
   onSave,
-  onResize,
 }: {
   draft: string;
   saving: boolean;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  editorRef: RefObject<TaskCommentEditorHandle | null>;
   onDraftChange: (value: string) => void;
   onCancel: () => void;
   onSave: () => void;
-  onResize: (el: HTMLTextAreaElement | null) => void;
 }) {
   return (
     <form
@@ -556,20 +579,17 @@ function CommentEditForm({
         onSave();
       }}
     >
-      <textarea
-        ref={inputRef}
+      <TaskCommentEditor
+        editorRef={editorRef}
         className="task-activity-comment-edit__input"
+        variant="edit"
         value={draft}
-        onChange={(event) => {
-          onDraftChange(event.target.value);
-          onResize(event.target);
-        }}
+        onChange={onDraftChange}
         onBlur={(event) => {
-          onResize(event.target);
           const next = event.relatedTarget;
           if (
             next instanceof Node &&
-            event.currentTarget.form?.contains(next)
+            event.currentTarget.closest("form")?.contains(next)
           ) {
             return;
           }
@@ -579,16 +599,11 @@ function CommentEditForm({
           if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
-            return;
-          }
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-            event.preventDefault();
-            onSave();
           }
         }}
-        rows={1}
+        onSubmitShortcut={onSave}
         autoFocus
-        aria-label="Edit comment"
+        ariaLabel="Edit comment"
       />
       <div className="task-activity-comment-edit__footer">
         <button
@@ -654,8 +669,7 @@ export function TaskActivityPanel({
   onContinueHoldComment,
 }: TaskActivityPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
-  const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const editInputRef = useRef<HTMLTextAreaElement>(null);
+  const editInputRef = useRef<TaskCommentEditorHandle | null>(null);
   const currentUserAvatar = useMemo(
     () => ({
       email: normalizeEmail(currentUser.email),
@@ -690,35 +704,6 @@ export function TaskActivityPanel({
   const [expandedAgentGroups, setExpandedAgentGroups] = useState<
     Record<string, true>
   >({});
-
-  const resizeComposer = useCallback((el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    // Clear inline height so CSS min-height (and focus animation) can apply.
-    el.style.height = "auto";
-    const minHeight = Number.parseFloat(getComputedStyle(el).minHeight) || 0;
-    if (el.scrollHeight > minHeight + 1) {
-      el.style.height = `${el.scrollHeight}px`;
-    } else {
-      el.style.height = "";
-    }
-  }, []);
-
-  useEffect(() => {
-    resizeComposer(composerInputRef.current);
-  }, [draft, resizeComposer]);
-
-  useEffect(() => {
-    if (editingCommentId) {
-      resizeComposer(editInputRef.current);
-    }
-  }, [editDraft, editingCommentId, resizeComposer]);
-
-  useEffect(() => {
-    const inputs = document.querySelectorAll<HTMLTextAreaElement>(
-      ".task-activity-reply__input",
-    );
-    inputs.forEach((input) => resizeComposer(input));
-  }, [replyDrafts, resizeComposer]);
 
   const requestJsonRef = useRef(requestJson);
   requestJsonRef.current = requestJson;
@@ -976,42 +961,35 @@ export function TaskActivityPanel({
     [comments],
   );
 
-  const onComposerKeyDown = (
-    event: KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
-    parentCommentId?: string | null,
-  ) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      if (parentCommentId) {
-        if (
-          onContinueHoldComment &&
-          isAgentContinueThread(parentCommentId)
-        ) {
-          void runAgentReplyContinue(parentCommentId);
-        } else {
-          void postComment(
-            replyDrafts[parentCommentId] ?? "",
-            parentCommentId,
-          );
-        }
-      } else {
-        void postComment(draft);
+  const submitComposer = useCallback(() => {
+    void postComment(draft);
+  }, [draft, postComment]);
+
+  const submitReply = useCallback(
+    (parentCommentId: string) => {
+      if (onContinueHoldComment && isAgentContinueThread(parentCommentId)) {
+        void runAgentReplyContinue(parentCommentId);
+        return;
       }
-    }
-  };
+      void postComment(replyDrafts[parentCommentId] ?? "", parentCommentId);
+    },
+    [
+      isAgentContinueThread,
+      onContinueHoldComment,
+      postComment,
+      replyDrafts,
+      runAgentReplyContinue,
+    ],
+  );
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void postComment(draft);
+    submitComposer();
   };
 
   const onReplySubmit = (event: FormEvent, parentCommentId: string) => {
     event.preventDefault();
-    if (onContinueHoldComment && isAgentContinueThread(parentCommentId)) {
-      void runAgentReplyContinue(parentCommentId);
-      return;
-    }
-    void postComment(replyDrafts[parentCommentId] ?? "", parentCommentId);
+    submitReply(parentCommentId);
   };
 
   const patchComment = useCallback(
@@ -1164,20 +1142,12 @@ export function TaskActivityPanel({
   }, [closeDeleteModal, pendingDeleteComment]);
 
   useEffect(() => {
-    function collectCommentFocusTargets(): HTMLTextAreaElement[] {
+    function collectCommentFocusTargets(): HTMLElement[] {
       const root = panelRef.current;
       if (!root) return [];
       return Array.from(
-        root.querySelectorAll<HTMLTextAreaElement>(
-          `textarea[${COMMENT_FOCUS_ATTR}]`,
-        ),
+        root.querySelectorAll<HTMLElement>(`[${COMMENT_FOCUS_ATTR}]`),
       ).filter(isVisibleFocusTarget);
-    }
-
-    function focusCommentTarget(el: HTMLTextAreaElement) {
-      el.focus();
-      el.scrollIntoView({ block: "nearest" });
-      resizeComposer(el);
     }
 
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -1187,7 +1157,14 @@ export function TaskActivityPanel({
       const eventTarget = event.target;
       if (eventTarget instanceof HTMLElement) {
         if (eventTarget.closest(".xterm")) return;
-        if (eventTarget.closest(".cm-editor")) return;
+        // Don't steal Shift+C from other CodeMirror editors (e.g. description).
+        // Comment editors are handled below via focus-attr targeting.
+        if (
+          eventTarget.closest(".cm-editor") &&
+          !findCommentEditorRoot(eventTarget)
+        ) {
+          return;
+        }
         if (eventTarget.closest("[data-compose-modal]")) return;
         if (eventTarget.closest("[data-searchable-dropdown-panel]")) return;
       }
@@ -1200,44 +1177,49 @@ export function TaskActivityPanel({
       if (isShiftC) {
         // Don't steal Shift+C while typing (agent message box, inputs, etc.).
         if (!shouldHandleGlobalShortcut(event)) return;
-        const composer = panelRef.current?.querySelector<HTMLTextAreaElement>(
-          `textarea[${COMMENT_FOCUS_ATTR}="composer"]`,
+        const composer = panelRef.current?.querySelector<HTMLElement>(
+          `[${COMMENT_FOCUS_ATTR}="composer"]`,
         );
         if (!composer || !isVisibleFocusTarget(composer)) return;
         event.preventDefault();
         event.stopPropagation();
-        focusCommentTarget(composer);
+        focusCommentEditorRoot(composer);
         return;
       }
 
       if (event.key === "Escape") {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLTextAreaElement)) return;
-        if (!active.hasAttribute(COMMENT_FOCUS_ATTR)) return;
-        if (!panelRef.current?.contains(active)) return;
+        // Let the @ mention popup dismiss first.
+        if (document.querySelector(".mention-menu")) return;
+        const activeRoot = findCommentEditorRoot(document.activeElement);
+        if (!activeRoot || !panelRef.current?.contains(activeRoot)) return;
+        // Edit form owns Escape (cancel); don't blur-save underneath it.
+        if (activeRoot.classList.contains("task-comment-editor--edit")) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
-        active.blur();
+        (document.activeElement as HTMLElement | null)?.blur();
         return;
       }
 
       if (event.key !== "Tab") return;
 
-      const active = document.activeElement;
-      if (!(active instanceof HTMLTextAreaElement)) return;
-      if (!active.hasAttribute(COMMENT_FOCUS_ATTR)) return;
-      if (!panelRef.current?.contains(active)) return;
+      // Mention menu owns Tab while open.
+      if (document.querySelector(".mention-menu")) return;
+
+      const activeRoot = findCommentEditorRoot(document.activeElement);
+      if (!activeRoot || !panelRef.current?.contains(activeRoot)) return;
 
       const targets = collectCommentFocusTargets();
       if (targets.length === 0) return;
-      const index = targets.indexOf(active);
+      const index = targets.indexOf(activeRoot);
       if (index < 0) return;
 
       const nextIndex = event.shiftKey
         ? (index - 1 + targets.length) % targets.length
         : (index + 1) % targets.length;
       const next = targets[nextIndex];
-      if (!next || next === active) {
+      if (!next || next === activeRoot) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1245,12 +1227,12 @@ export function TaskActivityPanel({
 
       event.preventDefault();
       event.stopPropagation();
-      focusCommentTarget(next);
+      focusCommentEditorRoot(next);
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [resizeComposer]);
+  }, []);
 
   return (
     <section
@@ -1422,21 +1404,15 @@ export function TaskActivityPanel({
           aria-label="New comment"
         >
           <form className="task-activity-composer" onSubmit={onSubmit}>
-            <textarea
-              ref={composerInputRef}
+            <TaskCommentEditor
               className="task-activity-composer__input"
-              data-task-comment-focus="composer"
+              variant="composer"
+              focusAttr="composer"
               value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                resizeComposer(event.target);
-              }}
-              onFocus={(event) => resizeComposer(event.target)}
-              onBlur={(event) => resizeComposer(event.target)}
-              onKeyDown={(event) => onComposerKeyDown(event)}
+              onChange={setDraft}
+              onSubmitShortcut={submitComposer}
               placeholder="Leave a comment…"
-              rows={2}
-              aria-label="Leave a comment"
+              ariaLabel="Leave a comment"
             />
             <button
               type="submit"
@@ -1522,13 +1498,12 @@ export function TaskActivityPanel({
               <CommentEditForm
                 draft={editDraft}
                 saving={savingCommentId === target.id}
-                inputRef={editInputRef}
+                editorRef={editInputRef}
                 onDraftChange={setEditDraft}
                 onCancel={cancelEditComment}
                 onSave={() => {
                   void saveEditComment(target.id);
                 }}
-                onResize={resizeComposer}
               />
             ) : (
               <div className="task-activity-comment__body">
@@ -1654,29 +1629,24 @@ export function TaskActivityPanel({
                   className="task-activity-reply"
                   onSubmit={(event) => onReplySubmit(event, comment.id)}
                 >
-                  <textarea
+                  <TaskCommentEditor
                     className="task-activity-reply__input"
-                    data-task-comment-focus={`reply:${comment.id}`}
+                    variant="reply"
+                    focusAttr={`reply:${comment.id}`}
                     value={replyDraft}
-                    onChange={(event) => {
+                    onChange={(value) => {
                       setReplyDrafts((current) => ({
                         ...current,
-                        [comment.id]: event.target.value,
+                        [comment.id]: value,
                       }));
-                      resizeComposer(event.target);
                     }}
-                    onFocus={(event) => resizeComposer(event.target)}
-                    onBlur={(event) => resizeComposer(event.target)}
-                    onKeyDown={(event) =>
-                      onComposerKeyDown(event, comment.id)
-                    }
+                    onSubmitShortcut={() => submitReply(comment.id)}
                     placeholder={
                       agentReplyContinues
                         ? "Answer the agent…"
                         : "Leave a reply…"
                     }
-                    rows={1}
-                    aria-label={`Reply to ${comment.authorName}`}
+                    ariaLabel={`Reply to ${comment.authorName}`}
                   />
                   <button
                     type="submit"

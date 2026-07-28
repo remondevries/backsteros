@@ -8,10 +8,11 @@ import {
   type CursorUpdateTodosParams,
 } from "./t3-port/cursor-todos";
 import {
-  isGenericToolTitle,
-  normalizeCompactToolLabel,
-  toolKindVerb,
-} from "./t3-port/work-entry-labels";
+  deriveToolActivityPresentation,
+  mergeToolCallPayload,
+  shouldEmitToolActivity,
+} from "./t3-port/tool-activity-presentation";
+import { isGenericToolTitle } from "./t3-port/work-entry-labels";
 
 export type { AgentChatPlanStep } from "./t3-port/cursor-todos";
 
@@ -80,6 +81,16 @@ export type AgentChatTurnUiState = {
   planSteps: AgentChatPlanStep[];
   /** Markdown from `cursor/create_plan` (t3 proposed plan). */
   proposedPlanMarkdown: string | null;
+  /**
+   * Tool calls seen but not yet shown (T3 shouldEmitToolCallUpdate).
+   * Held until `detail` arrives or the tool completes/fails.
+   */
+  pendingTools: Record<string, AgentChatActivityItem>;
+  /**
+   * Accumulated ACP tool payloads by toolCallId (T3 mergeToolCallState.data).
+   * Lets status-only updates keep earlier rawInput/locations for presentation.
+   */
+  toolCallPayloads: Record<string, Record<string, unknown>>;
 };
 
 const PENDING_TURN_ID = "acp-turn-pending";
@@ -312,6 +323,8 @@ export function emptyAgentChatTurnUiState(): AgentChatTurnUiState {
     phase: "idle",
     planSteps: [],
     proposedPlanMarkdown: null,
+    pendingTools: {},
+    toolCallPayloads: {},
   };
 }
 
@@ -336,6 +349,8 @@ export function createOptimisticTurnUiState(): AgentChatTurnUiState {
     phase: "starting",
     planSteps: [],
     proposedPlanMarkdown: null,
+    pendingTools: {},
+    toolCallPayloads: {},
   };
 }
 
@@ -345,215 +360,6 @@ function parseActivityStatus(value: unknown): AgentChatActivityStatus | undefine
   if (value === "completed") return "completed";
   if (value === "failed") return "failed";
   return undefined;
-}
-
-/** Short path for activity rows — keep enough parent folders to disambiguate. */
-function formatPathForDetail(path: string, max = 64): string {
-  const normalized = path.replace(/\\/g, "/").trim();
-  if (!normalized) return "";
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length === 0) return truncateDetail(normalized, max);
-  if (parts.length <= 3) return truncateDetail(parts.join("/"), max);
-  return truncateDetail(parts.slice(-3).join("/"), max);
-}
-
-function maybePathLike(value: string | null | undefined): string | null {
-  if (!value?.trim()) return null;
-  const trimmed = value.trim();
-  if (
-    trimmed.includes("/") ||
-    trimmed.includes("\\") ||
-    trimmed.startsWith(".") ||
-    /\.(?:[a-z0-9]{1,16})$/i.test(trimmed)
-  ) {
-    return trimmed;
-  }
-  return null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-/** Walk nested ACP payloads for file paths (rawInput / locations / content). */
-function collectPathsFromValue(
-  value: unknown,
-  paths: string[],
-  seen: Set<string>,
-  depth: number,
-): void {
-  if (depth > 5 || paths.length >= 8) return;
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      collectPathsFromValue(entry, paths, seen, depth + 1);
-      if (paths.length >= 8) return;
-    }
-    return;
-  }
-  const record = asRecord(value);
-  if (!record) return;
-
-  for (const key of [
-    "path",
-    "file_path",
-    "filePath",
-    "target_file",
-    "targetFile",
-    "relativePath",
-    "filename",
-    "file",
-    "newPath",
-    "oldPath",
-    "uri",
-  ]) {
-    const raw = stringField(record, key);
-    if (!raw) continue;
-    const candidate =
-      maybePathLike(raw) ??
-      (key === "uri" && raw.startsWith("file:")
-        ? maybePathLike(raw.replace(/^file:\/\//, ""))
-        : null);
-    if (!candidate || seen.has(candidate)) continue;
-    seen.add(candidate);
-    paths.push(candidate);
-    if (paths.length >= 8) return;
-  }
-
-  for (const nestedKey of [
-    "locations",
-    "item",
-    "input",
-    "result",
-    "rawInput",
-    "arguments",
-    "args",
-    "data",
-    "changes",
-    "content",
-  ]) {
-    if (!(nestedKey in record)) continue;
-    collectPathsFromValue(record[nestedKey], paths, seen, depth + 1);
-    if (paths.length >= 8) return;
-  }
-}
-
-const TOOL_TITLE_VERB_RE =
-  /^(reading|read(?:\s+file)?|grepping|grep(?:ping)?|searching|search|glob(?:bing)?|editing|edit(?:ing)?|writing|write|deleting|delete|moving|move|fetching|fetch|running|ran|terminal|bash|shell)\b(?:\s+|$)(.*)$/i;
-
-/**
- * Split Cursor titles like "Reading src/app.ts" into a short verb + detail.
- * When ACP omits rawInput, the path often only lives in the title.
- */
-function peelToolTitle(titleFromAgent: string): {
-  title: string;
-  detailHint?: string;
-} {
-  const compact = normalizeCompactToolLabel(titleFromAgent);
-  if (!compact) return { title: "" };
-  const match = TOOL_TITLE_VERB_RE.exec(compact);
-  if (!match) return { title: compact };
-  const verb = match[1] ?? compact;
-  const rest = (match[2] ?? "").trim();
-  if (!rest) return { title: verb };
-  const unquoted = rest
-    .replace(/^`([^`]+)`$/, "$1")
-    .replace(/^"([^"]+)"$/, "$1")
-    .replace(/^'([^']+)'$/, "$1")
-    .trim();
-  if (!unquoted) return { title: verb };
-  const pathLike = maybePathLike(unquoted);
-  return {
-    title: verb,
-    detailHint: pathLike
-      ? formatPathForDetail(pathLike)
-      : truncateDetail(unquoted),
-  };
-}
-
-/** Prefer T3-style action labels over raw Cursor tool titles when possible. */
-function presentToolTitle(
-  titleFromAgent: string,
-  toolKind: string | undefined,
-): string {
-  const kindLabel = toolKindVerb(toolKind);
-  const compact = normalizeCompactToolLabel(titleFromAgent);
-  if (!compact || isGenericToolTitle(compact)) return kindLabel || "Tool";
-  const lower = compact.toLowerCase();
-  if (
-    kindLabel &&
-    (lower === "write" ||
-      lower === "writing" ||
-      lower === "edit" ||
-      lower === "editing" ||
-      lower === "read" ||
-      lower === "reading" ||
-      lower === "read file" ||
-      lower === "terminal" ||
-      lower === "bash" ||
-      lower === "shell" ||
-      lower === "grep" ||
-      lower === "grepping" ||
-      lower === "find" ||
-      lower === "search" ||
-      lower === "searching" ||
-      lower === "glob" ||
-      lower === "globbing" ||
-      lower === "tool")
-  ) {
-    return kindLabel;
-  }
-  return compact;
-}
-
-function truncateDetail(value: string, max = 72): string {
-  const oneLine = value.replace(/\s+/g, " ").trim();
-  if (!oneLine) return "";
-  return oneLine.length > max ? `${oneLine.slice(0, max - 3)}…` : oneLine;
-}
-
-function stringField(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): string | null {
-  for (const key of keys) {
-    const value = input[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
-
-function quoteSearchQuery(query: string): string {
-  const truncated = truncateDetail(query);
-  if (!truncated) return "";
-  return truncated.includes(" ") || truncated.includes('"')
-    ? truncated
-    : `"${truncated}"`;
-}
-
-function coerceRawInput(raw: unknown): Record<string, unknown> | null {
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // Cursor sometimes sends a bare path / glob as the rawInput string.
-      if (maybePathLike(trimmed) || trimmed.includes("*")) {
-        return { path: trimmed };
-      }
-      return null;
-    }
-    return null;
-  }
-  if (typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  return null;
 }
 
 function splitLines(text: string): string[] {
@@ -658,6 +464,8 @@ function toolDiffFromUpdate(
         : typeof b.file === "string"
           ? b.file
           : undefined;
+
+    // ACP v1: oldText / newText pair.
     const oldText =
       typeof b.oldText === "string"
         ? b.oldText
@@ -670,99 +478,106 @@ function toolDiffFromUpdate(
         : typeof b.new_text === "string"
           ? b.new_text
           : null;
-    const preview = buildActivityDiffPreview(oldText, newText, path);
-    if (preview) return preview;
+    const fromTexts = buildActivityDiffPreview(oldText, newText, path);
+    if (fromTexts) return fromTexts;
+
+    // ACP v2: git_patch / unified patch text (no oldText/newText).
+    const fromPatch = activityDiffFromPatchBlock(b, path);
+    if (fromPatch) return fromPatch;
   }
   return undefined;
 }
 
-function toolDetailFromUpdate(
-  update: Record<string, unknown>,
-  toolKind?: string,
-): string | undefined {
-  const kind = (toolKind ?? "").toLowerCase();
-  const prefersSearch =
-    kind.includes("search") ||
-    kind.includes("grep") ||
-    kind.includes("glob") ||
-    kind.includes("find");
-
-  const input =
-    coerceRawInput(update.rawInput) ??
-    coerceRawInput(update.input) ??
-    coerceRawInput(update.arguments) ??
-    coerceRawInput(update.args);
-
-  if (input) {
-    const query = stringField(
-      input,
-      "pattern",
-      "query",
-      "search",
-      "searchTerm",
-      "regex",
-      "glob_pattern",
-      "globPattern",
-      "glob",
-    );
-    const filePath = stringField(
-      input,
-      "file_path",
-      "filePath",
-      "target_file",
-      "targetFile",
-      "relativePath",
-      "filename",
-      "file",
-      "path",
-      "target_directory",
-      "targetDirectory",
-      "directory",
-      "dir",
-    );
-    const command =
-      stringField(input, "command", "cmd") ??
-      (() => {
-        const executable = stringField(input, "executable");
-        if (!executable) return null;
-        const args = input.args;
-        if (Array.isArray(args)) {
-          const parts = args
-            .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-            .filter(Boolean);
-          return parts.length > 0
-            ? `${executable} ${parts.join(" ")}`
-            : executable;
-        }
-        if (typeof args === "string" && args.trim()) {
-          return `${executable} ${args.trim()}`;
-        }
-        return executable;
-      })();
-
-    if (prefersSearch) {
-      if (query) {
-        const quoted = quoteSearchQuery(query);
-        if (filePath) {
-          return truncateDetail(
-            `${quoted} in ${formatPathForDetail(filePath)}`,
-          );
-        }
-        return quoted;
-      }
-      if (filePath) return formatPathForDetail(filePath);
-    } else {
-      if (filePath) return formatPathForDetail(filePath);
-      if (command) return truncateDetail(command);
-      if (query) return truncateDetail(query);
+/** Parse ACP v2 `patch: { format, text }` or a bare unified-diff string. */
+function activityDiffFromPatchBlock(
+  block: Record<string, unknown>,
+  path?: string,
+): AgentChatActivityDiff | undefined {
+  let patchText = "";
+  const patch = block.patch;
+  if (patch && typeof patch === "object") {
+    const p = patch as Record<string, unknown>;
+    if (typeof p.text === "string" && p.text.trim()) {
+      patchText = p.text;
+    } else if (typeof p.diff === "string" && p.diff.trim()) {
+      patchText = p.diff;
     }
   }
+  if (
+    !patchText &&
+    typeof block.text === "string" &&
+    block.text.includes("@@")
+  ) {
+    patchText = block.text;
+  }
+  if (
+    !patchText &&
+    typeof block.unifiedDiff === "string" &&
+    block.unifiedDiff.trim()
+  ) {
+    patchText = block.unifiedDiff;
+  }
+  if (!patchText.trim()) return undefined;
 
-  const nestedPaths: string[] = [];
-  collectPathsFromValue(update, nestedPaths, new Set(), 0);
-  if (nestedPaths[0]) return formatPathForDetail(nestedPaths[0]);
+  const lines = linesFromUnifiedPatch(patchText);
+  if (lines.length === 0) return undefined;
+  const additions = lines.filter((line) => line.type === "add").length;
+  const deletions = lines.filter((line) => line.type === "del").length;
+  if (additions === 0 && deletions === 0) return undefined;
 
+  let preview = lines;
+  if (preview.length > MAX_DIFF_PREVIEW_LINES) {
+    const head = preview.slice(0, MAX_DIFF_PREVIEW_LINES - 1);
+    preview = [
+      ...head,
+      { type: "ctx", text: `… ${preview.length - head.length} more lines` },
+    ];
+  }
+
+  const pathFromPatch = pathFromUnifiedPatch(patchText);
+  return {
+    path: path?.trim() || pathFromPatch || undefined,
+    additions,
+    deletions,
+    lines: preview,
+  };
+}
+
+function pathFromUnifiedPatch(patchText: string): string | undefined {
+  for (const line of patchText.split("\n")) {
+    if (line.startsWith("+++ b/")) {
+      const path = line.slice("+++ b/".length).trim();
+      if (path && path !== "/dev/null") return path;
+    }
+    if (line.startsWith("+++ ")) {
+      const path = line.slice(4).trim().replace(/^[ab]\//, "");
+      if (path && path !== "/dev/null") return path;
+    }
+  }
   return undefined;
+}
+
+function linesFromUnifiedPatch(patchText: string): AgentChatActivityDiffLine[] {
+  const lines: AgentChatActivityDiffLine[] = [];
+  for (const raw of patchText.replace(/\r\n/g, "\n").split("\n")) {
+    if (
+      raw.startsWith("diff --git") ||
+      raw.startsWith("index ") ||
+      raw.startsWith("--- ") ||
+      raw.startsWith("+++ ") ||
+      raw.startsWith("@@")
+    ) {
+      continue;
+    }
+    if (raw.startsWith("+")) {
+      lines.push({ type: "add", text: raw.slice(1) });
+    } else if (raw.startsWith("-")) {
+      lines.push({ type: "del", text: raw.slice(1) });
+    } else if (raw.startsWith(" ") || raw === "") {
+      lines.push({ type: "ctx", text: raw.startsWith(" ") ? raw.slice(1) : "" });
+    }
+  }
+  return lines;
 }
 
 function thoughtTextFromChunk(update: Record<string, unknown>): string {
@@ -823,6 +638,29 @@ export function finalizeTurnSegments(
       return { ...segment, activities };
     })
     .filter((segment): segment is AgentChatTurnSegment => segment != null);
+}
+
+/**
+ * Flush held tool calls into the timeline and mark open rows complete
+ * (T3 end-of-turn: pending tools without detail still surface once settled).
+ */
+export function sealTurnUiState(
+  state: AgentChatTurnUiState,
+): AgentChatTurnUiState {
+  let segments = state.segments;
+  for (const pending of Object.values(state.pendingTools)) {
+    segments = upsertActivityInSegments(segments, {
+      ...pending,
+      status: pending.status === "failed" ? "failed" : "completed",
+    });
+  }
+  segments = finalizeTurnSegments(segments);
+  return {
+    ...state,
+    pendingTools: {},
+    segments,
+    activities: activitiesFromSegments(segments),
+  };
 }
 
 /** Whether an activity row should start expanded in the transcript. */
@@ -896,50 +734,88 @@ export function applyAcpSessionUpdateToTurn(
         typeof u.toolCallId === "string" && u.toolCallId.trim()
           ? u.toolCallId.trim()
           : `tool-${state.activities.length}`;
-      const existing = state.activities.find((item) => item.id === toolCallId);
-      const hasKind = typeof u.kind === "string" && Boolean(u.kind.trim());
+      const existingVisible = state.activities.find(
+        (item) => item.id === toolCallId,
+      );
+      const existingPending = state.pendingTools[toolCallId];
+      const existing = existingVisible ?? existingPending;
+      // T3 mergeToolCallState: accumulate rawInput/locations across patch frames.
+      const mergedUpdate = mergeToolCallPayload(
+        state.toolCallPayloads[toolCallId],
+        u,
+      );
+      const toolCallPayloads = {
+        ...state.toolCallPayloads,
+        [toolCallId]: mergedUpdate,
+      };
+      const hasKind =
+        typeof mergedUpdate.kind === "string" &&
+        Boolean(String(mergedUpdate.kind).trim());
       const toolKind = hasKind
-        ? (u.kind as string).trim()
+        ? String(mergedUpdate.kind).trim()
         : existing?.toolKind;
-      const hasTitle = typeof u.title === "string" && Boolean(u.title.trim());
+      const hasTitle =
+        typeof mergedUpdate.title === "string" &&
+        Boolean(String(mergedUpdate.title).trim());
       // ACP patch semantics: omitted title/kind leave prior values. Avoid
       // inventing a generic "Tool" title on status-only updates.
       const titleFromAgent = hasTitle
-        ? (u.title as string).trim()
+        ? String(mergedUpdate.title).trim()
         : existing && !isGenericToolTitle(existing.title)
           ? existing.title
           : "";
-      // T3 keeps path-bearing Cursor titles in the heading (toolWorkEntryHeading
-      // uses toolTitle as-is). Only collapse exact generic verbs via
-      // presentToolTitle — do not peel the path out of the title first, or a
-      // missing rawInput/locations frame leaves a bare "Read" with no file.
-      const peeled = peelToolTitle(titleFromAgent);
-      const title = presentToolTitle(titleFromAgent, toolKind);
-      const diff = toolDiffFromUpdate(u);
-      const detail =
-        toolDetailFromUpdate(u, toolKind) ??
-        peeled.detailHint ??
-        (diff?.path ? formatPathForDetail(diff.path) : undefined);
+      const diff = toolDiffFromUpdate(mergedUpdate) ?? existing?.diff;
+      // Present from the merged payload so a late status frame still has the path.
+      const presentation = deriveToolActivityPresentation({
+        titleFromAgent,
+        toolKind,
+        update: mergedUpdate,
+        existingDetail: existing?.detail,
+        diffPath: diff?.path,
+      });
       const status =
-        parseActivityStatus(u.status) ??
+        parseActivityStatus(mergedUpdate.status) ??
         existing?.status ??
         "in_progress";
-      const segments = upsertActivityInSegments(state.segments, {
+      const activity: AgentChatActivityItem = {
         id: toolCallId,
         kind: "tool",
-        title,
-        detail,
+        title: presentation.summary,
+        detail: presentation.detail,
         status,
         toolKind,
         diff,
-      });
+      };
+      const toolingPhase =
+        state.phase === "responding" ? "responding" : "tooling";
+
+      // T3 shouldEmitToolCallUpdate: hold until detail exists (or completed).
+      if (
+        !shouldEmitToolActivity({
+          detail: activity.detail,
+          status: activity.status,
+          alreadyVisible: Boolean(existingVisible),
+        })
+      ) {
+        return {
+          ...state,
+          toolCallPayloads,
+          pendingTools: { ...state.pendingTools, [toolCallId]: activity },
+          phase: toolingPhase,
+        };
+      }
+
+      const { [toolCallId]: _removed, ...restPending } = state.pendingTools;
+      const segments = upsertActivityInSegments(state.segments, activity);
       return {
         ...state,
+        toolCallPayloads,
+        pendingTools: restPending,
         segments,
         activities: activitiesFromSegments(segments),
         // Keep responding if we already streamed text — next tools open a new
         // work segment below that text.
-        phase: state.phase === "responding" ? "responding" : "tooling",
+        phase: toolingPhase,
       };
     }
     case "agent_thought_chunk": {
@@ -1062,6 +938,8 @@ export function applyAcpSessionUpdate(
       phase: "tooling",
       planSteps: [],
       proposedPlanMarkdown: null,
+      pendingTools: {},
+      toolCallPayloads: {},
     },
     update,
   ).activities;

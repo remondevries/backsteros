@@ -292,11 +292,14 @@ function mergeAssistantTimeline(existing, incoming) {
   const existingSegmentCount = existing.segments?.length ?? 0;
   const nextSegmentCount = incoming.segments?.length ?? 0;
   const preferNewerSegments = nextSegmentCount > existingSegmentCount;
-  const existingPlanCount = existing.planSteps?.length ?? 0;
-  const nextPlanCount = incoming.planSteps?.length ?? 0;
-  const preferNewerPlans = nextPlanCount > existingPlanCount;
   const nextText = incoming.text.trim();
   const existingText = existing.text.trim();
+  const existingPlanCount = existing.planSteps?.length ?? 0;
+  const nextPlanCount = incoming.planSteps?.length ?? 0;
+  // Same-length status updates must win (T3 latest snapshot); reject only
+  // shorter incoming lists so a stale partial cannot wipe a richer checklist.
+  const preferNewerPlans =
+    nextPlanCount > 0 && (existingPlanCount === 0 || nextPlanCount >= existingPlanCount);
   return {
     ...existing,
     ...incoming,
@@ -513,6 +516,12 @@ export function upsertAssistantTurnTimeline(chatId, patch) {
       saveChatTranscript(id, next);
       return { messages: next, message: merged };
     }
+  }
+
+  // T3 / client parity: never append an assistant turn without a trailing user
+  // prompt — otherwise the reply can land above (or hide) the user's message.
+  if (last?.role !== "user") {
+    return { messages: current, message: null };
   }
 
   const next = [...current, incoming];

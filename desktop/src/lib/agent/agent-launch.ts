@@ -13,7 +13,7 @@ export type ReadyToStartAgentTask = {
 };
 
 /**
- * @deprecated Project working directory is optional — agents fall back to `~`.
+ * @deprecated Prefer ensuring the project vault folder so agents always have a cwd.
  * Kept so older call sites compile; always returns null.
  */
 export function missingProjectDirectoryError(
@@ -28,7 +28,7 @@ export function missingProjectDirectoryError(
  * Asks the agent to implement the task so a real turn begins
  * (status advances to In Progress when the turn is working).
  *
- * When no project working directory is set, the shell starts in `~`.
+ * Working directory is the project vault folder (or an explicit codebase path).
  */
 export function buildReadyToStartAgentPrompt(
   task: ReadyToStartAgentTask,

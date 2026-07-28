@@ -919,13 +919,9 @@ export function DesktopAgentChatTranscript({
   const showProposedPlan = Boolean(proposedPlanMarkdown?.trim());
   const draft = assistantDraft.trimEnd();
   const showDraft = draft.length > 0 && !showLiveSegments;
-  const showTurnChrome =
-    working ||
-    showActivities ||
-    showLiveSegments ||
-    showDraft ||
-    showPlanTodos ||
-    showProposedPlan;
+  // T3 only appends the working/live row while the turn is unsettled. Do not
+  // keep chrome up from leftover turnUi after settle (looks "still busy").
+  const showTurnChrome = Boolean(working);
   const liveChangedFiles = collectChangedFilesFromActivities(activities);
 
   const rows = useMemo(
@@ -987,16 +983,17 @@ export function DesktopAgentChatTranscript({
     }
   }, [showTurnChrome]);
 
-  // T3: sending pins the new user turn near the top while the reply grows below.
+  // Keep the timeline stuck to the end so each new user/agent row appears
+  // under the previous turn. T3 pins the prompt to the viewport top; that
+  // scrolled prior agent replies out of view and felt like messages jumped up.
   useEffect(() => {
     if (!working || !latestUserMessageId) return;
-    if (anchorMessageId === latestUserMessageId) return;
-    setAnchorMessageId(latestUserMessageId);
-    scrollModeRef.current = "anchoring-new-turn";
+    scrollModeRef.current = "following-end";
     liveFollowGenRef.current = userScrollGenRef.current;
-    pendingAnchorIdRef.current = latestUserMessageId;
-    positionedAnchorIdRef.current = null;
-    settledAnchorIdRef.current = null;
+    pendingAnchorIdRef.current = null;
+    if (anchorMessageId != null) {
+      setAnchorMessageId(null);
+    }
     settleCleanupRef.current?.();
     settleCleanupRef.current = null;
     showScrollDebouncerRef.current.cancel();
@@ -1009,7 +1006,10 @@ export function DesktopAgentChatTranscript({
       scrollModeRef.current = "following-end";
       liveFollowGenRef.current = userScrollGenRef.current;
     }
-  }, [working]);
+    if (anchorMessageId != null) {
+      setAnchorMessageId(null);
+    }
+  }, [anchorMessageId, working]);
 
   const cancelLiveFollowForUserNavigation = useCallback(() => {
     userScrollGenRef.current += 1;
@@ -1067,6 +1067,8 @@ export function DesktopAgentChatTranscript({
         void list.scrollToIndex({
           index: anchorIndex,
           animated: true,
+          // T3 pins the user turn at the top of the viewport.
+          viewPosition: 0,
           viewOffset: CHAT_LIST_ANCHOR_OFFSET,
         });
       });
@@ -1267,6 +1269,8 @@ export function DesktopAgentChatTranscript({
         }
 
         if (scrollModeRef.current !== "following-end") return;
+        // Stick to the latest row. Short threads dock via alignItemsAtEnd;
+        // overflowing threads need an explicit scrollToEnd.
         void list.scrollToEnd?.({ animated: false });
       });
     });
@@ -1424,6 +1428,7 @@ export function DesktopAgentChatTranscript({
         renderItem={renderItem}
         estimatedItemSize={90}
         initialScrollAtEnd
+        alignItemsAtEnd
         contentInsetEndAdjustment={composerOverlayHeight}
         {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
         maintainScrollAtEnd={
@@ -1444,7 +1449,19 @@ export function DesktopAgentChatTranscript({
         }}
         onScroll={handleListScroll}
         className="desktop-agent-chat__transcript desktop-agent-chat__transcript--top-fade"
-        style={{ height: "100%", minHeight: 0 }}
+        style={
+          {
+            height: "100%",
+            minHeight: 0,
+            /* Match fade height to the composer overlay so text dissolves
+               behind the message box (same mask technique as the top edge). */
+            ...(composerOverlayHeight > 0
+              ? {
+                  ["--desktop-agent-chat-bottom-fade"]: `${composerOverlayHeight}px`,
+                }
+              : null),
+          } as CSSProperties
+        }
       />
       <AgentChatTimelineMinimap
         items={minimapItems}

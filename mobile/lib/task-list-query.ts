@@ -6,6 +6,7 @@ export const TASK_LIST_SELECT = `SELECT
   t.status,
   t.priority,
   t.due_date,
+  t.inbox,
   t.project_id,
   t.contact_id,
   COALESCE(t.assignee_id, t.contact_id) AS assignee_id,

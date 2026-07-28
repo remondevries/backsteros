@@ -100,6 +100,11 @@ export type TaskStatusIconProps = {
    * animation (agent actively working on this task).
    */
   working?: boolean;
+  /**
+   * For ring statuses (ready_to_start, in_progress, …), draw only the outer
+   * circle — no pie wedge fill. Same ring geometry/color as the status.
+   */
+  ringOnly?: boolean;
 };
 
 export function TaskStatusIcon({
@@ -109,6 +114,7 @@ export function TaskStatusIcon({
   size = 14,
   highlighted = false,
   working = false,
+  ringOnly = false,
 }: TaskStatusIconProps) {
   const normalizedStatus = isTaskStatus(status) ? status : "backlog";
   const colorScheme = useSyncExternalStore(
@@ -154,7 +160,7 @@ export function TaskStatusIcon({
         {model.kind === "completed" ? <CompletedIcon /> : null}
         {model.kind === "duplicated" ? <DuplicatedIcon /> : null}
         {model.kind === "ring" ? (
-          <ProgressRingIcon fillRatio={model.fillRatio} />
+          <ProgressRingIcon fillRatio={ringOnly ? 0 : model.fillRatio} />
         ) : null}
       </g>
     </svg>

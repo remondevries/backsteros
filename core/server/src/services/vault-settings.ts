@@ -68,5 +68,14 @@ export async function updateVaultStorageSettings(
   setVaultPathCache(trimmed);
   warmedForWorkspaceId = workspaceId;
   await circleService.updateSettings(workspaceId, { vaultPath: trimmed });
+  // Backfill project folders + .cursor skills for every existing project.
+  try {
+    const { ensureAllProjectVaultWorkspaces } = await import(
+      "./project-vault.js"
+    );
+    await ensureAllProjectVaultWorkspaces(workspaceId);
+  } catch {
+    // Vault path is still saved even if a project folder fails.
+  }
   return getVaultStorageSettings(workspaceId);
 }

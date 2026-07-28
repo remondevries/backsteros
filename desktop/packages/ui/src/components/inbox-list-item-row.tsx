@@ -26,6 +26,7 @@ import {
   TaskListPriorityLabel,
 } from "./task-list-property-label.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
+import { TaskStatusIcon } from "./task-status-icon.js";
 import { Tooltip } from "./tooltip.js";
 
 export type InboxListItemLinkComponent = ComponentType<{
@@ -190,7 +191,7 @@ export function InboxListItemRow({
           className="inbox-list-item-hit-area"
         />
         <div className="app-side-panel-item-row-primary inbox-list-item-card-layer">
-          <InboxItemTypeIcon kind="task" />
+          <TaskStatusIcon status={item.status} size={14} />
           <span className="inbox-list-item-title-wrap">
             <span className="inbox-list-item-title">{item.title}</span>
             {titleTrailing ? (

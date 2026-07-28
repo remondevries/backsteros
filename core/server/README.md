@@ -66,7 +66,7 @@ On first configure, the API creates:
 
 ```text
 Journal/
-Projects/{PROJECT_KEY}/Codebase|Documents|Updates/
+Projects/{PROJECT_KEY}/Documents|Updates/   # + Codebase/ for codebase projects
 Letters/{YYYY}/{MM}/
 Knowledge Base/
 .backsteros/   # avatars / system blobs

@@ -20,6 +20,9 @@ import {
   isNativeSqliteThreadError,
 } from "./powersync";
 
+/** Keep in sync with `use-rest-fallback-gate` export. */
+const REST_FALLBACK_DELAY_MS = 4500;
+
 type PowerSyncStatus =
   | "idle"
   | "unauthenticated"
@@ -35,6 +38,11 @@ type SyncState = {
   connected: boolean;
   connecting: boolean;
   lastSyncedAt: Date | null;
+  /**
+   * App-wide: empty local DB may use REST after the fallback delay (or on
+   * hard error). Shared so each screen does not restart its own 4.5s wait.
+   */
+  restFallbackAllowed: boolean;
   patchTask: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
@@ -55,6 +63,7 @@ const idleState: SyncState = {
   connected: false,
   connecting: false,
   lastSyncedAt: null,
+  restFallbackAllowed: false,
   patchTask: async () => {
     throw new Error("Offline database is not ready");
   },
@@ -114,6 +123,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     connecting: false,
     lastSyncedAtMs: null as number | null,
   });
+  const [restFallbackAllowed, setRestFallbackAllowed] = useState(false);
   const databaseRef = useRef<PowerSyncDatabase | null>(null);
   const identityRef = useRef<string | null>(null);
   /** Serialize open/close — overlapping OP-SQLite opens exhaust device threads. */
@@ -148,6 +158,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     if (userChanged) {
       setDatabase(null);
       setInitError(null);
+      setRestFallbackAllowed(false);
       setSyncFlags({
         hasSynced: false,
         connected: false,
@@ -214,26 +225,62 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
             });
           },
         });
+
         try {
-          await next.connect(connector);
+          // Open SQLite first so cached rows are readable immediately. Sync
+          // connect can be slow/fail on device — never gate local reads on it.
           await next.waitForReady();
           if (cancelled || generation !== generationRef.current) {
             dispose();
             await closeDatabase(next, false);
             return null;
           }
+
           databaseRef.current = next;
           setInitError(null);
           setSyncFlags(flagsFromStatus(next.currentStatus));
           setDatabase(next);
           console.info(
-            `[mobile] PowerSync ready (${forceSqlJs ? "sqljs" : "op-sqlite"})`,
+            `[mobile] PowerSync local DB ready (${forceSqlJs ? "sqljs" : "op-sqlite"})`,
           );
-          return next;
-        } catch (reason) {
+
+          try {
+            await next.connect(connector);
+            if (cancelled || generation !== generationRef.current) {
+              return next;
+            }
+            setInitError(null);
+            setSyncFlags(flagsFromStatus(next.currentStatus));
+            console.info(
+              `[mobile] PowerSync connected (${forceSqlJs ? "sqljs" : "op-sqlite"})`,
+            );
+            return next;
+          } catch (connectReason) {
+            // Keep the local DB (desktop parity). REST fallback is only needed
+            // when there is no prior sync cache to read from.
+            const hasLocalCache = Boolean(next.currentStatus.hasSynced);
+            console.warn(
+              hasLocalCache
+                ? "[mobile] PowerSync sync connect failed; serving cached SQLite"
+                : "[mobile] PowerSync sync connect failed; no local cache yet",
+              connectReason,
+            );
+            if (!cancelled && generation === generationRef.current) {
+              if (!hasLocalCache) {
+                setInitError(
+                  connectReason instanceof Error
+                    ? connectReason
+                    : new Error("PowerSync connect failed"),
+                );
+              }
+              setSyncFlags(flagsFromStatus(next.currentStatus));
+            }
+            return next;
+          }
+        } catch (openReason) {
           dispose();
           await closeDatabase(next, false);
-          throw reason;
+          throw openReason;
         }
       };
 
@@ -242,6 +289,8 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
       } catch (reason) {
         if (cancelled || generation !== generationRef.current) return;
 
+        // Only swap adapters when *opening* SQLite fails — never after a
+        // working OP-SQLite DB is already serving cached rows.
         if (isNativeSqliteThreadError(reason)) {
           console.warn(
             "[mobile] OP-SQLite thread exhausted — falling back to SQL.js once",
@@ -254,7 +303,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
             const error =
               sqlJsReason instanceof Error
                 ? sqlJsReason
-                : new Error("PowerSync SQL.js connect failed");
+                : new Error("PowerSync SQL.js open failed");
             console.warn("[mobile] PowerSync SQL.js fallback failed", error);
             setDatabase(null);
             setInitError(error);
@@ -265,8 +314,8 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
         const error =
           reason instanceof Error
             ? reason
-            : new Error("PowerSync connect failed");
-        console.warn("[mobile] PowerSync connect failed", error);
+            : new Error("PowerSync open failed");
+        console.warn("[mobile] PowerSync open failed", error);
         setDatabase(null);
         setInitError(error);
       }
@@ -356,6 +405,28 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   // Otherwise connect can open an empty SQLite DB before data arrives.
   const hasSynced = syncFlags.hasSynced;
   const ready = sqliteReady && hasSynced;
+
+  // Single app-wide REST fallback timer — screens used to each restart a 4.5s
+  // wait on mount, which felt like a spinner on every navigation.
+  useEffect(() => {
+    if (ready) {
+      setRestFallbackAllowed(false);
+      return;
+    }
+    if (initError) {
+      setRestFallbackAllowed(true);
+      return;
+    }
+    if (!isLoaded || !userId || !sessionId) {
+      setRestFallbackAllowed(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setRestFallbackAllowed(true);
+    }, REST_FALLBACK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [initError, isLoaded, ready, sessionId, userId]);
+
   const value = useMemo<SyncState>(() => {
     let syncStatus: PowerSyncStatus = "idle";
     let message = "PowerSync idle";
@@ -396,6 +467,8 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
         syncFlags.lastSyncedAtMs != null
           ? new Date(syncFlags.lastSyncedAtMs)
           : null,
+      restFallbackAllowed:
+        syncStatus === "error" ? true : restFallbackAllowed,
       patchTask,
       patchProject,
       patchLetter,
@@ -415,6 +488,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     patchProject,
     patchTask,
     ready,
+    restFallbackAllowed,
     retry,
     sessionId,
     sqliteReady,

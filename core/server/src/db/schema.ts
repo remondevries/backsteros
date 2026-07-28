@@ -548,6 +548,33 @@ export const letterAttachments = pgTable(
   ],
 );
 
+/** Inline images pasted into task descriptions (Tier B metadata + Tier D blob). */
+export const taskImages = pgTable(
+  "task_images",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull().default(""),
+    contentType: text("content_type").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    checksum: text("checksum"),
+    contentEtag: text("content_etag"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("task_images_workspace_id_idx").on(table.workspaceId),
+    index("task_images_task_id_idx").on(table.taskId),
+  ],
+);
+
 export const avatars = pgTable(
   "avatars",
   {
@@ -719,3 +746,4 @@ export type DbContact = typeof contacts.$inferSelect;
 export type DbArea = typeof areas.$inferSelect;
 export type DbLetter = typeof letters.$inferSelect;
 export type DbAvatar = typeof avatars.$inferSelect;
+export type DbTaskImage = typeof taskImages.$inferSelect;

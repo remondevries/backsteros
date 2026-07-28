@@ -159,10 +159,12 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     callbacksRef.current.onAgentActivitySummaryChange?.(summary);
   };
 
-  // Poll ACP sessions so background turns keep list/board Working… without a viewer.
-  useEffect(() => {
+    // Poll ACP sessions so background turns keep list/board Working… without a viewer.
+    // Also recover chat settle when the session goes idle but a settle frame was missed.
+    useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    const previouslyWorking = new Set<string>();
 
     async function refreshSessions() {
       try {
@@ -171,10 +173,20 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
         if (cancelled || !result.ok) return;
         const nextWorking = new Set<string>();
         for (const session of result.sessions) {
-          const id = session.taskId?.trim();
-          if (!id) continue;
-          if (session.lastActivity === "working") nextWorking.add(id);
+          const sid = session.taskId?.trim();
+          if (!sid) continue;
+          if (session.lastActivity === "working") nextWorking.add(sid);
         }
+        // Tasks that were busy and are now idle → settle (authoritative ACP busy).
+        for (const sid of previouslyWorking) {
+          if (!nextWorking.has(sid) && workingRef.current.has(sid)) {
+            workingRef.current.delete(sid);
+            clearLiveAgentWorkingForTask(sid);
+            callbacksRef.current.onAcpTurnSettled?.(sid);
+          }
+        }
+        previouslyWorking.clear();
+        for (const sid of nextWorking) previouslyWorking.add(sid);
         workingRef.current = nextWorking;
         publishStatus();
       } catch {
@@ -247,13 +259,16 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
 
     const settle = () => {
       if (settledTimer != null) window.clearTimeout(settledTimer);
+      // Queue behind any same-tick afterAgentResponse frame so text lands in
+      // turnUi before finalize — but do not wait 80ms (that left Working…
+      // visible after the agent was already done).
       settledTimer = window.setTimeout(() => {
         settledTimer = null;
         workingRef.current.delete(id);
         clearLiveAgentWorkingForTask(id);
         publishStatus();
         callbacksRef.current.onAcpTurnSettled?.(id);
-      }, 80);
+      }, 0);
     };
 
     socket.addEventListener("message", (event) => {
@@ -287,6 +302,8 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
         openRef.current.delete(id);
         clearLiveAgentWorkingForTask(id);
         publishStatus();
+        // T3: session end leaves the turn settled — finalize chat chrome too.
+        settle();
         return;
       }
 
@@ -313,9 +330,10 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
       if (message.type !== "acp-event") return;
 
       if (message.event === "session-update" && message.update !== undefined) {
-        workingRef.current.add(id);
-        markLiveAgentWorkingForTask(id);
-        publishStatus();
+        // T3: working follows session/turn lifecycle, not every content chunk.
+        // Marking working on each session/update revived Activities/Working…
+        // after settle when late frames arrived (same class of bug as
+        // afterAgentResponse flipping activity back to working).
         callbacksRef.current.onAcpSessionUpdate?.(id, message.update);
         return;
       }
@@ -485,7 +503,15 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     });
 
     return () => {
-      if (settledTimer != null) window.clearTimeout(settledTimer);
+      // Flush a pending settle before teardown so collapse/remount cannot
+      // drop the finalize that was already queued.
+      if (settledTimer != null) {
+        window.clearTimeout(settledTimer);
+        settledTimer = null;
+        workingRef.current.delete(id);
+        clearLiveAgentWorkingForTask(id);
+        callbacksRef.current.onAcpTurnSettled?.(id);
+      }
       openRef.current.delete(id);
       publishStatus();
       try {

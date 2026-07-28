@@ -77,6 +77,12 @@ export function parseCssHexColor(value: string): {
 export function getTaskStatusHeaderGradient(
   status: TaskStatus | string,
 ): StatusHeaderGradient {
+  if (status === "overdue") {
+    return {
+      from: "#cb686118",
+      to: "#ffffff05",
+    };
+  }
   return TASK_STATUS_HEADER_GRADIENTS[migrateLegacyTaskStatus(status)];
 }
 

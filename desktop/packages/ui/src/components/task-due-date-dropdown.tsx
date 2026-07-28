@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type SyntheticEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type SyntheticEvent,
+} from "react";
 
 import { DueDateCalendarPopover } from "./due-date-calendar-popover.js";
 import {
@@ -20,9 +27,16 @@ import {
   parseDueDateInputValue,
 } from "../task-due-date.js";
 import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+import {
+  getPreferredColorSchemeSnapshot,
+  subscribeToPreferredColorScheme,
+} from "../task-status-color.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
-import { TaskDueDateIcon } from "./task-due-date-icon.js";
+import {
+  resolveTaskDueDateUrgencyColor,
+  TaskDueDateIcon,
+} from "./task-due-date-icon.js";
 
 export type TaskDueDateDropdownProps = {
   dueDate: Date | number | string | null | undefined;
@@ -99,6 +113,16 @@ export function TaskDueDateDropdown({
     () => getTaskDueDateUrgency(ymdValue || null, new Date(), { status }),
     [status, ymdValue],
   );
+  const colorScheme = useSyncExternalStore(
+    subscribeToPreferredColorScheme,
+    getPreferredColorSchemeSnapshot,
+    () => "dark" as const,
+  );
+  // Past due only (yesterday or older) — not "Today".
+  const lateLabelColor =
+    hasDueDate && dueDateUrgency === "overdue"
+      ? resolveTaskDueDateUrgencyColor(dueDateUrgency, colorScheme)
+      : undefined;
 
   const applyYmd = useCallback(
     (nextYmd: string | null) => {
@@ -232,7 +256,11 @@ export function TaskDueDateDropdown({
               className={[
                 "task-due-date-dropdown__list-trigger",
                 hasDueDate ? "is-set" : "is-empty",
-              ].join(" ")}
+                lateLabelColor ? "is-late" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              style={lateLabelColor ? { color: lateLabelColor } : undefined}
               disabled={isDisabled}
               aria-haspopup="listbox"
               aria-expanded={open}

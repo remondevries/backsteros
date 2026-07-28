@@ -40,6 +40,8 @@ export type TaskPropertiesDisplayTask = {
 export type TaskPropertiesDisplayProps = {
   task: TaskPropertiesDisplayTask | null;
   onStatusChange?: (status: TaskStatus) => void;
+  /** When true, status dropdown is read-only (e.g. inbox triage without a project). */
+  statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -63,6 +65,7 @@ function toDate(value: number | Date | null | undefined): Date | null {
 export function TaskPropertiesDisplay({
   task,
   onStatusChange,
+  statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
@@ -108,7 +111,7 @@ export function TaskPropertiesDisplay({
             value={status}
             options={statusOptions}
             onChange={onStatusChange}
-            disabled={disabled}
+            disabled={disabled || statusDisabled || !onStatusChange}
             searchPlaceholder="Change status…"
             searchShortcutLabel="S"
             ariaLabel="Status"

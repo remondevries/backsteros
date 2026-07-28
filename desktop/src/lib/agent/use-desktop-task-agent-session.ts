@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 
+import { useDesktopApi } from "../api-context";
+import { ensureProjectVault } from "../ensure-project-vault";
 import { buildReadyToStartAgentPrompt } from "./agent-launch";
 import { readAgentChatModelId } from "./agent-chat-model";
 import {
@@ -50,6 +52,7 @@ export function useDesktopTaskAgentSession({
   patchTaskValues,
   automateTaskStatus = false,
 }: UseDesktopTaskAgentSessionOptions) {
+  const { client } = useDesktopApi();
   const { requestAttach, requestEnd, focusAgentTab, setTaskResearchWorking } =
     useDesktopAgentStatus();
 
@@ -58,76 +61,100 @@ export function useDesktopTaskAgentSession({
 
   const hasSession = Boolean(agentChatId?.trim());
 
-  const startAgentSession = useCallback(async () => {
-    if (creatingAgent) return;
-    setCreatingAgent(true);
-    setAgentError(null);
-    try {
-      const workingDirectory = normalizeWorkingDirectory(
-        taskSummary.workingDirectory,
-      );
-      if (!workingDirectory) {
-        throw new Error(
-          "Set a local working directory on this project before starting the agent.",
+  const startAgentSession = useCallback(
+    async (options?: { prompt?: string }) => {
+      if (creatingAgent) return;
+      setCreatingAgent(true);
+      setAgentError(null);
+      try {
+        let workingDirectory = normalizeWorkingDirectory(
+          taskSummary.workingDirectory,
         );
-      }
-      const prompt = buildReadyToStartAgentPrompt({
-        id: taskId,
-        number: taskSummary.number,
-        title: taskSummary.title,
-        description: taskSummary.description,
-        projectKey: taskSummary.projectKey,
-        workingDirectory,
-      });
-      // Optimistic — list/activity pulses should light up before ACP attaches
-      // (bootstrap prompt is fire-and-forget; WebSocket hooks often miss it).
-      setTaskResearchWorking(taskId, true);
-      markLiveAgentWorkingForTask(taskId);
-      const result = await startTaskAgentSession({
-        taskId,
-        cwd: workingDirectory,
-        prompt,
-        model: readAgentChatModelId(),
-      });
-      if (!result.ok) {
+        // Safety: create vault project folder + .cursor skills, and adopt the
+        // vault path as cwd when the project has no working directory yet.
+        if (taskSummary.projectId?.trim()) {
+          const ensured = await ensureProjectVault(
+            client,
+            taskSummary.projectId,
+          );
+          if (ensured?.configured) {
+            workingDirectory =
+              normalizeWorkingDirectory(ensured.localWorkingDirectory) ??
+              normalizeWorkingDirectory(ensured.projectVaultPath) ??
+              workingDirectory;
+          }
+        }
+        if (!workingDirectory) {
+          throw new Error(
+            "Configure a vault folder in Settings → Storage (or set a local working directory) before starting the agent.",
+          );
+        }
+        const customPrompt = options?.prompt?.trim();
+        const prompt =
+          customPrompt ||
+          buildReadyToStartAgentPrompt({
+            id: taskId,
+            number: taskSummary.number,
+            title: taskSummary.title,
+            description: taskSummary.description,
+            projectKey: taskSummary.projectKey,
+            workingDirectory,
+          });
+        // Optimistic — list/activity pulses should light up before ACP attaches
+        // (bootstrap prompt is fire-and-forget; WebSocket hooks often miss it).
+        setTaskResearchWorking(taskId, true);
+        markLiveAgentWorkingForTask(taskId);
+        const result = await startTaskAgentSession({
+          taskId,
+          cwd: workingDirectory,
+          prompt,
+          model: readAgentChatModelId(),
+        });
+        if (!result.ok) {
+          clearLiveAgentWorkingForTask(taskId);
+          throw new Error(result.error);
+        }
+        const bootstrap = createAgentChatMessage("user", prompt);
+        saveAgentChatTranscript(result.chatId, [bootstrap]);
+        publishAgentChatTranscriptMessage(result.chatId, bootstrap);
+        focusAgentTab();
+        requestAttach({
+          taskId,
+          chatId: result.chatId,
+          prompt,
+          sessionIsNew: true,
+          forceReattach: true,
+          focusUi: true,
+        });
+        await patchTaskValues({
+          ...(automateTaskStatus
+            ? { status: "in_progress", activityActor: "agent" }
+            : { activityActor: "agent" }),
+          agentChatId: result.chatId,
+        });
+      } catch (err) {
         clearLiveAgentWorkingForTask(taskId);
-        throw new Error(result.error);
+        setAgentError(
+          err instanceof Error
+            ? err.message
+            : "Could not create agent session.",
+        );
+      } finally {
+        setCreatingAgent(false);
       }
-      const bootstrap = createAgentChatMessage("user", prompt);
-      saveAgentChatTranscript(result.chatId, [bootstrap]);
-      publishAgentChatTranscriptMessage(result.chatId, bootstrap);
-      focusAgentTab();
-      requestAttach({
-        taskId,
-        chatId: result.chatId,
-        sessionIsNew: true,
-        forceReattach: true,
-        focusUi: true,
-      });
-      await patchTaskValues({
-        ...(automateTaskStatus
-          ? { status: "in_progress", activityActor: "agent" }
-          : { activityActor: "agent" }),
-        agentChatId: result.chatId,
-      });
-    } catch (err) {
-      clearLiveAgentWorkingForTask(taskId);
-      setAgentError(
-        err instanceof Error ? err.message : "Could not create agent session.",
-      );
-    } finally {
-      setCreatingAgent(false);
-    }
-  }, [
-    automateTaskStatus,
-    creatingAgent,
-    focusAgentTab,
-    patchTaskValues,
-    requestAttach,
-    setTaskResearchWorking,
-    taskId,
-    taskSummary,
-  ]);
+    },
+    [
+      automateTaskStatus,
+      client,
+      creatingAgent,
+      focusAgentTab,
+      patchTaskValues,
+      requestAttach,
+      setTaskResearchWorking,
+      taskId,
+      taskSummary,
+    ],
+  );
 
   const endAgentSession = useCallback(() => {
     const chatId = agentChatId?.trim();

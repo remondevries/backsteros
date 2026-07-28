@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
+import { shouldHandleTabChromeShortcut } from "./shortcut-guards.js";
 
 function hasPrimaryModifier(event: KeyboardEvent): boolean {
   return event.metaKey || event.ctrlKey;
@@ -13,6 +13,10 @@ function hasPrimaryModifier(event: KeyboardEvent): boolean {
  *
  * When `enabled` is false (e.g. file editor tabs own the shortcuts), ⌘⇧T
  * still reopens a closed app tab if `reopenClosedTab` is provided.
+ *
+ * Uses {@link shouldHandleTabChromeShortcut} by default so ⌘W still closes
+ * the active product tab while focus is in the agent chat / editors —
+ * not the native window-close accelerator.
  *
  * Handlers are read from refs so tab switches do not rebind the capture
  * keydown listener on every `activeTabId` change.
@@ -25,7 +29,7 @@ export function useTabShortcuts({
   activatePreviousTab,
   activateNextTab,
   reopenClosedTab,
-  shouldHandle = shouldHandleGlobalShortcut,
+  shouldHandle = shouldHandleTabChromeShortcut,
 }: {
   enabled?: boolean;
   activeTabId: string;
@@ -35,7 +39,7 @@ export function useTabShortcuts({
   activateNextTab: () => void;
   /** ⌘⇧T — restore the most recently closed tab. Return true if one was restored. */
   reopenClosedTab?: () => boolean | void;
-  /** Override focus/modal guards (e.g. allow while xterm is focused). */
+  /** Override focus/modal guards (defaults to tab-chrome: allow in editors). */
   shouldHandle?: (event: KeyboardEvent) => boolean;
 }) {
   const shouldHandleRef = useRef(shouldHandle);

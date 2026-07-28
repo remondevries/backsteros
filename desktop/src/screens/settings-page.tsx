@@ -444,7 +444,7 @@ function SettingsStorageTab({
       reason={reason}
       hint={
         configured
-          ? "Project folders get Codebase, Documents, and Updates when a project is created."
+          ? "Every project gets Documents, Updates, and .cursor skills; Codebase is added only for codebase projects."
           : null
       }
       testing={testing || saving}

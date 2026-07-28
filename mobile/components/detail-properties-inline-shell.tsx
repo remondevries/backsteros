@@ -1,4 +1,3 @@
-import { useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
@@ -39,8 +38,11 @@ type Props = {
 
 /**
  * Circle mobile parity: filled property chips in a wrapping card, plus opens a
- * bottom sheet with the full property editor list. Hides stack header + tab bar
+ * bottom sheet with the full property editor list. Hides the floating tab bar
  * while the sheet is open for more vertical space.
+ *
+ * Do not toggle stack `headerShown` here — after editing a property, re-applying
+ * screen options can leave the native back chevron stuck hidden on iOS.
  */
 export function DetailPropertiesInlineShell({
   modalTitle,
@@ -51,7 +53,6 @@ export function DetailPropertiesInlineShell({
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
   const keyboardHeight = useKeyboardBottomInset();
   const windowHeight = Dimensions.get("window").height;
 
@@ -60,13 +61,6 @@ export function DetailPropertiesInlineShell({
   useEffect(() => {
     onOpenChange?.(open);
   }, [onOpenChange, open]);
-
-  useEffect(() => {
-    navigation.setOptions({ headerShown: !open });
-    return () => {
-      navigation.setOptions({ headerShown: true });
-    };
-  }, [navigation, open]);
 
   function openSheet() {
     setOpen(true);

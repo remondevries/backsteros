@@ -6,7 +6,9 @@ import {
   closeAgentSurfaceTab,
   createDefaultAgentSurfaceTabs,
   nextNumberedTabTitle,
+  readAgentSurfaceTabs,
   updateAgentSurfaceTab,
+  writeAgentSurfaceTabs,
   type AgentSurfaceTab,
 } from "./agent-surface-tabs.ts";
 
@@ -81,4 +83,37 @@ test("updateAgentSurfaceTab patches title and resourceId", () => {
   });
   assert.equal(next[0]?.title, "localhost");
   assert.equal(next[0]?.resourceId, "http://127.0.0.1:5173");
+});
+
+test("read/writeAgentSurfaceTabs round-trip per task", () => {
+  const storage = new Map<string, string>();
+  const originalWindow = globalThis.window;
+  // @ts-expect-error test stub
+  globalThis.window = {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+    },
+  };
+
+  try {
+    const initial = createDefaultAgentSurfaceTabs();
+    const withBrowser = addAgentSurfaceTab(initial.tabs, "browser");
+    writeAgentSurfaceTabs("task-1", withBrowser);
+    const loaded = readAgentSurfaceTabs("task-1");
+    assert.equal(loaded.tabs.length, 2);
+    assert.equal(loaded.tabs[1]?.kind, "browser");
+    assert.equal(loaded.activeId, withBrowser.activeId);
+
+    const other = readAgentSurfaceTabs("task-2");
+    assert.equal(other.tabs.length, 1);
+    assert.equal(other.tabs[0]?.kind, "chat");
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

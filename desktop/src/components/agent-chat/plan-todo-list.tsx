@@ -1,84 +1,37 @@
 /**
  * Plan / todo step checklist.
  * Adapted from pingdotgg/t3code (MIT) — apps/web/src/components/PlanSidebar.tsx steps UI
+ *
+ * Status glyphs match the system TaskStatusIcon set:
+ * pending → ready_to_start ring only, inProgress → working pulse,
+ * completed → completed.
  */
 
-import { Check } from "lucide-react";
+import { TaskStatusIcon } from "@backsteros/ui";
 
 import {
   planStepsWorkingSummary,
   type AgentChatPlanStep,
 } from "../../lib/agent/t3-port/cursor-todos";
 
-/**
- * In-progress step indicator. Uses SVG `animateTransform` with an explicit
- * center (6 6) so rotation cannot drift off-axis the way CSS-spinning an
- * asymmetric Lucide Loader path can.
- */
-function PlanStepSpinner() {
-  return (
-    <svg
-      className="desktop-agent-chat__plan-todo-spinner"
-      viewBox="0 0 12 12"
-      width={12}
-      height={12}
-      fill="none"
-      aria-hidden
-    >
-      <g>
-        <circle
-          cx="6"
-          cy="6"
-          r="4.5"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeDasharray="7 20"
-        />
-        <animateTransform
-          attributeName="transform"
-          type="rotate"
-          from="0 6 6"
-          to="360 6 6"
-          dur="0.9s"
-          repeatCount="indefinite"
-        />
-      </g>
-    </svg>
-  );
-}
-
 function StepStatusIcon({ status }: { status: AgentChatPlanStep["status"] }) {
   if (status === "completed") {
     return (
-      <span
-        className="desktop-agent-chat__plan-todo-icon is-completed"
-        aria-hidden
-      >
-        <Check
-          className="desktop-agent-chat__plan-todo-lucide"
-          size={12}
-          strokeWidth={2.2}
-        />
+      <span className="desktop-agent-chat__plan-todo-icon" aria-hidden>
+        <TaskStatusIcon status="completed" size={14} />
       </span>
     );
   }
   if (status === "inProgress") {
     return (
-      <span
-        className="desktop-agent-chat__plan-todo-icon is-progress"
-        aria-hidden
-      >
-        <PlanStepSpinner />
+      <span className="desktop-agent-chat__plan-todo-icon" aria-hidden>
+        <TaskStatusIcon status="in_progress" working size={14} />
       </span>
     );
   }
   return (
-    <span
-      className="desktop-agent-chat__plan-todo-icon is-pending"
-      aria-hidden
-    >
-      <span className="desktop-agent-chat__plan-todo-dot" />
+    <span className="desktop-agent-chat__plan-todo-icon" aria-hidden>
+      <TaskStatusIcon status="ready_to_start" ringOnly size={14} />
     </span>
   );
 }

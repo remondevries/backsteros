@@ -18,7 +18,7 @@ import {
   getDefaultSettingsHref,
 } from "../settings.js";
 import { getNavigationItemIcon } from "./navigation-item-icon.js";
-import { ProfileLogoIcon } from "./profile-logo-icon.js";
+import { DevelopmentAdeLogoIcon } from "./development-ade-logo-icon.js";
 import {
   SearchNavIcon,
   SidebarAccountIcon,
@@ -63,6 +63,8 @@ export type ProductSidebarProps = {
   searchShortcutHint?: string;
   recentPages?: ProductSidebarRecentPage[];
   onSelectRecentPage?: (href: string) => void;
+  /** Grey dot on Inbox when the attention list is non-empty. */
+  inboxHasItems?: boolean;
 };
 
 function HistoryButton({
@@ -97,9 +99,11 @@ function HistoryButton({
 function NavLinks({
   pathname,
   Link,
+  inboxHasItems = false,
 }: {
   pathname: string;
   Link: ProductSidebarLinkComponent;
+  inboxHasItems?: boolean;
 }) {
   return (
     <nav className="sidebar-sections" aria-label="Workspace">
@@ -111,6 +115,8 @@ function NavLinks({
             .map((item) => {
               const Icon = getNavigationItemIcon(item.icon);
               const active = isNavigationPathActive(pathname, item.href);
+              const showInboxDot =
+                item.href === "/inbox" && inboxHasItems;
               return (
                 <Link
                   key={item.href}
@@ -118,7 +124,17 @@ function NavLinks({
                   className={`sidebar-link${active ? " is-active" : ""}`}
                   aria-current={active ? "page" : undefined}
                 >
-                  {Icon ? <Icon className="nav-icon" /> : null}
+                  {Icon ? (
+                    <span className="nav-icon-wrap">
+                      <Icon className="nav-icon" />
+                      {showInboxDot ? (
+                        <span
+                          className="sidebar-link-indicator-dot"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </span>
+                  ) : null}
                   <span className="sidebar-link-label">{item.label}</span>
                 </Link>
               );
@@ -148,6 +164,7 @@ export function ProductSidebar({
   searchShortcutHint = "⌘K",
   recentPages = [],
   onSelectRecentPage,
+  inboxHasItems = false,
 }: ProductSidebarProps) {
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -291,7 +308,7 @@ export function ProductSidebar({
               className="app-side-panel-profile-logo"
               aria-hidden="true"
             >
-              <ProfileLogoIcon className="app-side-panel-profile-logo-mark" />
+              <DevelopmentAdeLogoIcon className="app-side-panel-profile-logo-mark" />
             </span>
             <span
               className={[
@@ -391,7 +408,11 @@ export function ProductSidebar({
         </button>
       </div>
 
-      <NavLinks pathname={pathname} Link={Link} />
+      <NavLinks
+        pathname={pathname}
+        Link={Link}
+        inboxHasItems={inboxHasItems}
+      />
 
       <div className="sidebar-footer">
         <button type="button" onClick={onSearch}>

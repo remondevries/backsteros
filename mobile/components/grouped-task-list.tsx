@@ -8,6 +8,7 @@ import {
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
+import { groupInboxRowsByAttentionStatus } from "../lib/inbox-attention";
 import { findSectionListLocation } from "../lib/list-keyboard-nav";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
@@ -35,6 +36,7 @@ export type GroupedTaskRow = {
   status: string | null;
   priority?: number | null;
   due_date?: string | null;
+  inbox?: boolean | number | null;
   project_name?: string | null;
   project_key?: string | null;
   project_icon?: string | null;
@@ -69,9 +71,10 @@ type Props = {
   showProject?: boolean;
   /**
    * When false, render a flat list with no status section headers
-   * (Inbox — all rows are triage anyway).
+   * (legacy Inbox — all rows are triage anyway).
+   * When `"inbox"`, group by Overdue / Triage / On Hold / In Review.
    */
-  groupByStatus?: boolean;
+  groupByStatus?: boolean | "inbox";
   /**
    * `inbox` — stacked desktop side-panel rows (type icon + title / meta).
    * `default` — phone compact or iPad task-board horizontal rows.
@@ -202,8 +205,15 @@ export function GroupedTaskList({
   }, [rows]);
 
   const sections = useMemo<Section[]>(() => {
-    if (!groupByStatus) {
+    if (groupByStatus === false) {
       return [{ title: "", status: "", data: mergedRows }];
+    }
+    if (groupByStatus === "inbox") {
+      return groupInboxRowsByAttentionStatus(mergedRows).map((group) => ({
+        title: group.label,
+        status: group.status,
+        data: collapsed.has(group.status) ? [] : group.data,
+      }));
     }
     // Keep every status header visible (incl. empty) so chrome matches desktop Tasks.
     return groupTasksByStatus(mergedRows, { includeEmpty: true }).map(
@@ -323,15 +333,17 @@ export function GroupedTaskList({
   const renderSectionHeader = useCallback(
     ({ section }: { section: Section }) => {
       if (!groupByStatus) return null;
+      const iconStatus =
+        section.status === "overdue" ? "on_hold" : section.status;
       return constrain(
         <StatusGroupHeader
           title={section.title}
-          icon={<TaskStatusIcon status={section.status} size={14} />}
+          icon={<TaskStatusIcon status={iconStatus} size={14} />}
           gradient={getTaskStatusHeaderGradient(section.status)}
           collapsed={collapsed.has(section.status)}
           onToggle={() => toggleStatus(section.status)}
           onAdd={
-            onAddToStatus
+            onAddToStatus && section.status !== "overdue"
               ? () => {
                   setCollapsed((current) => {
                     const next = new Set(current);

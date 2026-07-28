@@ -14,11 +14,15 @@ Configure via desktop **Settings → Storage** or `BACKSTEROS_VAULT_PATH`.
   Journal/
     {YYYY-MM-DD}.md
   Projects/
-    {PROJECT_KEY}/
-      Codebase/          # optional / empty OK
+    {PROJECT_KEY}/              # always created (even with no documents)
+      Codebase/                 # codebase projects only
       Documents/
         {path}.md
       Updates/
+      .cursor/
+        skills/
+          backsteros-workflow-in_review-or-on_hold/
+            SKILL.md            # seeded once; agent cwd for non-codebase chats
   Letters/
     {YYYY}/
       {MM}/
@@ -30,6 +34,11 @@ Configure via desktop **Settings → Storage** or `BACKSTEROS_VAULT_PATH`.
 
 Clients never talk to the filesystem directly for sync — they use the API /
 PowerSync metadata and lazy `GET …/content` or `…/pdf`.
+
+Opening a project (desktop or mobile) calls `POST /api/v1/projects/:id/ensure-vault`
+so the folder + `.cursor` skills are created on the fly if missing. When
+`localWorkingDirectory` is empty, it is set to the vault project root so agent
+sessions start inside that folder.
 
 ## Object storage (optional / future remote)
 

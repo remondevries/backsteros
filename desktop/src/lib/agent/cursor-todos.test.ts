@@ -5,7 +5,7 @@ import {
   applyCursorUpdateTodosToTurn,
   emptyAgentChatTurnUiState,
 } from "./agent-acp-activity";
-import { extractTodosAsPlan, mergePlanSteps } from "./t3-port/cursor-todos";
+import { extractTodosAsPlan, mergePlanSteps, preferPlanSteps } from "./t3-port/cursor-todos";
 
 describe("cursor todos (t3 port)", () => {
   it("extractTodosAsPlan maps statuses", () => {
@@ -36,6 +36,36 @@ describe("cursor todos (t3 port)", () => {
       { step: "A", status: "completed" },
       { step: "B", status: "inProgress" },
     ]);
+  });
+
+  it("preferPlanSteps keeps same-length status updates", () => {
+    const preferred = preferPlanSteps(
+      [
+        { step: "A", status: "inProgress" },
+        { step: "B", status: "pending" },
+      ],
+      [
+        { step: "A", status: "completed" },
+        { step: "B", status: "completed" },
+      ],
+    );
+    expect(preferred).toEqual([
+      { step: "A", status: "completed" },
+      { step: "B", status: "completed" },
+    ]);
+  });
+
+  it("preferPlanSteps rejects a shorter stale snapshot", () => {
+    const preferred = preferPlanSteps(
+      [
+        { step: "A", status: "completed" },
+        { step: "B", status: "completed" },
+        { step: "C", status: "pending" },
+      ],
+      [{ step: "A", status: "inProgress" }],
+    );
+    expect(preferred).toHaveLength(3);
+    expect(preferred?.[0]?.status).toBe("completed");
   });
 
   it("applyCursorUpdateTodosToTurn stores checklist on turn state", () => {

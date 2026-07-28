@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   applyLiveTurnTimelineToMessages,
   findRehydratableLiveAssistant,
+  foldAssistantTextIntoLastMessage,
   liveTurnToTimelinePatch,
   rehydrateTurnUiFromMessage,
   shouldSuppressSettledAssistantForLiveTurn,
@@ -80,6 +81,40 @@ test("applyLiveTurnTimelineToMessages upserts then merges text", () => {
   assert.equal(second.messages[1]?.activities?.length, 1);
 });
 
+test("applyLiveTurnTimelineToMessages does not prepend assistant before user", () => {
+  const patch = liveTurnToTimelinePatch(sampleTurn(), {
+    messageId: "a1",
+    createdAt: 1,
+  })!;
+  const empty = applyLiveTurnTimelineToMessages([], patch);
+  assert.equal(empty.messages.length, 0);
+
+  const priorAssistant: AgentChatMessage = {
+    id: "a0",
+    role: "assistant",
+    text: "Earlier reply",
+    createdAt: 5,
+  };
+  const raced = applyLiveTurnTimelineToMessages([priorAssistant], patch);
+  assert.equal(raced.messages.length, 1);
+  assert.equal(raced.messages[0]?.id, "a0");
+});
+
+test("applyLiveTurnTimelineToMessages keeps assistant createdAt after user", () => {
+  const user: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "Go",
+    createdAt: 100,
+  };
+  const patch = liveTurnToTimelinePatch(sampleTurn(), {
+    messageId: "a1",
+    createdAt: 50,
+  })!;
+  const applied = applyLiveTurnTimelineToMessages([user], patch);
+  assert.equal(applied.messages[1]?.createdAt, 101);
+});
+
 test("rehydrateTurnUiFromMessage restores tooling phase", () => {
   const message: AgentChatMessage = {
     id: "a1",
@@ -101,6 +136,55 @@ test("rehydrateTurnUiFromMessage restores tooling phase", () => {
   assert.equal(turn.phase, "tooling");
   assert.equal(turn.activities.length, 1);
   assert.equal(findRehydratableLiveAssistant([message])?.id, "a1");
+});
+
+test("findRehydratableLiveAssistant ignores sealed assistant answers", () => {
+  const sealed: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "All done.",
+    createdAt: 10,
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Edited file",
+        status: "completed",
+        toolKind: "edit",
+      },
+    ],
+  };
+  assert.equal(findRehydratableLiveAssistant([sealed]), null);
+});
+
+test("foldAssistantTextIntoLastMessage updates sealed text without new rows", () => {
+  const messages: AgentChatMessage[] = [
+    { id: "u1", role: "user", text: "Go", createdAt: 1 },
+    {
+      id: "a1",
+      role: "assistant",
+      text: "Partial",
+      createdAt: 2,
+      activities: [
+        { id: "t1", kind: "tool", title: "Read", status: "completed" },
+      ],
+    },
+  ];
+  const folded = foldAssistantTextIntoLastMessage(
+    messages,
+    "Partial\n\nDone.",
+  );
+  assert.equal(folded.length, 2);
+  assert.equal(folded[1]?.text, "Partial\n\nDone.");
+  assert.equal(folded[1]?.id, "a1");
+});
+
+test("foldAssistantTextIntoLastMessage is a no-op for identical text", () => {
+  const messages: AgentChatMessage[] = [
+    { id: "a1", role: "assistant", text: "Done.", createdAt: 1 },
+  ];
+  const folded = foldAssistantTextIntoLastMessage(messages, "Done.");
+  assert.equal(folded, messages);
 });
 
 test("shouldSuppressSettledAssistantForLiveTurn only while working", () => {
@@ -125,6 +209,42 @@ test("shouldSuppressSettledAssistantForLiveTurn only while working", () => {
     shouldSuppressSettledAssistantForLiveTurn(message, "other", true),
     false,
   );
+});
+
+test("applyLiveTurnTimelineToMessages keeps same-length plan status updates", () => {
+  const user: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "Do the list",
+    createdAt: 1,
+  };
+  const firstPatch = liveTurnToTimelinePatch(
+    {
+      ...sampleTurn(),
+      planSteps: [
+        { step: "A", status: "inProgress" },
+        { step: "B", status: "pending" },
+      ],
+    },
+    { messageId: "a1" },
+  )!;
+  const first = applyLiveTurnTimelineToMessages([user], firstPatch);
+  const secondPatch = liveTurnToTimelinePatch(
+    {
+      ...sampleTurn(),
+      assistantDraft: "Done.",
+      planSteps: [
+        { step: "A", status: "completed" },
+        { step: "B", status: "completed" },
+      ],
+    },
+    { messageId: "a1", seal: true },
+  )!;
+  const second = applyLiveTurnTimelineToMessages(first.messages, secondPatch);
+  assert.deepEqual(second.messages[1]?.planSteps, [
+    { step: "A", status: "completed" },
+    { step: "B", status: "completed" },
+  ]);
 });
 
 test("merge keeps activities when remote is text-only", () => {

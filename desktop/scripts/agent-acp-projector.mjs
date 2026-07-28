@@ -72,6 +72,10 @@ function emptyTurn(taskId, chatId) {
     assistantDraft: "",
     planSteps: [],
     proposedPlanMarkdown: null,
+    /** @type {Record<string, Activity>} */
+    pendingTools: {},
+    /** @type {Record<string, Record<string, unknown>>} */
+    toolCallPayloads: {},
     dirty: false,
   };
 }
@@ -336,7 +340,7 @@ function quoteSearchQuery(query) {
     : `"${truncated}"`;
 }
 
-function coerceRawInput(raw) {
+function coerceRawInput(raw, toolKind) {
   if (!raw) return null;
   if (typeof raw === "string") {
     const trimmed = raw.trim();
@@ -350,6 +354,15 @@ function coerceRawInput(raw) {
       if (maybePathLike(trimmed) || trimmed.includes("*")) {
         return { path: trimmed };
       }
+      const kind = String(toolKind ?? "").toLowerCase();
+      if (
+        kind.includes("search") ||
+        kind.includes("grep") ||
+        kind.includes("glob") ||
+        kind.includes("find")
+      ) {
+        return { pattern: trimmed };
+      }
       return null;
     }
     return null;
@@ -361,6 +374,216 @@ function coerceRawInput(raw) {
 }
 
 /**
+ * T3 mergeToolCallState data merge — keep rawInput/locations across patches.
+ * Empty content arrays must not wipe a prior diff payload.
+ * @param {Record<string, unknown> | undefined} previous
+ * @param {Record<string, unknown>} update
+ */
+function mergeToolCallPayload(previous, update) {
+  /** @type {Record<string, unknown>} */
+  const merged = { ...(previous ?? {}) };
+  for (const key of ["toolCallId", "sessionUpdate", "title", "kind", "status"]) {
+    const value = update[key];
+    if (typeof value === "string" && value.trim()) {
+      merged[key] = value.trim();
+    }
+  }
+  for (const key of [
+    "rawInput",
+    "input",
+    "arguments",
+    "args",
+    "locations",
+    "rawOutput",
+  ]) {
+    if (update[key] !== undefined && update[key] !== null) {
+      merged[key] = update[key];
+    }
+  }
+  if (update.content !== undefined && update.content !== null) {
+    const nextContent = update.content;
+    const prevContent = merged.content;
+    const nextEmpty = Array.isArray(nextContent) && nextContent.length === 0;
+    const prevHasItems = Array.isArray(prevContent) && prevContent.length > 0;
+    if (!(nextEmpty && prevHasItems)) {
+      merged.content = nextContent;
+    }
+  }
+  return merged;
+}
+
+/**
+ * Lightweight line diff for activity previews (mirrors desktop agent-acp-activity).
+ * @param {string | null | undefined} oldText
+ * @param {string | null | undefined} newText
+ * @param {string | null | undefined} [path]
+ * @returns {Activity["diff"] | undefined}
+ */
+function buildActivityDiffPreview(oldText, newText, path) {
+  const before = typeof oldText === "string" ? oldText : "";
+  const after = typeof newText === "string" ? newText : "";
+  if (!before && !after) return undefined;
+
+  /** @param {string} text */
+  const splitLines = (text) => {
+    if (!text) return /** @type {string[]} */ ([]);
+    const parts = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+    return parts;
+  };
+
+  const oldLines = splitLines(before);
+  const newLines = splitLines(after);
+  let start = 0;
+  while (
+    start < oldLines.length &&
+    start < newLines.length &&
+    oldLines[start] === newLines[start]
+  ) {
+    start += 1;
+  }
+  let oldEnd = oldLines.length;
+  let newEnd = newLines.length;
+  while (
+    oldEnd > start &&
+    newEnd > start &&
+    oldLines[oldEnd - 1] === newLines[newEnd - 1]
+  ) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+
+  /** @type {NonNullable<Activity["diff"]>["lines"]} */
+  const lines = [];
+  const ctxBefore = Math.min(2, start);
+  for (let i = start - ctxBefore; i < start; i += 1) {
+    lines.push({ type: "ctx", text: oldLines[i] ?? "" });
+  }
+  for (let i = start; i < oldEnd; i += 1) {
+    lines.push({ type: "del", text: oldLines[i] ?? "" });
+  }
+  for (let i = start; i < newEnd; i += 1) {
+    lines.push({ type: "add", text: newLines[i] ?? "" });
+  }
+  const ctxAfter = Math.min(2, oldLines.length - oldEnd);
+  for (let i = oldEnd; i < oldEnd + ctxAfter; i += 1) {
+    lines.push({ type: "ctx", text: oldLines[i] ?? "" });
+  }
+
+  const additions = lines.filter((line) => line.type === "add").length;
+  const deletions = lines.filter((line) => line.type === "del").length;
+  if (additions === 0 && deletions === 0) return undefined;
+
+  const MAX = 400;
+  let preview = lines;
+  if (preview.length > MAX) {
+    preview = [
+      ...preview.slice(0, MAX - 1),
+      { type: "ctx", text: `… ${preview.length - (MAX - 1)} more lines` },
+    ];
+  }
+
+  return {
+    path: path?.trim() ? path.trim() : undefined,
+    additions,
+    deletions,
+    lines: preview,
+  };
+}
+
+/**
+ * @param {string} patchText
+ * @returns {NonNullable<Activity["diff"]>["lines"]}
+ */
+function linesFromUnifiedPatch(patchText) {
+  /** @type {NonNullable<Activity["diff"]>["lines"]} */
+  const lines = [];
+  for (const raw of patchText.replace(/\r\n/g, "\n").split("\n")) {
+    if (
+      raw.startsWith("diff --git") ||
+      raw.startsWith("index ") ||
+      raw.startsWith("--- ") ||
+      raw.startsWith("+++ ") ||
+      raw.startsWith("@@")
+    ) {
+      continue;
+    }
+    if (raw.startsWith("+")) {
+      lines.push({ type: "add", text: raw.slice(1) });
+    } else if (raw.startsWith("-")) {
+      lines.push({ type: "del", text: raw.slice(1) });
+    } else if (raw.startsWith(" ") || raw === "") {
+      lines.push({
+        type: "ctx",
+        text: raw.startsWith(" ") ? raw.slice(1) : "",
+      });
+    }
+  }
+  return lines;
+}
+
+/**
+ * @param {Record<string, unknown>} update
+ * @returns {Activity["diff"] | undefined}
+ */
+function toolDiffFromUpdate(update) {
+  const content = update.content;
+  if (!Array.isArray(content)) return undefined;
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const b = /** @type {Record<string, unknown>} */ (block);
+    if (b.type !== "diff") continue;
+    const path =
+      typeof b.path === "string"
+        ? b.path
+        : typeof b.file === "string"
+          ? b.file
+          : undefined;
+    const oldText =
+      typeof b.oldText === "string"
+        ? b.oldText
+        : typeof b.old_text === "string"
+          ? b.old_text
+          : null;
+    const newText =
+      typeof b.newText === "string"
+        ? b.newText
+        : typeof b.new_text === "string"
+          ? b.new_text
+          : null;
+    const fromTexts = buildActivityDiffPreview(oldText, newText, path);
+    if (fromTexts) return fromTexts;
+
+    let patchText = "";
+    const patch = b.patch;
+    if (patch && typeof patch === "object") {
+      const p = /** @type {Record<string, unknown>} */ (patch);
+      if (typeof p.text === "string" && p.text.trim()) patchText = p.text;
+      else if (typeof p.diff === "string" && p.diff.trim()) patchText = p.diff;
+    }
+    if (!patchText && typeof b.text === "string" && b.text.includes("@@")) {
+      patchText = b.text;
+    }
+    if (!patchText && typeof b.unifiedDiff === "string") {
+      patchText = b.unifiedDiff;
+    }
+    if (!patchText.trim()) continue;
+    const lines = linesFromUnifiedPatch(patchText);
+    if (lines.length === 0) continue;
+    const additions = lines.filter((line) => line.type === "add").length;
+    const deletions = lines.filter((line) => line.type === "del").length;
+    if (additions === 0 && deletions === 0) continue;
+    return {
+      path: path?.trim() || undefined,
+      additions,
+      deletions,
+      lines,
+    };
+  }
+  return undefined;
+}
+
+/**
  * @param {unknown} value
  * @param {string[]} paths
  * @param {Set<string>} seen
@@ -368,6 +591,14 @@ function coerceRawInput(raw) {
  */
 function collectPathsFromValue(value, paths, seen, depth) {
   if (depth > 5 || paths.length >= 8) return;
+  if (typeof value === "string") {
+    const candidate = maybePathLike(value.trim());
+    if (candidate && !seen.has(candidate)) {
+      seen.add(candidate);
+      paths.push(candidate);
+    }
+    return;
+  }
   if (Array.isArray(value)) {
     for (const entry of value) {
       collectPathsFromValue(entry, paths, seen, depth + 1);
@@ -531,10 +762,10 @@ function toolDetailFromUpdate(update, toolKind) {
     kind.includes("find");
 
   const input =
-    coerceRawInput(update.rawInput) ??
-    coerceRawInput(update.input) ??
-    coerceRawInput(update.arguments) ??
-    coerceRawInput(update.args);
+    coerceRawInput(update.rawInput, toolKind) ??
+    coerceRawInput(update.input, toolKind) ??
+    coerceRawInput(update.arguments, toolKind) ??
+    coerceRawInput(update.args, toolKind);
 
   if (input) {
     const query = stringField(
@@ -613,6 +844,7 @@ function toolDetailFromUpdate(update, toolKind) {
 
 /**
  * Present one ACP tool_call / tool_call_update as a timeline activity.
+ * T3-style: short kind verb in the heading; path/query in detail.
  * Exported for unit tests (matches desktop agent-acp-activity semantics).
  * @param {Record<string, unknown>} update
  * @param {Activity | undefined} existing
@@ -634,14 +866,18 @@ export function presentAcpToolActivity(update, existing) {
     : existing && !isGenericToolTitle(existing.title)
       ? existing.title
       : "";
-  // T3 keeps path-bearing Cursor titles in the heading. Only collapse exact
-  // generic verbs — do not peel the path out of the title first.
   const peeled = peelToolTitle(titleFromAgent);
-  const title = presentToolTitle(titleFromAgent, toolKind);
   const detail =
     toolDetailFromUpdate(update, toolKind) ??
     peeled.detailHint ??
     existing?.detail;
+  // T3 summary style: kind verb when known so the path sits in detail.
+  const kindLabel = toolKindVerb(toolKind);
+  const title = kindLabel
+    ? kindLabel
+    : peeled.detailHint
+      ? presentToolTitle(peeled.title, toolKind)
+      : presentToolTitle(titleFromAgent, toolKind);
   const status = parseStatus(update.status) ?? existing?.status ?? "in_progress";
   return {
     id: toolCallId,
@@ -650,8 +886,21 @@ export function presentAcpToolActivity(update, existing) {
     detail,
     status,
     toolKind,
-    diff: existing?.diff,
+    diff: toolDiffFromUpdate(update) ?? existing?.diff,
   };
+}
+
+/**
+ * T3 shouldEmitToolCallUpdate: hold in-progress rows until detail exists.
+ * @param {Activity} activity
+ * @param {boolean} alreadyVisible
+ */
+function shouldEmitToolActivity(activity, alreadyVisible) {
+  if (alreadyVisible) return true;
+  if (activity.status === "completed" || activity.status === "failed") {
+    return true;
+  }
+  return Boolean(activity.detail && String(activity.detail).trim());
 }
 
 /**
@@ -690,12 +939,38 @@ export function projectAcpSessionUpdate(taskId, chatId, update) {
     }
     case "tool_call":
     case "tool_call_update": {
-      const existing = turn.activities.find(
-        (a) =>
-          a.id ===
-          (typeof u.toolCallId === "string" ? u.toolCallId.trim() : ""),
+      const toolCallId =
+        typeof u.toolCallId === "string" ? u.toolCallId.trim() : "";
+      const existingVisible = turn.activities.find((a) => a.id === toolCallId);
+      const existingPending = toolCallId
+        ? turn.pendingTools[toolCallId]
+        : undefined;
+      const existing = existingVisible ?? existingPending;
+      // T3 mergeToolCallState: accumulate rawInput/locations across patches.
+      const mergedUpdate = mergeToolCallPayload(
+        toolCallId ? turn.toolCallPayloads[toolCallId] : undefined,
+        u,
       );
-      const activity = presentAcpToolActivity(u, existing);
+      if (toolCallId) {
+        turn.toolCallPayloads = {
+          ...turn.toolCallPayloads,
+          [toolCallId]: mergedUpdate,
+        };
+      }
+      const activity = presentAcpToolActivity(mergedUpdate, existing);
+      // T3 shouldEmitToolCallUpdate: hold until path/query detail arrives.
+      if (!shouldEmitToolActivity(activity, Boolean(existingVisible))) {
+        turn.pendingTools = {
+          ...turn.pendingTools,
+          [activity.id]: activity,
+        };
+        turn.dirty = true;
+        break;
+      }
+      if (activity.id in turn.pendingTools) {
+        const { [activity.id]: _removed, ...rest } = turn.pendingTools;
+        turn.pendingTools = rest;
+      }
       turn.segments = upsertActivityInSegments(turn.segments, activity);
       turn.activities = activitiesFromSegments(turn.segments);
       turn.dirty = true;
@@ -749,6 +1024,25 @@ export function projectAcpSessionUpdate(taskId, chatId, update) {
 }
 
 /**
+ * @param {LiveTurn["planSteps"]} previous
+ * @param {LiveTurn["planSteps"]} next
+ * @param {boolean} merge
+ * @returns {LiveTurn["planSteps"]}
+ */
+function mergePlanSteps(previous, next, merge) {
+  if (!merge || previous.length === 0) return [...next];
+  /** @type {Map<string, LiveTurn["planSteps"][number]>} */
+  const byStep = new Map();
+  for (const step of previous) {
+    byStep.set(step.step, step);
+  }
+  for (const step of next) {
+    byStep.set(step.step, step);
+  }
+  return [...byStep.values()];
+}
+
+/**
  * @param {string} taskId
  * @param {string | null | undefined} chatId
  * @param {unknown} params
@@ -779,7 +1073,7 @@ export function projectCursorUpdateTodos(taskId, chatId, params) {
     plan.push({ step, status });
   }
   if (raw.merge === true && plan.length === 0) return turn;
-  turn.planSteps = raw.merge === true ? [...turn.planSteps, ...plan] : plan;
+  turn.planSteps = mergePlanSteps(turn.planSteps, plan, raw.merge === true);
   turn.dirty = true;
   schedulePersist(id);
   return turn;
@@ -898,6 +1192,16 @@ export function sealAcpProjectedTurn(taskId, chatId, finalText) {
   if (!id || !cid) return null;
 
   if (turn) {
+    // Flush held tool calls (waiting for detail) before sealing — T3 end-of-turn.
+    for (const pending of Object.values(turn.pendingTools)) {
+      turn.segments = upsertActivityInSegments(turn.segments, {
+        ...pending,
+        status: pending.status === "failed" ? "failed" : "completed",
+      });
+    }
+    turn.pendingTools = {};
+    turn.activities = activitiesFromSegments(turn.segments);
+
     const text = stripTransientAgentStreamError(
       (typeof finalText === "string" && finalText.trim()) || turn.assistantDraft,
     ).trim();

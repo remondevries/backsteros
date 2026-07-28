@@ -22,7 +22,10 @@ import {
 import { ContentDetailTitleHeader } from "./content-detail-title-header.js";
 import { DetailWithPropertiesLayout } from "./detail-with-properties-layout.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
+import {
+  DocumentMarkdownPreview,
+  type ResolveMarkdownImageSrc,
+} from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
@@ -33,6 +36,7 @@ import {
 } from "./task-properties-display.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
+import type { UploadMarkdownImages } from "../markdown-image-paste.js";
 
 export type TaskDetailViewTask = TaskPropertiesDisplayTask & {
   title: string;
@@ -72,6 +76,10 @@ export type TaskDetailViewProps = {
   onToggleSpellcheckDescriptionSegment?: (segmentId: string) => void;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onChangeLinks?: (links: TaskLink[]) => void;
+  /** Upload clipboard/drop images for Linear-style markdown embeds. */
+  onUploadImages?: UploadMarkdownImages;
+  /** Resolve authenticated task image URLs in the preview. */
+  resolveImageSrc?: ResolveMarkdownImageSrc;
   onSaveTitle?: (
     title: string,
   ) =>
@@ -82,6 +90,8 @@ export type TaskDetailViewProps = {
   onStatusChange?: (
     status: import("../task-status.js").TaskStatus,
   ) => void;
+  /** When true, status dropdown is read-only (inbox triage without a project). */
+  statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -104,9 +114,12 @@ export function TaskDetailView({
   onToggleSpellcheckDescriptionSegment,
   onSaveDescription,
   onChangeLinks,
+  onUploadImages,
+  resolveImageSrc,
   onSaveTitle,
   onFieldActivate,
   onStatusChange,
+  statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
@@ -227,7 +240,6 @@ export function TaskDetailView({
   );
 
   void sectionLabel;
-  void headerMeta;
 
   return (
     <div
@@ -241,6 +253,9 @@ export function TaskDetailView({
       legacyStorageKeys={TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS}
       main={
         <div className="inbox-detail-layout">
+          {headerMeta ? (
+            <div className="inbox-detail-header-meta">{headerMeta}</div>
+          ) : null}
           <div className="inbox-detail-body inbox-detail-body--document">
             <ContentDetailTitleHeader>
               {task.displayId ? (
@@ -263,6 +278,7 @@ export function TaskDetailView({
                   focusRequest={editorFocusRequest}
                   scrollWithContent
                   highlightRanges={descriptionMarkRanges}
+                  onUploadImages={onUploadImages}
                   ariaLabel="Task description"
                 />
               }
@@ -283,6 +299,7 @@ export function TaskDetailView({
                     <DocumentMarkdownPreview
                       body={value}
                       onChange={handleChange}
+                      resolveImageSrc={resolveImageSrc}
                     />
                   ) : (
                     <p className="overview-empty">Add a description…</p>
@@ -314,6 +331,7 @@ export function TaskDetailView({
           task={task}
           onFieldActivate={onFieldActivate}
           onStatusChange={onStatusChange}
+          statusDisabled={statusDisabled}
           onPriorityChange={onPriorityChange}
           onDueDateChange={onDueDateChange}
           onAssigneeChange={onAssigneeChange}

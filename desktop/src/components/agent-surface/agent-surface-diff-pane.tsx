@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { FileDiff } from "lucide-react";
 
 import type { AgentChatActivityItem } from "../../lib/agent/agent-acp-activity";
@@ -29,6 +29,9 @@ function latestChangedFiles(
   return [];
 }
 
+/**
+ * Diff surface — single Pierre-based file list + viewer (no duplicate sidebar).
+ */
 export function AgentSurfaceDiffPane({
   messages,
   liveActivities,
@@ -37,8 +40,6 @@ export function AgentSurfaceDiffPane({
     () => latestChangedFiles(messages, liveActivities),
     [liveActivities, messages],
   );
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const activePath = selectedPath ?? files[0]?.path ?? null;
 
   if (files.length === 0) {
     return (
@@ -54,34 +55,14 @@ export function AgentSurfaceDiffPane({
 
   return (
     <div className="agent-surface-pane agent-surface-pane--diff">
-      <div className="agent-surface-diff-layout">
-        <ul className="agent-surface-diff-list" aria-label="Changed files">
-          {files.map((file) => (
-            <li key={file.path}>
-              <button
-                type="button"
-                className={`agent-surface-diff-file${
-                  file.path === activePath ? " is-active" : ""
-                }`}
-                onClick={() => setSelectedPath(file.path)}
-              >
-                <span className="agent-surface-diff-file-name">{file.name}</span>
-                <span className="agent-surface-diff-file-stats">
-                  +{file.additions} −{file.deletions}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="agent-surface-diff-panel">
-          <DesktopAgentChatDiffPanel
-            files={files}
-            initialPath={activePath}
-            variant="sheet"
-            onClose={() => setSelectedPath(null)}
-          />
-        </div>
-      </div>
+      <DesktopAgentChatDiffPanel
+        files={files}
+        variant="sheet"
+        showClose={false}
+        onClose={() => {
+          /* Embedded in a surface tab — close via the tab bar. */
+        }}
+      />
     </div>
   );
 }

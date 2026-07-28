@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   InboxDetailSkeleton,
   RegisterEntityDeleteAction,
   TaskDetailView,
   buildAssigneeDropdownOptions,
+  buildInboxTaskListItem,
   buildProjectDropdownOptions,
+  encodeTaskSlug,
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
   getInboxItemDisplayId,
+  getInboxTaskRouteSlugForTask,
+  getProjectTaskHref,
+  type InboxTaskListItem,
 } from "@backsteros/ui";
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
@@ -19,24 +24,86 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { useTaskDescriptionImages } from "../lib/task-description-images";
+import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+
+type MovedToProjectNotice = {
+  projectKey: string;
+  projectName: string;
+  taskNumber: number;
+};
+
+function resolveInboxTaskFromWorkspace(
+  workspace: ReturnType<typeof useDesktopWorkspaceData>,
+  itemId: string,
+): InboxTaskListItem | null {
+  const fromList = findInboxItemBySlugOrId(workspace.inboxItems, itemId);
+  if (fromList?.kind === "task") return fromList;
+
+  const normalized = itemId.trim().toLowerCase();
+  const full = workspace.allTasks.find((task) => {
+    if (task.id === itemId) return true;
+    const slug = getInboxTaskRouteSlugForTask({
+      number: task.number,
+      projectKey: task.projectKey,
+    });
+    return (
+      slug === normalized ||
+      slug.toLowerCase() === normalized ||
+      encodeTaskSlug(task.projectKey ?? "in", task.number) === normalized
+    );
+  });
+  if (!full) return null;
+
+  return buildInboxTaskListItem({
+    id: full.id,
+    title: full.title,
+    number: full.number ?? 0,
+    status: full.status,
+    priority: full.priority,
+    dueDate:
+      typeof full.dueDate === "number"
+        ? full.dueDate
+        : full.dueDate
+          ? full.dueDate.getTime()
+          : null,
+    updatedAt: full.updatedAt ?? Date.now(),
+    description: workspace.taskDescriptions[full.id] ?? null,
+    projectId: full.projectId,
+    projectKey: full.projectKey ?? null,
+    projectName: full.projectName ?? null,
+    assigneeId: full.assigneeId ?? null,
+    inbox: false,
+  });
+}
 
 export function InboxPage() {
   const navigate = useNavigate();
   const { itemId } = useParams<{ itemId?: string }>();
   const workspace = useDesktopWorkspaceData();
+  const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
+    null,
+  );
 
-  const selected = itemId
-    ? findInboxItemBySlugOrId(workspace.inboxItems, itemId) ?? null
+  const selectedTask = itemId
+    ? resolveInboxTaskFromWorkspace(workspace, itemId)
     : null;
 
-  const selectedTask =
-    selected?.kind === "task" ? selected : null;
+  const inList = selectedTask
+    ? workspace.inboxItems.some((item) => item.id === selectedTask.id)
+    : false;
 
   // Inbox list items omit assignee; join full task row for detail chrome.
   const selectedTaskRecord = selectedTask
     ? (workspace.allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
     : null;
+
+  useEnsureProjectVault(selectedTaskRecord?.projectId);
+
+  const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
+    selectedTask?.id ?? "",
+  );
 
   const displayId = selectedTask ? getInboxItemDisplayId(selectedTask) : null;
   useDesktopSectionBreadcrumb(
@@ -53,19 +120,19 @@ export function InboxPage() {
   );
 
   useEffect(() => {
-    if (itemId) {
-      if (!selectedTask && workspace.inboxItems.length) {
-        const first = getFirstInboxItemHref(workspace.inboxItems);
-        if (first) navigate(first, { replace: true });
-      }
-      return;
-    }
+    setMovedNotice(null);
+  }, [itemId]);
 
+  useEffect(() => {
+    // Only auto-open the first item when the route has no selection.
+    // When the open task leaves the inbox list (e.g. assigned to a project),
+    // keep the detail pane mounted so the user can finish editing.
+    if (itemId) return;
     const first = getFirstInboxItemHref(workspace.inboxItems);
     if (first) {
       navigate(first, { replace: true });
     }
-  }, [itemId, navigate, selectedTask, workspace.inboxItems]);
+  }, [itemId, navigate, workspace.inboxItems]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -110,6 +177,31 @@ export function InboxPage() {
     }
   }, [navigate, selectedTask, workspace]);
 
+  const handleProjectChange = useCallback(
+    (next: string | null) => {
+      if (!selectedTask) return;
+      const nextProject = next
+        ? workspace.projects.find((entry) => entry.key === next) ?? null
+        : null;
+      void workspace.patchTask(selectedTask.id, {
+        projectId: nextProject?.id ?? null,
+        inbox: !nextProject,
+        // Keep triage until the user explicitly changes status.
+        ...(nextProject ? {} : { status: "triage" }),
+      });
+      if (nextProject) {
+        setMovedNotice({
+          projectKey: nextProject.key,
+          projectName: nextProject.name,
+          taskNumber: selectedTask.number,
+        });
+      } else {
+        setMovedNotice(null);
+      }
+    },
+    [selectedTask, workspace],
+  );
+
   if (!itemId || !selectedTask) {
     if (!workspace.ready || workspace.inboxItems.length > 0) {
       return <InboxDetailSkeleton />;
@@ -123,9 +215,17 @@ export function InboxPage() {
     );
   }
 
-  const resolvedProjectKey = selectedTask.projectKey ?? null;
+  const resolvedProjectKey =
+    selectedTask.projectKey ??
+    selectedTaskRecord?.projectKey ??
+    null;
   const project =
-    workspace.projects.find((entry) => entry.key === resolvedProjectKey) ?? null;
+    workspace.projects.find((entry) => entry.key === resolvedProjectKey) ??
+    (selectedTaskRecord?.projectId
+      ? workspace.projects.find(
+          (entry) => entry.id === selectedTaskRecord.projectId,
+        ) ?? null
+      : null);
   const resolvedAssigneeId = selectedTaskRecord?.assigneeId ?? null;
   const assignee =
     workspace.contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
@@ -134,6 +234,14 @@ export function InboxPage() {
     : "task";
 
   const workingDirectory = project?.localWorkingDirectory ?? null;
+  const hasProject = Boolean(project?.id ?? selectedTask.projectId);
+  const statusDisabled = !hasProject;
+  const projectTaskHref =
+    movedNotice != null
+      ? getProjectTaskHref(movedNotice.projectKey, movedNotice.taskNumber)
+      : project
+        ? getProjectTaskHref(project.key, selectedTask.number)
+        : null;
 
   return (
     <>
@@ -167,15 +275,32 @@ export function InboxPage() {
       >
       <TaskDetailView
         sectionLabel="Inbox"
+        headerMeta={
+          movedNotice && projectTaskHref && !inList ? (
+            <div className="inbox-moved-banner" role="status">
+              <span>
+                Moved into{" "}
+                <Link
+                  className="inbox-moved-banner__link"
+                  to={projectTaskHref}
+                >
+                  {movedNotice.projectName}
+                </Link>
+                .
+              </span>
+            </div>
+          ) : null
+        }
         task={{
           id: selectedTask.id,
           title: selectedTask.title,
-          status: selectedTask.status,
-          priority: selectedTask.priority,
-          dueDate: selectedTask.dueDate,
+          status: selectedTaskRecord?.status ?? selectedTask.status,
+          priority: selectedTaskRecord?.priority ?? selectedTask.priority,
+          dueDate:
+            selectedTaskRecord?.dueDate ?? selectedTask.dueDate ?? null,
           assigneeId: resolvedAssigneeId,
           assigneeName: assignee?.name ?? null,
-          projectKey: resolvedProjectKey,
+          projectKey: project?.key ?? resolvedProjectKey,
           projectName: project?.name ?? selectedTask.projectName ?? null,
           description:
             workspace.taskDescriptions[selectedTask.id] ??
@@ -184,9 +309,14 @@ export function InboxPage() {
           links: workspace.taskLinks[selectedTask.id] ?? [],
           displayId: getInboxItemDisplayId(selectedTask),
         }}
-        onStatusChange={(next) => {
-          void workspace.patchTask(selectedTask.id, { status: next });
-        }}
+        statusDisabled={statusDisabled}
+        onStatusChange={
+          statusDisabled
+            ? undefined
+            : (next) => {
+                void workspace.patchTask(selectedTask.id, { status: next });
+              }
+        }
         onPriorityChange={(next) => {
           void workspace.patchTask(selectedTask.id, { priority: next });
         }}
@@ -198,17 +328,12 @@ export function InboxPage() {
         onAssigneeChange={(next) => {
           void workspace.patchTask(selectedTask.id, { assigneeId: next });
         }}
-        onProjectChange={(next) => {
-          const nextProject = next
-            ? workspace.projects.find((entry) => entry.key === next) ?? null
-            : null;
-          void workspace.patchTask(selectedTask.id, {
-            projectId: nextProject?.id ?? null,
-          });
-        }}
+        onProjectChange={handleProjectChange}
         onSaveDescription={(description) => {
           void workspace.patchTask(selectedTask.id, { description });
         }}
+        onUploadImages={onUploadImages}
+        resolveImageSrc={resolveImageSrc}
         onChangeLinks={(links) => {
           void workspace.patchTask(selectedTask.id, { links });
         }}
@@ -236,7 +361,11 @@ export function InboxPage() {
           resolvedAssigneeId ? `/contacts/${resolvedAssigneeId}` : null
         }
         projectNavigateHref={
-          resolvedProjectKey ? `/projects/${resolvedProjectKey}` : null
+          project?.key
+            ? `/projects/${project.key}`
+            : resolvedProjectKey
+              ? `/projects/${resolvedProjectKey}`
+              : null
         }
         onCreateAssigneeFromQuery={(query) => {
           void workspace.createContact({ name: query }).then((created) => {

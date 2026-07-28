@@ -27,6 +27,7 @@ import {
   InboxListItemRow,
   type InboxListItemLinkComponent,
 } from "./inbox-list-item-row.js";
+import { ProjectTypeGroupSection } from "./project-type-group-section.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
 import { InboxSidePanelSkeleton } from "./skeletons/inbox-side-panel-skeleton.js";
@@ -53,8 +54,8 @@ export type InboxSidePanelViewProps = {
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
   /**
-   * Group tasks into plain On Hold / In Review / In Progress sections
-   * (iOS-style text labels — not gradient status headers).
+   * Group tasks into collapsible subgroups (Triage / On Hold / In Review / …)
+   * with the shared label + rule line used on Projects/Areas.
    */
   groupByAttentionStatus?: boolean;
   /** Optional trailing control next to each task title (e.g. agent busy). */
@@ -104,6 +105,9 @@ export function InboxSidePanelView({
   const [composing, setComposing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
 
   const selectedItemId = useMemo(() => {
@@ -116,6 +120,15 @@ export function InboxSidePanelView({
       groupByAttentionStatus ? groupInboxItemsByAttentionStatus(items) : null,
     [groupByAttentionStatus, items],
   );
+
+  function toggleGroup(status: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  }
 
   function renderRow(item: InboxListItem) {
     const href = getInboxItemHref(item, items);
@@ -206,9 +219,9 @@ export function InboxSidePanelView({
             {...listContainerProps}
           >
             {attentionGroups
-              ? attentionGroups.map((group) => (
-                  <Fragment key={group.status}>
-                    {minimized ? (
+              ? attentionGroups.map((group) =>
+                  minimized ? (
+                    <Fragment key={group.status}>
                       <li
                         className="side-panel-plain-group-header side-panel-plain-group-header--minimized"
                         title={group.label}
@@ -219,21 +232,30 @@ export function InboxSidePanelView({
                             size={14}
                             title={group.label}
                           />
+                        ) : group.status === "overdue" ? (
+                          <TaskStatusIcon
+                            status="on_hold"
+                            size={14}
+                            title={group.label}
+                          />
                         ) : (
                           <InboxItemTypeIcon kind="letter" />
                         )}
                         <span className="sr-only">{group.label}</span>
                       </li>
-                    ) : (
-                      <li className="side-panel-plain-group-header">
-                        <span className="side-panel-plain-group-label">
-                          {group.label}
-                        </span>
-                      </li>
-                    )}
-                    {group.items.map((item) => renderRow(item))}
-                  </Fragment>
-                ))
+                      {group.items.map((item) => renderRow(item))}
+                    </Fragment>
+                  ) : (
+                    <ProjectTypeGroupSection
+                      key={group.status}
+                      title={group.label}
+                      collapsed={collapsedGroups.has(group.status)}
+                      onToggle={() => toggleGroup(group.status)}
+                    >
+                      {group.items.map((item) => renderRow(item))}
+                    </ProjectTypeGroupSection>
+                  ),
+                )
               : items.map((item) => renderRow(item))}
           </ContentSidePanelList>
         ) : null}

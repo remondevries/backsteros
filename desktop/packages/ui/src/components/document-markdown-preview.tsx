@@ -2,9 +2,13 @@
 
 import {
   Children,
+  createContext,
   isValidElement,
+  useContext,
+  useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -64,6 +68,115 @@ import {
 import { ProjectStatusIcon } from "./project-status-icon.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
+import { MarkdownImageLightbox } from "./markdown-image-lightbox.js";
+
+/** Resolve authenticated / relative markdown image srcs to displayable URLs. */
+export type ResolveMarkdownImageSrc = (
+  src: string,
+) => Promise<string | null> | string | null;
+
+const MarkdownImageResolveContext =
+  createContext<ResolveMarkdownImageSrc | null>(null);
+
+function MarkdownPreviewImage({
+  src,
+  alt,
+}: {
+  src?: string | null;
+  alt?: string | null;
+}) {
+  const resolve = useContext(MarkdownImageResolveContext);
+  const [displaySrc, setDisplaySrc] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [lightbox, setLightbox] = useState<{
+    src: string;
+    alt: string;
+    rect: DOMRect;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const revoke = () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+
+    void (async () => {
+      revoke();
+      if (!src) {
+        if (!cancelled) setDisplaySrc(null);
+        return;
+      }
+      if (!resolve) {
+        if (!cancelled) setDisplaySrc(src);
+        return;
+      }
+      try {
+        const next = await resolve(src);
+        if (cancelled) return;
+        if (next && next.startsWith("blob:")) {
+          objectUrlRef.current = next;
+        }
+        setDisplaySrc(next ?? src);
+      } catch {
+        if (!cancelled) setDisplaySrc(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      revoke();
+    };
+  }, [resolve, src]);
+
+  if (!displaySrc) {
+    return null;
+  }
+
+  const openLightbox = () => {
+    const node = imgRef.current;
+    if (!node) return;
+    setLightbox({
+      src: displaySrc,
+      alt: alt ?? "",
+      rect: node.getBoundingClientRect(),
+    });
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="content-markdown-preview-image-button"
+        aria-label={alt ? `Expand image: ${alt}` : "Expand image"}
+        onClick={openLightbox}
+      >
+        <img
+          ref={imgRef}
+          src={displaySrc}
+          alt={alt ?? ""}
+          className={[
+            "content-markdown-preview-image",
+            lightbox ? "content-markdown-preview-image--lightbox-open" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        />
+      </button>
+      {lightbox ? (
+        <MarkdownImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          sourceRect={lightbox.rect}
+          onClose={() => setLightbox(null)}
+        />
+      ) : null}
+    </>
+  );
+}
 
 const markdownPreviewComponents: Components = {
   a({ href, children }) {
@@ -87,6 +200,9 @@ const markdownPreviewComponents: Components = {
         {children}
       </a>
     );
+  },
+  img({ src, alt }) {
+    return <MarkdownPreviewImage src={src} alt={alt} />;
   },
   li(props) {
     const { children, className, ...rest } = props;
@@ -140,6 +256,12 @@ export type DocumentMarkdownPreviewProps = {
    * body (e.g. preview edits that persist via useMarkdownDetailEditor).
    */
   onChange?: (nextBody: string) => void;
+  /**
+   * Optional resolver for authenticated image URLs (e.g. task description
+   * images under `/api/v1/tasks/.../images/...`). Return a blob: URL or the
+   * original src; null hides the image.
+   */
+  resolveImageSrc?: ResolveMarkdownImageSrc;
 };
 
 function hasBlockMarkdown(content: string): boolean {
@@ -1024,6 +1146,7 @@ export function DocumentMarkdownPreview({
   body,
   mentionCatalog,
   onChange,
+  resolveImageSrc,
 }: DocumentMarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const catalogFromContext = useMentionCatalogOptional()?.catalog;
@@ -1053,23 +1176,25 @@ export function DocumentMarkdownPreview({
   const paragraphs = splitParagraphs(body);
 
   return (
-    <MarkdownTaskListInteractProvider body={body} onChange={onChange}>
-      <div
-        ref={containerRef}
-        data-content-preview-links=""
-        data-markdown-task-list-root=""
-        tabIndex={-1}
-        className="content-markdown-preview-body content-markdown-preview-body--rendered"
-      >
-        {paragraphs.map((paragraph, index) => (
-          <ParagraphPreview
-            key={`paragraph-${index}`}
-            paragraph={paragraph}
-            catalog={catalog}
-            paragraphIndex={index}
-          />
-        ))}
-      </div>
-    </MarkdownTaskListInteractProvider>
+    <MarkdownImageResolveContext.Provider value={resolveImageSrc ?? null}>
+      <MarkdownTaskListInteractProvider body={body} onChange={onChange}>
+        <div
+          ref={containerRef}
+          data-content-preview-links=""
+          data-markdown-task-list-root=""
+          tabIndex={-1}
+          className="content-markdown-preview-body content-markdown-preview-body--rendered"
+        >
+          {paragraphs.map((paragraph, index) => (
+            <ParagraphPreview
+              key={`paragraph-${index}`}
+              paragraph={paragraph}
+              catalog={catalog}
+              paragraphIndex={index}
+            />
+          ))}
+        </div>
+      </MarkdownTaskListInteractProvider>
+    </MarkdownImageResolveContext.Provider>
   );
 }

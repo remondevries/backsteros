@@ -15,6 +15,7 @@ import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
  * (e.g. global `/letters/…`); project/org/contact letter routes prefer section tabs.
  * On codebase projects, 1–4 switch Tasks / Files / Commits / PRs while the
  * development workbench is mounted.
+ * Disabled on task detail routes so 1–5 do not leave the single-task layout.
  */
 export function useSectionTabShortcuts({
   enabled = true,

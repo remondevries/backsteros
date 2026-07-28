@@ -11,7 +11,10 @@ import {
 } from "./content-markdown-view-layout.js";
 import { ContentDetailTitleHeader } from "./content-detail-title-header.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
+import {
+  DocumentMarkdownPreview,
+  type ResolveMarkdownImageSrc,
+} from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
@@ -21,6 +24,7 @@ import {
 } from "./task-properties-inline-chips.js";
 import type { TaskDetailViewTask } from "./task-detail-view.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
+import type { UploadMarkdownImages } from "../markdown-image-paste.js";
 
 export type TaskStackedDetailViewProps = {
   task: TaskDetailViewTask;
@@ -35,6 +39,8 @@ export type TaskStackedDetailViewProps = {
   belowDescription?: ReactNode;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onChangeLinks?: (links: TaskLink[]) => void;
+  onUploadImages?: UploadMarkdownImages;
+  resolveImageSrc?: ResolveMarkdownImageSrc;
   onSaveTitle?: (
     title: string,
   ) =>
@@ -45,6 +51,7 @@ export type TaskStackedDetailViewProps = {
   onStatusChange?: (
     status: import("../task-status.js").TaskStatus,
   ) => void;
+  statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -64,9 +71,12 @@ export function TaskStackedDetailView({
   belowDescription,
   onSaveDescription,
   onChangeLinks,
+  onUploadImages,
+  resolveImageSrc,
   onSaveTitle,
   onFieldActivate,
   onStatusChange,
+  statusDisabled = false,
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
@@ -165,6 +175,7 @@ export function TaskStackedDetailView({
             task={task}
             onFieldActivate={onFieldActivate}
             onStatusChange={onStatusChange}
+            statusDisabled={statusDisabled}
             onPriorityChange={onPriorityChange}
             onDueDateChange={onDueDateChange}
             onAssigneeChange={onAssigneeChange}
@@ -186,6 +197,7 @@ export function TaskStackedDetailView({
                 onBlur={handleBlurSave}
                 focusRequest={editorFocusRequest}
                 scrollWithContent
+                onUploadImages={onUploadImages}
                 ariaLabel="Task description"
               />
             }
@@ -195,6 +207,7 @@ export function TaskStackedDetailView({
                   <DocumentMarkdownPreview
                     body={value}
                     onChange={handleChange}
+                    resolveImageSrc={resolveImageSrc}
                   />
                 ) : (
                   <p className="overview-empty">Add a description…</p>

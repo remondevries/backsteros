@@ -133,6 +133,7 @@ export {
   SearchNavIcon,
 } from "./components/sidebar-nav-icons.js";
 
+export { DevelopmentAdeLogoIcon } from "./components/development-ade-logo-icon.js";
 export { ProfileLogoIcon } from "./components/profile-logo-icon.js";
 
 export {
@@ -163,11 +164,21 @@ export {
   createDefaultTabsState,
   getTabTitleForHref,
   normalizeTabHref,
+  refreshOpenTabTaskStatuses,
   resolveTabNavIconId,
+  syncActiveTabTaskMeta,
   syncActiveTabToPath,
   type ProductTab,
   type ProductTabsState,
 } from "./tabs.js";
+
+export {
+  extractTaskRouteParamFromHref,
+  findTaskForTabHref,
+  resolveProductTabTaskMeta,
+  taskMatchesTabRouteParam,
+  type ProductTabTaskMeta,
+} from "./product-tab-task-meta.js";
 
 export {
   INBOX_TASK_LIST_PANEL_WIDTH_KEY,
@@ -206,13 +217,19 @@ export {
   findInboxItemBySlugOrId,
   formatInboxDueDateLabel,
   getFirstInboxItemHref,
+  getInboxAttentionGroupKey,
+  getInboxAttentionGroupLabel,
   getInboxItemDisplayId,
   getInboxItemHref,
   getInboxItemRouteSlug,
   getInboxTaskRouteHref,
   getInboxTaskRouteSlugForTask,
+  getProjectTaskHref,
   groupInboxItemsByAttentionStatus,
+  isInboxOverdueTask,
   sortInboxItemsByAttentionStatus,
+  taskBelongsInInbox,
+  INBOX_ATTENTION_REAL_STATUSES,
   INBOX_ATTENTION_STATUS_ORDER,
   type InboxAttentionStatus,
   type InboxAttentionStatusGroup,
@@ -1249,6 +1266,13 @@ export {
 } from "./components/task-activity-panel.js";
 
 export {
+  TaskCommentEditor,
+  type TaskCommentEditorHandle,
+  type TaskCommentEditorProps,
+  type TaskCommentEditorVariant,
+} from "./components/task-comment-editor.js";
+
+export {
   AgentActivityIcon,
 } from "./components/agent-activity-icon.js";
 
@@ -1346,7 +1370,15 @@ export {
 export {
   DocumentMarkdownPreview,
   type DocumentMarkdownPreviewProps,
+  type ResolveMarkdownImageSrc,
 } from "./components/document-markdown-preview.js";
+
+export {
+  collectImageFiles,
+  createMarkdownImagePasteExtensions,
+  markdownImageSnippet,
+  type UploadMarkdownImages,
+} from "./markdown-image-paste.js";
 
 export {
   DocumentMentionHoverCard,
@@ -1837,6 +1869,7 @@ export {
   isTargetInsideBlockingModal,
   shouldBlockPageShortcuts,
   shouldHandleGlobalShortcut,
+  shouldHandleTabChromeShortcut,
   BLOCKING_MODAL_SELECTOR,
 } from "./shortcut-guards.js";
 
@@ -2120,6 +2153,22 @@ export {
   ProjectWorkingDirectoryTree,
   type ProjectWorkingDirectoryTreeProps,
 } from "./components/codebase/project-working-directory-tree.js";
+
+export {
+  FileTypeIcon,
+  type FileTypeIconProps,
+} from "./components/file-type-icon.js";
+
+export {
+  ensurePierreIconSprite,
+  hasSpecificPierreIconForFileName,
+  resolvePierreIconForEntry,
+  syntheticFileNameForLanguageId,
+  basenameOfPath,
+  inferEntryKindFromPath,
+  T3_PIERRE_ICONS,
+  type PierreIconResolution,
+} from "./pierre-icons.js";
 
 export {
   CodebaseProjectOverviewPane,

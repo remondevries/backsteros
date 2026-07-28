@@ -76,6 +76,41 @@ export function mergePlanSteps(
   return [...byStep.values()];
 }
 
+/**
+ * Prefer the latest todo snapshot (T3: always take newest plan payload).
+ * Same-length status updates must win; only reject a shorter incoming list
+ * so a stale partial cannot wipe a richer checklist.
+ */
+export function preferPlanSteps(
+  existing: readonly AgentChatPlanStep[] | undefined,
+  incoming: readonly AgentChatPlanStep[] | undefined,
+): AgentChatPlanStep[] | undefined {
+  const next = incoming ?? [];
+  const prev = existing ?? [];
+  if (next.length === 0) {
+    return prev.length > 0 ? prev.map((step) => ({ ...step })) : undefined;
+  }
+  if (prev.length === 0 || next.length >= prev.length) {
+    return next.map((step) => ({ ...step }));
+  }
+  return prev.map((step) => ({ ...step }));
+}
+
+export function planStepsEqual(
+  a: readonly AgentChatPlanStep[] | undefined,
+  b: readonly AgentChatPlanStep[] | undefined,
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i]?.step !== right[i]?.step || left[i]?.status !== right[i]?.status) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function planStepsWorkingSummary(
   steps: readonly AgentChatPlanStep[],
 ): string | null {

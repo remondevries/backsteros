@@ -34,6 +34,8 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { useTaskDescriptionImages } from "../lib/task-description-images";
+import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 export type TaskDetailPageProps = {
@@ -156,6 +158,12 @@ export function TaskDetailPage({
         routeParam,
       );
     }) ?? null;
+
+  useEnsureProjectVault(base?.projectId);
+
+  const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
+    base?.id ?? "",
+  );
 
   const applySpellcheckComposition = useCallback(
     async (session: TaskSpellcheckHighlight) => {
@@ -445,6 +453,8 @@ export function TaskDetailPage({
       onProjectChange={patchProjectKey}
       onSaveDescription={saveDescription}
       onChangeLinks={changeLinks}
+      onUploadImages={onUploadImages}
+      resolveImageSrc={resolveImageSrc}
       onSaveTitle={saveTitle}
       assigneeOptions={assigneeOptions}
       projectOptions={projectOptions}
@@ -469,6 +479,8 @@ export function TaskDetailPage({
       onProjectChange={patchProjectKey}
       onSaveDescription={saveDescription}
       onChangeLinks={changeLinks}
+      onUploadImages={onUploadImages}
+      resolveImageSrc={resolveImageSrc}
       onSaveTitle={saveTitle}
       assigneeOptions={assigneeOptions}
       projectOptions={projectOptions}

@@ -14,6 +14,8 @@ export type DesktopAgentChatDiffPanelProps = {
   onClose: () => void;
   /** Docked beside chat, or full-body sheet on narrow rails. */
   variant?: "docked" | "sheet";
+  /** When false, hide the Close control (e.g. Diff surface tab). Default true. */
+  showClose?: boolean;
 };
 
 function UnifiedDiffFallback({
@@ -84,6 +86,7 @@ export function DesktopAgentChatDiffPanel({
   initialPath = null,
   onClose,
   variant = "docked",
+  showClose = true,
 }: DesktopAgentChatDiffPanelProps) {
   const summary = useMemo(() => summarizeChangedFileStats(files), [files]);
   const [activePath, setActivePath] = useState<string | null>(() => {
@@ -104,6 +107,7 @@ export function DesktopAgentChatDiffPanel({
   }, [activePath, files, initialPath]);
 
   useEffect(() => {
+    if (!showClose) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -112,7 +116,7 @@ export function DesktopAgentChatDiffPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, showClose]);
 
   const activeFile =
     files.find((file) => file.path === activePath) ?? files[0] ?? null;
@@ -122,7 +126,7 @@ export function DesktopAgentChatDiffPanel({
     <div
       className={`desktop-agent-chat__diff-panel desktop-agent-chat__diff-panel--${variant}`}
       role={isSheet ? "dialog" : "complementary"}
-      aria-modal={isSheet ? true : undefined}
+      aria-modal={isSheet && showClose ? true : undefined}
       aria-label="Turn diff"
     >
       <header className="desktop-agent-chat__diff-panel-header">
@@ -141,13 +145,15 @@ export function DesktopAgentChatDiffPanel({
             </span>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="desktop-agent-chat__diff-panel-close"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        {showClose ? (
+          <button
+            type="button"
+            className="desktop-agent-chat__diff-panel-close"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        ) : null}
       </header>
 
       {files.length === 0 ? (

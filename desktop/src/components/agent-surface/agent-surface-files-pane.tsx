@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, File, Folder, FolderOpen, RefreshCw } from "lucide-react";
+import { FileDetailPane, FileTypeIcon } from "@backsteros/ui";
+import {
+  ChevronRight,
+  File,
+  Folder,
+  FolderOpen,
+  RefreshCw,
+} from "lucide-react";
 
 import { projectFs, type FsTreeEntry } from "../../lib/project-fs";
 
@@ -11,16 +18,18 @@ type TreeNode = FsTreeEntry & {
 
 export type AgentSurfaceFilesPaneProps = {
   cwd: string;
-  onOpenFile?: (relativePath: string) => void;
 };
 
-export function AgentSurfaceFilesPane({
-  cwd,
-  onOpenFile,
-}: AgentSurfaceFilesPaneProps) {
+/**
+ * Project file browser matching the codebase workbench Files experience:
+ * tree on the left, FileDetailPane (CodeMirror) on the right.
+ */
+export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openPaths, setOpenPaths] = useState<string[]>([]);
+  const [activePath, setActivePath] = useState<string | null>(null);
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
@@ -50,6 +59,19 @@ export function AgentSurfaceFilesPane({
   useEffect(() => {
     void loadRoot();
   }, [loadRoot]);
+
+  useEffect(() => {
+    // Reset open editors when the working directory changes.
+    setOpenPaths([]);
+    setActivePath(null);
+  }, [cwd]);
+
+  const openFile = useCallback((path: string) => {
+    setOpenPaths((current) =>
+      current.includes(path) ? current : [...current, path],
+    );
+    setActivePath(path);
+  }, []);
 
   const toggleDir = async (path: string) => {
     setRoots((current) => {
@@ -115,27 +137,66 @@ export function AgentSurfaceFilesPane({
           <RefreshCw size={13} aria-hidden />
         </button>
       </div>
-      {loading ? (
-        <p className="agent-surface-empty">Loading files…</p>
-      ) : null}
-      {error ? (
-        <p className="agent-surface-empty" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {!loading && !error ? (
-        <ul className="agent-surface-files-tree">
-          {roots.map((node) => (
-            <FileTreeNode
-              key={node.path}
-              node={node}
-              depth={0}
-              onToggleDir={(p) => void toggleDir(p)}
-              onOpenFile={onOpenFile}
+      <div className="agent-surface-files-layout">
+        <div className="agent-surface-files-tree-pane">
+          {loading ? (
+            <p className="agent-surface-empty">Loading files…</p>
+          ) : null}
+          {error ? (
+            <p className="agent-surface-empty" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {!loading && !error ? (
+            <ul className="agent-surface-files-tree">
+              {roots.map((node) => (
+                <FileTreeNode
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  selectedPath={activePath}
+                  onToggleDir={(p) => void toggleDir(p)}
+                  onOpenFile={openFile}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="agent-surface-files-preview">
+          {activePath && openPaths.length > 0 ? (
+            <FileDetailPane
+              workingDirectory={cwd}
+              openPaths={openPaths}
+              activePath={activePath}
+              fs={projectFs}
+              onActivatePath={setActivePath}
+              onClosePath={(path) => {
+                setOpenPaths((current) => {
+                  const next = current.filter((entry) => entry !== path);
+                  setActivePath((active) => {
+                    if (active !== path) return active;
+                    return next[next.length - 1] ?? null;
+                  });
+                  return next;
+                });
+              }}
+              onFileDeleted={(path) => {
+                void loadRoot();
+                setOpenPaths((current) =>
+                  current.filter((entry) => entry !== path),
+                );
+                setActivePath((active) => (active === path ? null : active));
+              }}
             />
-          ))}
-        </ul>
-      ) : null}
+          ) : (
+            <div className="agent-surface-empty agent-surface-empty--centered">
+              <File size={20} aria-hidden strokeWidth={1.6} />
+              <h3>Select a file</h3>
+              <p>Choose a document in the tree to edit it here.</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -154,24 +215,27 @@ function findNode(nodes: TreeNode[], path: string): TreeNode | null {
 function FileTreeNode({
   node,
   depth,
+  selectedPath,
   onToggleDir,
   onOpenFile,
 }: {
   node: TreeNode;
   depth: number;
+  selectedPath: string | null;
   onToggleDir: (path: string) => void;
-  onOpenFile?: (relativePath: string) => void;
+  onOpenFile: (path: string) => void;
 }) {
   const isDir = node.kind === "directory";
+  const isSelected = !isDir && node.path === selectedPath;
   return (
     <li>
       <button
         type="button"
-        className="agent-surface-files-row"
+        className={`agent-surface-files-row${isSelected ? " is-selected" : ""}`}
         style={{ paddingLeft: 8 + depth * 12 }}
         onClick={() => {
           if (isDir) onToggleDir(node.path);
-          else onOpenFile?.(node.path);
+          else onOpenFile(node.path);
         }}
       >
         {isDir ? (
@@ -190,7 +254,7 @@ function FileTreeNode({
             <Folder size={13} aria-hidden />
           )
         ) : (
-          <File size={13} aria-hidden />
+          <FileTypeIcon pathValue={node.path} size={13} />
         )}
         <span>{node.name}</span>
       </button>
@@ -201,6 +265,7 @@ function FileTreeNode({
               key={child.path}
               node={child}
               depth={depth + 1}
+              selectedPath={selectedPath}
               onToggleDir={onToggleDir}
               onOpenFile={onOpenFile}
             />

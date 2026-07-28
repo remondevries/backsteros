@@ -276,6 +276,9 @@ importers:
       '@git-diff-view/react':
         specifier: ^0.1.7
         version: 0.1.7(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@pierre/trees':
+        specifier: 1.0.0-beta.4
+        version: 1.0.0-beta.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@primer/octicons-react':
         specifier: ^19.29.2
         version: 19.29.2(react@19.1.0)

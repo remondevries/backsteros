@@ -44,6 +44,36 @@ test("standard project sections stay on default tabs", () => {
   ]);
 });
 
+test("task detail routes disable section tab shortcuts", () => {
+  assert.equal(
+    resolveDesktopSectionTabHrefs("/projects/demo/tasks/demo-12"),
+    null,
+  );
+  assert.equal(
+    resolveDesktopSectionTabHrefs(
+      "/organizations/acme/projects/demo/tasks/demo-12",
+    ),
+    null,
+  );
+  assert.equal(
+    resolveDesktopSectionTabHrefs("/contacts/c-1/tasks/c-3"),
+    null,
+  );
+  assert.equal(resolveDesktopSectionTabHrefs("/tasks/task-uuid-1"), null);
+  assert.equal(resolveDesktopSectionTabHrefs("/tasks/today/demo-12"), null);
+  assert.equal(resolveDesktopSectionTabHrefs("/inbox/demo-12"), null);
+});
+
+test("project tasks list section still exposes section tabs", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo/tasks"), [
+    "/projects/demo",
+    "/projects/demo/tasks",
+    "/projects/demo/documents",
+    "/projects/demo/letters",
+    "/projects/demo/updates",
+  ]);
+});
+
 test("org-scoped codebase workbench routes use scoped tab hrefs", () => {
   assert.deepEqual(
     resolveDesktopSectionTabHrefs("/organizations/acme/projects/demo/files"),

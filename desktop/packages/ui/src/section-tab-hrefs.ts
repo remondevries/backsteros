@@ -35,6 +35,7 @@ import {
   parseOrganizationProjectRoute,
   type ProjectRouteScope,
 } from "./project-route-scope.js";
+import { isTaskDetailPath } from "./properties-panel.js";
 import {
   buildTasksDueHref,
   isTasksDueListPathname,
@@ -106,6 +107,9 @@ function resolveProjectSectionTabHrefs(
  * Matches Next resolveSectionTabHrefs for tasks due, projects areas,
  * and project/contact/organization entity sections. On codebase projects,
  * 1–4 map to Tasks / Files / Commits / PRs while that layout is active.
+ *
+ * Task detail routes return null so 1–5 stay free for the task layout
+ * (agent option keys, etc.) instead of jumping to Files / Documents / ….
  */
 export function resolveDesktopSectionTabHrefs(
   pathname: string,
@@ -113,6 +117,10 @@ export function resolveDesktopSectionTabHrefs(
 ): string[] | null {
   const path = pathname.replace(/\/+$/, "") || "/";
   const view = parseViewFromSearch(search);
+
+  if (isTaskDetailPath(path)) {
+    return null;
+  }
 
   if (isTasksDueListPathname(path)) {
     return TASKS_DUE_FILTERS.map((filter) => buildTasksDueHref(filter, view));

@@ -14,6 +14,7 @@ const {
   beginAcpProjectedTurn,
   projectAcpUiRequest,
   completeAcpProjectedUiRequest,
+  projectCursorUpdateTodos,
 } = await import("./agent-acp-projector.mjs");
 
 test("presentAcpToolActivity: Grep shows query in path like T3", () => {
@@ -46,7 +47,7 @@ test("presentAcpToolActivity: Find/glob pattern from rawInput", () => {
   assert.equal(activity.detail, '"**/*.swift"');
 });
 
-test("presentAcpToolActivity: keeps path-bearing Reading title (T3-style)", () => {
+test("presentAcpToolActivity: peels path-bearing Reading title into verb + detail", () => {
   const activity = presentAcpToolActivity(
     {
       toolCallId: "read-title",
@@ -56,11 +57,59 @@ test("presentAcpToolActivity: keeps path-bearing Reading title (T3-style)", () =
     },
     undefined,
   );
-  assert.equal(
-    activity.title,
-    "Reading src/lib/agent/agent-acp-activity.ts",
-  );
+  assert.equal(activity.title, "Read");
   assert.equal(activity.detail, "lib/agent/agent-acp-activity.ts");
+});
+
+test("projectAcpSessionUpdate holds bare Read until locations arrive", () => {
+  const taskId = "task-read-gate";
+  const chatId = "dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee";
+  beginAcpProjectedTurn(taskId, chatId);
+  let turn = projectAcpSessionUpdate(taskId, chatId, {
+    sessionUpdate: "tool_call",
+    toolCallId: "read-1",
+    title: "Read",
+    kind: "read",
+    status: "in_progress",
+  });
+  assert.ok(turn);
+  assert.equal(turn.activities.length, 0);
+  assert.ok(turn.pendingTools["read-1"]);
+
+  turn = projectAcpSessionUpdate(taskId, chatId, {
+    sessionUpdate: "tool_call_update",
+    toolCallId: "read-1",
+    locations: [{ path: "/repo/desktop/src/App.css" }],
+    status: "in_progress",
+  });
+  assert.ok(turn);
+  assert.equal(turn.activities.length, 1);
+  assert.equal(turn.activities[0]?.title, "Read");
+  assert.equal(turn.activities[0]?.detail, "desktop/src/App.css");
+  assert.equal(turn.pendingTools["read-1"], undefined);
+});
+
+test("projectAcpSessionUpdate keeps detail across status-only completed (T3 merge)", () => {
+  const taskId = "task-merge-detail";
+  const chatId = "eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee";
+  beginAcpProjectedTurn(taskId, chatId);
+  projectAcpSessionUpdate(taskId, chatId, {
+    sessionUpdate: "tool_call",
+    toolCallId: "grep-1",
+    title: "Grepping",
+    kind: "search",
+    status: "in_progress",
+    rawInput: { pattern: "fade", path: "/repo/desktop" },
+  });
+  const turn = projectAcpSessionUpdate(taskId, chatId, {
+    sessionUpdate: "tool_call_update",
+    toolCallId: "grep-1",
+    status: "completed",
+  });
+  assert.ok(turn);
+  assert.equal(turn.activities[0]?.title, "Grepped");
+  assert.equal(turn.activities[0]?.detail, '"fade" in repo/desktop');
+  assert.equal(turn.activities[0]?.status, "completed");
 });
 
 test("presentAcpToolActivity: locations path for Grepping", () => {
@@ -141,4 +190,29 @@ test("projectAcpUiRequest creates in_progress info activity and completes on cle
   const settled = completeAcpProjectedUiRequest(taskId, chatId, "ask-42");
   const done = settled?.activities.find((a) => a.id === "acp-ui-ask-42");
   assert.equal(done?.status, "completed");
+});
+
+test("projectCursorUpdateTodos merges by step text when merge=true", () => {
+  const taskId = "task-todo-merge";
+  const chatId = "dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb";
+  beginAcpProjectedTurn(taskId, chatId);
+  projectCursorUpdateTodos(taskId, chatId, {
+    merge: false,
+    todos: [
+      { content: "Inspect", status: "in_progress" },
+      { content: "Fix", status: "pending" },
+    ],
+  });
+  const turn = projectCursorUpdateTodos(taskId, chatId, {
+    merge: true,
+    todos: [
+      { content: "Inspect", status: "completed" },
+      { content: "Fix", status: "in_progress" },
+    ],
+  });
+  assert.ok(turn);
+  assert.deepEqual(turn.planSteps, [
+    { step: "Inspect", status: "completed" },
+    { step: "Fix", status: "inProgress" },
+  ]);
 });

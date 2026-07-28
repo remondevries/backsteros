@@ -103,8 +103,64 @@ export function syncActiveTabToPath(
             href: normalized,
             title: getTabTitleForHref(normalized),
             icon: undefined,
+            // Cleared until the shell resolves live task meta for the new route.
+            taskId: undefined,
+            taskStatus: undefined,
           }
         : tab,
     ),
   };
+}
+
+/** Persist task id/status on the active tab for status icons across tab switches. */
+export function syncActiveTabTaskMeta(
+  state: ProductTabsState,
+  meta: { taskId?: string | null; taskStatus?: string | null },
+): ProductTabsState {
+  const nextTaskId = meta.taskId ?? null;
+  const nextTaskStatus = meta.taskStatus ?? null;
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+  if (!activeTab) {
+    return state;
+  }
+  if (
+    (activeTab.taskId ?? null) === nextTaskId &&
+    (activeTab.taskStatus ?? null) === nextTaskStatus
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) =>
+      tab.id === state.activeTabId
+        ? {
+            ...tab,
+            taskId: nextTaskId,
+            taskStatus: nextTaskStatus,
+          }
+        : tab,
+    ),
+  };
+}
+
+/**
+ * Refresh stored taskStatus on every open tab from live workspace data so
+ * background tabs stay accurate when status changes elsewhere.
+ */
+export function refreshOpenTabTaskStatuses(
+  state: ProductTabsState,
+  statusByTaskId: ReadonlyMap<string, string>,
+): ProductTabsState {
+  let changed = false;
+  const tabs = state.tabs.map((tab) => {
+    const taskId = tab.taskId?.trim();
+    if (!taskId) return tab;
+    const nextStatus = statusByTaskId.get(taskId);
+    if (nextStatus == null || (tab.taskStatus ?? null) === nextStatus) {
+      return tab;
+    }
+    changed = true;
+    return { ...tab, taskStatus: nextStatus };
+  });
+  return changed ? { ...state, tabs } : state;
 }

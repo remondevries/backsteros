@@ -1,10 +1,13 @@
-import { useMemo } from "react";
+import type { Contact, Project, Task } from "@backsteros/contracts";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { migrateLegacyProjectType } from "./project-type";
 import { useMobilePowerSync } from "./powersync-context";
 import { getTaskDisplayId } from "./task-display-id";
 import { TASK_DETAIL_SELECT } from "./task-list-query";
 import { useLocalQuery } from "./use-local-query";
+import { useMobileApiClient } from "./use-mobile-api-client";
+import { useRestFallbackGate } from "./use-rest-fallback-gate";
 
 export type TaskDetailModel = {
   id: string;
@@ -75,6 +78,41 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
   };
 }
 
+function mapApiTask(
+  task: Task,
+  project: Project | null,
+  assignee: Contact | null,
+): TaskDetailModel {
+  const assigneeId = task.assigneeId ?? task.contactId;
+  return {
+    id: task.id,
+    number: task.number,
+    title: task.title ?? "Untitled",
+    status: task.status,
+    priority: task.priority ?? 0,
+    due_date: task.dueDate,
+    project_id: task.projectId,
+    assignee_id: assigneeId,
+    project_name: project?.name ?? null,
+    project_key: project?.key ?? null,
+    project_type: project?.type
+      ? migrateLegacyProjectType(project.type)
+      : null,
+    project_local_working_directory: project?.localWorkingDirectory ?? null,
+    assignee_name: assignee?.name?.trim() || null,
+    display_id: getTaskDisplayId(
+      {
+        number: task.number,
+        projectId: task.projectId,
+        contactId: task.contactId,
+      },
+      project?.key,
+    ),
+    description: task.description,
+    agent_chat_id: task.agentChatId,
+  };
+}
+
 const DETAIL_SQL = `${TASK_DETAIL_SELECT}
  WHERE t.id = ?
  LIMIT 1`;
@@ -83,6 +121,7 @@ const EMPTY_DETAIL_SQL = "SELECT 1 AS id WHERE 0";
 
 export function useTaskDetail(taskId: string | undefined) {
   const powerSync = useMobilePowerSync();
+  const client = useMobileApiClient();
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<SyncedDetailRow>(
@@ -91,17 +130,83 @@ export function useTaskDetail(taskId: string | undefined) {
     );
 
   const syncedTask = syncedRows?.[0] ? mapSyncedRow(syncedRows[0]) : null;
-  const task = syncedTask;
+  const useRest = useRestFallbackGate(syncedTask ? 1 : 0);
+
+  const [restTask, setRestTask] = useState<TaskDetailModel | null>(null);
+  const [restError, setRestError] = useState<string | null>(null);
+  const [restLoading, setRestLoading] = useState(false);
+
+  const reloadRest = useCallback(async () => {
+    if (!taskId) {
+      setRestTask(null);
+      setRestError(null);
+      setRestLoading(false);
+      return;
+    }
+    setRestLoading(true);
+    setRestError(null);
+    try {
+      const task = await client.requestJson<Task>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+      );
+      const assigneeId = task.assigneeId ?? task.contactId;
+      const [project, assignee] = await Promise.all([
+        task.projectId
+          ? client
+              .requestJson<Project>(
+                `/api/v1/projects/${encodeURIComponent(task.projectId)}`,
+              )
+              .catch(() => null)
+          : Promise.resolve(null),
+        assigneeId
+          ? client
+              .requestJson<Contact>(
+                `/api/v1/contacts/${encodeURIComponent(assigneeId)}`,
+              )
+              .catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      setRestTask(mapApiTask(task, project, assignee));
+    } catch (reason) {
+      setRestError(reason instanceof Error ? reason.message : String(reason));
+      setRestTask(null);
+    } finally {
+      setRestLoading(false);
+    }
+  }, [client, taskId]);
+
+  useEffect(() => {
+    setRestTask(null);
+    setRestError(null);
+  }, [taskId]);
+
+  useEffect(() => {
+    if (useRest) void reloadRest();
+  }, [reloadRest, useRest]);
+
+  const task = syncedTask ?? restTask;
+
+  const waitingForSync =
+    Boolean(taskId) &&
+    !task &&
+    !useRest &&
+    (powerSync.status === "connecting" ||
+      powerSync.status === "idle" ||
+      syncLoading ||
+      !powerSync.ready);
+
   const loading =
     Boolean(taskId) &&
-    !syncedTask &&
-    powerSync.status !== "error" &&
-    (syncLoading || !powerSync.ready);
+    !task &&
+    (useRest ? restLoading : waitingForSync);
+
   const error =
-    !loading && taskId && !syncedTask
-      ? powerSync.status === "error"
-        ? powerSync.message
-        : "Task not found."
+    !loading && taskId && !task
+      ? useRest
+        ? restError ?? "Task not found."
+        : powerSync.status === "error"
+          ? powerSync.message
+          : "Task not found."
       : null;
 
   const isCodebaseTask = useMemo(
@@ -113,7 +218,7 @@ export function useTaskDetail(taskId: string | undefined) {
     task,
     loading,
     error,
-    retry: powerSync.retry,
+    retry: useRest ? () => void reloadRest() : powerSync.retry,
     isCodebaseTask,
   };
 }

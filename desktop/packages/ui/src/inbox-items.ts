@@ -1,20 +1,34 @@
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "./task-display-id.js";
 import {
+  INACTIVE_TASK_STATUSES,
+  taskDueDateMatchesFilter,
+} from "./tasks-due-filters.js";
+import {
   getTaskStatusLabel,
   isTaskStatus,
   migrateLegacyTaskStatus,
   type TaskStatus,
 } from "./task-status.js";
 
-/** Attention inbox section order: hold → review → in progress (last). */
+/**
+ * Inbox section order: overdue (special due-date group) → triage → hold → review.
+ * `overdue` is not a real task status — past-due open work only.
+ */
 export const INBOX_ATTENTION_STATUS_ORDER = [
+  "overdue",
+  "triage",
   "on_hold",
   "in_review",
-  "in_progress",
-] as const satisfies readonly TaskStatus[];
+] as const;
 
 export type InboxAttentionStatus =
   (typeof INBOX_ATTENTION_STATUS_ORDER)[number];
+
+/** Real statuses that always belong in the inbox (from any project). */
+export const INBOX_ATTENTION_REAL_STATUSES = [
+  "on_hold",
+  "in_review",
+] as const satisfies readonly TaskStatus[];
 
 export type InboxTaskListItem = {
   kind: "task";
@@ -32,6 +46,8 @@ export type InboxTaskListItem = {
   dueDate: number | null;
   updatedAt: number;
   description?: string | null;
+  /** Present when known — triage capture uses `inbox === true`. */
+  inbox?: boolean | null;
 };
 
 export type InboxLetterListItem = {
@@ -70,6 +86,14 @@ export function getInboxTaskRouteHref(input: {
   return `/inbox/${getInboxTaskRouteSlugForTask(input)}`;
 }
 
+/** Project tasks tab with the given task focused. */
+export function getProjectTaskHref(
+  projectKey: string,
+  taskNumber: number,
+): string {
+  return `/projects/${encodeURIComponent(projectKey)}/tasks/${encodeTaskSlug(projectKey, taskNumber)}`;
+}
+
 export function buildInboxTaskListItem(input: {
   id: string;
   title: string;
@@ -84,6 +108,7 @@ export function buildInboxTaskListItem(input: {
   projectName?: string | null;
   projectIcon?: string | null;
   assigneeId?: string | null;
+  inbox?: boolean | null;
 }): InboxTaskListItem {
   return {
     kind: "task",
@@ -101,6 +126,7 @@ export function buildInboxTaskListItem(input: {
     dueDate: input.dueDate ?? null,
     updatedAt: input.updatedAt ?? Date.now(),
     description: input.description ?? null,
+    inbox: input.inbox ?? null,
   };
 }
 
@@ -181,17 +207,79 @@ export function formatInboxDueDateLabel(dueDateMs: number): string {
   });
 }
 
-function attentionStatusRank(status: string): number {
-  const migrated = migrateLegacyTaskStatus(status);
+function isInactiveTaskStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  return (INACTIVE_TASK_STATUSES as readonly string[]).includes(
+    migrateLegacyTaskStatus(status),
+  );
+}
+
+/** Past-due and still open (not completed / canceled / duplicated). */
+export function isInboxOverdueTask(
+  input: {
+    dueDate?: number | Date | string | null;
+    status?: string | null;
+  },
+  referenceDate: Date = new Date(),
+): boolean {
+  if (isInactiveTaskStatus(input.status ?? undefined)) return false;
+  return taskDueDateMatchesFilter(input.dueDate, "overdue", referenceDate);
+}
+
+/**
+ * Whether a task belongs in the expanded inbox:
+ * - classic triage capture (`inbox === true`)
+ * - On Hold / In Review from any project
+ * - overdue open tasks (fake group)
+ */
+export function taskBelongsInInbox(
+  input: {
+    inbox?: boolean | null;
+    status?: string | null;
+    dueDate?: number | Date | string | null;
+  },
+  referenceDate: Date = new Date(),
+): boolean {
+  if (input.inbox === true) return true;
+  const status = migrateLegacyTaskStatus(input.status ?? "backlog");
+  if (
+    (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
+  ) {
+    return true;
+  }
+  return isInboxOverdueTask(input, referenceDate);
+}
+
+/**
+ * Section key for an inbox task.
+ *
+ * Overdue is a special non-status group: any task with a due date in the past
+ * that is not completed / canceled / duplicated lands here (including triage,
+ * On Hold, and In Review). Remaining inbox tasks group by real status.
+ */
+export function getInboxAttentionGroupKey(
+  item: Pick<InboxTaskListItem, "status" | "dueDate" | "inbox">,
+  referenceDate: Date = new Date(),
+): InboxAttentionStatus | "other" {
+  if (isInboxOverdueTask(item, referenceDate)) return "overdue";
+  const status = migrateLegacyTaskStatus(item.status);
+  if (item.inbox === true || status === "triage") return "triage";
+  if (status === "on_hold") return "on_hold";
+  if (status === "in_review") return "in_review";
+  return "other";
+}
+
+function attentionStatusRank(groupKey: string): number {
   const index = INBOX_ATTENTION_STATUS_ORDER.indexOf(
-    migrated as InboxAttentionStatus,
+    groupKey as InboxAttentionStatus,
   );
   return index === -1 ? INBOX_ATTENTION_STATUS_ORDER.length : index;
 }
 
-/** Sort tasks into On Hold → In Review → In Progress, then by updatedAt desc. */
+/** Sort: Overdue → Triage → On Hold → In Review, then by updatedAt desc. */
 export function sortInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
+  referenceDate: Date = new Date(),
 ): InboxListItem[] {
   return [...items].sort((a, b) => {
     if (a.kind !== "task" || b.kind !== "task") {
@@ -199,7 +287,8 @@ export function sortInboxItemsByAttentionStatus(
       return a.kind === "task" ? -1 : 1;
     }
     const rankDiff =
-      attentionStatusRank(a.status) - attentionStatusRank(b.status);
+      attentionStatusRank(getInboxAttentionGroupKey(a, referenceDate)) -
+      attentionStatusRank(getInboxAttentionGroupKey(b, referenceDate));
     if (rankDiff !== 0) return rankDiff;
     return b.updatedAt - a.updatedAt;
   });
@@ -211,9 +300,16 @@ export type InboxAttentionStatusGroup = {
   items: InboxListItem[];
 };
 
+export function getInboxAttentionGroupLabel(status: string): string {
+  if (status === "overdue") return "Overdue";
+  if (isTaskStatus(status)) return getTaskStatusLabel(status);
+  return status;
+}
+
 /** Group sorted/unsorted inbox tasks into non-empty attention sections. */
 export function groupInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
+  referenceDate: Date = new Date(),
 ): InboxAttentionStatusGroup[] {
   const buckets = new Map<string, InboxListItem[]>();
   for (const status of INBOX_ATTENTION_STATUS_ORDER) {
@@ -221,13 +317,13 @@ export function groupInboxItemsByAttentionStatus(
   }
   const other: InboxListItem[] = [];
 
-  for (const item of sortInboxItemsByAttentionStatus(items)) {
+  for (const item of sortInboxItemsByAttentionStatus(items, referenceDate)) {
     if (item.kind !== "task") {
       other.push(item);
       continue;
     }
-    const status = migrateLegacyTaskStatus(item.status);
-    const bucket = buckets.get(status);
+    const groupKey = getInboxAttentionGroupKey(item, referenceDate);
+    const bucket = buckets.get(groupKey);
     if (bucket) {
       bucket.push(item);
     } else {
@@ -241,7 +337,7 @@ export function groupInboxItemsByAttentionStatus(
     if (groupItems.length === 0) continue;
     groups.push({
       status,
-      label: isTaskStatus(status) ? getTaskStatusLabel(status) : status,
+      label: getInboxAttentionGroupLabel(status),
       items: groupItems,
     });
   }

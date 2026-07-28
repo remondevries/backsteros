@@ -23,6 +23,11 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  CODEBASE_SIDE_PANEL_MAX_WIDTH,
+  CODEBASE_SIDE_PANEL_MIN_WIDTH,
+  useCodebaseSidePanelWidth,
+} from "../lib/codebase-side-panel-layout";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
 
@@ -413,6 +418,13 @@ export function CodebaseProjectWorkbench({
     apiProject.localWorkingDirectory,
   );
 
+  const {
+    containerRef,
+    panelWidth: sidePanelWidth,
+    beginResize: beginSidePanelResize,
+    isResizing: isSidePanelResizing,
+  } = useCodebaseSidePanelWidth();
+
   const showCommitDetail =
     selection.tab === "commits" && Boolean(selectedCommit);
   const showPullDetail =
@@ -556,7 +568,16 @@ export function CodebaseProjectWorkbench({
 
   return (
     <div
-      className="codebase-project-workbench"
+      ref={containerRef}
+      className={[
+        "codebase-project-workbench",
+        isSidePanelResizing ? "is-resizing" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{
+        gridTemplateColumns: `${sidePanelWidth}px minmax(0, 1fr)`,
+      }}
       data-codebase-workbench
       data-content-detail
     >
@@ -608,6 +629,20 @@ export function CodebaseProjectWorkbench({
             taskProgress={taskProgress}
           />
         </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize side panel"
+          aria-valuemin={CODEBASE_SIDE_PANEL_MIN_WIDTH}
+          aria-valuemax={CODEBASE_SIDE_PANEL_MAX_WIDTH}
+          aria-valuenow={sidePanelWidth}
+          title="Drag to resize"
+          className="desktop-codebase-side-panel-resize"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            beginSidePanelResize(event.clientX);
+          }}
+        />
       </div>
       <div className="codebase-project-workbench__detail">{detail}</div>
     </div>

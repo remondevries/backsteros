@@ -1,4 +1,16 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import type {
   CreateApiKeyInput,
@@ -12,13 +24,19 @@ import { db } from "../db/index.js";
 import {
   areas,
   contacts,
+  documents,
   entityCounters,
   organizations,
   projects,
   tasks,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
-import { ensureProjectVaultFolders } from "../lib/storage.js";
+import {
+  ensureProjectVaultFolders,
+  renameProjectVaultFolder,
+  rewriteProjectStorageKeyPrefix,
+  rewriteProjectVaultWorkingDirectory,
+} from "../lib/storage.js";
 import * as taskActivityService from "./task-activities.js";
 import type { TaskWriteActor } from "./task-activities.js";
 
@@ -204,7 +222,24 @@ export async function createProject(
     .returning();
 
   try {
-    await ensureProjectVaultFolders(key);
+    const ensured = await ensureProjectVaultFolders(key, undefined, {
+      projectType: type,
+    });
+    // Default agent cwd to the vault project folder when the caller did not
+    // supply a local working directory (codebase repos still override this).
+    if (!row.localWorkingDirectory?.trim()) {
+      const [updated] = await executor
+        .update(projects)
+        .set({
+          localWorkingDirectory: ensured.projectVaultPath,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+        .returning();
+      if (updated) {
+        return updated;
+      }
+    }
   } catch {
     // Vault may be unset — folder bootstrap happens when storage is configured.
   }
@@ -255,7 +290,7 @@ export async function updateProject(
       ? null
       : input.githubRepository;
 
-  const [row] = await executor
+  const [updatedRow] = await executor
     .update(projects)
     .set({
       key,
@@ -286,7 +321,104 @@ export async function updateProject(
     .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
     .returning();
 
-  return row ?? null;
+  let row = updatedRow;
+  if (!row) {
+    return null;
+  }
+
+  const keyChanged = Boolean(key && key !== existing.key);
+
+  // Key rename — move the on-disk vault folder and rewrite document storage keys.
+  if (keyChanged) {
+    try {
+      const renamed = await renameProjectVaultFolder(existing.key, row.key);
+      if (renamed.renamed && renamed.previousProjectVaultPath) {
+        const nextCwd = rewriteProjectVaultWorkingDirectory(
+          row.localWorkingDirectory,
+          renamed.previousProjectVaultPath,
+          renamed.projectVaultPath,
+        );
+        if (nextCwd && nextCwd !== row.localWorkingDirectory) {
+          const [cwdUpdated] = await executor
+            .update(projects)
+            .set({
+              localWorkingDirectory: nextCwd,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+            .returning();
+          if (cwdUpdated) {
+            row = cwdUpdated;
+          }
+        }
+      }
+
+      const projectDocs = await executor
+        .select({
+          id: documents.id,
+          storageKey: documents.storageKey,
+        })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.workspaceId, workspaceId),
+            eq(documents.projectId, id),
+            eq(documents.type, "project"),
+          ),
+        );
+
+      for (const doc of projectDocs) {
+        const nextKey = rewriteProjectStorageKeyPrefix(
+          doc.storageKey,
+          existing.key,
+          row.key,
+        );
+        if (!nextKey || nextKey === doc.storageKey) continue;
+        await executor
+          .update(documents)
+          .set({
+            storageKey: nextKey,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(documents.workspaceId, workspaceId),
+              eq(documents.id, doc.id),
+            ),
+          );
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "PROJECT_VAULT_TARGET_EXISTS"
+      ) {
+        throw error;
+      }
+      // Vault may be unset — folder bootstrap still runs below when possible.
+    }
+  }
+
+  // Keep on-disk vault folders in sync (creates missing areas / .cursor skills).
+  try {
+    const ensured = await ensureProjectVaultFolders(row.key, undefined, {
+      projectType: row.type,
+    });
+    if (!row.localWorkingDirectory?.trim()) {
+      const [updated] = await executor
+        .update(projects)
+        .set({
+          localWorkingDirectory: ensured.projectVaultPath,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id)))
+        .returning();
+      return updated ?? row;
+    }
+  } catch {
+    // Vault may be unset.
+  }
+
+  return row;
 }
 
 export async function deleteProject(
@@ -732,7 +864,15 @@ export async function listDueTasks(
     .orderBy(asc(tasks.dueDate), asc(tasks.sortOrder));
 }
 
+/**
+ * Expanded inbox: triage capture (`inbox`), On Hold / In Review from any
+ * project, and overdue open tasks (due before local today, not completed /
+ * canceled / duplicated). Overdue matching is refined on clients by calendar day.
+ */
 export async function listInboxTasks(workspaceId: string, executor: DbExecutor = db) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
   return executor
     .select()
     .from(tasks)
@@ -740,7 +880,15 @@ export async function listInboxTasks(workspaceId: string, executor: DbExecutor =
       and(
         eq(tasks.workspaceId, workspaceId),
         isNull(tasks.deletedAt),
-        eq(tasks.inbox, true),
+        or(
+          eq(tasks.inbox, true),
+          inArray(tasks.status, ["on_hold", "in_review"]),
+          and(
+            isNotNull(tasks.dueDate),
+            lt(tasks.dueDate, startOfToday),
+            sql`${tasks.status} not in ('completed', 'canceled', 'duplicated')`,
+          ),
+        ),
       ),
     )
     .orderBy(asc(tasks.sortOrder), desc(tasks.updatedAt));

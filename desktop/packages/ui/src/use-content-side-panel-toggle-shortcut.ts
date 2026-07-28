@@ -6,7 +6,8 @@ import { isContentSidePanelToggleShortcut } from "./content-side-panel-toggle-sh
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
 /**
- * ⇧[ / ] toggles the content side panel (Next useContentSidePanelToggleShortcut).
+ * ⇧[ toggles the left content side panel.
+ * Plain ] is reserved for the right agent panel.
  */
 export function useContentSidePanelToggleShortcut({
   enabled = true,

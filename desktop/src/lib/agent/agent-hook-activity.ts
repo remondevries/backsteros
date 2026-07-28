@@ -182,29 +182,53 @@ function diffContentFromHookInput(input: unknown): unknown[] | undefined {
   if (!input || typeof input !== "object") return undefined;
   const record = input as Record<string, unknown>;
   const path = filePathFromInput(input);
-  const edits = Array.isArray(record.edits) ? record.edits : null;
-  if (!path || !edits || edits.length === 0) return undefined;
+  if (!path) return undefined;
 
+  const edits = Array.isArray(record.edits) ? record.edits : null;
   let oldText = "";
   let newText = "";
-  for (const edit of edits) {
-    if (!edit || typeof edit !== "object") continue;
-    const entry = edit as Record<string, unknown>;
+
+  if (edits && edits.length > 0) {
+    for (const edit of edits) {
+      if (!edit || typeof edit !== "object") continue;
+      const entry = edit as Record<string, unknown>;
+      const oldString =
+        typeof entry.old_string === "string"
+          ? entry.old_string
+          : typeof entry.oldString === "string"
+            ? entry.oldString
+            : "";
+      const newString =
+        typeof entry.new_string === "string"
+          ? entry.new_string
+          : typeof entry.newString === "string"
+            ? entry.newString
+            : "";
+      if (oldString) oldText += `${oldString}\n`;
+      if (newString) newText += `${newString}\n`;
+    }
+  } else {
+    // Singular top-level old/new (some Cursor hook payloads).
     const oldString =
-      typeof entry.old_string === "string"
-        ? entry.old_string
-        : typeof entry.oldString === "string"
-          ? entry.oldString
-          : "";
+      typeof record.old_string === "string"
+        ? record.old_string
+        : typeof record.oldString === "string"
+          ? record.oldString
+          : typeof record.before === "string"
+            ? record.before
+            : "";
     const newString =
-      typeof entry.new_string === "string"
-        ? entry.new_string
-        : typeof entry.newString === "string"
-          ? entry.newString
-          : "";
-    if (oldString) oldText += `${oldString}\n`;
-    if (newString) newText += `${newString}\n`;
+      typeof record.new_string === "string"
+        ? record.new_string
+        : typeof record.newString === "string"
+          ? record.newString
+          : typeof record.after === "string"
+            ? record.after
+            : "";
+    oldText = oldString;
+    newText = newString;
   }
+
   if (!oldText && !newText) return undefined;
   return [
     {
