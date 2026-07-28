@@ -618,7 +618,7 @@
   height: 44px;
   flex-shrink: 0;
   align-items: center;
-  padding: 0 8px 0 12px;
+  padding: 0 8px;
   transition: padding 180ms ease;
 }
 
@@ -816,7 +816,7 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  margin: 0 8px 8px 12px;
+  margin: 8px;
   overflow: hidden;
   border: 0.5px solid var(--border);
   border-radius: 8px;
@@ -827,13 +827,30 @@
     border-width 180ms ease;
 }
 
-/* Nav hidden: content fills the window edge-to-edge (no gutter / radius). */
+/* Nav hidden: pure black chrome behind content; content surface stays unchanged. */
+.bos-product-shell.is-sidebar-collapsed {
+  background: #000;
+}
+
+.bos-product-shell.is-sidebar-collapsed .workspace {
+  background: #000;
+}
+
 .bos-product-shell.is-sidebar-collapsed .content-frame {
   margin: 0;
   border-radius: 0;
   border-left-width: 0;
   border-right-width: 0;
   border-bottom-width: 0;
+}
+
+/* Window fullscreen + nav hidden: keep an even 8px gutter on all sides. */
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-frame {
+  margin: 8px;
+  border-radius: 8px;
+  border-left-width: 0.5px;
+  border-right-width: 0.5px;
+  border-bottom-width: 0.5px;
 }
 
 .content-frame-main-only .context-panel {
@@ -1942,6 +1959,15 @@ body[data-keyboard-nav-hover="suppressed"]
   display: flex;
   min-height: 100%;
   flex-direction: column;
+}
+
+/* Locked detail pages: fill the scrollport instead of growing past it. */
+.page-scroll:has([data-content-detail]) > .inbox-detail-layout,
+.bos-product-shell [data-content-detail].inbox-detail-layout {
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
 }
 
 .inbox-detail-header-meta {
@@ -9192,6 +9218,56 @@ body.app-is-dragging * {
   overflow: hidden;
 }
 
+/*
+ * Journal embeds MarkdownDocumentDetailView with Whoop as `leading`. The
+ * embedded--scroll-leading variant scrolls Whoop + markdown together while
+ * keeping the Edit/Preview dock outside that scrollport.
+ */
+.markdown-document-embedded {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.markdown-document-embedded--scroll-leading {
+  flex: 1;
+  min-height: 0;
+}
+
+.markdown-document-embedded__scroll {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  container-type: size;
+}
+
+.markdown-document-embedded--scroll-leading .content-markdown-view-layout,
+.markdown-document-embedded--scroll-leading
+  .content-markdown-view-layout__preview {
+  overflow: visible;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* Edit: fill the scrollport under Whoop so CodeMirror keeps a usable height. */
+.markdown-document-embedded--scroll-leading[data-content-view-mode="edit"]
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  flex: 0 0 auto;
+  min-height: 100cqh;
+  overflow: hidden;
+}
+
 .markdown-document-leading {
   display: flex;
   justify-content: center;
@@ -10212,7 +10288,8 @@ body.app-is-dragging * {
 
 .detail-skeleton__column--whoop {
   flex-shrink: 0;
-  padding-top: 2rem;
+  /* Scroll already contributes 1rem; keep total ~ leading pt-8 (2rem). */
+  padding-top: 1rem;
 }
 
 .detail-skeleton__column--tasks {

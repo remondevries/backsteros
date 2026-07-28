@@ -25,8 +25,9 @@ export type AgentSurfaceTabsState = {
   activeId: string | null;
 };
 
-/** Singleton surfaces — re-activate if already open. */
+/** Singleton surfaces — re-activate if already open (only one of each). */
 const SINGLETON_KINDS = new Set<AgentSurfaceTabKind>([
+  "chat",
   "files",
   "plan",
   "diff",
@@ -91,8 +92,8 @@ export function createDefaultAgentSurfaceTabs(): AgentSurfaceTabsState {
 
 /**
  * Add or activate a surface tab.
- * Singleton kinds (files/plan/diff) re-activate an existing tab.
- * Multi kinds (browser/terminal/chat) always append.
+ * Singleton kinds (chat/files/plan/diff) re-activate an existing tab.
+ * Multi kinds (browser/terminal) always append.
  */
 export function addAgentSurfaceTab(
   tabs: AgentSurfaceTab[],

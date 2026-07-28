@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type KeyboardEvent,
 } from "react";
 import {
@@ -24,6 +25,7 @@ import { projectFs, type FsTreeEntry } from "../../lib/project-fs";
 import {
   AGENT_SURFACE_FOCUS,
   AGENT_SURFACE_FOCUS_ATTR,
+  BLUR_AGENT_FILES_TREE_EVENT,
 } from "../../lib/agent/agent-surface-focus";
 
 type TreeNode = FsTreeEntry & {
@@ -78,12 +80,16 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  /** Orange keyboard ring only while the tree owns focus (cleared on Escape). */
+  const [keyboardActive, setKeyboardActive] = useState(false);
 
   const visibleNodes = useMemo(() => flattenVisibleNodes(roots), [roots]);
   const visibleNodesRef = useRef(visibleNodes);
   visibleNodesRef.current = visibleNodes;
   const focusedPathRef = useRef(focusedPath);
   focusedPathRef.current = focusedPath;
+  const keyboardActiveRef = useRef(keyboardActive);
+  keyboardActiveRef.current = keyboardActive;
   const rootsRef = useRef(roots);
   rootsRef.current = roots;
 
@@ -120,15 +126,36 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
     setOpenPaths([]);
     setActivePath(null);
     setFocusedPath(null);
+    setKeyboardActive(false);
   }, [cwd]);
 
-  // Keep keyboard highlight on the first row after roots load / Tab focus.
+  // Remember a roving index for Tab re-entry; do not force a highlight until focused.
   useEffect(() => {
     if (focusedPath && visibleNodes.some((node) => node.path === focusedPath)) {
       return;
     }
     setFocusedPath(visibleNodes[0]?.path ?? null);
   }, [focusedPath, visibleNodes]);
+
+  useEffect(() => {
+    function handleBlurTree() {
+      setKeyboardActive(false);
+    }
+    window.addEventListener(BLUR_AGENT_FILES_TREE_EVENT, handleBlurTree);
+    return () =>
+      window.removeEventListener(BLUR_AGENT_FILES_TREE_EVENT, handleBlurTree);
+  }, []);
+
+  const clearKeyboardFocus = useCallback(() => {
+    setKeyboardActive(false);
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      treeRef.current?.contains(active)
+    ) {
+      active.blur();
+    }
+  }, []);
 
   const openFile = useCallback((path: string) => {
     setOpenPaths((current) =>
@@ -140,11 +167,22 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
 
   const focusRow = useCallback((path: string) => {
     setFocusedPath(path);
+    setKeyboardActive(true);
     const row = treeRef.current?.querySelector<HTMLElement>(
       `[data-keyboard-nav-item="${CSS.escape(path)}"] .agent-surface-files-row`,
     );
     row?.focus({ preventScroll: true });
     row?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const handleTreeFocusIn = useCallback(() => {
+    setKeyboardActive(true);
+  }, []);
+
+  const handleTreeFocusOut = useCallback((event: FocusEvent<HTMLUListElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && treeRef.current?.contains(next)) return;
+    setKeyboardActive(false);
   }, []);
 
   const toggleDir = useCallback(async (path: string) => {
@@ -230,6 +268,13 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const key = event.key;
+      if (key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        clearKeyboardFocus();
+        return;
+      }
+
       const isNext =
         key === "ArrowDown" || key === "j" || key === "J";
       const isPrev = key === "ArrowUp" || key === "k" || key === "K";
@@ -238,6 +283,11 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
       const isConfirm = key === "Enter" || key === " ";
 
       if (!isNext && !isPrev && !isExpand && !isCollapse && !isConfirm) {
+        return;
+      }
+
+      // j/k only while the tree owns keyboard focus (after Tab / click-in).
+      if (!keyboardActiveRef.current && (key === "j" || key === "J" || key === "k" || key === "K")) {
         return;
       }
 
@@ -304,6 +354,7 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
     },
     [
       activePath,
+      clearKeyboardFocus,
       collapseDir,
       expandDir,
       focusRow,
@@ -345,6 +396,8 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
               aria-label="Project files"
               {...{ [AGENT_SURFACE_FOCUS_ATTR]: AGENT_SURFACE_FOCUS.filesTree }}
               onKeyDown={handleTreeKeyDown}
+              onFocus={handleTreeFocusIn}
+              onBlur={handleTreeFocusOut}
             >
               {roots.map((node) => (
                 <FileTreeNode
@@ -353,6 +406,7 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
                   depth={0}
                   selectedPath={activePath}
                   focusedPath={focusedPath}
+                  keyboardActive={keyboardActive}
                   onToggleDir={(p) => void toggleDir(p)}
                   onOpenFile={openFile}
                   onFocusPath={setFocusedPath}
@@ -416,6 +470,7 @@ function FileTreeNode({
   depth,
   selectedPath,
   focusedPath,
+  keyboardActive,
   onToggleDir,
   onOpenFile,
   onFocusPath,
@@ -424,6 +479,7 @@ function FileTreeNode({
   depth: number;
   selectedPath: string | null;
   focusedPath: string | null;
+  keyboardActive: boolean;
   onToggleDir: (path: string) => void;
   onOpenFile: (path: string) => void;
   onFocusPath: (path: string) => void;
@@ -431,6 +487,7 @@ function FileTreeNode({
   const isDir = node.kind === "directory";
   const isSelected = !isDir && node.path === selectedPath;
   const isFocused = node.path === focusedPath;
+  const showKeyboardHighlight = keyboardActive && isFocused;
   return (
     <li role="treeitem" aria-expanded={isDir ? Boolean(node.open) : undefined} {...keyboardNavItemProps(node.path)}>
       <button
@@ -438,7 +495,7 @@ function FileTreeNode({
         tabIndex={isFocused ? 0 : -1}
         className={`agent-surface-files-row${
           isSelected ? " is-selected" : ""
-        } ${keyboardNavListItemClass(isFocused)}`}
+        } ${keyboardNavListItemClass(showKeyboardHighlight)}`}
         style={{ paddingLeft: 8 + depth * 12 }}
         onFocus={() => onFocusPath(node.path)}
         onClick={() => {
@@ -476,6 +533,7 @@ function FileTreeNode({
               depth={depth + 1}
               selectedPath={selectedPath}
               focusedPath={focusedPath}
+              keyboardActive={keyboardActive}
               onToggleDir={onToggleDir}
               onOpenFile={onOpenFile}
               onFocusPath={onFocusPath}

@@ -33,22 +33,10 @@ import { useDesktopResource } from "../lib/use-desktop-resource";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
-function JournalDayShell({
-  dateSlug,
-  fetchEnabled,
-  children,
-}: {
-  dateSlug: string;
-  /** False until skeleton has painted — Whoop + content start together after. */
-  fetchEnabled: boolean;
-  children: ReactNode;
-}) {
+function JournalDayShell({ children }: { children: ReactNode }) {
   return (
     <div className="inbox-detail-layout" data-content-detail>
       <div className="inbox-detail-body inbox-detail-body--document">
-        <div className="markdown-document-leading">
-          <JournalWhoopLeading dateSlug={dateSlug} fetchEnabled={fetchEnabled} />
-        </div>
         {children}
       </div>
     </div>
@@ -131,7 +119,7 @@ function JournalScreen({
   const [ensureError, setEnsureError] = useState<Error | null>(null);
   const [ensureNonce, setEnsureNonce] = useState(0);
   const [trackedDate, setTrackedDate] = useState(date);
-  // Gate: do not start Whoop/content until skeleton has painted. Cached content
+  // Gate: do not start content fetch until skeleton has painted. Cached content
   // used to call markReady inside flushSync (loading:false) and skip paint.
   const [fetchEnabled, setFetchEnabled] = useState(false);
 
@@ -144,7 +132,7 @@ function JournalScreen({
 
   const documentId = knownId ?? ensuredId;
 
-  // After skeleton commit paints, enable Whoop + content together.
+  // After skeleton commit paints, enable content fetch.
   useEffect(() => {
     if (!showSkeleton) {
       setFetchEnabled(true);
@@ -165,7 +153,7 @@ function JournalScreen({
     };
   }, [date, showSkeleton]);
 
-  // Ensure document id only after paint (parallel with Whoop).
+  // Ensure document id only after paint.
   useEffect(() => {
     if (!fetchEnabled || knownId) return;
     let cancelled = false;
@@ -194,7 +182,7 @@ function JournalScreen({
     // Skeleton only until paint gate; then headless loader runs (no editor).
     body = (
       <>
-        <JournalDetailSkeleton framed={false} includeWhoop={false} />
+        <JournalDetailSkeleton framed={false} />
         {fetchEnabled && documentId ? (
           <JournalEntryLoader
             dateSlug={date}
@@ -214,14 +202,10 @@ function JournalScreen({
       />
     );
   } else {
-    body = <JournalDetailSkeleton framed={false} includeWhoop={false} />;
+    body = <JournalDetailSkeleton framed={false} />;
   }
 
-  return (
-    <JournalDayShell dateSlug={date} fetchEnabled={fetchEnabled}>
-      {body}
-    </JournalDayShell>
-  );
+  return <JournalDayShell>{body}</JournalDayShell>;
 }
 
 /** Headless fetch while the skeleton is visible — never paints the editor. */
@@ -330,7 +314,7 @@ function JournalEntryDetail({
   );
 
   if (contentLoading) {
-    return <JournalDetailSkeleton framed={false} includeWhoop={false} />;
+    return <JournalDetailSkeleton framed={false} />;
   }
 
   return (
@@ -347,6 +331,9 @@ function JournalEntryDetail({
         titleEditable={false}
         previewTitleEditable={false}
         embedded
+        leading={
+          <JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />
+        }
         icon={
           <DocumentDetailIcon
             documentId={documentId}

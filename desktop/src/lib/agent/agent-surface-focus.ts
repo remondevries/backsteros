@@ -13,6 +13,7 @@ export const AGENT_SURFACE_FOCUS_ATTR = "data-agent-surface-focus";
 
 export const FOCUS_AGENT_TERMINAL_EVENT = "backsteros:focus-agent-terminal";
 export const BLUR_AGENT_TERMINAL_EVENT = "backsteros:blur-agent-terminal";
+export const BLUR_AGENT_FILES_TREE_EVENT = "backsteros:blur-agent-files-tree";
 
 export type AgentSurfaceFocusKind =
   | "chat"
@@ -85,6 +86,7 @@ export function focusFilesTreeFirstItem(root: ParentNode | null): boolean {
 export function blurFilesSurface(active: EventTarget | null): boolean {
   if (!isInsideFilesSurface(active)) return false;
   if (active instanceof HTMLElement) active.blur();
+  window.dispatchEvent(new CustomEvent(BLUR_AGENT_FILES_TREE_EVENT));
   return true;
 }
 

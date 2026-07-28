@@ -84,6 +84,31 @@ textarea {
   padding-left: var(--bos-traffic-light-inset);
 }
 
+/* Native fullscreen hides traffic lights — use the same 8px gutter as the
+   content card (top / left / right), not the traffic-light inset.
+   No bottom padding: content-frame’s top margin already gaps tabs ↔ card. */
+.bos-product-shell.is-window-fullscreen {
+  --bos-fullscreen-chrome-inset: 8px;
+}
+
+.bos-product-shell.is-window-fullscreen .app-side-panel-history-toolbar {
+  padding-left: var(--bos-fullscreen-chrome-inset);
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {
+  box-sizing: border-box;
+  height: calc(44px + var(--bos-fullscreen-chrome-inset));
+  padding: var(--bos-fullscreen-chrome-inset) var(--bos-fullscreen-chrome-inset)
+    0;
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
+  .content-tabs-bar
+  .content-tab {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 /*
  * Overlay titlebar + drag regions: keep the workspace content interactive.
  * Without this, WKWebView can treat large areas as drag and swallow clicks.
@@ -171,6 +196,7 @@ textarea {
   display: flex;
   justify-content: center;
   width: 100%;
+  flex-shrink: 0;
   padding: 2rem 1rem 0;
 }
 

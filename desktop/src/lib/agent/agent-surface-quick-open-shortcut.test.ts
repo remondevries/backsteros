@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   agentSurfaceQuickOpenHotkeyLabel,
   listAgentSurfaceQuickOpenKinds,
+  resolveAgentSurfaceDigitShortcut,
   resolveAgentSurfaceQuickOpenShortcut,
 } from "./agent-surface-quick-open-shortcut.ts";
 
@@ -25,7 +26,7 @@ test("non-codebase projects hide Files and Diff", () => {
   ]);
 });
 
-test("⌘1–⌘5 map by visible options on codebase projects", () => {
+test("⌘1–⌘5 map by visible options on codebase projects when empty", () => {
   assert.equal(
     resolveAgentSurfaceQuickOpenShortcut(
       {
@@ -67,7 +68,7 @@ test("⌘1–⌘5 map by visible options on codebase projects", () => {
   );
 });
 
-test("⌘3 is Plan on non-codebase projects", () => {
+test("⌘3 is Plan on non-codebase projects when empty", () => {
   assert.equal(
     resolveAgentSurfaceQuickOpenShortcut(
       {
@@ -101,4 +102,75 @@ test("hotkey labels follow visible order", () => {
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("files", true), "⌘3");
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("plan", false), "⌘3");
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("files", false), "");
+});
+
+test("with open tabs, ⌘N activates tab index instead of creating surfaces", () => {
+  assert.deepEqual(
+    resolveAgentSurfaceDigitShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit1",
+      },
+      { isCodebaseProject: true, tabCount: 3 },
+    ),
+    { action: "activate-tab", index: 0 },
+  );
+  assert.deepEqual(
+    resolveAgentSurfaceDigitShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit2",
+      },
+      { isCodebaseProject: true, tabCount: 3 },
+    ),
+    { action: "activate-tab", index: 1 },
+  );
+  assert.deepEqual(
+    resolveAgentSurfaceDigitShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit3",
+      },
+      { isCodebaseProject: true, tabCount: 3 },
+    ),
+    { action: "activate-tab", index: 2 },
+  );
+  assert.equal(
+    resolveAgentSurfaceDigitShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit4",
+      },
+      { isCodebaseProject: true, tabCount: 3 },
+    ),
+    null,
+  );
+});
+
+test("with no tabs, digit shortcut still quick-opens", () => {
+  assert.deepEqual(
+    resolveAgentSurfaceDigitShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit2",
+      },
+      { isCodebaseProject: false, tabCount: 0 },
+    ),
+    { action: "quick-open", kind: "browser" },
+  );
 });

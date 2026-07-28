@@ -89,14 +89,15 @@ export function DesktopAgentSurfaceTabBar({
 }: DesktopAgentSurfaceTabBarProps) {
   const canClose = tabs.length >= 1;
   const showAddButton = tabs.length > 0;
-  const menuItems = useMemo(
-    () =>
-      listAgentSurfaceQuickOpenOptions(isCodebaseProject).map((option) => ({
+  const menuItems = useMemo(() => {
+    const hasChatTab = tabs.some((tab) => tab.kind === "chat");
+    return listAgentSurfaceQuickOpenOptions(isCodebaseProject)
+      .filter((option) => !(option.kind === "chat" && hasChatTab))
+      .map((option) => ({
         ...option,
         Icon: KIND_ICONS[option.kind],
-      })),
-    [isCodebaseProject],
-  );
+      }));
+  }, [isCodebaseProject, tabs]);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const addWrapRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);

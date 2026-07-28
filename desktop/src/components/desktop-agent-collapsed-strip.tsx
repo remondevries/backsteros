@@ -22,7 +22,8 @@ export type DesktopAgentCollapsedStripProps = {
 /**
  * Narrow vertical strip shown while the agent panel is collapsed.
  * Reuses horizontal pill tab chrome (same classes/colors/icons), stood on end.
- * With no tabs, quick-open kinds show as dashed ghosts (⌘1–N still works).
+ * With no tabs, quick-open kinds show as dashed ghosts (⌘1–N create).
+ * With tabs, chips mirror open surfaces (⌘1–N activate by position).
  */
 export function DesktopAgentCollapsedStrip({
   tabs,

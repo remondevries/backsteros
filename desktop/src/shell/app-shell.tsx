@@ -159,6 +159,7 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useAgentAttentionNotifications } from "../lib/agent/use-agent-attention-notifications";
 import { useComposeGlobalShortcut } from "../lib/use-compose-global-shortcut";
 import { useCommandPaletteGlobalShortcut } from "../lib/use-command-palette-global-shortcut";
+import { useTauriWindowFullscreen } from "../lib/use-tauri-window-fullscreen";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
 
 const TABS_STORAGE_KEY = "backsteros.desktop.app-tabs";
@@ -921,6 +922,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const windowFullscreen = useTauriWindowFullscreen();
   const [defaultAssigneeId, setDefaultAssigneeIdState] = useState<string | null>(
     () => getDefaultAssigneeId(),
   );
@@ -1837,6 +1839,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         updateActiveTabTitle={updateActiveTabTitle}
       >
       <ProductAppShell
+        className={windowFullscreen ? "is-window-fullscreen" : undefined}
         sidebar={sidebar}
         sidebarCollapsed={sidebarCollapsed}
         tabs={tabsState.tabs}

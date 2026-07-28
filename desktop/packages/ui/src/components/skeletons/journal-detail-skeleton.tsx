@@ -5,8 +5,7 @@ export type JournalDetailSkeletonProps = {
   /** When false, omit the outer content-detail shell (parent already provides it). */
   framed?: boolean;
   /**
-   * When false, omit Whoop ring placeholders — parent is rendering live
-   * `JournalWhoopLeading` (or its skeleton) in parallel with content load.
+   * When false, omit Whoop ring placeholders (caller renders Whoop separately).
    */
   includeWhoop?: boolean;
 };
@@ -36,18 +35,18 @@ export function JournalDetailSkeleton({
       aria-busy="true"
       aria-label="Loading journal entry"
     >
-      {includeWhoop ? (
-        <div
-          className="detail-skeleton__column detail-skeleton__column--whoop"
-          style={{ maxWidth: DOCUMENT_CONTENT_MAX_WIDTH }}
-        >
-          <div className="journal-detail-skeleton-whoop">
-            <JournalWhoopHeaderSkeleton />
-          </div>
-        </div>
-      ) : null}
-
       <div className="detail-skeleton__scroll detail-skeleton__scroll--padded">
+        {includeWhoop ? (
+          <div
+            className="detail-skeleton__column detail-skeleton__column--whoop"
+            style={{ maxWidth: DOCUMENT_CONTENT_MAX_WIDTH }}
+          >
+            <div className="journal-detail-skeleton-whoop">
+              <JournalWhoopHeaderSkeleton />
+            </div>
+          </div>
+        ) : null}
+
         <div
           className="detail-skeleton__column detail-skeleton__column--padded"
           style={{ maxWidth: DOCUMENT_CONTENT_MAX_WIDTH }}

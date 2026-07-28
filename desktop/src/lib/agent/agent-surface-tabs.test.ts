@@ -48,6 +48,16 @@ test("addAgentSurfaceTab reactivates singleton kinds", () => {
   assert.equal(again.activeId, filesId);
 });
 
+test("addAgentSurfaceTab keeps Agent (chat) as a singleton", () => {
+  const withChat = addAgentSurfaceTab([], "chat");
+  const chatId = withChat.activeId;
+  const withBrowser = addAgentSurfaceTab(withChat.tabs, "browser");
+  const again = addAgentSurfaceTab(withBrowser.tabs, "chat");
+  assert.equal(again.tabs.filter((tab) => tab.kind === "chat").length, 1);
+  assert.equal(again.activeId, chatId);
+  assert.equal(again.tabs.length, 2);
+});
+
 test("closeAgentSurfaceTab closes the last tab to empty picker", () => {
   const withChat = addAgentSurfaceTab([], "chat");
   const closed = closeAgentSurfaceTab(

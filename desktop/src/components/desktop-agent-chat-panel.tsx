@@ -112,6 +112,7 @@ import {
   type AgentChatTurnDiffSelection,
 } from "../lib/agent/agent-chat-timeline";
 import {
+  BLUR_AGENT_FILES_TREE_EVENT,
   blurAgentTerminal,
   blurBrowserAddress,
   blurFilesSurface,
@@ -136,7 +137,7 @@ import {
 } from "../lib/agent/agent-surface-tabs";
 import { isAgentSurfaceAddMenuShortcut } from "../lib/agent/agent-surface-add-menu-shortcut";
 import {
-  resolveAgentSurfaceQuickOpenShortcut,
+  resolveAgentSurfaceDigitShortcut,
   type AgentSurfaceQuickOpenKind,
 } from "../lib/agent/agent-surface-quick-open-shortcut";
 import { DesktopAgentSurfaceTabBar } from "./desktop-agent-surface-tab-bar";
@@ -749,9 +750,18 @@ export function DesktopAgentChatPanel({
           return;
         }
         if (kind === "files") {
-          if (!blurFilesSurface(active)) return;
+          if (
+            !isInsideFilesSurface(active) &&
+            !isInsideFilesSurface(event.target)
+          ) {
+            return;
+          }
           event.preventDefault();
           event.stopPropagation();
+          if (!blurFilesSurface(active)) {
+            window.dispatchEvent(new CustomEvent(BLUR_AGENT_FILES_TREE_EVENT));
+            if (active instanceof HTMLElement) active.blur();
+          }
           return;
         }
         if (kind === "terminal") {
@@ -1965,8 +1975,9 @@ export function DesktopAgentChatPanel({
   const isCodebaseProjectRef = useRef(isCodebaseProject);
   isCodebaseProjectRef.current = isCodebaseProject;
 
-  // ⌘N open surfaces (also while collapsed → expands); ⌥T opens + when tabs
-  // exist; ⌥[ / ⌥] cycle; ⌥W closes. Other tab chrome only when expanded.
+  // ⌘N: empty picker → open surfaces; with tabs → activate Nth tab
+  // (also while collapsed → expands). ⌥T opens + when tabs exist;
+  // ⌥[ / ⌥] cycle; ⌥W closes. Other tab chrome only when expanded.
   useEffect(() => {
     if (collapsed) {
       setAddMenuOpen(false);
@@ -1985,11 +1996,26 @@ export function DesktopAgentChatPanel({
     function handleKeyDown(event: KeyboardEvent) {
       if (isBlockingUiTarget(event.target)) return;
 
-      const quickOpen = resolveAgentSurfaceQuickOpenShortcut(
-        event,
-        isCodebaseProjectRef.current,
-      );
-      if (quickOpen != null) {
+      const currentTabs = surfaceTabStateRef.current;
+      const digitShortcut = resolveAgentSurfaceDigitShortcut(event, {
+        isCodebaseProject: isCodebaseProjectRef.current,
+        tabCount: currentTabs.tabs.length,
+      });
+      if (digitShortcut != null) {
+        if (digitShortcut.action === "activate-tab") {
+          const tab = currentTabs.tabs[digitShortcut.index];
+          if (!tab) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setAddMenuOpen(false);
+          if (collapsed) onExpandRef.current?.();
+          if (tab.id !== currentTabs.activeId) {
+            setSurfaceTabState({ ...currentTabs, activeId: tab.id });
+          }
+          return;
+        }
+
+        const quickOpen = digitShortcut.kind;
         if (quickOpen === "chat" && !chatPickerAvailableRef.current) return;
         if (quickOpen === "files" && !cwdAvailableRef.current) return;
         event.preventDefault();

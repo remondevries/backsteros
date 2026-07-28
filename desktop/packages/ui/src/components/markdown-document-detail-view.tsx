@@ -33,8 +33,8 @@ export type MarkdownDocumentDetailViewProps = {
   /** Optional content below the markdown body (e.g. journal due tasks). Shown in preview mode. */
   footer?: ReactNode;
   /**
-   * When true, omit the outer inbox-detail chrome so a parent can own Whoop
-   * (or other leading chrome) as a stable sibling of the body.
+   * When true, omit the outer inbox-detail chrome (parent supplies the page
+   * shell). With `leading`, Whoop scrolls inside this view with the body.
    */
   embedded?: boolean;
   /** Next uses a static title in preview and an editor only in edit mode. */
@@ -178,11 +178,8 @@ export function MarkdownDocumentDetailView({
         ),
       };
 
-  const body = (
+  const markdown = (
     <>
-      {leading ? (
-        <div className="markdown-document-leading">{leading}</div>
-      ) : null}
       <ContentMarkdownViewLayout
         mode={mode}
         editorActivated={editorActivated}
@@ -223,25 +220,50 @@ export function MarkdownDocumentDetailView({
     </>
   );
 
+  const leadingBlock = leading ? (
+    <div className="markdown-document-leading">{leading}</div>
+  ) : null;
+
+  const viewModeDock = (
+    <FloatingPillToggleDock>
+      <SegmentedPillToggle
+        value={mode}
+        options={[
+          { value: "edit", label: "Edit" },
+          { value: "preview", label: "Preview" },
+        ]}
+        onChange={setViewMode}
+        ariaLabel="Document view mode"
+      />
+    </FloatingPillToggleDock>
+  );
+
   if (embedded) {
+    // Leading (e.g. Whoop) lives in a scroll sibling of the dock so rings
+    // scroll away with the body while Edit/Preview stays pinned.
+    if (leadingBlock) {
+      return (
+        <div
+          className="markdown-document-embedded markdown-document-embedded--scroll-leading"
+          data-content-view-mode={mode}
+        >
+          <div className="markdown-document-embedded__scroll">
+            {leadingBlock}
+            {markdown}
+          </div>
+          {viewModeDock}
+        </div>
+      );
+    }
+
     return (
       <div
         className="markdown-document-embedded"
         data-content-view-mode={mode}
         style={{ position: "relative", flex: 1, minHeight: 0 }}
       >
-        {body}
-        <FloatingPillToggleDock>
-          <SegmentedPillToggle
-            value={mode}
-            options={[
-              { value: "edit", label: "Edit" },
-              { value: "preview", label: "Preview" },
-            ]}
-            onChange={setViewMode}
-            ariaLabel="Document view mode"
-          />
-        </FloatingPillToggleDock>
+        {markdown}
+        {viewModeDock}
       </div>
     );
   }
@@ -254,19 +276,10 @@ export function MarkdownDocumentDetailView({
       style={{ position: "relative" }}
     >
       <div className="inbox-detail-body inbox-detail-body--document">
-        {body}
+        {leadingBlock}
+        {markdown}
       </div>
-      <FloatingPillToggleDock>
-        <SegmentedPillToggle
-          value={mode}
-          options={[
-            { value: "edit", label: "Edit" },
-            { value: "preview", label: "Preview" },
-          ]}
-          onChange={setViewMode}
-          ariaLabel="Document view mode"
-        />
-      </FloatingPillToggleDock>
+      {viewModeDock}
     </div>
   );
 }

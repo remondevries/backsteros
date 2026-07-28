@@ -87,38 +87,95 @@ export function listAgentSurfaceQuickOpenKinds(
   );
 }
 
+type DigitShortcutEvent = Pick<
+  KeyboardEvent,
+  "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code"
+>;
+
 /**
- * ⌘1–⌘N (⌃1–⌃N) open primary surfaces.
- * Codebase: Agent, Browser, Files, Plan, Diff
- * Other: Agent, Browser, Plan
+ * ⌘/⌃ + digit 1–9 → 1-based index, or null when not a digit shortcut.
  */
-export function resolveAgentSurfaceQuickOpenShortcut(
-  event: Pick<
-    KeyboardEvent,
-    "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code"
-  >,
-  isCodebaseProject: boolean,
-): AgentSurfaceQuickOpenKind | null {
+export function resolveAgentSurfaceDigitIndex(
+  event: DigitShortcutEvent,
+): number | null {
   if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
     return null;
   }
 
-  const digit =
-    event.code === "Digit1" || event.code === "Numpad1"
-      ? 1
-      : event.code === "Digit2" || event.code === "Numpad2"
-        ? 2
-        : event.code === "Digit3" || event.code === "Numpad3"
-          ? 3
-          : event.code === "Digit4" || event.code === "Numpad4"
-            ? 4
-            : event.code === "Digit5" || event.code === "Numpad5"
-              ? 5
-              : null;
+  switch (event.code) {
+    case "Digit1":
+    case "Numpad1":
+      return 1;
+    case "Digit2":
+    case "Numpad2":
+      return 2;
+    case "Digit3":
+    case "Numpad3":
+      return 3;
+    case "Digit4":
+    case "Numpad4":
+      return 4;
+    case "Digit5":
+    case "Numpad5":
+      return 5;
+    case "Digit6":
+    case "Numpad6":
+      return 6;
+    case "Digit7":
+    case "Numpad7":
+      return 7;
+    case "Digit8":
+    case "Numpad8":
+      return 8;
+    case "Digit9":
+    case "Numpad9":
+      return 9;
+    default:
+      return null;
+  }
+}
+
+export type AgentSurfaceDigitShortcut =
+  | { action: "quick-open"; kind: AgentSurfaceQuickOpenKind }
+  | { action: "activate-tab"; index: number };
+
+/**
+ * ⌘1–⌘N behavior depends on whether surface tabs already exist:
+ * - empty picker (0 tabs): open primary surfaces (Agent, Browser, …)
+ * - tabs open: activate the Nth tab (1-based; out of range → null)
+ */
+export function resolveAgentSurfaceDigitShortcut(
+  event: DigitShortcutEvent,
+  options: { isCodebaseProject: boolean; tabCount: number },
+): AgentSurfaceDigitShortcut | null {
+  const digit = resolveAgentSurfaceDigitIndex(event);
   if (digit == null) return null;
 
-  const kinds = listAgentSurfaceQuickOpenKinds(isCodebaseProject);
-  return kinds[digit - 1] ?? null;
+  if (options.tabCount > 0) {
+    if (digit > options.tabCount) return null;
+    return { action: "activate-tab", index: digit - 1 };
+  }
+
+  const kind = listAgentSurfaceQuickOpenKinds(options.isCodebaseProject)[
+    digit - 1
+  ];
+  return kind ? { action: "quick-open", kind } : null;
+}
+
+/**
+ * ⌘1–⌘N (⌃1–⌃N) open primary surfaces when the empty picker is showing.
+ * Codebase: Agent, Browser, Files, Plan, Diff
+ * Other: Agent, Browser, Plan
+ */
+export function resolveAgentSurfaceQuickOpenShortcut(
+  event: DigitShortcutEvent,
+  isCodebaseProject: boolean,
+): AgentSurfaceQuickOpenKind | null {
+  const result = resolveAgentSurfaceDigitShortcut(event, {
+    isCodebaseProject,
+    tabCount: 0,
+  });
+  return result?.action === "quick-open" ? result.kind : null;
 }
 
 /** Display label for picker cards (Mac-first desktop shell). */
