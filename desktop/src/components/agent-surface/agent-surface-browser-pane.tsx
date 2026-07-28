@@ -1,12 +1,29 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
   type FormEvent,
 } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from "lucide-react";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+
+import {
+  agentBrowserCreate,
+  agentBrowserDestroy,
+  agentBrowserGoBack,
+  agentBrowserGoForward,
+  agentBrowserHide,
+  agentBrowserLabel,
+  agentBrowserNavigate,
+  agentBrowserReload,
+  agentBrowserSetBounds,
+  agentBrowserShow,
+  isAgentBrowserAvailable,
+  listenAgentBrowserLoad,
+  listenAgentBrowserTitle,
+  readElementBounds,
+} from "../../lib/agent/agent-browser-webview";
 
 function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim();
@@ -39,24 +56,83 @@ async function openExternal(url: string): Promise<void> {
   }
 }
 
+const FOCUS_BROWSER_ADDRESS_EVENT = "backsteros:focus-browser-address";
+
 export type AgentSurfaceBrowserPaneProps = {
+  /** Agent-surface tab id — used as the native webview label suffix. */
+  tabId: string;
+  /** Whether this browser pane is the active surface tab. */
+  active?: boolean;
   initialUrl?: string | null;
   onUrlChange?: (url: string, title: string) => void;
 };
 
 export function AgentSurfaceBrowserPane({
+  tabId,
+  active = true,
   initialUrl = null,
   onUrlChange,
 }: AgentSurfaceBrowserPaneProps) {
-  const iframeId = useId();
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const createdRef = useRef(false);
+  const urlRef = useRef(initialUrl?.trim() || "");
+  const activeRef = useRef(active);
+  const onUrlChangeRef = useRef(onUrlChange);
+  const label = agentBrowserLabel(tabId);
+  const native = isAgentBrowserAvailable();
+
+  activeRef.current = active;
+
   const [draft, setDraft] = useState(initialUrl ?? "");
   const [url, setUrl] = useState(initialUrl?.trim() || "");
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<string[]>(() =>
-    initialUrl?.trim() ? [initialUrl.trim()] : [],
-  );
-  const [historyIndex, setHistoryIndex] = useState(0);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onUrlChangeRef.current = onUrlChange;
+  }, [onUrlChange]);
+
+  useEffect(() => {
+    urlRef.current = url;
+  }, [url]);
+
+  const focusAddressBar = useCallback(() => {
+    const input = urlInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, []);
+
+  // ⌘L / Ctrl+L — focus address bar when this browser tab is active.
+  // Native menu accelerator covers the case where the child webview has focus;
+  // the keydown listener covers focus already in the React shell.
+  useEffect(() => {
+    if (!active) return;
+
+    const onFocusAddress = () => {
+      focusAddressBar();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key !== "l" && event.key !== "L") return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusAddressBar();
+    };
+
+    window.addEventListener(FOCUS_BROWSER_ADDRESS_EVENT, onFocusAddress);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener(FOCUS_BROWSER_ADDRESS_EVENT, onFocusAddress);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [active, focusAddressBar]);
 
   useEffect(() => {
     if (!initialUrl?.trim()) return;
@@ -65,9 +141,171 @@ export function AgentSurfaceBrowserPane({
     if (!next) return;
     setUrl(next);
     setDraft(next);
-    setHistory([next]);
-    setHistoryIndex(0);
   }, [initialUrl, url]);
+
+  const syncBounds = useCallback(async () => {
+    if (!native || !createdRef.current) return;
+    const host = hostRef.current;
+    if (!host) return;
+    try {
+      await agentBrowserSetBounds(label, readElementBounds(host));
+    } catch {
+      /* webview may have been destroyed */
+    }
+  }, [label, native]);
+
+  const ensureWebview = useCallback(
+    async (nextUrl: string) => {
+      if (!native) {
+        setError("In-app browser requires the desktop app.");
+        return;
+      }
+      const host = hostRef.current;
+      if (!host) return;
+      const bounds = readElementBounds(host);
+      setError(null);
+      try {
+        if (!createdRef.current) {
+          await agentBrowserCreate(label, nextUrl, bounds);
+          createdRef.current = true;
+        } else {
+          await agentBrowserNavigate(label, nextUrl);
+          await agentBrowserSetBounds(label, bounds);
+        }
+        if (activeRef.current) {
+          await agentBrowserShow(label);
+        } else {
+          await agentBrowserHide(label);
+        }
+      } catch (err) {
+        createdRef.current = false;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      }
+    },
+    [label, native],
+  );
+
+  // Create / navigate when the committed URL changes (not on active toggle).
+  useEffect(() => {
+    if (!url || !native) return;
+    let cancelled = false;
+    const run = async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+      if (cancelled) return;
+      setLoading(true);
+      await ensureWebview(url);
+      if (cancelled && createdRef.current) {
+        createdRef.current = false;
+        try {
+          await agentBrowserDestroy(label);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [url, native, ensureWebview, label]);
+
+  // Show / hide when active tab changes (native webviews ignore CSS visibility).
+  useEffect(() => {
+    if (!native || !createdRef.current) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        if (active) {
+          await syncBounds();
+          if (!cancelled) await agentBrowserShow(label);
+        } else {
+          await agentBrowserHide(label);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [active, label, native, syncBounds]);
+
+  // Keep bounds in sync with the host placeholder.
+  useEffect(() => {
+    if (!native || !url) return;
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      void syncBounds();
+    });
+    observer.observe(host);
+
+    const onWindowResize = () => {
+      void syncBounds();
+    };
+    window.addEventListener("resize", onWindowResize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", onWindowResize);
+    };
+  }, [native, url, syncBounds]);
+
+  // Native load / title events.
+  useEffect(() => {
+    if (!native) return;
+    let disposed = false;
+    const unlisteners: UnlistenFn[] = [];
+
+    void (async () => {
+      const unLoad = await listenAgentBrowserLoad((payload) => {
+        if (disposed || payload.label !== label) return;
+        setLoading(payload.loading);
+        if (payload.loading) return;
+        if (!payload.url || payload.url === "about:blank") return;
+        // Update chrome only — do not set `url` or redirects re-trigger navigate.
+        setDraft(payload.url);
+        urlRef.current = payload.url;
+        setCanGoBack(true);
+        setCanGoForward(true);
+        onUrlChangeRef.current?.(payload.url, hostLabel(payload.url));
+      });
+      const unTitle = await listenAgentBrowserTitle((payload) => {
+        if (disposed || payload.label !== label) return;
+        const currentUrl = urlRef.current;
+        if (!currentUrl) return;
+        onUrlChangeRef.current?.(
+          currentUrl,
+          payload.title || hostLabel(currentUrl),
+        );
+      });
+      if (disposed) {
+        unLoad();
+        unTitle();
+        return;
+      }
+      unlisteners.push(unLoad, unTitle);
+    })();
+
+    return () => {
+      disposed = true;
+      for (const un of unlisteners) un();
+    };
+  }, [native, label]);
+
+  // Destroy native webview on unmount.
+  useEffect(() => {
+    return () => {
+      if (!native || !createdRef.current) return;
+      createdRef.current = false;
+      void agentBrowserDestroy(label);
+    };
+  }, [label, native]);
 
   const navigate = useCallback(
     (raw: string) => {
@@ -76,18 +314,9 @@ export function AgentSurfaceBrowserPane({
       setUrl(next);
       setDraft(next);
       setLoading(true);
-      onUrlChange?.(next, hostLabel(next));
-      setHistory((current) => {
-        const clipped = current.slice(0, historyIndex + 1);
-        if (clipped[clipped.length - 1] === next) {
-          return clipped;
-        }
-        const updated = [...clipped, next];
-        setHistoryIndex(updated.length - 1);
-        return updated;
-      });
+      onUrlChangeRef.current?.(next, hostLabel(next));
     },
-    [historyIndex, onUrlChange],
+    [],
   );
 
   const submit = (event?: FormEvent) => {
@@ -95,22 +324,22 @@ export function AgentSurfaceBrowserPane({
     navigate(draft);
   };
 
-  const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < history.length - 1;
-
   if (!url) {
     return (
       <div className="agent-surface-pane agent-surface-pane--browser">
         <div className="agent-surface-browser-empty">
           <Globe size={20} aria-hidden strokeWidth={1.6} />
           <h3>No preview yet</h3>
-          <p>Type a URL below, or open a local dev server (e.g. localhost:5173).</p>
+          <p>
+            Type a URL below, or open a local dev server (e.g. localhost:5173).
+          </p>
           <form className="agent-surface-browser-empty__form" onSubmit={submit}>
             <input
+              ref={urlInputRef}
               type="text"
               className="agent-surface-browser-url"
               value={draft}
-              placeholder="http://localhost:5173"
+              placeholder="https://google.com"
               autoFocus
               onChange={(event) => setDraft(event.target.value)}
               aria-label="URL"
@@ -131,18 +360,12 @@ export function AgentSurfaceBrowserPane({
           <button
             type="button"
             className="agent-surface-browser-nav-btn"
-            disabled={!canGoBack}
+            disabled={!canGoBack || !native}
             aria-label="Back"
             onClick={() => {
-              if (!canGoBack) return;
-              const nextIndex = historyIndex - 1;
-              const next = history[nextIndex];
-              if (!next) return;
-              setHistoryIndex(nextIndex);
-              setUrl(next);
-              setDraft(next);
+              if (!native || !createdRef.current) return;
               setLoading(true);
-              onUrlChange?.(next, hostLabel(next));
+              void agentBrowserGoBack(label);
             }}
           >
             <ArrowLeft size={14} aria-hidden />
@@ -150,18 +373,12 @@ export function AgentSurfaceBrowserPane({
           <button
             type="button"
             className="agent-surface-browser-nav-btn"
-            disabled={!canGoForward}
+            disabled={!canGoForward || !native}
             aria-label="Forward"
             onClick={() => {
-              if (!canGoForward) return;
-              const nextIndex = historyIndex + 1;
-              const next = history[nextIndex];
-              if (!next) return;
-              setHistoryIndex(nextIndex);
-              setUrl(next);
-              setDraft(next);
+              if (!native || !createdRef.current) return;
               setLoading(true);
-              onUrlChange?.(next, hostLabel(next));
+              void agentBrowserGoForward(label);
             }}
           >
             <ArrowRight size={14} aria-hidden />
@@ -171,10 +388,10 @@ export function AgentSurfaceBrowserPane({
             className="agent-surface-browser-nav-btn"
             aria-label="Refresh"
             onClick={() => {
-              const frame = iframeRef.current;
-              if (!frame) return;
               setLoading(true);
-              frame.src = url;
+              if (native && createdRef.current) {
+                void agentBrowserReload(label);
+              }
             }}
           >
             <RotateCw
@@ -185,31 +402,35 @@ export function AgentSurfaceBrowserPane({
           </button>
         </div>
         <input
+          ref={urlInputRef}
           type="text"
           className="agent-surface-browser-url"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onFocus={(event) => event.currentTarget.select()}
           aria-label="URL"
+          title="Address (⌘L)"
         />
         <button
           type="button"
           className="agent-surface-browser-nav-btn"
           aria-label="Open in system browser"
           title="Open in system browser"
-          onClick={() => void openExternal(url)}
+          onClick={() => void openExternal(draft || url)}
         >
           <ExternalLink size={14} aria-hidden />
         </button>
       </form>
-      <iframe
-        id={iframeId}
-        ref={iframeRef}
+      {error ? (
+        <p className="agent-surface-browser-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div
+        ref={hostRef}
         className="agent-surface-browser-frame"
-        title="Browser preview"
-        src={url}
-        onLoad={() => setLoading(false)}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        data-agent-browser-host={label}
+        aria-label="Browser preview"
       />
     </div>
   );

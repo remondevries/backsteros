@@ -12,3 +12,18 @@ commands.allow = ["system_stats"]
 identifier = "allow-oauth-windows"
 description = "Allows closing OAuth popup windows after Clerk sign-in."
 commands.allow = ["close_oauth_windows"]
+
+[[permission]]
+identifier = "allow-agent-browser"
+description = "Allows creating and controlling agent-surface Browser child webviews."
+commands.allow = [
+  "agent_browser_create",
+  "agent_browser_set_bounds",
+  "agent_browser_show",
+  "agent_browser_hide",
+  "agent_browser_destroy",
+  "agent_browser_navigate",
+  "agent_browser_reload",
+  "agent_browser_go_back",
+  "agent_browser_go_forward",
+]

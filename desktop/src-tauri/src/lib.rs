@@ -1,3 +1,4 @@
+mod agent_browser;
 mod overlay;
 mod system_stats;
 mod whoop;
@@ -23,6 +24,12 @@ static OAUTH_WINDOW_SEQ: AtomicU64 = AtomicU64::new(1);
 /// WKWebView on macOS often swallows Cmd+K before JS `keydown` listeners see it.
 const TOGGLE_COMMAND_PALETTE_JS: &str =
     "window.dispatchEvent(new CustomEvent('backsteros:toggle-command-palette'))";
+
+/// Dispatched when ⌘L / Ctrl+L fires — focus the agent Browser tab address bar.
+/// Needed because a focused child browser webview swallows keydowns before the
+/// main shell's JS listeners see them.
+const FOCUS_BROWSER_ADDRESS_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsteros:focus-browser-address'))";
 
 fn is_app_origin(url: &tauri::Url) -> bool {
     match url.scheme() {
@@ -132,8 +139,13 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+K")
         .build(handle)?;
 
+    let open_location_item = MenuItemBuilder::with_id("browser-address", "Open Location")
+        .accelerator("CmdOrCtrl+L")
+        .build(handle)?;
+
     let edit_submenu = SubmenuBuilder::new(handle, "Edit")
         .item(&search_item)
+        .item(&open_location_item)
         .separator()
         .undo()
         .redo()
@@ -168,6 +180,15 @@ fn dispatch_toggle_command_palette(app: &AppHandle) {
     }
 }
 
+fn dispatch_focus_browser_address(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // Child browser webviews steal keyboard focus; pull it back to the shell
+        // so the address-bar <input> can receive keystrokes.
+        let _ = window.set_focus();
+        let _ = window.eval(FOCUS_BROWSER_ADDRESS_JS);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -191,10 +212,21 @@ pub fn run() {
             focus_main_window,
             toggle_desktop_overlay_palette,
             toggle_desktop_overlay_compose,
+            agent_browser::agent_browser_create,
+            agent_browser::agent_browser_set_bounds,
+            agent_browser::agent_browser_show,
+            agent_browser::agent_browser_hide,
+            agent_browser::agent_browser_destroy,
+            agent_browser::agent_browser_navigate,
+            agent_browser::agent_browser_reload,
+            agent_browser::agent_browser_go_back,
+            agent_browser::agent_browser_go_forward,
         ])
         .on_menu_event(|app, event| {
             if event.id() == "command-palette" {
                 dispatch_toggle_command_palette(app);
+            } else if event.id() == "browser-address" {
+                dispatch_focus_browser_address(app);
             }
         })
         .setup(|app| {

@@ -2447,6 +2447,8 @@ export function DesktopAgentChatPanel({
                 >
                   {tab.kind === "browser" ? (
                     <AgentSurfaceBrowserPane
+                      tabId={tab.id}
+                      active={active && !collapsed}
                       initialUrl={tab.resourceId}
                       onUrlChange={(url, title) =>
                         handleBrowserUrlChange(tab.id, url, title)

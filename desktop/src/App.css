@@ -986,6 +986,16 @@ html:has(.desktop-overlay-root--palette) .command-list {
   background: #fff;
 }
 
+.agent-surface-browser-error {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .agent-surface-browser-empty {
   display: flex;
   flex: 1;
