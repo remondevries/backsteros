@@ -558,7 +558,7 @@
   border-radius: 999px;
   background: var(--muted);
   pointer-events: none;
-  border: 1px solid red;
+  outline: 2px solid var(--background);
 }
 
 .sidebar-footer {
