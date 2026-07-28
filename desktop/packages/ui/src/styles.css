@@ -383,7 +383,7 @@
 .app-side-panel-profile-logo-mark {
   display: block;
   flex-shrink: 0;
-  scale: 1.5;
+  scale: 2;
 }
 
 .app-side-panel-profile-name {
@@ -558,6 +558,7 @@
   border-radius: 999px;
   background: var(--muted);
   pointer-events: none;
+  border: 1px solid red;
 }
 
 .sidebar-footer {
