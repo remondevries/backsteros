@@ -63,7 +63,8 @@ export type TaskStackedDetailViewProps = {
 
 /**
  * Narrow-host task detail: title → inline property chips → markdown content.
- * Does not affect the desktop/web split `TaskDetailView`.
+ * Prefer `TaskDetailView`, which switches chips/rail by measured width.
+ * Kept for legacy console hosts that always want the stacked presentation.
  */
 export function TaskStackedDetailView({
   task,

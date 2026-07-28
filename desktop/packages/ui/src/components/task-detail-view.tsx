@@ -1,7 +1,13 @@
 "use client";
 
 import type { TaskLink } from "@backsteros/contracts";
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import {
   TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS,
@@ -34,9 +40,13 @@ import {
   TaskPropertiesDisplay,
   type TaskPropertiesDisplayTask,
 } from "./task-properties-display.js";
+import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../markdown-image-paste.js";
+
+/** Below this width, properties render as inline chips; at/above as the card rail. */
+export const TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT = 720;
 
 export type TaskDetailViewTask = TaskPropertiesDisplayTask & {
   title: string;
@@ -62,6 +72,11 @@ export type TaskDetailViewProps = {
   task: TaskDetailViewTask;
   sectionLabel?: string;
   headerMeta?: ReactNode;
+  /**
+   * When true (default), show `task.displayId` above the title.
+   * Set false when the host chrome already shows the id.
+   */
+  showDisplayId?: boolean;
   /**
    * Optional content rendered below the description (e.g. activity / comments).
    * Pass a render function to receive the current preview/edit mode.
@@ -107,6 +122,7 @@ export function TaskDetailView({
   task,
   sectionLabel = "Tasks",
   headerMeta,
+  showDisplayId = true,
   belowDescription,
   spellcheckHighlight = null,
   onSpellcheckHighlightClear,
@@ -130,6 +146,41 @@ export function TaskDetailView({
   projectNavigateHref,
   onCreateAssigneeFromQuery,
 }: TaskDetailViewProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [usePropertiesRail, setUsePropertiesRail] = useState(false);
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    let settledTimer: number | null = null;
+    let didCommitInitial = false;
+    const commit = (width: number) => {
+      setUsePropertiesRail(width >= TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT);
+    };
+    const update = () => {
+      const width = Math.round(node.getBoundingClientRect().width);
+      // First paint: apply immediately. Later: wait until width stops changing
+      // so a smooth split nudge cannot flip chips ↔ rail mid-animation.
+      if (!didCommitInitial) {
+        didCommitInitial = true;
+        commit(width);
+        return;
+      }
+      if (settledTimer != null) window.clearTimeout(settledTimer);
+      settledTimer = window.setTimeout(() => {
+        settledTimer = null;
+        commit(width);
+      }, 140);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      if (settledTimer != null) window.clearTimeout(settledTimer);
+      observer.disconnect();
+    };
+  }, []);
+
   const [title, setTitle] = useState(task.title);
   const [titleSource, setTitleSource] = useState(task.title);
   const [prevTaskId, setPrevTaskId] = useState(task.id);
@@ -239,15 +290,116 @@ export function TaskDetailView({
     />
   );
 
+  const displayIdNode =
+    showDisplayId && task.displayId ? (
+      <p className="content-detail-display-id">{task.displayId}</p>
+    ) : null;
+
+  const descriptionEditor = (
+    <DocumentMarkdownEditor
+      value={value}
+      onChange={(next) => {
+        clearHighlights();
+        handleChange(next);
+      }}
+      onBlur={handleBlurSave}
+      focusRequest={editorFocusRequest}
+      scrollWithContent
+      highlightRanges={descriptionMarkRanges}
+      onUploadImages={onUploadImages}
+      ariaLabel="Task description"
+    />
+  );
+
+  const descriptionPreview = (
+    <ContentMarkdownPreviewColumn includeTopInset={false}>
+      {hasSpellcheckHighlights &&
+      spellcheckHasChanges(descriptionSegments) ? (
+        <div
+          className="spellcheck-highlight-description"
+          aria-label="Spellchecked description"
+        >
+          <SpellcheckSegmentText
+            segments={descriptionSegments}
+            onToggleSegment={onToggleSpellcheckDescriptionSegment}
+          />
+        </div>
+      ) : value.trim() ? (
+        <DocumentMarkdownPreview
+          body={value}
+          onChange={handleChange}
+          resolveImageSrc={resolveImageSrc}
+        />
+      ) : (
+        <p className="overview-empty">Add a description…</p>
+      )}
+    </ContentMarkdownPreviewColumn>
+  );
+
+  const belowDescriptionNode = belowDescription ? (
+    <div className="task-detail-below-description">
+      {typeof belowDescription === "function"
+        ? belowDescription({ mode })
+        : belowDescription}
+    </div>
+  ) : null;
+
+  const errorNode = error ? (
+    <p className="overview-empty" role="alert">
+      {error}
+    </p>
+  ) : null;
+
   void sectionLabel;
 
-  return (
-    <div
-      className="task-detail-split"
-      data-content-detail
-      data-detail-split=""
-      data-content-view-mode={mode}
-    >
+  const stackedBody = (
+    <>
+      {headerMeta ? (
+        <div className="inbox-detail-header-meta">{headerMeta}</div>
+      ) : null}
+      <div className="task-detail-stacked__scroll">
+        <ContentDetailTitleHeader>
+          {displayIdNode}
+          {titleEditor}
+        </ContentDetailTitleHeader>
+        <div className="task-detail-stacked__properties">
+          <TaskPropertiesInlineChips
+            task={task}
+            onFieldActivate={onFieldActivate}
+            onStatusChange={onStatusChange}
+            statusDisabled={statusDisabled}
+            onPriorityChange={onPriorityChange}
+            onDueDateChange={onDueDateChange}
+            onAssigneeChange={onAssigneeChange}
+            onProjectChange={onProjectChange}
+            assigneeOptions={assigneeOptions}
+            projectOptions={projectOptions}
+            onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+          />
+        </div>
+        <div className="task-detail-stacked__content">
+          <ContentMarkdownViewLayout
+            mode={mode}
+            editorActivated={editorActivated}
+            onToggleMode={handleToggleViewMode}
+            editor={descriptionEditor}
+            preview={descriptionPreview}
+            toggle={
+              <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
+            }
+          />
+          <TaskLinkAttachments
+            links={task.links}
+            onChangeLinks={onChangeLinks}
+          />
+          {belowDescriptionNode}
+          {errorNode}
+        </div>
+      </div>
+    </>
+  );
+
+  const railBody = (
     <DetailWithPropertiesLayout
       storageKey={TASK_PROPERTIES_PANEL_WIDTH_KEY}
       legacyStorageKeys={TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS}
@@ -258,71 +410,22 @@ export function TaskDetailView({
           ) : null}
           <div className="inbox-detail-body inbox-detail-body--document">
             <ContentDetailTitleHeader>
-              {task.displayId ? (
-                <p className="content-detail-display-id">{task.displayId}</p>
-              ) : null}
+              {displayIdNode}
               {titleEditor}
             </ContentDetailTitleHeader>
             <ContentMarkdownViewLayout
               mode={mode}
               editorActivated={editorActivated}
               onToggleMode={handleToggleViewMode}
-              editor={
-                <DocumentMarkdownEditor
-                  value={value}
-                  onChange={(next) => {
-                    clearHighlights();
-                    handleChange(next);
-                  }}
-                  onBlur={handleBlurSave}
-                  focusRequest={editorFocusRequest}
-                  scrollWithContent
-                  highlightRanges={descriptionMarkRanges}
-                  onUploadImages={onUploadImages}
-                  ariaLabel="Task description"
-                />
-              }
-              preview={
-                <ContentMarkdownPreviewColumn includeTopInset={false}>
-                  {hasSpellcheckHighlights &&
-                  spellcheckHasChanges(descriptionSegments) ? (
-                    <div
-                      className="spellcheck-highlight-description"
-                      aria-label="Spellchecked description"
-                    >
-                      <SpellcheckSegmentText
-                        segments={descriptionSegments}
-                        onToggleSegment={onToggleSpellcheckDescriptionSegment}
-                      />
-                    </div>
-                  ) : value.trim() ? (
-                    <DocumentMarkdownPreview
-                      body={value}
-                      onChange={handleChange}
-                      resolveImageSrc={resolveImageSrc}
-                    />
-                  ) : (
-                    <p className="overview-empty">Add a description…</p>
-                  )}
-                </ContentMarkdownPreviewColumn>
-              }
+              editor={descriptionEditor}
+              preview={descriptionPreview}
             />
             <TaskLinkAttachments
               links={task.links}
               onChangeLinks={onChangeLinks}
             />
-            {belowDescription ? (
-              <div className="task-detail-below-description">
-                {typeof belowDescription === "function"
-                  ? belowDescription({ mode })
-                  : belowDescription}
-              </div>
-            ) : null}
-            {error ? (
-              <p className="overview-empty" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {belowDescriptionNode}
+            {errorNode}
           </div>
         </div>
       }
@@ -345,6 +448,21 @@ export function TaskDetailView({
       }
       dock={<FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>}
     />
+  );
+
+  return (
+    <div
+      ref={rootRef}
+      className={[
+        "task-detail-view",
+        usePropertiesRail ? "task-detail-split" : "task-detail-stacked",
+      ].join(" ")}
+      data-content-detail
+      data-detail-split={usePropertiesRail ? "" : undefined}
+      data-content-view-mode={mode}
+      data-properties-presentation={usePropertiesRail ? "rail" : "chips"}
+    >
+      {usePropertiesRail ? railBody : stackedBody}
     </div>
   );
 }

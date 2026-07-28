@@ -13,6 +13,7 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
   ".main-slot",
   ".console-content-inbox-detail",
   ".task-panel-island--detail",
+  ".task-detail-view",
   ".task-detail-stacked",
 ] as const;
 

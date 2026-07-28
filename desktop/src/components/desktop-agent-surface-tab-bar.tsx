@@ -1,19 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   ClipboardList,
   FileDiff,
-  Files,
-  Globe2,
   MessageCircle,
   Plus,
-  SquareTerminal,
 } from "lucide-react";
+import {
+  BrowserWindowIcon,
+  KnowledgeBaseNavIcon,
+  ProjectsSidePanelIcon,
+} from "@backsteros/ui";
 
 import {
-  type AgentSurfaceAddableKind,
+  firstEnabledMenuIndex,
+  moveEnabledMenuIndex,
+  resolveAgentSurfaceAddMenuNavAction,
+} from "../lib/agent/agent-surface-add-menu-shortcut";
+import {
+  listAgentSurfaceQuickOpenOptions,
+  type AgentSurfaceQuickOpenKind,
+} from "../lib/agent/agent-surface-quick-open-shortcut";
+import {
   type AgentSurfaceTab,
   type AgentSurfaceTabKind,
 } from "../lib/agent/agent-surface-tabs";
+import { AgentSurfaceTabKindIcon } from "./agent-surface-tab-kind-icon";
 
 function TabCloseIcon() {
   return (
@@ -34,83 +45,33 @@ function TabCloseIcon() {
   );
 }
 
-const ADD_MENU_ITEMS: {
-  kind: AgentSurfaceAddableKind;
-  label: string;
-  description: string;
-  Icon: typeof Globe2;
-  needsCwd: boolean;
-}[] = [
-  {
-    kind: "browser",
-    label: "Browser",
-    description: "Open a local app or URL.",
-    Icon: Globe2,
-    needsCwd: false,
-  },
-  {
-    kind: "terminal",
-    label: "Terminal",
-    description: "Start a shell in this workspace.",
-    Icon: SquareTerminal,
-    needsCwd: true,
-  },
-  {
-    kind: "files",
-    label: "Files",
-    description: "Browse and read workspace files.",
-    Icon: Files,
-    needsCwd: true,
-  },
-  {
-    kind: "plan",
-    label: "Plan",
-    description: "Review the agent’s proposed plan.",
-    Icon: ClipboardList,
-    needsCwd: false,
-  },
-  {
-    kind: "diff",
-    label: "Diff",
-    description: "Review changes from this turn.",
-    Icon: FileDiff,
-    needsCwd: false,
-  },
-];
+type AddMenuIcon = ComponentType<{
+  className?: string;
+  size?: number;
+  strokeWidth?: number;
+  "aria-hidden"?: boolean | "true" | "false";
+}>;
 
-function TabKindIcon({ kind }: { kind: AgentSurfaceTabKind }) {
-  const className = "desktop-agent-surface-tab-icon";
-  switch (kind) {
-    case "terminal":
-      return (
-        <SquareTerminal className={className} size={12} aria-hidden strokeWidth={1.8} />
-      );
-    case "browser":
-      return <Globe2 className={className} size={12} aria-hidden strokeWidth={1.8} />;
-    case "files":
-      return <Files className={className} size={12} aria-hidden strokeWidth={1.8} />;
-    case "plan":
-      return (
-        <ClipboardList className={className} size={12} aria-hidden strokeWidth={1.8} />
-      );
-    case "diff":
-      return <FileDiff className={className} size={12} aria-hidden strokeWidth={1.8} />;
-    case "chat":
-    default:
-      return (
-        <MessageCircle className={className} size={12} aria-hidden strokeWidth={1.8} />
-      );
-  }
-}
+const KIND_ICONS: Record<AgentSurfaceQuickOpenKind, AddMenuIcon> = {
+  chat: MessageCircle,
+  browser: BrowserWindowIcon,
+  files: KnowledgeBaseNavIcon,
+  plan: ClipboardList,
+  diff: FileDiff,
+};
 
 export type DesktopAgentSurfaceTabBarProps = {
   tabs: AgentSurfaceTab[];
-  activeId: string;
+  activeId: string | null;
   cwdAvailable?: boolean;
+  /** Files + Diff only appear for codebase projects. */
+  isCodebaseProject?: boolean;
+  /** Controlled add-menu open state (⌥T is handled by the parent when tabs exist). */
+  addMenuOpen: boolean;
+  onAddMenuOpenChange: (open: boolean) => void;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
-  onAddSurface: (kind: AgentSurfaceAddableKind) => void;
-  onStopAgent?: () => void;
+  onAddSurface: (kind: AgentSurfaceTabKind) => void;
   onHide?: () => void;
 };
 
@@ -118,98 +79,163 @@ export function DesktopAgentSurfaceTabBar({
   tabs,
   activeId,
   cwdAvailable = true,
+  isCodebaseProject = false,
+  addMenuOpen,
+  onAddMenuOpenChange,
   onActivate,
   onClose,
   onAddSurface,
-  onStopAgent,
   onHide,
 }: DesktopAgentSurfaceTabBarProps) {
-  const canClose = tabs.length > 1;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const canClose = tabs.length >= 1;
+  const showAddButton = tabs.length > 0;
+  const menuItems = useMemo(
+    () =>
+      listAgentSurfaceQuickOpenOptions(isCodebaseProject).map((option) => ({
+        ...option,
+        Icon: KIND_ICONS[option.kind],
+      })),
+    [isCodebaseProject],
+  );
+  const [highlightIndex, setHighlightIndex] = useState(0);
   const addWrapRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const highlightIndexRef = useRef(highlightIndex);
+  highlightIndexRef.current = highlightIndex;
+  const cwdAvailableRef = useRef(cwdAvailable);
+  cwdAvailableRef.current = cwdAvailable;
+  const menuItemsRef = useRef(menuItems);
+  menuItemsRef.current = menuItems;
+  const onAddSurfaceRef = useRef(onAddSurface);
+  onAddSurfaceRef.current = onAddSurface;
+  const onAddMenuOpenChangeRef = useRef(onAddMenuOpenChange);
+  onAddMenuOpenChangeRef.current = onAddMenuOpenChange;
+
+  const enabledFlags = useMemo(
+    () => menuItems.map((item) => !(item.needsCwd && !cwdAvailable)),
+    [cwdAvailable, menuItems],
+  );
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!showAddButton && addMenuOpen) {
+      onAddMenuOpenChange(false);
+    }
+  }, [addMenuOpen, onAddMenuOpenChange, showAddButton]);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    setHighlightIndex(Math.max(0, firstEnabledMenuIndex(enabledFlags)));
+  }, [addMenuOpen, enabledFlags]);
+
+  useEffect(() => {
+    if (!addMenuOpen || !showAddButton) return;
+
     const onPointerDown = (event: PointerEvent) => {
       const root = addWrapRef.current;
       if (!root || !(event.target instanceof Node)) return;
-      if (!root.contains(event.target)) setMenuOpen(false);
+      if (!root.contains(event.target)) {
+        onAddMenuOpenChangeRef.current(false);
+      }
     };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      const action = resolveAgentSurfaceAddMenuNavAction(event);
+      if (action == null) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (action === "dismiss") {
+        onAddMenuOpenChangeRef.current(false);
+        return;
+      }
+
+      const flags = menuItemsRef.current.map(
+        (item) => !(item.needsCwd && !cwdAvailableRef.current),
+      );
+      if (action === "next" || action === "previous") {
+        setHighlightIndex((current) =>
+          moveEnabledMenuIndex(flags, current, action),
+        );
+        return;
+      }
+
+      if (action === "confirm") {
+        const index = highlightIndexRef.current;
+        const item = menuItemsRef.current[index];
+        if (!item || (item.needsCwd && !cwdAvailableRef.current)) return;
+        onAddSurfaceRef.current(item.kind);
+        onAddMenuOpenChangeRef.current(false);
+      }
     };
+
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [menuOpen]);
+  }, [addMenuOpen, showAddButton]);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    itemRefs.current[highlightIndex]?.scrollIntoView({ block: "nearest" });
+  }, [highlightIndex, addMenuOpen]);
 
   return (
     <div className="desktop-agent-surface-tab-bar">
-      <div
-        className="desktop-agent-surface-tab-list"
-        role="tablist"
-        aria-label="Agent surface tabs"
-      >
-        {tabs.map((tab, index) => {
-          const active = tab.id === activeId;
-          const hasTabsToRight = index < tabs.length - 1;
+      <div className="desktop-agent-surface-tab-cluster">
+        <div
+          className="desktop-agent-surface-tab-list"
+          role="tablist"
+          aria-label="Agent surface tabs"
+        >
+          <div className="desktop-agent-surface-tab-row">
+            {tabs.map((tab) => {
+              const active = tab.id === activeId;
+              const closeLabel =
+                tab.kind === "chat"
+                  ? `Close ${tab.title} and end agent session`
+                  : `Close ${tab.title}`;
 
-          return (
-            <div
-              key={tab.id}
-              className={`desktop-agent-surface-tab-width${
-                active ? " is-active" : ""
-              }`}
-            >
-              <div
-                role="tab"
-                tabIndex={0}
-                aria-selected={active}
-                title={tab.title}
-                className={`desktop-agent-surface-tab${
-                  active ? " is-active" : ""
-                }${hasTabsToRight ? " has-border-right" : ""}`}
-                onClick={() => onActivate(tab.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onActivate(tab.id);
-                  }
-                }}
-                onMouseDown={(event) => {
-                  if (event.button === 1) {
-                    event.preventDefault();
-                  }
-                }}
-                onAuxClick={(event) => {
-                  if (event.button === 1 && canClose) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onClose(tab.id);
-                  }
-                }}
-              >
-                {active ? (
-                  <span
-                    className="desktop-agent-surface-tab-active-bar"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <TabKindIcon kind={tab.kind} />
-                <span className="desktop-agent-surface-tab-label">
-                  {tab.title}
-                </span>
-                {canClose ? (
-                  <div className="desktop-agent-surface-tab-trailing">
+              return (
+                <div
+                  key={tab.id}
+                  className={`desktop-agent-surface-tab${
+                    active ? " is-active" : ""
+                  }`}
+                  role="tab"
+                  tabIndex={0}
+                  aria-selected={active}
+                  title={tab.title}
+                  onClick={() => onActivate(tab.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onActivate(tab.id);
+                    }
+                  }}
+                  onMouseDown={(event) => {
+                    if (event.button === 1) event.preventDefault();
+                  }}
+                  onAuxClick={(event) => {
+                    if (event.button === 1 && canClose) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onClose(tab.id);
+                    }
+                  }}
+                >
+                  <AgentSurfaceTabKindIcon kind={tab.kind} />
+                  <span className="desktop-agent-surface-tab-label">
+                    {tab.title}
+                  </span>
+                  {canClose ? (
                     <button
                       type="button"
-                      className={`desktop-agent-surface-tab-close${
-                        active ? " is-active-tab" : ""
-                      }`}
-                      aria-label={`Close ${tab.title}`}
+                      className="desktop-agent-surface-tab-close"
+                      aria-label={closeLabel}
+                      title={closeLabel}
                       onClick={(event) => {
                         event.stopPropagation();
                         onClose(tab.id);
@@ -218,92 +244,87 @@ export function DesktopAgentSurfaceTabBar({
                     >
                       <TabCloseIcon />
                     </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div ref={addWrapRef} className="desktop-agent-surface-tab-add-wrap">
-        <button
-          type="button"
-          className="desktop-agent-surface-tab-add"
-          aria-label="Add panel surface"
-          title="Add panel surface"
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          <Plus size={14} aria-hidden strokeWidth={2} />
-        </button>
-        {menuOpen ? (
-          <div
-            className="desktop-agent-surface-add-menu"
-            role="menu"
-            aria-label="Add surface"
-          >
-            {ADD_MENU_ITEMS.map((item) => {
-              const disabled = item.needsCwd && !cwdAvailable;
-              const Icon = item.Icon;
-              return (
-                <button
-                  key={item.kind}
-                  type="button"
-                  role="menuitem"
-                  className="desktop-agent-surface-add-menu__item"
-                  disabled={disabled}
-                  title={
-                    disabled
-                      ? "Available when a project working directory is set."
-                      : item.description
-                  }
-                  onClick={() => {
-                    if (disabled) return;
-                    onAddSurface(item.kind);
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Icon size={14} aria-hidden strokeWidth={1.8} />
-                  <span className="desktop-agent-surface-add-menu__text">
-                    <span className="desktop-agent-surface-add-menu__label">
-                      {item.label}
-                    </span>
-                    <span className="desktop-agent-surface-add-menu__desc">
-                      {item.description}
-                    </span>
-                  </span>
-                </button>
+                  ) : null}
+                </div>
               );
             })}
+          </div>
+        </div>
+
+        {showAddButton ? (
+          <div ref={addWrapRef} className="desktop-agent-surface-tab-add-wrap">
+            <button
+              type="button"
+              className="desktop-agent-surface-tab-add"
+              aria-label="Add panel surface"
+              title="Add panel surface (⌥T)"
+              aria-expanded={addMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => onAddMenuOpenChange(!addMenuOpen)}
+            >
+              <Plus size={16} aria-hidden strokeWidth={2} />
+            </button>
+            {addMenuOpen ? (
+              <div
+                className="desktop-agent-surface-add-menu"
+                role="menu"
+                aria-label="Add surface"
+              >
+                {menuItems.map((item, index) => {
+                  const disabled = item.needsCwd && !cwdAvailable;
+                  const highlighted = index === highlightIndex;
+                  const Icon = item.Icon;
+                  return (
+                    <button
+                      key={item.kind}
+                      ref={(node) => {
+                        itemRefs.current[index] = node;
+                      }}
+                      type="button"
+                      role="menuitem"
+                      className={`desktop-agent-surface-add-menu__item${
+                        highlighted ? " is-highlighted" : ""
+                      }`}
+                      disabled={disabled}
+                      aria-disabled={disabled || undefined}
+                      title={
+                        disabled
+                          ? "Available when a project working directory is set."
+                          : item.label
+                      }
+                      onMouseEnter={() => {
+                        if (!disabled) setHighlightIndex(index);
+                      }}
+                      onClick={() => {
+                        if (disabled) return;
+                        onAddSurface(item.kind);
+                        onAddMenuOpenChange(false);
+                      }}
+                    >
+                      <Icon size={14} aria-hidden strokeWidth={1.8} />
+                      <span className="desktop-agent-surface-add-menu__label">
+                        {item.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
 
-      {onStopAgent || onHide ? (
+      {onHide ? (
         <div className="desktop-agent-surface-tab-actions">
-          {onStopAgent ? (
-            <button
-              type="button"
-              className="desktop-agent-chat__stop"
-              aria-label="Stop agent"
-              title="Stop agent — end the ACP session and clear this task's agent chat"
-              onClick={onStopAgent}
-            >
-              Stop
-            </button>
-          ) : null}
-          {onHide ? (
-            <button
-              type="button"
-              className="desktop-agent-chat__hide"
-              onClick={onHide}
-              title="Hide agent chat"
-            >
-              Hide
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="desktop-agent-surface-tab desktop-agent-surface-tab--icon"
+            onClick={onHide}
+            title="Hide agent panel"
+            aria-label="Hide agent panel"
+          >
+            <ProjectsSidePanelIcon size={16} collapsed={false} rail="end" />
+          </button>
         </div>
       ) : null}
     </div>

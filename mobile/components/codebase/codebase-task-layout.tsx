@@ -12,7 +12,7 @@ type Props = {
 
 /**
  * iPad codebase task layout: narrow stacked detail | agent Chat/Terminal
- * (mirrors desktop `desktop-codebase-task-layout`).
+ * (mirrors desktop `desktop-task-layout`).
  * Sits under the native stack header (back + task id).
  */
 export function CodebaseTaskLayout({ detail, agent }: Props) {

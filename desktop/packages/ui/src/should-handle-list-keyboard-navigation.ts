@@ -41,6 +41,14 @@ function shouldHandleListKeyboardShortcut(event: KeyboardEvent): boolean {
     return false;
   }
 
+  // Agent Files tree owns j/k / arrows while a row is focused.
+  if (
+    target.closest('[data-agent-surface-focus="files-tree"]') ||
+    target.closest(".agent-surface-files-tree")
+  ) {
+    return false;
+  }
+
   if (target.closest("[data-searchable-dropdown-panel]")) {
     return false;
   }

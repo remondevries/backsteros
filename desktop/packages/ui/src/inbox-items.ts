@@ -346,3 +346,22 @@ export function groupInboxItemsByAttentionStatus(
   }
   return groups;
 }
+
+/**
+ * Flat j/k / arrow order matching the attention-grouped inbox list.
+ * Skips collapsed sections so keyboard nav cannot land on hidden rows.
+ */
+export function getInboxAttentionKeyboardItemIds(
+  items: readonly InboxListItem[],
+  collapsedKeys: ReadonlySet<string> = new Set(),
+  referenceDate: Date = new Date(),
+): string[] {
+  const ids: string[] = [];
+  for (const group of groupInboxItemsByAttentionStatus(items, referenceDate)) {
+    if (collapsedKeys.has(group.status)) continue;
+    for (const item of group.items) {
+      ids.push(item.id);
+    }
+  }
+  return ids;
+}

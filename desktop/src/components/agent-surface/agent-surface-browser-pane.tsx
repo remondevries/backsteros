@@ -24,6 +24,10 @@ import {
   listenAgentBrowserTitle,
   readElementBounds,
 } from "../../lib/agent/agent-browser-webview";
+import {
+  AGENT_SURFACE_FOCUS,
+  AGENT_SURFACE_FOCUS_ATTR,
+} from "../../lib/agent/agent-surface-focus";
 
 function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim();
@@ -58,11 +62,19 @@ async function openExternal(url: string): Promise<void> {
 
 const FOCUS_BROWSER_ADDRESS_EVENT = "backsteros:focus-browser-address";
 
+export { FOCUS_BROWSER_ADDRESS_EVENT };
+
 export type AgentSurfaceBrowserPaneProps = {
   /** Agent-surface tab id — used as the native webview label suffix. */
   tabId: string;
   /** Whether this browser pane is the active surface tab. */
   active?: boolean;
+  /**
+   * When true, hide the native webview even if this tab is active.
+   * Native Tauri webviews paint above HTML, so CSS z-index cannot cover
+   * dropdowns that overlap the page (e.g. the surface + menu).
+   */
+  overlayOpen?: boolean;
   initialUrl?: string | null;
   onUrlChange?: (url: string, title: string) => void;
 };
@@ -70,6 +82,7 @@ export type AgentSurfaceBrowserPaneProps = {
 export function AgentSurfaceBrowserPane({
   tabId,
   active = true,
+  overlayOpen = false,
   initialUrl = null,
   onUrlChange,
 }: AgentSurfaceBrowserPaneProps) {
@@ -213,12 +226,14 @@ export function AgentSurfaceBrowserPane({
   }, [url, native, ensureWebview, label]);
 
   // Show / hide when active tab changes (native webviews ignore CSS visibility).
+  // Also hide while an HTML overlay (surface + menu) is open — native layers
+  // paint above the page and cannot be covered with z-index.
   useEffect(() => {
     if (!native || !createdRef.current) return;
     let cancelled = false;
     const run = async () => {
       try {
-        if (active) {
+        if (active && !overlayOpen) {
           await syncBounds();
           if (!cancelled) await agentBrowserShow(label);
         } else {
@@ -232,7 +247,7 @@ export function AgentSurfaceBrowserPane({
     return () => {
       cancelled = true;
     };
-  }, [active, label, native, syncBounds]);
+  }, [active, label, native, overlayOpen, syncBounds]);
 
   // Keep bounds in sync with the host placeholder.
   useEffect(() => {
@@ -343,6 +358,7 @@ export function AgentSurfaceBrowserPane({
               autoFocus
               onChange={(event) => setDraft(event.target.value)}
               aria-label="URL"
+              {...{ [AGENT_SURFACE_FOCUS_ATTR]: AGENT_SURFACE_FOCUS.browserAddress }}
             />
             <button type="submit" className="agent-surface-browser-go">
               Open
@@ -410,6 +426,7 @@ export function AgentSurfaceBrowserPane({
           onFocus={(event) => event.currentTarget.select()}
           aria-label="URL"
           title="Address (⌘L)"
+          {...{ [AGENT_SURFACE_FOCUS_ATTR]: AGENT_SURFACE_FOCUS.browserAddress }}
         />
         <button
           type="button"

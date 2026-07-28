@@ -75,11 +75,14 @@ export function JournalNavIcon({ className }: SidebarNavIconProps) {
   );
 }
 
-export function KnowledgeBaseNavIcon({ className }: SidebarNavIconProps) {
+export function KnowledgeBaseNavIcon({
+  className,
+  size = 16,
+}: SidebarNavIconProps) {
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 16 16"
       fill="none"
       aria-hidden="true"

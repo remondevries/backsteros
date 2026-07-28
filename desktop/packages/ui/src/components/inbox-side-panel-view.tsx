@@ -34,6 +34,8 @@ import { InboxSidePanelSkeleton } from "./skeletons/inbox-side-panel-skeleton.js
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 
+const EMPTY_COLLAPSED_GROUPS: ReadonlySet<string> = new Set();
+
 export type InboxSidePanelViewProps = {
   pathname: string;
   items: InboxListItem[];
@@ -58,6 +60,12 @@ export type InboxSidePanelViewProps = {
    * with the shared label + rule line used on Projects/Areas.
    */
   groupByAttentionStatus?: boolean;
+  /**
+   * Collapsed attention-group keys when `groupByAttentionStatus` is on.
+   * Owned by the host so keyboard-nav item order can skip hidden rows.
+   */
+  collapsedGroups?: ReadonlySet<string>;
+  onToggleGroup?: (status: string) => void;
   /** Optional trailing control next to each task title (e.g. agent busy). */
   renderTitleTrailing?: (item: InboxListItem) => ReactNode;
   emptyLabel?: string;
@@ -94,6 +102,8 @@ export function InboxSidePanelView({
   onProjectChange,
   onAssigneeChange,
   groupByAttentionStatus = false,
+  collapsedGroups = EMPTY_COLLAPSED_GROUPS,
+  onToggleGroup,
   renderTitleTrailing,
   emptyLabel = "Your inbox is empty.",
   showHeader = true,
@@ -105,9 +115,6 @@ export function InboxSidePanelView({
   const [composing, setComposing] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
 
   const selectedItemId = useMemo(() => {
@@ -120,15 +127,6 @@ export function InboxSidePanelView({
       groupByAttentionStatus ? groupInboxItemsByAttentionStatus(items) : null,
     [groupByAttentionStatus, items],
   );
-
-  function toggleGroup(status: string) {
-    setCollapsedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
-  }
 
   function renderRow(item: InboxListItem) {
     const href = getInboxItemHref(item, items);
@@ -250,7 +248,7 @@ export function InboxSidePanelView({
                       key={group.status}
                       title={group.label}
                       collapsed={collapsedGroups.has(group.status)}
-                      onToggle={() => toggleGroup(group.status)}
+                      onToggle={() => onToggleGroup?.(group.status)}
                     >
                       {group.items.map((item) => renderRow(item))}
                     </ProjectTypeGroupSection>

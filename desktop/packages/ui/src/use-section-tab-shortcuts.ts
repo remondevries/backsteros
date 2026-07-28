@@ -5,16 +5,19 @@ import { useEffect } from "react";
 import {
   normalizeTabLocation,
   parseSectionTabIndex,
+  resolveAdjacentSectionTabHref,
   resolveDesktopSectionTabHrefs,
+  resolveSectionTabCycleShortcut,
 } from "./section-tab-hrefs.js";
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
 /**
  * Number keys switch list/entity section tabs (Next useSectionTabShortcuts).
+ * ⌥[ / ⌥] cycle previous / next among those same tabs.
  * On letter detail, 1–5 also select PDF attachments when no section tabs apply
  * (e.g. global `/letters/…`); project/org/contact letter routes prefer section tabs.
- * On codebase projects, 1–4 switch Tasks / Files / Commits / PRs while the
- * development workbench is mounted.
+ * On codebase projects, 1–4 (and ⌥[ / ⌥]) switch Tasks / Files / Commits / PRs
+ * while the development workbench is mounted.
  * Disabled on task detail routes so 1–5 do not leave the single-task layout.
  */
 export function useSectionTabShortcuts({
@@ -35,11 +38,33 @@ export function useSectionTabShortcuts({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (commandPaletteOpen) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      const cycle = resolveSectionTabCycleShortcut(event);
+      if (cycle != null) {
+        const tabHrefs = resolveDesktopSectionTabHrefs(pathname, search);
+        if (!tabHrefs?.length) return;
+
+        const targetHref = resolveAdjacentSectionTabHref(
+          tabHrefs,
+          pathname,
+          search,
+          cycle,
+        );
+        if (!targetHref) return;
+
+        const current = normalizeTabLocation(`${pathname}${search}`);
+        if (normalizeTabLocation(targetHref) === current) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onNavigate(targetHref);
+        return;
+      }
 
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }
-      if (!shouldHandleGlobalShortcut(event)) return;
 
       const tabIndex = parseSectionTabIndex(event.key);
       if (tabIndex == null) return;

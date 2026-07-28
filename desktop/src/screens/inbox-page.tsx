@@ -18,7 +18,7 @@ import {
 } from "@backsteros/ui";
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
-import { DesktopTaskWorkbench } from "../components/desktop-task-workbench";
+import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -249,13 +249,16 @@ export function InboxPage() {
         entityLabel={deleteEntityLabel}
         onDelete={handleDeleteTask}
       />
-      <DesktopTaskWorkbench
+      <DesktopTaskLayout
         taskId={selectedTask.id}
         projectId={project?.id ?? null}
         projectLabel={project?.name ?? selectedTask.projectName ?? "Task"}
         taskDisplayId={displayId}
         cwd={workingDirectory?.trim() || "~"}
         agentChatId={selectedTaskRecord?.agentChatId ?? null}
+        taskStatus={selectedTaskRecord?.status ?? selectedTask.status}
+        preferWideTaskPanel
+        viewScope={project?.type === "codebase" ? "codebase" : "rail"}
         taskSummary={{
           number: selectedTask.number ?? 0,
           title: selectedTask.title,
@@ -399,7 +402,7 @@ export function InboxPage() {
           />
         }
       />
-      </DesktopTaskWorkbench>
+      </DesktopTaskLayout>
     </>
   );
 }

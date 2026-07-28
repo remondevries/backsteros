@@ -369,51 +369,91 @@ html:has(.desktop-overlay-root--palette) .command-list {
   pointer-events: none;
 }
 
-/* Codebase task: detail left | agent Chat/Terminal right (workbench columns) */
-.bos-product-shell .desktop-codebase-task-layout[data-content-detail],
-.page-scroll .desktop-codebase-task-layout[data-content-detail],
-.desktop-codebase-task-layout[data-content-detail],
-.desktop-codebase-task-layout {
+/* Task layout: detail left | agent Chat/Terminal right
+ * Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }`
+ *
+ * CSS grid with explicit px tracks so collapse/expand interpolates both columns
+ * (flex 0 0 ↔ flex 1 / width:auto cannot animate and causes a full-width flicker).
+ * Drag-resize / ⌥ nudge still write --desktop-task-detail-col / --agent-col.
+ */
+.bos-product-shell .desktop-task-layout[data-content-detail],
+.page-scroll .desktop-task-layout[data-content-detail],
+.desktop-task-layout[data-content-detail],
+.desktop-task-layout {
+  --desktop-task-side-panel-width: 380px;
+  --desktop-task-agent-strip-width: 46px;
+  --desktop-task-detail-col: var(--desktop-task-side-panel-width);
+  --desktop-task-agent-col: 380px;
+  --desktop-task-layout-collapse-duration: 220ms;
+  --desktop-task-layout-collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
   display: grid !important;
-  grid-template-columns: var(--desktop-codebase-side-panel-width, 380px) minmax(0, 1fr);
+  grid-template-columns: var(--desktop-task-detail-col) var(--desktop-task-agent-col);
   grid-template-rows: minmax(0, 1fr);
-  flex-direction: unset;
+  align-items: stretch;
   gap: 0;
   min-height: 0;
   width: 100%;
   height: 100%;
   flex: 1;
   overflow: hidden;
-  transition: grid-template-columns 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.desktop-codebase-task-layout.is-skip-grid-transition,
-.desktop-codebase-task-layout.is-resizing {
-  transition: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .desktop-codebase-task-layout {
-    transition: none;
-  }
-}
-
-.desktop-codebase-task-layout__detail,
-.desktop-codebase-task-layout__terminal {
+.desktop-task-layout__detail,
+.desktop-task-layout__terminal {
   display: flex;
   min-width: 0;
   min-height: 0;
+  width: auto;
+  max-width: none;
   height: 100%;
   flex-direction: column;
   overflow: hidden;
 }
 
-.desktop-codebase-task-layout__detail {
+/* Only animate during collapse/expand — not while dragging or ⌥-/⌥= nudging. */
+.desktop-task-layout.is-collapse-animating {
+  transition-property: grid-template-columns;
+  transition-duration: var(--desktop-task-layout-collapse-duration);
+  transition-timing-function: var(--desktop-task-layout-collapse-ease);
+}
+
+.desktop-task-layout.is-resizing {
+  transition: none;
+}
+
+.desktop-task-layout__detail {
   position: relative;
   overflow: hidden;
 }
 
-.desktop-codebase-task-layout__detail-body {
+.desktop-task-layout.is-agent-collapsed .desktop-task-layout__detail {
+  border-right: 0;
+}
+
+.desktop-task-layout.is-detail-collapsed .desktop-task-layout__detail,
+.desktop-task-layout__detail.is-collapsed {
+  border-right: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: var(--background);
+}
+
+.desktop-task-layout__terminal {
+  position: relative;
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: var(--background);
+  overflow: hidden;
+}
+
+.desktop-task-layout.is-agent-collapsed .desktop-task-layout__terminal,
+.desktop-task-layout__terminal.is-collapsed {
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: transparent;
+}
+
+.desktop-task-layout.is-detail-collapsed .desktop-task-layout__terminal {
+  border-left: 0;
+}
+
+.desktop-task-layout__detail-body {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -422,19 +462,18 @@ html:has(.desktop-overlay-root--palette) .command-list {
   overflow: hidden;
 }
 
-.desktop-codebase-task-layout__detail-body[hidden] {
+.desktop-task-layout__detail-body > .task-detail-view {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.desktop-task-layout__detail-body[hidden] {
   display: none !important;
 }
 
-.desktop-codebase-task-layout__detail.is-collapsed {
-  flex: 0 0 46px;
-  width: 46px;
-  max-width: 46px;
-  border-right: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
-  background: var(--background);
-}
-
-.desktop-codebase-side-panel-resize {
+.desktop-codebase-side-panel-resize,
+.desktop-task-layout-side-panel-resize {
   position: absolute;
   z-index: 5;
   top: 0;
@@ -445,7 +484,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
   touch-action: none;
 }
 
-.desktop-codebase-side-panel-resize::after {
+.desktop-codebase-side-panel-resize::after,
+.desktop-task-layout-side-panel-resize::after {
   position: absolute;
   top: 12px;
   right: 4px;
@@ -457,66 +497,49 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .desktop-codebase-side-panel-resize:hover::after,
-.desktop-codebase-task-layout.is-resizing .desktop-codebase-side-panel-resize::after,
+.desktop-task-layout-side-panel-resize:hover::after,
+.desktop-task-layout.is-resizing .desktop-task-layout-side-panel-resize::after,
 .codebase-project-workbench.is-resizing .desktop-codebase-side-panel-resize::after {
   background: rgb(255 255 255 / 0.15);
 }
 
-.desktop-codebase-task-layout__detail-strip {
+.desktop-task-layout__detail-strip {
   display: flex;
   flex: 1;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
   width: 100%;
   min-height: 0;
   margin: 0;
   padding: 14px 0;
   border: 0;
   background: transparent;
-  color: rgb(163 163 163 / 0.95);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
   cursor: pointer;
 }
 
-.desktop-codebase-task-layout__detail-strip:hover {
-  color: rgb(247 249 255 / 0.92);
-  background: rgb(255 255 255 / 0.04);
+.desktop-task-layout__detail-strip:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
-.desktop-codebase-task-layout__detail-strip-label {
+.desktop-task-layout__detail-strip-status {
+  flex: none;
+}
+
+.desktop-task-layout__detail-strip-label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: inherit;
+  letter-spacing: normal;
+  line-height: 1;
+  text-transform: none;
 }
 
-.desktop-codebase-task-layout__terminal {
-  position: relative;
-  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
-  background: var(--background);
-  overflow: hidden;
-}
-
-.desktop-codebase-task-layout__terminal.is-collapsed {
-  flex: 0 0 46px;
-  width: 46px;
-  max-width: 46px;
-  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
-  background: transparent;
-}
-
-.desktop-codebase-task-layout.is-detail-collapsed
-  .desktop-codebase-task-layout__terminal {
-  border-left: 0;
-}
-
-.desktop-codebase-task-layout.is-agent-collapsed
-  .desktop-codebase-task-layout__detail {
-  border-right: 0;
-}
-
-.desktop-codebase-task-layout__terminal-body {
+.desktop-task-layout__terminal-body {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -528,25 +551,131 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 /*
  * Keep chat laid out at a usable width while the strip clips to 46px.
- * display:none / measuring at strip width leaves LegendList rows stuck
- * ~30px wide after expand (composer reflows; virtualized messages do not).
+ * The body stays visible so the collapsed vertical tab strip (positioned on
+ * the right edge) can receive clicks; main chat chrome is hidden separately.
  */
-.desktop-codebase-task-layout__terminal.is-collapsed
-  .desktop-codebase-task-layout__terminal-body {
+.desktop-task-layout__terminal.is-collapsed
+  .desktop-task-layout__terminal-body {
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: max(560px, calc(100vw - 420px));
-  visibility: hidden;
   pointer-events: none;
 }
 
-.desktop-codebase-task-layout__terminal .desktop-agent-chat,
-.desktop-codebase-task-layout__terminal .terminal-directory-gate,
-.desktop-codebase-task-layout__terminal .terminal-stage {
+.desktop-task-layout__terminal.is-collapsed .desktop-agent-chat {
+  pointer-events: none;
+}
+
+.desktop-task-layout__terminal.is-collapsed .desktop-agent-collapsed-strip {
+  pointer-events: auto;
+}
+
+.desktop-task-layout__terminal .desktop-agent-chat,
+.desktop-task-layout__terminal .terminal-directory-gate,
+.desktop-task-layout__terminal .terminal-stage {
   flex: 1;
   min-height: 0;
+}
+
+/* Collapsed agent strip — same pill tabs as the horizontal bar, stood on end */
+.desktop-agent-collapsed-strip {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  width: 46px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 8px;
+  background: var(--background);
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.desktop-agent-collapsed-strip__tabs {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.desktop-agent-collapsed-strip__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Right-strip vertical tabs = horizontal pills stood on end:
+ * icon then label, reading top→bottom (opposite of left Details spine).
+ * Use vertical-lr so glyphs run top→bottom; rotate icons to match.
+ */
+.desktop-agent-surface-tab.desktop-agent-surface-tab--vertical {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  height: auto;
+  min-height: 5.5rem;
+  max-height: 11rem;
+  padding: 8px 0;
+}
+
+.desktop-agent-surface-tab.desktop-agent-surface-tab--vertical
+  .desktop-agent-surface-tab-icon {
+  flex: none;
+  /* Match vertical-lr + sideways glyph rotation (90° CCW). */
+  transform: rotate(-90deg);
+}
+
+.desktop-agent-surface-tab.desktop-agent-surface-tab--vertical
+  .desktop-agent-surface-tab-label {
+  writing-mode: vertical-lr;
+  text-orientation: sideways;
+  transform: none;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: calc(11rem - 2rem);
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-agent-surface-tab.desktop-agent-surface-tab--vertical.is-ghost {
+  border: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 38%, transparent);
+}
+
+.desktop-agent-surface-tab.desktop-agent-surface-tab--vertical.is-ghost:hover {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+/* Icon-only tab (panel toggle) — same pill chrome as labeled tabs */
+.desktop-agent-surface-tab.desktop-agent-surface-tab--icon {
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.desktop-agent-chat.is-collapsed > .desktop-agent-chat__body,
+.desktop-agent-chat.is-collapsed > .desktop-agent-chat__error {
+  visibility: hidden;
 }
 
 .desktop-terminal-strip {
@@ -564,6 +693,10 @@ html:has(.desktop-overlay-root--palette) .command-list {
   cursor: pointer;
   user-select: none;
   font: inherit;
+}
+
+.desktop-terminal-strip:hover {
+  color: rgb(255 255 255 / 0.85);
 }
 
 .desktop-terminal-strip__label {
@@ -650,80 +783,83 @@ html:has(.desktop-overlay-root--palette) .command-list {
   color: var(--foreground);
 }
 
-/* In-flow agent surface tabs (file-editor style, not floating overlay) */
+/* Compact pill tabs (t3-style) — buttons in the panel chrome, + beside last tab.
+   Keep above surface panes; native browser webviews still need hide-on-menu. */
 .desktop-agent-surface-tab-bar {
+  position: relative;
+  z-index: 50;
   display: flex;
   flex-shrink: 0;
-  align-items: stretch;
-  min-height: 32px;
-  max-height: 32px;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 8px;
   background: var(--background);
 }
 
-.desktop-agent-surface-tab-list {
+/* Tabs + add sit together on the left; Hide stays on the far right. */
+.desktop-agent-surface-tab-cluster {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
-  align-items: stretch;
-  overflow-x: auto;
-  overflow-y: hidden;
+  align-items: center;
+  gap: 4px;
 }
 
-.desktop-agent-surface-tab-width {
+.desktop-agent-surface-tab-list {
+  /* Shrink to tab content so + sits beside the last tab; scroll when needed. */
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.desktop-agent-surface-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.desktop-agent-surface-tab-row {
   display: flex;
-  min-width: 88px;
-  max-width: 220px;
-  flex: 1 1 140px;
+  width: max-content;
+  align-items: center;
+  gap: 4px;
 }
 
 .desktop-agent-surface-tab {
-  position: relative;
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  padding: 0 6px;
+  gap: 6px;
+  min-width: 5.5rem;
+  max-width: 11rem;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  background: var(--background);
+  border-radius: 6px;
+  background: transparent;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   user-select: none;
   outline: none;
 }
 
-.desktop-agent-surface-tab.has-border-right {
-  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
 .desktop-agent-surface-tab:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
   color: var(--foreground);
 }
 
 .desktop-agent-surface-tab.is-active {
-  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
   color: var(--foreground);
-}
-
-.desktop-agent-surface-tab-active-bar {
-  pointer-events: none;
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 1;
-  height: 2px;
-  background: color-mix(in srgb, var(--foreground) 60%, var(--background));
 }
 
 .desktop-agent-surface-tab-icon {
   flex: none;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .desktop-agent-surface-tab-label {
@@ -734,42 +870,40 @@ html:has(.desktop-overlay-root--palette) .command-list {
   white-space: nowrap;
 }
 
-.desktop-agent-surface-tab-trailing {
-  position: relative;
-  display: flex;
+.desktop-agent-surface-tab-close {
+  display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
-}
-
-.desktop-agent-surface-tab-close {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
+  margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: 4px;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  opacity: 0;
   cursor: pointer;
 }
 
-.desktop-agent-surface-tab-close.is-active-tab {
-  display: inline-flex;
-}
-
+.desktop-agent-surface-tab.is-active .desktop-agent-surface-tab-close,
 .desktop-agent-surface-tab:hover .desktop-agent-surface-tab-close,
 .desktop-agent-surface-tab:focus-within .desktop-agent-surface-tab-close {
-  display: inline-flex;
+  opacity: 1;
 }
 
 .desktop-agent-surface-tab-close:hover {
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
   color: var(--foreground);
+}
+
+.desktop-agent-surface-tab-add-wrap {
+  position: relative;
+  z-index: 60;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 
 .desktop-agent-surface-tab-add {
@@ -778,11 +912,11 @@ html:has(.desktop-overlay-root--palette) .command-list {
   align-items: center;
   justify-content: center;
   width: 28px;
-  height: 100%;
+  height: 28px;
   margin: 0;
   padding: 0;
   border: 0;
-  border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-radius: 6px;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   cursor: pointer;
@@ -793,19 +927,11 @@ html:has(.desktop-overlay-root--palette) .command-list {
   background: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
-.desktop-agent-surface-tab-add-wrap {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: stretch;
-  height: 100%;
-}
-
 .desktop-agent-surface-add-menu {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
+  left: 0;
+  z-index: 70;
   display: flex;
   min-width: 220px;
   flex-direction: column;
@@ -819,13 +945,13 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-agent-surface-add-menu__item {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   margin: 0;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--foreground);
   font: inherit;
@@ -833,7 +959,8 @@ html:has(.desktop-overlay-root--palette) .command-list {
   cursor: pointer;
 }
 
-.desktop-agent-surface-add-menu__item:hover:not(:disabled) {
+.desktop-agent-surface-add-menu__item:hover:not(:disabled),
+.desktop-agent-surface-add-menu__item.is-highlighted:not(:disabled) {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
@@ -842,23 +969,12 @@ html:has(.desktop-overlay-root--palette) .command-list {
   opacity: 0.4;
 }
 
-.desktop-agent-surface-add-menu__text {
-  display: flex;
+.desktop-agent-surface-add-menu__label {
   min-width: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.desktop-agent-surface-add-menu__label {
   font-size: 13px;
-  font-weight: 600;
-}
-
-.desktop-agent-surface-add-menu__desc {
-  font-size: 11px;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .desktop-agent-surface-tab-actions {
@@ -866,8 +982,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
-  border-left: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  padding-left: 4px;
 }
 
 /* Agent surface panes (Browser / Terminal / Files / Plan / Diff) */
@@ -909,6 +1024,116 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .agent-surface-empty--centered p {
   margin: 0;
   max-width: 28rem;
+}
+
+/* t3-style empty right panel — pick a surface before Chat opens */
+.agent-surface-empty-picker {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.agent-surface-empty-picker__inner {
+  width: 100%;
+  max-width: 36rem;
+}
+
+.agent-surface-empty-picker__header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.agent-surface-empty-picker__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.agent-surface-empty-picker__subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.agent-surface-empty-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-surface-empty-picker__card {
+  position: relative;
+  display: flex;
+  min-height: 7rem;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 4%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.agent-surface-empty-picker__hotkey {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6rem;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.agent-surface-empty-picker__card:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 7%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+.agent-surface-empty-picker__card.is-disabled,
+.agent-surface-empty-picker__card:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.agent-surface-empty-picker__icon {
+  margin-bottom: 10px;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.agent-surface-empty-picker__label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.agent-surface-empty-picker__desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
 }
 
 .agent-surface-browser-chrome {
@@ -1130,12 +1355,15 @@ html:has(.desktop-overlay-root--palette) .command-list {
   margin: 0;
   padding: 4px 10px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 82%, transparent);
   font: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+  outline: none;
+  box-shadow: none;
 }
 
 .agent-surface-files-row:hover {
@@ -1143,9 +1371,25 @@ html:has(.desktop-overlay-root--palette) .command-list {
   color: var(--foreground);
 }
 
-.agent-surface-files-row.is-selected {
+.agent-surface-files-row:focus,
+.agent-surface-files-row:focus-visible {
+  outline: none;
+}
+
+.agent-surface-files-row.is-selected:not(.keyboard-nav-item-highlight) {
   background: color-mix(in srgb, var(--foreground) 12%, transparent);
   color: var(--foreground);
+}
+
+.agent-surface-files-row.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.agent-surface-files-row.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.agent-surface-files-row.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.agent-surface-files-row.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  color: var(--foreground);
+  background-color: var(--keyboard-nav-highlight-bg);
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width)
+    var(--keyboard-nav-highlight-color);
 }
 
 .agent-surface-files-row .is-open {
@@ -1198,24 +1442,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-agent-chat__footer.is-surface-hidden {
   visibility: hidden;
   pointer-events: none;
-}
-
-.desktop-agent-chat__hide {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: color-mix(in srgb, var(--foreground) 45%, transparent);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.desktop-agent-chat__hide:hover {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .desktop-agent-chat__body {
@@ -4307,26 +4533,6 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 
-.desktop-agent-chat__stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 3px 10px;
-  border: 0.5px solid rgb(248 81 73 / 0.5);
-  border-radius: 6px;
-  background: rgb(248 81 73 / 0.28);
-  color: rgb(255 255 255 / 0.92);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.desktop-agent-chat__stop:hover {
-  opacity: 0.92;
-}
-
 /* Development console status bar (Agents + CPU/MEM/Disk) */
 .console-statusbar {
   display: flex;
@@ -4345,6 +4551,10 @@ html:has(.desktop-overlay-root--palette) .command-list {
   font-variant-numeric: tabular-nums;
   line-height: 1;
   flex-shrink: 0;
+}
+
+.bos-product-shell.is-sidebar-collapsed .console-statusbar {
+  display: none;
 }
 
 .statusbar-agents {

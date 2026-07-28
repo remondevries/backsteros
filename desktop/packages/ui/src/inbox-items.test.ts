@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   buildInboxTaskListItem,
   getInboxAttentionGroupKey,
+  getInboxAttentionKeyboardItemIds,
   groupInboxItemsByAttentionStatus,
   isInboxOverdueTask,
   taskBelongsInInbox,
@@ -145,4 +146,24 @@ test("groupInboxItemsByAttentionStatus orders overdue → triage → hold → re
   );
   assert.equal(groups[0]?.items[0]?.id, "overdue");
   assert.equal(groups[0]?.label, "Overdue");
+});
+
+test("getInboxAttentionKeyboardItemIds follows visual group order, not updatedAt", () => {
+  const past = new Date(2026, 6, 10).getTime();
+  const items = [
+    task({ id: "review", status: "in_review", updatedAt: 99 }),
+    task({ id: "triage", status: "triage", inbox: true, updatedAt: 1 }),
+    task({ id: "overdue", status: "backlog", dueDate: past, updatedAt: 50 }),
+    task({ id: "hold", status: "on_hold", updatedAt: 80 }),
+  ];
+  assert.deepEqual(getInboxAttentionKeyboardItemIds(items, new Set(), wednesday), [
+    "overdue",
+    "triage",
+    "hold",
+    "review",
+  ]);
+  assert.deepEqual(
+    getInboxAttentionKeyboardItemIds(items, new Set(["triage"]), wednesday),
+    ["overdue", "hold", "review"],
+  );
 });

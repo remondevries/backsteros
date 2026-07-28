@@ -46,6 +46,7 @@ import {
   getContactsHref,
   getContactSidePanelHref,
   getContentSidePanelWidthKey,
+  getInboxAttentionKeyboardItemIds,
   getInboxItemHref,
   getInboxTaskRouteHref,
   getJournalHref,
@@ -233,25 +234,38 @@ function DesktopInboxSidePanel({
   ...viewProps
 }: Omit<
   InboxSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps"
+  | "highlightedId"
+  | "listRef"
+  | "listContainerProps"
+  | "collapsedGroups"
+  | "onToggleGroup"
 > &
   SidePanelNavProps) {
   const listRef = useRef<HTMLElement>(null);
-  const { pathname, items } = viewProps;
+  const { pathname, items, groupByAttentionStatus = false } = viewProps;
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
   const selectedId = selectedSlug
     ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
     : null;
+  const itemIds = useMemo(() => {
+    if (groupByAttentionStatus) {
+      return getInboxAttentionKeyboardItemIds(items, collapsedGroups);
+    }
+    return items.map((item) => item.id);
+  }, [collapsedGroups, groupByAttentionStatus, items]);
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
-    itemIds: items.map((item) => item.id),
+    itemIds,
     selectedId,
     onNavigate: (itemId) => {
       const item = items.find((entry) => entry.id === itemId);
       if (item) onNavigate(getInboxItemHref(item, items));
     },
     zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
+    enabled: itemIds.length > 0,
   });
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
@@ -259,6 +273,15 @@ function DesktopInboxSidePanel({
   return (
     <InboxSidePanelView
       {...viewProps}
+      collapsedGroups={collapsedGroups}
+      onToggleGroup={(status) => {
+        setCollapsedGroups((current) => {
+          const next = new Set(current);
+          if (next.has(status)) next.delete(status);
+          else next.add(status);
+          return next;
+        });
+      }}
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
@@ -1855,7 +1878,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           chromeHeader ??
           (sidePanel ? <BreadcrumbChromeSkeleton /> : null)
         }
-        statusBar={<DesktopStatusBar />}
+        statusBar={sidebarCollapsed ? null : <DesktopStatusBar />}
       >
         {children}
       </ProductAppShell>

@@ -19,6 +19,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
+  sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
   type ContactListItem,
   type InboxListItem,
@@ -650,9 +651,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   })();
 
   // Inbox is tasks-only (parity with Next). Letters live under /letters.
-  const inboxItems = [...inboxTaskItems].sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  );
+  // Order matches the attention-grouped side panel (overdue → triage → …).
+  const inboxItems = sortInboxItemsByAttentionStatus(inboxTaskItems);
 
   const toSnakeFields = useCallback((values: Record<string, unknown>) => {
     const snake: Record<string, unknown> = {};

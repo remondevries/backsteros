@@ -6,7 +6,6 @@ import {
   RegisterPageTitle,
   TaskDetailSkeleton,
   TaskDetailView,
-  TaskStackedDetailView,
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
   buildSpellcheckSegments,
@@ -27,8 +26,7 @@ import {
   DesktopTaskActivityPanel,
   type TaskSpellcheckAppliedPayload,
 } from "../components/desktop-task-activity-panel";
-import { DesktopCodebaseTaskLayout } from "../components/desktop-codebase-task-layout";
-import { DesktopTaskWorkbench } from "../components/desktop-task-workbench";
+import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -443,58 +441,6 @@ export function TaskDetailPage({
     />
   );
 
-  const stackedDetail = (
-    <TaskStackedDetailView
-      task={task}
-      onStatusChange={patchStatus}
-      onPriorityChange={patchPriority}
-      onDueDateChange={patchDueDate}
-      onAssigneeChange={patchAssignee}
-      onProjectChange={patchProjectKey}
-      onSaveDescription={saveDescription}
-      onChangeLinks={changeLinks}
-      onUploadImages={onUploadImages}
-      resolveImageSrc={resolveImageSrc}
-      onSaveTitle={saveTitle}
-      assigneeOptions={assigneeOptions}
-      projectOptions={projectOptions}
-      onCreateAssigneeFromQuery={createAssigneeFromQuery}
-      belowDescription={activityPanel(true)}
-    />
-  );
-
-  const splitDetail = (
-    <TaskDetailView
-      task={task}
-      spellcheckHighlight={spellcheckHighlight}
-      onSpellcheckHighlightClear={() => setSpellcheckHighlight(null)}
-      onToggleSpellcheckTitleSegment={onToggleSpellcheckTitleSegment}
-      onToggleSpellcheckDescriptionSegment={
-        onToggleSpellcheckDescriptionSegment
-      }
-      onStatusChange={patchStatus}
-      onPriorityChange={patchPriority}
-      onDueDateChange={patchDueDate}
-      onAssigneeChange={patchAssignee}
-      onProjectChange={patchProjectKey}
-      onSaveDescription={saveDescription}
-      onChangeLinks={changeLinks}
-      onUploadImages={onUploadImages}
-      resolveImageSrc={resolveImageSrc}
-      onSaveTitle={saveTitle}
-      assigneeOptions={assigneeOptions}
-      projectOptions={projectOptions}
-      assigneeNavigateHref={
-        task.assigneeId ? `/contacts/${task.assigneeId}` : null
-      }
-      projectNavigateHref={
-        task.projectKey ? `/projects/${task.projectKey}` : null
-      }
-      onCreateAssigneeFromQuery={createAssigneeFromQuery}
-      belowDescription={({ mode }) => activityPanel(mode === "preview")}
-    />
-  );
-
   return (
     <>
       <RegisterPageTitle title={task.title} />
@@ -502,40 +448,64 @@ export function TaskDetailPage({
         entityLabel={deleteEntityLabel}
         onDelete={handleDeleteTask}
       />
-      {isCodebaseTask && project ? (
-        <DesktopCodebaseTaskLayout
-          taskId={task.id}
-          projectId={project.id}
-          projectLabel={project.name ?? task.projectName ?? "Task"}
-          taskDisplayId={task.displayId ?? null}
-          cwd={workingDirectory}
-          agentChatId={base?.agentChatId ?? null}
-          taskStatus={task.status}
-          taskSummary={taskAgentSummary}
-          patchTaskValues={(values) => workspace.patchTask(task.id, values)}
-          onWorkingDirectoryChange={async (directory) => {
-            await workspace.patchProject(project.id, {
-              localWorkingDirectory: directory,
-            });
-          }}
-        >
-          {stackedDetail}
-        </DesktopCodebaseTaskLayout>
-      ) : (
-        <DesktopTaskWorkbench
-          taskId={task.id}
-          projectId={project?.id ?? null}
-          projectLabel={project?.name ?? task.projectName ?? "Task"}
-          taskDisplayId={task.displayId ?? null}
-          cwd={workingDirectory?.trim() || "~"}
-          agentChatId={base?.agentChatId ?? null}
-          taskStatus={task.status}
-          taskSummary={taskAgentSummary}
-          patchTaskValues={(values) => workspace.patchTask(task.id, values)}
-        >
-          {splitDetail}
-        </DesktopTaskWorkbench>
-      )}
+      <DesktopTaskLayout
+        taskId={task.id}
+        projectId={project?.id ?? null}
+        projectLabel={project?.name ?? task.projectName ?? "Task"}
+        taskDisplayId={task.displayId ?? null}
+        cwd={
+          isCodebaseTask
+            ? workingDirectory
+            : workingDirectory?.trim() || "~"
+        }
+        agentChatId={base?.agentChatId ?? null}
+        taskStatus={task.status}
+        taskSummary={taskAgentSummary}
+        patchTaskValues={(values) => workspace.patchTask(task.id, values)}
+        autoStartOnReadyToStart={isCodebaseTask}
+        preferWideTaskPanel={!isCodebaseTask}
+        viewScope={isCodebaseTask ? "codebase" : "rail"}
+        requireWorkingDirectory={isCodebaseTask}
+        onWorkingDirectoryChange={
+          isCodebaseTask && project
+            ? async (directory) => {
+                await workspace.patchProject(project.id, {
+                  localWorkingDirectory: directory,
+                });
+              }
+            : undefined
+        }
+      >
+        <TaskDetailView
+          task={task}
+          spellcheckHighlight={spellcheckHighlight}
+          onSpellcheckHighlightClear={() => setSpellcheckHighlight(null)}
+          onToggleSpellcheckTitleSegment={onToggleSpellcheckTitleSegment}
+          onToggleSpellcheckDescriptionSegment={
+            onToggleSpellcheckDescriptionSegment
+          }
+          onStatusChange={patchStatus}
+          onPriorityChange={patchPriority}
+          onDueDateChange={patchDueDate}
+          onAssigneeChange={patchAssignee}
+          onProjectChange={patchProjectKey}
+          onSaveDescription={saveDescription}
+          onChangeLinks={changeLinks}
+          onUploadImages={onUploadImages}
+          resolveImageSrc={resolveImageSrc}
+          onSaveTitle={saveTitle}
+          assigneeOptions={assigneeOptions}
+          projectOptions={projectOptions}
+          assigneeNavigateHref={
+            task.assigneeId ? `/contacts/${task.assigneeId}` : null
+          }
+          projectNavigateHref={
+            task.projectKey ? `/projects/${task.projectKey}` : null
+          }
+          onCreateAssigneeFromQuery={createAssigneeFromQuery}
+          belowDescription={({ mode }) => activityPanel(mode === "preview")}
+        />
+      </DesktopTaskLayout>
     </>
   );
 }

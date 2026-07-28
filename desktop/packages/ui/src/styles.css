@@ -383,7 +383,7 @@
 .app-side-panel-profile-logo-mark {
   display: block;
   flex-shrink: 0;
-  scale: 2;
+  scale: 1.3;
 }
 
 .app-side-panel-profile-name {
@@ -558,7 +558,7 @@
   border-radius: 999px;
   background: var(--muted);
   pointer-events: none;
-  outline: 2px solid var(--background);
+  outline: 2px solid #0a0a0a;
 }
 
 .sidebar-footer {
@@ -618,7 +618,12 @@
   height: 44px;
   flex-shrink: 0;
   align-items: center;
-  padding: 0 4px 0 0;
+  padding: 0 8px 0 12px;
+  transition: padding 180ms ease;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
+  padding-right: 0;
 }
 
 .content-tabs-scroll {
@@ -811,11 +816,24 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  margin: 0 4px 4px 0;
+  margin: 0 8px 8px 12px;
   overflow: hidden;
   border: 0.5px solid var(--border);
-  border-radius: 5px;
+  border-radius: 8px;
   background: rgb(255 255 255 / 0.05);
+  transition:
+    margin 180ms ease,
+    border-radius 180ms ease,
+    border-width 180ms ease;
+}
+
+/* Nav hidden: content fills the window edge-to-edge (no gutter / radius). */
+.bos-product-shell.is-sidebar-collapsed .content-frame {
+  margin: 0;
+  border-radius: 0;
+  border-left-width: 0;
+  border-right-width: 0;
+  border-bottom-width: 0;
 }
 
 .content-frame-main-only .context-panel {
@@ -7999,6 +8017,7 @@ body.app-is-dragging * {
 
 /* Letter / task detail: notes(+PDF) | properties — web data-detail-split parity */
 .letter-detail-split,
+.task-detail-view,
 .task-detail-split {
   display: flex;
   min-height: 0;
@@ -14784,13 +14803,16 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 }
 
 /* —— Codebase project workbench host —— */
-/* Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }` */
+/* Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }`
+ * Grid + 1fr keeps the detail column filling leftover space while the left
+ * width is driven by --desktop-codebase-side-panel-width (rAF / drag). */
 .bos-product-shell .codebase-project-workbench[data-content-detail],
 .page-scroll .codebase-project-workbench[data-content-detail],
 .codebase-project-workbench[data-content-detail],
 .codebase-project-workbench {
+  --desktop-codebase-side-panel-width: 380px;
   display: grid !important;
-  grid-template-columns: var(--desktop-codebase-side-panel-width, 380px) minmax(0, 1fr);
+  grid-template-columns: var(--desktop-codebase-side-panel-width) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   flex-direction: unset;
   gap: 0;
@@ -14814,6 +14836,10 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
 .codebase-project-workbench__list {
   position: relative;
   border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.codebase-project-workbench__detail {
+  min-width: 0;
 }
 
 .codebase-project-workbench__list > .console-pane,

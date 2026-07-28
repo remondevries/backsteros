@@ -225,6 +225,7 @@ export {
   getInboxTaskRouteHref,
   getInboxTaskRouteSlugForTask,
   getProjectTaskHref,
+  getInboxAttentionKeyboardItemIds,
   groupInboxItemsByAttentionStatus,
   isInboxOverdueTask,
   sortInboxItemsByAttentionStatus,
@@ -368,6 +369,8 @@ export { ContactPersonIcon } from "./components/contact-person-icon.js";
 export { OrganizationIcon } from "./components/organization-icon.js";
 export { DefaultProjectIcon } from "./components/default-project-icon.js";
 export { TerminalConsoleIcon } from "./components/terminal-console-icon.js";
+export { BrowserWindowIcon } from "./components/browser-window-icon.js";
+export { ProjectsSidePanelIcon } from "./components/codebase/projects-side-panel-icon.js";
 export {
   ProjectOcticon,
   getDisplayProjectIcon,
@@ -1236,6 +1239,7 @@ export { SpellcheckSegmentText } from "./components/spellcheck-segment-text.js";
 
 export {
   TaskDetailView,
+  TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT,
   type TaskDetailBelowDescriptionContext,
   type TaskDetailViewProps,
   type TaskDetailViewTask,
@@ -1878,6 +1882,10 @@ export {
   isCodebaseWorkbenchMounted,
   parseSectionTabIndex,
   normalizeTabLocation,
+  resolveSectionTabCycleShortcut,
+  findActiveSectionTabIndex,
+  resolveAdjacentSectionTabHref,
+  type SectionTabCycleDirection,
 } from "./section-tab-hrefs.js";
 
 export { useNavigationShortcuts } from "./use-navigation-shortcuts.js";
@@ -1886,7 +1894,12 @@ export { useSectionTabShortcuts } from "./use-section-tab-shortcuts.js";
 export { useEscapeBackNavigation } from "./use-escape-back-navigation.js";
 export { useTaskPropertyDropdownShortcuts } from "./use-task-property-dropdown-shortcuts.js";
 export { useListBoardViewShortcuts } from "./use-list-board-view-shortcuts.js";
-export { useTabShortcuts } from "./use-tab-shortcuts.js";
+export {
+  resolveTabCycleShortcut,
+  useTabShortcuts,
+  type TabCycleDirection,
+} from "./use-tab-shortcuts.js";
+
 export { useContentSidePanelToggleShortcut } from "./use-content-side-panel-toggle-shortcut.js";
 
 export {

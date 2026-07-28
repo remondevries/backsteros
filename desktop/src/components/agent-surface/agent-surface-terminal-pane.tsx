@@ -5,19 +5,31 @@ import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 
 import { getPtyWebSocketUrl } from "../../lib/pty";
+import {
+  AGENT_SURFACE_FOCUS,
+  AGENT_SURFACE_FOCUS_ATTR,
+  BLUR_AGENT_TERMINAL_EVENT,
+  FOCUS_AGENT_TERMINAL_EVENT,
+} from "../../lib/agent/agent-surface-focus";
 
 export type AgentSurfaceTerminalPaneProps = {
   cwd: string;
   sessionKey: string;
   label?: string | null;
+  /** When false, Tab/Escape focus events for this session are ignored. */
+  active?: boolean;
 };
 
 export function AgentSurfaceTerminalPane({
   cwd,
   sessionKey,
   label = null,
+  active = true,
 }: AgentSurfaceTerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -46,6 +58,7 @@ export function AgentSurfaceTerminalPane({
     }
     term.open(host);
     fit.fit();
+    termRef.current = term;
 
     const cols = term.cols;
     const rows = term.rows;
@@ -99,6 +112,7 @@ export function AgentSurfaceTerminalPane({
       observer.disconnect();
       dataDisp.dispose();
       resizeDisp.dispose();
+      termRef.current = null;
       try {
         socket.close();
       } catch {
@@ -108,9 +122,39 @@ export function AgentSurfaceTerminalPane({
     };
   }, [cwd, label, sessionKey]);
 
+  // Tab / Escape from the agent panel focus or blur this session’s terminal.
+  useEffect(() => {
+    const matches = (event: Event) => {
+      if (!activeRef.current) return false;
+      const detail = (event as CustomEvent<{ sessionKey?: string | null }>).detail;
+      const key = detail?.sessionKey;
+      return key == null || key === sessionKey;
+    };
+
+    const onFocus = (event: Event) => {
+      if (!matches(event)) return;
+      termRef.current?.focus();
+    };
+    const onBlur = (event: Event) => {
+      if (!matches(event)) return;
+      termRef.current?.blur();
+    };
+
+    window.addEventListener(FOCUS_AGENT_TERMINAL_EVENT, onFocus);
+    window.addEventListener(BLUR_AGENT_TERMINAL_EVENT, onBlur);
+    return () => {
+      window.removeEventListener(FOCUS_AGENT_TERMINAL_EVENT, onFocus);
+      window.removeEventListener(BLUR_AGENT_TERMINAL_EVENT, onBlur);
+    };
+  }, [sessionKey]);
+
   return (
     <div className="agent-surface-pane agent-surface-pane--terminal">
-      <div ref={hostRef} className="agent-surface-terminal-host" />
+      <div
+        ref={hostRef}
+        className="agent-surface-terminal-host"
+        {...{ [AGENT_SURFACE_FOCUS_ATTR]: AGENT_SURFACE_FOCUS.terminal }}
+      />
     </div>
   );
 }

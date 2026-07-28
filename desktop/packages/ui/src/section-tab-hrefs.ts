@@ -196,3 +196,74 @@ export function normalizeTabLocation(href: string): string {
     return href;
   }
 }
+
+export type SectionTabCycleDirection = "previous" | "next";
+
+/**
+ * ⌥[ / ⌥] — previous / next in-page section tab (tasks due pills, codebase
+ * Tasks/Files/Commits/PRs, project/contact/org sections). Match by `code`:
+ * with Option held, `event.key` is often a special character on macOS.
+ */
+export function resolveSectionTabCycleShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code"
+  >,
+): SectionTabCycleDirection | null {
+  if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
+    return null;
+  }
+  if (event.code === "BracketLeft") return "previous";
+  if (event.code === "BracketRight") return "next";
+  return null;
+}
+
+/**
+ * Index of the active section tab for the current location.
+ * Exact location match first; otherwise longest pathname prefix (nested
+ * routes like `/projects/x/commits/abc` → Commits).
+ */
+export function findActiveSectionTabIndex(
+  tabHrefs: readonly string[],
+  pathname: string,
+  search = "",
+): number {
+  const current = normalizeTabLocation(`${pathname}${search}`);
+  const exact = tabHrefs.findIndex(
+    (href) => normalizeTabLocation(href) === current,
+  );
+  if (exact >= 0) return exact;
+
+  const currentPath = current.split("?")[0] ?? current;
+  let best = -1;
+  let bestLen = -1;
+  for (let i = 0; i < tabHrefs.length; i++) {
+    const tabPath =
+      normalizeTabLocation(tabHrefs[i]!).split("?")[0] ?? tabHrefs[i]!;
+    if (currentPath === tabPath || currentPath.startsWith(`${tabPath}/`)) {
+      if (tabPath.length > bestLen) {
+        bestLen = tabPath.length;
+        best = i;
+      }
+    }
+  }
+  return best;
+}
+
+/** Adjacent section-tab href for ⌥[ / ⌥], or null when there is nowhere to go. */
+export function resolveAdjacentSectionTabHref(
+  tabHrefs: readonly string[],
+  pathname: string,
+  search: string,
+  direction: SectionTabCycleDirection,
+): string | null {
+  if (tabHrefs.length <= 1) return null;
+  const index = findActiveSectionTabIndex(tabHrefs, pathname, search);
+  if (index < 0) return null;
+
+  const nextIndex =
+    direction === "next"
+      ? (index + 1) % tabHrefs.length
+      : (index - 1 + tabHrefs.length) % tabHrefs.length;
+  return tabHrefs[nextIndex] ?? null;
+}

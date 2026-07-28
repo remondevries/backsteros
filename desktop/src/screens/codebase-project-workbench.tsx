@@ -15,6 +15,7 @@ import {
   getCodebaseWorkbenchHref,
   normalizeWorkingDirectory,
   parseCodebaseWorkbenchPath,
+  shouldHandleGlobalShortcut,
   type CodebaseGithubListTab,
   type ProjectDetailNestedArea,
   type ProjectFsClient,
@@ -24,10 +25,11 @@ import {
 
 import { useDesktopApi } from "../lib/api-context";
 import {
-  CODEBASE_SIDE_PANEL_MAX_WIDTH,
   CODEBASE_SIDE_PANEL_MIN_WIDTH,
+  CODEBASE_SIDE_PANEL_NUDGE_STEP,
   useCodebaseSidePanelWidth,
 } from "../lib/codebase-side-panel-layout";
+import { resolvePanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
 
@@ -422,8 +424,27 @@ export function CodebaseProjectWorkbench({
     containerRef,
     panelWidth: sidePanelWidth,
     beginResize: beginSidePanelResize,
+    nudgePanelWidth: nudgeSidePanelWidth,
     isResizing: isSidePanelResizing,
-  } = useCodebaseSidePanelWidth();
+  } = useCodebaseSidePanelWidth(project.id);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const direction = resolvePanelResizeShortcut(event);
+      if (!direction) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const delta =
+        direction === "shrink-left"
+          ? -CODEBASE_SIDE_PANEL_NUDGE_STEP
+          : CODEBASE_SIDE_PANEL_NUDGE_STEP;
+      nudgeSidePanelWidth(delta);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [nudgeSidePanelWidth]);
 
   const showCommitDetail =
     selection.tab === "commits" && Boolean(selectedCommit);
@@ -575,9 +596,6 @@ export function CodebaseProjectWorkbench({
       ]
         .filter(Boolean)
         .join(" ")}
-      style={{
-        gridTemplateColumns: `${sidePanelWidth}px minmax(0, 1fr)`,
-      }}
       data-codebase-workbench
       data-content-detail
     >
@@ -634,9 +652,8 @@ export function CodebaseProjectWorkbench({
           aria-orientation="vertical"
           aria-label="Resize side panel"
           aria-valuemin={CODEBASE_SIDE_PANEL_MIN_WIDTH}
-          aria-valuemax={CODEBASE_SIDE_PANEL_MAX_WIDTH}
           aria-valuenow={sidePanelWidth}
-          title="Drag to resize"
+          title="Drag to resize · ⌥- / ⌥="
           className="desktop-codebase-side-panel-resize"
           onPointerDown={(event) => {
             event.preventDefault();

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveDesktopSectionTabHrefs } from "../dist/section-tab-hrefs.js";
+import {
+  findActiveSectionTabIndex,
+  resolveAdjacentSectionTabHref,
+  resolveDesktopSectionTabHrefs,
+  resolveSectionTabCycleShortcut,
+} from "../dist/section-tab-hrefs.js";
 
 test("project overview uses default section tabs when workbench is not mounted", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo"), [
@@ -103,4 +108,102 @@ test("mounted codebase workbench maps bare project path to list tabs", () => {
   } finally {
     globalThis.document = previousDocument;
   }
+});
+
+test("⌥[ / ⌥] resolve to previous / next section tab", () => {
+  assert.equal(
+    resolveSectionTabCycleShortcut({
+      altKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      code: "BracketLeft",
+    }),
+    "previous",
+  );
+  assert.equal(
+    resolveSectionTabCycleShortcut({
+      altKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      code: "BracketRight",
+    }),
+    "next",
+  );
+  assert.equal(
+    resolveSectionTabCycleShortcut({
+      altKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: true,
+      code: "BracketLeft",
+    }),
+    null,
+  );
+});
+
+test("findActiveSectionTabIndex matches nested codebase routes", () => {
+  const tabs = [
+    "/projects/demo",
+    "/projects/demo/files",
+    "/projects/demo/commits",
+    "/projects/demo/pulls",
+  ];
+  assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo"), 0);
+  assert.equal(findActiveSectionTabIndex(tabs, "/projects/demo/files"), 1);
+  assert.equal(
+    findActiveSectionTabIndex(tabs, "/projects/demo/commits/abc123"),
+    2,
+  );
+});
+
+test("resolveAdjacentSectionTabHref cycles tasks due pills", () => {
+  const tabs = resolveDesktopSectionTabHrefs("/tasks")!;
+  assert.deepEqual(tabs, [
+    "/tasks",
+    "/tasks?due=tomorrow",
+    "/tasks?due=this-week",
+    "/tasks?due=next-week",
+    "/tasks?due=overdue",
+  ]);
+  assert.equal(
+    resolveAdjacentSectionTabHref(tabs, "/tasks", "", "next"),
+    "/tasks?due=tomorrow",
+  );
+  assert.equal(
+    resolveAdjacentSectionTabHref(tabs, "/tasks", "", "previous"),
+    "/tasks?due=overdue",
+  );
+  assert.equal(
+    resolveAdjacentSectionTabHref(
+      tabs,
+      "/tasks",
+      "?due=tomorrow",
+      "next",
+    ),
+    "/tasks?due=this-week",
+  );
+});
+
+test("resolveAdjacentSectionTabHref cycles codebase workbench tabs", () => {
+  const tabs = [
+    "/projects/demo",
+    "/projects/demo/files",
+    "/projects/demo/commits",
+    "/projects/demo/pulls",
+  ];
+  assert.equal(
+    resolveAdjacentSectionTabHref(tabs, "/projects/demo/files", "", "next"),
+    "/projects/demo/commits",
+  );
+  assert.equal(
+    resolveAdjacentSectionTabHref(
+      tabs,
+      "/projects/demo/commits/abc",
+      "",
+      "previous",
+    ),
+    "/projects/demo/files",
+  );
 });

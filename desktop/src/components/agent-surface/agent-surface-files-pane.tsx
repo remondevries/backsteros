@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
-import { FileDetailPane, FileTypeIcon } from "@backsteros/ui";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import {
+  FileDetailPane,
+  FileTypeIcon,
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "@backsteros/ui";
 import {
   ChevronRight,
   File,
@@ -9,6 +21,10 @@ import {
 } from "lucide-react";
 
 import { projectFs, type FsTreeEntry } from "../../lib/project-fs";
+import {
+  AGENT_SURFACE_FOCUS,
+  AGENT_SURFACE_FOCUS_ATTR,
+} from "../../lib/agent/agent-surface-focus";
 
 type TreeNode = FsTreeEntry & {
   children?: TreeNode[];
@@ -20,16 +36,56 @@ export type AgentSurfaceFilesPaneProps = {
   cwd: string;
 };
 
+function flattenVisibleNodes(nodes: TreeNode[]): TreeNode[] {
+  const out: TreeNode[] = [];
+  const walk = (list: TreeNode[]) => {
+    for (const node of list) {
+      out.push(node);
+      if (node.kind === "directory" && node.open && node.children?.length) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+function parentPathFor(nodes: TreeNode[], path: string): string | null {
+  const stack: { list: TreeNode[]; parent: string | null }[] = [
+    { list: nodes, parent: null },
+  ];
+  while (stack.length > 0) {
+    const { list, parent } = stack.pop()!;
+    for (const node of list) {
+      if (node.path === path) return parent;
+      if (node.children?.length) {
+        stack.push({ list: node.children, parent: node.path });
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Project file browser matching the codebase workbench Files experience:
  * tree on the left, FileDetailPane (CodeMirror) on the right.
  */
 export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
+  const treeRef = useRef<HTMLUListElement | null>(null);
   const [roots, setRoots] = useState<TreeNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+
+  const visibleNodes = useMemo(() => flattenVisibleNodes(roots), [roots]);
+  const visibleNodesRef = useRef(visibleNodes);
+  visibleNodesRef.current = visibleNodes;
+  const focusedPathRef = useRef(focusedPath);
+  focusedPathRef.current = focusedPath;
+  const rootsRef = useRef(roots);
+  rootsRef.current = roots;
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
@@ -61,19 +117,38 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
   }, [loadRoot]);
 
   useEffect(() => {
-    // Reset open editors when the working directory changes.
     setOpenPaths([]);
     setActivePath(null);
+    setFocusedPath(null);
   }, [cwd]);
+
+  // Keep keyboard highlight on the first row after roots load / Tab focus.
+  useEffect(() => {
+    if (focusedPath && visibleNodes.some((node) => node.path === focusedPath)) {
+      return;
+    }
+    setFocusedPath(visibleNodes[0]?.path ?? null);
+  }, [focusedPath, visibleNodes]);
 
   const openFile = useCallback((path: string) => {
     setOpenPaths((current) =>
       current.includes(path) ? current : [...current, path],
     );
     setActivePath(path);
+    setFocusedPath(path);
   }, []);
 
-  const toggleDir = async (path: string) => {
+  const focusRow = useCallback((path: string) => {
+    setFocusedPath(path);
+    const row = treeRef.current?.querySelector<HTMLElement>(
+      `[data-keyboard-nav-item="${CSS.escape(path)}"] .agent-surface-files-row`,
+    );
+    row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const toggleDir = useCallback(async (path: string) => {
+    setFocusedPath(path);
     setRoots((current) => {
       const next = structuredClone(current) as TreeNode[];
       const walk = (nodes: TreeNode[]): boolean => {
@@ -90,7 +165,7 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
       return next;
     });
 
-    const target = findNode(roots, path);
+    const target = findNode(rootsRef.current, path);
     if (!target || target.kind !== "directory" || target.loaded) return;
 
     try {
@@ -120,7 +195,122 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open folder.");
     }
-  };
+  }, []);
+
+  const expandDir = useCallback(
+    async (path: string) => {
+      const target = findNode(rootsRef.current, path);
+      if (!target || target.kind !== "directory") return;
+      if (target.open) return;
+      await toggleDir(path);
+    },
+    [toggleDir],
+  );
+
+  const collapseDir = useCallback((path: string) => {
+    setRoots((current) => {
+      const next = structuredClone(current) as TreeNode[];
+      const walk = (nodes: TreeNode[]): boolean => {
+        for (const node of nodes) {
+          if (node.path === path) {
+            node.open = false;
+            return true;
+          }
+          if (node.children && walk(node.children)) return true;
+        }
+        return false;
+      };
+      walk(next);
+      return next;
+    });
+  }, []);
+
+  const handleTreeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLUListElement>) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key;
+      const isNext =
+        key === "ArrowDown" || key === "j" || key === "J";
+      const isPrev = key === "ArrowUp" || key === "k" || key === "K";
+      const isExpand = key === "ArrowRight";
+      const isCollapse = key === "ArrowLeft";
+      const isConfirm = key === "Enter" || key === " ";
+
+      if (!isNext && !isPrev && !isExpand && !isCollapse && !isConfirm) {
+        return;
+      }
+
+      const nodes = visibleNodesRef.current;
+      if (nodes.length === 0) return;
+
+      const currentPath =
+        focusedPathRef.current ??
+        nodes.find((node) => node.path === activePath)?.path ??
+        nodes[0]?.path ??
+        null;
+      if (!currentPath) return;
+      const index = nodes.findIndex((node) => node.path === currentPath);
+      if (index < 0) return;
+      const current = nodes[index]!;
+
+      if (isNext || isPrev) {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextIndex = isNext
+          ? Math.min(nodes.length - 1, index + 1)
+          : Math.max(0, index - 1);
+        const next = nodes[nextIndex];
+        if (next) focusRow(next.path);
+        return;
+      }
+
+      if (isExpand) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (current.kind === "directory") {
+          if (!current.open) {
+            void expandDir(current.path);
+            return;
+          }
+          const firstChild = current.children?.[0];
+          if (firstChild) focusRow(firstChild.path);
+        }
+        return;
+      }
+
+      if (isCollapse) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (current.kind === "directory" && current.open) {
+          collapseDir(current.path);
+          focusRow(current.path);
+          return;
+        }
+        const parent = parentPathFor(rootsRef.current, current.path);
+        if (parent) focusRow(parent);
+        return;
+      }
+
+      if (isConfirm) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (current.kind === "directory") {
+          void toggleDir(current.path);
+        } else {
+          openFile(current.path);
+        }
+      }
+    },
+    [
+      activePath,
+      collapseDir,
+      expandDir,
+      focusRow,
+      openFile,
+      toggleDir,
+    ],
+  );
 
   return (
     <div className="agent-surface-pane agent-surface-pane--files">
@@ -148,15 +338,24 @@ export function AgentSurfaceFilesPane({ cwd }: AgentSurfaceFilesPaneProps) {
             </p>
           ) : null}
           {!loading && !error ? (
-            <ul className="agent-surface-files-tree">
+            <ul
+              ref={treeRef}
+              className="agent-surface-files-tree"
+              role="tree"
+              aria-label="Project files"
+              {...{ [AGENT_SURFACE_FOCUS_ATTR]: AGENT_SURFACE_FOCUS.filesTree }}
+              onKeyDown={handleTreeKeyDown}
+            >
               {roots.map((node) => (
                 <FileTreeNode
                   key={node.path}
                   node={node}
                   depth={0}
                   selectedPath={activePath}
+                  focusedPath={focusedPath}
                   onToggleDir={(p) => void toggleDir(p)}
                   onOpenFile={openFile}
+                  onFocusPath={setFocusedPath}
                 />
               ))}
             </ul>
@@ -216,24 +415,34 @@ function FileTreeNode({
   node,
   depth,
   selectedPath,
+  focusedPath,
   onToggleDir,
   onOpenFile,
+  onFocusPath,
 }: {
   node: TreeNode;
   depth: number;
   selectedPath: string | null;
+  focusedPath: string | null;
   onToggleDir: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onFocusPath: (path: string) => void;
 }) {
   const isDir = node.kind === "directory";
   const isSelected = !isDir && node.path === selectedPath;
+  const isFocused = node.path === focusedPath;
   return (
-    <li>
+    <li role="treeitem" aria-expanded={isDir ? Boolean(node.open) : undefined} {...keyboardNavItemProps(node.path)}>
       <button
         type="button"
-        className={`agent-surface-files-row${isSelected ? " is-selected" : ""}`}
+        tabIndex={isFocused ? 0 : -1}
+        className={`agent-surface-files-row${
+          isSelected ? " is-selected" : ""
+        } ${keyboardNavListItemClass(isFocused)}`}
         style={{ paddingLeft: 8 + depth * 12 }}
+        onFocus={() => onFocusPath(node.path)}
         onClick={() => {
+          onFocusPath(node.path);
           if (isDir) onToggleDir(node.path);
           else onOpenFile(node.path);
         }}
@@ -259,15 +468,17 @@ function FileTreeNode({
         <span>{node.name}</span>
       </button>
       {isDir && node.open && node.children?.length ? (
-        <ul>
+        <ul role="group">
           {node.children.map((child) => (
             <FileTreeNode
               key={child.path}
               node={child}
               depth={depth + 1}
               selectedPath={selectedPath}
+              focusedPath={focusedPath}
               onToggleDir={onToggleDir}
               onOpenFile={onOpenFile}
+              onFocusPath={onFocusPath}
             />
           ))}
         </ul>

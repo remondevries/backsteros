@@ -21,7 +21,8 @@ export type AgentSurfaceTab = {
 
 export type AgentSurfaceTabsState = {
   tabs: AgentSurfaceTab[];
-  activeId: string;
+  /** `null` when no surface is open (empty picker). */
+  activeId: string | null;
 };
 
 /** Singleton surfaces — re-activate if already open. */
@@ -41,7 +42,7 @@ function newTabId(): string {
 function baseTitleForKind(kind: AgentSurfaceTabKind): string {
   switch (kind) {
     case "chat":
-      return "Chat";
+      return "Agent";
     case "browser":
       return "Browser";
     case "terminal":
@@ -83,12 +84,9 @@ export function nextChatTabTitle(tabs: AgentSurfaceTab[]): string {
   return nextNumberedTabTitle(tabs, "chat");
 }
 
+/** Empty right panel — show the “Open a surface” picker. */
 export function createDefaultAgentSurfaceTabs(): AgentSurfaceTabsState {
-  const id = newTabId();
-  return {
-    tabs: [{ id, kind: "chat", title: "Chat" }],
-    activeId: id,
-  };
+  return { tabs: [], activeId: null };
 }
 
 /**
@@ -131,6 +129,18 @@ export function addAgentSurfaceChatTab(
   return addAgentSurfaceTab(tabs, "chat");
 }
 
+/**
+ * Ensure a Chat tab exists and is active. No-op (aside from activating) when
+ * Chat is already open — used when an agent session becomes ready.
+ */
+export function ensureChatTab(tabs: AgentSurfaceTab[]): AgentSurfaceTabsState {
+  const existing = tabs.find((tab) => tab.kind === "chat");
+  if (existing) {
+    return { tabs, activeId: existing.id };
+  }
+  return addAgentSurfaceTab(tabs, "chat");
+}
+
 export function updateAgentSurfaceTab(
   tabs: AgentSurfaceTab[],
   id: string,
@@ -140,28 +150,80 @@ export function updateAgentSurfaceTab(
 }
 
 /**
- * Close a tab. Never leaves zero tabs — closing the last tab is a no-op.
- * When closing the active tab, activate the neighbor to the left (or right if first).
+ * Close a tab. Closing the last tab yields an empty state (surface picker).
+ * When closing the active tab among several, activate the neighbor to the left
+ * (or right if first).
  */
 export function closeAgentSurfaceTab(
   tabs: AgentSurfaceTab[],
   id: string,
-  activeId: string,
+  activeId: string | null,
 ): AgentSurfaceTabsState {
-  if (tabs.length <= 1) {
-    const only = tabs[0];
-    if (only) return { tabs, activeId: only.id };
-    return createDefaultAgentSurfaceTabs();
-  }
-
   const index = tabs.findIndex((tab) => tab.id === id);
   if (index < 0) return { tabs, activeId };
 
   const next = tabs.filter((tab) => tab.id !== id);
+  if (next.length === 0) {
+    return { tabs: [], activeId: null };
+  }
   if (activeId !== id) return { tabs: next, activeId };
 
   const neighbor = next[Math.max(0, index - 1)] ?? next[0]!;
   return { tabs: next, activeId: neighbor.id };
+}
+
+export type AgentSurfaceTabCycleDirection = "previous" | "next";
+
+/**
+ * ⌥[ / ⌥] — previous / next agent surface tab on the task right panel.
+ * Match by `code`: with Option held, `event.key` is often a special character.
+ */
+export function resolveAgentSurfaceTabCycleShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code"
+  >,
+): AgentSurfaceTabCycleDirection | null {
+  if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
+    return null;
+  }
+  if (event.code === "BracketLeft") return "previous";
+  if (event.code === "BracketRight") return "next";
+  return null;
+}
+
+/**
+ * ⌥W closes the active agent surface tab on the task right panel.
+ * Match by `code`: with Option held, `event.key` is often a special character.
+ */
+export function isAgentSurfaceCloseTabShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code"
+  >,
+): boolean {
+  if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
+    return false;
+  }
+  return event.code === "KeyW";
+}
+
+/** Adjacent surface tab id for ⌥[ / ⌥], or null when there is nowhere to go. */
+export function resolveAdjacentAgentSurfaceTabId(
+  tabs: readonly AgentSurfaceTab[],
+  activeId: string | null,
+  direction: AgentSurfaceTabCycleDirection,
+): string | null {
+  if (tabs.length <= 1) return null;
+  const index = activeId
+    ? tabs.findIndex((tab) => tab.id === activeId)
+    : -1;
+  const current = index >= 0 ? index : 0;
+  const nextIndex =
+    direction === "next"
+      ? (current + 1) % tabs.length
+      : (current - 1 + tabs.length) % tabs.length;
+  return tabs[nextIndex]?.id ?? null;
 }
 
 const SURFACE_TABS_STORAGE_PREFIX =
@@ -176,9 +238,8 @@ function normalizeStoredTabsState(
 ): AgentSurfaceTabsState | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
-  if (!Array.isArray(record.tabs) || typeof record.activeId !== "string") {
-    return null;
-  }
+  if (!Array.isArray(record.tabs)) return null;
+
   const tabs: AgentSurfaceTab[] = [];
   for (const entry of record.tabs) {
     if (!entry || typeof entry !== "object") continue;
@@ -209,8 +270,22 @@ function normalizeStoredTabsState(
             : undefined,
     });
   }
-  if (tabs.length === 0) return null;
-  const activeId = record.activeId.trim();
+
+  // Explicit empty persist is valid (picker).
+  if (tabs.length === 0) {
+    if (
+      record.activeId === null ||
+      record.activeId === undefined ||
+      record.activeId === ""
+    ) {
+      return { tabs: [], activeId: null };
+    }
+    // Legacy/corrupt: non-empty activeId with no tabs → treat as empty default.
+    return { tabs: [], activeId: null };
+  }
+
+  const activeId =
+    typeof record.activeId === "string" ? record.activeId.trim() : "";
   const activeExists = tabs.some((tab) => tab.id === activeId);
   return {
     tabs,
@@ -218,7 +293,7 @@ function normalizeStoredTabsState(
   };
 }
 
-/** Load per-task surface tabs (Chat / Terminal / …). Missing → default Chat. */
+/** Load per-task surface tabs. Missing → empty picker default. */
 export function readAgentSurfaceTabs(
   taskId: string | null | undefined,
 ): AgentSurfaceTabsState {

@@ -8,6 +8,27 @@ function hasPrimaryModifier(event: KeyboardEvent): boolean {
   return event.metaKey || event.ctrlKey;
 }
 
+export type TabCycleDirection = "previous" | "next";
+
+/**
+ * ⌘⇧[ / ⌘⇧] — previous / next top product (app) tab.
+ * In-page section pills use ⌥[ / ⌥] via {@link resolveSectionTabCycleShortcut}.
+ */
+export function resolveTabCycleShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "altKey" | "metaKey" | "ctrlKey" | "shiftKey" | "code" | "key"
+  >,
+): TabCycleDirection | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || !event.shiftKey) {
+    return null;
+  }
+
+  if (event.code === "BracketLeft" || event.key === "[") return "previous";
+  if (event.code === "BracketRight" || event.key === "]") return "next";
+  return null;
+}
+
 /**
  * ⌘T / ⌘⇧T / ⌘W / ⌘⇧[ / ⌘⇧] for app tabs.
  *
@@ -59,11 +80,24 @@ export function useTabShortcuts({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (!hasPrimaryModifier(event) || event.altKey) {
+      if (!shouldHandleRef.current(event)) {
         return;
       }
 
-      if (!shouldHandleRef.current(event)) {
+      const cycle = resolveTabCycleShortcut(event);
+      if (cycle != null) {
+        if (!enabled) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (cycle === "previous") {
+          activatePreviousTabRef.current();
+        } else {
+          activateNextTabRef.current();
+        }
+        return;
+      }
+
+      if (!hasPrimaryModifier(event) || event.altKey) {
         return;
       }
 
@@ -94,24 +128,6 @@ export function useTabShortcuts({
       ) {
         event.preventDefault();
         closeTabRef.current(activeTabIdRef.current);
-        return;
-      }
-
-      if (
-        event.shiftKey &&
-        (event.key === "[" || event.code === "BracketLeft")
-      ) {
-        event.preventDefault();
-        activatePreviousTabRef.current();
-        return;
-      }
-
-      if (
-        event.shiftKey &&
-        (event.key === "]" || event.code === "BracketRight")
-      ) {
-        event.preventDefault();
-        activateNextTabRef.current();
       }
     }
 
