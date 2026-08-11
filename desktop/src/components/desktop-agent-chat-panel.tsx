@@ -23,6 +23,8 @@ import type {
   StatusBarAgentItem,
 } from "../lib/agent/agent-activity";
 import { isTaskAgentWorkingForUi } from "../lib/agent/agent-list-indicators";
+import { shouldReopenLiveTurnFromLateFrame } from "../lib/agent/agent-acp-settle";
+import { resolveAgentChatWorking } from "../lib/agent/agent-chat-working";
 import {
   clearAgentChatComposerDraft,
   readAgentChatComposerDraft,
@@ -51,6 +53,7 @@ import {
   liveTurnToTimelinePatch,
   rehydrateTurnUiFromMessage,
 } from "../lib/agent/agent-chat-live-timeline";
+import { resolveTurnWorkingStartedAt } from "../lib/agent/agent-chat-work-ui";
 import {
   mergeDisplayMessagesWithOptimisticUsers,
   pruneOptimisticUserMessages,
@@ -59,15 +62,13 @@ import {
   planStepsEqual,
   preferPlanSteps,
 } from "../lib/agent/t3-port/cursor-todos";
-import {
-  buildCheckpointPatchesFromActivities,
-  collectPathsFromPatches,
-} from "../lib/agent/agent-chat-checkpoint";
+import { buildCheckpointPatchesFromActivities } from "../lib/agent/agent-chat-checkpoint";
 import {
   readAgentChatMode,
   writeAgentChatMode,
   type AgentChatMode,
 } from "../lib/agent/agent-chat-mode";
+import { resolvePlanFollowUpSubmission } from "../lib/agent/t3-port/proposed-plan";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import {
   type AgentAttachRequest,
@@ -94,10 +95,23 @@ import {
   ensurePtyAcpSession,
   fetchPtyGitHead,
   respondPtyAcpUiRequest,
-  revertPtyGitCheckpoint,
+  restorePtyGitCheckpoint,
+  setPtyAcpAccessMode,
+  setPtyAcpModel,
   setPtyAgentMode,
+  steerPtyAcpTurn,
   submitPtyAgentPrompt,
 } from "../lib/pty";
+import {
+  readAgentChatModelId,
+  resolveEffectiveAgentChatModelId,
+  writeAgentChatModelId,
+} from "../lib/agent/agent-chat-model";
+import {
+  readAgentChatAccessMode,
+  writeAgentChatAccessMode,
+  type AgentChatAccessMode,
+} from "../lib/agent/agent-chat-runtime-mode";
 import {
   buildAskAnswersPayload,
   deriveAskProgress,
@@ -108,6 +122,7 @@ import {
   type AskQuestionItem,
 } from "../lib/agent/agent-chat-ask";
 import {
+  latestAgentChatChangedFiles,
   resolveTurnDiffFiles,
   type AgentChatTurnDiffSelection,
 } from "../lib/agent/agent-chat-timeline";
@@ -158,10 +173,12 @@ type AgentChatUiRequest = {
   questions?: AskQuestionItem[];
 };
 
-type AgentChatFollowUpDraft = {
+/** Unsent mid-turn steer — Retry/Discard, never auto-flushed after settle. */
+type FailedSteerDraft = {
   id: string;
   text: string;
   images: AgentChatImageAttachment[];
+  error: string;
 };
 
 /** T3 ComposerPendingApprovalPanel summary labels. */
@@ -219,13 +236,6 @@ function permissionOptionLabel(label: string): string {
   return label;
 }
 
-function newFollowUpId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `followup-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function isEditableFocusTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
@@ -252,6 +262,22 @@ function isInsideAgentChatComposer(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   if (isAgentChatComposer(el)) return true;
   return Boolean(el.closest(".desktop-agent-chat__composer"));
+}
+
+/** CreatedAt of the user message immediately before an assistant row. */
+function findPairedUserCreatedAt(
+  messages: readonly AgentChatMessage[],
+  assistantId: string,
+): number | null {
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.id !== assistantId) continue;
+    const prev = messages[i - 1];
+    if (prev?.role === "user" && Number.isFinite(prev.createdAt)) {
+      return prev.createdAt;
+    }
+    return null;
+  }
+  return null;
 }
 
 export type DesktopAgentChatPanelProps = {
@@ -285,8 +311,12 @@ export type DesktopAgentChatPanelProps = {
   onHide?: () => void;
   /** Expand the agent column from the collapsed strip / ⌘N. */
   onExpand?: () => void;
-  /** Start a new agent session; optional prompt overrides the default ticket brief. */
-  onStartAgent?: (options?: { prompt?: string }) => void;
+  /** Start a new agent session; optional prompt/images/mode override the default ticket brief. */
+  onStartAgent?: (options?: {
+    prompt?: string;
+    images?: readonly AgentChatImageAttachment[];
+    mode?: AgentChatMode | null;
+  }) => void;
   startingAgent?: boolean;
   onStopAgent?: () => void;
   agentError?: string | null;
@@ -329,8 +359,13 @@ export function DesktopAgentChatPanel({
 }: DesktopAgentChatPanelProps) {
   const { client } = useDesktopApi();
   const agentStatus = useDesktopAgentStatus();
-  const { requestAttach, setTaskResearchWorking } =
-    agentStatus;
+  const {
+    requestAttach,
+    setTaskResearchWorking,
+    pendingBootstrapPrompt,
+    setPendingBootstrapPrompt,
+    isTaskAcpSessionBusy,
+  } = agentStatus;
   const autoMarkInProgress = viewScope === "codebase";
   const [draft, setDraft] = useState(
     () => readAgentChatComposerDraft(taskId).text,
@@ -364,18 +399,29 @@ export function DesktopAgentChatPanel({
   );
   /** Local optimistic working — do not wait for PTY/status round-trip. */
   const [turnPending, setTurnPending] = useState(false);
-  const [uiRequest, setUiRequest] = useState<AgentChatUiRequest | null>(null);
+  const [uiRequestQueue, setUiRequestQueue] = useState<AgentChatUiRequest[]>(
+    [],
+  );
+  const uiRequest = uiRequestQueue[0] ?? null;
   const [uiRequestBusy, setUiRequestBusy] = useState(false);
-  /** Cursor-style follow-ups — shown above composer until the live turn settles. */
-  const [queuedFollowUps, setQueuedFollowUps] = useState<
-    AgentChatFollowUpDraft[]
-  >([]);
-  const queuedFollowUpsRef = useRef(queuedFollowUps);
-  queuedFollowUpsRef.current = queuedFollowUps;
-  const flushingFollowUpRef = useRef(false);
-  const flushQueuedFollowUpRef = useRef<(() => void) | null>(null);
+  /** Failed mid-turn steer — Retry/Discard above composer; never auto-flushed. */
+  const [failedSteer, setFailedSteer] = useState<FailedSteerDraft | null>(null);
+  /** Live ACP session model pin (null = use global last-picked). */
+  const [sessionModelId, setSessionModelId] = useState<string | null>(null);
+  const [globalModelId, setGlobalModelId] = useState(() =>
+    readAgentChatModelId(),
+  );
+  const effectiveModelId = resolveEffectiveAgentChatModelId({
+    sessionModelId,
+    globalModelId,
+  });
   /** Prevent double Enter / double-click from submitting the same draft twice. */
   const sendInFlightRef = useRef(false);
+  const [sendInFlight, setSendInFlight] = useState(false);
+  const setSendInFlightBoth = useCallback((value: boolean) => {
+    sendInFlightRef.current = value;
+    setSendInFlight(value);
+  }, []);
   const [askDrafts, setAskDrafts] = useState<Record<string, AskQuestionDraft>>(
     {},
   );
@@ -388,6 +434,9 @@ export function DesktopAgentChatPanel({
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   const [agentMode, setAgentMode] = useState<AgentChatMode>(() =>
     readAgentChatMode(),
+  );
+  const [accessMode, setAccessMode] = useState<AgentChatAccessMode>(() =>
+    readAgentChatAccessMode(taskId),
   );
   const footerRef = useRef<HTMLDivElement | null>(null);
   const bootstrapPromptKeyRef = useRef<string | null>(null);
@@ -403,21 +452,30 @@ export function DesktopAgentChatPanel({
   const persistLiveTurnTimerRef = useRef<number | null>(null);
 
   const localTurnWorking =
-    turnPending || turnUi.phase !== "idle";
+    turnPending || turnUi.phase !== "idle" || sendInFlight;
   const localTurnWorkingRef = useRef(localTurnWorking);
   localTurnWorkingRef.current = localTurnWorking;
   /** True between user/bootstrap send and settle — ignores late ACP frames. */
   const turnActiveRef = useRef(false);
+  /** User hit Stop — seal as interrupted when ACP acknowledges (or times out). */
+  const cancellingRef = useRef(false);
+  const cancelSettleTimerRef = useRef<number | null>(null);
+  /** Sidecar-minted durable turn id for the live turn (steer / settle). */
+  const activeTurnIdRef = useRef<string | null>(null);
+  const pendingTurnOutcomeRef = useRef<
+    "completed" | "interrupted" | "failed" | null
+  >(null);
 
   const turnUiRef = useRef(turnUi);
   turnUiRef.current = turnUi;
 
   const persistLiveTurnTimelineNow = useCallback(
     (turn: AgentChatTurnUiState, options?: { seal?: boolean; retry?: boolean }) => {
+      const seal = options?.seal === true;
       const patch = liveTurnToTimelinePatch(turn, {
         messageId: liveTurnMessageIdRef.current,
         workedStartedAt: turnStartedAtRef.current,
-        seal: options?.seal === true,
+        seal,
       });
       if (!patch) return;
       setMessages((prev) => {
@@ -433,7 +491,7 @@ export function DesktopAgentChatPanel({
           applied.messages.every((message, index) => message === prev[index]);
         if (unchanged) {
           // User row may still be committing — retry once shortly.
-          if (options?.seal !== true && options?.retry !== false) {
+          if (!seal && options?.retry !== false) {
             window.setTimeout(() => {
               persistLiveTurnTimelineNow(turnUiRef.current, { retry: false });
             }, 50);
@@ -444,17 +502,21 @@ export function DesktopAgentChatPanel({
           liveTurnMessageIdRef.current = applied.messageId;
           setLiveTurnMessageId(applied.messageId);
         }
+        // Local cache for remount within this window — durable mid-turn writes
+        // belong to the sidecar projector (single writer). Publish on seal only.
         saveAgentChatTranscript(chatIdRef.current, applied.messages);
-        publishAgentChatTranscriptTimeline(chatIdRef.current, {
-          id: applied.messageId,
-          text: patch.text,
-          createdAt: patch.createdAt,
-          activities: patch.activities,
-          segments: patch.segments,
-          planSteps: patch.planSteps,
-          proposedPlanMarkdown: patch.proposedPlanMarkdown,
-          workedStartedAt: patch.workedStartedAt,
-        });
+        if (seal) {
+          publishAgentChatTranscriptTimeline(chatIdRef.current, {
+            id: applied.messageId,
+            text: patch.text,
+            createdAt: patch.createdAt,
+            activities: patch.activities,
+            segments: patch.segments,
+            planSteps: patch.planSteps,
+            proposedPlanMarkdown: patch.proposedPlanMarkdown,
+            workedStartedAt: patch.workedStartedAt,
+          });
+        }
         return applied.messages;
       });
     },
@@ -493,13 +555,61 @@ export function DesktopAgentChatPanel({
     [schedulePersistLiveTurnTimeline],
   );
 
-  // Chat "Working…" follows the live turn only. List/board still use
-  // agentStatus / PTY marks — OR'ing them here flashed bare "Working…" on an
-  // empty chat before the user sent anything.
-  const working = localTurnWorking;
+  // T3: send intent + turn phase (startingAgent / sendInFlight count as busy).
+  const working = resolveAgentChatWorking({
+    turnPending,
+    turnPhase: turnUi.phase,
+    startingAgent,
+    sendInFlight,
+  });
+  // Composer Stop only after a live turn; Sending… while dispatching/start.
+  const composerSending = sendInFlight || startingAgent;
+  const composerRunning =
+    !composerSending && (turnPending || turnUi.phase !== "idle");
   const sessionReady =
     Boolean(agentChatId?.trim()) || Boolean(agentAttachRequest);
   const previousSessionReadyRef = useRef(false);
+
+  useEffect(() => {
+    setAccessMode(readAgentChatAccessMode(taskId));
+    setGlobalModelId(readAgentChatModelId());
+    setSessionModelId(null);
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    void setPtyAcpAccessMode({ taskId, mode: accessMode, cwd });
+  }, [accessMode, cwd, sessionReady, taskId]);
+
+  // Sync session model pin when Chat attaches / becomes ready.
+  useEffect(() => {
+    if (!sessionReady) {
+      setSessionModelId(null);
+      return;
+    }
+    const workingDirectory = cwd?.trim();
+    if (!workingDirectory) return;
+    let cancelled = false;
+    void ensurePtyAcpSession({
+      taskId,
+      cwd: workingDirectory,
+      chatId: agentChatId,
+    }).then((result) => {
+      if (cancelled || !result.ok) return;
+      setSessionModelId(result.modelId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentChatId, cwd, sessionReady, taskId]);
+
+  const handleAccessModeChange = useCallback(
+    (mode: AgentChatAccessMode) => {
+      writeAgentChatAccessMode(taskId, mode);
+      setAccessMode(mode);
+    },
+    [taskId],
+  );
 
   // When an agent session becomes ready, open Chat if none exists yet.
   useEffect(() => {
@@ -542,14 +652,19 @@ export function DesktopAgentChatPanel({
       // be running and list/board pulses should keep reflecting that.
       bootstrapPromptKeyRef.current = null;
       turnActiveRef.current = false;
+      cancellingRef.current = false;
+      if (cancelSettleTimerRef.current != null) {
+        window.clearTimeout(cancelSettleTimerRef.current);
+        cancelSettleTimerRef.current = null;
+      }
       liveTurnMessageIdRef.current = null;
       setLiveTurnMessageId(null);
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
-      setUiRequest(null);
+      setUiRequestQueue([]);
       setUiRequestBusy(false);
-      setQueuedFollowUps([]);
+      setFailedSteer(null);
       setAskDrafts({});
       setAskQuestionIndex(0);
       setDiffSelection(null);
@@ -568,13 +683,13 @@ export function DesktopAgentChatPanel({
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
-      setUiRequest(null);
+      setUiRequestQueue([]);
       setUiRequestBusy(false);
       setMessages([]);
       setOptimisticUserMessages([]);
       // Keep the unsent composer draft — navigating away / idle session must not
       // wipe what the user was typing (restored via agent-chat-composer-draft).
-      setQueuedFollowUps([]);
+      setFailedSteer(null);
       return;
     }
 
@@ -599,9 +714,12 @@ export function DesktopAgentChatPanel({
       setTurnUi(restored);
       setTurnPending(true);
       turnActiveRef.current = true;
-      if (open.workedStartedAt != null) {
-        setTurnStartedAt(open.workedStartedAt);
-      }
+      setTurnStartedAt(
+        resolveTurnWorkingStartedAt({
+          workedStartedAt: open.workedStartedAt,
+          userCreatedAt: findPairedUserCreatedAt(list, open.id),
+        }),
+      );
     };
 
     setMessages((prev) => {
@@ -832,6 +950,66 @@ export function DesktopAgentChatPanel({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [activeSurfaceTabId, collapsed, surfaceTabs, viewMode]);
 
+  // Start click → show Thinking / Working for… before ensure/attach returns.
+  // Typed send already does this in dispatchPrompt; bootstrap lagged until
+  // sessionIsNew arrived after the ACP ensure round-trip.
+  useEffect(() => {
+    if (!startingAgent) return;
+    turnActiveRef.current = true;
+    setTurnPending(true);
+    setTurnStartedAt((prev) => prev ?? Date.now());
+    if (!liveTurnMessageIdRef.current) {
+      const liveId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      liveTurnMessageIdRef.current = liveId;
+      setLiveTurnMessageId(liveId);
+    }
+    setTurnUi((prev) => {
+      if (prev.phase !== "idle") return prev;
+      const next = createOptimisticTurnUiState();
+      turnUiRef.current = next;
+      return next;
+    });
+    markLiveAgentWorkingForTask(taskId);
+  }, [startingAgent, taskId]);
+
+  // Optimistic Start-agent user bubble as soon as the prompt is known (before
+  // ensure/attach returns a real chatId).
+  useEffect(() => {
+    const pending = pendingBootstrapPrompt;
+    if (!pending || pending.taskId !== taskId) return;
+    const prompt = pending.prompt.trim();
+    if (!prompt) return;
+    const message: AgentChatMessage = {
+      id: pending.messageId,
+      role: "user",
+      text: prompt,
+      createdAt: pending.createdAt,
+      ...(pending.images && pending.images.length > 0
+        ? {
+            images: pending.images.map((image) => ({
+              id: image.id,
+              name: image.name,
+              mimeType: image.mimeType,
+              ...(image.dataBase64
+                ? { dataBase64: image.dataBase64 }
+                : {}),
+            })),
+          }
+        : {}),
+    };
+    setOptimisticUserMessages((prev) => {
+      if (
+        prev.some((entry) => entry.id === message.id || entry.text === prompt)
+      ) {
+        return prev;
+      }
+      return [...prev, message];
+    });
+  }, [pendingBootstrapPrompt, taskId]);
+
   // Record the Start-agent bootstrap prompt as the first user message once.
   // sessionIsNew means a bootstrap turn is already in flight (Start agent) —
   // not merely a fresh chat id (/clear).
@@ -839,11 +1017,21 @@ export function DesktopAgentChatPanel({
     const request = agentAttachRequest;
     if (!request || request.taskId !== taskId) return;
     if (request.sessionIsNew) {
-      // Bootstrap ACP turn is already in flight — light up Chat Working…
-      // before the first session/update frame arrives.
+      // Keep Working… lit if the startingAgent effect already ran; otherwise
+      // light it up here (e.g. attach arrived without a startingAgent frame).
       turnActiveRef.current = true;
       setTurnPending(true);
       setTurnStartedAt((prev) => prev ?? Date.now());
+      // Match typed send: mint a live id so settled projector rows can be
+      // suppressed while the bootstrap turn is still open.
+      if (!liveTurnMessageIdRef.current) {
+        const liveId =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        liveTurnMessageIdRef.current = liveId;
+        setLiveTurnMessageId(liveId);
+      }
       setTurnUi((prev) => {
         if (prev.phase !== "idle") return prev;
         const next = createOptimisticTurnUiState();
@@ -858,7 +1046,31 @@ export function DesktopAgentChatPanel({
     if (bootstrapPromptKeyRef.current === key) return;
     bootstrapPromptKeyRef.current = key;
 
-    const message = createAgentChatMessage("user", prompt);
+    const pending =
+      pendingBootstrapPrompt?.taskId === taskId &&
+      pendingBootstrapPrompt.prompt.trim() === prompt
+        ? pendingBootstrapPrompt
+        : null;
+    const message: AgentChatMessage = pending
+      ? {
+          id: pending.messageId,
+          role: "user",
+          text: prompt,
+          createdAt: pending.createdAt,
+          ...(pending.images && pending.images.length > 0
+            ? {
+                images: pending.images.map((image) => ({
+                  id: image.id,
+                  name: image.name,
+                  mimeType: image.mimeType,
+                  ...(image.dataBase64
+                    ? { dataBase64: image.dataBase64 }
+                    : {}),
+                })),
+              }
+            : {}),
+        }
+      : createAgentChatMessage("user", prompt);
     setOptimisticUserMessages((prev) => {
       if (prev.some((entry) => entry.id === message.id || entry.text === prompt)) {
         return prev;
@@ -877,13 +1089,20 @@ export function DesktopAgentChatPanel({
       chatIdRef.current = request.chatId;
       return next;
     });
+    setPendingBootstrapPrompt(null);
     // Persist live timeline only after the user row is queued (T3 order).
     if (request.sessionIsNew) {
       window.setTimeout(() => {
         schedulePersistLiveTurnTimeline();
       }, 0);
     }
-  }, [agentAttachRequest, schedulePersistLiveTurnTimeline, taskId]);
+  }, [
+    agentAttachRequest,
+    pendingBootstrapPrompt,
+    schedulePersistLiveTurnTimeline,
+    setPendingBootstrapPrompt,
+    taskId,
+  ]);
 
   const appendMessage = useCallback(
     (
@@ -1131,7 +1350,31 @@ export function DesktopAgentChatPanel({
   }, []);
 
   const finalizeAssistantTurn = useCallback(
-    (text: string) => {
+    (text: string, options?: { interrupted?: boolean; failed?: boolean }) => {
+      if (
+        !turnActiveRef.current &&
+        !localTurnWorkingRef.current &&
+        turnUiRef.current.phase === "idle" &&
+        !cancellingRef.current
+      ) {
+        return;
+      }
+      const pendingOutcome = pendingTurnOutcomeRef.current;
+      pendingTurnOutcomeRef.current = null;
+      const interrupted =
+        options?.interrupted === true ||
+        cancellingRef.current ||
+        pendingOutcome === "interrupted";
+      const failed =
+        !interrupted &&
+        (options?.failed === true || pendingOutcome === "failed");
+      cancellingRef.current = false;
+      activeTurnIdRef.current = null;
+      if (cancelSettleTimerRef.current != null) {
+        window.clearTimeout(cancelSettleTimerRef.current);
+        cancelSettleTimerRef.current = null;
+      }
+
       const turn = turnUiRef.current;
       const trimmed = text.trim() || turn.assistantDraft.trim();
       let sealed = sealTurnUiState(turn);
@@ -1160,39 +1403,50 @@ export function DesktopAgentChatPanel({
       const checkpointPatches = buildCheckpointPatchesFromActivities(
         sealed.activities,
       );
+      const turnOutcome = interrupted
+        ? "interrupted"
+        : failed
+          ? "failed"
+          : "completed";
       const patch = liveTurnToTimelinePatch(sealed, {
         messageId: liveTurnMessageIdRef.current,
         workedStartedAt: turnStartedAtRef.current,
+        turnOutcome,
         seal: true,
       });
       if (patch) {
         setMessages((prev) => {
           const applied = applyLiveTurnTimelineToMessages(prev, patch);
           const last = applied.messages[applied.messages.length - 1];
-          const withCheckpoint =
-            last?.role === "assistant" && checkpointPatches.length > 0
-              ? {
-                  ...last,
-                  checkpointPatches: [...checkpointPatches],
-                }
-              : last;
+          let sealedMessage = last;
+          if (last?.role === "assistant") {
+            sealedMessage = {
+              ...last,
+              turnOutcome,
+              turnStatus: turnOutcome,
+              ...(checkpointPatches.length > 0
+                ? { checkpointPatches: [...checkpointPatches] }
+                : {}),
+            };
+          }
           const nextMessages =
-            withCheckpoint && last
-              ? [...applied.messages.slice(0, -1), withCheckpoint]
+            sealedMessage && last
+              ? [...applied.messages.slice(0, -1), sealedMessage]
               : applied.messages;
           liveTurnMessageIdRef.current = applied.messageId;
           setLiveTurnMessageId(applied.messageId);
           saveAgentChatTranscript(chatIdRef.current, nextMessages);
-          if (withCheckpoint) {
+          if (sealedMessage) {
             publishAgentChatTranscriptTimeline(chatIdRef.current, {
-              id: withCheckpoint.id,
-              text: withCheckpoint.text,
-              createdAt: withCheckpoint.createdAt,
-              activities: withCheckpoint.activities,
-              segments: withCheckpoint.segments,
-              planSteps: withCheckpoint.planSteps,
-              proposedPlanMarkdown: withCheckpoint.proposedPlanMarkdown,
-              workedStartedAt: withCheckpoint.workedStartedAt,
+              id: sealedMessage.id,
+              text: sealedMessage.text,
+              createdAt: sealedMessage.createdAt,
+              activities: sealedMessage.activities,
+              segments: sealedMessage.segments,
+              planSteps: sealedMessage.planSteps,
+              proposedPlanMarkdown: sealedMessage.proposedPlanMarkdown,
+              workedStartedAt: sealedMessage.workedStartedAt,
+              turnOutcome: sealedMessage.turnOutcome,
             });
           }
           return nextMessages;
@@ -1204,20 +1458,20 @@ export function DesktopAgentChatPanel({
       setTurnUi(emptyAgentChatTurnUiState());
       setTurnPending(false);
       setTurnStartedAt(null);
+      setSendInFlightBoth(false);
       // Keep liveTurnMessageId until working clears so transcript can suppress
       // duplicate settled+live rows for one frame; clear on next send.
       // Clear before React re-renders: bump listeners still see the old
       // localTurnWorkingRef for this tick if we leave it true.
       localTurnWorkingRef.current = false;
       clearLiveAgentWorkingForTask(taskId);
-      // Flush Cursor-style follow-ups after the live turn settles.
+      // Steer-first: never auto-dispatch a deferred prompt after settle.
       window.setTimeout(() => {
         liveTurnMessageIdRef.current = null;
         setLiveTurnMessageId(null);
-        flushQueuedFollowUpRef.current?.();
       }, 350);
     },
-    [taskId],
+    [setSendInFlightBoth, taskId],
   );
 
   const upgradeLastAssistantWithText = useCallback((text: string) => {
@@ -1265,17 +1519,59 @@ export function DesktopAgentChatPanel({
     [schedulePersistLiveTurnTimeline, taskId, upgradeLastAssistantWithText],
   );
 
+  const reopenLiveTurnIfAgentStillWorking = useCallback(() => {
+    // Only reopen from late ACP frames while the session is still busy —
+    // not from stale optimistic list marks (research/Start pulse).
+    if (
+      !shouldReopenLiveTurnFromLateFrame({
+        localTurnActive:
+          localTurnWorkingRef.current || turnActiveRef.current,
+        sessionBusy: isTaskAcpSessionBusy(taskId),
+      })
+    ) {
+      return;
+    }
+    setMessages((prev) => {
+      const open =
+        findRehydratableLiveAssistant(prev) ??
+        // Bootstrap can seal with acknowledgment text before todos land —
+        // still reopen the latest assistant while the ACP session is busy.
+        (prev[prev.length - 1]?.role === "assistant"
+          ? prev[prev.length - 1]!
+          : null);
+      if (!open || open.role !== "assistant") return prev;
+      const restored = rehydrateTurnUiFromMessage(open);
+      turnUiRef.current = restored;
+      liveTurnMessageIdRef.current = open.id;
+      setLiveTurnMessageId(open.id);
+      setTurnUi(restored);
+      setTurnPending(true);
+      turnActiveRef.current = true;
+      const resolvedStart = resolveTurnWorkingStartedAt({
+        workedStartedAt: open.workedStartedAt,
+        userCreatedAt: findPairedUserCreatedAt(prev, open.id),
+      });
+      setTurnStartedAt((prevStarted) => resolvedStart ?? prevStarted ?? Date.now());
+      markLiveAgentWorkingForTask(taskId);
+      return prev;
+    });
+  }, [isTaskAcpSessionBusy, taskId]);
+
   const handleAcpSessionUpdate = useCallback(
     (forTaskId: string, update: unknown) => {
       if (forTaskId !== taskId) return;
-      // Ignore frames that arrive after settle (or before the next send).
-      if (!turnActiveRef.current && !localTurnWorkingRef.current) return;
+      // Ignore frames that arrive after settle (or before the next send),
+      // unless Start-agent sealed early while the ACP session is still busy.
+      if (!turnActiveRef.current && !localTurnWorkingRef.current) {
+        reopenLiveTurnIfAgentStillWorking();
+        if (!turnActiveRef.current && !localTurnWorkingRef.current) return;
+      }
       turnActiveRef.current = true;
       setTurnPending(true);
       setTurnStartedAt((prev) => prev ?? Date.now());
       patchTurnUi((prev) => applyAcpSessionUpdateToTurn(prev, update));
     },
-    [patchTurnUi, taskId],
+    [patchTurnUi, reopenLiveTurnIfAgentStillWorking, taskId],
   );
 
   const handleCursorUpdateTodos = useCallback(
@@ -1285,6 +1581,8 @@ export function DesktopAgentChatPanel({
       // final "all completed" updates are not lost to the finalize race.
       if (!turnActiveRef.current && !localTurnWorkingRef.current) {
         upgradeLastAssistantWithTodos(params);
+        // Start-agent can seal early; reopen Working… when todos keep moving.
+        reopenLiveTurnIfAgentStillWorking();
         return;
       }
       turnActiveRef.current = true;
@@ -1292,7 +1590,12 @@ export function DesktopAgentChatPanel({
       setTurnStartedAt((prev) => prev ?? Date.now());
       patchTurnUi((prev) => applyCursorUpdateTodosToTurn(prev, params));
     },
-    [patchTurnUi, taskId, upgradeLastAssistantWithTodos],
+    [
+      patchTurnUi,
+      reopenLiveTurnIfAgentStillWorking,
+      taskId,
+      upgradeLastAssistantWithTodos,
+    ],
   );
 
   const handleCursorCreatePlan = useCallback(
@@ -1328,6 +1631,7 @@ export function DesktopAgentChatPanel({
       // so Read/Edit/diff chrome is not lost to the finalize race.
       if (!turnActiveRef.current && !localTurnWorkingRef.current) {
         upgradeLastAssistantWithHook(message);
+        reopenLiveTurnIfAgentStillWorking();
         return;
       }
       turnActiveRef.current = true;
@@ -1335,7 +1639,12 @@ export function DesktopAgentChatPanel({
       setTurnStartedAt((prev) => prev ?? Date.now());
       patchTurnUi((prev) => applyAgentHookEventToTurn(prev, message));
     },
-    [patchTurnUi, taskId, upgradeLastAssistantWithHook],
+    [
+      patchTurnUi,
+      reopenLiveTurnIfAgentStillWorking,
+      taskId,
+      upgradeLastAssistantWithHook,
+    ],
   );
 
   const handleAcpTurnSettled = useCallback(
@@ -1350,8 +1659,14 @@ export function DesktopAgentChatPanel({
   const handleAcpUiRequest = useCallback(
     (forTaskId: string, request: AgentChatUiRequest) => {
       if (forTaskId !== taskId) return;
-      setUiRequest(request);
+      setUiRequestQueue((prev) => {
+        if (prev.some((entry) => entry.requestId === request.requestId)) {
+          return prev;
+        }
+        return [...prev, request];
+      });
       setUiRequestBusy(false);
+      // Only reset ask drafts when this becomes the active (head) request.
       setAskDrafts({});
       setAskQuestionIndex(0);
     },
@@ -1361,10 +1676,10 @@ export function DesktopAgentChatPanel({
   const handleAcpUiRequestCleared = useCallback(
     (forTaskId: string, requestId: string | null) => {
       if (forTaskId !== taskId) return;
-      setUiRequest((prev) => {
-        if (!prev) return null;
-        if (requestId && prev.requestId !== requestId) return prev;
-        return null;
+      setUiRequestQueue((prev) => {
+        if (prev.length === 0) return prev;
+        if (!requestId) return [];
+        return prev.filter((entry) => entry.requestId !== requestId);
       });
       setUiRequestBusy(false);
       setAskDrafts({});
@@ -1389,6 +1704,52 @@ export function DesktopAgentChatPanel({
     onCursorUpdateTodos: handleCursorUpdateTodos,
     onCursorCreatePlan: handleCursorCreatePlan,
     onAcpTurnSettled: handleAcpTurnSettled,
+    onAcpTurnBegin: (forTaskId, messageId, meta) => {
+      if (forTaskId !== taskId) return;
+      const id = messageId.trim();
+      if (!id) return;
+      liveTurnMessageIdRef.current = id;
+      setLiveTurnMessageId(id);
+      const turnId = meta?.turnId?.trim();
+      if (turnId) activeTurnIdRef.current = turnId;
+      // Projector startedAt is authoritative — especially on leave→return replay
+      // when rehydrate may have restored a stale workedStartedAt.
+      if (meta?.startedAt != null) {
+        setTurnStartedAt(meta.startedAt);
+      }
+      turnActiveRef.current = true;
+      setTurnPending(true);
+      // Remount / reconnect: bind live chrome to the transcript row for this
+      // message so tool progress is visible before the next session-update.
+      if (turnUiRef.current.phase === "idle") {
+        setMessages((prev) => {
+          const open =
+            prev.find((message) => message.id === id) ??
+            findRehydratableLiveAssistant(prev);
+          if (!open || open.role !== "assistant") return prev;
+          const restored = rehydrateTurnUiFromMessage(open);
+          turnUiRef.current = restored;
+          setTurnUi(restored);
+          if (meta?.startedAt == null) {
+            setTurnStartedAt(
+              resolveTurnWorkingStartedAt({
+                workedStartedAt: open.workedStartedAt,
+                userCreatedAt: findPairedUserCreatedAt(prev, open.id),
+              }),
+            );
+          }
+          return prev;
+        });
+      }
+    },
+    onAcpTurnState: (forTaskId, state) => {
+      if (forTaskId !== taskId) return;
+      pendingTurnOutcomeRef.current = state.status;
+      if (state.status === "interrupted") {
+        cancellingRef.current = true;
+      }
+      activeTurnIdRef.current = null;
+    },
     onAcpUiRequest: handleAcpUiRequest,
     onAcpUiRequestCleared: handleAcpUiRequestCleared,
     onAgentHookTurnUpdate: handleAgentHookTurnUpdate,
@@ -1423,7 +1784,10 @@ export function DesktopAgentChatPanel({
       optionId?: string | null;
       preference?: "once" | "always" | "reject" | null;
       skipped?: boolean;
-      answers?: Record<string, string | string[]> | null;
+      answers?:
+        | Record<string, string | string[]>
+        | { questionId: string; selectedOptionIds: string[] }[]
+        | null;
     }) => {
       const pending = uiRequest;
       if (!pending || uiRequestBusy) return;
@@ -1440,7 +1804,9 @@ export function DesktopAgentChatPanel({
         setUiRequestBusy(false);
         return;
       }
-      setUiRequest(null);
+      setUiRequestQueue((prev) =>
+        prev.filter((entry) => entry.requestId !== pending.requestId),
+      );
       setUiRequestBusy(false);
       setAskDrafts({});
       setAskQuestionIndex(0);
@@ -1536,30 +1902,46 @@ export function DesktopAgentChatPanel({
       ) {
         return;
       }
+      const later = messages.slice(index + 1);
+      const checkpointId =
+        later.find((message) => message.checkpointId?.trim())?.checkpointId?.trim() ||
+        null;
+      const deleteCheckpointIds = later
+        .map((message) => message.checkpointId?.trim() || "")
+        .filter(Boolean);
       if (working) {
-        clearLiveAgentWorkingForTask(taskId);
+        cancellingRef.current = true;
         void cancelPtyAcpTurn(taskId);
       }
-      const later = messages.slice(index + 1);
-      const patches = later.flatMap(
-        (message) => message.checkpointPatches ?? [],
-      );
-      const paths = collectPathsFromPatches(patches);
-      void revertPtyGitCheckpoint({
+      if (!checkpointId) {
+        setSendError(
+          "No snapshot checkpoint for this turn — cannot safely revert.",
+        );
+        return;
+      }
+      void restorePtyGitCheckpoint({
         cwd,
-        headSha: anchor.gitHeadSha ?? null,
-        paths,
-        patches,
+        checkpointId,
+        deleteCheckpointIds,
       }).then((result) => {
         if (!result.ok) {
           setSendError(result.error);
+          return;
         }
+        // Truncate Chat only after filesystem restore succeeds.
+        setTurnPending(false);
+        setTurnStartedAt(null);
+        turnUiRef.current = emptyAgentChatTurnUiState();
+        setTurnUi(emptyAgentChatTurnUiState());
+        setDiffSelection(null);
+        turnActiveRef.current = false;
+        activeTurnIdRef.current = null;
+        setMessages((prev) => {
+          const next = prev.slice(0, index + 1);
+          saveAgentChatTranscript(chatIdRef.current, next);
+          return next;
+        });
       });
-      setTurnPending(false);
-      setTurnStartedAt(null);
-      setTurnUi(emptyAgentChatTurnUiState());
-      setDiffSelection(null);
-      setMessages((prev) => prev.slice(0, index + 1));
     },
     [cwd, messages, taskId, working],
   );
@@ -1592,22 +1974,62 @@ export function DesktopAgentChatPanel({
     beginResize: beginDiffResize,
   } = useAgentDiffPanelLayout(Boolean(diffSelection));
 
-  const dispatchPrompt = useCallback(
+  const restoreComposerDraft = useCallback(
     (text: string, images: readonly AgentChatImageAttachment[]) => {
+      setDraft(text);
+      setDraftImages([...images]);
+      writeAgentChatComposerDraft(taskId, {
+        text,
+        images: [...images],
+      });
+    },
+    [taskId],
+  );
+
+  const removeLastOptimisticUser = useCallback(
+    (text: string, images: readonly AgentChatImageAttachment[]) => {
+      const needle = (text || "(image)").trim();
+      setMessages((prev) => {
+        for (let i = prev.length - 1; i >= 0; i -= 1) {
+          const row = prev[i];
+          if (!row || row.role !== "user") continue;
+          const sameText = row.text.trim() === needle;
+          const sameImageCount =
+            (row.images?.length ?? 0) === images.length;
+          if (!sameText || !sameImageCount) continue;
+          const next = [...prev.slice(0, i), ...prev.slice(i + 1)];
+          saveAgentChatTranscript(chatIdRef.current, next);
+          return next;
+        }
+        return prev;
+      });
+    },
+    [],
+  );
+
+  const dispatchPrompt = useCallback(
+    (
+      text: string,
+      images: readonly AgentChatImageAttachment[],
+      options?: { mode?: AgentChatMode },
+    ) => {
       if (!sessionReady) {
-        setSendError("Start an agent from Activities first.");
-        sendInFlightRef.current = false;
+        setSendError("Start an agent from the Chat rail first.");
+        setSendInFlightBoth(false);
         return;
       }
       setSendError(null);
       turnActiveRef.current = true;
       // Stable live assistant id for the whole unsettled window (T3 turn id).
-      const liveId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      liveTurnMessageIdRef.current = liveId;
-      setLiveTurnMessageId(liveId);
+      // Prefer projector-minted id from turn-begin when it arrives.
+      if (!liveTurnMessageIdRef.current) {
+        const liveId =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `live-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        liveTurnMessageIdRef.current = liveId;
+        setLiveTurnMessageId(liveId);
+      }
       setTurnPending(true);
       setTurnStartedAt(Date.now());
       const optimistic = createOptimisticTurnUiState();
@@ -1626,6 +2048,7 @@ export function DesktopAgentChatPanel({
           mimeType: image.mimeType,
           data: image.dataBase64!,
         }));
+      const promptMode = options?.mode ?? agentMode;
       void (async () => {
         try {
           const gitHeadSha = await fetchPtyGitHead(cwd);
@@ -1643,12 +2066,14 @@ export function DesktopAgentChatPanel({
             });
           }
           markLiveAgentWorkingForTask(taskId);
+          // New sessions: send global preference. Sidecar keeps session pin after.
           const result = await submitPtyAgentPrompt({
             taskId,
             prompt: text || " ",
             chatId: agentChatId,
             cwd,
-            mode: agentMode,
+            mode: promptMode,
+            model: sessionModelId ?? readAgentChatModelId(),
             images: imagePayload,
           });
           if (!result.ok) {
@@ -1660,10 +2085,13 @@ export function DesktopAgentChatPanel({
             setTurnStartedAt(null);
             setTurnUi(emptyAgentChatTurnUiState());
             clearLiveAgentWorkingForTask(taskId);
-            flushingFollowUpRef.current = false;
+            removeLastOptimisticUser(text, images);
+            restoreComposerDraft(text, images);
+          } else if (result.modelId) {
+            setSessionModelId(result.modelId);
           }
         } finally {
-          sendInFlightRef.current = false;
+          setSendInFlightBoth(false);
         }
       })();
     },
@@ -1674,24 +2102,15 @@ export function DesktopAgentChatPanel({
       autoMarkInProgress,
       client,
       cwd,
+      removeLastOptimisticUser,
+      restoreComposerDraft,
       schedulePersistLiveTurnTimeline,
+      sessionModelId,
       sessionReady,
+      setSendInFlightBoth,
       taskId,
     ],
   );
-
-  const flushQueuedFollowUp = useCallback(() => {
-    if (flushingFollowUpRef.current || sendInFlightRef.current) return;
-    if (localTurnWorkingRef.current || turnActiveRef.current) return;
-    const next = queuedFollowUpsRef.current[0];
-    if (!next) return;
-    flushingFollowUpRef.current = true;
-    setQueuedFollowUps((prev) => prev.slice(1));
-    sendInFlightRef.current = true;
-    dispatchPrompt(next.text, next.images);
-    flushingFollowUpRef.current = false;
-  }, [dispatchPrompt]);
-  flushQueuedFollowUpRef.current = flushQueuedFollowUp;
 
   const clearComposerDraft = useCallback(() => {
     clearAgentChatComposerDraft(taskId);
@@ -1699,75 +2118,289 @@ export function DesktopAgentChatPanel({
     setDraftImages([]);
   }, [taskId]);
 
+  const pendingStartDraftRef = useRef<{
+    text: string;
+    images: AgentChatImageAttachment[];
+  } | null>(null);
+  const wasStartingAgentRef = useRef(false);
+
+  useEffect(() => {
+    const wasStarting = wasStartingAgentRef.current;
+    wasStartingAgentRef.current = Boolean(startingAgent);
+    if (wasStarting && !startingAgent) {
+      const pending = pendingStartDraftRef.current;
+      if (sessionReady) {
+        pendingStartDraftRef.current = null;
+        return;
+      }
+      // Start failed — drop optimistic Working… and restore composer.
+      turnActiveRef.current = false;
+      liveTurnMessageIdRef.current = null;
+      setLiveTurnMessageId(null);
+      setTurnPending(false);
+      setTurnStartedAt(null);
+      turnUiRef.current = emptyAgentChatTurnUiState();
+      setTurnUi(emptyAgentChatTurnUiState());
+      if (pending) {
+        restoreComposerDraft(pending.text, pending.images);
+        pendingStartDraftRef.current = null;
+      }
+    }
+  }, [restoreComposerDraft, sessionReady, startingAgent]);
+
+  const activeProposedPlanMarkdown = useMemo(() => {
+    const fromTurn = turnUi.proposedPlanMarkdown?.trim();
+    if (fromTurn) return fromTurn;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const markdown = messages[i]?.proposedPlanMarkdown?.trim();
+      if (markdown) return markdown;
+    }
+    return null;
+  }, [messages, turnUi.proposedPlanMarkdown]);
+
+  const showPlanFollowUpPrompt =
+    sessionReady &&
+    !working &&
+    !uiRequest &&
+    agentMode === "plan" &&
+    Boolean(activeProposedPlanMarkdown);
+
   const handleSend = useCallback(() => {
     const text = draft.trim();
     const images = draftImages;
-    if (!text && images.length === 0) return;
     if (sendInFlightRef.current || startingAgent) return;
+
+    // Plan Ready: empty → Implement (build), text → Refine (stay in plan).
+    if (
+      showPlanFollowUpPrompt &&
+      activeProposedPlanMarkdown &&
+      sessionReady &&
+      !localTurnWorking &&
+      !turnActiveRef.current
+    ) {
+      const followUp = resolvePlanFollowUpSubmission({
+        draftText: text,
+        planMarkdown: activeProposedPlanMarkdown,
+      });
+      writeAgentChatMode(followUp.mode);
+      setAgentMode(followUp.mode);
+      clearComposerDraft();
+      setSendError(null);
+      setSendInFlightBoth(true);
+      dispatchPrompt(followUp.text, images, { mode: followUp.mode });
+      return;
+    }
+
+    if (!text && images.length === 0) return;
     if (!sessionReady) {
       if (!onStartAgent) {
-        setSendError("Start an agent from Activities first.");
+        setSendError("Start an agent from the Chat rail first.");
         return;
       }
-      if (!text) {
-        setSendError("Type a message to start the agent, or use Implement this task.");
-        return;
-      }
+      // Image-only start is allowed (t3 IMAGE_ONLY_BOOTSTRAP_PROMPT).
+      pendingStartDraftRef.current = { text, images: [...images] };
       clearComposerDraft();
       setSendError(null);
-      onStartAgent({ prompt: text });
+      onStartAgent({
+        prompt: text || undefined,
+        images,
+        mode: agentMode,
+      });
       return;
     }
-    // Queue only while THIS panel has an in-flight turn — sticky list
-    // Working… must not turn a fresh send into a follow-up.
-    if (localTurnWorking || turnActiveRef.current) {
-      setQueuedFollowUps((prev) => [
-        ...prev,
-        {
-          id: newFollowUpId(),
-          text: text || "(image)",
-          images: [...images],
-        },
-      ]);
+    // Mid-turn: steer-first. On failure keep Retry/Discard — never auto-flush.
+    if (localTurnWorking || turnActiveRef.current || working) {
+      const imagePayload = images
+        .filter((image) => image.dataBase64)
+        .map((image) => ({
+          mimeType: image.mimeType,
+          data: image.dataBase64!,
+        }));
+      const promptText = text || "(image)";
+      const draftImagesCopy = [...images];
       clearComposerDraft();
       setSendError(null);
+      setFailedSteer(null);
+      setSendInFlightBoth(true);
+      const optimistic = createAgentChatMessage("user", promptText, {
+        images,
+      });
+      setOptimisticUserMessages((prev) => [...prev, optimistic]);
+      void (async () => {
+        const started = Date.now();
+        let expectedTurnId = activeTurnIdRef.current?.trim() || "";
+        while (!expectedTurnId && Date.now() - started < 400) {
+          await new Promise((r) => window.setTimeout(r, 40));
+          expectedTurnId = activeTurnIdRef.current?.trim() || "";
+        }
+        if (!expectedTurnId) {
+          setSendInFlightBoth(false);
+          // Keep optimistic user row; mark failed for Retry/Discard.
+          setFailedSteer({
+            id: optimistic.id,
+            text: promptText,
+            images: draftImagesCopy,
+            error: "Turn not ready to steer yet",
+          });
+          setSendError("Couldn’t steer — Retry when ready, or Discard.");
+          return;
+        }
+        const result = await steerPtyAcpTurn({
+          taskId,
+          expectedTurnId,
+          prompt: promptText,
+          images: imagePayload,
+          clientMessageId: optimistic.id,
+        });
+        setSendInFlightBoth(false);
+        if (result.ok) return;
+        setFailedSteer({
+          id: optimistic.id,
+          text: promptText,
+          images: draftImagesCopy,
+          error: result.error,
+        });
+        setSendError(
+          result.conflict
+            ? "Couldn’t steer this turn — Retry or Discard."
+            : result.error,
+        );
+      })();
       return;
     }
-    sendInFlightRef.current = true;
+    setSendInFlightBoth(true);
     clearComposerDraft();
     dispatchPrompt(text, images);
   }, [
+    activeProposedPlanMarkdown,
+    agentMode,
     clearComposerDraft,
     dispatchPrompt,
+    setSendInFlightBoth,
     draft,
     draftImages,
     localTurnWorking,
     onStartAgent,
     sessionReady,
+    showPlanFollowUpPrompt,
     startingAgent,
+    taskId,
+    working,
+  ]);
+
+  const discardFailedSteer = useCallback(() => {
+    const id = failedSteer?.id;
+    setFailedSteer(null);
+    setSendError(null);
+    if (id) {
+      setOptimisticUserMessages((prev) =>
+        prev.filter((entry) => entry.id !== id),
+      );
+    }
+  }, [failedSteer?.id]);
+
+  const retryFailedSteer = useCallback(() => {
+    const draftItem = failedSteer;
+    if (!draftItem || sendInFlightRef.current || startingAgent) return;
+    setFailedSteer(null);
+    setSendError(null);
+    const midTurn = localTurnWorking || turnActiveRef.current || working;
+    if (midTurn) {
+      const imagePayload = draftItem.images
+        .filter((image) => image.dataBase64)
+        .map((image) => ({
+          mimeType: image.mimeType,
+          data: image.dataBase64!,
+        }));
+      setSendInFlightBoth(true);
+      setOptimisticUserMessages((prev) => {
+        if (prev.some((entry) => entry.id === draftItem.id)) return prev;
+        return [
+          ...prev,
+          {
+            ...createAgentChatMessage("user", draftItem.text, {
+              images: draftItem.images,
+            }),
+            id: draftItem.id,
+          },
+        ];
+      });
+      void (async () => {
+        const started = Date.now();
+        let expectedTurnId = activeTurnIdRef.current?.trim() || "";
+        while (!expectedTurnId && Date.now() - started < 400) {
+          await new Promise((r) => window.setTimeout(r, 40));
+          expectedTurnId = activeTurnIdRef.current?.trim() || "";
+        }
+        if (!expectedTurnId) {
+          setSendInFlightBoth(false);
+          setFailedSteer({
+            ...draftItem,
+            error: "Turn not ready to steer yet",
+          });
+          setSendError("Couldn’t steer — Retry when ready, or Discard.");
+          return;
+        }
+        const result = await steerPtyAcpTurn({
+          taskId,
+          expectedTurnId,
+          prompt: draftItem.text,
+          images: imagePayload,
+          clientMessageId: draftItem.id,
+        });
+        setSendInFlightBoth(false);
+        if (result.ok) return;
+        setFailedSteer({
+          ...draftItem,
+          error: result.error,
+        });
+        setSendError(
+          result.conflict
+            ? "Couldn’t steer this turn — Retry or Discard."
+            : result.error,
+        );
+      })();
+      return;
+    }
+    // Idle: drop the failed optimistic row; dispatchPrompt adds a fresh user.
+    setOptimisticUserMessages((prev) =>
+      prev.filter((entry) => entry.id !== draftItem.id),
+    );
+    setSendInFlightBoth(true);
+    dispatchPrompt(draftItem.text, draftItem.images);
+  }, [
+    dispatchPrompt,
+    failedSteer,
+    localTurnWorking,
+    setSendInFlightBoth,
+    startingAgent,
+    taskId,
+    working,
   ]);
 
   const handleStartOnTicket = useCallback(() => {
     if (startingAgent || sendInFlightRef.current) return;
     if (!onStartAgent) {
-      setSendError("Start an agent from Activities first.");
+      setSendError("Start an agent from the Chat rail first.");
       return;
     }
+    setFailedSteer(null);
     clearComposerDraft();
     setSendError(null);
-    onStartAgent();
-  }, [clearComposerDraft, onStartAgent, startingAgent]);
-
-  const removeQueuedFollowUp = useCallback((id: string) => {
-    setQueuedFollowUps((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+    onStartAgent({ mode: agentMode });
+  }, [agentMode, clearComposerDraft, onStartAgent, startingAgent]);
 
   const clearLocalTurnWorking = useCallback(() => {
     turnActiveRef.current = false;
+    cancellingRef.current = false;
+    if (cancelSettleTimerRef.current != null) {
+      window.clearTimeout(cancelSettleTimerRef.current);
+      cancelSettleTimerRef.current = null;
+    }
     setTurnPending(false);
     setTurnStartedAt(null);
     setTurnUi(emptyAgentChatTurnUiState());
-    setUiRequest(null);
+    setUiRequestQueue([]);
     setUiRequestBusy(false);
     setAskDrafts({});
     setAskQuestionIndex(0);
@@ -1776,12 +2409,37 @@ export function DesktopAgentChatPanel({
   }, [taskId]);
 
   const handleCancel = useCallback(() => {
-    clearLiveAgentWorkingForTask(taskId);
-    void cancelPtyAcpTurn(taskId);
-    // T3 blocks mid-turn send — we queue; cancel must not auto-flush the queue.
-    setQueuedFollowUps([]);
-    clearLocalTurnWorking();
-  }, [clearLocalTurnWorking, taskId]);
+    if (cancellingRef.current) return;
+    // Keep live turn chrome until ACP stop/idle seals as interrupted —
+    // clearing turnUi here used to wipe partial Thinking/tools.
+    cancellingRef.current = true;
+    setSendInFlightBoth(false);
+    // Stop cancels in-flight steers and clears failed-steer recovery.
+    const failedId = failedSteer?.id;
+    setFailedSteer(null);
+    if (failedId) {
+      setOptimisticUserMessages((prev) =>
+        prev.filter((entry) => entry.id !== failedId),
+      );
+    }
+    void cancelPtyAcpTurn(taskId).then((result) => {
+      if (!cancellingRef.current) return;
+      if (!result.ok || result.cancelled !== true) {
+        finalizeAssistantTurn("", { interrupted: true });
+        return;
+      }
+      // Stop accepted — wait for settle; fall back if the stop frame never arrives.
+      if (cancelSettleTimerRef.current != null) {
+        window.clearTimeout(cancelSettleTimerRef.current);
+      }
+      cancelSettleTimerRef.current = window.setTimeout(() => {
+        cancelSettleTimerRef.current = null;
+        if (cancellingRef.current) {
+          finalizeAssistantTurn("", { interrupted: true });
+        }
+      }, 2500);
+    });
+  }, [failedSteer?.id, finalizeAssistantTurn, setSendInFlightBoth, taskId]);
 
   // Ctrl+C cancels the in-flight turn (Cursor TUI-style). Cmd+C stays copy on macOS.
   useEffect(() => {
@@ -1841,7 +2499,7 @@ export function DesktopAgentChatPanel({
     setMessages([]);
     setOptimisticUserMessages([]);
     clearComposerDraft();
-    setQueuedFollowUps([]);
+    setFailedSteer(null);
     setDiffSelection(null);
     setSendError(null);
     if (previousChatId) {
@@ -1908,11 +2566,28 @@ export function DesktopAgentChatPanel({
   ]);
 
   const handleStopAgent = useCallback(() => {
-    clearLiveAgentWorkingForTask(taskId);
+    const failedId = failedSteer?.id;
+    setFailedSteer(null);
+    if (failedId) {
+      setOptimisticUserMessages((prev) =>
+        prev.filter((entry) => entry.id !== failedId),
+      );
+    }
+    if (localTurnWorkingRef.current || turnActiveRef.current) {
+      cancellingRef.current = true;
+      finalizeAssistantTurn("", { interrupted: true });
+    } else {
+      clearLocalTurnWorking();
+    }
     void cancelPtyAcpTurn(taskId);
-    clearLocalTurnWorking();
     onStopAgent?.();
-  }, [clearLocalTurnWorking, onStopAgent, taskId]);
+  }, [
+    clearLocalTurnWorking,
+    failedSteer?.id,
+    finalizeAssistantTurn,
+    onStopAgent,
+    taskId,
+  ]);
 
   const handleActivateSurfaceTab = useCallback((id: string) => {
     setSurfaceTabState((current) =>
@@ -1974,6 +2649,10 @@ export function DesktopAgentChatPanel({
   const isCodebaseProject = viewScope === "codebase";
   const isCodebaseProjectRef = useRef(isCodebaseProject);
   isCodebaseProjectRef.current = isCodebaseProject;
+  const diffAvailable =
+    latestAgentChatChangedFiles(displayMessages, turnUi.activities).length > 0;
+  const diffAvailableRef = useRef(diffAvailable);
+  diffAvailableRef.current = diffAvailable;
 
   // ⌘N: empty picker → open surfaces; with tabs → activate Nth tab
   // (also while collapsed → expands). ⌥T opens + when tabs exist;
@@ -1999,6 +2678,7 @@ export function DesktopAgentChatPanel({
       const currentTabs = surfaceTabStateRef.current;
       const digitShortcut = resolveAgentSurfaceDigitShortcut(event, {
         isCodebaseProject: isCodebaseProjectRef.current,
+        diffAvailable: diffAvailableRef.current,
         tabCount: currentTabs.tabs.length,
       });
       if (digitShortcut != null) {
@@ -2105,9 +2785,31 @@ export function DesktopAgentChatPanel({
           .find((message) => message.planSteps && message.planSteps.length > 0)
           ?.planSteps ?? [];
 
-  const handleModelChange = useCallback((_modelId: string) => {
-      // Model is applied on the next ACP prompt via readAgentChatModelId().
-    }, []);
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      writeAgentChatModelId(modelId);
+      setGlobalModelId(modelId);
+      if (!sessionReady) {
+        setSessionModelId(null);
+        return;
+      }
+      // Live session: apply + pin so this chat follows the user's pick.
+      setSessionModelId(modelId);
+      void setPtyAcpModel({
+        taskId,
+        model: modelId,
+        chatId: agentChatId,
+        cwd,
+      }).then((result) => {
+        if (!result.ok) {
+          setSendError(result.error);
+          return;
+        }
+        setSessionModelId(result.modelId);
+      });
+    },
+    [agentChatId, cwd, sessionReady, taskId],
+  );
 
   const handleModeChange = useCallback(
     (mode: AgentChatMode) => {
@@ -2141,15 +2843,6 @@ export function DesktopAgentChatPanel({
       cwd,
     });
   }, [agentChatId, cwd, sessionReady, taskId]);
-
-  // After a natural settle (not cancel), flush one queued follow-up.
-  useEffect(() => {
-    if (working || queuedFollowUps.length === 0) return;
-    const timer = window.setTimeout(() => {
-      flushQueuedFollowUpRef.current?.();
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [queuedFollowUps.length, working]);
 
   // Keep preference in sync if the same panel instance is reused across scopes.
   useEffect(() => {
@@ -2186,7 +2879,7 @@ export function DesktopAgentChatPanel({
     uiRequest,
     sendError,
     viewMode,
-    queuedFollowUps.length,
+    failedSteer,
     showTicketStart,
     startingAgent,
   ]);
@@ -2209,6 +2902,7 @@ export function DesktopAgentChatPanel({
           tabs={surfaceTabs}
           activeId={activeSurfaceTabId}
           isCodebaseProject={isCodebaseProject}
+          diffAvailable={diffAvailable}
           cwdAvailable={cwdAvailable}
           chatAvailable={chatPickerAvailable}
           onActivateTab={handleActivateSurfaceTab}
@@ -2246,6 +2940,7 @@ export function DesktopAgentChatPanel({
             activeId={activeSurfaceTabId}
             cwdAvailable={cwdAvailable}
             isCodebaseProject={isCodebaseProject}
+            diffAvailable={diffAvailable}
             addMenuOpen={addMenuOpen}
             onAddMenuOpenChange={setAddMenuOpen}
             onActivate={handleActivateSurfaceTab}
@@ -2261,6 +2956,7 @@ export function DesktopAgentChatPanel({
                 cwdAvailable={cwdAvailable}
                 chatAvailable={chatPickerAvailable}
                 isCodebaseProject={isCodebaseProject}
+                diffAvailable={diffAvailable}
               />
             ) : (
               <>
@@ -2282,6 +2978,7 @@ export function DesktopAgentChatPanel({
               working={working}
               liveTurnMessageId={liveTurnMessageId}
               turnStartedAt={turnStartedAt}
+              failedSteerMessageId={failedSteer?.id ?? null}
               composerOverlayHeight={
                 isDraftHeroState ? 0 : composerOverlayHeight
               }
@@ -2328,49 +3025,55 @@ export function DesktopAgentChatPanel({
                 {sendError}
               </p>
             ) : null}
-            {queuedFollowUps.length > 0 ? (
+            {failedSteer ? (
               <div
                 className="desktop-agent-chat__followups"
-                aria-label="Queued follow-ups"
+                aria-label="Failed steer"
               >
-                {queuedFollowUps.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className="desktop-agent-chat__followup"
-                    role="status"
-                  >
-                    <div className="desktop-agent-chat__followup-header">
-                      <span className="desktop-agent-chat__followup-label">
-                        {index === 0 ? "Send next" : `Queued · ${index + 1}`}
-                      </span>
+                <div
+                  className="desktop-agent-chat__followup"
+                  role="status"
+                >
+                  <div className="desktop-agent-chat__followup-header">
+                    <span className="desktop-agent-chat__followup-label">
+                      Steer failed
+                    </span>
+                    <div className="desktop-agent-chat__failed-steer-actions">
+                      <button
+                        type="button"
+                        className="desktop-agent-chat__followup-retry"
+                        onClick={() => retryFailedSteer()}
+                      >
+                        Retry
+                      </button>
                       <button
                         type="button"
                         className="desktop-agent-chat__followup-remove"
-                        aria-label="Remove follow-up"
-                        title="Remove"
-                        onClick={() => removeQueuedFollowUp(item.id)}
+                        aria-label="Discard failed steer"
+                        title="Discard"
+                        onClick={discardFailedSteer}
                       >
                         ×
                       </button>
                     </div>
-                    {item.images.length > 0 ? (
-                      <div className="desktop-agent-chat__followup-images">
-                        {item.images.map((image) =>
-                          image.dataBase64 ? (
-                            <img
-                              key={image.id}
-                              src={`data:${image.mimeType};base64,${image.dataBase64}`}
-                              alt={image.name}
-                            />
-                          ) : null,
-                        )}
-                      </div>
-                    ) : null}
-                    <p className="desktop-agent-chat__followup-text">
-                      {item.text}
-                    </p>
                   </div>
-                ))}
+                  {failedSteer.images.length > 0 ? (
+                    <div className="desktop-agent-chat__followup-images">
+                      {failedSteer.images.map((image) =>
+                        image.dataBase64 ? (
+                          <img
+                            key={image.id}
+                            src={`data:${image.mimeType};base64,${image.dataBase64}`}
+                            alt={image.name}
+                          />
+                        ) : null,
+                      )}
+                    </div>
+                  ) : null}
+                  <p className="desktop-agent-chat__followup-text">
+                    {failedSteer.text}
+                  </p>
+                </div>
               </div>
             ) : null}
             <div
@@ -2391,9 +3094,14 @@ export function DesktopAgentChatPanel({
               onSend={handleSend}
               onCancel={handleCancel}
               onClearChat={handleClearChat}
+              modelId={effectiveModelId}
               onModelChange={handleModelChange}
               onModeChange={handleModeChange}
-              running={working}
+              accessMode={accessMode}
+              onAccessModeChange={handleAccessModeChange}
+              sending={composerSending}
+              running={composerRunning}
+              showPlanFollowUpPrompt={showPlanFollowUpPrompt}
               disabled={
                 startingAgent || (!sessionReady && !onStartAgent && !working)
               }
@@ -2403,13 +3111,17 @@ export function DesktopAgentChatPanel({
                     ? "Type your own answer, or leave this blank to use the selected option"
                     : (uiRequest.detail ??
                       "Resolve this approval request to continue")
-                  : startingAgent
-                    ? "Starting agent…"
-                    : !sessionReady
-                      ? "Message the agent to start…"
-                      : working
-                        ? "Add a follow-up to send next…"
-                        : "Message the agent… (@ files, / commands, paste images)"
+                  : showPlanFollowUpPrompt
+                    ? draft.trim()
+                      ? "Describe how to refine the plan…"
+                      : "Plan ready — Implement, or type a refinement…"
+                    : startingAgent
+                      ? "Starting agent…"
+                      : !sessionReady
+                        ? "Message the agent to start…"
+                        : working
+                          ? "Add a follow-up to send next…"
+                          : "Message the agent… (@ files, / commands, paste images)"
               }
               pendingBanner={
                 uiRequest ? (
@@ -2422,6 +3134,16 @@ export function DesktopAgentChatPanel({
                     role="alertdialog"
                     aria-label={uiRequest.title}
                   >
+                    {uiRequestQueue.length > 1 ? (
+                      <div className="desktop-agent-chat__ask-header">
+                        <span className="desktop-agent-chat__ask-eyebrow">
+                          Pending
+                        </span>
+                        <span className="desktop-agent-chat__ask-count">
+                          1/{uiRequestQueue.length}
+                        </span>
+                      </div>
+                    ) : null}
                     {uiRequest.kind === "ask_question" &&
                     askProgress.activeQuestion ? (
                       <>

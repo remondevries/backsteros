@@ -7,13 +7,13 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { DocumentMarkdownPreview } from "@backsteros/ui";
+import { DocumentMarkdownPreview, ShimmerText } from "@backsteros/ui";
 import {
   LegendList,
   type LegendListRef,
   type LegendListRenderItemProps,
 } from "@legendapp/list/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
 import {
   activityIsCollapsible,
@@ -36,7 +36,7 @@ import {
 } from "../lib/agent/agent-chat-scroll";
 import {
   collectChangedFilesFromActivities,
-  turnWorkedLabel,
+  turnFoldLabel,
 } from "../lib/agent/agent-chat-timeline";
 import {
   agentChatTimelineRowAnchorId,
@@ -101,6 +101,8 @@ export type DesktopAgentChatTranscriptProps = {
   onOpenTurnDiff?: (turnId: string, filePath?: string) => void;
   /** Truncate transcript after this user message (local revert checkpoint). */
   onRevertToMessage?: (messageId: string) => void;
+  /** Optimistic user row that failed mid-turn steer (Retry/Discard). */
+  failedSteerMessageId?: string | null;
 };
 
 function CopyMessageButton({ text }: { text: string }) {
@@ -169,18 +171,24 @@ function UserMessageBubble({
   createdAt,
   images,
   onRevert,
+  failed,
 }: {
   text: string;
   createdAt: number;
   images?: AgentChatMessage["images"];
   onRevert?: () => void;
+  failed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const canCollapse = text.length > 600 || text.split("\n").length > 8;
   const collapsed = canCollapse && !expanded;
 
   return (
-    <div className="desktop-agent-chat__bubble-wrap desktop-agent-chat__bubble-wrap--user">
+    <div
+      className={`desktop-agent-chat__bubble-wrap desktop-agent-chat__bubble-wrap--user${
+        failed ? " is-failed-steer" : ""
+      }`}
+    >
       <div className="desktop-agent-chat__bubble">
         <div
           className={`desktop-agent-chat__user-content-wrap${
@@ -291,11 +299,25 @@ function TrailingIndicator({
     <span
       className={`desktop-agent-chat__activity-flag is-${kind}`}
       aria-label={
-        kind === "success" ? "Done" : kind === "failed" ? "Failed" : undefined
+        kind === "success"
+          ? "Done"
+          : kind === "failed"
+            ? "Failed"
+            : kind === "pending"
+              ? "In progress"
+              : undefined
       }
       aria-hidden={kind === "pending" ? true : undefined}
     >
-      {activityStatusLucide(kind)}
+      {kind === "pending" ? (
+        <Loader2
+          className="desktop-agent-chat__activity-lucide is-pending desktop-agent-chat__spin"
+          aria-hidden
+          strokeWidth={1.8}
+        />
+      ) : (
+        activityStatusLucide(kind)
+      )}
     </span>
   );
 }
@@ -369,8 +391,14 @@ function ActivityRow({
     item.kind === "tool"
       ? toolActivityHeading({ title: item.title, toolKind: item.toolKind })
       : item.title;
+  const titleBusy =
+    live &&
+    (item.status === "in_progress" || item.status === "pending") &&
+    (item.kind === "thought" || item.kind === "info" || item.kind === "tool");
   const title = (
-    <span className="desktop-agent-chat__activity-title">{heading}</span>
+    <span className="desktop-agent-chat__activity-title">
+      {titleBusy ? <ShimmerText>{heading}</ShimmerText> : heading}
+    </span>
   );
 
   const body = (
@@ -773,16 +801,27 @@ function SettledAssistantTurn({
     Boolean(message.proposedPlanMarkdown?.trim());
   const [expanded, setExpanded] = useState(true);
   const changedFiles = collectChangedFilesFromActivities(activities);
+  // Prefer durable workedStartedAt (authoritative turn start). Fall back to the
+  // paired user timestamp. Mid-turn createdAt≈workedStartedAt is handled in
+  // workEndedAt below so sealed “Worked for…” does not collapse to "<1s".
   const workStartedAt = message.workedStartedAt ?? startedAt;
-  const foldLabel = turnWorkedLabel({
+  const workEndedAt =
+    workStartedAt != null &&
+    message.workedStartedAt != null &&
+    Math.abs(message.createdAt - message.workedStartedAt) < 1000
+      ? null
+      : message.createdAt;
+  const foldLabel = turnFoldLabel({
+    outcome: message.turnOutcome,
     startedAt: workStartedAt,
-    endedAt: message.createdAt,
+    endedAt: workEndedAt,
     activityCount: activities.length,
   });
   const hasWorkSummary =
     hasActivities ||
     hasPlanExtras ||
-    (workStartedAt != null && message.createdAt >= workStartedAt);
+    (workStartedAt != null &&
+      (workEndedAt == null || workEndedAt >= workStartedAt));
 
   return (
     <div
@@ -832,7 +871,7 @@ function SettledAssistantTurn({
                   />
                 ) : null}
                 {message.planSteps && message.planSteps.length > 0 ? (
-                  <PlanTodoList steps={message.planSteps} />
+                  <PlanTodoList steps={message.planSteps} active={false} />
                 ) : null}
               </div>
             </div>
@@ -879,6 +918,7 @@ export function DesktopAgentChatTranscript({
   working = false,
   liveTurnMessageId = null,
   turnStartedAt = null,
+  failedSteerMessageId = null,
   composerOverlayHeight = 0,
   onOpenTurnDiff,
   onRevertToMessage,
@@ -933,6 +973,46 @@ export function DesktopAgentChatTranscript({
         liveTurnMessageId,
       }),
     [liveTurnMessageId, messages, showTurnChrome, working],
+  );
+
+  // LegendList only re-renders items when `data`/`extraData` change. The live
+  // row id stays "live" while turnUi streams — without extraData the list looks
+  // stuck on "Working…" until seal swaps in the settled assistant.
+  const liveListExtraData = useMemo(
+    () => ({
+      working: Boolean(working),
+      turnStartedAt,
+      activitySig: activities
+        .map(
+          (item) =>
+            `${item.id}:${item.status}:${item.title}:${item.detail?.length ?? 0}`,
+        )
+        .join("|"),
+      draftLen: draft.length,
+      segmentSig: resolvedLiveSegments
+        .map((segment) =>
+          segment.kind === "text"
+            ? `t:${segment.text.length}`
+            : `w:${segment.activities
+                .map(
+                  (item) =>
+                    `${item.id}:${item.status}:${item.detail?.length ?? 0}`,
+                )
+                .join(",")}`,
+        )
+        .join("|"),
+      planCount: planSteps.length,
+      proposedLen: proposedPlanMarkdown?.length ?? 0,
+    }),
+    [
+      activities,
+      draft.length,
+      planSteps.length,
+      proposedPlanMarkdown?.length,
+      resolvedLiveSegments,
+      turnStartedAt,
+      working,
+    ],
   );
 
   const minimapItems = useMemo(
@@ -1314,14 +1394,19 @@ export function DesktopAgentChatTranscript({
               freshMessageIds.has(item.message.id)
                 ? " desktop-agent-chat__turn--enter"
                 : ""
+            }${
+              failedSteerMessageId === item.message.id
+                ? " is-failed-steer"
+                : ""
             }`}
           >
             <UserMessageBubble
               text={item.message.text}
               createdAt={item.message.createdAt}
               images={item.message.images}
+              failed={failedSteerMessageId === item.message.id}
               onRevert={
-                canRevert
+                canRevert && failedSteerMessageId !== item.message.id
                   ? () => onRevertToMessage(item.message.id)
                   : undefined
               }
@@ -1341,6 +1426,12 @@ export function DesktopAgentChatTranscript({
             isLatestTurn={item.isLatestTurn}
             onOpenTurnDiff={onOpenTurnDiff}
           />
+        );
+      } else if (item.kind === "working") {
+        body = (
+          <div className="desktop-agent-chat__turn desktop-agent-chat__turn--working">
+            <WorkingRow startedAt={turnStartedAt} />
+          </div>
         );
       } else {
         body = (
@@ -1368,7 +1459,9 @@ export function DesktopAgentChatTranscript({
             {showProposedPlan && proposedPlanMarkdown ? (
               <ProposedPlanCard planMarkdown={proposedPlanMarkdown} />
             ) : null}
-            {showPlanTodos ? <PlanTodoList steps={planSteps} /> : null}
+            {showPlanTodos ? (
+              <PlanTodoList steps={planSteps} active={Boolean(working)} />
+            ) : null}
             {onOpenTurnDiff ? (
               <DesktopAgentChatChangedFiles
                 turnId="live"
@@ -1377,7 +1470,6 @@ export function DesktopAgentChatTranscript({
                 onOpenTurnDiff={onOpenTurnDiff}
               />
             ) : null}
-            {working ? <WorkingRow startedAt={turnStartedAt} /> : null}
           </div>
         );
       }
@@ -1395,6 +1487,7 @@ export function DesktopAgentChatTranscript({
       activities,
       anchorMessageId,
       draft,
+      failedSteerMessageId,
       freshMessageIds,
       liveChangedFiles,
       liveEnter,
@@ -1423,6 +1516,7 @@ export function DesktopAgentChatTranscript({
       <LegendList
         ref={listRef}
         data={rows}
+        extraData={liveListExtraData}
         keyExtractor={agentChatTimelineRowKey}
         getItemType={(item) => agentChatTimelineRowType(item)}
         renderItem={renderItem}

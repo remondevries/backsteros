@@ -135,6 +135,33 @@ test("append of bare assistant text cannot drop richer activities", () => {
   assert.equal(result.messages[1]?.activities?.length, 1);
 });
 
+test("append folds different hook text into trailing projector assistant", () => {
+  seedUser();
+  upsertAssistantTurnTimeline(CHAT_ID, {
+    id: "assist-proj",
+    text: "Draft from ACP",
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Reading file",
+        status: "completed",
+        toolKind: "read",
+      },
+    ],
+  });
+  const result = appendChatTranscriptMessage(CHAT_ID, {
+    role: "assistant",
+    text: "Final from hook transcript",
+    id: "assist-hook",
+  });
+  assert.equal(result.appended, false);
+  assert.equal(result.messages.length, 2);
+  assert.equal(result.messages[1]?.id, "assist-proj");
+  assert.equal(result.messages[1]?.text, "Final from hook transcript");
+  assert.equal(result.messages[1]?.activities?.length, 1);
+});
+
 test("segments round-trip through save/load", () => {
   seedUser();
   upsertAssistantTurnTimeline(CHAT_ID, {
@@ -161,4 +188,60 @@ test("segments round-trip through save/load", () => {
   assert.equal(loaded[1]?.segments?.length, 2);
   assert.equal(loaded[1]?.segments?.[0]?.kind, "work");
   assert.equal(loaded[1]?.segments?.[1]?.kind, "text");
+});
+
+test("turn lifecycle fields and checkpointId survive normalize", () => {
+  seedUser();
+  upsertAssistantTurnTimeline(CHAT_ID, {
+    id: "assist-turn",
+    text: "Done",
+    turnId: "turn-abc",
+    turnStatus: "completed",
+    turnStartedAt: 100,
+    turnCompletedAt: 200,
+    turnOutcome: "interrupted",
+    checkpointId: "ckpt-1",
+    gitHeadSha: "deadbeef",
+    checkpointPatches: ["diff --git a/x b/x\n"],
+  });
+  const loaded = loadChatTranscript(CHAT_ID);
+  assert.equal(loaded[1]?.turnId, "turn-abc");
+  assert.equal(loaded[1]?.turnStatus, "completed");
+  assert.equal(loaded[1]?.turnOutcome, "interrupted");
+  assert.equal(loaded[1]?.checkpointId, "ckpt-1");
+  assert.equal(loaded[1]?.gitHeadSha, "deadbeef");
+  assert.equal(loaded[1]?.checkpointPatches?.length, 1);
+});
+
+test("upsert prefers later workedStartedAt so stale leave→return cannot inflate timer", () => {
+  seedUser();
+  upsertAssistantTurnTimeline(CHAT_ID, {
+    id: "assist-stale",
+    text: "",
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Reading",
+        status: "in_progress",
+        toolKind: "read",
+      },
+    ],
+    workedStartedAt: 1_000,
+  });
+  upsertAssistantTurnTimeline(CHAT_ID, {
+    id: "assist-stale",
+    text: "",
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Reading",
+        status: "in_progress",
+        toolKind: "read",
+      },
+    ],
+    workedStartedAt: 50_000,
+  });
+  assert.equal(loadChatTranscript(CHAT_ID)[1]?.workedStartedAt, 50_000);
 });

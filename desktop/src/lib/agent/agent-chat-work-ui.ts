@@ -18,6 +18,48 @@ export function formatWorkingTimerNow(startedAtMs: number): string {
   return formatWorkingTimer(startedAtMs, Date.now());
 }
 
+/**
+ * Prefer the later (more recent) turn-start timestamp.
+ * Stale merges used to keep an ancient `workedStartedAt`, inflating
+ * “Working for…” to multi-day durations after leave→return.
+ */
+export function preferWorkedStartedAt(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): number | null {
+  const av = typeof a === "number" && Number.isFinite(a) ? a : null;
+  const bv = typeof b === "number" && Number.isFinite(b) ? b : null;
+  if (av == null) return bv;
+  if (bv == null) return av;
+  return Math.max(av, bv);
+}
+
+/**
+ * Resolve the Working timer start for remount/rehydrate.
+ * If persisted start is long before the paired user prompt, trust the prompt
+ * (stuck open turns from a prior session must not show 49h clocks).
+ */
+export function resolveTurnWorkingStartedAt(options: {
+  workedStartedAt?: number | null;
+  userCreatedAt?: number | null;
+}): number | null {
+  const worked =
+    typeof options.workedStartedAt === "number" &&
+    Number.isFinite(options.workedStartedAt)
+      ? options.workedStartedAt
+      : null;
+  const user =
+    typeof options.userCreatedAt === "number" &&
+    Number.isFinite(options.userCreatedAt)
+      ? options.userCreatedAt
+      : null;
+  if (worked == null) return user;
+  if (user == null) return worked;
+  // Allow a small skew (optimistic Start before user row commits).
+  if (worked + 60_000 < user) return user;
+  return worked;
+}
+
 export function formatShortChatTimestamp(createdAt: number): string {
   if (!Number.isFinite(createdAt)) return "";
   try {

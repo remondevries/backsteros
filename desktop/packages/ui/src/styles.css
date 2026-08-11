@@ -599,6 +599,84 @@
   font-size: 10px;
 }
 
+.sidebar-cursor-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 9px 6px;
+  border-radius: 7px;
+  color: color-mix(in oklab, var(--foreground) 72%, transparent);
+  font-size: 11px;
+}
+
+.sidebar-cursor-credits-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sidebar-cursor-credits-label {
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.sidebar-cursor-credits-value {
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--foreground) 78%, transparent);
+  white-space: nowrap;
+}
+
+.sidebar-cursor-credits-meta {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.sidebar-cursor-credits-bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sidebar-cursor-credits-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: color-mix(in oklab, var(--foreground) 62%, transparent);
+}
+
+.sidebar-cursor-credits-bar-pct {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-cursor-credits-track {
+  height: 4px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+
+.sidebar-cursor-credits-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: color-mix(in oklab, #3d9a6a 70%, var(--foreground));
+  transition: width 240ms ease;
+}
+
+.sidebar-cursor-credits-fill--warn {
+  background: color-mix(in oklab, #c4922a 75%, var(--foreground));
+}
+
+.sidebar-cursor-credits-fill--critical {
+  background: color-mix(in oklab, #c45c5c 80%, var(--foreground));
+}
+
 /* Content shell — matches backsteros-app workspace / tabs / frame */
 .workspace {
   position: relative;
@@ -827,12 +905,17 @@
     border-width 180ms ease;
 }
 
-/* Nav hidden: pure black chrome behind content; content surface stays unchanged. */
-.bos-product-shell.is-sidebar-collapsed {
+/* Nav hidden or window fullscreen: pure black app chrome (nav, tabs strip,
+   status bar). Override --background so every chrome surface that uses the
+   token follows; content-frame keeps its own elevated surface. */
+.bos-product-shell.is-sidebar-collapsed,
+.bos-product-shell.is-window-fullscreen {
+  --background: #000;
   background: #000;
 }
 
-.bos-product-shell.is-sidebar-collapsed .workspace {
+.bos-product-shell.is-sidebar-collapsed .workspace,
+.bos-product-shell.is-window-fullscreen .workspace {
   background: #000;
 }
 
@@ -1059,6 +1142,55 @@
 
 .entity-delete-modal-cancel:disabled,
 .entity-delete-modal-confirm:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.entity-duplicate-modal-actions {
+  flex-wrap: wrap;
+}
+
+.entity-duplicate-modal-secondary {
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.entity-duplicate-modal-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+}
+
+.entity-duplicate-modal-primary {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.entity-duplicate-modal-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.entity-duplicate-modal-secondary:disabled,
+.entity-duplicate-modal-primary:disabled {
   cursor: default;
   opacity: 0.5;
 }
@@ -3906,7 +4038,10 @@ body[data-keyboard-nav-hover="suppressed"]
 }
 
 .task-item-row__id {
+  box-sizing: content-box;
   flex-shrink: 0;
+  width: calc(var(--task-id-column-ch, 6) * 1ch);
+  white-space: nowrap;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -4545,11 +4680,23 @@ body[data-keyboard-nav-hover="suppressed"]
 .content-markdown-preview-body--rendered ul,
 .content-markdown-preview-body--rendered ol {
   margin: 0.65em 0;
+  padding-left: 1.35em;
 }
 
-.content-markdown-preview-body--rendered ul,
+/* Tailwind preflight clears list markers — restore them in markdown preview. */
+.content-markdown-preview-body--rendered ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
 .content-markdown-preview-body--rendered ol {
-  padding-left: 1.35em;
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered li {
+  display: list-item;
+  margin: 0.25em 0;
 }
 
 .content-markdown-preview-body--rendered ul.contains-task-list,
@@ -5197,8 +5344,19 @@ a.mention-chip-lite--deleted:hover {
   max-width: 100%;
 }
 
+.content-markdown-preview-body--rendered ul.mention-structured-list {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered ol.mention-structured-list {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
 .content-markdown-preview-body--rendered .mention-structured-list--inline > li,
 .mention-structured-list--inline > li {
+  display: list-item;
   margin: 0.25rem 0;
   line-height: 1.75;
 }
@@ -7000,6 +7158,14 @@ a.mention-chip-lite--deleted:hover {
   padding-right: 0 !important;
 }
 
+/* Preview-parity list gutter (disc sits in this inset). */
+.content-markdown-view-layout
+  .document-codemirror:not(.document-codemirror--document-scroll)
+  .cm-editor
+  .cm-line.cm-md-ul-item {
+  padding-left: 1.35em !important;
+}
+
 /* Content-sized editor (task detail): match preview height, no fill. */
 .document-codemirror--document-scroll {
   height: auto;
@@ -7054,6 +7220,10 @@ a.mention-chip-lite--deleted:hover {
 .document-codemirror--document-scroll .cm-editor .cm-line {
   padding-left: 0 !important;
   padding-right: 0 !important;
+}
+
+.document-codemirror--document-scroll .cm-editor .cm-line.cm-md-ul-item {
+  padding-left: 1.35em !important;
 }
 
 /* Command palette (shared — matches backsteros-app) */
@@ -8613,7 +8783,26 @@ body.app-is-dragging * {
   padding-bottom: 8px;
 }
 
-.letter-pdf-section--empty,
+/* Empty PDF dock: stretch children so the dropzone is full width. */
+.letter-pdf-section--empty {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.letter-pdf-section--empty > .resizable-bottom-panel-body {
+  width: 100%;
+  min-width: 0;
+}
+
+.letter-pdf-section--empty .letter-pdf-dropzone {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .letter-pdf-section-empty {
   display: flex;
   min-height: 0;
@@ -9485,6 +9674,16 @@ body.app-is-dragging * {
   line-height: 1;
   color: color-mix(in srgb, var(--foreground) 35%, transparent);
   user-select: none;
+}
+
+.create-task-modal-attachments {
+  margin-top: 4px;
+}
+
+.create-task-modal-attachments .task-detail-attachments {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .create-task-modal-text-fields {
@@ -14112,7 +14311,8 @@ body.app-is-dragging * {
   overflow: hidden;
 }
 
-/* Files / Commits / PRs — scroll the list, keep toolbar + load-more pinned. */
+/* Files / Commits / PRs — scroll the list; keep toolbar pinned (load-more for
+   commits lives inside the list so it only appears at the bottom). */
 .project-panel-list-body > .console-fs-tree-pane,
 .project-panel-list-body > .console-github-commit-list,
 .project-panel-repositories > .console-github-commit-list {
@@ -14126,6 +14326,10 @@ body.app-is-dragging * {
 .project-panel-list-body > .console-github-pane-status,
 .project-panel-list-body > .console-github-pane-error {
   flex-shrink: 0;
+}
+
+.console-github-commit-list > .console-github-pane-more {
+  padding: 8px 0 4px;
 }
 
 .console-github-pane-toolbar {
@@ -14202,6 +14406,46 @@ body.app-is-dragging * {
   flex-direction: column;
   margin-top: 4px;
   overflow: auto;
+}
+
+.console-fs-tree-pane--docs {
+  overflow: hidden;
+}
+
+.console-docs-tree {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.console-docs-tree__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 2px 4px;
+}
+
+.console-docs-tree__main {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.console-docs-tree__main .app-content-side-panel-body {
+  padding-inline: 0;
+}
+
+.console-docs-tree__main .app-content-side-panel-empty {
+  padding: 12px 8px;
+  font-size: 13px;
 }
 
 .console-fs-tree {
@@ -14926,6 +15170,7 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   height: 100%;
 }
 
+.codebase-project-workbench__docs,
 .codebase-project-workbench__tasks {
   display: flex;
   min-height: 0;

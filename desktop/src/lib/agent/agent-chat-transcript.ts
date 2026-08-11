@@ -2,6 +2,7 @@ import type {
   AgentChatActivityItem,
   AgentChatTurnSegment,
 } from "./agent-acp-activity";
+import { preferWorkedStartedAt } from "./agent-chat-work-ui";
 import { preferPlanSteps } from "./t3-port/cursor-todos";
 
 export type AgentChatRole = "user" | "assistant";
@@ -13,6 +14,13 @@ export type AgentChatImageAttachment = {
   /** Raw base64 payload (no data: prefix). Omitted after reload if stripped. */
   dataBase64?: string;
 };
+
+export type AgentChatTurnOutcome = "completed" | "interrupted" | "failed";
+export type AgentChatTurnStatus =
+  | "running"
+  | "completed"
+  | "interrupted"
+  | "failed";
 
 export type AgentChatMessage = {
   id: string;
@@ -36,12 +44,24 @@ export type AgentChatMessage = {
    * pairing alone.
    */
   workedStartedAt?: number | null;
+  /** Sidecar-minted durable turn id (distinct from message id). */
+  turnId?: string | null;
+  turnStatus?: AgentChatTurnStatus | null;
+  turnStartedAt?: number | null;
+  turnCompletedAt?: number | null;
+  /**
+   * How the assistant turn ended. `interrupted` → "You stopped…" fold label.
+   * Omitted / completed → normal "Worked…" label.
+   */
+  turnOutcome?: AgentChatTurnOutcome | null;
   /** User-attached images for this turn. */
   images?: AgentChatImageAttachment[];
   /** `git rev-parse HEAD` at user send time — used for workspace revert. */
   gitHeadSha?: string | null;
   /** Unified patches of files changed in this assistant turn (for reverse apply). */
   checkpointPatches?: string[];
+  /** Sidecar snapshot checkpoint id for transactional revert. */
+  checkpointId?: string | null;
 };
 
 const STORAGE_PREFIX = "backsteros-desktop.agent-chat-transcript.";
@@ -238,6 +258,32 @@ function normalizeMessage(entry: unknown): AgentChatMessage | null {
       Number.isFinite(raw.workedStartedAt)
         ? raw.workedStartedAt
         : undefined,
+    turnId:
+      typeof raw.turnId === "string" && raw.turnId.trim()
+        ? raw.turnId.trim()
+        : undefined,
+    turnStatus:
+      raw.turnStatus === "running" ||
+      raw.turnStatus === "completed" ||
+      raw.turnStatus === "interrupted" ||
+      raw.turnStatus === "failed"
+        ? raw.turnStatus
+        : undefined,
+    turnStartedAt:
+      typeof raw.turnStartedAt === "number" && Number.isFinite(raw.turnStartedAt)
+        ? raw.turnStartedAt
+        : undefined,
+    turnCompletedAt:
+      typeof raw.turnCompletedAt === "number" &&
+      Number.isFinite(raw.turnCompletedAt)
+        ? raw.turnCompletedAt
+        : undefined,
+    turnOutcome:
+      raw.turnOutcome === "interrupted" ||
+      raw.turnOutcome === "completed" ||
+      raw.turnOutcome === "failed"
+        ? raw.turnOutcome
+        : undefined,
     images: normalizeImages(raw.images),
     gitHeadSha:
       typeof raw.gitHeadSha === "string" && raw.gitHeadSha.trim()
@@ -246,6 +292,10 @@ function normalizeMessage(entry: unknown): AgentChatMessage | null {
           ? null
           : undefined,
     checkpointPatches: normalizeCheckpointPatches(raw.checkpointPatches),
+    checkpointId:
+      typeof raw.checkpointId === "string" && raw.checkpointId.trim()
+        ? raw.checkpointId.trim()
+        : undefined,
   };
 }
 
@@ -316,6 +366,7 @@ export function createAgentChatMessage(
     planSteps?: readonly import("./t3-port/cursor-todos").AgentChatPlanStep[];
     proposedPlanMarkdown?: string | null;
     workedStartedAt?: number | null;
+    turnOutcome?: AgentChatTurnOutcome | null;
     images?: readonly AgentChatImageAttachment[];
     gitHeadSha?: string | null;
     checkpointPatches?: readonly string[];
@@ -361,6 +412,9 @@ export function createAgentChatMessage(
       : {}),
     ...(options?.workedStartedAt != null
       ? { workedStartedAt: options.workedStartedAt }
+      : {}),
+    ...(options?.turnOutcome
+      ? { turnOutcome: options.turnOutcome }
       : {}),
     ...(images ? { images } : {}),
     ...(options?.gitHeadSha !== undefined
@@ -411,6 +465,18 @@ function mergeTranscriptMessages(
   const order: string[] = [];
   /** Local ids that already absorbed a sidecar-minted duplicate. */
   const fuzzyConsumed = new Set<string>();
+  /**
+   * Fuzzy-ack is only for a 1:1 sidecar mint race (same prompt, two ids).
+   * Repeated identical user prompts (e.g. bootstrap text) must stay distinct —
+   * collapsing them orphaned the open assistant and let repair pull follow-ups up.
+   */
+  const userTextCounts = new Map<string, number>();
+  for (const message of [...a, ...b]) {
+    if (message.role !== "user") continue;
+    const text = message.text.trim();
+    if (!text) continue;
+    userTextCounts.set(text, (userTextCounts.get(text) ?? 0) + 1);
+  }
 
   function mergeFields(
     existing: AgentChatMessage,
@@ -437,11 +503,34 @@ function mergeTranscriptMessages(
         message.proposedPlanMarkdown?.trim() ||
         existing.proposedPlanMarkdown ||
         message.proposedPlanMarkdown,
-      workedStartedAt:
-        existing.workedStartedAt ?? message.workedStartedAt ?? null,
+      workedStartedAt: preferWorkedStartedAt(
+        existing.workedStartedAt,
+        message.workedStartedAt,
+      ),
+      turnId: existing.turnId ?? message.turnId ?? null,
+      turnStatus:
+        message.turnStatus === "completed" ||
+        message.turnStatus === "interrupted" ||
+        message.turnStatus === "failed"
+          ? message.turnStatus
+          : (existing.turnStatus ?? message.turnStatus ?? null),
+      turnStartedAt: preferWorkedStartedAt(
+        existing.turnStartedAt,
+        message.turnStartedAt,
+      ),
+      turnCompletedAt:
+        message.turnCompletedAt ?? existing.turnCompletedAt ?? null,
+      turnOutcome:
+        existing.turnOutcome === "interrupted" ||
+        message.turnOutcome === "interrupted"
+          ? "interrupted"
+          : (message.turnOutcome ?? existing.turnOutcome ?? null),
+      checkpointId: existing.checkpointId ?? message.checkpointId ?? null,
       // Keep the first-seen id (T3 optimistic id stability).
       id: existing.id,
-      createdAt: Math.min(existing.createdAt, message.createdAt),
+      // Prefer later createdAt so a sealed end stamp is not collapsed back to
+      // turn-begin (that made every "Worked for…" render as "<1s").
+      createdAt: Math.max(existing.createdAt, message.createdAt),
       images: message.images ?? existing.images,
       gitHeadSha:
         message.gitHeadSha !== undefined
@@ -456,6 +545,12 @@ function mergeTranscriptMessages(
     // Only fuzzy-ack identical text within a short window (sidecar mint race).
     // Do not key the whole transcript by role:text — that collapsed "ok"/"continue".
     if (!message.text.trim()) return null;
+    if (
+      message.role === "user" &&
+      (userTextCounts.get(message.text.trim()) ?? 0) > 2
+    ) {
+      return null;
+    }
     for (const existing of byId.values()) {
       if (existing.role !== message.role) continue;
       if (fuzzyConsumed.has(existing.id)) continue;
@@ -498,9 +593,9 @@ function mergeTranscriptMessages(
  * Fix raced transcripts where a live assistant row was persisted before its
  * user prompt (reply rendered above the question).
  *
- * Only swap an orphan assistant that is not already paired with a preceding
- * user. Never pull a follow-up user above a prior agent turn — that made new
- * prompts jump to the top of the thread.
+ * Only rewrite the trailing assistant→user pair (the live race). Mid-thread
+ * inversions are often fuzzy-merge damage; swapping those pulls follow-ups above
+ * prior turns.
  */
 export function repairInvertedUserAssistantPairs(
   messages: readonly AgentChatMessage[],
@@ -508,14 +603,18 @@ export function repairInvertedUserAssistantPairs(
   if (messages.length < 2) return [...messages];
   const next = [...messages];
   let changed = false;
-  for (let i = 0; i < next.length - 1; i += 1) {
-    const current = next[i];
-    const following = next[i + 1];
-    if (!current || !following) continue;
-    if (current.role !== "assistant" || following.role !== "user") continue;
+  // Only the last two rows can be a live persist race.
+  const i = next.length - 2;
+  const current = next[i];
+  const following = next[i + 1];
+  if (
+    current &&
+    following &&
+    current.role === "assistant" &&
+    following.role === "user"
+  ) {
     // [user, assistant, user2] is a normal next turn — do not swap.
     const previous = i > 0 ? next[i - 1] : null;
-    if (previous?.role === "user") continue;
     const assistantLooksOpen =
       !current.text.trim() ||
       Boolean(
@@ -524,13 +623,15 @@ export function repairInvertedUserAssistantPairs(
             item.status === "pending" || item.status === "in_progress",
         ),
       );
-    if (!assistantLooksOpen) continue;
-    next[i] = following;
-    next[i + 1] = {
-      ...current,
-      createdAt: Math.max(current.createdAt, following.createdAt + 1),
-    };
-    changed = true;
+    const willSwap = previous?.role !== "user" && assistantLooksOpen;
+    if (willSwap) {
+      next[i] = following;
+      next[i + 1] = {
+        ...current,
+        createdAt: Math.max(current.createdAt, following.createdAt + 1),
+      };
+      changed = true;
+    }
   }
   return changed ? next : [...messages];
 }
@@ -585,6 +686,7 @@ export function publishAgentChatTranscriptTimeline(
     planSteps?: AgentChatMessage["planSteps"];
     proposedPlanMarkdown?: string | null;
     workedStartedAt?: number | null;
+    turnOutcome?: AgentChatTurnOutcome | null;
   },
 ): void {
   const id = chatId?.trim().toLowerCase();

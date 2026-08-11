@@ -157,6 +157,84 @@ test("findRehydratableLiveAssistant ignores sealed assistant answers", () => {
   assert.equal(findRehydratableLiveAssistant([sealed]), null);
 });
 
+test("findRehydratableLiveAssistant ignores text replies with stuck in_progress tools", () => {
+  const sealed: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "Done despite race.",
+    createdAt: 10,
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Reading file",
+        status: "in_progress",
+        toolKind: "read",
+      },
+    ],
+  };
+  assert.equal(findRehydratableLiveAssistant([sealed]), null);
+});
+
+test("findRehydratableLiveAssistant keeps text replies with inProgress plan steps", () => {
+  const midBootstrap: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "I'll inspect the layout.",
+    createdAt: 10,
+    planSteps: [
+      { step: "Explore layout", status: "inProgress" },
+      { step: "Keep sidebar", status: "pending" },
+    ],
+  };
+  assert.equal(findRehydratableLiveAssistant([midBootstrap])?.id, "a1");
+});
+
+test("findRehydratableLiveAssistant ignores completed turns with stuck plan steps", () => {
+  const sealed: AgentChatMessage = {
+    id: "a1",
+    role: "assistant",
+    text: "Done.",
+    createdAt: 10,
+    turnStatus: "completed",
+    turnOutcome: "completed",
+    planSteps: [{ step: "Explore", status: "inProgress" }],
+    workedStartedAt: 1,
+  };
+  assert.equal(findRehydratableLiveAssistant([sealed]), null);
+});
+
+test("applyLiveTurnTimelineToMessages prefers later workedStartedAt", () => {
+  const user: AgentChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "Go",
+    createdAt: 100,
+  };
+  const staleOpen: AgentChatMessage = {
+    id: "a-old",
+    role: "assistant",
+    text: "",
+    createdAt: 101,
+    activities: [
+      {
+        id: "t1",
+        kind: "tool",
+        title: "Reading",
+        status: "in_progress",
+        toolKind: "read",
+      },
+    ],
+    workedStartedAt: 1,
+  };
+  const patch = liveTurnToTimelinePatch(sampleTurn(), {
+    messageId: "a-new",
+    workedStartedAt: 50_000,
+  })!;
+  const applied = applyLiveTurnTimelineToMessages([user, staleOpen], patch);
+  assert.equal(applied.messages[1]?.workedStartedAt, 50_000);
+});
+
 test("foldAssistantTextIntoLastMessage updates sealed text without new rows", () => {
   const messages: AgentChatMessage[] = [
     { id: "u1", role: "user", text: "Go", createdAt: 1 },

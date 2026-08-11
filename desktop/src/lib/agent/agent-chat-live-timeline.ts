@@ -11,6 +11,7 @@ import type {
   AgentChatTurnUiState,
 } from "./agent-acp-activity";
 import type { AgentChatMessage } from "./agent-chat-transcript";
+import { preferWorkedStartedAt } from "./agent-chat-work-ui";
 import { preferPlanSteps } from "./t3-port/cursor-todos";
 
 function newMessageId(): string {
@@ -79,6 +80,7 @@ export type LiveTurnTimelinePatch = {
   planSteps?: AgentChatMessage["planSteps"];
   proposedPlanMarkdown?: string | null;
   workedStartedAt?: number | null;
+  turnOutcome?: AgentChatMessage["turnOutcome"];
 };
 
 /** Build a durable assistant timeline patch from live turn UI. */
@@ -88,6 +90,7 @@ export function liveTurnToTimelinePatch(
     messageId: string | null;
     createdAt?: number;
     workedStartedAt?: number | null;
+    turnOutcome?: AgentChatMessage["turnOutcome"];
     seal?: boolean;
     checkpointPatches?: readonly string[];
   },
@@ -120,6 +123,9 @@ export function liveTurnToTimelinePatch(
       : {}),
     ...(options.workedStartedAt != null
       ? { workedStartedAt: options.workedStartedAt }
+      : {}),
+    ...(options.turnOutcome
+      ? { turnOutcome: options.turnOutcome }
       : {}),
   };
 }
@@ -157,7 +163,15 @@ export function applyLiveTurnTimelineToMessages(
         patch.proposedPlanMarkdown?.trim() ||
         last.proposedPlanMarkdown ||
         patch.proposedPlanMarkdown,
-      workedStartedAt: last.workedStartedAt ?? patch.workedStartedAt ?? null,
+      workedStartedAt: preferWorkedStartedAt(
+        last.workedStartedAt,
+        patch.workedStartedAt,
+      ),
+      turnOutcome:
+        last.turnOutcome === "interrupted" ||
+        patch.turnOutcome === "interrupted"
+          ? "interrupted"
+          : (patch.turnOutcome ?? last.turnOutcome ?? null),
     };
     return {
       messages: [...messages.slice(0, -1), nextMessage],
@@ -186,6 +200,7 @@ export function applyLiveTurnTimelineToMessages(
     ...(patch.workedStartedAt != null
       ? { workedStartedAt: patch.workedStartedAt }
       : {}),
+    ...(patch.turnOutcome ? { turnOutcome: patch.turnOutcome } : {}),
   };
   return { messages: [...messages, message], messageId: message.id };
 }
@@ -245,6 +260,28 @@ export function assistantMessageLooksOpen(
   message: AgentChatMessage | null | undefined,
 ): boolean {
   if (!message || message.role !== "assistant") return false;
+  // Terminal turn status wins — do not resurrect Working… from stuck todos.
+  if (
+    message.turnStatus === "completed" ||
+    message.turnStatus === "interrupted" ||
+    message.turnStatus === "failed" ||
+    message.turnOutcome === "completed" ||
+    message.turnOutcome === "interrupted" ||
+    message.turnOutcome === "failed"
+  ) {
+    return false;
+  }
+  // Start-agent bootstrap can seal early (socket reconnect race) while Cursor
+  // todos are still inProgress — treat that as open so Chat can rehydrate the
+  // live Working… row when the agent is still busy.
+  if (
+    message.planSteps?.some((step) => step.status === "inProgress")
+  ) {
+    return true;
+  }
+  // Sealed replies with text must not resurrect Working… even if a tool row
+  // was left in_progress by a dual-writer race.
+  if (message.text.trim()) return false;
   const activities = message.activities ?? [];
   const hasOpenWork = activities.some(
     (item) => item.status === "pending" || item.status === "in_progress",
@@ -253,7 +290,7 @@ export function assistantMessageLooksOpen(
   const hasTimeline =
     activities.length > 0 || Boolean(message.segments?.length);
   // Tools started but no final reply text yet — still mid-turn.
-  return hasTimeline && !message.text.trim();
+  return hasTimeline;
 }
 
 /** Pick the latest assistant message that still looks like an open turn. */

@@ -57,6 +57,9 @@ import {
   acpCancel,
   acpPrompt,
   acpSetMode,
+  acpSetModel,
+  acpSteer,
+  ensureAcpSessionModel,
   normalizeCursorModeId,
   clearAcpBusy,
   ensureAcpSession,
@@ -67,6 +70,7 @@ import {
   listPendingUiRequests,
   onAcpEvent,
   respondAcpUiRequest,
+  setAcpAccessMode,
 } from "./agent-acp-manager.mjs";
 import {
   broadcastChat,
@@ -79,12 +83,38 @@ import {
   beginAcpProjectedTurn,
   clearAcpProjectedTurn,
   completeAcpProjectedUiRequest,
+  getAcpProjectedTurn,
+  markAcpTurnCancelRequested,
   projectAcpSessionUpdate,
   projectAcpUiRequest,
   projectCursorCreatePlan,
   projectCursorUpdateTodos,
   sealAcpProjectedTurn,
+  setAcpProjectedTurnCheckpoint,
 } from "./agent-acp-projector.mjs";
+import {
+  createGitCheckpoint,
+  deleteGitCheckpoints,
+  restoreGitCheckpoint,
+} from "./agent-git-checkpoints.mjs";
+
+/**
+ * @param {string} taskId
+ * @param {ReturnType<typeof getAcpProjectedTurn>} turn
+ * @param {"completed" | "interrupted" | "failed"} status
+ */
+function broadcastTurnState(taskId, turn, status) {
+  if (!turn) return;
+  broadcastChat(taskId, {
+    type: "acp-event",
+    event: "turn-state",
+    turnId: turn.turnId,
+    messageId: turn.messageId,
+    sessionId: turn.chatId,
+    status,
+    completedAt: turn.turnCompletedAt ?? Date.now(),
+  });
+}
 
 const HOST = process.env.PTY_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PTY_PORT ?? 3101);
@@ -303,15 +333,35 @@ onAcpEvent((event) => {
 
   if (event.type === "activity") {
     const activity = event.activity === "working" ? "working" : "idle";
+    let projected = null;
+    let isNewTurn = false;
     if (activity === "working" && chatId) {
-      beginAcpProjectedTurn(taskId, chatId);
+      const prior = getAcpProjectedTurn(taskId);
+      projected = beginAcpProjectedTurn(taskId, chatId);
+      isNewTurn = Boolean(
+        projected && (!prior || prior.turnId !== projected.turnId),
+      );
     }
     broadcastChat(taskId, {
       type: "acp-event",
       event: "activity",
       activity,
       sessionId: event.sessionId ?? chatId ?? null,
+      ...(projected?.messageId ? { messageId: projected.messageId } : {}),
+      ...(projected?.turnId ? { turnId: projected.turnId } : {}),
     });
+    // Only announce turn-begin when a new durable turn was minted.
+    if (isNewTurn && projected) {
+      broadcastChat(taskId, {
+        type: "acp-event",
+        event: "turn-begin",
+        turnId: projected.turnId,
+        messageId: projected.messageId,
+        sessionId: event.sessionId ?? chatId ?? null,
+        status: "running",
+        startedAt: projected.workedStartedAt,
+      });
+    }
     broadcastChat(taskId, {
       type: "agent-hook",
       event: activity === "working" ? "preToolUse" : "stop",
@@ -354,16 +404,21 @@ onAcpEvent((event) => {
       acpAssistantDraftByTask.get(taskId) || "",
     ).trim();
     acpAssistantDraftByTask.delete(taskId);
-    if (chatId) {
-      sealAcpProjectedTurn(taskId, chatId, draft);
-    }
+    const live = getAcpProjectedTurn(taskId);
+    const status =
+      live?.cancelRequested === true ? "interrupted" : "completed";
+    const sealed = chatId
+      ? sealAcpProjectedTurn(taskId, chatId, draft, { status })
+      : null;
     broadcastChat(taskId, {
       type: "acp-event",
       event: "prompt-complete",
       sessionId: event.sessionId ?? chatId ?? null,
       text: draft || null,
       result: event.result ?? null,
+      turnId: sealed?.turnId ?? live?.turnId ?? null,
     });
+    broadcastTurnState(taskId, sealed ?? live, status);
     if (draft) {
       broadcastChat(taskId, {
         type: "agent-hook",
@@ -378,17 +433,27 @@ onAcpEvent((event) => {
 
   if (event.type === "prompt-error") {
     acpAssistantDraftByTask.delete(taskId);
-    if (chatId) {
-      sealAcpProjectedTurn(taskId, chatId, "");
-    } else {
+    const live = getAcpProjectedTurn(taskId);
+    const errorText =
+      typeof event.error === "string" ? event.error : "ACP prompt failed";
+    const status =
+      live?.cancelRequested === true || /cancel/i.test(errorText)
+        ? "interrupted"
+        : "failed";
+    const sealed = chatId
+      ? sealAcpProjectedTurn(taskId, chatId, "", { status })
+      : null;
+    if (!sealed && !chatId) {
       clearAcpProjectedTurn(taskId);
     }
     broadcastChat(taskId, {
       type: "acp-event",
       event: "prompt-error",
       sessionId: event.sessionId ?? chatId ?? null,
-      error: event.error ?? "ACP prompt failed",
+      error: errorText,
+      turnId: sealed?.turnId ?? live?.turnId ?? null,
     });
+    broadcastTurnState(taskId, sealed ?? live, status);
     return;
   }
 
@@ -952,6 +1017,7 @@ function handleAgentHook(sessionId, payloadText) {
         event === "sessionEnd") &&
       text?.trim()
     ) {
+      // Fold into projector-owned assistant when present (never a 2nd bubble).
       appendChatTranscriptMessage(chatId, {
         role: "assistant",
         text: text.trim(),
@@ -1421,6 +1487,7 @@ const httpServer = createServer(async (req, res) => {
         );
       }
 
+      const acp = getAcpSession(taskId);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(
         JSON.stringify({
@@ -1431,6 +1498,7 @@ const httpServer = createServer(async (req, res) => {
           cwd: ensured.cwd,
           created: ensured.created,
           resumed: ensured.resumed,
+          modelId: acp?.modelId ?? null,
         }),
       );
       return;
@@ -1494,6 +1562,12 @@ const httpServer = createServer(async (req, res) => {
               ? body.modeId
               : null,
         ) || null;
+      const requestedModelId =
+        typeof body.model === "string"
+          ? body.model.trim()
+          : typeof body.modelId === "string"
+            ? body.modelId.trim()
+            : null;
 
       const images = Array.isArray(body.images)
         ? body.images
@@ -1527,16 +1601,66 @@ const httpServer = createServer(async (req, res) => {
         );
       }
 
-      beginAcpProjectedTurn(taskId, ensured.sessionId);
+      const priorTurn = getAcpProjectedTurn(taskId);
+      const projected = beginAcpProjectedTurn(taskId, ensured.sessionId);
+      const isNewTurn = Boolean(
+        projected && (!priorTurn || priorTurn.turnId !== projected.turnId),
+      );
 
-      // Belt-and-suspenders: never block Chat on a stale busy lock.
-      clearAcpBusy(taskId);
+      // Do not clearAcpBusy here — that let stacked /agent/prompt calls bypass the
+      // in-flight guard. Stale locks are healed inside acpPrompt when no RPC is pending.
 
       appendChatTranscriptMessage(ensured.sessionId, {
         role: "user",
         text: trimmed || (images.length > 0 ? "(image)" : ""),
+        turnId: projected?.turnId ?? null,
       });
       acpAssistantDraftByTask.set(taskId, "");
+
+      if (isNewTurn && projected) {
+        broadcastChat(taskId, {
+          type: "acp-event",
+          event: "turn-begin",
+          turnId: projected.turnId,
+          messageId: projected.messageId,
+          sessionId: ensured.sessionId,
+          status: "running",
+          startedAt: projected.workedStartedAt,
+        });
+        // Await snapshot so sealed turns keep checkpointId (soft timeout).
+        const checkpointCwd = ensured.cwd || cwd;
+        try {
+          const checkpoint = await Promise.race([
+            createGitCheckpoint(checkpointCwd, {
+              turnId: projected.turnId,
+            }),
+            new Promise((_, reject) => {
+              setTimeout(() => reject(new Error("checkpoint timeout")), 2500);
+            }),
+          ]);
+          setAcpProjectedTurnCheckpoint(taskId, checkpoint.checkpointId);
+        } catch (error) {
+          console.warn(
+            "[pty] checkpoint capture failed:",
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      // Pin model on first prompt; later prompts keep the session pin.
+      let modelId = getAcpSession(taskId)?.modelId ?? null;
+      try {
+        const modelResult = await ensureAcpSessionModel({
+          taskId,
+          requestedModelId,
+        });
+        modelId = modelResult.modelId;
+      } catch (error) {
+        console.warn(
+          "[pty] ACP model apply failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
 
       broadcastChat(taskId, {
         type: "agent-hook",
@@ -1564,6 +1688,9 @@ const httpServer = createServer(async (req, res) => {
           taskId,
           sessionId: ensured.sessionId,
           chatId: ensured.sessionId,
+          turnId: projected?.turnId ?? null,
+          messageId: projected?.messageId ?? null,
+          modelId,
           via: "acp",
           result: result ?? null,
         }),
@@ -1806,7 +1933,6 @@ const httpServer = createServer(async (req, res) => {
           modeId: result.modeId,
           sessionId: result.sessionId,
           unchanged: result.unchanged === true,
-          
         }),
       );
       return;
@@ -1818,6 +1944,86 @@ const httpServer = createServer(async (req, res) => {
             error instanceof Error
               ? error.message
               : "Failed to set agent mode.",
+        }),
+      );
+      return;
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/agent/acp/model") {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const bodyText = await readRequestBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyText || "{}");
+      } catch {
+        body = {};
+      }
+      const taskId =
+        typeof body.taskId === "string" ? body.taskId.trim() : "";
+      const modelId =
+        typeof body.model === "string"
+          ? body.model.trim()
+          : typeof body.modelId === "string"
+            ? body.modelId.trim()
+            : "";
+      const preferredSession =
+        (typeof body.chatId === "string" && body.chatId.trim().toLowerCase()) ||
+        (typeof body.sessionId === "string" &&
+          body.sessionId.trim().toLowerCase()) ||
+        null;
+      let cwd = DEFAULT_CWD;
+      const cwdRaw = typeof body.cwd === "string" ? body.cwd.trim() : "";
+      if (cwdRaw === "~") cwd = os.homedir();
+      else if (cwdRaw.startsWith("~/")) {
+        cwd = path.join(os.homedir(), cwdRaw.slice(2));
+      } else if (cwdRaw && path.isAbsolute(cwdRaw)) {
+        cwd = cwdRaw;
+      }
+
+      if (!taskId || !modelId) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            error: "taskId and model are required.",
+          }),
+        );
+        return;
+      }
+
+      if (!getAcpSession(taskId)) {
+        await ensureAcpSession({
+          taskId,
+          cwd,
+          sessionId: preferredSession,
+        });
+      }
+
+      const result = await acpSetModel({ taskId, modelId });
+
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          taskId,
+          modelId: result.modelId,
+          sessionId: result.sessionId,
+          unchanged: result.unchanged === true,
+        }),
+      );
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to set agent model.",
         }),
       );
       return;
@@ -1844,7 +2050,7 @@ const httpServer = createServer(async (req, res) => {
         res.end(JSON.stringify({ error: "taskId is required." }));
         return;
       }
-      clearAcpBusy(taskId);
+      markAcpTurnCancelRequested(taskId);
       const ok = await acpCancel(taskId);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, cancelled: ok, taskId }));
@@ -1857,6 +2063,249 @@ const httpServer = createServer(async (req, res) => {
             error instanceof Error
               ? error.message
               : "Failed to cancel ACP turn.",
+        }),
+      );
+      return;
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/agent/steer") {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const bodyText = await readRequestBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyText || "{}");
+      } catch {
+        body = {};
+      }
+      const taskId =
+        typeof body.taskId === "string" ? body.taskId.trim() : "";
+      const expectedTurnId =
+        typeof body.expectedTurnId === "string"
+          ? body.expectedTurnId.trim()
+          : "";
+      const trimmed =
+        typeof body.prompt === "string" ? body.prompt.trim() : "";
+      const images = Array.isArray(body.images)
+        ? body.images
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") return null;
+              const mimeType =
+                typeof entry.mimeType === "string" ? entry.mimeType.trim() : "";
+              const data =
+                typeof entry.data === "string"
+                  ? entry.data.trim()
+                  : typeof entry.dataBase64 === "string"
+                    ? entry.dataBase64.trim()
+                    : "";
+              if (!mimeType.startsWith("image/") || !data) return null;
+              return { mimeType, data };
+            })
+            .filter(Boolean)
+        : [];
+      if (!taskId || !expectedTurnId) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            error: "taskId and expectedTurnId are required.",
+          }),
+        );
+        return;
+      }
+      if (!trimmed && images.length === 0) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "prompt is required." }));
+        return;
+      }
+      const clientMessageId =
+        typeof body.clientMessageId === "string"
+          ? body.clientMessageId.trim()
+          : "";
+      const live = getAcpProjectedTurn(taskId);
+      if (
+        !live ||
+        live.turnStatus !== "running" ||
+        live.turnId !== expectedTurnId
+      ) {
+        res.writeHead(409, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(
+          JSON.stringify({
+            error: "No matching running turn to steer.",
+            code: "turn_mismatch",
+          }),
+        );
+        return;
+      }
+      // Idempotent retry: if this clientMessageId was already accepted, do not
+      // re-prompt Cursor — just acknowledge.
+      if (clientMessageId) {
+        const existing = loadChatTranscript(live.chatId);
+        if (existing.some((msg) => msg?.id === clientMessageId)) {
+          res.writeHead(200, {
+            "Content-Type": "application/json; charset=utf-8",
+          });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              taskId,
+              turnId: live.turnId,
+              messageId: live.messageId,
+              clientMessageId,
+              deduped: true,
+            }),
+          );
+          return;
+        }
+      }
+
+      // Accept steer first — only then persist the user row (idempotent by id).
+      const result = await acpSteer({
+        taskId,
+        prompt: trimmed,
+        images,
+      });
+      appendChatTranscriptMessage(live.chatId, {
+        ...(clientMessageId ? { id: clientMessageId } : {}),
+        role: "user",
+        text: trimmed || "(image)",
+        turnId: live.turnId,
+      });
+      broadcastChat(taskId, {
+        type: "acp-event",
+        event: "turn-steered",
+        turnId: live.turnId,
+        messageId: live.messageId,
+        clientMessageId: clientMessageId || null,
+        sessionId: live.chatId,
+      });
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          taskId,
+          turnId: live.turnId,
+          messageId: live.messageId,
+          clientMessageId: clientMessageId || null,
+          result: result ?? null,
+        }),
+      );
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            error instanceof Error ? error.message : "Failed to steer turn.",
+        }),
+      );
+      return;
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/agent/acp/access-mode") {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const bodyText = await readRequestBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyText || "{}");
+      } catch {
+        body = {};
+      }
+      const taskId =
+        typeof body.taskId === "string" ? body.taskId.trim() : "";
+      const mode =
+        body.mode === "full_access"
+          ? "full_access"
+          : body.mode === "auto_accept_edits"
+            ? "auto_accept_edits"
+            : "supervised";
+      if (!taskId) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "taskId is required." }));
+        return;
+      }
+      if (!getAcpSession(taskId)) {
+        const cwd =
+          typeof body.cwd === "string" && body.cwd.trim()
+            ? body.cwd.trim()
+            : DEFAULT_CWD;
+        await ensureAcpSession({ taskId, cwd });
+      }
+      const result = setAcpAccessMode(taskId, mode);
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, ...result }));
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to set access mode.",
+        }),
+      );
+      return;
+    }
+  }
+
+  if (
+    req.method === "POST" &&
+    url.pathname === "/agent/git/checkpoints/restore"
+  ) {
+    if (!isAuthorized(req, url)) {
+      rejectUnauthorized(res);
+      return;
+    }
+    try {
+      const bodyText = await readRequestBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyText || "{}");
+      } catch {
+        body = {};
+      }
+      const cwd =
+        typeof body.cwd === "string" && body.cwd.trim()
+          ? body.cwd.trim()
+          : DEFAULT_CWD;
+      const checkpointId =
+        typeof body.checkpointId === "string" ? body.checkpointId.trim() : "";
+      if (!checkpointId) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "checkpointId is required." }));
+        return;
+      }
+      const restored = await restoreGitCheckpoint(cwd, checkpointId);
+      const deleteIds = Array.isArray(body.deleteCheckpointIds)
+        ? body.deleteCheckpointIds
+            .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+            .filter(Boolean)
+        : [];
+      if (deleteIds.length > 0) {
+        await deleteGitCheckpoints(cwd, deleteIds);
+      }
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, restored: true, ...restored }));
+      return;
+    } catch (error) {
+      res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          ok: false,
+          restored: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to restore checkpoint.",
         }),
       );
       return;
@@ -2022,6 +2471,7 @@ const httpServer = createServer(async (req, res) => {
           taskId,
           started: ensured.created,
           lastActivity: acp?.busy ? "working" : "idle",
+          modelId: acp?.modelId ?? null,
         }),
       );
       return;
@@ -2244,15 +2694,31 @@ function bindAgentChatSubscriber(ws, taskId, chatIdParam, sessionIdParam) {
   console.log(
     `[acp] chat subscriber task=${taskId} chat=${chatId ?? "-"} viewers=${viewers}`,
   );
+  const liveTurn = getAcpProjectedTurn(taskId);
   send(ws, {
     type: "ready",
     sessionId: chatId || sessionIdParam || taskId,
     taskId,
     kind: "agent",
     reattached: true,
-    lastActivity: acp?.busy ? "working" : "idle",
+    lastActivity: acp?.busy || liveTurn?.turnStatus === "running" ? "working" : "idle",
     viewers,
   });
+
+  // Replay the in-flight projected turn so leave→return rebinds Working… to the
+  // real turn start (and message id) instead of a stale transcript snapshot.
+  if (liveTurn && liveTurn.turnStatus === "running") {
+    send(ws, {
+      type: "acp-event",
+      event: "turn-begin",
+      turnId: liveTurn.turnId,
+      messageId: liveTurn.messageId,
+      sessionId: liveTurn.chatId,
+      status: "running",
+      startedAt: liveTurn.workedStartedAt,
+      reattached: true,
+    });
+  }
 
   // T3-style: replay open ask/permission so remount/reconnect still shows the panel.
   for (const pending of listPendingUiRequests(taskId)) {
@@ -2481,7 +2947,7 @@ wss.on("connection", (ws, req) => {
       error instanceof Error ? error.message : "Failed to spawn shell.";
     const hint =
       /posix_spawnp failed/i.test(message)
-        ? " (often PTY exhaustion — restart `pnpm pty` / the development console)"
+        ? " (often PTY exhaustion — restart `pnpm --filter @backsteros/desktop pty` / the development console)"
         : "";
     send(ws, { type: "error", message: `${message}${hint}` });
     ws.close();
@@ -2555,7 +3021,7 @@ function assertPortFree(port) {
       socket.destroy();
       reject(
         new Error(
-          `Port ${port} is already in use. Stop the other \`pnpm pty\` / \`pty:tailscale\` process before starting another — desktop and iPad must share one sidecar.`,
+          `Port ${port} is already in use. Stop the other \`pnpm --filter @backsteros/desktop pty\` / \`pty:tailscale\` process before starting another — desktop and iPad must share one sidecar.`,
         ),
       );
     });
@@ -2594,6 +3060,7 @@ httpServer.listen(PORT, HOST, () => {
   console.log(`[pty] agent prompt POST http://${HOST}:${PORT}/agent/prompt (ACP-only Chat)`);
   console.log(`[pty] agent acp ensure POST http://${HOST}:${PORT}/agent/acp/ensure`);
   console.log(`[pty] agent acp mode POST http://${HOST}:${PORT}/agent/acp/mode`);
+  console.log(`[pty] agent acp model POST http://${HOST}:${PORT}/agent/acp/model`);
   console.log(`[pty] agent acp cancel POST http://${HOST}:${PORT}/agent/acp/cancel`);
   console.log(`[pty] agent acp respond POST http://${HOST}:${PORT}/agent/acp/respond`);
   console.log(

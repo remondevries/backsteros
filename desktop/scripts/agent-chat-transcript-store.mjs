@@ -16,6 +16,21 @@ const TRANSCRIPT_DIR = path.join(
   "agent-chat-transcripts",
 );
 
+/**
+ * Prefer the later (more recent) turn-start so stale merges cannot inflate
+ * “Working for…” after leave→return.
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {number | null}
+ */
+function preferWorkedStartedAt(a, b) {
+  const av = typeof a === "number" && Number.isFinite(a) ? a : null;
+  const bv = typeof b === "number" && Number.isFinite(b) ? b : null;
+  if (av == null) return bv;
+  if (bv == null) return av;
+  return Math.max(av, bv);
+}
+
 /** @typedef {{
  *   id: string,
  *   kind: "tool" | "thought" | "plan" | "info",
@@ -51,6 +66,14 @@ const TRANSCRIPT_DIR = path.join(
  *   planSteps?: Array<{ step: string, status: "completed" | "inProgress" | "pending" }>,
  *   proposedPlanMarkdown?: string,
  *   workedStartedAt?: number | null,
+ *   turnId?: string | null,
+ *   turnStatus?: "running" | "completed" | "interrupted" | "failed" | null,
+ *   turnStartedAt?: number | null,
+ *   turnCompletedAt?: number | null,
+ *   turnOutcome?: "completed" | "interrupted" | "failed" | null,
+ *   gitHeadSha?: string | null,
+ *   checkpointPatches?: string[],
+ *   checkpointId?: string | null,
  * }} AgentChatMessage */
 
 /** @type {Map<string, AgentChatMessage[]>} */
@@ -254,6 +277,25 @@ function normalizeMessage(entry, options = {}) {
       : undefined;
   const workedRaw =
     /** @type {{ workedStartedAt?: unknown }} */ (entry).workedStartedAt;
+  const turnIdRaw = /** @type {{ turnId?: unknown }} */ (entry).turnId;
+  const turnStatusRaw =
+    /** @type {{ turnStatus?: unknown }} */ (entry).turnStatus;
+  const turnStartedRaw =
+    /** @type {{ turnStartedAt?: unknown }} */ (entry).turnStartedAt;
+  const turnCompletedRaw =
+    /** @type {{ turnCompletedAt?: unknown }} */ (entry).turnCompletedAt;
+  const turnOutcomeRaw =
+    /** @type {{ turnOutcome?: unknown }} */ (entry).turnOutcome;
+  const gitHeadRaw = /** @type {{ gitHeadSha?: unknown }} */ (entry).gitHeadSha;
+  const checkpointIdRaw =
+    /** @type {{ checkpointId?: unknown }} */ (entry).checkpointId;
+  const checkpointPatchesRaw =
+    /** @type {{ checkpointPatches?: unknown }} */ (entry).checkpointPatches;
+  const checkpointPatches = Array.isArray(checkpointPatchesRaw)
+    ? checkpointPatchesRaw
+        .map((entry) => (typeof entry === "string" ? entry : ""))
+        .filter((entry) => entry.trim())
+    : undefined;
   /** @type {AgentChatMessage} */
   const message = {
     id:
@@ -275,6 +317,38 @@ function normalizeMessage(entry, options = {}) {
       : workedRaw === null
         ? { workedStartedAt: null }
         : {}),
+    ...(typeof turnIdRaw === "string" && turnIdRaw.trim()
+      ? { turnId: turnIdRaw.trim() }
+      : {}),
+    ...(turnStatusRaw === "running" ||
+    turnStatusRaw === "completed" ||
+    turnStatusRaw === "interrupted" ||
+    turnStatusRaw === "failed"
+      ? { turnStatus: turnStatusRaw }
+      : {}),
+    ...(typeof turnStartedRaw === "number" && Number.isFinite(turnStartedRaw)
+      ? { turnStartedAt: turnStartedRaw }
+      : {}),
+    ...(typeof turnCompletedRaw === "number" &&
+    Number.isFinite(turnCompletedRaw)
+      ? { turnCompletedAt: turnCompletedRaw }
+      : {}),
+    ...(turnOutcomeRaw === "completed" ||
+    turnOutcomeRaw === "interrupted" ||
+    turnOutcomeRaw === "failed"
+      ? { turnOutcome: turnOutcomeRaw }
+      : {}),
+    ...(typeof gitHeadRaw === "string" && gitHeadRaw.trim()
+      ? { gitHeadSha: gitHeadRaw.trim() }
+      : gitHeadRaw === null
+        ? { gitHeadSha: null }
+        : {}),
+    ...(typeof checkpointIdRaw === "string" && checkpointIdRaw.trim()
+      ? { checkpointId: checkpointIdRaw.trim() }
+      : {}),
+    ...(checkpointPatches && checkpointPatches.length > 0
+      ? { checkpointPatches }
+      : {}),
   };
   return message;
 }
@@ -318,10 +392,38 @@ function mergeAssistantTimeline(existing, incoming) {
         incoming.proposedPlanMarkdown.trim()) ||
       existing.proposedPlanMarkdown ||
       incoming.proposedPlanMarkdown,
-    workedStartedAt:
-      existing.workedStartedAt ?? incoming.workedStartedAt ?? null,
+    workedStartedAt: preferWorkedStartedAt(
+      existing.workedStartedAt,
+      incoming.workedStartedAt,
+    ),
+    turnId: existing.turnId ?? incoming.turnId ?? null,
+    turnStatus:
+      incoming.turnStatus === "completed" ||
+      incoming.turnStatus === "interrupted" ||
+      incoming.turnStatus === "failed"
+        ? incoming.turnStatus
+        : (existing.turnStatus ?? incoming.turnStatus ?? null),
+    turnStartedAt: preferWorkedStartedAt(
+      existing.turnStartedAt,
+      incoming.turnStartedAt,
+    ),
+    turnCompletedAt:
+      incoming.turnCompletedAt ?? existing.turnCompletedAt ?? null,
+    turnOutcome:
+      existing.turnOutcome === "interrupted" ||
+      incoming.turnOutcome === "interrupted"
+        ? "interrupted"
+        : (incoming.turnOutcome ?? existing.turnOutcome ?? null),
+    gitHeadSha:
+      incoming.gitHeadSha !== undefined
+        ? incoming.gitHeadSha
+        : existing.gitHeadSha,
+    checkpointId: existing.checkpointId ?? incoming.checkpointId ?? null,
+    checkpointPatches:
+      incoming.checkpointPatches ?? existing.checkpointPatches,
     id: existing.id || incoming.id,
-    createdAt: Math.min(existing.createdAt, incoming.createdAt),
+    // Prefer later createdAt on seal so Worked-for duration is not "<1s".
+    createdAt: Math.max(existing.createdAt, incoming.createdAt),
   };
 }
 
@@ -424,6 +526,19 @@ export function appendChatTranscriptMessage(chatId, input) {
 
   const current = loadChatTranscript(id);
   const last = current[current.length - 1];
+
+  // Hook afterAgentResponse / stop often appends text-only assistants while the
+  // ACP projector already owns a richer open turn. Always fold into the trailing
+  // assistant instead of creating a second bubble.
+  if (msg.role === "assistant" && last?.role === "assistant") {
+    const upgraded = [
+      ...current.slice(0, -1),
+      mergeAssistantTimeline(last, msg),
+    ];
+    saveChatTranscript(id, upgraded);
+    return { appended: false, messages: upgraded };
+  }
+
   if (
     last &&
     last.role === msg.role &&
@@ -431,14 +546,6 @@ export function appendChatTranscriptMessage(chatId, input) {
       (last.text === msg.text &&
         Math.abs(last.createdAt - msg.createdAt) < 60_000))
   ) {
-    if (msg.role === "assistant") {
-      const upgraded = [
-        ...current.slice(0, -1),
-        mergeAssistantTimeline(last, msg),
-      ];
-      saveChatTranscript(id, upgraded);
-      return { appended: false, messages: upgraded };
-    }
     return { appended: false, messages: current };
   }
 
@@ -460,6 +567,14 @@ export function appendChatTranscriptMessage(chatId, input) {
  *   planSteps?: AgentChatMessage["planSteps"],
  *   proposedPlanMarkdown?: string | null,
  *   workedStartedAt?: number | null,
+ *   turnId?: string | null,
+ *   turnStatus?: AgentChatMessage["turnStatus"],
+ *   turnStartedAt?: number | null,
+ *   turnCompletedAt?: number | null,
+ *   turnOutcome?: AgentChatMessage["turnOutcome"],
+ *   checkpointId?: string | null,
+ *   gitHeadSha?: string | null,
+ *   checkpointPatches?: string[],
  * }} patch
  * @returns {{ messages: AgentChatMessage[], message: AgentChatMessage | null }}
  */
@@ -479,6 +594,14 @@ export function upsertAssistantTurnTimeline(chatId, patch) {
       planSteps: patch.planSteps,
       proposedPlanMarkdown: patch.proposedPlanMarkdown,
       workedStartedAt: patch.workedStartedAt,
+      turnId: patch.turnId,
+      turnStatus: patch.turnStatus,
+      turnStartedAt: patch.turnStartedAt,
+      turnCompletedAt: patch.turnCompletedAt,
+      turnOutcome: patch.turnOutcome,
+      checkpointId: patch.checkpointId,
+      gitHeadSha: patch.gitHeadSha,
+      checkpointPatches: patch.checkpointPatches,
     },
     { allowEmptyAssistantText: true },
   );
