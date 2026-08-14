@@ -2553,6 +2553,34 @@ body[data-keyboard-nav-hover="suppressed"]
   overflow: hidden;
 }
 
+.documents-empty-create > .markdown-document-scrollport {
+  flex: 1;
+  min-height: 0;
+}
+
+.documents-empty-create[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  min-height: 100cqh;
+}
+
+.documents-empty-create[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.documents-empty-create[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.documents-empty-create[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
+}
+
 .documents-empty-create__icon {
   display: inline-flex;
   width: 32px;
@@ -8695,12 +8723,48 @@ body.app-is-dragging * {
   overflow: hidden;
 }
 
+.document-pdf-main__notes.markdown-document-scrollport {
+  overflow-x: hidden;
+  overflow-y: auto;
+  container-type: size;
+}
+
 .document-pdf-main__notes .inbox-detail-body--document {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.document-pdf-main__notes.markdown-document-scrollport .inbox-detail-body--document {
+  overflow: visible;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 100%;
+}
+
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  min-height: 100cqh;
+}
+
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
 }
 
 .letter-compose-title-row {
@@ -9408,9 +9472,10 @@ body.app-is-dragging * {
 }
 
 /*
- * Journal embeds MarkdownDocumentDetailView with Whoop as `leading`. The
- * embedded--scroll-leading variant scrolls Whoop + markdown together while
- * keeping the Edit/Preview dock outside that scrollport.
+ * Document / note detail: scroll on a full-width port so the scrollbar sits on
+ * the far right of the pane. Text stays max-width 800px centered; CodeMirror
+ * uses scrollWithContent (no inner mid-column scrollbar). Edit/Preview dock
+ * stays outside the scrollport (sibling).
  */
 .markdown-document-embedded {
   position: relative;
@@ -9422,11 +9487,12 @@ body.app-is-dragging * {
   overflow: hidden;
 }
 
-.markdown-document-embedded--scroll-leading {
+.markdown-document-embedded--document-scroll {
   flex: 1;
   min-height: 0;
 }
 
+.markdown-document-scrollport,
 .markdown-document-embedded__scroll {
   display: flex;
   min-width: 0;
@@ -9438,23 +9504,63 @@ body.app-is-dragging * {
   container-type: size;
 }
 
-.markdown-document-embedded--scroll-leading .content-markdown-view-layout,
-.markdown-document-embedded--scroll-leading
-  .content-markdown-view-layout__preview {
+.markdown-document-scrollport .content-markdown-view-layout,
+.markdown-document-scrollport .content-markdown-view-layout__preview,
+.markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
   overflow: visible;
   flex: 0 0 auto;
   height: auto;
   min-height: 0;
 }
 
-/* Edit: fill the scrollport under Whoop so CodeMirror keeps a usable height. */
-.markdown-document-embedded--scroll-leading[data-content-view-mode="edit"]
+.markdown-document-scrollport .content-markdown-editor-column {
+  flex: 1 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* Edit: fill the scrollport (under optional leading) for empty/short docs. */
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden),
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
   .content-markdown-view-layout__edit:not(
     .content-markdown-view-layout__edit--preparing
   ):not(.content-markdown-view-layout__edit--hidden) {
-  flex: 0 0 auto;
   min-height: 100cqh;
-  overflow: hidden;
+}
+
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
 }
 
 .markdown-document-leading {

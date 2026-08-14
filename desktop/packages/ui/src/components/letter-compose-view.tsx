@@ -282,7 +282,7 @@ export function LetterComposeView({
         storageKey={LETTER_PROPERTIES_PANEL_WIDTH_KEY}
         main={
           <div className="document-pdf-main">
-            <div className="document-pdf-main__notes">
+            <div className="document-pdf-main__notes markdown-document-scrollport">
               <div className="inbox-detail-body inbox-detail-body--document">
                 <ContentDetailIconTitleHeader
                   icon={
@@ -326,6 +326,7 @@ export function LetterComposeView({
                       disabled={pdfUploading}
                       focusRequest={editorFocusRequest}
                       ariaLabel="Letter notes"
+                      scrollWithContent
                     />
                   }
                   preview={

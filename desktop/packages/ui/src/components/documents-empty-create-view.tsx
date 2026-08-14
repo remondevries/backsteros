@@ -128,96 +128,97 @@ export function DocumentsEmptyCreateView({
       data-content-detail
       data-content-view-mode={mode}
     >
-      <ContentDetailIconTitleHeader
-        icon={
-          <div className="document-detail-icon">
-            <span
-              className="document-detail-icon__button"
-              aria-hidden="true"
-            >
-              <DocumentOcticon
-                icon={null}
-                size={16}
-                className="document-detail-icon__glyph"
-              />
-            </span>
-          </div>
-        }
-        title={
-          <OverviewNameEditor
-            value={title}
-            entityLabel="Document"
-            resetKey="empty-create"
-            autoEdit
-            renameFocusRequest={focusRequest}
-            onDraftChange={(draft) => {
-              titleRef.current = draft;
-            }}
-            onLeaveTitle={() => {
-              leaveTitleForBody();
-            }}
-            onSave={(next) => {
-              titleRef.current = next;
-              setTitle(next);
-              return { ok: true };
-            }}
-          />
-        }
-      />
-
-      <ContentMarkdownViewLayout
-        mode={mode}
-        editorActivated={editorActivated}
-        onToggleMode={() => {
-          if (mode === "edit") {
-            toggleViewMode();
-            return;
+      <div className="markdown-document-scrollport">
+        <ContentDetailIconTitleHeader
+          icon={
+            <div className="document-detail-icon">
+              <span
+                className="document-detail-icon__button"
+                aria-hidden="true"
+              >
+                <DocumentOcticon
+                  icon={null}
+                  size={16}
+                  className="document-detail-icon__glyph"
+                />
+              </span>
+            </div>
           }
-          enterBody();
-        }}
-        editor={
-          <DocumentMarkdownEditor
-            value={markdown}
-            onChange={handleChange}
-            disabled={creating}
-            focusRequest={editorFocusRequest}
-            ariaLabel="Document content"
-          />
-        }
-        preview={
-          <ContentMarkdownPreviewColumn includeTopInset={false}>
-            {markdown.trim() ? (
-              <DocumentMarkdownPreview
-                body={markdown}
-                onChange={handleChange}
-              />
-            ) : (
-              <p className="content-markdown-empty-hint">
-                This document is empty.
-              </p>
-            )}
-          </ContentMarkdownPreviewColumn>
-        }
-        toggle={
-          <FloatingPillToggleDock>
-            <SegmentedPillToggle
-              value={mode}
-              options={[
-                { value: "preview", label: "Preview" },
-                { value: "edit", label: "Edit" },
-              ]}
-              onChange={(nextMode) => {
-                if (nextMode === "edit") {
-                  enterBody();
-                  return;
-                }
-                setViewMode(nextMode);
+          title={
+            <OverviewNameEditor
+              value={title}
+              entityLabel="Document"
+              resetKey="empty-create"
+              autoEdit
+              renameFocusRequest={focusRequest}
+              onDraftChange={(draft) => {
+                titleRef.current = draft;
               }}
-              ariaLabel="Document view mode"
+              onLeaveTitle={() => {
+                leaveTitleForBody();
+              }}
+              onSave={(next) => {
+                titleRef.current = next;
+                setTitle(next);
+                return { ok: true };
+              }}
             />
-          </FloatingPillToggleDock>
-        }
-      />
+          }
+        />
+
+        <ContentMarkdownViewLayout
+          mode={mode}
+          editorActivated={editorActivated}
+          onToggleMode={() => {
+            if (mode === "edit") {
+              toggleViewMode();
+              return;
+            }
+            enterBody();
+          }}
+          editor={
+            <DocumentMarkdownEditor
+              value={markdown}
+              onChange={handleChange}
+              disabled={creating}
+              focusRequest={editorFocusRequest}
+              ariaLabel="Document content"
+              scrollWithContent
+            />
+          }
+          preview={
+            <ContentMarkdownPreviewColumn includeTopInset={false}>
+              {markdown.trim() ? (
+                <DocumentMarkdownPreview
+                  body={markdown}
+                  onChange={handleChange}
+                />
+              ) : (
+                <p className="content-markdown-empty-hint">
+                  This document is empty.
+                </p>
+              )}
+            </ContentMarkdownPreviewColumn>
+          }
+        />
+      </div>
+      <FloatingPillToggleDock>
+        <SegmentedPillToggle
+          value={mode}
+          options={[
+            { value: "preview", label: "Preview" },
+            { value: "edit", label: "Edit" },
+          ]}
+          onChange={(nextMode) => {
+            if (nextMode === "edit") {
+              enterBody();
+              return;
+            }
+            setViewMode(nextMode);
+          }}
+          ariaLabel="Document view mode"
+        />
+      </FloatingPillToggleDock>
     </div>
   );
 }

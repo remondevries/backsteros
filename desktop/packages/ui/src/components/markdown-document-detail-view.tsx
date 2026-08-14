@@ -192,6 +192,7 @@ export function MarkdownDocumentDetailView({
             onBlur={handleBlurSave}
             focusRequest={editorFocusRequest}
             ariaLabel={`${sectionLabel} content`}
+            scrollWithContent
           />
         }
         preview={
@@ -238,31 +239,23 @@ export function MarkdownDocumentDetailView({
     </FloatingPillToggleDock>
   );
 
-  if (embedded) {
-    // Leading (e.g. Whoop) lives in a scroll sibling of the dock so rings
-    // scroll away with the body while Edit/Preview stays pinned.
-    if (leadingBlock) {
-      return (
-        <div
-          className="markdown-document-embedded markdown-document-embedded--scroll-leading"
-          data-content-view-mode={mode}
-        >
-          <div className="markdown-document-embedded__scroll">
-            {leadingBlock}
-            {markdown}
-          </div>
-          {viewModeDock}
-        </div>
-      );
-    }
+  // Full-width scrollport (sibling of the Edit/Preview dock) so the scrollbar
+  // sits on the far right of the pane — not beside the centered 800px column.
+  // Leading (e.g. Whoop) scrolls away with the body; the dock stays pinned.
+  const scrollBody = (
+    <>
+      {leadingBlock}
+      {markdown}
+    </>
+  );
 
+  if (embedded) {
     return (
       <div
-        className="markdown-document-embedded"
+        className="markdown-document-embedded markdown-document-embedded--document-scroll"
         data-content-view-mode={mode}
-        style={{ position: "relative", flex: 1, minHeight: 0 }}
       >
-        {markdown}
+        <div className="markdown-document-scrollport">{scrollBody}</div>
         {viewModeDock}
       </div>
     );
@@ -275,9 +268,8 @@ export function MarkdownDocumentDetailView({
       data-content-view-mode={mode}
       style={{ position: "relative" }}
     >
-      <div className="inbox-detail-body inbox-detail-body--document">
-        {leadingBlock}
-        {markdown}
+      <div className="inbox-detail-body inbox-detail-body--document markdown-document-scrollport">
+        {scrollBody}
       </div>
       {viewModeDock}
     </div>

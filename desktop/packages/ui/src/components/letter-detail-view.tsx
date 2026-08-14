@@ -222,7 +222,7 @@ export function LetterDetailView({
   };
 
   const notes = (
-    <div className="document-pdf-main__notes">
+    <div className="document-pdf-main__notes markdown-document-scrollport">
       <div className="inbox-detail-body inbox-detail-body--document">
         <ContentDetailIconTitleHeader
           icon={<LetterDetailIcon title={title} />}
@@ -263,6 +263,7 @@ export function LetterDetailView({
               onBlur={handleBlurSave}
               focusRequest={editorFocusRequest}
               ariaLabel="Letter notes"
+              scrollWithContent
             />
           }
           preview={
