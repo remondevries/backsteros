@@ -1,6 +1,8 @@
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "./task-display-id.js";
+import { formatLocalYmd } from "./task-due-date.js";
 import {
   INACTIVE_TASK_STATUSES,
+  getTaskDueDateYmd,
   taskDueDateMatchesFilter,
 } from "./tasks-due-filters.js";
 import {
@@ -24,7 +26,10 @@ export const INBOX_ATTENTION_STATUS_ORDER = [
 export type InboxAttentionStatus =
   (typeof INBOX_ATTENTION_STATUS_ORDER)[number];
 
-/** Real statuses that always belong in the inbox (from any project). */
+/**
+ * Real statuses that belong in the inbox (from any project), unless their due
+ * date is still in the future.
+ */
 export const INBOX_ATTENTION_REAL_STATUSES = [
   "on_hold",
   "in_review",
@@ -229,7 +234,7 @@ export function isInboxOverdueTask(
 /**
  * Whether a task belongs in the expanded inbox:
  * - classic triage capture (`inbox === true`)
- * - On Hold / In Review from any project
+ * - On Hold / In Review from any project (hidden when due date is in the future)
  * - overdue open tasks (fake group)
  */
 export function taskBelongsInInbox(
@@ -245,6 +250,10 @@ export function taskBelongsInInbox(
   if (
     (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
   ) {
+    const dueYmd = getTaskDueDateYmd(input.dueDate);
+    if (dueYmd && dueYmd > formatLocalYmd(referenceDate)) {
+      return false;
+    }
     return true;
   }
   return isInboxOverdueTask(input, referenceDate);

@@ -53,6 +53,28 @@ export function parseDueDateInputValue(ymd: string): Date | null {
   return parseYmdLocal(ymd.trim().slice(0, 10));
 }
 
+/**
+ * Normalize UI due dates (YMD calendar strings, Date, or ISO) to values that
+ * satisfy API `z.string().datetime()` fields. Compose and dropdowns store
+ * local `YYYY-MM-DD`; posting that raw string yields a 400 Zod error.
+ */
+export function toApiDueDateIso(
+  dueDate: Date | string | null | undefined,
+): string | null {
+  if (dueDate == null) return null;
+  if (dueDate instanceof Date) {
+    return Number.isNaN(dueDate.getTime()) ? null : dueDate.toISOString();
+  }
+  const trimmed = dueDate.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const local = parseYmdLocal(trimmed);
+    return local ? local.toISOString() : null;
+  }
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 export type TaskDueDateUrgency = "overdue" | "due_today" | "due_soon";
 
 const INACTIVE_DUE_DATE_STATUSES = new Set([

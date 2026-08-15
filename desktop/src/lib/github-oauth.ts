@@ -11,6 +11,9 @@ export const GITHUB_OAUTH_SCOPES = [...GITHUB_INTEGRATION_SCOPES];
 
 export const GITHUB_SSO_CALLBACK_PATH = "/sso-callback";
 
+/** Lightweight return path for Tauri OAuth popup (no Clerk sign-in callback). */
+export const GITHUB_OAUTH_POPUP_DONE_PATH = "/oauth/popup-done";
+
 export const GITHUB_OAUTH_RETURN_STORAGE_KEY =
   "backsteros.desktop.github.oauth.return";
 
@@ -119,6 +122,11 @@ export function githubSsoCallbackUrl(origin = window.location.origin): string {
   return `${githubAppOrigin(origin)}${GITHUB_SSO_CALLBACK_PATH}`;
 }
 
+/** Prefer a no-op done page in Tauri so the popup never runs sign-in SSO. */
+export function githubOauthPopupDoneUrl(origin = window.location.origin): string {
+  return `${githubAppOrigin(origin)}${GITHUB_OAUTH_POPUP_DONE_PATH}`;
+}
+
 export function githubSettingsReturnUrl(origin = window.location.origin): string {
   return `${githubAppOrigin(origin)}/settings/github`;
 }
@@ -133,13 +141,18 @@ export function rememberGithubOauthReturnUrl(
   }
 }
 
+export function isGithubOauthReturnUrl(value: string): boolean {
+  // Packaged Tauri uses `tauri://localhost`; allow that plus http(s).
+  return /^(https?:|tauri:)\/\//i.test(value);
+}
+
 export function consumeGithubOauthReturnUrl(
   fallback = githubSettingsReturnUrl(),
 ): string {
   try {
     const stored = sessionStorage.getItem(GITHUB_OAUTH_RETURN_STORAGE_KEY);
     sessionStorage.removeItem(GITHUB_OAUTH_RETURN_STORAGE_KEY);
-    if (stored && /^https?:\/\//i.test(stored)) {
+    if (stored && isGithubOauthReturnUrl(stored)) {
       return stored;
     }
   } catch {
@@ -150,7 +163,9 @@ export function consumeGithubOauthReturnUrl(
 
 export async function startGithubOauthConnect(
   user: GithubUserLike,
-  redirectUrl: string = githubSsoCallbackUrl(),
+  redirectUrl: string = isTauriRuntime()
+    ? githubOauthPopupDoneUrl()
+    : githubSsoCallbackUrl(),
   returnUrl: string = githubSettingsReturnUrl(),
 ): Promise<void> {
   rememberGithubOauthReturnUrl(returnUrl);
@@ -179,7 +194,7 @@ export async function startGithubOauthConnect(
   // Tauri blocks main-window navigations to github.com (keeps the shell on the
   // app origin). Open the authorize URL in a related webview — same path as
   // Clerk oauthFlow="popup" for sign-in — so on_new_window can host it and
-  // relay /sso-callback back to main when GitHub finishes.
+  // soft-notify main when GitHub finishes (never remount main).
   if (isTauriRuntime()) {
     const popup = window.open(
       url.href,

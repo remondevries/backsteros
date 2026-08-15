@@ -29,6 +29,7 @@ import {
 import {
   hydrateAgentChatModelId,
 } from "../../lib/agent/agent-chat-model";
+import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
 import { colors } from "../../lib/theme";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
 import { AgentChatComposer } from "./agent-chat-composer";
@@ -697,6 +698,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexShrink: 0,
+    paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
   },
   sendError: {
     paddingHorizontal: 12,

@@ -147,6 +147,8 @@ export type ListBoardViewShellProps = {
   onViewChange: (view: ListBoardView) => void;
   listContent: ReactNode;
   boardContent?: ReactNode;
+  /** Overlay above the list (e.g. task bulk edit dock). */
+  listOverlay?: ReactNode;
   ariaLabel?: string;
 };
 
@@ -155,6 +157,7 @@ export function ListBoardViewShell({
   onViewChange,
   listContent,
   boardContent,
+  listOverlay = null,
   ariaLabel = "View mode",
 }: ListBoardViewShellProps) {
   const isBoard = view === "board";
@@ -173,6 +176,8 @@ export function ListBoardViewShell({
       ) : (
         <div className="list-board-view-list">{listContent}</div>
       )}
+
+      {!isBoard ? listOverlay : null}
 
       <div className="content-view-mode-toggle">
         <SegmentedPillToggle

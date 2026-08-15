@@ -8,6 +8,10 @@ export const SYNC_ENTITIES = [
   "contact",
   "letter",
   "workspace_setting",
+  "bank_account",
+  "financial_category",
+  "financial_goal",
+  "financial_recurring",
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
@@ -22,6 +26,10 @@ export const POWERSYNC_TABLES = [
   "contacts",
   "letters",
   "workspace_settings",
+  "bank_accounts",
+  "financial_categories",
+  "financial_goals",
+  "financial_recurrings",
 ] as const;
 export type PowerSyncTable = (typeof POWERSYNC_TABLES)[number];
 

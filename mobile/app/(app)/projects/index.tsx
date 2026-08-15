@@ -1,7 +1,7 @@
 import type { Document, Project, Task } from "@backsteros/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -13,7 +13,6 @@ import {
 } from "react-native";
 
 import { ListSearchField } from "../../../components/list-search-field";
-import { ChevronRightIcon } from "../../../components/chevron-right-icon";
 import { ProjectIcon } from "../../../components/project-icon";
 import {
   ProjectOverviewListHeader,
@@ -21,6 +20,7 @@ import {
 } from "../../../components/project-overview-list-row";
 import { ProjectProgressRing } from "../../../components/project-progress-ring";
 import { ProjectStatusIcon } from "../../../components/project-status-icon";
+import { ProjectTypeGroupHeader } from "../../../components/project-type-group-header";
 import { ProjectsHeader } from "../../../components/projects-header";
 import { StatusGroupHeader } from "../../../components/status-group-header";
 import { projectDetailHref } from "../../../lib/detail-href";
@@ -57,7 +57,8 @@ import { useListJkNavigation } from "../../../lib/use-list-jk-navigation";
 import { useLocalQuery } from "../../../lib/use-local-query";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
 import { usePullToRevealSearch } from "../../../lib/use-pull-to-reveal-search";
-import { useRestFallbackGate } from "../../../lib/use-rest-fallback-gate";
+import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
+import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
 import { useSectionTabShortcuts } from "../../../lib/use-section-tab-shortcuts";
 
 type ProjectRow = {
@@ -182,7 +183,7 @@ export default function ProjectsScreen() {
     TASK_PROGRESS_SQL,
   );
 
-  const [restRows, setRestRows] = useState<ProjectRow[]>([]);
+  const [restRows, setRestRows] = useState<ProjectRow[] | null>(null);
   const [restProgress, setRestProgress] = useState<
     Record<string, ProjectTaskProgress>
   >({});
@@ -209,8 +210,6 @@ export default function ProjectsScreen() {
       })),
     [syncedProjects],
   );
-
-  const useRest = useRestFallbackGate(localRows.length);
 
   const reloadRest = useCallback(async () => {
     setRestLoading(true);
@@ -253,22 +252,18 @@ export default function ProjectsScreen() {
           ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
           : detail,
       );
-      setRestRows([]);
-      setRestProgress({});
     } finally {
       setRestLoading(false);
     }
   }, [apiUrl, client]);
 
-  useEffect(() => {
-    if (useRest) void reloadRest();
-  }, [reloadRest, useRest]);
+  useRestListHydration(reloadRest);
 
-  const sourceRows = useMemo(() => {
-    if (localRows.length > 0) return localRows;
-    if (useRest) return restRows;
-    return localRows;
-  }, [localRows, restRows, useRest]);
+  const sourceRows = resolveSyncedOrRestRows({
+    localRows,
+    restRows,
+    connected: powerSync.connected,
+  });
 
   const rows = useMemo(
     () =>
@@ -366,18 +361,21 @@ export default function ProjectsScreen() {
   );
   const progressByProjectId = useMemo(() => {
     if (Object.keys(localProgress).length > 0) return localProgress;
-    if (useRest) return restProgress;
+    if (restRows != null) return restProgress;
     return localProgress;
-  }, [localProgress, restProgress, useRest]);
+  }, [localProgress, restProgress, restRows]);
 
   const loading =
     sourceRows.length === 0 &&
-    (useRest
-      ? restLoading
-      : powerSync.status === "connecting" ||
-        powerSync.status === "idle" ||
-        syncLoading);
-  const error = useRest && sourceRows.length === 0 ? restError : null;
+    (restLoading ||
+      (restRows == null &&
+        (powerSync.status === "connecting" ||
+          powerSync.status === "idle" ||
+          syncLoading)));
+  const error =
+    sourceRows.length === 0 && restError && !powerSync.connected
+      ? restError
+      : null;
 
   if (loading) {
     return (
@@ -421,10 +419,10 @@ export default function ProjectsScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={useRest ? restLoading : false}
+            refreshing={restLoading}
             onRefresh={() => {
               search.open();
-              if (useRest) void reloadRest();
+              void reloadRest();
             }}
             tintColor={colors.muted}
             colors={[colors.muted]}
@@ -453,28 +451,11 @@ export default function ProjectsScreen() {
         renderItem={({ item }) => {
           if (item.kind === "type-header") {
             return (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: !item.collapsed }}
-                accessibilityLabel={`${item.label}, ${item.collapsed ? "collapsed" : "expanded"}`}
-                onPress={() => toggleTypeGroup(item.collapseKey)}
-                style={({ pressed }) => [
-                  ui.typeSubheaderRow,
-                  pressed ? { opacity: 0.7 } : null,
-                ]}
-              >
-                <View
-                  style={{
-                    transform: [{ rotate: item.collapsed ? "0deg" : "90deg" }],
-                  }}
-                >
-                  <ChevronRightIcon
-                    size={12}
-                    color="rgba(255, 255, 255, 0.38)"
-                  />
-                </View>
-                <Text style={ui.typeSubheaderLabel}>{item.label}</Text>
-              </Pressable>
+              <ProjectTypeGroupHeader
+                title={item.label}
+                collapsed={item.collapsed}
+                onToggle={() => toggleTypeGroup(item.collapseKey)}
+              />
             );
           }
 

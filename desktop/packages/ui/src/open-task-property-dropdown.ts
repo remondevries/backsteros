@@ -4,6 +4,7 @@ import { resolveComposeModalPropertyScope } from "./compose-modal-shortcut-targe
 import { KEYBOARD_NAV_ITEM_ATTR } from "./keyboard-nav-item.js";
 import { resolveTaskListPropertyScope } from "./resolve-task-list-property-scope.js";
 import {
+  TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE,
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
   type TaskPropertyDropdownId,
 } from "./task-property-dropdown-keys.js";
@@ -15,6 +16,8 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
   ".task-panel-island--detail",
   ".task-detail-view",
   ".task-detail-stacked",
+  ".finance-transactions-view__detail",
+  ".finance-categories-view__detail",
 ] as const;
 
 export function getTaskPropertyDropdownTrigger(
@@ -70,6 +73,14 @@ function pageHasTaskListPropertyRows(): boolean {
   );
 }
 
+/** Bulk editor scope when >1 tasks are selected (see TaskBulkEditBar). */
+function resolveTaskBulkPropertyScope(): HTMLElement | null {
+  const scope = document.querySelector(
+    `[${TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE}]`,
+  );
+  return scope instanceof HTMLElement && scope.isConnected ? scope : null;
+}
+
 function resolveTaskDetailPropertyScopes(): ParentNode[] {
   const scopes: ParentNode[] = [];
   for (const selector of TASK_DETAIL_PROPERTY_SCOPE_SELECTORS) {
@@ -116,6 +127,12 @@ export function openTaskPropertyDropdown(
   const composeScope = resolveComposeModalPropertyScope();
   if (composeScope) {
     return tryOpenInScope(composeScope, ids);
+  }
+
+  // Multi-select (>1): open the bulk editor field instead of a single row.
+  const bulkScope = resolveTaskBulkPropertyScope();
+  if (bulkScope && tryOpenInScope(bulkScope, ids, { centerPlacement: true })) {
+    return true;
   }
 
   // Prefer the keyboard-highlighted / active list row when it exposes the field.

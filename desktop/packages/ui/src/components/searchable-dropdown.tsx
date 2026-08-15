@@ -1,5 +1,6 @@
 "use client";
 
+import { XIcon } from "@primer/octicons-react";
 import {
   useCallback,
   useEffect,
@@ -35,6 +36,19 @@ export type SearchableDropdownOption<T extends string = string> = {
   avatarSrc?: string | null;
   shortcut?: string;
   searchTerms?: string;
+  /** Indentation level for hierarchical options (e.g. subcategories). */
+  depth?: number;
+  /**
+   * Optional row action (e.g. edit).
+   * - `trailing` (default): button to the right of the option
+   * - `icon`: overlays the option icon on hover; rest of the row selects
+   */
+  action?: {
+    ariaLabel: string;
+    icon: ReactNode;
+    onSelect: () => void;
+    placement?: "trailing" | "icon";
+  };
 };
 
 const DEFAULT_PANEL_WIDTH = 280;
@@ -72,9 +86,29 @@ function filterOptions<T extends string>(
 }
 
 export type SearchableDropdownProps<T extends string> = {
-  value: T | null;
+  /** Single-select value. Ignored when `multiple` is true. */
+  value?: T | null;
+  /**
+   * Multi-select values. Used when `multiple` is true.
+   * Empty array means “no selection” (caller defines what that means).
+   */
+  values?: T[];
   options: SearchableDropdownOption<T>[];
   onChange?: (value: T) => void;
+  /** Fired when an option is toggled in multi-select mode. */
+  onValuesChange?: (values: T[]) => void;
+  /** Enable checkbox multi-select; panel stays open while toggling. */
+  multiple?: boolean;
+  /**
+   * Trigger label when `multiple` and nothing is selected.
+   * Defaults to `"Select…"`.
+   */
+  emptySelectionLabel?: string;
+  /**
+   * When false, the trigger never shows an option icon (labels still appear).
+   * Use for placeholder-style chips (e.g. bulk editor) until a real value is set.
+   */
+  showIcon?: boolean;
   disabled?: boolean;
   searchPlaceholder?: string;
   searchShortcutLabel?: string;
@@ -95,12 +129,26 @@ export type SearchableDropdownProps<T extends string> = {
   onCreateFromQuery?: (query: string) => void;
   onTabFromSearch?: () => void;
   onShiftTabFromSearch?: () => void;
+  /**
+   * When set, shows an outline X on the trigger for non-empty selections so
+   * the value can be reset without opening the panel. Distinct from the
+   * filled search-clear control (`XCircleFillIcon`) used in filter search bars.
+   */
+  onClear?: () => void;
+  /**
+   * Single-select values that count as empty (hide clear). Use for “All”
+   * sentinels such as `__all__`. Multi-select treats `[]` as empty.
+   */
+  clearExemptValues?: readonly T[];
   renderTrigger?: (props: {
     selected: SearchableDropdownOption<T> | null;
+    selectedOptions: SearchableDropdownOption<T>[];
     open: boolean;
     disabled: boolean;
     triggerId: string;
     onToggle: () => void;
+    canClear: boolean;
+    onClear?: () => void;
   }) => ReactNode;
 };
 
@@ -109,9 +157,14 @@ export type SearchableDropdownProps<T extends string> = {
  * Matches Next.js keyboard/placement/create-from-query behavior.
  */
 export function SearchableDropdown<T extends string>({
-  value,
+  value = null,
+  values = [],
   options,
   onChange,
+  onValuesChange,
+  multiple = false,
+  emptySelectionLabel = "Select…",
+  showIcon = true,
   disabled = false,
   searchPlaceholder = "Search…",
   searchShortcutLabel,
@@ -129,6 +182,8 @@ export function SearchableDropdown<T extends string>({
   onCreateFromQuery,
   onTabFromSearch,
   onShiftTabFromSearch,
+  onClear,
+  clearExemptValues,
   renderTrigger,
 }: SearchableDropdownProps<T>) {
   const fallbackId = useId();
@@ -148,10 +203,32 @@ export function SearchableDropdown<T extends string>({
     "anchored" | "center"
   >(panelPlacement);
 
-  const selected = useMemo(
-    () => options.find((option) => option.value === value) ?? null,
-    [options, value],
-  );
+  const selectedValues = useMemo(() => {
+    if (!multiple) {
+      return value == null ? [] : [value];
+    }
+    return values;
+  }, [multiple, value, values]);
+
+  const selectedOptions = useMemo(() => {
+    const selectedSet = new Set(selectedValues);
+    return options.filter((option) => selectedSet.has(option.value));
+  }, [options, selectedValues]);
+
+  const selected = selectedOptions[0] ?? null;
+
+  const triggerLabel = useMemo(() => {
+    if (!multiple) {
+      return selected?.label ?? emptySelectionLabel;
+    }
+    if (selectedOptions.length === 0) {
+      return emptySelectionLabel;
+    }
+    if (selectedOptions.length === 1) {
+      return selectedOptions[0]!.label;
+    }
+    return `${selectedOptions.length} selected`;
+  }, [emptySelectionLabel, multiple, selected, selectedOptions]);
 
   const filteredOptions = useMemo(
     () => filterOptions(options, query),
@@ -203,12 +280,19 @@ export function SearchableDropdown<T extends string>({
 
   const selectOption = useCallback(
     (option: SearchableDropdownOption<T>) => {
+      if (multiple) {
+        const next = selectedValues.includes(option.value)
+          ? selectedValues.filter((entry) => entry !== option.value)
+          : [...selectedValues, option.value];
+        onValuesChange?.(next);
+        return;
+      }
       onChange?.(option.value);
       window.requestAnimationFrame(() => {
         close();
       });
     },
-    [close, onChange],
+    [close, multiple, onChange, onValuesChange, selectedValues],
   );
 
   const openMenu = useCallback(() => {
@@ -237,6 +321,23 @@ export function SearchableDropdown<T extends string>({
     }
     openMenu();
   }, [close, disabled, open, openMenu]);
+
+  const clearExemptSet = useMemo(
+    () => new Set(clearExemptValues ?? []),
+    [clearExemptValues],
+  );
+
+  const canClear = Boolean(onClear) &&
+    !disabled &&
+    (multiple
+      ? selectedValues.length > 0
+      : value != null && !clearExemptSet.has(value));
+
+  const handleClear = useCallback(() => {
+    if (!canClear || !onClear) return;
+    onClear();
+    close();
+  }, [canClear, close, onClear]);
 
   const updatePanelPosition = useCallback(() => {
     const root = rootRef.current;
@@ -431,6 +532,11 @@ export function SearchableDropdown<T extends string>({
   );
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // React portals bubble through the React tree (not the DOM). Stop keys here
+    // so parent role="button" handlers (e.g. Space opening a transaction) do
+    // not fire while typing in the search field.
+    event.stopPropagation();
+
     if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -569,31 +675,56 @@ export function SearchableDropdown<T extends string>({
   }
 
   const defaultTrigger = (
-    <button
-      type="button"
-      id={triggerId}
-      data-task-property-dropdown={taskPropertyDropdownId}
-      className={["property-dropdown-trigger", triggerClassName]
+    <div
+      className={[
+        "searchable-dropdown-trigger-cluster",
+        canClear ? "has-clear" : null,
+      ]
         .filter(Boolean)
         .join(" ")}
-      disabled={disabled}
-      aria-haspopup="listbox"
-      aria-expanded={open}
-      aria-label={ariaLabel}
-      onClick={(event) => {
-        event.stopPropagation();
-        toggleMenu();
-      }}
     >
-      {selected?.icon ? (
-        <span className="property-dropdown-trigger__icon" aria-hidden="true">
-          {selected.icon}
-        </span>
+      <button
+        type="button"
+        id={triggerId}
+        data-task-property-dropdown={taskPropertyDropdownId}
+        className={[
+          "property-dropdown-trigger",
+          triggerClassName,
+          canClear ? "has-clear" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleMenu();
+        }}
+      >
+        {!multiple && showIcon && selected?.icon ? (
+          <span className="property-dropdown-trigger__icon" aria-hidden="true">
+            {selected.icon}
+          </span>
+        ) : null}
+        <span className="property-dropdown-trigger__label">{triggerLabel}</span>
+      </button>
+      {canClear ? (
+        <button
+          type="button"
+          className="property-dropdown-trigger__clear"
+          aria-label={`Clear ${ariaLabel}`}
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleClear();
+          }}
+        >
+          <XIcon size={12} />
+        </button>
       ) : null}
-      <span className="property-dropdown-trigger__label">
-        {selected?.label ?? "Select…"}
-      </span>
-    </button>
+    </div>
   );
 
   return (
@@ -608,10 +739,13 @@ export function SearchableDropdown<T extends string>({
       {renderTrigger
         ? renderTrigger({
             selected,
+            selectedOptions,
             open,
             disabled,
             triggerId,
             onToggle: toggleMenu,
+            canClear,
+            onClear: canClear ? handleClear : undefined,
           })
         : defaultTrigger}
 
@@ -665,6 +799,7 @@ export function SearchableDropdown<T extends string>({
                 ref={listboxRef}
                 className="searchable-dropdown-panel__list"
                 role="listbox"
+                aria-multiselectable={multiple || undefined}
                 aria-labelledby={triggerId}
                 aria-activedescendant={
                   listFocusActive && navigableOptionCount > 0
@@ -722,14 +857,66 @@ export function SearchableDropdown<T extends string>({
                   </li>
                 ) : (
                   filteredOptions.map((option, index) => {
-                    const isSelected = option.value === value;
+                    const isSelected = selectedValues.includes(option.value);
                     const isActive = index === safeActiveIndex;
                     const showKeyboardHighlight = listFocusActive && isActive;
-                    const shortcut =
-                      option.shortcut ?? searchableDropdownShortcut(index);
+                    const shortcut = multiple
+                      ? null
+                      : (option.shortcut ?? searchableDropdownShortcut(index));
+                    const iconAction =
+                      option.action?.placement === "icon"
+                        ? option.action
+                        : null;
+                    const trailingAction =
+                      option.action && option.action.placement !== "icon"
+                        ? option.action
+                        : null;
 
                     return (
-                      <li key={option.value} role="presentation">
+                      <li
+                        key={option.value}
+                        role="presentation"
+                        className={[
+                          "searchable-dropdown-panel__option-row",
+                          iconAction
+                            ? "searchable-dropdown-panel__option-row--icon-action"
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {iconAction ? (
+                          <button
+                            type="button"
+                            className="searchable-dropdown-panel__option-icon-action"
+                            aria-label={iconAction.ariaLabel}
+                            onMouseEnter={() => {
+                              setListFocusActive(false);
+                              setActiveIndex(index);
+                            }}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              iconAction.onSelect();
+                              window.requestAnimationFrame(() => {
+                                close();
+                              });
+                            }}
+                          >
+                            <span
+                              className="searchable-dropdown-panel__option-icon-action-media"
+                              aria-hidden="true"
+                            >
+                              {option.icon}
+                            </span>
+                            <span
+                              className="searchable-dropdown-panel__option-icon-action-overlay"
+                              aria-hidden="true"
+                            >
+                              {iconAction.icon}
+                            </span>
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           id={`${triggerId}-option-${option.value}`}
@@ -740,12 +927,25 @@ export function SearchableDropdown<T extends string>({
                           }
                           className={[
                             "searchable-dropdown-panel__option",
+                            multiple
+                              ? "searchable-dropdown-panel__option--multi"
+                              : null,
+                            trailingAction
+                              ? "searchable-dropdown-panel__option--with-action"
+                              : null,
                             showKeyboardHighlight
                               ? "keyboard-nav-item-highlight"
                               : null,
                           ]
                             .filter(Boolean)
                             .join(" ")}
+                          style={
+                            option.depth
+                              ? {
+                                  paddingInlineStart: `${8 + option.depth * 16}px`,
+                                }
+                              : undefined
+                          }
                           onMouseEnter={() => {
                             setListFocusActive(false);
                             setActiveIndex(index);
@@ -757,7 +957,20 @@ export function SearchableDropdown<T extends string>({
                           }}
                         >
                           <span className="searchable-dropdown-panel__option-main">
-                            {option.icon ? (
+                            {multiple ? (
+                              <span
+                                className={[
+                                  "searchable-dropdown-panel__checkbox",
+                                  isSelected ? "is-checked" : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                                aria-hidden="true"
+                              >
+                                {isSelected ? <CheckIcon /> : null}
+                              </span>
+                            ) : null}
+                            {!iconAction && option.icon ? (
                               <span
                                 className="searchable-dropdown-panel__option-icon"
                                 aria-hidden="true"
@@ -770,7 +983,7 @@ export function SearchableDropdown<T extends string>({
                             </span>
                           </span>
                           <span className="searchable-dropdown-panel__option-trailing">
-                            {isSelected ? (
+                            {!multiple && isSelected ? (
                               <span
                                 className="searchable-dropdown-panel__check"
                                 aria-hidden="true"
@@ -788,6 +1001,27 @@ export function SearchableDropdown<T extends string>({
                             ) : null}
                           </span>
                         </button>
+                        {trailingAction ? (
+                          <button
+                            type="button"
+                            className="searchable-dropdown-panel__option-action"
+                            aria-label={trailingAction.ariaLabel}
+                            onMouseEnter={() => {
+                              setListFocusActive(false);
+                              setActiveIndex(index);
+                            }}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              trailingAction.onSelect();
+                              window.requestAnimationFrame(() => {
+                                close();
+                              });
+                            }}
+                          >
+                            {trailingAction.icon}
+                          </button>
+                        ) : null}
                       </li>
                     );
                   })

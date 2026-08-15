@@ -1,5 +1,5 @@
 import type { Document, Task } from "@backsteros/contracts";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -14,8 +14,9 @@ import {
   isComposeKnowledgeBaseValue,
   type ComposeKind,
 } from "../lib/compose";
+import { createdTaskDetailHref } from "../lib/created-task-href";
 import { getDefaultAssigneeId, syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
-import { documentDetailHref, taskDetailHref } from "../lib/detail-href";
+import { documentDetailHref } from "../lib/detail-href";
 import { formatTaskDueMetaLabel } from "../lib/task-due-date";
 import {
   getTaskPriorityLabel,
@@ -79,6 +80,7 @@ const CONTACTS_SQL = `SELECT id, name FROM contacts
 /** Global compose tab — Task / Document toggle (desktop create modal parity). */
 export function ComposeScreen() {
   const router = useRouter();
+  const segments = useSegments();
 
   const client = useMobileApiClient();
 
@@ -326,7 +328,8 @@ export function ComposeScreen() {
             sortOrder: Date.now(),
           }),
         });
-        router.replace(taskDetailHref(created.id));
+        // Stay inside `(app)` — replace onto root `/task/:id` can drop the tab bar.
+        router.replace(createdTaskDetailHref(created.id, segments as string[]));
         return;
       }
 

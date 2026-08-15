@@ -13,9 +13,36 @@ import type { PowerSyncDatabase } from "@powersync/web";
 
 import {
   BacksterPowerSyncConnector,
+  POWER_SYNC_CONNECT_TIMEOUT_MS,
+  closePowerSyncDatabase,
   createPowerSyncDatabase,
+  disposePowerSyncGlobalSlot,
+  getPowerSyncGlobalSlot,
+  setPowerSyncGlobalSlot,
 } from "./powersync";
 import { useDesktopApi } from "./api-context";
+
+async function connectWithTimeout(
+  database: PowerSyncDatabase,
+  connector: BacksterPowerSyncConnector,
+): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async () => {
+        await database.connect(connector);
+        await database.waitForReady();
+      })(),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("PowerSync connect timed out"));
+        }, POWER_SYNC_CONNECT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId != null) clearTimeout(timeoutId);
+  }
+}
 
 export const SYNCED_METADATA_TABLES = [
   "projects",
@@ -25,6 +52,8 @@ export const SYNCED_METADATA_TABLES = [
   "contacts",
   "letters",
   "workspace_settings",
+  "bank_accounts",
+  "financial_categories",
 ] as const;
 
 export type SyncedMetadataTable = (typeof SYNCED_METADATA_TABLES)[number];
@@ -146,9 +175,8 @@ function AuthenticatedPowerSyncProvider({
   const databaseRef = useRef<PowerSyncDatabase | null>(null);
   const connectorRef = useRef<BacksterPowerSyncConnector | null>(null);
   const transitionRef = useRef(Promise.resolve());
-  const identityRef = useRef<{ userId: string | null }>({
-    userId: null,
-  });
+  const disposeListenerRef = useRef<(() => void) | null>(null);
+  const reconnectNonceRef = useRef(reconnectNonce);
 
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
@@ -164,31 +192,28 @@ function AuthenticatedPowerSyncProvider({
   useEffect(() => {
     if (!isLoaded) return;
     let cancelled = false;
-    const userChanged = identityRef.current.userId !== userId;
-    // Drop the live DB handle immediately so UI does not keep serving the
-    // previous identity while the next PowerSync instance is connecting.
-    if (userChanged) {
+    const forceRecreate = reconnectNonceRef.current !== reconnectNonce;
+    reconnectNonceRef.current = reconnectNonce;
+    const existingAtStart = getPowerSyncGlobalSlot();
+    const switchingUser = Boolean(
+      userId && existingAtStart && existingAtStart.userId !== userId,
+    );
+
+    if (switchingUser || forceRecreate) {
       setDatabaseState(null);
       setInitError(null);
     }
 
     transitionRef.current = transitionRef.current.then(async () => {
-      const previous = databaseRef.current;
-      databaseRef.current = null;
-      connectorRef.current = null;
-      if (previous) {
-        try {
-          if (userChanged) {
-            await previous.disconnectAndClear();
-          } else {
-            await previous.disconnect();
-          }
-          await previous.close({ disconnect: true });
-        } catch {
-          /* ignore close races */
-        }
-      }
-      if (cancelled || !userId || !sessionId) {
+      if (cancelled) return;
+
+      // Sign-out / missing session: tear down singleton so IDB is unlocked.
+      if (!userId || !sessionId) {
+        databaseRef.current = null;
+        connectorRef.current = null;
+        disposeListenerRef.current?.();
+        disposeListenerRef.current = null;
+        await disposePowerSyncGlobalSlot({ clear: true });
         if (!cancelled) {
           setDatabaseState(null);
           setInitError(null);
@@ -196,10 +221,43 @@ function AuthenticatedPowerSyncProvider({
         return;
       }
 
-      identityRef.current = { userId };
+      // HMR / StrictMode remount: reuse the global singleton for this user.
+      const existing = getPowerSyncGlobalSlot();
+      if (existing && existing.userId === userId && !forceRecreate) {
+        databaseRef.current = existing.database;
+        disposeListenerRef.current?.();
+        disposeListenerRef.current = existing.database.registerListener({
+          statusChanged: () => setStatusVersion((version) => version + 1),
+        });
+        if (!cancelled) {
+          setInitError(null);
+          setDatabaseState({ userId, database: existing.database });
+        }
+        return;
+      }
+
+      // Identity change or explicit retry: close any prior handle first.
+      const previous = existing?.database ?? databaseRef.current;
+      databaseRef.current = null;
+      connectorRef.current = null;
+      disposeListenerRef.current?.();
+      disposeListenerRef.current = null;
+      setPowerSyncGlobalSlot(null);
+      if (previous) {
+        await closePowerSyncDatabase(previous, {
+          clear: switchingUser || !sessionId,
+        });
+      }
+
+      if (cancelled) return;
 
       try {
         const next = createPowerSyncDatabase(userId);
+        // Publish early so a cancelled StrictMode/HMR pass can reuse instead of
+        // racing a second sqlite3_open on the same IDB file.
+        setPowerSyncGlobalSlot({ userId, database: next });
+        databaseRef.current = next;
+
         const connector = new BacksterPowerSyncConnector(
           apiUrl,
           async () => {
@@ -235,14 +293,12 @@ function AuthenticatedPowerSyncProvider({
             throw new Error("Sign in to connect");
           },
         );
-        databaseRef.current = next;
         connectorRef.current = connector;
-        const dispose = next.registerListener({
+        disposeListenerRef.current = next.registerListener({
           statusChanged: () => setStatusVersion((version) => version + 1),
         });
         try {
-          await next.connect(connector);
-          await next.waitForReady();
+          await connectWithTimeout(next, connector);
           if (!cancelled) setInitError(null);
         } catch (reason) {
           console.warn("[desktop] PowerSync connect failed", reason);
@@ -254,10 +310,23 @@ function AuthenticatedPowerSyncProvider({
             );
           }
         }
-        if (!cancelled) setDatabaseState({ userId, database: next });
-        if (cancelled) dispose();
+        if (cancelled) {
+          // Remount will reuse the singleton; only drop the listener.
+          disposeListenerRef.current?.();
+          disposeListenerRef.current = null;
+          return;
+        }
+        setDatabaseState({ userId, database: next });
       } catch (reason) {
         console.warn("[desktop] PowerSync SQLite init failed", reason);
+        const orphan = databaseRef.current;
+        databaseRef.current = null;
+        disposeListenerRef.current?.();
+        disposeListenerRef.current = null;
+        setPowerSyncGlobalSlot(null);
+        if (orphan) {
+          await closePowerSyncDatabase(orphan);
+        }
         if (!cancelled) {
           setDatabaseState(null);
           setInitError(
@@ -270,6 +339,10 @@ function AuthenticatedPowerSyncProvider({
     });
     return () => {
       cancelled = true;
+      // Do not close the global singleton here — HMR / StrictMode remounts reuse
+      // it. Module hot.dispose and sign-out / retry paths close explicitly.
+      disposeListenerRef.current?.();
+      disposeListenerRef.current = null;
     };
     // Intentionally omit getToken — Clerk often returns a new function identity
     // every render, which would wipe/reconnect the DB in a loop.
@@ -279,6 +352,7 @@ function AuthenticatedPowerSyncProvider({
     // Always full re-init — soft reconnect can no-op when the previous connect
     // never reached fetchCredentials (worker/WASM failures).
     setInitError(null);
+    setDatabaseState(null);
     setReconnectNonce((nonce) => nonce + 1);
   }, []);
 
@@ -347,7 +421,7 @@ function AuthenticatedPowerSyncProvider({
     } else if (!userId || !sessionId) {
       syncStatus = "unauthenticated";
       message = "Sign in to enable PowerSync";
-    } else if (initError && !database) {
+    } else if (initError) {
       syncStatus = "error";
       message = `PowerSync unavailable (${initError.message})`;
     } else if (!database || status?.connecting) {
@@ -356,9 +430,6 @@ function AuthenticatedPowerSyncProvider({
     } else if (ready) {
       syncStatus = "ready";
       message = "PowerSync ready";
-    } else if (initError) {
-      syncStatus = "error";
-      message = `PowerSync error (${initError.message})`;
     } else {
       syncStatus = "error";
       message = "PowerSync not ready";

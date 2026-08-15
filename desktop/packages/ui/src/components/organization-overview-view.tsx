@@ -15,6 +15,7 @@ export type OrganizationOverviewDetails = {
   postalCode?: string | null;
   country?: string | null;
   summary?: string | null;
+  moneybirdContactId?: string | null;
 };
 
 export type OrganizationOverviewViewOrganization =
@@ -81,6 +82,7 @@ export function OrganizationOverviewView({
   const remotePostalCode = organization.postalCode ?? "";
   const remoteCountry = organization.country ?? "";
   const remoteSummary = organization.summary ?? "";
+  const remoteMoneybirdContactId = organization.moneybirdContactId ?? "";
 
   const [name, setName] = useState(organization.name);
   const [nameSource, setNameSource] = useState(organization.name);
@@ -100,6 +102,12 @@ export function OrganizationOverviewView({
   const [countrySource, setCountrySource] = useState(remoteCountry);
   const [summary, setSummary] = useState(remoteSummary);
   const [summarySource, setSummarySource] = useState(remoteSummary);
+  const [moneybirdContactId, setMoneybirdContactId] = useState(
+    remoteMoneybirdContactId,
+  );
+  const [moneybirdContactIdSource, setMoneybirdContactIdSource] = useState(
+    remoteMoneybirdContactId,
+  );
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(organization.id);
 
@@ -129,6 +137,8 @@ export function OrganizationOverviewView({
     setCountrySource(remoteCountry);
     setSummary(remoteSummary);
     setSummarySource(remoteSummary);
+    setMoneybirdContactId(remoteMoneybirdContactId);
+    setMoneybirdContactIdSource(remoteMoneybirdContactId);
   } else {
     // Remote/synced fields changed — adopt when the local field is clean.
     adoptRemoteField(
@@ -175,6 +185,13 @@ export function OrganizationOverviewView({
       summarySource,
       setSummary,
       setSummarySource,
+    );
+    adoptRemoteField(
+      remoteMoneybirdContactId,
+      moneybirdContactId,
+      moneybirdContactIdSource,
+      setMoneybirdContactId,
+      setMoneybirdContactIdSource,
     );
   }
 
@@ -298,6 +315,26 @@ export function OrganizationOverviewView({
             autoComplete="country-name"
             onChange={(event) => setCountry(event.target.value)}
             onBlur={() => persist({ country: country.trim() || null })}
+          />
+        </DetailsField>
+        <DetailsField
+          label="Moneybird contact ID"
+          htmlFor="organization-moneybird-contact"
+        >
+          <input
+            id="organization-moneybird-contact"
+            type="text"
+            className="entity-overview-input"
+            value={moneybirdContactId}
+            placeholder="Moneybird contact id"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setMoneybirdContactId(event.target.value)}
+            onBlur={() =>
+              persist({
+                moneybirdContactId: moneybirdContactId.trim() || null,
+              })
+            }
           />
         </DetailsField>
         <DetailsField label="Notes" htmlFor="organization-notes">

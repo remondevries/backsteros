@@ -3,6 +3,7 @@
 import {
   useMemo,
   type DragEvent,
+  type MouseEvent,
   type ReactNode,
   type SyntheticEvent,
 } from "react";
@@ -10,6 +11,7 @@ import {
 import type { GroupedListPointerItemBind } from "../use-grouped-list-pointer-reorder.js";
 import { getTaskDisplayId } from "../task-display-id.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../keyboard-nav-item.js";
+import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import {
   getTaskStatusLabel,
@@ -24,6 +26,7 @@ import {
 } from "./dropdown-options.js";
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
+import { PolishedCheckbox } from "./polished-checkbox.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { ShimmerText } from "./shimmer-text.js";
@@ -60,6 +63,22 @@ export type TaskItemRowProps = {
   task: TaskItemRowTask;
   keyboardHighlighted?: boolean;
   onSelect?: (taskId: string) => void;
+  /**
+   * Multi-select checked state (finance transaction row pattern).
+   * Slot is always reserved; the control fades in on hover / focus.
+   */
+  selected?: boolean;
+  /**
+   * When true (e.g. parent list has any selection), keep the checkbox visible
+   * even when the row is not hovered or focused.
+   */
+  forceShowCheckbox?: boolean;
+  /** Toggle multi-select; receives the originating event for shift-range later. */
+  onToggleSelected?: (
+    taskId: string,
+    checked: boolean,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
   showDueMeta?: boolean;
   /** When false, hide project chip (e.g. project tasks screen). Default true. */
   showProject?: boolean;
@@ -104,12 +123,15 @@ function stopFieldEvent(event: SyntheticEvent) {
 
 /**
  * Single shared task list item for web/desktop/console.
- * Order: priority → id → status → title | due / project / assignee (far right).
+ * Order: checkbox → priority → id → status → title | due / project / assignee.
  */
 export function TaskItemRow({
   task,
   keyboardHighlighted = false,
   onSelect,
+  selected = false,
+  forceShowCheckbox = false,
+  onToggleSelected,
   showDueMeta = true,
   showProject = true,
   showAssignee = true,
@@ -319,6 +341,8 @@ export function TaskItemRow({
         className={[
           "task-item-row",
           keyboardNavListItemClass(keyboardHighlighted),
+          selected ? "is-selected" : null,
+          forceShowCheckbox ? "force-show-checkbox" : null,
           canPointerReorder || canHtml5Drag ? "task-item-row--draggable" : null,
           dragging ? "task-item-row--dragging" : null,
         ]
@@ -326,15 +350,28 @@ export function TaskItemRow({
           .join(" ")}
         onClick={() => onSelect?.(task.id)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onSelect?.(task.id);
-          }
+          if (!isDirectRoleButtonActivationKey(event)) return;
+          event.preventDefault();
+          onSelect?.(task.id);
         }}
         onDragStart={canHtml5Drag ? onDragStart : undefined}
         onDragEnd={canHtml5Drag ? onDragEnd : undefined}
         {...(pointerReorderBind ?? {})}
       >
+        <span
+          className="task-item-row__check"
+          onClick={stopFieldEvent}
+          onKeyDown={stopFieldEvent}
+        >
+          <PolishedCheckbox
+            checked={selected}
+            ariaLabel={`Select ${task.title}`}
+            onCheckedChange={(checked, event) => {
+              onToggleSelected?.(task.id, checked, event);
+            }}
+          />
+        </span>
+
         <span
           className="task-item-row__priority"
           onMouseDown={stopFieldEvent}

@@ -8,6 +8,7 @@ import {
   PROJECTS_LIST_BOARD_STORAGE_KEY,
   parseListBoardViewFromLocation,
   persistListBoardView,
+  primeTabTitle,
   projectReorderPatches,
   type ListBoardView,
   type OrganizationRef,
@@ -98,11 +99,16 @@ export function DevelopmentPage() {
           navigate(buildDevelopmentListHref(nextView));
         }}
         onSelectProject={(key) => {
+          const match = projects.find(
+            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+          );
+          const href = `/projects/${key}`;
+          if (match?.name) primeTabTitle(href, match.name);
           const state: ProjectLocationState = {
             projectType: "codebase",
             from: "development",
           };
-          navigate(`/projects/${key}`, { state });
+          navigate(href, { state });
         }}
         onStatusChange={(projectId, status: ProjectStatus) => {
           void workspace.patchProject(projectId, { status });
@@ -128,13 +134,17 @@ export function DevelopmentPage() {
           });
         }}
         onCreatedProject={(_id, key) => {
-          if (key) {
-            const state: ProjectLocationState = {
-              projectType: "codebase",
-              from: "development",
-            };
-            navigate(`/projects/${key}`, { state });
-          }
+          if (!key) return;
+          const href = `/projects/${key}`;
+          const match = projects.find(
+            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+          );
+          if (match?.name) primeTabTitle(href, match.name);
+          const state: ProjectLocationState = {
+            projectType: "codebase",
+            from: "development",
+          };
+          navigate(href, { state });
         }}
         onReorder={(request) => {
           const patches = projectReorderPatches(

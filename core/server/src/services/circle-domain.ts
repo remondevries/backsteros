@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
   areas,
   avatars,
+  bankAccounts,
   contacts,
   documents,
   entityCounters,
@@ -23,6 +24,7 @@ import {
   checksumForContent,
   deleteObject,
   getObject,
+  moveObject,
   putObject,
 } from "../lib/storage.js";
 
@@ -44,6 +46,7 @@ type OrganizationInput = {
   avatarContentType?: string | null;
   sortOrder?: number;
   notes?: string | null;
+  moneybirdContactId?: string | null;
 };
 type ContactSocialAccount = {
   platform: string;
@@ -244,9 +247,28 @@ export async function updateOrganization(
   input: Partial<OrganizationInput>,
   executor: DbExecutor = db,
 ) {
+  const patch: Partial<OrganizationInput> = { ...input };
+  if (patch.moneybirdContactId !== undefined) {
+    const nextContactId = patch.moneybirdContactId?.trim() || null;
+    patch.moneybirdContactId = nextContactId;
+    if (nextContactId) {
+      await executor
+        .update(organizations)
+        .set({ moneybirdContactId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(organizations.workspaceId, workspaceId),
+            eq(organizations.moneybirdContactId, nextContactId),
+            ne(organizations.id, id),
+            isNull(organizations.deletedAt),
+          ),
+        );
+    }
+  }
+
   const [row] = await executor
     .update(organizations)
-    .set({ ...input, updatedAt: new Date() })
+    .set({ ...patch, updatedAt: new Date() })
     .where(
       and(
         eq(organizations.workspaceId, workspaceId),
@@ -552,6 +574,8 @@ export async function updateLetter(
   if (input.contactId && !(await contactExists(workspaceId, input.contactId, executor))) {
     throw new Error("CONTACT_NOT_FOUND");
   }
+  const shouldRelocatePdfs =
+    input.receivedDate !== undefined || input.title !== undefined;
   const [row] = await executor
     .update(letters)
     .set({
@@ -568,7 +592,64 @@ export async function updateLetter(
     })
     .where(and(eq(letters.workspaceId, workspaceId), eq(letters.id, id), isNull(letters.deletedAt)))
     .returning();
-  return row ?? null;
+  if (!row) return null;
+  if (shouldRelocatePdfs) {
+    await relocateLetterPdfAttachments(workspaceId, row);
+    return (await getLetterById(workspaceId, id, executor)) ?? row;
+  }
+  return row;
+}
+
+/** Re-file letter PDFs under Letters/YYYY/MM using Received Date (else today). */
+async function relocateLetterPdfAttachments(
+  workspaceId: string,
+  letter: typeof letters.$inferSelect,
+) {
+  const attachments = await listLetterAttachments(workspaceId, letter.id);
+  if (!attachments?.length) return;
+
+  let movedPrimary: typeof letterAttachments.$inferSelect | null = null;
+  for (const attachment of attachments) {
+    const nextKey = buildLetterPdfStorageKey({
+      title: letter.title,
+      receivedDate: letter.receivedDate,
+      attachmentId: attachment.id,
+    });
+    if (nextKey === attachment.storageKey) {
+      if (!movedPrimary) movedPrimary = attachment;
+      continue;
+    }
+    try {
+      await moveObject(attachment.storageKey, nextKey);
+    } catch (error) {
+      // Missing source file — still point metadata at the correct filing key.
+      if (
+        !(error instanceof Error) ||
+        error.message !== "STORAGE_OBJECT_NOT_FOUND"
+      ) {
+        throw error;
+      }
+    }
+    const [updated] = await db
+      .update(letterAttachments)
+      .set({ storageKey: nextKey, updatedAt: new Date() })
+      .where(
+        and(
+          eq(letterAttachments.workspaceId, workspaceId),
+          eq(letterAttachments.id, attachment.id),
+          isNull(letterAttachments.deletedAt),
+        ),
+      )
+      .returning();
+    if (updated && !movedPrimary) movedPrimary = updated;
+  }
+
+  const refreshed = await listLetterAttachments(workspaceId, letter.id);
+  await syncLetterPrimaryAttachment(
+    workspaceId,
+    letter.id,
+    refreshed?.[0] ?? movedPrimary,
+  );
 }
 
 export async function triageLetter(
@@ -920,6 +1001,17 @@ export async function putAvatar(
       .update(contacts)
       .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
       .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
+  } else if (entityType === "bank_account") {
+    await db
+      .update(bankAccounts)
+      .set({
+        avatarStorageKey: key,
+        avatarContentType: contentType,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
+      );
   }
   return row!;
 }
@@ -1001,6 +1093,17 @@ export async function deleteAvatar(
       })
       .where(
         and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
+      );
+  } else if (entityType === "bank_account") {
+    await db
+      .update(bankAccounts)
+      .set({
+        avatarStorageKey: null,
+        avatarContentType: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
       );
   }
 

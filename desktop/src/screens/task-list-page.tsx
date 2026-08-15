@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -8,12 +8,14 @@ import {
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
   buildTasksDueHref,
+  computeTaskDisplayIdColumnCh,
   getDefaultDueDateYmdForTasksDueFilter,
   getInboxTaskRouteSlugForTask,
   parseListBoardViewFromLocation,
   parseTasksDueFilterFromLocation,
   parseYmdLocal,
   persistListBoardView,
+  primeTabTitle,
   taskReorderPatches,
 } from "@backsteros/ui";
 
@@ -69,11 +71,21 @@ export function TaskListPage() {
     [contactAvatarSrc, workspace.contacts],
   );
 
-  const navigateToTask = (id: string) => {
+  const taskIdColumnCh = useMemo(
+    () => computeTaskDisplayIdColumnCh(workspace.allTasks),
+    [workspace.allTasks],
+  );
+
+  const pendingCreatedTaskTitleRef = useRef<string | null>(null);
+
+  const navigateToTask = (id: string, titleHint?: string | null) => {
     const task = workspace.tasks.find((entry) => entry.id === id);
     const due = dueFilter ?? "today";
     if (!task) {
-      navigate(`/tasks/${due}/${id}`);
+      const href = `/tasks/${due}/${id}`;
+      const title = titleHint?.trim();
+      if (title) primeTabTitle(href, title);
+      navigate(href);
       return;
     }
     const contact = task.contactId
@@ -84,7 +96,10 @@ export function TaskListPage() {
       projectKey: task.projectKey,
       contactKey: contact?.key ?? null,
     });
-    navigate(`/tasks/${due}/${slug}`);
+    const href = `/tasks/${due}/${slug}`;
+    const title = task.title || titleHint?.trim() || null;
+    if (title) primeTabTitle(href, title);
+    navigate(href);
   };
 
   if (!workspace.ready) {
@@ -100,6 +115,7 @@ export function TaskListPage() {
       tasks={workspace.tasks}
       projectOptions={projectOptions}
       assigneeOptions={assigneeOptions}
+      taskIdColumnCh={taskIdColumnCh}
       filter={dueFilter}
       onFilterChange={(filter) => {
         navigate(buildTasksDueHref(filter, view));
@@ -114,7 +130,7 @@ export function TaskListPage() {
           ),
         );
       }}
-      onSelectTask={navigateToTask}
+      onSelectTask={(id) => navigateToTask(id)}
       onStatusChange={(taskId, status) => {
         void workspace.patchTask(taskId, { status });
       }}
@@ -136,6 +152,11 @@ export function TaskListPage() {
       }}
       onAssigneeChange={(taskId, assigneeId) => {
         void workspace.patchTask(taskId, { assigneeId });
+      }}
+      onBulkDelete={async (taskIds) => {
+        for (const taskId of taskIds) {
+          await workspace.softDeleteTask(taskId);
+        }
       }}
       onReorder={(request) => {
         const patches = taskReorderPatches(workspace.tasks, request);
@@ -163,13 +184,18 @@ export function TaskListPage() {
           dueFilter ?? "today",
         );
         const dueDate = parseYmdLocal(dueYmd);
+        pendingCreatedTaskTitleRef.current = title;
         return workspace.createInboxTask({
           title,
           status,
           dueDate: dueDate ? dueDate.toISOString() : null,
         });
       }}
-      onCreatedTask={navigateToTask}
+      onCreatedTask={(taskId) => {
+        const titleHint = pendingCreatedTaskTitleRef.current;
+        pendingCreatedTaskTitleRef.current = null;
+        navigateToTask(taskId, titleHint);
+      }}
     />
   );
 }

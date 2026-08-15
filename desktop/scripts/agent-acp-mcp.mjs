@@ -420,3 +420,54 @@ export function permissionLooksLikeFileRead(params) {
     title.trim(),
   );
 }
+
+/**
+ * Built-in file mutations safe to auto-accept under Auto-accept edits.
+ * Never true for MCP / execute / fetch / other.
+ * @param {unknown} params
+ * @returns {boolean}
+ */
+export function permissionLooksLikeFileMutation(params) {
+  const p = params && typeof params === "object" ? params : {};
+  const toolCall =
+    /** @type {{ toolCall?: unknown, tool_call?: unknown }} */ (p).toolCall ||
+    /** @type {{ tool_call?: unknown }} */ (p).tool_call ||
+    null;
+  const kindRaw =
+    toolCall && typeof toolCall === "object"
+      ? /** @type {{ kind?: unknown, toolKind?: unknown }} */ (toolCall).kind ||
+        /** @type {{ toolKind?: unknown }} */ (toolCall).toolKind
+      : /** @type {{ kind?: unknown }} */ (p).kind;
+  const kind = typeof kindRaw === "string" ? kindRaw.toLowerCase() : "";
+  const title =
+    toolCall && typeof toolCall === "object"
+      ? String(
+          /** @type {{ title?: unknown, name?: unknown }} */ (toolCall).title ||
+            /** @type {{ name?: unknown }} */ (toolCall).name ||
+            "",
+        )
+      : "";
+  const hay = `${kind} ${title}`.toLowerCase();
+
+  // MCP / dynamic / external tools always prompt.
+  if (
+    /\bmcp\b|dynamic.?tool|external.?tool|moneybird_|1password|plugin-|project-0-/i.test(
+      hay,
+    )
+  ) {
+    return false;
+  }
+
+  // Commands / network / ambiguous never auto-accept as "edits".
+  if (
+    /\b(execute|exec|terminal|shell|fetch|think|switch_mode|other)\b/.test(kind)
+  ) {
+    return false;
+  }
+
+  if (/\b(edit|write|delete|move)\b/.test(kind)) return true;
+
+  return /^(edit|write|delete|move|apply.?patch|search.?replace|create.?file|delete.?file)\b/i.test(
+    title.trim(),
+  );
+}

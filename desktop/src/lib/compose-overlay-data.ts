@@ -11,6 +11,7 @@ import {
   getKnowledgeHref,
   getProjectDocumentHref,
   getScopedProjectTaskHref,
+  toApiDueDateIso,
   type AssigneeDropdownContact,
   type ComposeDocumentFoldersByTarget,
   type ComposeModalCreateDocumentInput,
@@ -23,6 +24,40 @@ import {
   resolveCreateAssigneeId,
   syncDefaultAssigneeIdFromSettings,
 } from "./default-assignee";
+
+async function createTaskWithAssigneeFallback(
+  client: BacksterosApiClient,
+  body: Record<string, unknown>,
+): Promise<{ id: string; number?: number }> {
+  try {
+    return await client.requestJson<{ id: string; number?: number }>(
+      "/api/v1/tasks",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  } catch (error) {
+    if (
+      body.assigneeId &&
+      error instanceof Error &&
+      (error.message.toLowerCase().includes("assignee") ||
+        ("code" in error &&
+          (error as { code?: string }).code === "assignee_not_found"))
+    ) {
+      return client.requestJson<{ id: string; number?: number }>(
+        "/api/v1/tasks",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...body, assigneeId: null }),
+        },
+      );
+    }
+    throw error;
+  }
+}
 
 export type ComposeOverlayContext = {
   projects: ComposeModalProject[];
@@ -111,22 +146,17 @@ export async function createComposeOverlayTask(
     const body = {
       projectId: input.projectId,
       title,
-      description: input.description?.trim() || null,
+      ...(input.description?.trim()
+        ? { description: input.description.trim() }
+        : {}),
       status: input.status ?? "ready_to_start",
       priority: input.priority ?? 0,
       sortOrder: Date.now(),
       assigneeId: resolveCreateAssigneeId(input.assigneeId),
-      dueDate: input.dueDate ?? null,
+      dueDate: toApiDueDateIso(input.dueDate),
       inbox: false,
     };
-    const task = await client.requestJson<{ id: string; number?: number }>(
-      "/api/v1/tasks",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    );
+    const task = await createTaskWithAssigneeFallback(client, body);
     const project = projectsById.get(input.projectId);
     if (project && task.number != null) {
       return { href: getScopedProjectTaskHref(project.key, task.number) };
@@ -136,23 +166,18 @@ export async function createComposeOverlayTask(
 
   const body = {
     title,
-    description: input.description?.trim() || null,
+    ...(input.description?.trim()
+      ? { description: input.description.trim() }
+      : {}),
     status: input.status ?? "triage",
     priority: input.priority ?? 0,
     sortOrder: Date.now(),
     assigneeId: resolveCreateAssigneeId(input.assigneeId),
-    dueDate: input.dueDate ?? null,
+    dueDate: toApiDueDateIso(input.dueDate),
     inbox: true,
     projectId: null,
   };
-  const task = await client.requestJson<{ id: string; number?: number }>(
-    "/api/v1/tasks",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
+  const task = await createTaskWithAssigneeFallback(client, body);
   if (task.number != null) {
     return { href: getInboxTaskRouteHref({ number: task.number }) };
   }

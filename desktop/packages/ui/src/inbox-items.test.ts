@@ -30,7 +30,7 @@ function task(input: {
   });
 }
 
-test("taskBelongsInInbox includes triage capture, hold, review, overdue", () => {
+test("taskBelongsInInbox includes triage, hold, review, overdue; skips future-due hold/review", () => {
   assert.equal(
     taskBelongsInInbox({ inbox: true, status: "triage" }, wednesday),
     true,
@@ -41,6 +41,50 @@ test("taskBelongsInInbox includes triage capture, hold, review, overdue", () => 
   );
   assert.equal(
     taskBelongsInInbox({ inbox: false, status: "in_review" }, wednesday),
+    true,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "on_hold",
+        dueDate: new Date(2026, 6, 15).getTime(),
+      },
+      wednesday,
+    ),
+    true,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "on_hold",
+        dueDate: new Date(2026, 6, 16).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "in_review",
+        dueDate: new Date(2026, 6, 20).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "in_review",
+        dueDate: new Date(2026, 6, 10).getTime(),
+      },
+      wednesday,
+    ),
     true,
   );
   assert.equal(

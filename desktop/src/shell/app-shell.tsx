@@ -22,6 +22,7 @@ import {
   ComposeModal,
   ContactsSidePanelView,
   EntityHeaderActionsShell,
+  FinanceSidePanelNavView,
   HistoryEntryIcon,
   InboxSidePanelView,
   JournalSidePanelView,
@@ -72,6 +73,7 @@ import {
   getTodayJournalDateSlug,
   groupItemsByAlphaLetter,
   isContactSectionPath,
+  isFinanceSectionPath,
   isInboxPath,
   isJournalSectionPath,
   isKnowledgeSectionPath,
@@ -101,9 +103,12 @@ import {
   useListBoardViewShortcuts,
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  installSelectAllShortcutListeners,
+  installClearSelectionShortcutListeners,
   useNavigationHistory,
   RegisterPageTitleProvider,
   useNavigationShortcuts,
+  useFinanceNavigationShortcuts,
   useSectionTabShortcuts,
   useSettingsShortcut,
   useTabShortcuts,
@@ -113,7 +118,9 @@ import {
   LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
   createDefaultTabsState,
   createProductTab,
+  primeTabTitle,
   type ContactsSidePanelViewProps,
+  type FinanceSidePanelNavViewProps,
   type InboxSidePanelViewProps,
   type JournalSidePanelViewProps,
   type KnowledgeSidePanelViewProps,
@@ -124,6 +131,7 @@ import {
   type ProductTabsState,
   type TreeReorderRequest,
 } from "@backsteros/ui";
+import type { BankAccount } from "@backsteros/contracts";
 import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
@@ -154,13 +162,21 @@ import {
 } from "../lib/journal-selection-context";
 import { useDesktopResource } from "../lib/use-desktop-resource";
 import { buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
+import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { useAgentAttentionNotifications } from "../lib/agent/use-agent-attention-notifications";
 import { useComposeGlobalShortcut } from "../lib/use-compose-global-shortcut";
 import { useCommandPaletteGlobalShortcut } from "../lib/use-command-palette-global-shortcut";
 import { useTauriWindowFullscreen } from "../lib/use-tauri-window-fullscreen";
+import {
+  projectNavFromLocationState,
+  rememberProjectNavFrom,
+  resolveProjectNavFromForPath,
+  resolveSidebarActivePathname,
+} from "../lib/project-type-cache";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
+import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
 
 const TABS_STORAGE_KEY = "backsteros.desktop.app-tabs";
 
@@ -844,6 +860,59 @@ function DesktopOrganizationsSidePanel({
   );
 }
 
+const BANK_ACCOUNTS_CHANGED_EVENT = "backsteros:bank-accounts-changed";
+
+function DesktopFinanceSidePanel({
+  pathname,
+  Link,
+  collapsed,
+  onToggleCollapse,
+}: Pick<
+  FinanceSidePanelNavViewProps,
+  "pathname" | "Link" | "collapsed" | "onToggleCollapse"
+>) {
+  const { client } = useDesktopApi();
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = () => {
+      void client
+        .requestJson<{ bankAccounts: BankAccount[] }>("/api/v1/bank-accounts")
+        .then((body) => {
+          if (!cancelled) setAccounts(body.bankAccounts);
+        })
+        .catch(() => {
+          if (!cancelled) setAccounts([]);
+        });
+    };
+
+    load();
+    window.addEventListener(BANK_ACCOUNTS_CHANGED_EVENT, load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(BANK_ACCOUNTS_CHANGED_EVENT, load);
+    };
+  }, [client, pathname]);
+
+  const accountAvatarSrcById = useDesktopAvatarSrcMap(
+    "bank_account",
+    accounts,
+  );
+
+  return (
+    <FinanceSidePanelNavView
+      pathname={pathname}
+      accounts={accounts}
+      accountAvatarSrcById={accountAvatarSrcById}
+      Link={Link}
+      collapsed={collapsed}
+      onToggleCollapse={onToggleCollapse}
+    />
+  );
+}
+
 function loadTabsState(pathname: string): ProductTabsState {
   if (typeof window === "undefined") {
     return createDefaultTabsState(pathname);
@@ -907,7 +976,7 @@ function DesktopClerkProfileBridgeInner({
 function AppShellInner({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { open: commandPaletteOpen, openSearch, openGo, setOpen, mode } =
+  const { open: commandPaletteOpen, openSearch, openGo, openFinanceGo, setOpen, mode } =
     useCommandPalette();
   const searchFn = useCommandPaletteSearchFn();
   const chromeHeader = useChromeHeader();
@@ -919,6 +988,17 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const [tabsState, setTabsState] = useState<ProductTabsState>(() =>
     loadTabsState(location.pathname),
   );
+  // Sync the active tab href during render (not in an effect) so child
+  // RegisterPageTitle effects run afterward and keep the real entity title.
+  // Matching the legacy TabsProvider pattern avoids the child→parent effect
+  // order that was overwriting project/task names with "Projects"/"Project".
+  const [tabsPathname, setTabsPathname] = useState(location.pathname);
+  if (location.pathname !== tabsPathname) {
+    setTabsPathname(location.pathname);
+    setTabsState((current) =>
+      syncActiveTabToPath(current, location.pathname),
+    );
+  }
   const [composeOpen, setComposeOpen] = useState(false);
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -973,6 +1053,11 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       setSidebarCollapsed(stored === "false"),
     );
     return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    installSelectAllShortcutListeners();
+    installClearSelectionShortcutListeners();
   }, []);
 
   const toggleSidebarCollapsed = useCallback(() => {
@@ -1054,6 +1139,16 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     onCompose: () => setComposeOpen(true),
   });
 
+  useEffect(() => {
+    function onOpenCompose() {
+      if (commandPaletteOpen) return;
+      setComposeOpen(true);
+    }
+    window.addEventListener("backsteros:open-compose", onOpenCompose);
+    return () =>
+      window.removeEventListener("backsteros:open-compose", onOpenCompose);
+  }, [commandPaletteOpen]);
+
   useCommandPaletteGlobalShortcut({
     enabled: true,
     onOpenPalette: openSearch,
@@ -1064,6 +1159,16 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     commandPaletteOpen,
     commandPaletteMode: mode,
     openGo,
+    closePalette,
+    onNavigate: navigateTo,
+  });
+
+  useFinanceNavigationShortcuts({
+    enabled: true,
+    pathname: location.pathname,
+    commandPaletteOpen,
+    commandPaletteMode: mode,
+    openFinanceGo,
     closePalette,
     onNavigate: navigateTo,
   });
@@ -1260,10 +1365,6 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     ],
   );
 
-  useEffect(() => {
-    setTabsState((current) => syncActiveTabToPath(current, location.pathname));
-  }, [location.pathname]);
-
   // Keep the active tab's task id/status so product tabs show status icons
   // (and working pulse) instead of the generic tasks glyph. Inbox stays on
   // the section glyph, so clear any leftover task meta there.
@@ -1423,8 +1524,26 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const pathname = location.pathname;
   const navigationTrail = parseNavigationTrailPath(pathname);
   const panelPathname = navigationTrail?.sourceHref ?? pathname;
+
+  const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
+  const projectRouteScope = getProjectRouteScopeFromPathname(panelPathname);
+  const activeProject = projectRouteParam
+    ? workspace.projects.find(
+        (project) =>
+          project.id === projectRouteParam ||
+          project.key.toLowerCase() === projectRouteParam.toLowerCase(),
+      ) ?? null
+    : null;
+
+  // Codebase Docs live in the workbench list pane — hide the chrome documents
+  // side panel so we don't stack two document trees.
   const showSidePanel =
-    !settingsPage && shouldShowContentSidePanel(panelPathname);
+    !settingsPage &&
+    shouldShowContentSidePanel(panelPathname) &&
+    !(
+      activeProject?.type === "codebase" &&
+      isProjectDocumentsSectionPath(panelPathname)
+    );
 
   useContentSidePanelToggleShortcut({
     enabled: showSidePanel,
@@ -1436,15 +1555,25 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     enabled: true,
   });
 
-  const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
-  const projectRouteScope = getProjectRouteScopeFromPathname(panelPathname);
-  const activeProject = projectRouteParam
-    ? workspace.projects.find(
-        (project) =>
-          project.id === projectRouteParam ||
-          project.key.toLowerCase() === projectRouteParam.toLowerCase(),
-      ) ?? null
-    : null;
+  const projectNavFrom = resolveProjectNavFromForPath({
+    locationState: location.state,
+    projectId: activeProject?.id,
+    projectKey: activeProject?.key,
+    routeParam: projectRouteParam,
+  });
+
+  useEffect(() => {
+    if (!activeProject) return;
+    const from = projectNavFromLocationState(location.state);
+    if (from) {
+      rememberProjectNavFrom(activeProject.id, activeProject.key, from);
+    }
+  }, [activeProject, location.state]);
+
+  const sidebarActivePathname = resolveSidebarActivePathname(
+    pathname,
+    projectNavFrom,
+  );
 
   const projectDocumentsForPanel = useMemo(() => {
     if (!activeProject) return [];
@@ -1478,11 +1607,17 @@ function AppShellInner({ children }: { children?: ReactNode }) {
             const item = workspace.inboxItems.find(
               (entry) => entry.id === taskId && entry.kind === "task",
             );
+            const taskTitle =
+              item && item.kind === "task" ? item.title : null;
             if (item && item.kind === "task" && item.number != null) {
-              navigate(getInboxTaskRouteHref({ number: item.number }));
+              const href = getInboxTaskRouteHref({ number: item.number });
+              if (taskTitle) primeTabTitle(href, taskTitle);
+              navigate(href);
               return;
             }
-            navigate(`/inbox/${taskId}`);
+            const href = `/inbox/${taskId}`;
+            if (taskTitle) primeTabTitle(href, taskTitle);
+            navigate(href);
           }}
           projectOptions={buildProjectDropdownOptions(
             workspace.projects.map((project) => ({
@@ -1720,14 +1855,26 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           pathname={panelPathname}
           items={projectLettersForPanel}
           loading={!workspace.ready}
-          composeHref={getScopedProjectLetterHref(
-            projectKey,
-            "new",
-            projectRouteScope,
-          )}
           getLetterHref={(letter) =>
             getScopedProjectLetterHref(projectKey, letter.number, projectRouteScope)
           }
+          onAdd={() => {
+            void workspace
+              .createLetter({
+                title: "New letter",
+                projectId: activeProject.id,
+              })
+              .then((created) => {
+                if (created.number == null) return;
+                const href = getScopedProjectLetterHref(
+                  projectKey,
+                  created.number,
+                  projectRouteScope,
+                );
+                primeTabTitle(href, "New letter");
+                navigate(href);
+              });
+          }}
         />
       );
     } else if (isLettersSectionPath(panelPathname)) {
@@ -1737,6 +1884,16 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           pathname={panelPathname}
           items={workspace.letters}
           loading={!workspace.ready}
+          onAdd={() => {
+            void workspace
+              .createLetter({ title: "New letter" })
+              .then((created) => {
+                if (created.number == null) return;
+                const href = getLettersHref(created.number);
+                primeTabTitle(href, "New letter");
+                navigate(href);
+              });
+          }}
         />
       );
     } else if (isContactSectionPath(panelPathname)) {
@@ -1771,16 +1928,38 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           }}
         />
       );
+    } else if (isFinanceSectionPath(panelPathname)) {
+      sidePanelBody = (
+        <DesktopFinanceSidePanel
+          pathname={panelPathname}
+          Link={RouterLink}
+          collapsed={sidePanelCollapsed}
+          onToggleCollapse={() =>
+            setSidePanelCollapsed((current) => !current)
+          }
+        />
+      );
     }
   }
 
+  // Finance keeps a slim expand rail when collapsed (so it can be reopened
+  // from the same spot); other sections hide the panel entirely.
+  const financeSection = isFinanceSectionPath(panelPathname);
+  const financeRail = financeSection && sidePanelCollapsed;
+
   const sidePanel =
     showSidePanel && sidePanelBody ? (
-      <ResizableContextPanel
-        storageKey={getContentSidePanelWidthKey(panelPathname)}
-      >
-        {sidePanelBody}
-      </ResizableContextPanel>
+      financeRail ? (
+        <aside className="context-panel context-panel--rail">
+          {sidePanelBody}
+        </aside>
+      ) : (
+        <ResizableContextPanel
+          storageKey={getContentSidePanelWidthKey(panelPathname)}
+        >
+          {sidePanelBody}
+        </ResizableContextPanel>
+      )
     ) : undefined;
 
   const sidebar = settingsPage ? (
@@ -1794,12 +1973,13 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       {({ onAccount, onSignOut }) => (
         <ProductSidebar
           pathname={pathname}
+          activePathname={sidebarActivePathname}
           Link={RouterLink}
           onBack={history.goBack}
           onForward={history.goForward}
           canGoBack={history.canGoBack}
           canGoForward={history.canGoForward}
-          onSearch={openSearch}
+          footer={<CursorCreditsUsageBar />}
           inboxHasItems={workspace.inboxItems.length > 0}
           recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
             const display = resolveHistoryEntryDisplay(page.href, page.title);
@@ -1831,6 +2011,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     <MentionCatalogProvider catalog={mentionCatalog}>
     <ListKeyboardNavigationProvider pathname={location.pathname}>
       <DesktopOverlayMainNavigationListener />
+      <ExternalOpenHrefListener />
       <RegisterPageTitleProvider
         pathname={location.pathname}
         registerPageIcon={history.registerPageIcon}
@@ -1875,7 +2056,9 @@ function AppShellInner({ children }: { children?: ReactNode }) {
             working,
           });
         }}
-        showSidePanel={Boolean(sidePanel) && !sidePanelCollapsed}
+        showSidePanel={
+          Boolean(sidePanel) && (!sidePanelCollapsed || financeRail)
+        }
         sidePanel={sidePanel}
         chromeHeader={
           chromeHeader ??
@@ -1916,13 +2099,19 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               priority: input.priority,
               assigneeId: input.assigneeId,
               dueDate: input.dueDate,
+              links: input.links,
             });
             if (project && created.number != null) {
-              return {
-                href: getScopedProjectTaskHref(project.key, created.number),
-              };
+              const href = getScopedProjectTaskHref(
+                project.key,
+                created.number,
+              );
+              primeTabTitle(href, input.title);
+              return { href };
             }
-            return { href: `/tasks/${created.id}` };
+            const href = `/tasks/${created.id}`;
+            primeTabTitle(href, input.title);
+            return { href };
           }
           const created = await workspace.createInboxTask({
             title: input.title,
@@ -1931,13 +2120,16 @@ function AppShellInner({ children }: { children?: ReactNode }) {
             priority: input.priority,
             assigneeId: input.assigneeId,
             dueDate: input.dueDate,
+            links: input.links,
           });
           if (created.number != null) {
-            return {
-              href: getInboxTaskRouteHref({ number: created.number }),
-            };
+            const href = getInboxTaskRouteHref({ number: created.number });
+            primeTabTitle(href, input.title);
+            return { href };
           }
-          return { href: `/inbox/${created.id}` };
+          const href = `/inbox/${created.id}`;
+          primeTabTitle(href, input.title);
+          return { href };
         }}
         onCreateDocument={async (input) => {
           if (input.target === "knowledge") {

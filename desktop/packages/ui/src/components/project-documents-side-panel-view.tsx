@@ -72,6 +72,11 @@ export type ProjectDocumentsSidePanelViewProps = {
   listContainerProps?: HTMLAttributes<HTMLElement>;
   onVisibleNavItemIdsChange?: (ids: string[]) => void;
   onFolderActivateRef?: Ref<(folderId: string) => void>;
+  /**
+   * `chrome` — app content side panel (default).
+   * `embedded` — codebase workbench Docs tab (matches Files tree chrome).
+   */
+  variant?: "chrome" | "embedded";
 };
 
 function toTreeSource(item: KnowledgeListItem) {
@@ -105,7 +110,9 @@ export function ProjectDocumentsSidePanelView({
   listContainerProps,
   onVisibleNavItemIdsChange,
   onFolderActivateRef,
+  variant = "chrome",
 }: ProjectDocumentsSidePanelViewProps) {
+  const embedded = variant === "embedded";
   const selectedSlug = getSelectedProjectDocumentPathFromPathname(pathname);
   const [addingFolder, setAddingFolder] = useState(false);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
@@ -220,87 +227,101 @@ export function ProjectDocumentsSidePanelView({
 
   const showList = items.length > 0 || addingFolder;
 
-  return (
-    <div className="app-content-side-panel app-content-side-panel--documents">
-      <ContentSidePanelHeader
-        title="Documents"
-        actions={
-          <>
-            {onAdd ? (
-              <button
-                type="button"
-                className="app-side-panel-section-action"
-                aria-label="Create document"
-                onClick={() => onAdd(selectedFolderId)}
-              >
-                <SidePanelPlusIcon />
-              </button>
-            ) : null}
-            {onCreateFolder ? (
-              <button
-                type="button"
-                className="app-side-panel-section-action"
-                aria-label={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
-                title={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
-                onClick={() => setAddingFolder(true)}
-              >
-                <FolderPlusIcon className="size-3.5" />
-              </button>
-            ) : null}
-          </>
-        }
-      />
-      <div className="app-content-side-panel-main">
-        {addingFolder && onCreateFolder ? (
-          <div className="app-content-side-panel-inline">
-            <AddFolderInline
-              onCancel={() => setAddingFolder(false)}
-              onSubmit={async (name) =>
-                onCreateFolder({ title: name, parentId: selectedFolderId })
+  const actions = (
+    <>
+      {onAdd ? (
+        <button
+          type="button"
+          className="app-side-panel-section-action"
+          aria-label="Create document"
+          onClick={() => onAdd(selectedFolderId)}
+        >
+          <SidePanelPlusIcon />
+        </button>
+      ) : null}
+      {onCreateFolder ? (
+        <button
+          type="button"
+          className="app-side-panel-section-action"
+          aria-label={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
+          title={`Create folder (${DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT})`}
+          onClick={() => setAddingFolder(true)}
+        >
+          <FolderPlusIcon className="size-3.5" />
+        </button>
+      ) : null}
+    </>
+  );
+
+  const body = (
+    <>
+      {addingFolder && onCreateFolder ? (
+        <div className="app-content-side-panel-inline">
+          <AddFolderInline
+            onCancel={() => setAddingFolder(false)}
+            onSubmit={async (name) =>
+              onCreateFolder({ title: name, parentId: selectedFolderId })
+            }
+          />
+        </div>
+      ) : null}
+      {!showList ? (
+        <ContentSidePanelEmpty>
+          No documents yet. Use the plus button to add one.
+        </ContentSidePanelEmpty>
+      ) : (
+        <ContentSidePanelList
+          aria-label="Project documents"
+          ref={listRef}
+          {...listContainerProps}
+        >
+          {tree.map((node) => (
+            <DocumentTreeNodeView
+              key={node.id}
+              node={node}
+              depth={0}
+              parentId={null}
+              selectedPath={selectedPath}
+              onSelectFolder={setSelectedFolderId}
+              onClearSelectedFolder={() => setSelectedFolderId(null)}
+              collapsedFolderIds={collapsedFolderIds}
+              onToggleFolderCollapsed={handleToggleFolderCollapsed}
+              highlightedNavItemId={highlightedId}
+              getDocumentHref={getDocumentHref}
+              Link={Link}
+              onRename={onRename}
+              dragInsertBeforeId={dragInsertBeforeId}
+              dragIntoFolderId={dragIntoFolderId}
+              activeDragPayload={activeDragPayload}
+              onDragInsertBeforeId={setDragInsertBeforeId}
+              onDragIntoFolderId={setDragIntoFolderId}
+              onTreeDragStart={setActiveDragPayload}
+              onTreeDragEnd={handleTreeDragEnd}
+              onReorderTreeItem={
+                onReorderTreeItem ? handleReorderTreeItem : undefined
               }
             />
-          </div>
+          ))}
+        </ContentSidePanelList>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="console-docs-tree">
+        {onAdd || onCreateFolder ? (
+          <div className="console-docs-tree__actions">{actions}</div>
         ) : null}
-        {!showList ? (
-          <ContentSidePanelEmpty>
-            No documents yet. Use the plus button to add one.
-          </ContentSidePanelEmpty>
-        ) : (
-          <ContentSidePanelList
-            aria-label="Project documents"
-            ref={listRef}
-            {...listContainerProps}
-          >
-            {tree.map((node) => (
-              <DocumentTreeNodeView
-                key={node.id}
-                node={node}
-                depth={0}
-                parentId={null}
-                selectedPath={selectedPath}
-                onSelectFolder={setSelectedFolderId}
-                onClearSelectedFolder={() => setSelectedFolderId(null)}
-                collapsedFolderIds={collapsedFolderIds}
-                onToggleFolderCollapsed={handleToggleFolderCollapsed}
-                highlightedNavItemId={highlightedId}
-                getDocumentHref={getDocumentHref}
-                Link={Link}
-                onRename={onRename}
-                dragInsertBeforeId={dragInsertBeforeId}
-                dragIntoFolderId={dragIntoFolderId}
-                activeDragPayload={activeDragPayload}
-                onDragInsertBeforeId={setDragInsertBeforeId}
-                onDragIntoFolderId={setDragIntoFolderId}
-                onTreeDragStart={setActiveDragPayload}
-                onTreeDragEnd={handleTreeDragEnd}
-                onReorderTreeItem={
-                  onReorderTreeItem ? handleReorderTreeItem : undefined
-                }
-              />
-            ))}
-          </ContentSidePanelList>
-        )}
+        <div className="console-docs-tree__main">{body}</div>
       </div>
+    );
+  }
+
+  return (
+    <div className="app-content-side-panel app-content-side-panel--documents">
+      <ContentSidePanelHeader title="Documents" actions={actions} />
+      <div className="app-content-side-panel-main">{body}</div>
     </div>
   );
 }

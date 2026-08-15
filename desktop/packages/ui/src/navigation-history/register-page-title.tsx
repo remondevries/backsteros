@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { primeTabTitle } from "../primed-tab-title.js";
+
 export type RegisterPageTitleContextValue = {
   pathname: string;
   registerPageTitle: (href: string, title: string) => void;
@@ -68,6 +70,9 @@ export function RegisterPageTitle({ title }: RegisterPageTitleProps) {
 
   useEffect(() => {
     if (!ctx || !title.trim()) return;
+    // Prime before updating the tab so a parent path-sync effect that runs
+    // later in the same commit still resolves the real entity title.
+    primeTabTitle(ctx.pathname, title);
     ctx.registerPageTitle(ctx.pathname, title);
     ctx.updateActiveTabTitle?.(title);
   }, [ctx, title]);

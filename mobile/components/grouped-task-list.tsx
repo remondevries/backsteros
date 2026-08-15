@@ -24,8 +24,9 @@ import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailContentContainer } from "./detail-content-container";
-import { StatusGroupHeader } from "./status-group-header";
 import { InboxListItemRow } from "./inbox-list-item-row";
+import { ProjectTypeGroupHeader } from "./project-type-group-header";
+import { StatusGroupHeader } from "./status-group-header";
 import { TaskItemListRow } from "./task-item-list-row";
 import { TaskPropertyPills } from "./task-property-pills";
 import { TaskStatusIcon } from "./task-status-icon";
@@ -333,6 +334,30 @@ export function GroupedTaskList({
   const renderSectionHeader = useCallback(
     ({ section }: { section: Section }) => {
       if (!groupByStatus) return null;
+      const onAdd =
+        onAddToStatus && section.status !== "overdue"
+          ? () => {
+              setCollapsed((current) => {
+                const next = new Set(current);
+                next.delete(section.status);
+                return next;
+              });
+              onAddToStatus(section.status);
+            }
+          : undefined;
+      // Inbox attention groups use the project-type subgroup chrome
+      // (label + divider) — desktop `ProjectTypeGroupSection` parity.
+      if (groupByStatus === "inbox") {
+        return constrain(
+          <ProjectTypeGroupHeader
+            title={section.title}
+            collapsed={collapsed.has(section.status)}
+            onToggle={() => toggleStatus(section.status)}
+            onAdd={onAdd}
+            addActionLabel="task"
+          />,
+        );
+      }
       const iconStatus =
         section.status === "overdue" ? "on_hold" : section.status;
       return constrain(
@@ -342,18 +367,7 @@ export function GroupedTaskList({
           gradient={getTaskStatusHeaderGradient(section.status)}
           collapsed={collapsed.has(section.status)}
           onToggle={() => toggleStatus(section.status)}
-          onAdd={
-            onAddToStatus && section.status !== "overdue"
-              ? () => {
-                  setCollapsed((current) => {
-                    const next = new Set(current);
-                    next.delete(section.status);
-                    return next;
-                  });
-                  onAddToStatus(section.status);
-                }
-              : undefined
-          }
+          onAdd={onAdd}
         />,
       );
     },
@@ -370,7 +384,7 @@ export function GroupedTaskList({
       style={ui.screen}
       sections={sections as SectionListData<GroupedTaskRow, Section>[]}
       keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={isPad && groupByStatus}
+      stickySectionHeadersEnabled={isPad && Boolean(groupByStatus)}
       refreshing={refreshing}
       onRefresh={onRefresh}
       keyboardShouldPersistTaps="handled"

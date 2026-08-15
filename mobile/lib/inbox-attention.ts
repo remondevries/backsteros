@@ -64,6 +64,10 @@ export function taskBelongsInInbox(
   if (
     (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
   ) {
+    const dueYmd = getTaskDueDateYmd(input.due_date ?? input.dueDate ?? null);
+    if (dueYmd && dueYmd > formatLocalYmd(referenceDate)) {
+      return false;
+    }
     return true;
   }
   return isInboxOverdueTask(input, referenceDate);

@@ -24,6 +24,25 @@ export type EntityDeleteConfig = {
   onDelete: () => Promise<EntityDeleteResult>;
 };
 
+export type EntityDuplicateOptions = {
+  /** When duplicating a project, whether to copy its tasks. */
+  includeTasks?: boolean;
+};
+
+export type EntityDuplicateConfig = {
+  onDuplicate: (
+    options?: EntityDuplicateOptions,
+  ) => Promise<EntityDeleteResult>;
+  disabled?: boolean;
+  /**
+   * `project` opens a choice modal (blank vs include tasks) before running.
+   * Omit for immediate duplication (tasks).
+   */
+  confirm?: "project";
+  /** Used in the project duplicate modal title, e.g. `project "Acme"`. */
+  entityLabel?: string;
+};
+
 type EntityHeaderActionsContextValue = {
   deleteConfig: EntityDeleteConfig | null;
   activeDeleteConfig: EntityDeleteConfig | null;
@@ -35,6 +54,19 @@ type EntityHeaderActionsContextValue = {
   confirmDelete: () => void;
   isDeletePending: boolean;
   deleteError: string | null;
+  duplicateConfig: EntityDuplicateConfig | null;
+  activeDuplicateConfig: EntityDuplicateConfig | null;
+  registerDuplicateConfig: (
+    ownerId: string,
+    config: EntityDuplicateConfig,
+  ) => void;
+  clearDuplicateConfig: (ownerId: string) => void;
+  runDuplicate: () => void;
+  duplicateModalOpen: boolean;
+  closeDuplicateModal: () => void;
+  confirmDuplicate: (options?: EntityDuplicateOptions) => void;
+  isDuplicatePending: boolean;
+  duplicateError: string | null;
 };
 
 const EntityHeaderActionsContext =
@@ -62,10 +94,25 @@ export function EntityHeaderActionsProvider({
   const deleteRegistrationsRef = useRef(
     new Map<string, EntityDeleteConfig>(),
   );
+  const [duplicateConfig, setDuplicateConfigState] =
+    useState<EntityDuplicateConfig | null>(null);
+  const [modalDuplicateConfig, setModalDuplicateConfig] =
+    useState<EntityDuplicateConfig | null>(null);
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [isDuplicatePending, startDuplicateTransition] = useTransition();
+  const duplicateRegistrationsRef = useRef(
+    new Map<string, EntityDuplicateConfig>(),
+  );
 
   const syncActiveDeleteConfig = useCallback(() => {
     const registrations = [...deleteRegistrationsRef.current.values()];
     setDeleteConfigState(registrations.at(-1) ?? null);
+  }, []);
+
+  const syncActiveDuplicateConfig = useCallback(() => {
+    const registrations = [...duplicateRegistrationsRef.current.values()];
+    setDuplicateConfigState(registrations.at(-1) ?? null);
   }, []);
 
   const registerDeleteConfig = useCallback(
@@ -92,6 +139,32 @@ export function EntityHeaderActionsProvider({
       setDeleteError(null);
     },
     [syncActiveDeleteConfig],
+  );
+
+  const registerDuplicateConfig = useCallback(
+    (ownerId: string, config: EntityDuplicateConfig) => {
+      duplicateRegistrationsRef.current.delete(ownerId);
+      duplicateRegistrationsRef.current.set(ownerId, config);
+      syncActiveDuplicateConfig();
+      setDuplicateModalOpen(false);
+      setModalDuplicateConfig(null);
+      setDuplicateError(null);
+    },
+    [syncActiveDuplicateConfig],
+  );
+
+  const clearDuplicateConfig = useCallback(
+    (ownerId: string) => {
+      if (!duplicateRegistrationsRef.current.delete(ownerId)) {
+        return;
+      }
+
+      syncActiveDuplicateConfig();
+      setDuplicateModalOpen(false);
+      setModalDuplicateConfig(null);
+      setDuplicateError(null);
+    },
+    [syncActiveDuplicateConfig],
   );
 
   const openDeleteModal = useCallback(
@@ -137,9 +210,72 @@ export function EntityHeaderActionsProvider({
     });
   }, [deleteConfig, modalDeleteConfig]);
 
+  const closeDuplicateModal = useCallback(() => {
+    setDuplicateModalOpen(false);
+    setModalDuplicateConfig(null);
+    setDuplicateError(null);
+  }, []);
+
+  const confirmDuplicate = useCallback(
+    (options?: EntityDuplicateOptions) => {
+      const config = modalDuplicateConfig ?? duplicateConfig;
+      if (!config || isDuplicatePending || isDeletePending) {
+        return;
+      }
+
+      startDuplicateTransition(async () => {
+        setDuplicateError(null);
+        const result = await config.onDuplicate(options);
+        if (result.ok) {
+          setDuplicateModalOpen(false);
+          setModalDuplicateConfig(null);
+          return;
+        }
+        setDuplicateError(result.error);
+      });
+    },
+    [
+      duplicateConfig,
+      isDeletePending,
+      isDuplicatePending,
+      modalDuplicateConfig,
+    ],
+  );
+
+  const runDuplicate = useCallback(() => {
+    const config = duplicateConfig;
+    if (
+      !config ||
+      config.disabled ||
+      isDuplicatePending ||
+      isDeletePending
+    ) {
+      return;
+    }
+
+    if (config.confirm === "project") {
+      setDuplicateError(null);
+      setModalDuplicateConfig(config);
+      setDuplicateModalOpen(true);
+      return;
+    }
+
+    startDuplicateTransition(async () => {
+      const result = await config.onDuplicate();
+      if (result.ok) {
+        return;
+      }
+      window.alert(result.error);
+    });
+  }, [duplicateConfig, isDeletePending, isDuplicatePending]);
+
   const activeDeleteConfig = deleteModalOpen
     ? modalDeleteConfig
     : resolveShortcutDeleteConfig(deleteConfig);
+
+  const activeDuplicateConfig = duplicateModalOpen
+    ? modalDuplicateConfig
+    : duplicateConfig;
 
   const value = useMemo(
     () => ({
@@ -153,18 +289,38 @@ export function EntityHeaderActionsProvider({
       confirmDelete,
       isDeletePending,
       deleteError,
+      duplicateConfig,
+      activeDuplicateConfig,
+      registerDuplicateConfig,
+      clearDuplicateConfig,
+      runDuplicate,
+      duplicateModalOpen,
+      closeDuplicateModal,
+      confirmDuplicate,
+      isDuplicatePending,
+      duplicateError,
     }),
     [
       activeDeleteConfig,
+      activeDuplicateConfig,
       clearDeleteConfig,
+      clearDuplicateConfig,
       closeDeleteModal,
+      closeDuplicateModal,
       confirmDelete,
+      confirmDuplicate,
       deleteConfig,
       deleteError,
       deleteModalOpen,
+      duplicateConfig,
+      duplicateError,
+      duplicateModalOpen,
       isDeletePending,
+      isDuplicatePending,
       openDeleteModal,
       registerDeleteConfig,
+      registerDuplicateConfig,
+      runDuplicate,
     ],
   );
 

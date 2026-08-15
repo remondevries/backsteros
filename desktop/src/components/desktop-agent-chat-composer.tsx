@@ -12,7 +12,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Loader2 } from "lucide-react";
 
+import { resolveComposerPrimaryAction } from "../lib/agent/agent-chat-working";
 import {
   listCursorAgentModels,
 } from "../lib/pty";
@@ -23,11 +25,14 @@ import {
 } from "../lib/agent/agent-chat-model";
 import {
   cycleAgentChatMode,
+  normalizeAgentChatMode,
   readAgentChatMode,
   writeAgentChatMode,
   type AgentChatMode,
 } from "../lib/agent/agent-chat-mode";
 import type { AgentChatImageAttachment } from "../lib/agent/agent-chat-transcript";
+import type { AgentChatAccessMode } from "../lib/agent/agent-chat-runtime-mode";
+import { DesktopAgentAccessPicker } from "./desktop-agent-access-picker";
 import { DesktopAgentModelPicker } from "./desktop-agent-model-picker";
 import { DesktopAgentModePicker } from "./desktop-agent-mode-picker";
 import { ComposerCommandMenu } from "./agent-composer/composer-command-menu";
@@ -95,6 +100,9 @@ export type DesktopAgentChatComposerProps = {
   onChange: (value: string) => void;
   onSend: () => void;
   onCancel?: () => void;
+  /** True while prompt/start HTTP is in flight (T3 Sending…). */
+  sending?: boolean;
+  /** True while an ACP turn is live (T3 Stop). */
   running?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -105,10 +113,15 @@ export type DesktopAgentChatComposerProps = {
   /** Image attachments staged for the next send. */
   images?: readonly AgentChatImageAttachment[];
   onImagesChange?: (images: AgentChatImageAttachment[]) => void;
+  /** Effective model id for the chip (session pin or global preference). */
+  modelId?: string;
   /** Fired when the composer model chip (or /model) changes. */
   onModelChange?: (modelId: string) => void;
   /** Fired when Build / Ask / Plan (or /build|/ask|/plan) changes. */
   onModeChange?: (mode: AgentChatMode) => void;
+  /** Approval policy — Supervised vs Full access. */
+  accessMode?: AgentChatAccessMode;
+  onAccessModeChange?: (mode: AgentChatAccessMode) => void;
   /** Fired for /clear — wipe transcript and reset the agent session. */
   onClearChat?: () => void;
   /**
@@ -116,6 +129,11 @@ export type DesktopAgentChatComposerProps = {
    * the glass host (`rounded-t` + bottom border), above the editor.
    */
   pendingBanner?: ReactNode;
+  /**
+   * After a settled Plan turn with proposed markdown: empty send → Implement,
+   * text send → Refine (t3 Plan Ready handoff).
+   */
+  showPlanFollowUpPrompt?: boolean;
 };
 
 const MAX_COMPOSER_IMAGES = 4;
@@ -156,6 +174,7 @@ export const DesktopAgentChatComposer = forwardRef<
     onChange,
     onSend,
     onCancel,
+    sending = false,
     running = false,
     disabled = false,
     placeholder = "Message the agent…",
@@ -163,10 +182,14 @@ export const DesktopAgentChatComposer = forwardRef<
     mode,
     images = [],
     onImagesChange,
+    modelId,
     onModelChange,
     onModeChange,
+    accessMode = "supervised",
+    onAccessModeChange,
     onClearChat,
     pendingBanner,
+    showPlanFollowUpPrompt = false,
   },
   ref,
 ) {
@@ -185,8 +208,12 @@ export const DesktopAgentChatComposer = forwardRef<
   const pathSearchGen = useRef(0);
 
   // While the agent is running, Send queues a Cursor-style follow-up.
+  // Plan Ready: empty send is allowed (Implement).
   const canSend =
-    (value.trim().length > 0 || images.length > 0) && !disabled;
+    !disabled &&
+    (value.trim().length > 0 ||
+      images.length > 0 ||
+      showPlanFollowUpPrompt);
 
   const trigger = useMemo(
     () => detectComposerTrigger(value, expandedCursor),
@@ -404,13 +431,26 @@ export const DesktopAgentChatComposer = forwardRef<
       onClearChat?.();
       return;
     }
+    // Standalone /build|/plan|/ask Enter → mode change (t3), not a chat message.
+    const modeSlash = /^\/(build|plan|ask|agent|default)$/i.exec(trimmed);
+    if (modeSlash) {
+      const next = normalizeAgentChatMode(modeSlash[1]);
+      writeAgentChatMode(next);
+      onModeChange?.(next);
+      onChange("");
+      return;
+    }
     // Empty Enter while running → stop (same as the primary Stop control).
-    // Non-empty → queue follow-up / send (keyboard path; button stays Stop like T3).
-    if (running && !trimmed && images.length === 0) {
+    // Non-empty → steer / send (keyboard path; button stays Stop like T3).
+    if (
+      resolveComposerPrimaryAction({ sending, running }) === "stop" &&
+      !trimmed &&
+      images.length === 0
+    ) {
       onCancel?.();
       return;
     }
-    if (canSend) onSend();
+    if (canSend && !sending) onSend();
   }, [
     acceptHighlighted,
     canSend,
@@ -419,8 +459,10 @@ export const DesktopAgentChatComposer = forwardRef<
     onCancel,
     onChange,
     onClearChat,
+    onModeChange,
     onSend,
     running,
+    sending,
     value,
   ]);
 
@@ -471,8 +513,16 @@ export const DesktopAgentChatComposer = forwardRef<
       onClearChat?.();
       return;
     }
+    const modeSlash = /^\/(build|plan|ask|agent|default)$/i.exec(trimmed);
+    if (modeSlash) {
+      const next = normalizeAgentChatMode(modeSlash[1]);
+      writeAgentChatMode(next);
+      onModeChange?.(next);
+      onChange("");
+      return;
+    }
     onSend();
-  }, [onChange, onClearChat, onSend, value]);
+  }, [onChange, onClearChat, onModeChange, onSend, value]);
 
   return (
     <div className="desktop-agent-chat__composer">
@@ -575,6 +625,7 @@ export const DesktopAgentChatComposer = forwardRef<
           <div className="desktop-agent-chat__composer-toolbar-start">
             <DesktopAgentModelPicker
               disabled={disabled}
+              value={modelId}
               onModelChange={onModelChange}
             />
             <DesktopAgentModePicker
@@ -582,35 +633,87 @@ export const DesktopAgentChatComposer = forwardRef<
               value={mode}
               onModeChange={onModeChange}
             />
+            <DesktopAgentAccessPicker
+              disabled={disabled}
+              value={accessMode}
+              onAccessModeChange={onAccessModeChange}
+            />
           </div>
           <div className="desktop-agent-chat__composer-toolbar-end">
-            {/* T3: one primary action — Stop while running, Send when idle. */}
-            {running && onCancel ? (
-              <button
-                type="button"
-                className="desktop-agent-chat__send desktop-agent-chat__send--stop"
-                onMouseDown={(event) => {
-                  // Keep the contenteditable from stealing focus before click fires.
-                  event.preventDefault();
-                }}
-                onClick={onCancel}
-                aria-label="Stop generation"
-                title="Stop"
-              >
-                <ComposerStopIcon />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="desktop-agent-chat__send"
-                onClick={handleSendClick}
-                disabled={!canSend && value.trim() !== "/clear"}
-                aria-label="Send message"
-                title="Send"
-              >
-                <ComposerSendIcon />
-              </button>
-            )}
+            {/* T3: Stop while running, Sending… while dispatching, else Send. */}
+            {(() => {
+              const primary = resolveComposerPrimaryAction({
+                sending,
+                running,
+              });
+              if (primary === "stop" && onCancel) {
+                return (
+                  <button
+                    type="button"
+                    className="desktop-agent-chat__send desktop-agent-chat__send--stop"
+                    onMouseDown={(event) => {
+                      // Keep the contenteditable from stealing focus before click fires.
+                      event.preventDefault();
+                    }}
+                    onClick={onCancel}
+                    aria-label="Stop generation"
+                    title="Stop"
+                  >
+                    <ComposerStopIcon />
+                  </button>
+                );
+              }
+              if (primary === "sending") {
+                return (
+                  <button
+                    type="button"
+                    className="desktop-agent-chat__send desktop-agent-chat__send--sending"
+                    disabled
+                    aria-label="Sending"
+                    aria-busy="true"
+                    title="Sending…"
+                  >
+                    <Loader2
+                      className="desktop-agent-chat__send-icon desktop-agent-chat__send-icon--spin"
+                      aria-hidden="true"
+                    />
+                    <span className="desktop-agent-chat__send-label">
+                      Sending…
+                    </span>
+                  </button>
+                );
+              }
+              if (showPlanFollowUpPrompt) {
+                return (
+                  <button
+                    type="button"
+                    className="desktop-agent-chat__send desktop-agent-chat__send--plan-follow-up"
+                    onClick={handleSendClick}
+                    disabled={!canSend && value.trim() !== "/clear"}
+                    aria-label={
+                      value.trim().length > 0
+                        ? "Refine plan"
+                        : "Implement plan"
+                    }
+                    title={value.trim().length > 0 ? "Refine" : "Implement"}
+                  >
+                    {value.trim().length > 0 ? "Refine" : "Implement"}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  type="button"
+                  className="desktop-agent-chat__send"
+                  onClick={handleSendClick}
+                  disabled={!canSend && value.trim() !== "/clear"}
+                  aria-label="Send message"
+                  title="Send"
+                >
+                  <ComposerSendIcon />
+                </button>
+              );
+            })()}
           </div>
         </div>
           </div>

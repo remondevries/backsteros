@@ -3,7 +3,6 @@ import { Stack } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -34,10 +33,7 @@ import {
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
-import {
-  TabStackHeaderTextButton,
-  tabDetailScreenOptions,
-} from "../lib/tab-stack-options";
+import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { formatTaskDueMetaLabel } from "../lib/task-due-date";
 import {
   getTaskStatusLabel,
@@ -55,7 +51,6 @@ import {
   FLOATING_PDF_DOCK_CLEARANCE,
   FloatingComposeActionPill,
 } from "./floating-compose-action-pill";
-import { JournalMarkdownBody } from "./journal-markdown-body";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
 import { LetterPdfViewerModal } from "./letter-pdf-viewer-modal";
@@ -115,7 +110,6 @@ export function LetterDetailScreen({ letterId }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftContext, setDraftContext] = useState("");
   const [saving, setSaving] = useState(false);
@@ -135,8 +129,9 @@ export function LetterDetailScreen({ letterId }: Props) {
   useEffect(() => {
     setPicker(null);
     setPropertyError(null);
-    setEditing(false);
     setSaveError(null);
+    setDraftTitle("");
+    setDraftContext("");
   }, [letterId]);
 
   // Attachments may exist even when the legacy letter PDF fields are empty.
@@ -180,14 +175,16 @@ export function LetterDetailScreen({ letterId }: Props) {
     setProjectId(letter.project_id);
   }, [letter]);
 
-  const startEditing = useCallback(() => {
+  const letterReady = Boolean(letter);
+
+  /** Title/notes stay inline-editable — no Edit button. Seed once per open. */
+  useEffect(() => {
     if (!letter) return;
     setDraftTitle(letter.title?.trim() || "");
     setDraftContext(letter.context ?? "");
     setSaveError(null);
-    setPicker(null);
-    setEditing(true);
-  }, [letter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed keys only
+  }, [letterId, letterReady]);
 
   async function saveEditing() {
     if (!letter || saving) return;
@@ -197,6 +194,13 @@ export function LetterDetailScreen({ letterId }: Props) {
       return;
     }
     const nextContext = draftContext.trim() || null;
+    const titleUnchanged = trimmedTitle === (letter.title?.trim() || "");
+    const contextUnchanged =
+      (nextContext ?? "") === (letter.context ?? "").trim();
+    if (titleUnchanged && contextUnchanged) {
+      setSaveError(null);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
@@ -233,9 +237,6 @@ export function LetterDetailScreen({ letterId }: Props) {
           },
         );
       }
-      setEditing(false);
-      setDraftTitle("");
-      setDraftContext("");
     } catch (reason) {
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save letter.",
@@ -534,8 +535,6 @@ export function LetterDetailScreen({ letterId }: Props) {
     );
   }
 
-  const title = letter.title?.trim() || "Letter";
-  const body = (letter.context ?? "").trim();
   const displayId =
     letter.number != null ? formatLetterDisplayId(letter.number) : null;
   const receivedLabel = formatTaskDueMetaLabel(receivedDate);
@@ -749,117 +748,80 @@ export function LetterDetailScreen({ letterId }: Props) {
         options={{
           ...tabDetailScreenOptions(),
           title: "",
-          headerRight: () =>
-            editing ? (
-              <TabStackHeaderTextButton
-                label="Save"
-                onPress={() => {
-                  void saveEditing();
-                }}
-                loading={saving}
-                disabled={saving || !draftTitle.trim()}
-              />
-            ) : (
-              <TabStackHeaderTextButton
-                label="Edit"
-                onPress={startEditing}
-              />
-            ),
         }}
       />
-      {editing ? (
-        <KeyboardAwareScrollView
-          style={ui.screen}
-          bottomClearance={
-            FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE
-          }
-          keepEndVisibleWhileTyping
+      <KeyboardAwareScrollView
+        style={ui.screen}
+        bottomClearance={
+          FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE
+        }
+        keepEndVisibleWhileTyping
+      >
+        <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
+          {displayId ? (
+            <Text style={ui.detailId}>{displayId}</Text>
+          ) : null}
+          <TextInput
+            value={draftTitle}
+            onChangeText={setDraftTitle}
+            placeholder="Letter title"
+            placeholderTextColor={colors.muted}
+            returnKeyType="next"
+            onBlur={() => {
+              void saveEditing();
+            }}
+            style={{
+              color: colors.foreground,
+              fontSize: 24,
+              fontWeight: "600",
+              lineHeight: 30,
+              paddingVertical: 4,
+            }}
+          />
+        </View>
+
+        <DetailPropertiesInlineShell
+          modalTitle="Letter properties"
+          chips={propertyChips}
+          overlay={propertySheets}
         >
-          <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
-            {displayId ? (
-              <Text style={ui.detailId}>{displayId}</Text>
-            ) : null}
-            <TextInput
-              value={draftTitle}
-              onChangeText={setDraftTitle}
-              placeholder="Letter title"
-              placeholderTextColor={colors.muted}
-              autoFocus
-              returnKeyType="next"
-              style={{
-                color: colors.foreground,
-                fontSize: 24,
-                fontWeight: "600",
-                lineHeight: 30,
-                paddingVertical: 4,
-              }}
-            />
-            <TextInput
-              value={draftContext}
-              onChangeText={setDraftContext}
-              placeholder="Add notes…"
-              placeholderTextColor={colors.muted}
-              multiline
-              scrollEnabled={false}
-              textAlignVertical="top"
-              style={{
-                color: colors.foreground,
-                fontSize: 15,
-                lineHeight: 22,
-                minHeight: 200,
-                paddingVertical: 4,
-              }}
-            />
-          </View>
-          {saveError ? (
-            <Text style={[ui.error, { paddingHorizontal: 16 }]}>
-              {saveError}
+          <DetailPropertyEditorRows
+            rows={allPropertyRows}
+            onPressRow={(key) => {
+              if (key === "contact" && !organizationId) return;
+              setPicker(key as PickerKind);
+            }}
+          />
+          {propertyError ? (
+            <Text style={[ui.error, { paddingTop: 8 }]}>
+              {propertyError}
             </Text>
           ) : null}
-        </KeyboardAwareScrollView>
-      ) : (
-        <ScrollView
-          style={ui.screen}
-          contentContainerStyle={{
-            paddingBottom:
-              FLOATING_TAB_BAR_CLEARANCE + FLOATING_PDF_DOCK_CLEARANCE,
-          }}
-        >
-          <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 6 }}>
-            {displayId ? (
-              <Text style={ui.detailId}>{displayId}</Text>
-            ) : null}
-            <Text style={ui.detailTitle}>{title}</Text>
-          </View>
+        </DetailPropertiesInlineShell>
 
-          <DetailPropertiesInlineShell
-            modalTitle="Letter properties"
-            chips={propertyChips}
-            overlay={propertySheets}
-          >
-            <DetailPropertyEditorRows
-              rows={allPropertyRows}
-              onPressRow={(key) => {
-                if (key === "contact" && !organizationId) return;
-                setPicker(key as PickerKind);
-              }}
-            />
-            {propertyError ? (
-              <Text style={[ui.error, { paddingTop: 8 }]}>
-                {propertyError}
-              </Text>
-            ) : null}
-          </DetailPropertiesInlineShell>
-
-          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-            {body ? (
-              <JournalMarkdownBody body={body} />
-            ) : (
-              <Text style={ui.rowMeta}>No notes yet.</Text>
-            )}
-          </View>
-        </ScrollView>
-      )}
+        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+          <TextInput
+            value={draftContext}
+            onChangeText={setDraftContext}
+            placeholder="Add notes…"
+            placeholderTextColor={colors.muted}
+            multiline
+            scrollEnabled={false}
+            textAlignVertical="top"
+            onBlur={() => {
+              void saveEditing();
+            }}
+            style={{
+              color: colors.foreground,
+              fontSize: 15,
+              lineHeight: 22,
+              minHeight: 200,
+              paddingVertical: 4,
+            }}
+          />
+          {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
+        </View>
+      </KeyboardAwareScrollView>
 
       {uploadError ? (
         <Text

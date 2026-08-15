@@ -96,3 +96,30 @@ export function downloadPlanAsTextFile(filename: string, contents: string): void
     URL.revokeObjectURL(url);
   }, 0);
 }
+
+export function buildPlanImplementationPrompt(planMarkdown: string): string {
+  return `PLEASE IMPLEMENT THIS PLAN:\n${planMarkdown.trim()}`;
+}
+
+/**
+ * Empty send → Implement (switch to build); non-empty → Refine (stay in plan).
+ */
+export function resolvePlanFollowUpSubmission(input: {
+  draftText: string;
+  planMarkdown: string;
+}): {
+  text: string;
+  mode: "build" | "plan";
+} {
+  const trimmedDraftText = input.draftText.trim();
+  if (trimmedDraftText.length > 0) {
+    return {
+      text: trimmedDraftText,
+      mode: "plan",
+    };
+  }
+  return {
+    text: buildPlanImplementationPrompt(input.planMarkdown),
+    mode: "build",
+  };
+}

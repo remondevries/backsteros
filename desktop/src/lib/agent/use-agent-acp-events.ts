@@ -20,6 +20,10 @@ import {
   type AgentActivitySummary,
   type StatusBarAgentItem,
 } from "./agent-activity";
+import {
+  shouldFinalizeChatTurn,
+  type AcpSettleSource,
+} from "./agent-acp-settle";
 import { getPtyWebSocketUrl, stopPtyAgentTask } from "../pty";
 
 export type AgentAcpUiRequest = {
@@ -52,6 +56,21 @@ export type UseAgentAcpEventsOptions = {
   onCursorUpdateTodos?: (taskId: string, params: unknown) => void;
   onCursorCreatePlan?: (taskId: string, params: unknown) => void;
   onAcpTurnSettled?: (taskId: string) => void;
+  /** Sidecar projector minted the durable assistant message id for this turn. */
+  onAcpTurnBegin?: (
+    taskId: string,
+    messageId: string,
+    meta?: { turnId?: string | null; startedAt?: number | null },
+  ) => void;
+  onAcpTurnState?: (
+    taskId: string,
+    state: {
+      turnId?: string | null;
+      messageId?: string | null;
+      status: "completed" | "interrupted" | "failed";
+      completedAt?: number | null;
+    },
+  ) => void;
   onAcpUiRequest?: (taskId: string, request: AgentAcpUiRequest) => void;
   onAcpUiRequestCleared?: (taskId: string, requestId: string | null) => void;
   onAgentHookTurnUpdate?: (
@@ -95,6 +114,8 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     onCursorUpdateTodos,
     onCursorCreatePlan,
     onAcpTurnSettled,
+    onAcpTurnBegin,
+    onAcpTurnState,
     onAcpUiRequest,
     onAcpUiRequestCleared,
     onAgentHookTurnUpdate,
@@ -110,6 +131,8 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     onCursorUpdateTodos,
     onCursorCreatePlan,
     onAcpTurnSettled,
+    onAcpTurnBegin,
+    onAcpTurnState,
     onAcpUiRequest,
     onAcpUiRequestCleared,
     onAgentHookTurnUpdate,
@@ -126,6 +149,8 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     onCursorUpdateTodos,
     onCursorCreatePlan,
     onAcpTurnSettled,
+    onAcpTurnBegin,
+    onAcpTurnState,
     onAcpUiRequest,
     onAcpUiRequestCleared,
     onAgentHookTurnUpdate,
@@ -139,6 +164,18 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
 
   const workingRef = useRef(new Set<string>());
   const openRef = useRef(new Set<string>());
+  /** Poll-observed busy tasks — veto idle/stop settle; drive background list marks. */
+  const pollBusyRef = useRef(new Set<string>());
+  /** Live-socket activity busy — survives poll flicker until prompt-complete/stop. */
+  const activityBusyRef = useRef(new Set<string>());
+
+  const republishWorkingMarks = () => {
+    workingRef.current = new Set([
+      ...pollBusyRef.current,
+      ...activityBusyRef.current,
+    ]);
+    publishStatus();
+  };
 
   const publishStatus = () => {
     const workingTaskIds = [...workingRef.current];
@@ -159,12 +196,12 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     callbacksRef.current.onAgentActivitySummaryChange?.(summary);
   };
 
-    // Poll ACP sessions so background turns keep list/board Working… without a viewer.
-    // Also recover chat settle when the session goes idle but a settle frame was missed.
-    useEffect(() => {
+  // Poll ACP sessions so background turns keep list/board Working… without a
+  // viewer. Do NOT finalize Chat from poll idle — that raced mid-turn and
+  // froze the transcript on settled chrome (T3: session.status is authority).
+  useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const previouslyWorking = new Set<string>();
 
     async function refreshSessions() {
       try {
@@ -177,18 +214,9 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
           if (!sid) continue;
           if (session.lastActivity === "working") nextWorking.add(sid);
         }
-        // Tasks that were busy and are now idle → settle (authoritative ACP busy).
-        for (const sid of previouslyWorking) {
-          if (!nextWorking.has(sid) && workingRef.current.has(sid)) {
-            workingRef.current.delete(sid);
-            clearLiveAgentWorkingForTask(sid);
-            callbacksRef.current.onAcpTurnSettled?.(sid);
-          }
-        }
-        previouslyWorking.clear();
-        for (const sid of nextWorking) previouslyWorking.add(sid);
-        workingRef.current = nextWorking;
-        publishStatus();
+        pollBusyRef.current = nextWorking;
+        // List/board marks only — never finalize Chat from poll idle.
+        republishWorkingMarks();
       } catch {
         /* ignore */
       }
@@ -213,10 +241,12 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     if (id) {
       openRef.current.add(id);
       if (agentAttachRequest.sessionIsNew) {
-        workingRef.current.add(id);
+        activityBusyRef.current.add(id);
         markLiveAgentWorkingForTask(id);
+        republishWorkingMarks();
+      } else {
+        publishStatus();
       }
-      publishStatus();
     }
     callbacksRef.current.onAgentAttachRequestHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,14 +258,24 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     const id = agentEndRequest.taskId.trim();
     void (async () => {
       clearLiveAgentWorkingForTask(id);
+      activityBusyRef.current.delete(id);
+      pollBusyRef.current.delete(id);
       workingRef.current.delete(id);
       openRef.current.delete(id);
-      publishStatus();
+      republishWorkingMarks();
       await stopPtyAgentTask(id);
     })();
     callbacksRef.current.onAgentEndRequestHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentEndRequest]);
+
+  // chatId is assigned when Start-agent binds the session. Reconnecting the
+  // socket on that change flushes a queued settle mid-bootstrap and freezes
+  // Chat on settled "Worked…" chrome while the agent keeps going.
+  const chatIdRef = useRef(chatId);
+  chatIdRef.current = chatId;
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
 
   // Live ACP event socket for the focused task.
   useEffect(() => {
@@ -248,25 +288,43 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
     const url = getPtyWebSocketUrl({
       cols: 80,
       rows: 24,
-      cwd: cwd?.trim() || null,
+      cwd: cwdRef.current?.trim() || null,
       kind: "agent",
       taskId: id,
-      chatId: chatId?.trim().toLowerCase() || null,
+      chatId: chatIdRef.current?.trim().toLowerCase() || null,
     });
 
     const socket = new WebSocket(url);
     let settledTimer: number | null = null;
 
-    const settle = () => {
+    const settle = (source: AcpSettleSource) => {
+      if (
+        !shouldFinalizeChatTurn({
+          source,
+          activityBusy: activityBusyRef.current.has(id),
+        })
+      ) {
+        return;
+      }
       if (settledTimer != null) window.clearTimeout(settledTimer);
       // Queue behind any same-tick afterAgentResponse frame so text lands in
       // turnUi before finalize — but do not wait 80ms (that left Working…
       // visible after the agent was already done).
       settledTimer = window.setTimeout(() => {
         settledTimer = null;
+        if (
+          !shouldFinalizeChatTurn({
+            source,
+            activityBusy: activityBusyRef.current.has(id),
+          })
+        ) {
+          return;
+        }
+        activityBusyRef.current.delete(id);
+        pollBusyRef.current.delete(id);
         workingRef.current.delete(id);
         clearLiveAgentWorkingForTask(id);
-        publishStatus();
+        republishWorkingMarks();
         callbacksRef.current.onAcpTurnSettled?.(id);
       }, 0);
     };
@@ -280,6 +338,11 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
         params?: unknown;
         text?: string | null;
         error?: string;
+        turnId?: string | null;
+        messageId?: string | null;
+        status?: string | null;
+        startedAt?: number | null;
+        completedAt?: number | null;
         requestId?: string | null;
         auto?: boolean;
         title?: string | null;
@@ -298,20 +361,32 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
       }
 
       if (message.type === "exit") {
+        activityBusyRef.current.delete(id);
         workingRef.current.delete(id);
         openRef.current.delete(id);
         clearLiveAgentWorkingForTask(id);
-        publishStatus();
+        republishWorkingMarks();
         // T3: session end leaves the turn settled — finalize chat chrome too.
-        settle();
+        settle("exit");
         return;
       }
 
       if (message.type === "agent-hook") {
-        if (message.activity === "working" || message.event === "preToolUse") {
-          workingRef.current.add(id);
+        // Only start/resume Working from turn-start hooks. Late postToolUse /
+        // afterFileEdit frames must not revive Working… after settle.
+        const startsTurn =
+          message.event === "beforeSubmitPrompt" ||
+          message.event === "preToolUse" ||
+          message.event === "sessionStart";
+        if (
+          (message.activity === "working" || startsTurn) &&
+          (startsTurn ||
+            activityBusyRef.current.has(id) ||
+            workingRef.current.has(id))
+        ) {
+          activityBusyRef.current.add(id);
           markLiveAgentWorkingForTask(id);
-          publishStatus();
+          republishWorkingMarks();
         }
         if (
           message.event === "afterAgentResponse" &&
@@ -322,12 +397,59 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
         }
         callbacksRef.current.onAgentHookTurnUpdate?.(id, message);
         if (message.event === "stop" || message.activity === "idle") {
-          settle();
+          // End-of-turn: clear activity busy first so the settle gate allows
+          // finalize. Mid-turn false idles are vetoed when activityBusy stays.
+          activityBusyRef.current.delete(id);
+          settle(message.event === "stop" ? "stop" : "idle");
         }
         return;
       }
 
       if (message.type !== "acp-event") return;
+
+      if (
+        message.event === "turn-begin" &&
+        typeof message.messageId === "string" &&
+        message.messageId.trim()
+      ) {
+        callbacksRef.current.onAcpTurnBegin?.(id, message.messageId.trim(), {
+          turnId:
+            typeof message.turnId === "string" ? message.turnId.trim() : null,
+          startedAt:
+            typeof message.startedAt === "number" ? message.startedAt : null,
+        });
+        return;
+      }
+
+      if (
+        message.event === "turn-state" &&
+        (message.status === "completed" ||
+          message.status === "interrupted" ||
+          message.status === "failed")
+      ) {
+        activityBusyRef.current.delete(id);
+        callbacksRef.current.onAcpTurnState?.(id, {
+          turnId:
+            typeof message.turnId === "string" ? message.turnId.trim() : null,
+          messageId:
+            typeof message.messageId === "string"
+              ? message.messageId.trim()
+              : null,
+          status: message.status,
+          completedAt:
+            typeof message.completedAt === "number"
+              ? message.completedAt
+              : null,
+        });
+        settle(
+          message.status === "interrupted"
+            ? "stop"
+            : message.status === "failed"
+              ? "prompt-error"
+              : "prompt-complete",
+        );
+        return;
+      }
 
       if (message.event === "session-update" && message.update !== undefined) {
         // T3: working follows session/turn lifecycle, not every content chunk.
@@ -357,7 +479,10 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
         if (reply) {
           callbacksRef.current.onAssistantMessage?.(id, reply);
         }
-        settle();
+        activityBusyRef.current.delete(id);
+        settle(
+          message.event === "prompt-error" ? "prompt-error" : "prompt-complete",
+        );
         return;
       }
 
@@ -493,33 +618,45 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
 
       if (message.event === "activity") {
         if (message.activity === "working") {
-          workingRef.current.add(id);
+          activityBusyRef.current.add(id);
           markLiveAgentWorkingForTask(id);
-          publishStatus();
+          republishWorkingMarks();
         } else if (message.activity === "idle") {
-          settle();
+          activityBusyRef.current.delete(id);
+          settle("idle");
         }
       }
     });
 
     return () => {
       // Flush a pending settle before teardown so collapse/remount cannot
-      // drop the finalize that was already queued.
+      // drop the finalize that was already queued. Do not flush when the
+      // agent is still marked working for this task — that happens when the
+      // effect re-runs while a Start-agent bootstrap turn is in flight.
       if (settledTimer != null) {
         window.clearTimeout(settledTimer);
         settledTimer = null;
-        workingRef.current.delete(id);
-        clearLiveAgentWorkingForTask(id);
-        callbacksRef.current.onAcpTurnSettled?.(id);
+        if (
+          shouldFinalizeChatTurn({
+            source: "teardown",
+            activityBusy: activityBusyRef.current.has(id),
+          })
+        ) {
+          activityBusyRef.current.delete(id);
+          clearLiveAgentWorkingForTask(id);
+          callbacksRef.current.onAcpTurnSettled?.(id);
+        }
       }
       openRef.current.delete(id);
-      publishStatus();
+      republishWorkingMarks();
       try {
         socket.close();
       } catch {
         /* ignore */
       }
     };
+    // Intentionally omit chatId/cwd — task-scoped chat bus; Start assigns
+    // agentChatId after attach and must not tear down the live socket.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, chatId, cwd, enabled]);
+  }, [taskId, enabled]);
 }

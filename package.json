@@ -7,11 +7,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @backsteros/server dev",
-    "dev:desktop": "pnpm --filter @backsteros/desktop tauri:dev",
-    "dev:mobile": "pnpm --filter @backsteros/mobile start",
-    "pty": "pnpm --filter @backsteros/desktop pty",
-    "build": "pnpm -r build",
-    "build:desktop": "pnpm --filter @backsteros/desktop tauri:build",
+    "build": "pnpm --filter @backsteros/contracts --filter @backsteros/api-client --filter @backsteros/powersync-schema --filter @backsteros/ui --filter @backsteros/server run build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm --filter @backsteros/contracts build && pnpm --filter @backsteros/api-client build && pnpm --filter @backsteros/powersync-schema build && pnpm --filter @backsteros/ui build && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",

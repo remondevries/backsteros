@@ -64,7 +64,7 @@ describe("ask drafts (T3 pendingUserInput)", () => {
     assert.equal(custom.selectedOptionLabels, undefined);
   });
 
-  it("deriveAskProgress and buildAskAnswersPayload use labels", () => {
+  it("deriveAskProgress and buildAskAnswersPayload map labels to option ids", () => {
     const questions = normalizeAskQuestions([
       {
         id: "q1",
@@ -93,9 +93,9 @@ describe("ask drafts (T3 pendingUserInput)", () => {
     assert.equal(progress.answeredCount, 2);
     assert.equal(progress.canAdvance, true);
     assert.deepEqual(progress.selectedOptionLabels, ["A", "B"]);
-    assert.deepEqual(buildAskAnswersPayload(questions, drafts), {
-      q1: "Yes",
-      q2: ["A", "B"],
-    });
+    assert.deepEqual(buildAskAnswersPayload(questions, drafts), [
+      { questionId: "q1", selectedOptionIds: ["y"] },
+      { questionId: "q2", selectedOptionIds: ["a", "b"] },
+    ]);
   });
 });

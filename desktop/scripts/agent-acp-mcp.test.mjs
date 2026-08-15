@@ -11,6 +11,7 @@ import {
   mcpApprovalKey,
   mcpJsonServerToAcp,
   mcpJsonToAcpServers,
+  permissionLooksLikeFileMutation,
   permissionLooksLikeFileRead,
   prepareSessionMcp,
   readProjectMcpJson,
@@ -188,6 +189,63 @@ test("permissionLooksLikeFileRead auto-allows file tools but not MCP", () => {
   assert.equal(
     permissionLooksLikeFileRead({
       toolCall: { title: "moneybird_list invoices" },
+    }),
+    false,
+  );
+});
+
+test("permissionLooksLikeFileMutation auto-allows edits but not execute/MCP", () => {
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "edit", title: "Edit file" },
+    }),
+    true,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "delete", title: "Delete file" },
+    }),
+    true,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "move", title: "Move file" },
+    }),
+    true,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "execute", title: "Shell" },
+    }),
+    false,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "fetch", title: "Fetch URL" },
+    }),
+    false,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "other", title: "Something else" },
+    }),
+    false,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "mcp", title: "moneybird_get" },
+    }),
+    false,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { title: "moneybird_create_contact" },
+    }),
+    false,
+  );
+  assert.equal(
+    permissionLooksLikeFileMutation({
+      toolCall: { kind: "read", title: "Read file" },
     }),
     false,
   );

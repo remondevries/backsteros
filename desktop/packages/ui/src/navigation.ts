@@ -9,6 +9,7 @@ export const routeFamilies = [
   "knowledge",
   "journal",
   "letters",
+  "finance",
   "settings",
 ] as const;
 
@@ -23,6 +24,7 @@ export type NavigationItemIconId =
   | "development"
   | "knowledge"
   | "letters"
+  | "finance"
   | "organizations"
   | "contacts"
   | "settings";
@@ -60,6 +62,7 @@ export const navigation: NavigationItem[] = [
     section: "workspace",
   },
   { href: "/letters", label: "Letters", icon: "letters", section: "workspace" },
+  { href: "/finance", label: "Finance", icon: "finance", section: "workspace" },
   { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   {
     href: "/organizations",
@@ -139,6 +142,12 @@ export const routeCopy: Record<
     description: "Correspondence and generated PDFs",
     singular: "letter",
     accent: "#8d9dad",
+  },
+  finance: {
+    title: "Finance",
+    description: "Bank accounts and transactions",
+    singular: "bank account",
+    accent: "#4cae8a",
   },
   settings: {
     title: "Settings",

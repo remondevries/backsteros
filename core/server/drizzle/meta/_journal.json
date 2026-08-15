@@ -176,6 +176,104 @@
       "when": 1785760000000,
       "tag": "0024_task_images",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785840000000,
+      "tag": "0025_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785920000000,
+      "tag": "0026_bank_account_avatars",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786000000000,
+      "tag": "0027_bank_account_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786080000000,
+      "tag": "0028_financial_category_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786160000000,
+      "tag": "0029_financial_transaction_display_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786240000000,
+      "tag": "0030_financial_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786320000000,
+      "tag": "0031_financial_transaction_goal",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0032_financial_goal_end_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786480000000,
+      "tag": "0033_bank_account_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786560000000,
+      "tag": "0034_financial_recurrings",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786640000000,
+      "tag": "0035_financial_recurring_archived",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786720000000,
+      "tag": "0036_moneybird_integration_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0037_organization_moneybird_contact",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786880000000,
+      "tag": "0038_credit_card_cashflow_polarity",
+      "breakpoints": true
     }
   ]
 }

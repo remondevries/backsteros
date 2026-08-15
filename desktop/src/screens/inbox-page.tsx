@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   InboxDetailSkeleton,
   RegisterEntityDeleteAction,
+  RegisterEntityDuplicateAction,
   TaskDetailView,
   buildAssigneeDropdownOptions,
   buildInboxTaskListItem,
@@ -14,6 +15,7 @@ import {
   getInboxItemDisplayId,
   getInboxTaskRouteSlugForTask,
   getProjectTaskHref,
+  resolveDuplicatedTaskHref,
   type InboxTaskListItem,
 } from "@backsteros/ui";
 
@@ -177,6 +179,39 @@ export function InboxPage() {
     }
   }, [navigate, selectedTask, workspace]);
 
+  const handleDuplicateTask = useCallback(async () => {
+    if (!selectedTask) {
+      return { ok: false as const, error: "Task is required." };
+    }
+    try {
+      const created = await workspace.duplicateTask(selectedTask.id);
+      const projectKey = selectedTask.projectKey ?? null;
+      const project =
+        projectKey != null
+          ? (workspace.projects.find((entry) => entry.key === projectKey) ??
+            null)
+          : selectedTask.projectId
+            ? (workspace.projects.find(
+                (entry) => entry.id === selectedTask.projectId,
+              ) ?? null)
+            : null;
+      navigate(
+        resolveDuplicatedTaskHref({
+          id: created.id,
+          number: created.number,
+          projectKey: project?.key ?? projectKey,
+        }),
+      );
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error ? error.message : "Failed to duplicate task.",
+      };
+    }
+  }, [navigate, selectedTask, workspace]);
+
   const handleProjectChange = useCallback(
     (next: string | null) => {
       if (!selectedTask) return;
@@ -245,6 +280,7 @@ export function InboxPage() {
 
   return (
     <>
+      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
       <RegisterEntityDeleteAction
         entityLabel={deleteEntityLabel}
         onDelete={handleDeleteTask}
@@ -272,9 +308,9 @@ export function InboxPage() {
           displayId: getInboxItemDisplayId(selectedTask),
           workingDirectory: workingDirectory,
         }}
-        patchTaskValues={(values) =>
-          workspace.patchTask(selectedTask.id, values)
-        }
+        patchTaskValues={async (values) => {
+          await workspace.patchTask(selectedTask.id, values);
+        }}
       >
       <TaskDetailView
         sectionLabel="Inbox"
@@ -383,9 +419,9 @@ export function InboxPage() {
             taskUpdatedAt={selectedTaskRecord?.updatedAt ?? null}
             contacts={workspace.contacts}
             contactAvatarSrc={contactAvatarSrc}
-            patchTaskValues={(values) =>
-              workspace.patchTask(selectedTask.id, values)
-            }
+            patchTaskValues={async (values) => {
+              await workspace.patchTask(selectedTask.id, values);
+            }}
             taskSummary={{
               number: selectedTask.number ?? 0,
               title: selectedTask.title,

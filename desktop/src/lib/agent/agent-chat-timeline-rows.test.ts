@@ -36,14 +36,28 @@ describe("deriveAgentChatTimelineRows", () => {
     assert.equal(agentChatTimelineRowAnchorId(rows[1]!), null);
   });
 
-  it("appends a live row when turn chrome is visible", () => {
+  it("appends live + working rows when the turn is unsettled", () => {
     const rows = deriveAgentChatTimelineRows({
       messages: [msg({ id: "u1", role: "user", text: "Go" })],
       showTurnChrome: true,
       working: true,
     });
-    assert.equal(rows.at(-1)?.kind, "live");
-    assert.equal(rows.length, 2);
+    assert.deepEqual(
+      rows.map((row) => row.kind),
+      ["user", "live", "working"],
+    );
+  });
+
+  it("does not append a working row when chrome is up but working is false", () => {
+    const rows = deriveAgentChatTimelineRows({
+      messages: [msg({ id: "u1", role: "user", text: "Go" })],
+      showTurnChrome: true,
+      working: false,
+    });
+    assert.deepEqual(
+      rows.map((row) => row.kind),
+      ["user", "live"],
+    );
   });
 
   it("suppresses the settled assistant that matches the live turn", () => {
@@ -58,7 +72,7 @@ describe("deriveAgentChatTimelineRows", () => {
     });
     assert.deepEqual(
       rows.map((row) => row.kind),
-      ["user", "live"],
+      ["user", "live", "working"],
     );
   });
 

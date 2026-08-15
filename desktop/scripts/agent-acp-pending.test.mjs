@@ -7,6 +7,8 @@ const {
   __testClearPendingUiRequests,
   __testRegisterSession,
   __testClearSessions,
+  __testTakeLastRpcResponse,
+  __testPermissionOutcome,
   resolveTaskAndSessionForUiRequest,
   respondAcpUiRequest,
   onAcpEvent,
@@ -120,7 +122,8 @@ test("respondAcpUiRequest emits ui-request-cleared", () => {
   stop();
 });
 
-test("respondAcpUiRequest accepts T3 answers record of labels", () => {
+test("respondAcpUiRequest maps label records to Cursor docs selectedOptionIds", () => {
+  __testTakeLastRpcResponse();
   __testEnqueuePendingUiRequest({
     requestId: "ask-answers",
     kind: "ask_question",
@@ -144,4 +147,69 @@ test("respondAcpUiRequest accepts T3 answers record of labels", () => {
   });
   assert.equal(result.ok, true);
   assert.equal(listPendingUiRequests("task-answers").length, 0);
+  assert.deepEqual(__testTakeLastRpcResponse()?.result, {
+    outcome: {
+      outcome: "answered",
+      answers: [{ questionId: "q1", selectedOptionIds: ["a"] }],
+    },
+  });
+});
+
+test("respondAcpUiRequest accepts docs answer array of option ids", () => {
+  __testTakeLastRpcResponse();
+  __testEnqueuePendingUiRequest({
+    requestId: "ask-ids",
+    kind: "ask_question",
+    taskId: "task-ids",
+    params: {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Pick",
+          options: [
+            { id: "a", label: "Alpha" },
+            { id: "b", label: "Beta" },
+          ],
+        },
+      ],
+    },
+  });
+  const result = respondAcpUiRequest({
+    requestId: "ask-ids",
+    answers: [{ questionId: "q1", selectedOptionIds: ["b"] }],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(__testTakeLastRpcResponse()?.result, {
+    outcome: {
+      outcome: "answered",
+      answers: [{ questionId: "q1", selectedOptionIds: ["b"] }],
+    },
+  });
+});
+
+test("permissionOutcome prefers ACP kind over name regex", () => {
+  const result = __testPermissionOutcome(
+    {
+      options: [
+        { optionId: "opaque-allow", name: "Continue", kind: "allow_once" },
+        { optionId: "opaque-reject", name: "Stop", kind: "reject_once" },
+      ],
+    },
+    "once",
+  );
+  assert.deepEqual(result, {
+    outcome: { outcome: "selected", optionId: "opaque-allow" },
+  });
+  const reject = __testPermissionOutcome(
+    {
+      options: [
+        { optionId: "opaque-allow", name: "Continue", kind: "allow_always" },
+        { optionId: "opaque-reject", name: "Stop", kind: "reject_once" },
+      ],
+    },
+    "reject",
+  );
+  assert.deepEqual(reject, {
+    outcome: { outcome: "selected", optionId: "opaque-reject" },
+  });
 });

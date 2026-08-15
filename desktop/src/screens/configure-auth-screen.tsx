@@ -6,7 +6,10 @@ export function ConfigureAuthScreen() {
   return (
     <div className="desktop-sign-in">
       <div className="desktop-sign-in-panel">
-        <h1 className="desktop-sign-in-brand">BacksterOS</h1>
+        <h1 className="desktop-sign-in-brand">
+          <span className="desktop-sign-in-brand-thin">Backster</span>
+          <span className="desktop-sign-in-brand-bold">OS</span>
+        </h1>
         <p className="desktop-sign-in-copy">
           Sign-in is required. Set{" "}
           <code className="desktop-sign-in-code">VITE_CLERK_PUBLISHABLE_KEY</code>{" "}

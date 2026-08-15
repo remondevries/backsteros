@@ -216,3 +216,14 @@ test("projectCursorUpdateTodos merges by step text when merge=true", () => {
     { step: "Fix", status: "inProgress" },
   ]);
 });
+
+test("beginAcpProjectedTurn mints one durable turnId until sealed", () => {
+  const taskId = "task-turn-id";
+  const chatId = "eeeeeeee-bbbb-cccc-dddd-ffffffffffff";
+  const first = beginAcpProjectedTurn(taskId, chatId);
+  const second = beginAcpProjectedTurn(taskId, chatId);
+  assert.ok(first?.turnId);
+  assert.equal(first.turnId, second?.turnId);
+  assert.equal(first.messageId, second?.messageId);
+  assert.equal(first.turnStatus, "running");
+});

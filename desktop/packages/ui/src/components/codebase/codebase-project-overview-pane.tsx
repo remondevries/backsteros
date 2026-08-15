@@ -10,7 +10,14 @@ import type {
   Project as ApiProject,
   Task as ApiTask,
 } from "@backsteros/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-keyboard-nav-zone.js";
 import {
@@ -21,6 +28,7 @@ import type { ProjectArea } from "../../project-areas.js";
 import type { ProjectStatus } from "../../project-status.js";
 import { buildOrganizationDropdownOptions } from "../dropdown-options.js";
 import { ComposeFolderIcon } from "../compose-folder-icon.js";
+import { DocumentIcon } from "../document-icon.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -69,12 +77,13 @@ const NONE_REPO_VALUE = "__none__";
 const CODEBASE_LIST_TAB_OPTIONS = [
   { value: "tasks" as const, label: "Tasks" },
   { value: "files" as const, label: "Files" },
+  { value: "docs" as const, label: "Docs" },
   { value: "commits" as const, label: "Commits" },
   { value: "pulls" as const, label: "PRs" },
 ];
 
 const GITHUB_LIST_TAB_ICONS: Record<
-  Exclude<CodebaseGithubListTab, "tasks" | "files">,
+  Exclude<CodebaseGithubListTab, "tasks" | "files" | "docs">,
   string
 > = {
   commits: "git-commit",
@@ -88,6 +97,9 @@ function ProjectListTabIcon({ tab }: { tab: CodebaseGithubListTab }) {
   if (tab === "files") {
     // Same folder mark as compose / documents on web + desktop.
     return <ComposeFolderIcon className="project-github-list-toggle__folder-icon" />;
+  }
+  if (tab === "docs") {
+    return <DocumentIcon size={14} className="project-github-list-toggle__folder-icon" />;
   }
   return <ProjectOcticon icon={GITHUB_LIST_TAB_ICONS[tab]} size={14} />;
 }
@@ -241,6 +253,7 @@ function ProjectCommitHistory({
   onFileEntryDeleted,
   fileTreeRefreshToken = 0,
   githubRefreshToken = 0,
+  docsListPanel = null,
   minimized = false,
   showTabs = true,
   pullDetailEngaged = false,
@@ -265,9 +278,11 @@ function ProjectCommitHistory({
   fileTreeRefreshToken?: number;
   /** Bumped after Settings OAuth so Clerk/GitHub fetches retry. */
   githubRefreshToken?: number;
+  /** Project documents tree for the Docs tab (same slot as Files). */
+  docsListPanel?: ReactNode;
   /** Narrow ⇧[ rail: icon stack / compact rows. */
   minimized?: boolean;
-  /** When false, host renders the Files/Commits/PRs toggle. */
+  /** When false, host renders the Files/Docs/Commits/PRs toggle. */
   showTabs?: boolean;
   /** True while PR detail owns keyboard (Enter/Space) — hide list orange ring. */
   pullDetailEngaged?: boolean;
@@ -834,8 +849,8 @@ function ProjectCommitHistory({
         listTab === "commits" || listTab === "pulls" ? listTab : null;
     }
 
-    if (listTab === "files") {
-      // Pill / 2 — move j/k onto the files tree (not the projects rail).
+    if (listTab === "files" || listTab === "docs") {
+      // Pill / 2–3 — move j/k onto the files or docs tree (not the projects rail).
       if (tabChanged) {
         setActiveZone("content", { activate: true });
       }
@@ -844,7 +859,7 @@ function ProjectCommitHistory({
 
     if (listTab === "tasks" || githubItemIds.length === 0) return;
 
-    // 3 / 4 or commits/PRs pill — activate once the list has rows.
+    // 4 / 5 or commits/PRs pill — activate once the list has rows.
     if (tabChanged) {
       setActiveZone("content", { activate: true });
       return;
@@ -947,7 +962,7 @@ function ProjectCommitHistory({
           : "project-panel-list-body"
       }
     >
-      {!minimized ? (
+      {!minimized && listTab !== "docs" && listTab !== "files" ? (
         <div className="console-github-pane-toolbar project-details-github-toolbar">
           <div className="project-github-repo-chip">
             <PropertyDropdown
@@ -998,12 +1013,15 @@ function ProjectCommitHistory({
           ) : null}
         </div>
       ) : null}
-      {!minimized && repositoriesError ? (
+      {!minimized &&
+      listTab !== "docs" &&
+      listTab !== "files" &&
+      repositoriesError ? (
         <p className="console-github-pane-error" role="alert">
           {apiErrorMessage(repositoriesError)}
         </p>
       ) : null}
-      {!minimized && repoError ? (
+      {!minimized && listTab !== "docs" && listTab !== "files" && repoError ? (
         <p className="console-github-pane-error" role="alert">
           {repoError}
         </p>
@@ -1087,6 +1105,14 @@ function ProjectCommitHistory({
                 onProjectUpdated(updated);
               }}
             />
+          )}
+        </div>
+      ) : null}
+
+      {listTab === "docs" && !minimized ? (
+        <div className="console-fs-tree-pane console-fs-tree-pane--docs">
+          {docsListPanel ?? (
+            <p className="console-github-pane-status">No documents yet.</p>
           )}
         </div>
       ) : null}
@@ -1198,26 +1224,25 @@ function ProjectCommitHistory({
                       </div>
                     </li>
                   ))}
+                  {!minimized && commitsHasMore && selectedBranch ? (
+                    <li className="console-github-pane-more">
+                      <button
+                        type="button"
+                        className="console-btn"
+                        disabled={commitsLoadingMore}
+                        onClick={() => {
+                          void loadCommitsPage(
+                            selectedBranch,
+                            commitsPage + 1,
+                            true,
+                          );
+                        }}
+                      >
+                        {commitsLoadingMore ? "Loading…" : "Load more"}
+                      </button>
+                    </li>
+                  ) : null}
                 </ul>
-              ) : null}
-
-              {!minimized && commitsHasMore && selectedBranch ? (
-                <div className="console-github-pane-more">
-                  <button
-                    type="button"
-                    className="console-btn"
-                    disabled={commitsLoadingMore}
-                    onClick={() => {
-                      void loadCommitsPage(
-                        selectedBranch,
-                        commitsPage + 1,
-                        true,
-                      );
-                    }}
-                  >
-                    {commitsLoadingMore ? "Loading…" : "Load more"}
-                  </button>
-                </div>
               ) : null}
             </>
           ) : (
@@ -1374,11 +1399,13 @@ export type CodebaseProjectOverviewPaneProps = {
   onSelectFile?: SelectProjectFileHandler;
   onFileEntryDeleted?: (path: string) => void;
   fileTreeRefreshToken?: number;
+  /** Project documents tree for the Docs tab (same slot as Files). */
+  docsListPanel?: ReactNode;
   tasksPanelCollapsed?: boolean;
   onToggleTasksPanel?: () => void;
   /** When false, host chrome owns the pane header (stable breadcrumb). */
   showHeader?: boolean;
-  /** Narrow ⇧[ rail — Files/Commits/PRs compact presentation. */
+  /** Narrow ⇧[ rail — Files/Docs/Commits/PRs compact presentation. */
   minimized?: boolean;
   /** True while PR detail owns keyboard — suppress list orange highlight. */
   pullDetailEngaged?: boolean;
@@ -1415,6 +1442,7 @@ export function CodebaseProjectOverviewPane({
   onSelectFile,
   onFileEntryDeleted,
   fileTreeRefreshToken = 0,
+  docsListPanel = null,
   tasksPanelCollapsed = false,
   onToggleTasksPanel,
   showHeader = true,
@@ -1646,7 +1674,9 @@ export function CodebaseProjectOverviewPane({
               );
             })}
           </div>
-          {githubListTab !== "tasks" && githubListTab !== "files" ? (
+          {githubListTab !== "tasks" &&
+          githubListTab !== "files" &&
+          githubListTab !== "docs" ? (
             <ProjectCommitHistory
               project={project}
               onProjectUpdated={onProjectUpdated}
@@ -1662,6 +1692,7 @@ export function CodebaseProjectOverviewPane({
               onSelectFile={onSelectFile}
               onFileEntryDeleted={onFileEntryDeleted}
               fileTreeRefreshToken={fileTreeRefreshToken}
+              docsListPanel={docsListPanel}
               githubRefreshToken={githubRefreshToken}
               minimized
               showTabs={false}
@@ -1853,6 +1884,7 @@ export function CodebaseProjectOverviewPane({
                 onSelectFile={onSelectFile}
                 onFileEntryDeleted={onFileEntryDeleted}
                 fileTreeRefreshToken={fileTreeRefreshToken}
+                docsListPanel={docsListPanel}
                 githubRefreshToken={githubRefreshToken}
                 showTabs={false}
                 pullDetailEngaged={pullDetailEngaged}

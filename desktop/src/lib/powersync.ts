@@ -131,3 +131,74 @@ export function createPowerSyncDatabase(userId: string) {
     retryDelayMs: 2_000,
   });
 }
+
+/** How long connect+waitForReady may block before we surface an error (HMR / IDB hangs). */
+export const POWER_SYNC_CONNECT_TIMEOUT_MS = 10_000;
+
+const GLOBAL_SLOT_KEY = "__backsteros_desktop_powersync__";
+
+export type PowerSyncGlobalSlot = {
+  userId: string;
+  database: PowerSyncDatabase;
+};
+
+type PowerSyncGlobalStore = {
+  slot: PowerSyncGlobalSlot | null;
+};
+
+function globalStore(): PowerSyncGlobalStore {
+  const root = globalThis as typeof globalThis & {
+    [GLOBAL_SLOT_KEY]?: PowerSyncGlobalStore;
+  };
+  if (!root[GLOBAL_SLOT_KEY]) {
+    root[GLOBAL_SLOT_KEY] = { slot: null };
+  }
+  return root[GLOBAL_SLOT_KEY];
+}
+
+export function getPowerSyncGlobalSlot(): PowerSyncGlobalSlot | null {
+  return globalStore().slot;
+}
+
+export function setPowerSyncGlobalSlot(slot: PowerSyncGlobalSlot | null) {
+  globalStore().slot = slot;
+}
+
+/** Disconnect and close; ignores races from HMR / StrictMode double-mount. */
+export async function closePowerSyncDatabase(
+  database: PowerSyncDatabase,
+  options?: { clear?: boolean },
+): Promise<void> {
+  try {
+    if (options?.clear) {
+      await database.disconnectAndClear();
+    } else {
+      await database.disconnect();
+    }
+    await database.close({ disconnect: true });
+  } catch {
+    /* ignore close races */
+  }
+}
+
+/**
+ * Close the global singleton when present. Used on sign-out, retry, and
+ * Vite `import.meta.hot.dispose` so IDB is not left locked across reloads.
+ */
+export async function disposePowerSyncGlobalSlot(options?: {
+  clear?: boolean;
+  onlyUserId?: string;
+}): Promise<void> {
+  const store = globalStore();
+  const current = store.slot;
+  if (!current) return;
+  if (options?.onlyUserId && current.userId !== options.onlyUserId) return;
+  store.slot = null;
+  await closePowerSyncDatabase(current.database, { clear: options?.clear });
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    void disposePowerSyncGlobalSlot();
+  });
+}

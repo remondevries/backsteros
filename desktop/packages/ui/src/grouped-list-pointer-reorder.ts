@@ -30,6 +30,10 @@ function readAttr(element: Element, name: string): string | null {
 /**
  * Resolve the drop target under the pointer for a vertical grouped list.
  * Item targets always insert *before* the hovered row (matches prior HTML5 UX).
+ *
+ * When reorder hosts nest (e.g. a parent section wrapping child rows, or an
+ * append zone inside an item host), prefer the deepest host under the pointer
+ * so child rows and append strips win over ancestor section items.
  */
 export function resolveGroupedListPointerDropTarget(
   clientX: number,
@@ -42,6 +46,22 @@ export function resolveGroupedListPointerDropTarget(
     if (!(node instanceof Element)) continue;
 
     const itemHost = node.closest(`[${LIST_REORDER_ITEM_ATTR}]`);
+    const appendHost = node.closest(`[${LIST_REORDER_APPEND_ATTR}]`);
+
+    if (itemHost && appendHost && itemHost !== appendHost) {
+      if (itemHost.contains(appendHost)) {
+        const groupKey = readAttr(appendHost, LIST_REORDER_APPEND_ATTR);
+        if (groupKey) return { kind: "append-group", groupKey };
+      }
+      if (appendHost.contains(itemHost)) {
+        const itemId = readAttr(itemHost, LIST_REORDER_ITEM_ATTR);
+        const groupKey = readAttr(itemHost, LIST_REORDER_GROUP_ATTR);
+        if (!itemId || !groupKey) continue;
+        if (itemId === draggingItemId) return null;
+        return { kind: "before-item", itemId, groupKey };
+      }
+    }
+
     if (itemHost) {
       const itemId = readAttr(itemHost, LIST_REORDER_ITEM_ATTR);
       const groupKey = readAttr(itemHost, LIST_REORDER_GROUP_ATTR);
@@ -50,7 +70,6 @@ export function resolveGroupedListPointerDropTarget(
       return { kind: "before-item", itemId, groupKey };
     }
 
-    const appendHost = node.closest(`[${LIST_REORDER_APPEND_ATTR}]`);
     if (appendHost) {
       const groupKey = readAttr(appendHost, LIST_REORDER_APPEND_ATTR);
       if (groupKey) return { kind: "append-group", groupKey };

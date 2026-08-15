@@ -62,3 +62,41 @@ test("duplicate optimistic prompts stay until each is acked", () => {
   assert.equal(display.length, 2);
   assert.equal(display[1]?.id, "u2");
 });
+
+test("bootstrap optimistic user shows before attach chatId transcript", () => {
+  // Start publishes pendingBootstrapPrompt → optimistic user while messages
+  // are still empty (no agentChatId yet).
+  const messages: AgentChatMessage[] = [];
+  const optimistic: AgentChatMessage[] = [
+    {
+      id: "bootstrap-u",
+      role: "user",
+      text: "Start working on BSH-1",
+      createdAt: 50,
+    },
+  ];
+  const display = mergeDisplayMessagesWithOptimisticUsers(
+    messages,
+    optimistic,
+  );
+  assert.equal(display.length, 1);
+  assert.equal(display[0]?.id, "bootstrap-u");
+
+  // After ensure, same id lands in the real transcript and is pruned.
+  const persisted: AgentChatMessage[] = [
+    {
+      id: "bootstrap-u",
+      role: "user",
+      text: "Start working on BSH-1",
+      createdAt: 50,
+    },
+  ];
+  assert.equal(
+    pruneOptimisticUserMessages(optimistic, persisted).length,
+    0,
+  );
+  assert.deepEqual(
+    mergeDisplayMessagesWithOptimisticUsers(persisted, optimistic),
+    persisted,
+  );
+});

@@ -35,6 +35,8 @@ export type AgentSurfaceEmptyPickerProps = {
   chatAvailable?: boolean;
   /** Files + Diff only appear for codebase projects. */
   isCodebaseProject?: boolean;
+  /** Diff only appears once the agent has produced file changes. */
+  diffAvailable?: boolean;
 };
 
 export function AgentSurfaceEmptyPicker({
@@ -42,29 +44,29 @@ export function AgentSurfaceEmptyPicker({
   cwdAvailable = true,
   chatAvailable = true,
   isCodebaseProject = false,
+  diffAvailable = false,
 }: AgentSurfaceEmptyPickerProps) {
-  const cards = listAgentSurfaceQuickOpenOptions(isCodebaseProject).map(
-    (option) => {
-      const available =
-        option.kind === "chat"
-          ? chatAvailable
-          : option.needsCwd
-            ? cwdAvailable
-            : true;
-      const disabledReason = !available
-        ? option.kind === "chat"
-          ? "Start an agent from Activities first."
-          : "Available when a project working directory is set."
-        : null;
-      return {
-        ...option,
-        Icon: KIND_ICONS[option.kind],
-        available,
-        disabledReason,
-        hotkey: agentSurfaceQuickOpenHotkeyLabel(option.kind, isCodebaseProject),
-      };
-    },
-  );
+  const visibility = { isCodebaseProject, diffAvailable };
+  const cards = listAgentSurfaceQuickOpenOptions(visibility).map((option) => {
+    const available =
+      option.kind === "chat"
+        ? chatAvailable
+        : option.needsCwd
+          ? cwdAvailable
+          : true;
+    const disabledReason = !available
+      ? option.kind === "chat"
+        ? "Start an agent from Activities first."
+        : "Available when a project working directory is set."
+      : null;
+    return {
+      ...option,
+      Icon: KIND_ICONS[option.kind],
+      available,
+      disabledReason,
+      hotkey: agentSurfaceQuickOpenHotkeyLabel(option.kind, visibility),
+    };
+  });
 
   return (
     <div className="agent-surface-empty-picker">

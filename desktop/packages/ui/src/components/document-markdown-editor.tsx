@@ -6,8 +6,10 @@ import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { documentEditorListBullets } from "../document-editor-list-bullets.js";
 import {
   createDocumentEditorContentLayoutTheme,
+  documentEditorSyntaxHighlighting,
   documentEditorTheme,
 } from "../document-editor-theme.js";
 import {
@@ -278,14 +280,18 @@ export function DocumentMarkdownEditor({
       ...(vimEnabled ? [vim({ status: false })] : []),
       markdown(),
       documentEditorTheme,
+      documentEditorSyntaxHighlighting,
       createDocumentEditorContentLayoutTheme(scrollWithContent),
+      ...documentEditorListBullets,
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
       ...(mentionsEnabled ? createMentionExtensions(mentionController) : []),
       ...createSpellcheckHighlightExtensions(value, highlightRanges),
       ...createMarkdownImagePasteExtensions(() => onUploadImagesRef.current),
     ],
-    // highlightKey stands in for highlightRanges identity
+    // highlightKey stands in for highlightRanges identity.
+    // Do not depend on `value` — rebuilding extensions every keystroke
+    // reconfigures CodeMirror and shifts text a few pixels while typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ranges encoded in highlightKey
     [
       disabled,
@@ -293,7 +299,6 @@ export function DocumentMarkdownEditor({
       mentionController,
       mentionsEnabled,
       scrollWithContent,
-      value,
       vimEnabled,
     ],
   );
@@ -424,6 +429,8 @@ export function DocumentMarkdownEditor({
             highlightActiveLine: false,
             highlightActiveLineGutter: false,
             drawSelection: true,
+            // Use documentEditorSyntaxHighlighting (brighter list markers).
+            syntaxHighlighting: false,
           }}
           extensions={extensions}
           onChange={onChange}

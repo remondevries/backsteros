@@ -315,6 +315,11 @@ export function ContactsPage({
               dueDate: dueDate ? dueDate.toISOString() : null,
             });
           }}
+          onBulkDelete={async (taskIds) => {
+            for (const taskId of taskIds) {
+              await workspace.softDeleteTask(taskId);
+            }
+          }}
           onReorder={(request) => {
             const patches = taskReorderPatches(tasks, request);
             for (const patch of patches) {
@@ -377,86 +382,84 @@ export function ContactsPage({
           onDelete={handleDeleteContact}
         />
       ) : null}
-      <EntityDetailLayout sectionLabel="Contacts" title={contact.name}>
-        <ContactDetailView
-          contact={{
-            id: contact.id,
-            name: contact.name,
-            displayId:
-              contact.number != null ? `C-${contact.number}` : contact.key,
-            email: details?.email ?? null,
-            phone: details?.phone ?? null,
-            title: details?.title ?? null,
-            address: details?.address ?? null,
-            city: details?.city ?? null,
-            postalCode: details?.postalCode ?? null,
-            country: details?.country ?? null,
-            organizationId: contact.organizationId ?? details?.organizationId,
-            organizationName: contact.organizationName,
-            summary: details?.summary ?? null,
-            socialAccounts: normalizeContactSocialAccounts(
-              details?.socialAccounts,
-            ),
-          }}
-          organizationOptions={organizationOptions}
-          section={activeSection}
-          onSectionChange={handleSectionChange}
-          renderSection={renderSection}
-          onCreateOrganizationFromQuery={(query) => {
-            void workspace
-              .createOrganization({ name: query })
-              .then((created) => {
-                void workspace.patchContact(contact.id, {
-                  organizationId: created.id,
-                  organizationName: query.trim(),
-                });
+      <ContactDetailView
+        contact={{
+          id: contact.id,
+          name: contact.name,
+          displayId:
+            contact.number != null ? `C-${contact.number}` : contact.key,
+          email: details?.email ?? null,
+          phone: details?.phone ?? null,
+          title: details?.title ?? null,
+          address: details?.address ?? null,
+          city: details?.city ?? null,
+          postalCode: details?.postalCode ?? null,
+          country: details?.country ?? null,
+          organizationId: contact.organizationId ?? details?.organizationId,
+          organizationName: contact.organizationName,
+          summary: details?.summary ?? null,
+          socialAccounts: normalizeContactSocialAccounts(
+            details?.socialAccounts,
+          ),
+        }}
+        organizationOptions={organizationOptions}
+        section={activeSection}
+        onSectionChange={handleSectionChange}
+        renderSection={renderSection}
+        onCreateOrganizationFromQuery={(query) => {
+          void workspace
+            .createOrganization({ name: query })
+            .then((created) => {
+              void workspace.patchContact(contact.id, {
+                organizationId: created.id,
+                organizationName: query.trim(),
               });
-          }}
-          overviewHeaderAccessory={
-            <AvatarUpload
-              displayName={contact.name}
-              avatarSrc={avatarSrc}
-              onUpload={async (file) => {
-                const result = await uploadDesktopAvatar(
-                  client,
-                  "contact",
-                  contact.id,
-                  file,
-                );
-                if (result.ok) {
-                  const url = URL.createObjectURL(file);
-                  setAvatarOverride((current) => {
-                    if (current) URL.revokeObjectURL(current);
-                    return url;
-                  });
-                }
-                return result;
-              }}
-              onRemove={async () => {
-                const result = await removeDesktopAvatar(
-                  client,
-                  "contact",
-                  contact.id,
-                );
-                if (result.ok) {
-                  setAvatarOverride((current) => {
-                    if (current) URL.revokeObjectURL(current);
-                    return null;
-                  });
-                }
-                return result;
-              }}
-            />
-          }
-          onSaveName={(name) => {
-            void workspace.patchContact(contact.id, { name });
-            return { ok: true };
-          }}
-          onSaveDetails={(patch: ContactOverviewDetails) => {
-            void workspace.patchContact(contact.id, patch);
-          }}
-        />
-      </EntityDetailLayout>
+            });
+        }}
+        overviewHeaderAccessory={
+          <AvatarUpload
+            displayName={contact.name}
+            avatarSrc={avatarSrc}
+            onUpload={async (file) => {
+              const result = await uploadDesktopAvatar(
+                client,
+                "contact",
+                contact.id,
+                file,
+              );
+              if (result.ok) {
+                const url = URL.createObjectURL(file);
+                setAvatarOverride((current) => {
+                  if (current) URL.revokeObjectURL(current);
+                  return url;
+                });
+              }
+              return result;
+            }}
+            onRemove={async () => {
+              const result = await removeDesktopAvatar(
+                client,
+                "contact",
+                contact.id,
+              );
+              if (result.ok) {
+                setAvatarOverride((current) => {
+                  if (current) URL.revokeObjectURL(current);
+                  return null;
+                });
+              }
+              return result;
+            }}
+          />
+        }
+        onSaveName={(name) => {
+          void workspace.patchContact(contact.id, { name });
+          return { ok: true };
+        }}
+        onSaveDetails={(patch: ContactOverviewDetails) => {
+          void workspace.patchContact(contact.id, patch);
+        }}
+      />
     </>
   );
 }

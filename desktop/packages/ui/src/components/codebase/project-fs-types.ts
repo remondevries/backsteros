@@ -55,7 +55,12 @@ export type ProjectFsClient = {
   readRawUrl?: (root: string, path: string) => Promise<string | null>;
 };
 
-export type CodebaseGithubListTab = "tasks" | "files" | "commits" | "pulls";
+export type CodebaseGithubListTab =
+  | "tasks"
+  | "files"
+  | "docs"
+  | "commits"
+  | "pulls";
 
 export type CodebaseRequestJson = <T>(
   path: string,

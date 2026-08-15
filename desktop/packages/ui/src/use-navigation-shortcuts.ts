@@ -6,6 +6,7 @@ import {
   DEFAULT_GO_NAVIGATION_ITEMS,
   type GoNavigationItem,
 } from "./command-palette.js";
+import { clearFinanceLeaderSequence } from "./finance-leader-sequence-gate.js";
 import {
   clearGoLeaderSequence,
   isGoLeaderSequencePending,
@@ -71,6 +72,7 @@ export function useNavigationShortcuts({
           return;
         }
         event.preventDefault();
+        clearFinanceLeaderSequence();
         registerGoLeaderKeyPress();
         openGo();
         return;

@@ -285,7 +285,7 @@ describe("applyAcpSessionUpdateToTurn", () => {
     if (state.segments[3]?.kind === "text") {
       assert.equal(state.segments[3].text, " Updated.");
     }
-    assert.equal(state.assistantDraft, "Found the file.\n\n Updated.");
+    assert.equal(state.assistantDraft, "Found the file. Updated.");
     assert.equal(state.activities.length, 2);
     assert.equal(state.activities[0]?.title, "Read");
     assert.equal(state.activities[0]?.detail, "NOTES.md");

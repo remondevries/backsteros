@@ -1,5 +1,8 @@
 import type { ProjectRouteScope } from "./project-route-scope.js";
-import { getScopedProjectBasePath } from "./project-route-scope.js";
+import {
+  getScopedProjectBasePath,
+  getScopedProjectDocumentHref,
+} from "./project-route-scope.js";
 import type { CodebaseGithubListTab } from "./components/codebase/project-fs-types.js";
 
 export type { CodebaseGithubListTab };
@@ -10,11 +13,14 @@ export type CodebaseWorkbenchSelection = {
   pullNumber: number | null;
   /** Absolute file path when a file is open. */
   filePath: string | null;
+  /** Project document path (or id) when a doc is open on the Docs tab. */
+  documentPath: string | null;
 };
 
 const CODEBASE_TABS: readonly CodebaseGithubListTab[] = [
   "tasks",
   "files",
+  "docs",
   "commits",
   "pulls",
 ];
@@ -25,10 +31,26 @@ export function isCodebaseGithubListTab(
   return (CODEBASE_TABS as readonly string[]).includes(value);
 }
 
+function emptySelection(
+  tab: CodebaseGithubListTab,
+): CodebaseWorkbenchSelection {
+  return {
+    tab,
+    commitSha: null,
+    pullNumber: null,
+    filePath: null,
+    documentPath: null,
+  };
+}
+
 /**
  * Parse codebase workbench selection from a project pathname.
- * Recognizes `/projects/:slug/{files,commits,pulls}` (and org-scoped equivalents).
- * Overview / Tasks tab is the bare project path (or unknown segments under overview).
+ * Recognizes `/projects/:slug/{files,documents,commits,pulls}` (and org-scoped
+ * equivalents). Overview / Tasks tab is the bare project path.
+ *
+ * `/documents` is a workbench Docs tab on codebase projects; section-tab
+ * shortcuts still treat it as a standard project section when the workbench
+ * is not mounted (general projects).
  */
 export function parseCodebaseWorkbenchPath(
   pathname: string,
@@ -50,15 +72,14 @@ export function parseCodebaseWorkbenchPath(
     .map((segment) => decodeURIComponent(segment));
 
   if (segments.length === 0) {
-    return { tab: "tasks", commitSha: null, pullNumber: null, filePath: null };
+    return emptySelection("tasks");
   }
 
   const head = segments[0]!;
 
-  // Standard project sections — not workbench tabs.
+  // Standard project sections — not workbench tabs (except documents → Docs).
   if (
     head === "tasks" ||
-    head === "documents" ||
     head === "letters" ||
     head === "updates" ||
     head === "overview"
@@ -66,30 +87,35 @@ export function parseCodebaseWorkbenchPath(
     return null;
   }
 
+  if (head === "documents") {
+    const documentPath =
+      segments.length > 1 ? segments.slice(1).join("/") : null;
+    return {
+      ...emptySelection("docs"),
+      documentPath,
+    };
+  }
+
   if (head === "files") {
-    const rest = segments.slice(1);
+    const fileRest = segments.slice(1);
     let filePath: string | null = null;
-    if (rest.length === 1) {
+    if (fileRest.length === 1) {
       // Prefer a single encoded absolute path segment.
-      filePath = rest[0] || null;
-    } else if (rest.length > 1) {
+      filePath = fileRest[0] || null;
+    } else if (fileRest.length > 1) {
       // Legacy multi-segment form — reconstruct absolute path on POSIX.
-      filePath = `/${rest.join("/")}`;
+      filePath = `/${fileRest.join("/")}`;
     }
     return {
-      tab: "files",
-      commitSha: null,
-      pullNumber: null,
+      ...emptySelection("files"),
       filePath,
     };
   }
 
   if (head === "commits") {
     return {
-      tab: "commits",
+      ...emptySelection("commits"),
       commitSha: segments[1] ?? null,
-      pullNumber: null,
-      filePath: null,
     };
   }
 
@@ -98,10 +124,8 @@ export function parseCodebaseWorkbenchPath(
     const pullNumber =
       raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : null;
     return {
-      tab: "pulls",
-      commitSha: null,
+      ...emptySelection("pulls"),
       pullNumber,
-      filePath: null,
     };
   }
 
@@ -127,6 +151,17 @@ export function getCodebaseWorkbenchHref(
     return `${base}/files`;
   }
 
+  if (tab === "docs") {
+    if (selection.documentPath) {
+      return getScopedProjectDocumentHref(
+        projectKey,
+        selection.documentPath,
+        scope ?? { kind: "standalone" },
+      );
+    }
+    return `${base}/documents`;
+  }
+
   if (tab === "commits") {
     if (selection.commitSha) {
       return `${base}/commits/${encodeURIComponent(selection.commitSha)}`;
@@ -144,7 +179,7 @@ export function getCodebaseWorkbenchHref(
   return base;
 }
 
-/** True when pathname is a codebase workbench sub-route (files/commits/pulls). */
+/** True when pathname is a codebase workbench sub-route (files/docs/commits/pulls). */
 export function isCodebaseWorkbenchPath(
   pathname: string,
   projectRouteParam: string,

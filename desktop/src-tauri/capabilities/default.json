@@ -22,6 +22,8 @@
       "allow": [
         { "path": "$HOME" },
         { "path": "$HOME/**" },
+        { "path": "/tmp/dynamic-island-tasks-refresh" },
+        { "path": "/tmp/backsteros-open-href" },
         { "path": "/Volumes" },
         { "path": "/Volumes/**" },
         { "path": "/Users" },
@@ -34,6 +36,7 @@
     "allow-desktop-overlay",
     "allow-whoop",
     "allow-system-stats",
+    "allow-cursor-usage",
     "allow-oauth-windows",
     "allow-agent-browser"
   ]

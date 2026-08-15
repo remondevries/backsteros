@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
+import { clearPrimedTabTitles, primeTabTitle } from "../dist/primed-tab-title.js";
 import {
   createDefaultTabsState,
   createProductTab,
@@ -11,6 +12,7 @@ import {
 
 describe("syncActiveTabToPath", () => {
   test("clears task meta when the active tab navigates", () => {
+    clearPrimedTabTitles();
     const first = createProductTab("/projects/bos/tasks/bos-1", "One");
     first.taskId = "t1";
     first.taskStatus = "in_progress";
@@ -19,6 +21,14 @@ describe("syncActiveTabToPath", () => {
     assert.equal(next.tabs[0]?.href, "/inbox");
     assert.equal(next.tabs[0]?.taskId, undefined);
     assert.equal(next.tabs[0]?.taskStatus, undefined);
+  });
+
+  test("keeps a primed project name instead of Projects/Project", () => {
+    clearPrimedTabTitles();
+    primeTabTitle("/projects/bos", "Backsteros");
+    const state = createDefaultTabsState("/projects");
+    const next = syncActiveTabToPath(state, "/projects/bos");
+    assert.equal(next.tabs[0]?.title, "Backsteros");
   });
 });
 

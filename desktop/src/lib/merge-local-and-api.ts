@@ -54,6 +54,21 @@ export function mergeLocalAndApiByUpdatedAt<
 }
 
 /**
+ * Keep optimistic rows that a fresh REST snapshot has not caught up with yet
+ * (create → hydrate race used to wipe a just-created letter from the side list).
+ */
+export function preservePendingApiRows<T extends { id: string }>(
+  previous: T[] | null | undefined,
+  incoming: T[],
+): T[] {
+  if (!previous?.length) return incoming;
+  const incomingIds = new Set(incoming.map((row) => row.id));
+  const pending = previous.filter((row) => !incomingIds.has(row.id));
+  if (pending.length === 0) return incoming;
+  return [...pending, ...incoming];
+}
+
+/**
  * When local wins by updatedAt but still omits `links` (stale schema / sync),
  * copy non-empty links from the API row — matches web `findLocalOrApi`.
  */
@@ -88,6 +103,45 @@ export function fillMissingTypeFromApi<
     const api = apiById.get(row.id);
     if (!api || typeMissing(api.type)) return row;
     return { ...row, type: api.type };
+  });
+}
+
+/**
+ * Prefer API `moneybirdContactId` when local is missing it, or when the API
+ * row is at least as new (stale PowerSync schema often omits the column).
+ */
+export function fillMissingMoneybirdContactIdFromApi<
+  T extends {
+    id: string;
+    moneybirdContactId?: string | null;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    const localId =
+      typeof row.moneybirdContactId === "string"
+        ? row.moneybirdContactId.trim()
+        : "";
+    const apiId =
+      typeof api.moneybirdContactId === "string"
+        ? api.moneybirdContactId.trim()
+        : "";
+    if (!apiId && !localId) return row;
+    if (localId === apiId) return row;
+    if (!localId && apiId) {
+      return { ...row, moneybirdContactId: api.moneybirdContactId };
+    }
+    if (
+      apiId &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      return { ...row, moneybirdContactId: api.moneybirdContactId };
+    }
+    return row;
   });
 }
 

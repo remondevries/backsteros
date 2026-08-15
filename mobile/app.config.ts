@@ -29,7 +29,7 @@ loadDotEnv();
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: config.name ?? "BacksterOS v2",
+  name: config.name ?? "BacksterOS",
   slug: config.slug ?? "backsteros-v2",
   extra: {
     ...(typeof config.extra === "object" && config.extra ? config.extra : {}),

@@ -8,6 +8,7 @@ import {
   apiContract,
   type ApiContract,
   type Avatar,
+  type FinancialImportResult,
   type Letter,
   type LetterAttachment,
   type PowerSyncCredentials,
@@ -44,15 +45,13 @@ export class ApiClientError extends Error {
   readonly headers: Headers;
 
   constructor(status: number, body: unknown, headers: Headers) {
-    const message =
-      isErrorBody(body) && body.error
-        ? body.error
-        : `BacksterOS API request failed with status ${status}`;
-    super(message);
+    super(formatApiErrorMessage(status, body));
     this.name = "ApiClientError";
     this.status = status;
     this.code = isErrorBody(body) && typeof body.code === "string" ? body.code : undefined;
-    this.details = isErrorBody(body) ? body.details : undefined;
+    this.details = isErrorBody(body)
+      ? body.details
+      : zodValidationIssues(body) ?? undefined;
     this.body = body;
     this.headers = headers;
   }
@@ -69,6 +68,43 @@ function isErrorBody(value: unknown): value is {
       "error" in value &&
       typeof (value as { error?: unknown }).error === "string",
   );
+}
+
+/** Hono `@hono/zod-validator` default failure body. */
+function zodValidationIssues(body: unknown): Array<{ path: string; message: string }> | null {
+  if (!body || typeof body !== "object") return null;
+  if ((body as { success?: unknown }).success !== false) return null;
+  const error = (body as { error?: unknown }).error;
+  if (!error || typeof error !== "object") return null;
+  const issues = (error as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return null;
+  const formatted: Array<{ path: string; message: string }> = [];
+  for (const issue of issues) {
+    if (!issue || typeof issue !== "object") continue;
+    const message =
+      typeof (issue as { message?: unknown }).message === "string"
+        ? (issue as { message: string }).message
+        : "Invalid";
+    const pathParts = Array.isArray((issue as { path?: unknown }).path)
+      ? (issue as { path: unknown[] }).path
+      : [];
+    formatted.push({
+      path: pathParts.map(String).join("."),
+      message,
+    });
+  }
+  return formatted.length > 0 ? formatted : null;
+}
+
+function formatApiErrorMessage(status: number, body: unknown): string {
+  if (isErrorBody(body) && body.error) return body.error;
+  const issues = zodValidationIssues(body);
+  if (issues) {
+    return issues
+      .map((issue) => (issue.path ? `${issue.path}: ${issue.message}` : issue.message))
+      .join("; ");
+  }
+  return `BacksterOS API request failed with status ${status}`;
 }
 
 function trimBaseUrl(value: string): string {
@@ -409,6 +445,12 @@ export type BacksterosApiClient = {
     contentType?: string,
   ): Promise<TaskImage>;
   downloadTaskImage(taskId: string, imageId: string): Promise<Blob>;
+  uploadBankAccountCsv(
+    bankAccountId: string,
+    csv: Blob | ArrayBuffer,
+    filename?: string,
+    options?: UploadRequestOptions,
+  ): Promise<FinancialImportResult>;
 };
 
 export function createApiClient(options: ApiClientOptions): BacksterosApiClient {
@@ -534,5 +576,17 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
       requestBinary(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`,
       ),
+    uploadBankAccountCsv: (bankAccountId, csv, filename, uploadOptions) =>
+      uploadBinaryWithProgress(
+        normalized,
+        "POST",
+        `/api/v1/bank-accounts/${encodeURIComponent(bankAccountId)}/imports`,
+        toUploadBody(csv),
+        {
+          "content-type": "text/csv",
+          ...(filename ? { "x-filename": filename } : {}),
+        },
+        uploadOptions,
+      ) as Promise<FinancialImportResult>,
   };
 }

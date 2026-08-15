@@ -79,10 +79,20 @@ test("storage keys follow Obsidian vault layout", () => {
   assert.equal(
     buildLetterPdfStorageKey({
       title: "Tax return",
-      receivedDate: new Date("2026-07-26T12:00:00Z"),
+      // Local calendar day (matches Received Date picker), not UTC stamp.
+      receivedDate: new Date(2026, 6, 26),
       attachmentId: "att_abcdefgh",
     }),
     "Letters/2026/07/2026-07-26 - Tax return (att_abcd).pdf",
+  );
+  // Local midnight stored as previous-day UTC must still file on the UI day.
+  assert.equal(
+    buildLetterPdfStorageKey({
+      title: "IB 2022",
+      receivedDate: new Date(2024, 3, 19),
+      attachmentId: "att_abcdefgh",
+    }),
+    "Letters/2024/04/2024-04-19 - IB 2022 (att_abcd).pdf",
   );
   assert.doesNotThrow(() =>
     assertPrivateStorageKey(

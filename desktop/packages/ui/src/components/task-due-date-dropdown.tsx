@@ -52,8 +52,9 @@ export type TaskDueDateDropdownProps = {
   /**
    * Hotkey target id (`dueDate` default). Use `startDate` / `receivedDate`
    * when this control is reused for those fields (Next parity).
+   * Pass `null` to omit the hotkey target (e.g. bulk bar with a single row selected).
    */
-  taskPropertyDropdownId?: TaskPropertyDropdownId;
+  taskPropertyDropdownId?: TaskPropertyDropdownId | null;
   /** When false, list/property triggers omit the calendar icon (Next list/board). */
   showIcon?: boolean;
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
@@ -78,10 +79,12 @@ export function TaskDueDateDropdown({
   noDueDateLabel = "No due date",
   searchPlaceholder = "tomorrow, yesterday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
-  taskPropertyDropdownId = "dueDate",
+  taskPropertyDropdownId,
   showIcon = true,
   triggerVariant = "default",
 }: TaskDueDateDropdownProps) {
+  const resolvedTaskPropertyDropdownId =
+    taskPropertyDropdownId === undefined ? "dueDate" : taskPropertyDropdownId;
   const [ymdValue, setYmdValue] = useState(() =>
     formatDueDateInputValue(dueDate),
   );
@@ -191,7 +194,7 @@ export function TaskDueDateDropdown({
           searchPlaceholder={searchPlaceholder}
           searchShortcutLabel={searchShortcutLabel}
           ariaLabel="Change due date"
-          taskPropertyDropdownId={taskPropertyDropdownId}
+          taskPropertyDropdownId={resolvedTaskPropertyDropdownId ?? undefined}
           fallbackIcon={
             showIcon ? (
               <TaskDueDateIcon active={hasDueDate} urgency={dueDateUrgency} />
@@ -218,7 +221,7 @@ export function TaskDueDateDropdown({
         searchPlaceholder={searchPlaceholder}
         searchShortcutLabel={searchShortcutLabel}
         ariaLabel={`Change due date: ${displayLabel}`}
-        taskPropertyDropdownId={taskPropertyDropdownId}
+        taskPropertyDropdownId={resolvedTaskPropertyDropdownId ?? undefined}
         className="task-due-date-dropdown__searchable"
         panelWidth={280}
         panelAlign={variant === "icon" ? "start" : "end"}

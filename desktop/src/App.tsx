@@ -30,10 +30,12 @@ import { KnowledgePage } from "./screens/knowledge-page";
 import { LettersPage } from "./screens/letters-page";
 import { NavigationTrailPage } from "./screens/navigation-trail-page";
 import { NotFoundPage } from "./screens/not-found-page";
+import { FinancePage } from "./screens/finance-page";
 import { OrganizationsPage } from "./screens/organizations-page";
 import { ProjectsPage } from "./screens/projects-page";
 import { SettingsPage } from "./screens/settings-page";
 import { SsoCallbackPage } from "./screens/sso-callback-page";
+import { OauthPopupDonePage } from "./screens/oauth-popup-done-page";
 import { TaskDetailPage } from "./screens/task-detail-page";
 import { TaskListPage } from "./screens/task-list-page";
 
@@ -362,6 +364,7 @@ export default function App() {
         element={<DesktopOverlayComposePage />}
       />
       <Route path="/sso-callback" element={<SsoCallbackPage />} />
+      <Route path="/oauth/popup-done" element={<OauthPopupDonePage />} />
       <Route element={<ShellLayout />}>
         <Route index element={<StartupRedirect />} />
         <Route path="inbox" element={<InboxPage />} />
@@ -404,6 +407,9 @@ export default function App() {
         <Route path="knowledge/*" element={<KnowledgePage />} />
         <Route path="letters" element={<LettersPage />} />
         <Route path="letters/:slug" element={<LettersPage />} />
+        <Route path="finance" element={<FinancePage />} />
+        <Route path="finance/:slug" element={<FinancePage />} />
+        <Route path="finance/:slug/:section" element={<FinancePage />} />
         <Route path="organizations" element={<OrganizationsPage />} />
         <Route
           path="organizations/:slug/projects/:projectSlug/tasks/:taskSlug"

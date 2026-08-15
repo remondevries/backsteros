@@ -22,6 +22,8 @@ import {
 import { filterEntityIconEmojis } from "../entity-icon-emojis.js";
 import {
   formatProjectIconLabel,
+  isProjectBrandIconKey,
+  partitionProjectIconKeys,
   PROJECT_ICON_KEYS,
   type ProjectIconKey,
 } from "../project-icon-keys.js";
@@ -42,6 +44,11 @@ export type EntityIconPickerProps = {
   onClose: () => void;
   onSelect: (icon: string | null) => void;
   defaultOption?: EntityIconPickerDefaultOption;
+  /**
+   * Color swatches only — saves a default/color payload (`{"t":"d","c":...}`).
+   * Used for parent finance categories that show a count instead of an icon.
+   */
+  colorOnly?: boolean;
 };
 
 function filterIcons(query: string): ProjectIconKey[] {
@@ -52,7 +59,8 @@ function filterIcons(query: string): ProjectIconKey[] {
 
   return PROJECT_ICON_KEYS.filter((key) => {
     const label = formatProjectIconLabel(key);
-    return `${key} ${label}`.includes(normalized);
+    const brandHint = isProjectBrandIconKey(key) ? "brand" : "";
+    return `${key} ${label} ${brandHint}`.includes(normalized);
   });
 }
 
@@ -148,6 +156,7 @@ export function EntityIconPicker({
   onClose,
   onSelect,
   defaultOption,
+  colorOnly = false,
 }: EntityIconPickerProps) {
   const titleId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -204,6 +213,10 @@ export function EntityIconPicker({
   });
 
   const filteredIcons = useMemo(() => filterIcons(query), [query]);
+  const { general: generalIcons, brand: brandIcons } = useMemo(
+    () => partitionProjectIconKeys(filteredIcons),
+    [filteredIcons],
+  );
   const filteredEmojis = useMemo(() => filterEntityIconEmojis(query), [query]);
 
   const isPresetColor = ENTITY_ICON_COLOR_PRESETS.includes(
@@ -265,7 +278,7 @@ export function EntityIconPicker({
   }
 
   useEffect(() => {
-    if (!open) {
+    if (!open || colorOnly) {
       return;
     }
 
@@ -286,7 +299,23 @@ export function EntityIconPicker({
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [close, open, openValueSyncKey]);
+  }, [close, colorOnly, open, openValueSyncKey]);
+
+  useEffect(() => {
+    if (!open || !colorOnly) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [close, colorOnly, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -316,15 +345,20 @@ export function EntityIconPicker({
     selectIcon({ kind: "emoji", emoji });
   }
 
+  function handleColorOnlySelect(color: string) {
+    selectIcon({ kind: "default", color });
+  }
+
   if (!open || typeof document === "undefined") {
     return null;
   }
 
   const panelStyle: CSSProperties = {
-    maxHeight: "min(72vh, 580px)",
+    maxHeight: colorOnly ? "min(72vh, 320px)" : "min(72vh, 580px)",
   };
 
   const showDefaultOption =
+    !colorOnly &&
     tab === "icons" &&
     defaultOption &&
     (!query.trim() ||
@@ -332,8 +366,74 @@ export function EntityIconPicker({
 
   const selectedEmoji = parsedValue.kind === "emoji" ? parsedValue.emoji : null;
 
+  const colorSection = (
+    <div className="entity-icon-picker__color-section">
+      <div className="entity-icon-picker__color-row">
+        {ENTITY_ICON_COLOR_PRESETS.map((color) => (
+          <ColorSwatch
+            key={color}
+            color={color}
+            selected={selectedColor === color && isPresetColor}
+            ariaLabel={`Icon color ${color}`}
+            onSelect={() => {
+              setSelectedColor(color);
+              setCustomPickerOpen(false);
+              if (colorOnly) {
+                handleColorOnlySelect(color);
+              }
+            }}
+          />
+        ))}
+        <span aria-hidden="true" className="entity-icon-picker__color-divider" />
+        <ColorSwatch
+          selected={!isPresetColor}
+          ariaLabel="Custom icon color"
+          onSelect={() => {
+            const nextCustom = isPresetColor ? selectedColor : customColor;
+            if (isPresetColor) {
+              setCustomColor(selectedColor);
+            }
+            setSelectedColor(nextCustom);
+            setCustomPickerOpen(true);
+          }}
+        />
+      </div>
+
+      {customPickerOpen ? (
+        <CustomColorPickerPanel
+          color={customColor}
+          onChange={(nextColor) => {
+            setCustomColor(nextColor);
+            setSelectedColor(nextColor);
+          }}
+        />
+      ) : null}
+
+      {colorOnly && customPickerOpen ? (
+        <div className="entity-icon-picker__color-only-actions">
+          <button
+            type="button"
+            className="entity-icon-picker__color-only-apply"
+            onClick={() => handleColorOnlySelect(selectedColor)}
+          >
+            Apply color
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return createPortal(
-    <div className="entity-icon-picker" data-blocking-modal="" data-entity-icon-picker="">
+    <div
+      className={[
+        "entity-icon-picker",
+        colorOnly ? "entity-icon-picker--color-only" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-blocking-modal=""
+      data-entity-icon-picker=""
+    >
       <button
         type="button"
         aria-label="Close icon picker"
@@ -352,143 +452,162 @@ export function EntityIconPicker({
             {dialogTitle}
           </h2>
 
-          <div role="tablist" aria-label="Icon type" className="entity-icon-picker__tablist">
-            <TabButton
-              active={tab === "icons"}
-              onClick={() => {
-                setTab("icons");
-                setQuery("");
-              }}
-            >
-              Icons
-            </TabButton>
-            <TabButton
-              active={tab === "emojis"}
-              onClick={() => {
-                setTab("emojis");
-                setQuery("");
-              }}
-            >
-              Emojis
-            </TabButton>
-          </div>
-
-          {tab === "icons" ? (
-            <div className="entity-icon-picker__color-section">
-              <div className="entity-icon-picker__color-row">
-                {ENTITY_ICON_COLOR_PRESETS.map((color) => (
-                  <ColorSwatch
-                    key={color}
-                    color={color}
-                    selected={selectedColor === color && isPresetColor}
-                    ariaLabel={`Icon color ${color}`}
-                    onSelect={() => {
-                      setSelectedColor(color);
-                      setCustomPickerOpen(false);
-                    }}
-                  />
-                ))}
-                <span aria-hidden="true" className="entity-icon-picker__color-divider" />
-                <ColorSwatch
-                  selected={!isPresetColor}
-                  ariaLabel="Custom icon color"
-                  onSelect={() => {
-                    const nextCustom = isPresetColor ? selectedColor : customColor;
-                    if (isPresetColor) {
-                      setCustomColor(selectedColor);
-                    }
-                    setSelectedColor(nextCustom);
-                    setCustomPickerOpen(true);
+          {colorOnly ? (
+            <>
+              <p className="entity-icon-picker__color-only-title">{dialogTitle}</p>
+              {colorSection}
+            </>
+          ) : (
+            <>
+              <div role="tablist" aria-label="Icon type" className="entity-icon-picker__tablist">
+                <TabButton
+                  active={tab === "icons"}
+                  onClick={() => {
+                    setTab("icons");
+                    setQuery("");
                   }}
-                />
+                >
+                  Icons
+                </TabButton>
+                <TabButton
+                  active={tab === "emojis"}
+                  onClick={() => {
+                    setTab("emojis");
+                    setQuery("");
+                  }}
+                >
+                  Emojis
+                </TabButton>
               </div>
 
-              {customPickerOpen ? (
-                <CustomColorPickerPanel
-                  color={customColor}
-                  onChange={(nextColor) => {
-                    setCustomColor(nextColor);
-                    setSelectedColor(nextColor);
-                  }}
-                />
-              ) : null}
-            </div>
-          ) : null}
+              {tab === "icons" ? colorSection : null}
 
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={tab === "icons" ? "Search icons…" : "Search emojis…"}
-            aria-label={tab === "icons" ? "Search icons" : "Search emojis"}
-            className="entity-icon-picker__search"
-          />
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={tab === "icons" ? "Search icons…" : "Search emojis…"}
+                aria-label={tab === "icons" ? "Search icons" : "Search emojis"}
+                className="entity-icon-picker__search"
+              />
+            </>
+          )}
         </header>
 
-        <div className="entity-icon-picker__content">
-          {tab === "icons" ? (
-            filteredIcons.length === 0 && !showDefaultOption ? (
-              <p className="entity-icon-picker__empty">No icons match your search.</p>
+        {colorOnly ? null : (
+          <div className="entity-icon-picker__content">
+            {tab === "icons" ? (
+              filteredIcons.length === 0 && !showDefaultOption ? (
+                <p className="entity-icon-picker__empty">No icons match your search.</p>
+              ) : (
+                <div className="entity-icon-picker__icon-sections">
+                  {showDefaultOption || generalIcons.length > 0 ? (
+                    <div className="entity-icon-picker__grid">
+                      {showDefaultOption ? (
+                        <button
+                          type="button"
+                          title={defaultOption.label}
+                          aria-label={defaultOption.label}
+                          aria-pressed={parsedValue.kind === "default"}
+                          onClick={() =>
+                            selectIcon({ kind: "default", color: selectedColor })
+                          }
+                          className={`entity-icon-picker__cell${
+                            parsedValue.kind === "default" ? " is-selected" : ""
+                          }`}
+                        >
+                          <span style={{ color: selectedColor }}>
+                            {defaultOption.preview}
+                          </span>
+                        </button>
+                      ) : null}
+                      {generalIcons.map((iconKey) => {
+                        const label = formatProjectIconLabel(iconKey);
+                        const isSelected =
+                          parsedValue.kind === "icon" &&
+                          parsedValue.key === iconKey;
+
+                        return (
+                          <button
+                            key={iconKey}
+                            type="button"
+                            title={label}
+                            aria-label={label}
+                            aria-pressed={isSelected}
+                            onClick={() => handleIconSelect(iconKey)}
+                            className={`entity-icon-picker__cell${isSelected ? " is-selected" : ""}`}
+                          >
+                            <ProjectOcticon
+                              icon={iconKey}
+                              size={16}
+                              style={{ color: selectedColor }}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {brandIcons.length > 0 ? (
+                    <section
+                      className="entity-icon-picker__brand-section"
+                      aria-label="Brand"
+                    >
+                      <h3 className="entity-icon-picker__section-title">Brand</h3>
+                      <div className="entity-icon-picker__grid">
+                        {brandIcons.map((iconKey) => {
+                          const label = formatProjectIconLabel(iconKey);
+                          const isSelected =
+                            parsedValue.kind === "icon" &&
+                            parsedValue.key === iconKey;
+
+                          return (
+                            <button
+                              key={iconKey}
+                              type="button"
+                              title={label}
+                              aria-label={label}
+                              aria-pressed={isSelected}
+                              onClick={() => handleIconSelect(iconKey)}
+                              className={`entity-icon-picker__cell${isSelected ? " is-selected" : ""}`}
+                            >
+                              <ProjectOcticon
+                                icon={iconKey}
+                                size={16}
+                                style={{ color: selectedColor }}
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              )
+            ) : filteredEmojis.length === 0 ? (
+              <p className="entity-icon-picker__empty">No emojis match your search.</p>
             ) : (
               <div className="entity-icon-picker__grid">
-                {showDefaultOption ? (
+                {filteredEmojis.map((entry) => (
                   <button
+                    key={entry.emoji}
                     type="button"
-                    title={defaultOption.label}
-                    aria-label={defaultOption.label}
-                    aria-pressed={parsedValue.kind === "default"}
-                    onClick={() => selectIcon({ kind: "default", color: selectedColor })}
-                    className={`entity-icon-picker__cell${
-                      parsedValue.kind === "default" ? " is-selected" : ""
+                    title={entry.keywords.join(", ")}
+                    aria-label={entry.keywords[0] ?? entry.emoji}
+                    aria-pressed={selectedEmoji === entry.emoji}
+                    onClick={() => handleEmojiSelect(entry.emoji)}
+                    className={`entity-icon-picker__cell entity-icon-picker__cell--emoji${
+                      selectedEmoji === entry.emoji ? " is-selected" : ""
                     }`}
                   >
-                    <span style={{ color: selectedColor }}>{defaultOption.preview}</span>
+                    {entry.emoji}
                   </button>
-                ) : null}
-                {filteredIcons.map((iconKey) => {
-                  const label = formatProjectIconLabel(iconKey);
-                  const isSelected =
-                    parsedValue.kind === "icon" && parsedValue.key === iconKey;
-
-                  return (
-                    <button
-                      key={iconKey}
-                      type="button"
-                      title={label}
-                      aria-label={label}
-                      aria-pressed={isSelected}
-                      onClick={() => handleIconSelect(iconKey)}
-                      className={`entity-icon-picker__cell${isSelected ? " is-selected" : ""}`}
-                    >
-                      <ProjectOcticon icon={iconKey} size={16} style={{ color: selectedColor }} />
-                    </button>
-                  );
-                })}
+                ))}
               </div>
-            )
-          ) : filteredEmojis.length === 0 ? (
-            <p className="entity-icon-picker__empty">No emojis match your search.</p>
-          ) : (
-            <div className="entity-icon-picker__grid">
-              {filteredEmojis.map((entry) => (
-                <button
-                  key={entry.emoji}
-                  type="button"
-                  title={entry.keywords.join(", ")}
-                  aria-label={entry.keywords[0] ?? entry.emoji}
-                  aria-pressed={selectedEmoji === entry.emoji}
-                  onClick={() => handleEmojiSelect(entry.emoji)}
-                  className={`entity-icon-picker__cell entity-icon-picker__cell--emoji${
-                    selectedEmoji === entry.emoji ? " is-selected" : ""
-                  }`}
-                >
-                  {entry.emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

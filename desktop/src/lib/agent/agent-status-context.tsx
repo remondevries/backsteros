@@ -14,13 +14,21 @@ import {
   type StatusBarAgentItem,
 } from "./agent-activity";
 import {
+  clearDynamicIslandAgentsWorking,
+  publishDynamicIslandAgentsWorking,
+} from "../dynamic-island-agents-working";
+import {
   registerClearLiveAgentWorking,
   registerMarkLiveAgentWorking,
 } from "./clear-live-agent-working";
 import type {
   AgentAttachRequest,
   AgentEndRequest,
+  PendingBootstrapPrompt,
 } from "./cursor-agent-cli";
+
+/** Keep island heartbeat fresh so a crashed desktop ages out (~90s stale). */
+const DYNAMIC_ISLAND_AGENTS_HEARTBEAT_MS = 30_000;
 
 export type DesktopAgentStatusContextValue = {
   summary: AgentActivitySummary;
@@ -38,9 +46,17 @@ export type DesktopAgentStatusContextValue = {
    */
   setTaskResearchWorking: (taskId: string, working: boolean) => void;
   isTaskWorking: (taskId: string) => boolean;
+  /**
+   * True when the ACP poll/socket path marks this task busy — excludes
+   * optimistic research marks from Start/composer (stale list pulses).
+   */
+  isTaskAcpSessionBusy: (taskId: string) => boolean;
   isTaskAgentOpen: (taskId: string) => boolean;
   agentAttachRequest: AgentAttachRequest | null;
   agentEndRequest: AgentEndRequest | null;
+  /** Start-agent optimistic user prompt before ACP ensure finishes. */
+  pendingBootstrapPrompt: PendingBootstrapPrompt | null;
+  setPendingBootstrapPrompt: (value: PendingBootstrapPrompt | null) => void;
   requestAttach: (request: AgentAttachRequest) => void;
   clearAttachRequest: () => void;
   requestEnd: (request: AgentEndRequest) => void;
@@ -106,6 +122,8 @@ export function DesktopAgentStatusProvider({
     useState<AgentAttachRequest | null>(null);
   const [agentEndRequest, setAgentEndRequest] =
     useState<AgentEndRequest | null>(null);
+  const [pendingBootstrapPrompt, setPendingBootstrapPrompt] =
+    useState<PendingBootstrapPrompt | null>(null);
   const [terminalCollapsed, setTerminalCollapsedState] = useState(
     readCollapsedFlag,
   );
@@ -170,6 +188,23 @@ export function DesktopAgentStatusProvider({
     for (const id of researchWorkingTaskIds) merged.add(id);
     return merged;
   }, [ptyWorkingTaskIds, researchWorkingTaskIds]);
+
+  // Mirror live working set to Dynamic Island (file bridge).
+  useEffect(() => {
+    publishDynamicIslandAgentsWorking(workingTaskIds);
+    const timer = window.setInterval(() => {
+      publishDynamicIslandAgentsWorking(workingTaskIds);
+    }, DYNAMIC_ISLAND_AGENTS_HEARTBEAT_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [workingTaskIds]);
+
+  useEffect(() => {
+    return () => {
+      clearDynamicIslandAgentsWorking();
+    };
+  }, []);
 
   const setOpenTaskIds = useCallback((taskIds: readonly string[]) => {
     setOpenTaskIdsState((current) => {
@@ -275,9 +310,12 @@ export function DesktopAgentStatusProvider({
       setOpenTaskIds,
       setTaskResearchWorking,
       isTaskWorking: (taskId) => workingTaskIds.has(taskId),
+      isTaskAcpSessionBusy: (taskId) => ptyWorkingTaskIds.has(taskId),
       isTaskAgentOpen: (taskId) => openTaskIds.has(taskId),
       agentAttachRequest,
       agentEndRequest,
+      pendingBootstrapPrompt,
+      setPendingBootstrapPrompt,
       requestAttach,
       clearAttachRequest,
       requestEnd,
@@ -301,8 +339,11 @@ export function DesktopAgentStatusProvider({
       focusAgentTab,
       focusRequest,
       openTaskIds,
+      pendingBootstrapPrompt,
+      ptyWorkingTaskIds,
       requestAttach,
       requestEnd,
+      setPendingBootstrapPrompt,
       setOpenTaskIds,
       setStatusItemsStable,
       setSummaryStable,

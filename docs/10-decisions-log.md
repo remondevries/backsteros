@@ -143,28 +143,25 @@ Architecture decisions from planning sessions. Status: **Accepted** unless noted
 
 ---
 
-## ADR-016: Clerk auth + Neon Postgres
+## ADR-016: Clerk auth + local Docker Postgres
 
-**Status:** Accepted  
-**Context:** Phase 1 needs human auth and a production Postgres host. DO Managed Postgres (~$15/mo) works but PowerSync (Phase 3) integrates more cleanly with Neon; Clerk free tier fits single-owner use.  
-**Decision:**
-- **Auth:** Clerk (Hobby / free) for human sessions on `/app`, `/admin`, mobile
-- **Postgres prod:** [Neon](https://neon.tech) — Free tier to start; Launch plan if always-on needed
-- **Postgres dev:** Docker Compose locally (`localhost`) — not Neon for day-to-day coding
+**Status:** Superseded (Neon / cloud Postgres retired — local-only v2)  
+**Context:** Phase 1 needed human auth and a Postgres host. Neon was briefly used for early cloud experiments.  
+**Decision (current):**
+- **Auth:** Clerk for human sessions on desktop / mobile
+- **Postgres:** Docker Compose locally (`localhost:5433`) only — no Neon or other cloud Postgres for active work
 - **Agent API keys:** Custom `sk_live_…` in Postgres — not Clerk
 
-**Neon setup notes (Phase 3):** Enable logical replication in Neon console; create `powersync_role` + `powersync` publication per [PowerSync Neon guide](https://docs.powersync.com/integrations/neon).
-
-**Alternatives rejected:** DO Managed Postgres (higher cost, `aiven_extras` for PowerSync), Supabase Auth (Clerk chosen), Supabase Postgres-only (unnecessary bundle).
+**Historical:** Neon Free + droplet Kamal were evaluated and later removed from the deploy surface.
 
 ---
 
-## ADR-017: API host `service.backsteros.com`
+## ADR-017: API host (local core)
 
-**Status:** Accepted  
-**Context:** `api.backsteros.com` subdomain already in use elsewhere.  
-**Decision:** API, sync, and OpenAPI live at **`https://service.backsteros.com`**. The product app hostname is superseded by ADR-018.
-**Consequences:** REST base URL is `https://service.backsteros.com/api/v1`; clients and agents use this host.
+**Status:** Superseded (`service.backsteros.com` cloud API retired)  
+**Context:** Early hosting used `service.backsteros.com` because `api.backsteros.com` was unavailable.  
+**Decision (current):** API, sync upload, and OpenAPI live on the **local computer** (`http://127.0.0.1:8788`, or Tailscale MagicDNS to that host).  
+**Consequences:** Clients and agents target local core; no public cloud API is required for v2.
 
 ---
 
@@ -211,8 +208,8 @@ separate Expo client (ADR-004) — not the same framework as desktop.
 - Build **`backsteros-desktop/`** as **Tauri 2** loading a **Vite + React** SPA
   (static frontend only).
 - **Do not** embed, package, or run the Next.js server / standalone build inside
-  Tauri. Remote **`https://service.backsteros.com`** only for API, sync upload,
-  and content fetch.
+  Tauri. Talk to **local core** (`http://127.0.0.1:8788` or Tailscale) for API,
+  sync upload, and content fetch.
 - **Do not** use Expo or React Native for desktop; do not use Tauri for iOS.
 - Product UI and interaction model should match **`backsteros-app`** as closely
   as practical (same screens, patterns, keyboard flows). Prefer extracting shared
@@ -247,12 +244,12 @@ fork of the Next deployment pipeline.
 
 | ID | Question | Owner |
 | --- | --- | --- |
-| Q-001 | Domains: product + API host | **Resolved:** product `backsteros.com/app`, API `service.backsteros.com` (`api.` unavailable) |
+| Q-001 | Domains: product + API host | **Resolved (v2):** local core `127.0.0.1:8788` (+ Tailscale); no cloud API |
 | Q-002 | B2 vs R2 after measuring PDF egress | Deferred — v2 uses local vault (ADR-021) |
 | Q-003 | Clerk vs Supabase Auth | **Resolved:** Clerk |
 | Q-004 | Monorepo vs multi-repo | **Resolved:** single workspace `~/code/backsteros/` with subfolders |
-| Q-005 | Self-host PowerSync vs PowerSync Cloud | Phase 3 |
-| Q-006 | Postgres host (prod) | **Resolved:** Neon (dev: Docker) |
+| Q-005 | Self-host PowerSync vs PowerSync Cloud | **Resolved (v2):** self-host Docker PowerSync locally |
+| Q-006 | Postgres host | **Resolved (v2):** Docker only — Neon / cloud Postgres retired |
 | Q-007 | Desktop client stack | **Resolved:** Tauri 2 + Vite/React (ADR-019); UI near-identical to web |
 
 ---
@@ -367,6 +364,88 @@ fork of the Next deployment pipeline.
 **Alternatives rejected:** Keep Herdr as Terminal viewer alongside ACP; hybrid Chat→Herdr typing; full Effect/orchestration port of T3.
 
 **Consequences:** Restart `pnpm pty` after sidecar changes. External `agent --resume <chatId>` may still work via ACP↔CLI session link, but is not required for Chat. iPad shared live TUI via Herdr is retired; iPad should use ACP Chat + transcript sync.
+
+---
+
+## ADR-026: Finance — bank-first CSV import, Tier A/C split
+
+**Status:** Accepted (2026-08)  
+**Context:** Large bank CSV histories (ING / AMEX) need a first-class Finance surface without PowerSync-bootstrapping tens of thousands of ledger rows.  
+**Decision:**
+
+- Create **bank accounts** first; upload CSV into a specific account
+- **Bank accounts + categories = Tier A** (PowerSync); **transactions = Tier C** (paginated REST only)
+- Ledger fields append-only / no client delete; classification (`organizationId`, `projectId`, `categoryId`, `notes`) is mutable + batchable
+- Built-in dialects only for v1: **ING NL** (`;`, `YYYYMMDD`, Debit/Credit) and **AMEX NL** (`,`, `MM/DD/YYYY`, signed `Bedrag`, unique `Referentie`)
+- Dedup: AMEX `externalId`; ING fingerprint hash; idempotent re-import
+- Desktop-first: month → week grouping, search/filters, org suggestions, bulk classification
+
+**Consequences:** Charts/budgets/rules deferred. Mobile Finance deferred. No generic column mapper in v1.
+
+---
+
+## ADR-027: Moneybird — personal API token for Finance invoices
+
+**Status:** Accepted (2026-08)  
+**Context:** Finance needs access to Moneybird sales invoices. Community SDKs are incomplete; Apideck adds a third-party proxy. Moneybird documents personal API tokens and OAuth; BacksterOS is a personal local-computer host.  
+**Decision:**
+
+- Use a **thin first-party Moneybird REST client** in `core/server` (Bearer token, API v2)
+- Store **API token + administration id** in `workspace_integration_secrets` (same pattern as Cursor; not PowerSync)
+- Settings → Integrations → **Moneybird**: save token, pick administration, test connection
+- Finance → **Invoices** lists sales invoices live via `GET /api/v1/finance/moneybird/invoices` (no local invoice table yet)
+- Prefer personal API token with `sales_invoices` scope for v1; OAuth deferred
+
+**Alternatives rejected:** Apideck accounting SDK; `@print-one/moneybird-js` as hard dependency; OAuth-only flow for v1.
+
+**Consequences:** Invoice sync/cache into Postgres can come later. Purchase invoices / bank mutations are out of scope until scopes expand.
+
+---
+
+## ADR-028: Finance — transfer/excluded categories omit from cashflow
+
+**Status:** Accepted (2026-08)  
+**Context:** Credit-card payoffs appear as a bank debit plus a card payment credit. Treating both as normal income/expense double-counts spend (and inflates income) even though account balances and assets/debt stay correct.  
+**Decision:**
+
+- A transaction is **non-cashflow** when its live category has `kind === "transfer"` **or** `listing === "excluded"`
+- Income / expense / net / spend-panel / category cashflow breakdowns **omit** those rows
+- Account **balances** and **assets/debt** still sum every ledger row
+- Uncategorized rows still count as cashflow
+- Matched transfer pairs (auto-link bank ↔ card) are **deferred**; users classify payoff legs into a Transfer/Excluded category (e.g. “Creditcard payments”)
+
+**Consequences:** Dashboard and Cash flow become trustworthy after payoff classification. Creating an excluded category alone is not enough without this aggregate rule (and vice versa: the rule needs tagged rows).
+
+---
+
+## ADR-029: Finance — credit-card cashflow polarity on import
+
+**Status:** Accepted (2026-08)  
+**Context:** AMEX NL (and similar issuer CSVs) use liability polarity: purchases are positive, payments/refunds are negative. Bank CSVs use cashflow polarity. Mixing them made card spend look like income and card balances look like assets.  
+**Decision:**
+
+- When importing into an account with `type === "credit_card"`, negate `amountCents` (and `balanceAfterCents` when present) before insert
+- Parser fingerprints stay on **source** polarity so re-imports still dedupe
+- One-time SQL migration flips existing credit-card rows (idempotent guards on thank-you payment sign / aggregate balance)
+- Transfer/excluded categorization of bank↔card payoffs (ADR-028) remains required for the checking-account leg
+
+**Consequences:** Credit-card purchases count as expenses; payments count as credits that reduce debt; assets/debt charts treat negative card balances as debt.
+
+---
+
+## ADR-030: Finance — category totals net credits against debits
+
+**Status:** Accepted (2026-08)  
+**Context:** Shared expenses (e.g. restaurant bill) often have a matching credit when someone pays you back. Showing only gross debits per category made “true spend” (what you actually paid) impossible to read; all-white totals also hid debit vs credit.  
+**Decision:**
+
+- Per-category totals use **net-spend polarity**: `sum(-amountCents)` — positive = net outflow, negative = net inflow
+- Credits tagged to the same category **reduce** that category’s spend (dinner −€100 + repayment +€40 → €60 Restaurant spend)
+- Dashboard Top categories, Categories Spent column / detail hero, spend-panel category list, and cashflow category month stacks follow this rule
+- Overall income / expense / net cashflow stay **sign-separated** (not netted into a single bucket); transfer/excluded categories still omit from cashflow (ADR-028)
+- UI shows the absolute amount with **debit (red) / credit (green)** coloring (dashboard Top categories, Categories page, spend panel) so net spend vs net income is readable at a glance.
+
+**Consequences:** Category analysis reflects true cost when reimbursements share a category. Users should tag shared-expense repayments on the same category as the original spend. Gross monthly spend headlines (total money out) remain debit-only where that metric is intentional.
 
 ---
 

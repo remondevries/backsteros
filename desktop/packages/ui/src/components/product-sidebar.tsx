@@ -20,7 +20,6 @@ import {
 import { getNavigationItemIcon } from "./navigation-item-icon.js";
 import { DevelopmentAdeLogoIcon } from "./development-ade-logo-icon.js";
 import {
-  SearchNavIcon,
   SidebarAccountIcon,
   SidebarChevronIcon,
   SidebarComposeIcon,
@@ -48,9 +47,14 @@ export type ProductSidebarRecentPage = {
 
 export type ProductSidebarProps = {
   pathname: string;
+  /**
+   * Pathname used for nav active matching. Defaults to `pathname`.
+   * Use when project detail routes should highlight Development/Areas
+   * based on which list the user opened the project from.
+   */
+  activePathname?: string;
   Link: ProductSidebarLinkComponent;
   displayName?: string;
-  onSearch?: () => void;
   onCompose?: () => void;
   /** Opens Clerk account / host account UI — matches Next.js profile menu. */
   onAccount?: () => void;
@@ -60,11 +64,12 @@ export type ProductSidebarProps = {
   onForward?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
-  searchShortcutHint?: string;
   recentPages?: ProductSidebarRecentPage[];
   onSelectRecentPage?: (href: string) => void;
   /** Grey dot on Inbox when the attention list is non-empty. */
   inboxHasItems?: boolean;
+  /** Bottom-left footer (e.g. Cursor credits). Replaces the old search button. */
+  footer?: ReactNode;
 };
 
 function HistoryButton({
@@ -97,11 +102,11 @@ function HistoryButton({
 }
 
 function NavLinks({
-  pathname,
+  activePathname,
   Link,
   inboxHasItems = false,
 }: {
-  pathname: string;
+  activePathname: string;
   Link: ProductSidebarLinkComponent;
   inboxHasItems?: boolean;
 }) {
@@ -114,7 +119,7 @@ function NavLinks({
             .filter((item) => item.section === section.id)
             .map((item) => {
               const Icon = getNavigationItemIcon(item.icon);
-              const active = isNavigationPathActive(pathname, item.href);
+              const active = isNavigationPathActive(activePathname, item.href);
               const showInboxDot =
                 item.href === "/inbox" && inboxHasItems;
               return (
@@ -151,9 +156,9 @@ function NavLinks({
  */
 export function ProductSidebar({
   pathname,
+  activePathname = pathname,
   Link,
   displayName = "BacksterOS",
-  onSearch,
   onCompose,
   onAccount,
   onSignOut,
@@ -161,10 +166,10 @@ export function ProductSidebar({
   onForward,
   canGoBack = false,
   canGoForward = false,
-  searchShortcutHint = "⌘K",
   recentPages = [],
   onSelectRecentPage,
   inboxHasItems = false,
+  footer,
 }: ProductSidebarProps) {
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -409,16 +414,12 @@ export function ProductSidebar({
       </div>
 
       <NavLinks
-        pathname={pathname}
+        activePathname={activePathname}
         Link={Link}
         inboxHasItems={inboxHasItems}
       />
 
-      <div className="sidebar-footer">
-        <button type="button" onClick={onSearch}>
-          <SearchNavIcon /> Search <kbd>{searchShortcutHint}</kbd>
-        </button>
-      </div>
+      {footer ? <div className="sidebar-footer">{footer}</div> : null}
     </div>
   );
 }

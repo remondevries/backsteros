@@ -6,6 +6,7 @@ import {
   fillMissingLinksFromApi,
   fillMissingTypeFromApi,
   mergeLocalAndApiByUpdatedAt,
+  preservePendingApiRows,
 } from "./merge-local-and-api.ts";
 
 test("mergeLocalAndApiByUpdatedAt prefers newer API row", () => {
@@ -119,4 +120,18 @@ test("fillMissingCodebaseFieldsFromApi keeps local repo and cwd when present", (
   );
   assert.equal(filled[0]?.githubRepository, "local/repo");
   assert.equal(filled[0]?.localWorkingDirectory, "/tmp/local");
+});
+
+test("preservePendingApiRows keeps optimistic creates missing from hydrate", () => {
+  const merged = preservePendingApiRows(
+    [
+      { id: "new", title: "Just created" },
+      { id: "old", title: "Already synced" },
+    ],
+    [{ id: "old", title: "Already synced" }],
+  );
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["new", "old"],
+  );
 });

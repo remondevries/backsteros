@@ -44,6 +44,11 @@ export type LetterComposeSubmitPayload = {
   receivedDate: Date | null;
   /** PDF selected in the compose dock; host uploads after create. */
   pdfFile: File | null;
+  /**
+   * When false, host should persist the letter but not route to it (used when
+   * flushing a draft because the user already navigated away).
+   */
+  navigateAfterCreate?: boolean;
 };
 
 export type LetterComposeViewProps = {
@@ -97,6 +102,35 @@ function pickLocalPdfFile(): Promise<File | null> {
     input.oncancel = () => resolve(null);
     input.click();
   });
+}
+
+/** Local object-URL preview for compose (bytes stay in-memory until create). */
+function LetterComposeLocalPdfPreview({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    setUrl(next);
+    return () => {
+      URL.revokeObjectURL(next);
+    };
+  }, [file]);
+
+  if (!url) {
+    return (
+      <div className="letter-compose-pdf-preview letter-compose-pdf-preview--loading">
+        <p>Loading preview…</p>
+      </div>
+    );
+  }
+
+  return (
+    <iframe
+      className="letter-compose-pdf-preview"
+      title={file.name || "PDF preview"}
+      src={url}
+    />
+  );
 }
 
 /**
@@ -209,25 +243,29 @@ export function LetterComposeView({
     requestEditorFocus,
   });
 
-  const submitCreate = useCallback(() => {
-    if (pdfUploading || submittedRef.current || !onSubmit) return;
-    submittedRef.current = true;
-    void Promise.resolve(
-      onSubmit({
-        title: titleRef.current.trim() || "Untitled",
-        body: bodyRef.current,
-        status: statusRef.current,
-        organizationId: organizationIdRef.current,
-        contactId: contactIdRef.current,
-        projectKey: projectKeyRef.current,
-        dueDate: dueDateRef.current,
-        receivedDate: receivedDateRef.current,
-        pdfFile: selectedPdfFileRef.current,
-      }),
-    ).catch(() => {
-      submittedRef.current = false;
-    });
-  }, [onSubmit, pdfUploading]);
+  const submitCreate = useCallback(
+    (options?: { navigateAfterCreate?: boolean }) => {
+      if (pdfUploading || submittedRef.current || !onSubmit) return;
+      submittedRef.current = true;
+      void Promise.resolve(
+        onSubmit({
+          title: titleRef.current.trim() || "Untitled",
+          body: bodyRef.current,
+          status: statusRef.current,
+          organizationId: organizationIdRef.current,
+          contactId: contactIdRef.current,
+          projectKey: projectKeyRef.current,
+          dueDate: dueDateRef.current,
+          receivedDate: receivedDateRef.current,
+          pdfFile: selectedPdfFileRef.current,
+          navigateAfterCreate: options?.navigateAfterCreate,
+        }),
+      ).catch(() => {
+        submittedRef.current = false;
+      });
+    },
+    [onSubmit, pdfUploading],
+  );
 
   const leaveTitleForBody = useCallback(() => {
     handleLeaveTitleForEditor();
@@ -238,6 +276,25 @@ export function LetterComposeView({
     activateEditMode();
     submitCreate();
   }, [activateEditMode, submitCreate]);
+
+  // Navigating away before title→body used to drop the draft entirely. Flush
+  // create on real unmount (queueMicrotask skips React Strict Mode remounts).
+  useEffect(() => {
+    let alive = true;
+    return () => {
+      alive = false;
+      queueMicrotask(() => {
+        if (alive) return;
+        if (submittedRef.current || pdfUploading || !onSubmit) return;
+        const title = titleRef.current.trim();
+        const body = bodyRef.current.trim();
+        const hasPdf = Boolean(selectedPdfFileRef.current);
+        // Ignore the pristine default shell ("New letter", empty body, no PDF).
+        if ((!title || title === "New letter") && !body && !hasPdf) return;
+        submitCreate({ navigateAfterCreate: false });
+      });
+    };
+  }, [onSubmit, pdfUploading, submitCreate]);
 
   const letter: LetterPropertiesDisplayLetter = {
     id: "compose",
@@ -357,7 +414,11 @@ export function LetterComposeView({
                 }
               }}
               uploading={pdfUploading}
-            />
+            >
+              {selectedPdfFile ? (
+                <LetterComposeLocalPdfPreview file={selectedPdfFile} />
+              ) : null}
+            </LetterPdfDock>
           </div>
         }
         properties={

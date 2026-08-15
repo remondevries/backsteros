@@ -14,6 +14,7 @@ import {
   type ProjectTaskProgress,
 } from "../project-progress-ring.js";
 import type { ProjectArea } from "../project-areas.js";
+import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -91,10 +92,9 @@ export function ProjectBoardCard({
       className="task-kanban-card"
       onClick={() => onOpen?.(project.key)}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen?.(project.key);
-        }
+        if (!isDirectRoleButtonActivationKey(event)) return;
+        event.preventDefault();
+        onOpen?.(project.key);
       }}
     >
       <span className="task-kanban-card-top">

@@ -13,6 +13,10 @@ import { createPortal } from "react-dom";
 
 import type { TaskLink } from "@backsteros/contracts";
 
+import {
+  ADD_TASK_LINK_SHORTCUT_HINT,
+  shouldHandleAddTaskLinkShortcut,
+} from "../task-link-add-shortcut.js";
 import { ProjectOcticon } from "./project-octicon.js";
 
 const MAX_TASK_LINKS = 20;
@@ -215,14 +219,48 @@ export function TaskLinkAttachments({
   const [modalOpen, setModalOpen] = useState(false);
   const [draftUrl, setDraftUrl] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
+
+  const openModal = useCallback(() => {
+    setDraftUrl("");
+    setFormError(null);
+    setModalOpen(true);
+  }, []);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
     setDraftUrl("");
     setFormError(null);
   }, []);
+
+  useEffect(() => {
+    if (!canEdit) {
+      return;
+    }
+
+    function handleAddLinkShortcut(event: KeyboardEvent) {
+      if (
+        !shouldHandleAddTaskLinkShortcut(event, {
+          enabled: canEdit,
+          modalAlreadyOpen: modalOpen,
+          root: rootRef.current,
+        })
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openModal();
+    }
+
+    window.addEventListener("keydown", handleAddLinkShortcut, true);
+    return () => {
+      window.removeEventListener("keydown", handleAddLinkShortcut, true);
+    };
+  }, [canEdit, modalOpen, openModal]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -236,6 +274,7 @@ export function TaskLinkAttachments({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopImmediatePropagation();
         closeModal();
       }
     }
@@ -287,20 +326,21 @@ export function TaskLinkAttachments({
     closeModal();
   }
 
+  const addShortcutTitle = `Add attachment (${ADD_TASK_LINK_SHORTCUT_HINT})`;
+
   return (
-    <div className="task-detail-attachments task-link-attachments">
+    <div
+      ref={rootRef}
+      className="task-detail-attachments task-link-attachments"
+    >
       {canEdit ? (
         <div className="task-link-attachments__toolbar">
           <button
             type="button"
             className="task-link-attachments__add"
-            aria-label="Add attachment"
-            title="Add attachment"
-            onClick={() => {
-              setDraftUrl("");
-              setFormError(null);
-              setModalOpen(true);
-            }}
+            aria-label={addShortcutTitle}
+            title={addShortcutTitle}
+            onClick={openModal}
           >
             <PaperclipIcon />
           </button>

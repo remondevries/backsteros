@@ -159,7 +159,7 @@ export async function createCursorAgentChat(
         ok: false,
         error:
           [body?.error, detail].filter(Boolean).join(" — ") ||
-          "Could not create agent session. Is `pnpm pty` reachable over Tailscale?",
+          "Could not create agent session. Is `pnpm --filter @backsteros/desktop pty` reachable over Tailscale?",
       };
     }
     return { ok: true, chatId: body.chatId.toLowerCase() };

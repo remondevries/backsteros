@@ -63,7 +63,7 @@ SSE: `{ "cursor": 4821 }` — client calls `pull` when cursor advances.
 
 ## REST API v1 (agents + portals)
 
-Base: `https://service.backsteros.com/api/v1`
+Base: `http://127.0.0.1:8788/api/v1` (or Tailscale MagicDNS to the local computer)
 
 Auth: `Authorization: Bearer sk_live_…`
 
@@ -103,7 +103,22 @@ Every write runs the **unified write pipeline** (storage → Postgres → sync e
 | `tasks:read` / `tasks:write` | Task CRUD + batch |
 | `documents:read` / `documents:write` | Markdown metadata + content |
 | `letters:read` | Letter metadata + PDF access |
+| `finance:read` / `finance:write` | Bank accounts, categories, transaction list/import/classification |
 | `search:query` | Meilisearch proxy |
+
+### Finance (Tier C ledger)
+
+```http
+GET    /api/v1/bank-accounts
+POST   /api/v1/bank-accounts
+GET    /api/v1/bank-accounts/{id}/transactions?q=&month=&cursor=
+POST   /api/v1/bank-accounts/{id}/imports   # CSV body + X-Filename
+PATCH  /api/v1/transactions/{id}           # classification only
+POST   /api/v1/transactions/batch
+GET    /api/v1/financial-categories
+```
+
+Transactions are **not** PowerSynced. Bank accounts and categories are Tier A.
 
 ## Live documents (human + agent)
 

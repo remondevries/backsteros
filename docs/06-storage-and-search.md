@@ -142,10 +142,10 @@ replaces Spaces for markdown + PDFs on the core computer (optional remote B2/R2 
 
 | Item | ~Monthly |
 | --- | --- |
-| B2 100 GB | &lt; $1 |
-| Neon Postgres (metadata) | $0 (free tier) → ~$5–15/mo if needed |
-| Meilisearch on VM | $0 (sidecar) |
-| VM (existing) | Already have |
+| Local vault / disk | $0 |
+| Docker Postgres (metadata) | $0 |
+| Meilisearch (optional local) | $0 |
+| Local computer | Already have |
 
 ## AI agent read workflow
 

@@ -231,8 +231,19 @@ export function LetterPdfDock({
       return;
     }
     setPendingFile(file);
+    // Local compose picks (and immediate host attach) never toggle `uploading`,
+    // so clear add-mode here — otherwise the dropzone stays over the preview.
+    setAddingPdf(false);
     onUploadFile?.(file);
   }
+
+  // Host may flip hasDocument without an uploading pulse (compose local File).
+  useEffect(() => {
+    if (hasDocument && !uploading) {
+      setAddingPdf(false);
+      setPendingFile(null);
+    }
+  }, [hasDocument, uploading]);
 
   const legacyName = stripPdfExtension(
     (legacyTitle ?? title).trim() || "Document.pdf",
@@ -241,7 +252,8 @@ export function LetterPdfDock({
   const multiMode = attachments.length > 0 || hasLegacyPdf;
   const showUploadControl = Boolean(onUploadFile || onUploadClick);
   const showDropzone =
-    canUseDropzone && (addingPdf || uploading || !hasDocument);
+    canUseDropzone &&
+    (addingPdf || uploading || Boolean(pendingFile) || !hasDocument);
 
   const dropzone = (
     <LetterPdfDropzone

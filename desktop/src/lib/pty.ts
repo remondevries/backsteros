@@ -63,6 +63,23 @@ export function getPtyHttpOrigin(): string {
   ).replace(/\/$/, "");
 }
 
+/** WebKit (Tauri) surfaces connection refused as opaque "Load failed". */
+function ptyUnreachableMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (
+      message === "Load failed" ||
+      message === "Failed to fetch" ||
+      message === "NetworkError when attempting to fetch resource." ||
+      error.name === "NetworkError"
+    ) {
+      return "Could not reach local PTY server. Start it from Hub (or run `pnpm --filter @backsteros/desktop pty`).";
+    }
+    if (message) return message;
+  }
+  return "Could not reach local PTY server. Start it from Hub (or run `pnpm --filter @backsteros/desktop pty`).";
+}
+
 /** Create an empty Cursor Agent chat via the local PTY sidecar. */
 export async function createCursorAgentChat(): Promise<
   { ok: true; chatId: string } | { ok: false; error: string }
@@ -81,17 +98,14 @@ export async function createCursorAgentChat(): Promise<
         ok: false,
         error:
           body?.error ||
-          "Could not create agent session. Is `pnpm pty` running?",
+          "Could not create agent session. Is `pnpm --filter @backsteros/desktop pty` running?",
       };
     }
     return { ok: true, chatId: body.chatId.toLowerCase() };
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -137,10 +151,7 @@ export async function listCursorAgentModels(): Promise<
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -176,7 +187,7 @@ export async function listPtySessions(options?: {
       error:
         error instanceof Error
           ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+          : "Could not reach local PTY server. Run `pnpm --filter @backsteros/desktop pty`.",
     };
   }
 }
@@ -424,10 +435,7 @@ export async function fetchAgentChatTranscript(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -467,10 +475,7 @@ export async function putAgentChatTranscript(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -515,10 +520,7 @@ export async function appendAgentChatTranscriptMessage(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -582,10 +584,7 @@ export async function upsertAgentChatTranscriptTimeline(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -604,7 +603,10 @@ export async function submitPtyAgentPrompt(options: {
   model?: string | null;
   images?: { mimeType: string; data: string }[] | null;
   clear?: boolean;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; modelId: string | null }
+  | { ok: false; error: string }
+> {
   const taskId = options.taskId.trim();
   const prompt = options.prompt.trim();
   const images = (options.images ?? []).filter(
@@ -633,6 +635,7 @@ export async function submitPtyAgentPrompt(options: {
     });
     const body = (await response.json().catch(() => null)) as {
       error?: string;
+      modelId?: string | null;
     } | null;
     if (!response.ok) {
       return {
@@ -640,14 +643,15 @@ export async function submitPtyAgentPrompt(options: {
         error: body?.error || `Agent prompt failed (${response.status}).`,
       };
     }
-    return { ok: true };
+    const modelId =
+      typeof body?.modelId === "string" && body.modelId.trim()
+        ? body.modelId.trim()
+        : null;
+    return { ok: true, modelId };
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -700,10 +704,60 @@ export async function setPtyAgentMode(options: {
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
+    };
+  }
+}
+
+/** Pin / apply Cursor ACP model for a live session (`session/set_config_option`). */
+export async function setPtyAcpModel(options: {
+  taskId: string;
+  model: string;
+  chatId?: string | null;
+  cwd?: string | null;
+}): Promise<
+  | { ok: true; modelId: string; unchanged: boolean }
+  | { ok: false; error: string }
+> {
+  const taskId = options.taskId.trim();
+  const model = options.model.trim();
+  if (!taskId || !model) {
+    return { ok: false, error: "taskId and model are required." };
+  }
+  try {
+    const response = await fetch(`${getPtyHttpOrigin()}/agent/acp/model`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        taskId,
+        model,
+        chatId: options.chatId?.trim() || null,
+        cwd: options.cwd?.trim() || null,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      modelId?: string;
+      unchanged?: boolean;
+      error?: string;
+    } | null;
+    if (!response.ok || !body?.modelId) {
+      return {
+        ok: false,
+        error: body?.error || `Could not set agent model (${response.status}).`,
+      };
+    }
+    return {
+      ok: true,
+      modelId: body.modelId,
+      unchanged: body.unchanged === true,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -723,6 +777,7 @@ export async function ensurePtyAcpSession(options: {
       chatId: string;
       created: boolean;
       resumed: boolean;
+      modelId: string | null;
     }
   | { ok: false; error: string }
 > {
@@ -752,6 +807,7 @@ export async function ensurePtyAcpSession(options: {
       chatId?: string;
       created?: boolean;
       resumed?: boolean;
+      modelId?: string | null;
       error?: string;
     } | null;
     const sessionId = body?.sessionId?.trim().toLowerCase();
@@ -761,20 +817,22 @@ export async function ensurePtyAcpSession(options: {
         error: body?.error || `ACP ensure failed (${response.status}).`,
       };
     }
+    const modelId =
+      typeof body?.modelId === "string" && body.modelId.trim()
+        ? body.modelId.trim()
+        : null;
     return {
       ok: true,
       sessionId,
       chatId: (body?.chatId || sessionId).toLowerCase(),
       created: body?.created === true,
       resumed: body?.resumed === true,
+      modelId,
     };
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -808,10 +866,7 @@ export async function cancelPtyAcpTurn(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -822,8 +877,14 @@ export async function respondPtyAcpUiRequest(options: {
   optionId?: string | null;
   preference?: "once" | "always" | "reject" | null;
   skipped?: boolean;
-  /** T3 shape: questionId → option label(s) or custom text. */
-  answers?: Record<string, string | string[]> | null;
+  /**
+   * Cursor ACP docs: `{ questionId, selectedOptionIds }[]`.
+   * Sidecar also accepts a legacy label record for compatibility.
+   */
+  answers?:
+    | Record<string, string | string[]>
+    | { questionId: string; selectedOptionIds: string[] }[]
+    | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const requestId = options.requestId.trim();
   if (!requestId) return { ok: false, error: "requestId is required." };
@@ -856,10 +917,7 @@ export async function respondPtyAcpUiRequest(options: {
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -887,10 +945,7 @@ export async function killPtySession(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -923,10 +978,7 @@ export async function stopPtyAgentTask(
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
   }
 }
@@ -995,10 +1047,155 @@ export async function revertPtyGitCheckpoint(options: {
   } catch (error) {
     return {
       ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Could not reach local PTY server. Run `pnpm pty`.",
+      error: ptyUnreachableMessage(error),
     };
+  }
+}
+
+/** Same-turn steer (additional ACP prompt on the active turnId). */
+export async function steerPtyAcpTurn(options: {
+  taskId: string;
+  expectedTurnId: string;
+  prompt: string;
+  images?: { mimeType: string; data: string }[] | null;
+  /** Client optimistic user message id — sidecar persists after accept. */
+  clientMessageId?: string | null;
+}): Promise<
+  | { ok: true; turnId: string }
+  | { ok: false; error: string; conflict?: boolean }
+> {
+  const taskId = options.taskId.trim();
+  const expectedTurnId = options.expectedTurnId.trim();
+  if (!taskId || !expectedTurnId) {
+    return { ok: false, error: "taskId and expectedTurnId are required." };
+  }
+  try {
+    const response = await fetch(`${getPtyHttpOrigin()}/agent/steer`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        taskId,
+        expectedTurnId,
+        prompt: options.prompt,
+        images: options.images ?? [],
+        clientMessageId: options.clientMessageId?.trim() || null,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      turnId?: string;
+      code?: string;
+    } | null;
+    if (response.status === 409) {
+      return {
+        ok: false,
+        conflict: true,
+        error: body?.error || "No matching running turn to steer.",
+      };
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: body?.error || `Steer failed (${response.status}).`,
+      };
+    }
+    return { ok: true, turnId: body?.turnId?.trim() || expectedTurnId };
+  } catch (error) {
+    return { ok: false, error: ptyUnreachableMessage(error) };
+  }
+}
+
+/** Restore a sidecar snapshot checkpoint; only then truncate Chat. */
+export async function restorePtyGitCheckpoint(options: {
+  cwd?: string | null;
+  checkpointId: string;
+  deleteCheckpointIds?: string[] | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const checkpointId = options.checkpointId.trim();
+  if (!checkpointId) return { ok: false, error: "checkpointId is required." };
+  try {
+    const response = await fetch(
+      `${getPtyHttpOrigin()}/agent/git/checkpoints/restore`,
+      {
+        method: "POST",
+        headers: {
+          ...ptyAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cwd: options.cwd?.trim() || null,
+          checkpointId,
+          deleteCheckpointIds: options.deleteCheckpointIds ?? [],
+        }),
+      },
+    );
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      restored?: boolean;
+      error?: string;
+    } | null;
+    if (!response.ok || body?.ok === false || body?.restored === false) {
+      return {
+        ok: false,
+        error: body?.error || `Checkpoint restore failed (${response.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: ptyUnreachableMessage(error) };
+  }
+}
+
+/** Access permission policy for the ACP session. */
+export async function setPtyAcpAccessMode(options: {
+  taskId: string;
+  mode: "supervised" | "auto_accept_edits" | "full_access";
+  cwd?: string | null;
+}): Promise<
+  | {
+      ok: true;
+      accessMode: "supervised" | "auto_accept_edits" | "full_access";
+    }
+  | { ok: false; error: string }
+> {
+  const taskId = options.taskId.trim();
+  if (!taskId) return { ok: false, error: "taskId is required." };
+  try {
+    const response = await fetch(`${getPtyHttpOrigin()}/agent/acp/access-mode`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        taskId,
+        mode: options.mode,
+        cwd: options.cwd?.trim() || null,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      accessMode?: "supervised" | "auto_accept_edits" | "full_access";
+    } | null;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: body?.error || `Access mode failed (${response.status}).`,
+      };
+    }
+    return {
+      ok: true,
+      accessMode:
+        body?.accessMode === "full_access"
+          ? "full_access"
+          : body?.accessMode === "auto_accept_edits"
+            ? "auto_accept_edits"
+            : "supervised",
+    };
+  } catch (error) {
+    return { ok: false, error: ptyUnreachableMessage(error) };
   }
 }

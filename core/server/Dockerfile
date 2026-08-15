@@ -20,7 +20,7 @@ COPY --from=build /app /app
 
 WORKDIR /app/backsteros-api
 ENV NODE_ENV=production
-ENV PORT=8787
-EXPOSE 8787
+ENV PORT=8788
+EXPOSE 8788
 
 CMD ["node", "dist/index.js"]

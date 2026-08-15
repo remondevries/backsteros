@@ -11,6 +11,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import type { TaskLink } from "@backsteros/contracts";
+
 import {
   getComposeKindForShortcutKey,
   hasCmdShiftArrowShortcutModifiers,
@@ -62,6 +64,7 @@ import { getDisplayProjectIcon, ProjectOcticon } from "./project-octicon.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { KnowledgeBaseNavIcon } from "./sidebar-nav-icons.js";
+import { TaskLinkAttachments } from "./task-link-attachments.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
@@ -130,6 +133,7 @@ export type ComposeModalCreateTaskInput = {
   priority?: number;
   dueDate: string | null;
   assigneeId: string | null;
+  links?: TaskLink[];
 };
 
 export type ComposeModalCreateDocumentInput = {
@@ -219,6 +223,7 @@ export function ComposeModal({
   const [priority, setPriority] = useState<TaskPriority>(0);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(defaultAssigneeId);
+  const [links, setLinks] = useState<TaskLink[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showBreadcrumbFade, setShowBreadcrumbFade] = useState(false);
   const [pending, setPending] = useState(false);
@@ -282,6 +287,7 @@ export function ComposeModal({
     setPriority(0);
     setDueDate(resolveComposeContextDueDate(pathname, projects));
     setAssigneeId(defaultAssigneeId);
+    setLinks([]);
     setError(null);
   } else if (!open && prevComposeResetKey !== "") {
     setPrevComposeResetKey("");
@@ -511,6 +517,7 @@ export function ComposeModal({
       priority,
       dueDate,
       assigneeId,
+      ...(links.length > 0 ? { links } : {}),
     })
       .then((result) => {
         navigateAfterCompose(result.href);
@@ -525,6 +532,7 @@ export function ComposeModal({
     assigneeId,
     description,
     dueDate,
+    links,
     navigateAfterCompose,
     onCreateTask,
     pending,
@@ -709,6 +717,11 @@ export function ComposeModal({
           window.requestAnimationFrame(() => {
             titleInputRef.current?.focus();
           });
+          return;
+        }
+
+        // Add-link modal is stacked above compose; let it own Escape.
+        if (document.querySelector("[data-task-link-modal]")) {
           return;
         }
 
@@ -1244,6 +1257,15 @@ export function ComposeModal({
                 />
               ) : null}
             </div>
+
+            {isTask ? (
+              <div className="create-task-modal-attachments">
+                <TaskLinkAttachments
+                  links={links}
+                  onChangeLinks={pending || contextLoading ? undefined : setLinks}
+                />
+              </div>
+            ) : null}
           </div>
 
           <footer

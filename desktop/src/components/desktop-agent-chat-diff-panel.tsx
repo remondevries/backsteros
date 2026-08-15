@@ -96,15 +96,21 @@ export function DesktopAgentChatDiffPanel({
     return files[0]?.path ?? null;
   });
 
+  // Only re-sync when the turn's file list / open path changes — never when the
+  // user picks a sidebar file. Depending on `activePath` + always applying
+  // `initialPath` snapped every click back to the first file.
   useEffect(() => {
     if (initialPath && files.some((file) => file.path === initialPath)) {
       setActivePath(initialPath);
       return;
     }
-    if (!activePath || !files.some((file) => file.path === activePath)) {
-      setActivePath(files[0]?.path ?? null);
-    }
-  }, [activePath, files, initialPath]);
+    setActivePath((current) => {
+      if (current && files.some((file) => file.path === current)) {
+        return current;
+      }
+      return files[0]?.path ?? null;
+    });
+  }, [files, initialPath]);
 
   useEffect(() => {
     if (!showClose) return;
@@ -199,7 +205,7 @@ export function DesktopAgentChatDiffPanel({
                     {formatDiffStat(activeFile)}
                   </span>
                 </div>
-                <PierreDiffBody file={activeFile} />
+                <PierreDiffBody key={activeFile.path} file={activeFile} />
               </>
             ) : null}
           </section>

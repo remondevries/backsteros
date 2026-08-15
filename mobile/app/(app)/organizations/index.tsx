@@ -71,7 +71,6 @@ export default function OrganizationsScreen() {
     rows: sourceRows,
     loading,
     error,
-    useRest,
     restLoading,
     reload,
   } = useSyncedOrRest<SyncedOrganizationRow, OrganizationRow>({
@@ -188,7 +187,7 @@ export default function OrganizationsScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={useRest ? restLoading : false}
+            refreshing={restLoading}
             onRefresh={() => {
               search.open();
               void reload();

@@ -5,6 +5,10 @@ import { StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
+import {
+  DEFAULT_CODEBASE_PHONE_SECTION,
+  type CodebasePhoneSectionId,
+} from "../lib/codebase-workbench-tabs";
 import { isPadDevice } from "../lib/device";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import {
@@ -70,6 +74,8 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   const [section, setSection] = useState<ProjectSectionId>(
     DEFAULT_PROJECT_SECTION,
   );
+  const [phoneCodebaseSection, setPhoneCodebaseSection] =
+    useState<CodebasePhoneSectionId>(DEFAULT_CODEBASE_PHONE_SECTION);
   const [displayTitle, setDisplayTitle] = useState(title);
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -89,6 +95,10 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
     setEditing(false);
     setSaveError(null);
   }, [section, projectId]);
+
+  useEffect(() => {
+    setPhoneCodebaseSection(DEFAULT_CODEBASE_PHONE_SECTION);
+  }, [projectId]);
 
   // Refresh GitHub lists when returning to the screen (e.g. after Settings OAuth).
   useEffect(() => {
@@ -197,6 +207,7 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   }
 
   if (isCodebase && !editing) {
+    const phoneOverviewActive = phoneCodebaseSection === "overview";
     return (
       <>
         <Stack.Screen
@@ -214,13 +225,19 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
                 </Text>
               </View>
             ),
-            headerRight: () => (
-              <TabStackHeaderPlusButton
-                chrome="plain"
-                onPress={onPressCreate}
-                accessibilityLabel="Create task"
-              />
-            ),
+            headerRight: () =>
+              phoneOverviewActive ? (
+                <TabStackHeaderTextButton
+                  label="Edit"
+                  onPress={startEditing}
+                />
+              ) : (
+                <TabStackHeaderPlusButton
+                  chrome="plain"
+                  onPress={onPressCreate}
+                  accessibilityLabel="Create task"
+                />
+              ),
           }}
         />
         <View style={ui.screen}>
@@ -228,6 +245,9 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
             projectId={projectId}
             githubRefreshToken={githubRefreshToken}
             onTitleChange={setDisplayTitle}
+            onPhoneSectionChange={setPhoneCodebaseSection}
+            descriptionOverride={overviewDescription}
+            onDescriptionLoaded={setOverviewDescription}
           />
         </View>
       </>

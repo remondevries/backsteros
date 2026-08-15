@@ -73,6 +73,12 @@ export function ContentBreadcrumb({
 export type ContentChromeHeaderProps = {
   children: ReactNode;
   actions?: ReactNode;
+  /**
+   * Optional right-side chrome that matches a content detail panel width
+   * (e.g. categories 50/50 split) so the panel reads as continuous into the
+   * breadcrumb row.
+   */
+  trailingPanel?: ReactNode;
   className?: string;
 };
 
@@ -80,15 +86,31 @@ export type ContentChromeHeaderProps = {
 export function ContentChromeHeader({
   children,
   actions,
+  trailingPanel = null,
   className = "",
 }: ContentChromeHeaderProps) {
+  const hasTrailingPanel = trailingPanel != null;
   return (
     <div
-      className={`content-chrome-header app-breadcrumb-header ${className}`.trim()}
+      className={[
+        "content-chrome-header",
+        "app-breadcrumb-header",
+        hasTrailingPanel ? "has-trailing-panel" : null,
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
-      <div className="content-chrome-header__main">{children}</div>
-      {actions ? (
-        <div className="content-chrome-header__actions">{actions}</div>
+      <div className="content-chrome-header__primary">
+        <div className="content-chrome-header__main">{children}</div>
+        {actions ? (
+          <div className="content-chrome-header__actions">{actions}</div>
+        ) : null}
+      </div>
+      {hasTrailingPanel ? (
+        <div className="content-chrome-header__trailing-panel">
+          {trailingPanel}
+        </div>
       ) : null}
     </div>
   );

@@ -330,35 +330,43 @@ export function LettersPage({
             ? projects.find((entry) => entry.key === payload.projectKey) ?? null
             : null;
           void (async () => {
-            const created = await workspace.createLetter({
-              title: payload.title,
-              body: payload.body,
-              status: payload.status,
-              organizationId: payload.organizationId,
-              contactId: payload.contactId,
-              projectId: project?.id ?? null,
-              dueDate: payload.dueDate
-                ? payload.dueDate.toISOString()
-                : null,
-              receivedDate: payload.receivedDate
-                ? payload.receivedDate.toISOString()
-                : null,
-            });
-            setOmittedLetterIds([]);
-            if (payload.pdfFile) {
-              setComposePdfUploading(true);
-              const upload = await uploadLetterPdfFile(
-                client,
-                created.id,
-                payload.pdfFile,
-              );
-              setComposePdfUploading(false);
-              if (!upload.ok) {
-                console.error(upload.error);
-                return;
+            try {
+              const created = await workspace.createLetter({
+                title: payload.title,
+                body: payload.body,
+                status: payload.status,
+                organizationId: payload.organizationId,
+                contactId: payload.contactId,
+                projectId: project?.id ?? null,
+                dueDate: payload.dueDate
+                  ? payload.dueDate.toISOString()
+                  : null,
+                receivedDate: payload.receivedDate
+                  ? payload.receivedDate.toISOString()
+                  : null,
+              });
+              setOmittedLetterIds([]);
+              const shouldNavigate = payload.navigateAfterCreate !== false;
+              if (shouldNavigate) {
+                // Navigate immediately so the letter is selectable in the side
+                // list; upload the PDF afterward (failure must not drop the letter).
+                navigate(letterDetailHref(created), { replace: true });
               }
+              if (payload.pdfFile) {
+                setComposePdfUploading(true);
+                const upload = await uploadLetterPdfFile(
+                  client,
+                  created.id,
+                  payload.pdfFile,
+                );
+                setComposePdfUploading(false);
+                if (!upload.ok) {
+                  console.error(upload.error);
+                }
+              }
+            } catch (error) {
+              console.error("[desktop] create letter", error);
             }
-            navigate(letterDetailHref(created), { replace: true });
           })();
         }}
       />

@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-export type CommandPaletteMode = "search" | "go";
+export type CommandPaletteMode = "search" | "go" | "finance-go";
 
 type CommandPaletteContextValue = {
   open: boolean;
@@ -18,6 +18,7 @@ type CommandPaletteContextValue = {
   toggle: () => void;
   openSearch: () => void;
   openGo: () => void;
+  openFinanceGo: () => void;
 };
 
 const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(
@@ -62,9 +63,22 @@ export function CommandPaletteProvider({
     setOpenState(true);
   }, []);
 
+  const openFinanceGo = useCallback(() => {
+    setMode("finance-go");
+    setOpenState(true);
+  }, []);
+
   const value = useMemo(
-    () => ({ open, mode, setOpen, toggle, openSearch, openGo }),
-    [mode, open, openGo, openSearch, setOpen, toggle],
+    () => ({
+      open,
+      mode,
+      setOpen,
+      toggle,
+      openSearch,
+      openGo,
+      openFinanceGo,
+    }),
+    [mode, open, openFinanceGo, openGo, openSearch, setOpen, toggle],
   );
 
   return (

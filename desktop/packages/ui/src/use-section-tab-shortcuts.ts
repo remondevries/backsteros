@@ -16,8 +16,8 @@ import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
  * ⌥[ / ⌥] cycle previous / next among those same tabs.
  * On letter detail, 1–5 also select PDF attachments when no section tabs apply
  * (e.g. global `/letters/…`); project/org/contact letter routes prefer section tabs.
- * On codebase projects, 1–4 (and ⌥[ / ⌥]) switch Tasks / Files / Commits / PRs
- * while the development workbench is mounted.
+ * On codebase projects, 1–5 (and ⌥[ / ⌥]) switch Tasks / Files / Docs /
+ * Commits / PRs while the development workbench is mounted.
  * Disabled on task detail routes so 1–5 do not leave the single-task layout.
  */
 export function useSectionTabShortcuts({

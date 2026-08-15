@@ -93,6 +93,8 @@ export const workspaceIntegrationSecrets = pgTable(
       .primaryKey()
       .references(() => workspaces.id, { onDelete: "cascade" }),
     cursorApiKey: text("cursor_api_key"),
+    moneybirdApiToken: text("moneybird_api_token"),
+    moneybirdAdministrationId: text("moneybird_administration_id"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -122,6 +124,7 @@ export const organizations = pgTable(
     avatarContentType: text("avatar_content_type"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     notes: text("notes"),
+    moneybirdContactId: text("moneybird_contact_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -732,6 +735,216 @@ export const mutationReceipts = pgTable(
   ],
 );
 
+export const bankAccounts = pgTable(
+  "bank_accounts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    ibanOrMask: text("iban_or_mask"),
+    currency: text("currency").notNull().default("EUR"),
+    type: text("type").notNull().default("bank_account"),
+    avatarStorageKey: text("avatar_storage_key"),
+    avatarContentType: text("avatar_content_type"),
+    /** Optional chart / accent color (#RRGGBB). */
+    color: text("color"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("bank_accounts_workspace_key_unique").on(
+      table.workspaceId,
+      table.key,
+    ),
+    index("bank_accounts_workspace_id_idx").on(table.workspaceId),
+    index("bank_accounts_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const financialCategories = pgTable(
+  "financial_categories",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    parentId: text("parent_id"),
+    kind: text("kind").notNull().default("expense"),
+    listing: text("listing").notNull().default("regular"),
+    icon: text("icon"),
+    budgetCents: bigint("budget_cents", { mode: "number" }),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("financial_categories_workspace_id_idx").on(table.workspaceId),
+    index("financial_categories_parent_id_idx").on(table.parentId),
+    index("financial_categories_deleted_at_idx").on(table.deletedAt),
+    foreignKey({
+      name: "financial_categories_parent_id_fk",
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+    }).onDelete("set null"),
+  ],
+);
+
+export const financialGoals = pgTable(
+  "financial_goals",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    listing: text("listing").notNull().default("active"),
+    icon: text("icon"),
+    goalAmountCents: bigint("goal_amount_cents", { mode: "number" }),
+    startDate: date("start_date", { mode: "string" }),
+    endDate: date("end_date", { mode: "string" }),
+    contributionCents: bigint("contribution_cents", { mode: "number" }),
+    savingMode: text("saving_mode").notNull().default("monthly"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("financial_goals_workspace_id_idx").on(table.workspaceId),
+    index("financial_goals_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const financialRecurrings = pgTable(
+  "financial_recurrings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    icon: text("icon"),
+    categoryId: text("category_id").references(() => financialCategories.id, {
+      onDelete: "set null",
+    }),
+    amountCents: bigint("amount_cents", { mode: "number" }),
+    nextDate: date("next_date", { mode: "string" }),
+    archived: boolean("archived").notNull().default(false),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("financial_recurrings_workspace_id_idx").on(table.workspaceId),
+    index("financial_recurrings_category_id_idx").on(table.categoryId),
+    index("financial_recurrings_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const financialImportBatches = pgTable(
+  "financial_import_batches",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    bankAccountId: text("bank_account_id")
+      .notNull()
+      .references(() => bankAccounts.id, { onDelete: "cascade" }),
+    originalFilename: text("original_filename").notNull().default(""),
+    storageKey: text("storage_key").notNull().default(""),
+    dialect: text("dialect").notNull().default("unknown"),
+    rowCount: integer("row_count").notNull().default(0),
+    insertedCount: integer("inserted_count").notNull().default(0),
+    duplicateCount: integer("duplicate_count").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("financial_import_batches_workspace_id_idx").on(table.workspaceId),
+    index("financial_import_batches_bank_account_id_idx").on(table.bankAccountId),
+  ],
+);
+
+export const financialTransactions = pgTable(
+  "financial_transactions",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    bankAccountId: text("bank_account_id")
+      .notNull()
+      .references(() => bankAccounts.id, { onDelete: "cascade" }),
+    importBatchId: text("import_batch_id").references(
+      () => financialImportBatches.id,
+      { onDelete: "set null" },
+    ),
+    bookedOn: date("booked_on", { mode: "string" }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("EUR"),
+    payee: text("payee").notNull().default(""),
+    counterparty: text("counterparty"),
+    memo: text("memo"),
+    /**
+     * Optional user-facing label. Original payee/memo/raw stay untouched for
+     * bank matching; when set, clients prefer this for list/detail titles.
+     */
+    displayName: text("display_name"),
+    balanceAfterCents: integer("balance_after_cents"),
+    externalId: text("external_id"),
+    fingerprint: text("fingerprint").notNull(),
+    sourceCode: text("source_code"),
+    sourceType: text("source_type"),
+    raw: jsonb("raw").notNull().default(sql`'{}'::jsonb`),
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    categoryId: text("category_id").references(() => financialCategories.id, {
+      onDelete: "set null",
+    }),
+    goalId: text("goal_id").references(() => financialGoals.id, {
+      onDelete: "set null",
+    }),
+    recurringId: text("recurring_id").references(() => financialRecurrings.id, {
+      onDelete: "set null",
+    }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("financial_transactions_account_booked_idx").on(
+      table.workspaceId,
+      table.bankAccountId,
+      table.bookedOn,
+    ),
+    uniqueIndex("financial_transactions_account_fingerprint_unique").on(
+      table.bankAccountId,
+      table.fingerprint,
+    ),
+    uniqueIndex("financial_transactions_account_external_id_unique")
+      .on(table.bankAccountId, table.externalId)
+      .where(sql`${table.externalId} IS NOT NULL`),
+    index("financial_transactions_organization_id_idx").on(table.organizationId),
+    index("financial_transactions_project_id_idx").on(table.projectId),
+    index("financial_transactions_category_id_idx").on(table.categoryId),
+    index("financial_transactions_goal_id_idx").on(table.goalId),
+    index("financial_transactions_recurring_id_idx").on(table.recurringId),
+  ],
+);
+
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
@@ -747,3 +960,9 @@ export type DbArea = typeof areas.$inferSelect;
 export type DbLetter = typeof letters.$inferSelect;
 export type DbAvatar = typeof avatars.$inferSelect;
 export type DbTaskImage = typeof taskImages.$inferSelect;
+export type DbBankAccount = typeof bankAccounts.$inferSelect;
+export type DbFinancialCategory = typeof financialCategories.$inferSelect;
+export type DbFinancialGoal = typeof financialGoals.$inferSelect;
+export type DbFinancialRecurring = typeof financialRecurrings.$inferSelect;
+export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;
+export type DbFinancialTransaction = typeof financialTransactions.$inferSelect;

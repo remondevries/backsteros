@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   formatAgentModelTriggerLabel,
+  normalizeAgentChatModelId,
   readAgentChatModelId,
   writeAgentChatModelId,
   type AgentChatModelOption,
@@ -10,6 +11,8 @@ import { listCursorAgentModels } from "../lib/pty";
 
 export type DesktopAgentModelPickerProps = {
   disabled?: boolean;
+  /** Effective model for this chat (session pin or global preference). */
+  value?: string;
   onModelChange?: (modelId: string) => void;
 };
 
@@ -37,6 +40,7 @@ function ModelChevronIcon() {
  */
 export function DesktopAgentModelPicker({
   disabled = false,
+  value,
   onModelChange,
 }: DesktopAgentModelPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -46,7 +50,7 @@ export function DesktopAgentModelPicker({
   const [models, setModels] = useState<AgentChatModelOption[]>([
     { id: "auto", displayName: "Auto" },
   ]);
-  const [selectedId, setSelectedId] = useState(() => readAgentChatModelId());
+  const selectedId = normalizeAgentChatModelId(value ?? readAgentChatModelId());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,12 +79,18 @@ export function DesktopAgentModelPicker({
       return;
     }
     setModels(result.models);
-    const current = readAgentChatModelId();
-    if (!result.models.some((m) => m.id === current)) {
-      writeAgentChatModelId("auto");
-      setSelectedId("auto");
+    const current = normalizeAgentChatModelId(
+      value ?? readAgentChatModelId(),
+    );
+    if (!result.models.some((m) => m.id === current) && current !== "auto") {
+      // Keep unknown ids visible via fallback label; only reset global if
+      // this picker is showing the global preference (no controlled value).
+      if (value == null) {
+        writeAgentChatModelId("auto");
+        onModelChange?.("auto");
+      }
     }
-  }, []);
+  }, [onModelChange, value]);
 
   useEffect(() => {
     void loadModels();
@@ -118,11 +128,11 @@ export function DesktopAgentModelPicker({
 
   const selectModel = useCallback(
     (id: string) => {
-      writeAgentChatModelId(id);
-      setSelectedId(id);
+      const next = normalizeAgentChatModelId(id);
+      writeAgentChatModelId(next);
       setOpen(false);
       setQuery("");
-      onModelChange?.(id);
+      onModelChange?.(next);
     },
     [onModelChange],
   );

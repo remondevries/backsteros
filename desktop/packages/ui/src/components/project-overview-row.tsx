@@ -17,6 +17,7 @@ import {
 } from "../project-progress-ring.js";
 import type { ProjectArea } from "../project-areas.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../keyboard-nav-item.js";
+import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
@@ -151,10 +152,9 @@ export function ProjectOverviewRow({
           .join(" ")}
         onClick={() => onSelect?.(project.key)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onSelect?.(project.key);
-          }
+          if (!isDirectRoleButtonActivationKey(event)) return;
+          event.preventDefault();
+          onSelect?.(project.key);
         }}
         onDragStart={canHtml5Drag ? onDragStart : undefined}
         onDragEnd={canHtml5Drag ? onDragEnd : undefined}

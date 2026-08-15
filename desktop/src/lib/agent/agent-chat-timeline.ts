@@ -3,7 +3,12 @@ import type {
   AgentChatActivityDiffLine,
   AgentChatActivityItem,
 } from "./agent-acp-activity";
-import type { AgentChatMessage } from "./agent-chat-transcript";
+import type {
+  AgentChatMessage,
+  AgentChatTurnOutcome,
+} from "./agent-chat-transcript";
+
+export type { AgentChatTurnOutcome };
 
 export type AgentChatChangedFile = {
   path: string;
@@ -39,23 +44,40 @@ export function formatChatDuration(ms: number): string {
   return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
 
-export function turnWorkedLabel(options: {
+/** Settled-turn fold label (T3 Worked / You stopped). */
+export function turnFoldLabel(options: {
+  outcome?: AgentChatTurnOutcome | null;
   startedAt?: number | null;
   endedAt?: number | null;
   activityCount: number;
 }): string {
   const started = options.startedAt ?? null;
   const ended = options.endedAt ?? null;
+  let duration = "";
   if (started != null && ended != null && ended >= started) {
-    const duration = formatChatDuration(ended - started);
-    if (duration) return `Worked for ${duration}`;
+    duration = formatChatDuration(ended - started);
   }
+  if (options.outcome === "interrupted") {
+    return duration
+      ? `You stopped after ${duration}`
+      : "You stopped this response";
+  }
+  if (duration) return `Worked for ${duration}`;
   if (options.activityCount > 0) {
     return `Worked · ${options.activityCount} step${
       options.activityCount === 1 ? "" : "s"
     }`;
   }
   return "Worked";
+}
+
+/** @deprecated Prefer turnFoldLabel — kept for existing call sites/tests. */
+export function turnWorkedLabel(options: {
+  startedAt?: number | null;
+  endedAt?: number | null;
+  activityCount: number;
+}): string {
+  return turnFoldLabel(options);
 }
 
 export function changedFileName(pathValue: string): string {
@@ -161,6 +183,25 @@ export function resolveTurnDiffFiles(options: {
   }
   const message = options.messages.find((entry) => entry.id === options.turnId);
   return collectChangedFilesFromActivities(message?.activities);
+}
+
+/**
+ * Prefer live-turn edits; otherwise the most recent assistant turn that
+ * produced file changes. Used by the Diff surface and “Open a surface” gating.
+ */
+export function latestAgentChatChangedFiles(
+  messages: readonly AgentChatMessage[],
+  liveActivities?: readonly AgentChatActivityItem[],
+): AgentChatChangedFile[] {
+  const live = collectChangedFilesFromActivities(liveActivities);
+  if (live.length > 0) return live;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== "assistant") continue;
+    const files = collectChangedFilesFromActivities(message.activities);
+    if (files.length > 0) return files;
+  }
+  return [];
 }
 
 export function toActivityDiff(

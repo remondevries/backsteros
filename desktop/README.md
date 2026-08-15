@@ -31,17 +31,30 @@ Requires Clerk — no demo fixtures when signed out or when the publishable key 
 pnpm install
 pnpm --filter @backsteros/ui build
 cp desktop/.env.example desktop/.env
-# Edit .env: VITE_API_URL=http://127.0.0.1:8787 and Clerk publishable key
+# Edit .env: VITE_API_URL=http://127.0.0.1:8788 and Clerk publishable key
 
+# Recommended — menu-bar hub starts Docker + core API + PTY
+pnpm --filter @backsteros/hub dev
+# In the tray: Start all
+
+# Then the product shell (from repo root or `cd desktop`)
+pnpm --filter @backsteros/desktop dev
+# Or Vite-only UI on :1420:
+pnpm --filter @backsteros/desktop dev:vite
+```
+
+Vite HMR can remount providers while PowerSync holds an IndexedDB SQLite handle. The desktop shell reuses that handle across Fast Refresh, surfaces a connect timeout as a recoverable error, and wraps the tree in an ErrorBoundary plus a boot-splash watchdog (Continue / Reload) so a bad hot update does not require killing the Tauri process.
+
+Manual alternative (without hub):
+
+```bash
 # Terminal 1 — local core API
 pnpm dev
 
 # Terminal 2 — local PTY sidecar (required for Start Agent / task terminal)
-pnpm pty
+pnpm --filter @backsteros/desktop pty
 
 # Terminal 3 — desktop shell
-pnpm --filter @backsteros/desktop tauri:dev
-# Or Vite-only UI on :1420:
 pnpm --filter @backsteros/desktop dev
 ```
 
@@ -49,14 +62,14 @@ pnpm --filter @backsteros/desktop dev
 
 Desktop task detail includes a collapsible right **agent Chat rail** (T3-style Cursor ACP). **Start Agent** talks to the local Node sidecar (`ws://127.0.0.1:3101`).
 
-- Run `pnpm pty` (or `pnpm --filter @backsteros/desktop pty`) before using Chat.
+- Run `pnpm --filter @backsteros/desktop pty` (or `cd desktop && pnpm pty`) before using Chat.
 - Cursor Agent CLI (`agent`) must be on PATH and logged in (`agent login`).
 - Start ensures an ACP session (`POST /agent/acp/ensure`) and sends the bootstrap prompt via ACP. Switching tasks does not stop background turns — the sidecar projects the live timeline into the shared transcript store.
 - Collapsing the rail / leaving the task only detaches the Chat event subscriber. Stop Agent ends the ACP session.
 - Default bind is loopback. For **iPad over Tailscale**, run with e.g.:
 
 ```bash
-PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm pty
+PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm --filter @backsteros/desktop pty
 ```
 
   Set the same token on core (`AGENT_PTY_AUTH_TOKEN`) and `AGENT_PTY_PUBLIC_URL` to the Tailscale-reachable origin (e.g. `http://macbook.tailnet.ts.net:3101`). Desktop can set `VITE_PTY_AUTH_TOKEN` to match when auth is enabled.
@@ -71,7 +84,7 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 ### Auth / API smoke
 
-1. Start API locally (`8787`) and ensure Clerk allowed origins include Vite `:1420` / Tauri hosts (see `.env.example`).
+1. Start API locally (`8788`) and ensure Clerk allowed origins include Vite `:1420` / Tauri hosts (see `.env.example`).
 2. Set `VITE_CLERK_PUBLISHABLE_KEY` — without it the app only shows the configure-auth screen.
 3. Until a session exists, Clerk sign-in is shown (no empty/demo workspace).
 4. Command palette (⌘K) uses live global search when authenticated; lists use PowerSync local SQLite.
@@ -81,13 +94,13 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 ```bash
 # Build shared UI, then native installers (macOS .app / .dmg, Windows, Linux)
 pnpm --filter @backsteros/ui build
-pnpm --filter @backsteros/desktop tauri:build
+pnpm --filter @backsteros/desktop build
 # Artifacts under backsteros-desktop/src-tauri/target/release/bundle/
 ```
 
 Packaged builds always use compile-time `VITE_*` from `.env` (or CI env).
 Icons live in `src-tauri/icons/`. Desktop always targets **local core**
-(`VITE_API_URL`, default `http://127.0.0.1:8787`).
+(`VITE_API_URL`, default `http://127.0.0.1:8788`).
 
 ### CI signing / notarization
 
@@ -128,7 +141,7 @@ Then re-run **Desktop release** (Actions → workflow_dispatch) or push a `deskt
 ### Local core
 
 Desktop always talks to local core via `VITE_API_URL` (default
-`http://127.0.0.1:8787`). There is no Dev/Prod backend switch in v2.
+`http://127.0.0.1:8788`). There is no Dev/Prod backend switch in v2.
 
 ### PowerSync
 

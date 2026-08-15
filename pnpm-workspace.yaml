@@ -4,6 +4,7 @@ packages:
   - mobile
   - desktop
   - desktop/packages/*
+  - hub
 allowBuilds:
   '@clerk/shared': true
   '@journeyapps/wa-sqlite': true

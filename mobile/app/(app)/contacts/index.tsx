@@ -79,7 +79,6 @@ export default function ContactsScreen() {
     rows: sourceRows,
     loading,
     error,
-    useRest,
     restLoading,
     reload,
   } = useSyncedOrRest<SyncedContactRow, ContactRow>({
@@ -214,7 +213,7 @@ export default function ContactsScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={useRest ? restLoading : false}
+            refreshing={restLoading}
             onRefresh={() => {
               search.open();
               void reload();

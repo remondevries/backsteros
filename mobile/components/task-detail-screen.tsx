@@ -15,7 +15,6 @@ import { isPadDevice } from "../lib/device";
 import { projectDetailHref } from "../lib/detail-href";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
-import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import {
   formatTaskDueMetaLabel,
@@ -128,9 +127,6 @@ export function TaskDetailScreen({ taskId }: Props) {
   );
 
   const { task, loading, error, retry, isCodebaseTask } = useTaskDetail(taskId);
-
-  /** Codebase iPad layout is full-bleed (agent TUI) — hide floating tabs. */
-  useHideTabBar(isPadDevice() && isCodebaseTask);
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
   const { data: syncedContacts } = useLocalQuery<ContactOptionRow>(CONTACTS_SQL);
@@ -536,9 +532,6 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const useSideProperties = isPadDevice() && !isCodebaseTask;
   const useCodebasePadLayout = isPadDevice() && isCodebaseTask;
-  const scrollBottomClearance = useCodebasePadLayout
-    ? 0
-    : FLOATING_TAB_BAR_CLEARANCE;
   /** Nested Modals only when phone chips sheet hosts pickers. */
   const embedPropertySheets = !useSideProperties;
 
@@ -735,7 +728,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   const alwaysEditMain = (
     <KeyboardAwareScrollView
       style={ui.screen}
-      bottomClearance={scrollBottomClearance}
+      bottomClearance={FLOATING_TAB_BAR_CLEARANCE}
       keepEndVisibleWhileTyping
     >
       {titleDescriptionEditors}
@@ -763,7 +756,7 @@ export function TaskDetailScreen({ taskId }: Props) {
     <KeyboardAwareScrollView
       style={ui.screen}
       contentContainerStyle={styles.detailScrollContent}
-      bottomClearance={scrollBottomClearance}
+      bottomClearance={FLOATING_TAB_BAR_CLEARANCE}
       keepEndVisibleWhileTyping
     >
       <DetailContentContainer constrained>

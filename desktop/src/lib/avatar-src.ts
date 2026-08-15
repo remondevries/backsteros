@@ -8,7 +8,7 @@ type AvatarEntity = {
   avatarUpdatedAt?: number | null;
 };
 
-type AvatarKind = "contact" | "organization";
+type AvatarKind = "contact" | "organization" | "bank_account";
 
 /**
  * Resolve avatar blob URLs for contacts/orgs that have `avatarStorageKey`.

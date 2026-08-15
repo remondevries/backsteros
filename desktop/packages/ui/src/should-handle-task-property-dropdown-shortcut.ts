@@ -1,7 +1,7 @@
 import { isBlockingModalOpen } from "./shortcut-guards.js";
 import { isComposeModalTitleOrDescriptionFocused } from "./compose-modal-shortcut-target.js";
 import { isContentEditModeActive } from "./content-view-mode.js";
-import { isGoLeaderSequencePending } from "./go-leader-sequence-gate.js";
+import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 import { isTaskPropertyDropdownShortcutKey } from "./task-property-dropdown-keys.js";
 
@@ -12,7 +12,7 @@ function shouldHandleTaskPropertyDropdownShortcut(
     return false;
   }
 
-  if (isGoLeaderSequencePending()) {
+  if (isAnyLeaderSequencePending()) {
     return false;
   }
 

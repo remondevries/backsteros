@@ -1,0 +1,22 @@
+[package]
+name = "backsteros-hub"
+version = "0.1.0"
+description = "BacksterOS menu-bar hub — local service start/stop"
+authors = ["BacksterOS"]
+edition = "2021"
+
+[lib]
+name = "backsteros_hub_lib"
+# rlib-only: staticlib+rlib made rustc hang for 10+ minutes on this crate.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+libc = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }

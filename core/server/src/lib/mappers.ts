@@ -1,7 +1,13 @@
 import type {
   ApiKey,
   Area,
+  BankAccount,
   Document,
+  FinancialCategory,
+  FinancialGoal,
+  FinancialImportBatch,
+  FinancialRecurring,
+  FinancialTransaction,
   Project,
   SearchResult,
   Task,
@@ -12,7 +18,13 @@ import type {
 import type {
   DbApiKey,
   DbArea,
+  DbBankAccount,
   DbDocument,
+  DbFinancialCategory,
+  DbFinancialGoal,
+  DbFinancialImportBatch,
+  DbFinancialRecurring,
+  DbFinancialTransaction,
   DbProject,
   DbTask,
   DbTaskActivity,
@@ -197,6 +209,183 @@ export function toSearchResult(row: DbDocument): SearchResult {
     path: row.path,
     title: row.title,
     snippet: row.snippet,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function toBankAccount(row: DbBankAccount): BankAccount {
+  const type =
+    row.type === "credit_card" ||
+    row.type === "savings" ||
+    row.type === "investment" ||
+    row.type === "bank_account"
+      ? row.type
+      : "bank_account";
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    key: row.key,
+    name: row.name,
+    ibanOrMask: row.ibanOrMask,
+    currency: row.currency,
+    type,
+    avatarStorageKey: row.avatarStorageKey,
+    avatarContentType: row.avatarContentType,
+    color: row.color ?? null,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toFinancialCategory(row: DbFinancialCategory): FinancialCategory {
+  const kind =
+    row.kind === "income" || row.kind === "expense" || row.kind === "transfer"
+      ? row.kind
+      : "expense";
+  const listing = row.listing === "excluded" ? "excluded" : "regular";
+  const budgetCents =
+    row.budgetCents == null || row.budgetCents === 0 ? null : row.budgetCents;
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    parentId: row.parentId,
+    kind,
+    listing,
+    icon: row.icon ?? null,
+    budgetCents,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toFinancialGoal(
+  row: DbFinancialGoal,
+  savedCents = 0,
+): FinancialGoal {
+  const listing =
+    row.listing === "ready_to_spend" || row.listing === "archive"
+      ? row.listing
+      : "active";
+  const savingMode =
+    row.savingMode === "daily" ||
+    row.savingMode === "weekly" ||
+    row.savingMode === "yearly"
+      ? row.savingMode
+      : "monthly";
+  const goalAmountCents =
+    row.goalAmountCents == null || row.goalAmountCents === 0
+      ? null
+      : row.goalAmountCents;
+  const contributionCents =
+    row.contributionCents == null || row.contributionCents === 0
+      ? null
+      : row.contributionCents;
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    listing,
+    icon: row.icon ?? null,
+    goalAmountCents,
+    startDate: row.startDate ?? null,
+    endDate: row.endDate ?? null,
+    contributionCents,
+    savingMode,
+    savedCents: Number.isFinite(savedCents) ? Math.trunc(savedCents) : 0,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toFinancialRecurring(
+  row: DbFinancialRecurring,
+): FinancialRecurring {
+  const amountCents =
+    row.amountCents == null || row.amountCents === 0 ? null : row.amountCents;
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    icon: row.icon ?? null,
+    categoryId: row.categoryId ?? null,
+    amountCents,
+    nextDate: row.nextDate ?? null,
+    archived: Boolean(row.archived),
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toFinancialImportBatch(
+  row: DbFinancialImportBatch,
+): FinancialImportBatch {
+  const dialect =
+    row.dialect === "ing_nl" ||
+    row.dialect === "amex_nl" ||
+    row.dialect === "unknown"
+      ? row.dialect
+      : "unknown";
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    bankAccountId: row.bankAccountId,
+    originalFilename: row.originalFilename,
+    storageKey: row.storageKey,
+    dialect,
+    rowCount: row.rowCount,
+    insertedCount: row.insertedCount,
+    duplicateCount: row.duplicateCount,
+    errorCount: row.errorCount,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toFinancialTransaction(
+  row: DbFinancialTransaction,
+): FinancialTransaction {
+  const raw =
+    row.raw && typeof row.raw === "object" && !Array.isArray(row.raw)
+      ? Object.fromEntries(
+          Object.entries(row.raw as Record<string, unknown>).map(([key, value]) => [
+            key,
+            value == null ? "" : String(value),
+          ]),
+        )
+      : {};
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    bankAccountId: row.bankAccountId,
+    importBatchId: row.importBatchId,
+    bookedOn: row.bookedOn,
+    amountCents: row.amountCents,
+    currency: row.currency,
+    payee: row.payee,
+    counterparty: row.counterparty,
+    memo: row.memo,
+    displayName: row.displayName,
+    balanceAfterCents: row.balanceAfterCents,
+    externalId: row.externalId,
+    fingerprint: row.fingerprint,
+    sourceCode: row.sourceCode,
+    sourceType: row.sourceType,
+    raw,
+    organizationId: row.organizationId,
+    projectId: row.projectId,
+    categoryId: row.categoryId,
+    goalId: row.goalId,
+    recurringId: row.recurringId,
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }

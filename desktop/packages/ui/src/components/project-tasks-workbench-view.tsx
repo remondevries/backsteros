@@ -29,6 +29,11 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
 } from "../use-grouped-list-pointer-reorder.js";
+import { useListMultiSelect } from "../use-list-multi-select.js";
+import {
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+} from "../task-id-column-width.js";
 import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { KanbanBoard } from "./kanban-board.js";
@@ -43,6 +48,10 @@ import {
 import { StatusGroupSection } from "./status-group-section.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
+  TaskBulkEditBar,
+  type TaskBulkPatch,
+} from "./task-bulk-edit-bar.js";
+import {
   TaskItemRow,
   type TaskItemRowTask,
 } from "./task-item-row.js";
@@ -55,6 +64,8 @@ export type ProjectTasksWorkbenchViewProps = {
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
+  /** Soft-delete all currently selected tasks (bulk trash). */
+  onBulkDelete?: (taskIds: string[]) => void | Promise<void>;
   /** Persist list/board drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: TaskReorderRequest) => void;
   /** Shown after the task title in list rows (e.g. agent bound badge). */
@@ -79,6 +90,11 @@ export type ProjectTasksWorkbenchViewProps = {
   view?: ListBoardView;
   onViewChange?: (view: ListBoardView) => void;
   selectedTaskId?: string | null;
+  /**
+   * Fixed monospace width (in `ch`) for the task-id column.
+   * Defaults to the widest display id among this project's tasks.
+   */
+  taskIdColumnCh?: number;
 };
 
 /**
@@ -92,6 +108,7 @@ export function ProjectTasksWorkbenchView({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onBulkDelete,
   onReorder,
   onCreateTask,
   onCreatedTask,
@@ -106,6 +123,7 @@ export function ProjectTasksWorkbenchView({
   renderAssigneeAccessory,
   titleTrailingAlign = "inline",
   showDueMeta = true,
+  taskIdColumnCh: taskIdColumnChProp,
 }: ProjectTasksWorkbenchViewProps) {
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
@@ -118,6 +136,14 @@ export function ProjectTasksWorkbenchView({
   };
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const { tasks: optimisticTasks, patchTask } = useOptimisticTaskList(tasks);
+  const taskIdColumnCh = useMemo(
+    () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(tasks),
+    [taskIdColumnChProp, tasks],
+  );
+  const taskIdColumnStyle = useMemo(
+    () => taskIdColumnCssVars(taskIdColumnCh),
+    [taskIdColumnCh],
+  );
   const [localTasks, setLocalTasks] = useState(optimisticTasks);
   const [addingToStatus, setAddingToStatus] = useState<TaskStatus | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -294,11 +320,51 @@ export function ProjectTasksWorkbenchView({
     enabled: view === "list" && itemIds.length > 0,
   });
 
+  const {
+    selectedIds,
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(itemIds, {
+    selectAllShortcutEnabled: view === "list",
+  });
+
+  const selectedTasks = useMemo(
+    () => localTasks.filter((task) => selectedIds.has(task.id)),
+    [localTasks, selectedIds],
+  );
+
+  const applyBulkPatch = async (patch: TaskBulkPatch) => {
+    const ids = [...selectedIds];
+    for (const taskId of ids) {
+      if (patch.status !== undefined) {
+        handleStatusChange(taskId, patch.status);
+      }
+      if (patch.priority !== undefined) {
+        handlePriorityChange(taskId, patch.priority);
+      }
+      if ("dueDate" in patch) {
+        handleDueDateChange(taskId, patch.dueDate ?? null);
+      }
+      if ("assigneeId" in patch) {
+        handleAssigneeChange(taskId, patch.assigneeId ?? null);
+      }
+    }
+  };
+
   const listContent = (
     <ul
-      className="project-tasks-list"
+      className={[
+        "project-tasks-list",
+        hasBulkSelection ? "has-bulk-selection" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="list"
       ref={listRef}
+      style={taskIdColumnStyle}
       {...listContainerProps}
     >
       {groups.map((group) => {
@@ -380,6 +446,11 @@ export function ProjectTasksWorkbenchView({
                 task={task}
                 keyboardHighlighted={highlightedId === task.id}
                 onSelect={selectTask}
+                selected={isSelected(task.id)}
+                forceShowCheckbox={hasBulkSelection}
+                onToggleSelected={(taskId, _checked, event) =>
+                  toggleSelected(taskId, Boolean(event.shiftKey))
+                }
                 showProject={false}
                 showDueMeta={showDueMeta}
                 showAssignee
@@ -459,6 +530,28 @@ export function ProjectTasksWorkbenchView({
         ariaLabel="Task view mode"
         listContent={listContent}
         boardContent={boardContent}
+        listOverlay={
+          hasBulkSelection ? (
+            <TaskBulkEditBar
+              selectedTasks={selectedTasks}
+              showProject={false}
+              showAssignee
+              assigneeOptions={assigneeOptions}
+              onClear={clearSelection}
+              onSelectAll={
+                selectedIds.size < itemIds.length ? selectAll : undefined
+              }
+              onApply={applyBulkPatch}
+              onDelete={
+                onBulkDelete
+                  ? async () => {
+                      await onBulkDelete([...selectedIds]);
+                    }
+                  : undefined
+              }
+            />
+          ) : null
+        }
       />
     </div>
   );

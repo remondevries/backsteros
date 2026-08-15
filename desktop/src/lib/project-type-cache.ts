@@ -96,3 +96,35 @@ export function projectListLabelForNavFrom(from: ProjectNavFrom): string {
   if (from === "development") return "Development";
   return "Projects";
 }
+
+/**
+ * Sidebar active matching uses pathname prefixes (`/projects/...` → Projects).
+ * When the user opened a project from Development or Areas, remap to that list
+ * so the correct nav item stays highlighted.
+ */
+export function resolveSidebarActivePathname(
+  pathname: string,
+  navFrom: ProjectNavFrom | null | undefined,
+): string {
+  if (!navFrom || navFrom === "projects") return pathname;
+
+  const match = pathname.match(/^\/projects\/([^/]+)/);
+  if (!match || match[1] === "new") return pathname;
+
+  return projectListHrefForNavFrom(navFrom);
+}
+
+/** Prefer location state, then the in-memory nav-from cache. */
+export function resolveProjectNavFromForPath(options: {
+  locationState: unknown;
+  projectId?: string | null;
+  projectKey?: string | null;
+  routeParam?: string | null;
+}): ProjectNavFrom | null {
+  return (
+    projectNavFromLocationState(options.locationState) ??
+    recalledProjectNavFrom(options.projectId) ??
+    recalledProjectNavFrom(options.projectKey) ??
+    recalledProjectNavFrom(options.routeParam)
+  );
+}

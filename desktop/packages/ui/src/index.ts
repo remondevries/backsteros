@@ -67,6 +67,24 @@ export {
 } from "./task-display-id.js";
 
 export {
+  DEFAULT_TASK_ID_COLUMN_CH,
+  TASK_ID_COLUMN_CH_SLACK,
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+  taskNumberDigitCount,
+  type TaskIdColumnWidthSource,
+} from "./task-id-column-width.js";
+
+export {
+  DEFAULT_TX_CATEGORY_COLUMN_PX,
+  TX_CATEGORY_CHIP_CHROME_PX,
+  TX_CATEGORY_COLUMN_SLACK_PX,
+  computeTxCategoryColumnWidthPx,
+  txCategoryColumnCssVars,
+  useTxCategoryColumnWidthPx,
+} from "./finance-tx-category-column-width.js";
+
+export {
   TaskStatusIcon,
   type TaskStatusIconProps,
 } from "./components/task-status-icon.js";
@@ -173,6 +191,12 @@ export {
 } from "./tabs.js";
 
 export {
+  clearPrimedTabTitles,
+  getPrimedTabTitle,
+  primeTabTitle,
+} from "./primed-tab-title.js";
+
+export {
   extractTaskRouteParamFromHref,
   findTaskForTabHref,
   resolveProductTabTaskMeta,
@@ -239,6 +263,8 @@ export {
   type InboxTaskListItem,
 } from "./inbox-items.js";
 
+export { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
+
 export {
   InboxItemTypeIcon,
   type InboxItemTypeIconProps,
@@ -281,6 +307,7 @@ export {
   getTaskDueDateUrgency,
   formatTaskDueMetaLabel,
   parseDueDateInputValue,
+  toApiDueDateIso,
   type TaskDueDateUrgency,
 } from "./task-due-date.js";
 
@@ -398,6 +425,8 @@ export {
 export { ProjectAreaBadge } from "./components/project-area-badge.js";
 export {
   DROPDOWN_NONE_VALUE,
+  DROPDOWN_NO_GOAL_VALUE,
+  DROPDOWN_NO_RECURRING_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
@@ -444,11 +473,315 @@ export {
   isKnowledgeSectionPath,
   getProjectsHref,
   isProjectsPath,
+  getSelectedBankAccountSlugFromPathname,
+  isFinanceSectionPath,
+  bankAccountMatchesSlug,
   type OrganizationListItem,
   type ContactListItem,
   type KnowledgeListItem,
   type ProjectListItem,
+  type BankAccountListItem,
 } from "./entity-routes.js";
+
+export {
+  BANK_ACCOUNT_SECTION_IDS,
+  BANK_ACCOUNT_SECTIONS,
+  isBankAccountSectionId,
+  parseBankAccountSectionId,
+  getBankAccountSectionHref,
+  getFinanceHref,
+  type BankAccountSectionId,
+  type BankAccountSectionConfig,
+} from "./bank-account-sections.js";
+
+export {
+  groupTransactionsByMonthWeek,
+  startOfWeekMonday,
+  type TransactionMonthGroup,
+  type TransactionWeekGroup,
+} from "./group-transactions-by-month-week.js";
+
+export { suggestOrganizationForPayee } from "./suggest-organization-for-payee.js";
+
+export {
+  FinanceCsvDropzone,
+  type FinanceCsvDropzoneProps,
+} from "./components/finance-csv-dropzone.js";
+
+export {
+  FinanceTransactionsView,
+  FinanceTransactionDetailPanel,
+  type FinanceBankAccountCreateInput,
+  type FinanceTransactionDetailPanelProps,
+  type FinanceTransactionPatch,
+  type FinanceTransactionsChromeState,
+  type FinanceTransactionsViewProps,
+} from "./components/finance-transactions-view.js";
+
+export {
+  FinanceBankAccountModal,
+  type FinanceBankAccountModalProps,
+  type FinanceBankAccountModalValues,
+} from "./components/finance-bank-account-modal.js";
+
+export {
+  FinanceImportModal,
+  type FinanceImportModalProps,
+} from "./components/finance-import-modal.js";
+
+export {
+  FinanceCategoriesSettingsModal,
+  type FinanceCategoriesSettingsModalProps,
+} from "./components/finance-categories-settings-modal.js";
+
+export {
+  FinanceSidePanelNavView,
+  FinanceSectionNavIcon,
+  type FinanceSidePanelLinkComponent,
+  type FinanceSidePanelNavViewProps,
+} from "./components/finance-side-panel-nav-view.js";
+
+export {
+  FINANCE_NAV_IDS,
+  FINANCE_NAV_ITEMS,
+  FINANCE_ACCOUNT_GROUP_IDS,
+  BANK_ACCOUNT_TYPE_OPTIONS,
+  groupBankAccountsForFinanceNav,
+  bankAccountTypeLabel,
+  bankAccountTypeForFinanceAccountGroupId,
+  financeAccountGroupIdForType,
+  getFinanceNavHref,
+  getFinanceDashboardHref,
+  getFinanceTransactionsHref,
+  getFinanceAccountHref,
+  getSelectedFinanceNavIdFromPathname,
+  isFinanceNavId,
+  isFinanceAccountPath,
+  DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
+  FINANCE_GO_LETTER_HINT,
+  financeGoNavigationItemSearchValue,
+  type FinanceNavId,
+  type FinanceNavItem,
+  type FinanceAccountGroupId,
+  type FinanceAccountGroup,
+  type FinanceGoNavigationItem,
+} from "./finance-nav.js";
+
+export {
+  AccountActionsMenu,
+  FinanceAccountsView,
+  type FinanceAccountsChromeState,
+  type FinanceAccountMetrics,
+  type FinanceAccountUpdateInput,
+  type FinanceAccountsViewProps,
+} from "./components/finance-accounts-view.js";
+
+export {
+  CategoryActionsMenu,
+  FinanceCategoriesView,
+  FinanceTransactionsPanelList,
+  type FinanceCategoriesChromeState,
+  type FinanceCategoriesViewProps,
+  type FinanceCategoryCreateInput,
+  type FinanceCategoryGroupOption,
+  type FinanceCategoryMetrics,
+  type FinanceCategoryMonthMetric,
+  type FinanceCategoryOrganization,
+  type FinanceCategoryTransactionPatch,
+  type FinanceCategoryUpdateInput,
+  type FinanceCategoryYearMetric,
+} from "./components/finance-categories-view.js";
+
+export {
+  FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
+  FINANCE_FILTER_ALL_VALUE,
+  FinanceTransactionsFilterBar,
+  type FinanceTransactionsFilterBarProps,
+} from "./components/finance-transactions-filter-bar.js";
+
+export {
+  FinanceAmountRangeFilter,
+  type FinanceAmountRangeFilterProps,
+} from "./components/finance-amount-range-filter.js";
+
+export {
+  buildAmountHistogramBins,
+  computeAmountRangeDomain,
+  DEFAULT_AMOUNT_RANGE_EXTENT_CENTS,
+  filterFinanceTransactions,
+  isFullAmountRange,
+  type AmountHistogramBin,
+  type AmountRangeDomain,
+  type FinanceTransactionListFilters,
+} from "./filter-finance-transactions.js";
+
+export {
+  CategorySpendChart,
+  type CategorySpendChartProps,
+} from "./components/category-spend-chart.js";
+
+export {
+  FinanceOverviewPie,
+  type FinanceOverviewPieProps,
+  type FinanceOverviewPieSlice,
+} from "./components/finance-overview-pie.js";
+
+export {
+  GoalActionsMenu,
+  FinanceGoalsView,
+  computeGoalSavedCents,
+  nextGoalListingForSavings,
+  resolveGoalSavedCents,
+  shouldPromoteGoalToReadyToSpend,
+  type FinanceGoalsChromeState,
+  type FinanceGoalsViewProps,
+  type FinanceGoalCreateInput,
+  type FinanceGoalUpdateInput,
+} from "./components/finance-goals-view.js";
+
+export {
+  FinanceCashflowView,
+  type FinanceCashflowViewProps,
+} from "./components/finance-cashflow-view.js";
+
+export {
+  FinanceSpendSidePanel,
+  type FinanceSpendSidePanelProps,
+} from "./components/finance-spend-side-panel.js";
+
+export {
+  NetIncomeYearChart,
+  type NetIncomeYearChartProps,
+} from "./components/net-income-year-chart.js";
+
+export {
+  CashflowIncomeYearChart,
+  CashflowSpendYearChart,
+  type CashflowIncomeYearChartProps,
+  type CashflowSpendYearChartProps,
+} from "./components/cashflow-spend-income-charts.js";
+
+export {
+  RecurringActionsMenu,
+  FinanceRecurringsView,
+  recurringDateGroup,
+  type FinanceRecurringsChromeState,
+  type FinanceRecurringsViewProps,
+  type FinanceRecurringCreateInput,
+  type FinanceRecurringUpdateInput,
+  type FinanceRecurringMetrics,
+  type RecurringDateGroup,
+} from "./components/finance-recurrings-view.js";
+
+export { advanceMonthlyNextDate, upcomingMonthlyPaymentDate } from "./recurring-next-date.js";
+
+export {
+  RecurringYearChart,
+  type RecurringYearChartProps,
+} from "./components/recurring-year-chart.js";
+
+export {
+  GoalProgressChart,
+  type GoalProgressChartProps,
+} from "./components/goal-progress-chart.js";
+
+export {
+  buildGoalChartSeries,
+  goalChartHasPlan,
+  type BuildGoalChartSeriesInput,
+  type GoalChartPoint,
+  type GoalChartSeries,
+} from "./goal-chart-series.js";
+
+export {
+  buildCategorySpendBarSeries,
+  categorySpendChartHasData,
+  CATEGORY_SPEND_DIRECT_KEY,
+  type CategorySpendBarSeries,
+  type CategorySpendMonthInput,
+} from "./category-spend-chart-series.js";
+
+export {
+  FinanceSectionPlaceholder,
+  type FinanceSectionPlaceholderProps,
+} from "./components/finance-section-placeholder.js";
+
+export {
+  FinanceInvoicesView,
+  type FinanceInvoicesViewProps,
+} from "./components/finance-invoices-view.js";
+export {
+  FinanceInvoiceDetailDocument,
+  type FinanceInvoiceDetailDocumentProps,
+} from "./components/finance-invoice-detail-document.js";
+
+export {
+  FINANCE_INVOICE_STATUS_OPTIONS,
+  FinanceInvoicesFilterBar,
+  type FinanceInvoicesFilterBarProps,
+} from "./components/finance-invoices-filter-bar.js";
+
+export {
+  buildMoneybirdContactInvoicesFilter,
+  buildMoneybirdInvoicesFilter,
+  filterFinanceInvoices,
+  type FinanceInvoiceFilterRow,
+  type FinanceInvoiceListFilters,
+} from "./filter-finance-invoices.js";
+
+export {
+  FinanceMonthNavigator,
+  FinanceYearNavigator,
+  asOfForMonthKey,
+  formatMonthKey,
+  formatMonthLong,
+  localCalendarYear,
+  localMonthKey,
+  parseMonthKey,
+  shiftMonthKey,
+  type FinanceMonthNavigatorProps,
+  type FinanceYearNavigatorProps,
+} from "./components/finance-month-navigator.js";
+
+export {
+  accountChartHasYearActivity,
+  aggregateBankAccountCashflowMonths,
+  buildAccountIncomeExpenseChartSeries,
+  buildAccountIncomeExpenseChartSeriesFromCashflow,
+  buildMonthIncomeExpenseDailyChartSeries,
+  type AccountChartPoint,
+  type AccountChartSeries,
+} from "./account-income-expense-chart-series.js";
+
+export {
+  FinanceChartLoading,
+  FinanceChartEmpty,
+  FinanceChartFadeIn,
+  type FinanceChartLoadingProps,
+  type FinanceChartEmptyProps,
+  type FinanceChartFadeInProps,
+} from "./components/finance-chart-status.js";
+
+export {
+  FinanceChartTooltip,
+  type FinanceChartTooltipProps,
+} from "./components/finance-chart-tooltip.js";
+
+export {
+  FinanceDashboardView,
+  type FinanceDashboardTopCategory,
+  type FinanceDashboardViewProps,
+} from "./components/finance-dashboard-view.js";
+
+export {
+  FinanceDetailSectionTitle,
+  type FinanceDetailSectionTitleProps,
+} from "./components/finance-detail-section-title.js";
+
+export {
+  AssetsDebtChart,
+  type AssetsDebtChartProps,
+} from "./components/assets-debt-chart.js";
 
 export {
   DEFAULT_SETTINGS_TAB,
@@ -469,6 +802,7 @@ export {
   StatusGroupSection,
   type StatusGroupSectionProps,
   type StatusGroupSectionListDrag,
+  type StatusGroupSectionSelection,
 } from "./components/status-group-section.js";
 
 export {
@@ -618,6 +952,11 @@ export {
 } from "./components/markdown-task-checkbox.js";
 
 export {
+  PolishedCheckbox,
+  type PolishedCheckboxProps,
+} from "./components/polished-checkbox.js";
+
+export {
   MarkdownTaskListInteractProvider,
   useMarkdownTaskListInteract,
   type MarkdownTaskListInteract,
@@ -664,6 +1003,7 @@ export {
   ProjectTypeGroupSection,
   type ProjectTypeGroupSectionProps,
   type ProjectTypeGroupSectionListDrag,
+  type ProjectTypeGroupSectionSelection,
 } from "./components/project-type-group-section.js";
 
 export {
@@ -709,6 +1049,108 @@ export {
   projectReorderPatches,
   type ProjectLikeForReorder,
 } from "./project-reorder.js";
+
+export {
+  applyOptimisticGroupedSortReorder,
+  applyOptimisticGoalReorder,
+  goalReorderPatches,
+  financeGoalOrderKey,
+  financeGoalGroupKey,
+  financeGoalGroupAppendOrderKey,
+  applyOptimisticAccountReorder,
+  accountReorderPatches,
+  financeAccountOrderKey,
+  financeAccountGroupKey,
+  financeAccountGroupAppendOrderKey,
+  applyOptimisticRecurringReorder,
+  recurringReorderPatches,
+  financeRecurringOrderKey,
+  financeRecurringGroupAppendOrderKey,
+  applyOptimisticCategoryReorder,
+  categoryReorderPatches,
+  financeCategoryOrderKey,
+  financeCategoryGroupKey,
+  financeCategoryListingGroupKey,
+  financeCategoryParentGroupKey,
+  financeCategoryGroupAppendOrderKey,
+  parseFinanceCategoryGroupKey,
+  type FinanceListReorderRequest,
+  type RecurringReorderGroup,
+  type RecurringGroupResolver,
+} from "./finance-list-reorder.js";
+
+export {
+  formatMoneyInput,
+  moneyCentsToInput,
+  moneyInputContentWidth,
+  parseMoneyInput,
+} from "./money-input.js";
+
+export {
+  measureFinanceMoneyLabelWidthPx,
+  useFinanceMoneyColumnWidthFromValues,
+  useFinanceMoneyColumnWidthPx,
+} from "./finance-money-column-width.js";
+
+export {
+  buildNetThisMonthPeriods,
+  computeNetThisMonthStats,
+  formatNetThisMonthRangeLabel,
+  previousMonthKey,
+  resolveNetThisMonthAsOfDay,
+  type NetThisMonthPeriod,
+  type NetThisMonthStats,
+} from "./net-this-month.js";
+
+export {
+  buildNonCashflowCategoryIdSet,
+  isCashflowCategory,
+  isCashflowTransaction,
+} from "./cashflow-exclusion.js";
+
+export {
+  categoryNetSpendAbsCents,
+  categoryNetSpendDisplayCents,
+  categoryNetSpendSign,
+  toCategoryNetSpendCents,
+  type CategoryNetSpendSign,
+} from "./category-net-spend.js";
+
+export {
+  applyShiftRangeSelection,
+  useKeyHeld,
+} from "./shift-range-selection.js";
+
+export { useListMultiSelect } from "./use-list-multi-select.js";
+export type { UseListMultiSelectOptions } from "./use-list-multi-select.js";
+
+export {
+  isSelectAllShortcut,
+  shouldHandleSelectAllShortcut,
+  selectAllInFocusedEditable,
+  SELECT_ALL_EVENT,
+} from "./list-select-all-shortcut.js";
+
+export {
+  useListSelectAllShortcut,
+  handleSelectAllRequest,
+  installSelectAllShortcutListeners,
+} from "./use-list-select-all-shortcut.js";
+
+export { shouldHandleClearSelectionShortcut } from "./list-clear-selection-shortcut.js";
+
+export {
+  useListClearSelectionShortcut,
+  useListDismissDetailShortcut,
+  installClearSelectionShortcutListeners,
+} from "./use-list-clear-selection-shortcut.js";
+
+export {
+  isToggleHighlightedSelectionShortcut,
+  shouldHandleToggleHighlightedSelectionShortcut,
+} from "./list-toggle-highlighted-selection-shortcut.js";
+
+export { useListToggleHighlightedSelectionShortcut } from "./use-list-toggle-highlighted-selection-shortcut.js";
 
 export {
   TASK_LIST_DRAG_TYPE,
@@ -805,6 +1247,12 @@ export {
   type TaskItemRowTask,
 } from "./components/task-item-row.js";
 
+export {
+  TaskBulkEditBar,
+  type TaskBulkEditBarProps,
+  type TaskBulkPatch,
+} from "./components/task-bulk-edit-bar.js";
+
 /** @deprecated Prefer `TaskItemRow` / `TaskItemRowTask`. */
 export {
   TaskOverviewRow,
@@ -874,10 +1322,13 @@ export {
 } from "./components/project-key-editor.js";
 
 export {
+  allocateUniqueProjectKey,
   buildProjectKeyRenameRedirectPath,
+  buildTaskProjectChangeRedirectPath,
   encodeProjectSlug,
   isValidProjectKey,
   normalizeProjectKey,
+  type TaskProjectChangeRedirectInput,
 } from "./project-key.js";
 
 export {
@@ -1163,9 +1614,28 @@ export {
 
 export {
   DOCUMENT_CONTENT_MAX_WIDTH,
+  DOCUMENT_BODY_COLOR,
+  DOCUMENT_MARKER_COLOR,
   documentEditorTheme,
+  documentEditorHighlightStyle,
+  documentEditorSyntaxHighlighting,
   createDocumentEditorContentLayoutTheme,
 } from "./document-editor-theme.js";
+
+export {
+  documentEditorListBullets,
+  isCursorInRange,
+  isTaskListMarkAfter,
+  isUnorderedListMark,
+  listMarkReplaceTo,
+  LIST_BULLET_GUTTER,
+} from "./document-editor-list-bullets.js";
+
+export {
+  documentEditorListHangIndent,
+  listHangIndentColumns,
+  LIST_HANG_INDENT_PREFIX,
+} from "./document-editor-list-hang-indent.js";
 
 export {
   parseMarkdownDocument,
@@ -1220,6 +1690,8 @@ export {
   type CommandPaletteViewProps,
 } from "./components/command-palette-view.js";
 
+export { isCommandPaletteToggleKey } from "./command-palette-toggle-key.js";
+
 export { shouldBlockBrowserTabFocus } from "./shortcuts/should-block-browser-tab-focus.js";
 export { useBlockBrowserTabFocus } from "./shortcuts/use-block-browser-tab-focus.js";
 
@@ -1256,6 +1728,12 @@ export {
   taskLinkDisplayLabel,
   type TaskLinkAttachmentsProps,
 } from "./components/task-link-attachments.js";
+
+export {
+  ADD_TASK_LINK_SHORTCUT_HINT,
+  isAddTaskLinkShortcut,
+  shouldHandleAddTaskLinkShortcut,
+} from "./task-link-add-shortcut.js";
 
 export {
   TaskStackedDetailView,
@@ -1322,11 +1800,15 @@ export {
 
 export { RegisterEntityDeleteAction } from "./components/entity-actions/register-entity-delete-action.js";
 
+export { RegisterEntityDuplicateAction } from "./components/entity-actions/register-entity-duplicate-action.js";
+
 export {
   EntityHeaderActionsProvider,
   useEntityHeaderActionsContext,
   type EntityDeleteConfig,
   type EntityDeleteResult,
+  type EntityDuplicateConfig,
+  type EntityDuplicateOptions,
 } from "./components/entity-actions/entity-header-actions-context.js";
 
 export {
@@ -1419,6 +1901,7 @@ export {
   splitTrailingStructuralPrefix,
   stripStructuralLinePrefix,
   matchListItemOpener,
+  listItemLeadingNewlinesContinueList,
   type MentionChipLayout,
 } from "./mentions/mention-layout.js";
 
@@ -1468,6 +1951,11 @@ export {
 } from "./components/organization-detail-view.js";
 
 export {
+  OrganizationTransactionsSection,
+  type OrganizationTransactionsSectionProps,
+} from "./components/organization-transactions-section.js";
+
+export {
   OrganizationContactsListView,
   type OrganizationContactsListViewProps,
 } from "./components/organization-contacts-list-view.js";
@@ -1494,6 +1982,7 @@ export {
 export {
   ORGANIZATION_SECTIONS,
   ORGANIZATION_SECTION_IDS,
+  ORGANIZATION_BASE_SECTION_IDS,
   buildOrganizationProjectsHref,
   getActiveOrganizationSection,
   getOrganizationIdFromProjectsPathname,
@@ -1502,8 +1991,10 @@ export {
   isOrganizationProjectsListPathname,
   isOrganizationSectionId,
   parseOrganizationSectionId,
+  resolveVisibleOrganizationSections,
   type OrganizationSectionConfig,
   type OrganizationSectionId,
+  type VisibleOrganizationSectionsOptions,
 } from "./organization-sections.js";
 
 export {
@@ -1616,7 +2107,10 @@ export {
 
 export {
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
+  TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE,
   resolveTaskPropertyDropdownOpenCandidatesFromEvent,
+  resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent,
+  pageHasFinanceTxPropertyHotkeyTargets,
   resolveTaskPropertyDropdownIdFromEvent,
   resolveTaskPropertyDropdownId,
   isTaskPropertyDropdownShortcutKey,
@@ -1825,9 +2319,13 @@ export {
 
 export {
   PROJECT_ICON_KEYS,
+  PROJECT_BRAND_ICON_KEYS,
   formatProjectIconLabel,
   isProjectIconKey,
+  isProjectBrandIconKey,
+  partitionProjectIconKeys,
   type ProjectIconKey,
+  type ProjectBrandIconKey,
 } from "./project-icon-keys.js";
 
 export {
@@ -1869,8 +2367,19 @@ export {
 } from "./go-leader-sequence-gate.js";
 
 export {
+  registerFinanceLeaderKeyPress,
+  isFinanceLeaderSequencePending,
+  clearFinanceLeaderSequence,
+  FINANCE_LEADER_SEQUENCE_TIMEOUT_MS,
+} from "./finance-leader-sequence-gate.js";
+
+export { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
+
+export {
   isBlockingModalOpen,
   isTargetInsideBlockingModal,
+  isEditableShortcutTarget,
+  isDirectRoleButtonActivationKey,
   shouldBlockPageShortcuts,
   shouldHandleGlobalShortcut,
   shouldHandleTabChromeShortcut,
@@ -1889,6 +2398,7 @@ export {
 } from "./section-tab-hrefs.js";
 
 export { useNavigationShortcuts } from "./use-navigation-shortcuts.js";
+export { useFinanceNavigationShortcuts } from "./use-finance-navigation-shortcuts.js";
 export { useSettingsShortcut } from "./use-settings-shortcut.js";
 export { useSectionTabShortcuts } from "./use-section-tab-shortcuts.js";
 export { useEscapeBackNavigation } from "./use-escape-back-navigation.js";

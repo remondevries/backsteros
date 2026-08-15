@@ -3,8 +3,6 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -24,14 +22,10 @@ import { filterTasksDueOnJournalDate } from "../lib/task-due-date";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
-import { useContentViewModeShortcut } from "../lib/use-content-view-mode-shortcut";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
-import { DetailContentContainer } from "./detail-content-container";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
-import { JournalMarkdownBody } from "./journal-markdown-body";
 import { JournalWhoopLeading, useWhoopDaySnapshot } from "./journal-whoop-leading";
-import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TasksNavIcon } from "./nav-icons";
 import { TextInput } from "./app-text-input";
 
@@ -51,50 +45,6 @@ type JournalDocRow = {
 type Props = {
   dateSlug: string;
 };
-
-function HeaderAction({
-  label,
-  onPress,
-  disabled = false,
-  loading = false,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled || loading}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => ({
-        minWidth: 52,
-        minHeight: 36,
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: disabled || loading ? 0.35 : pressed ? 0.55 : 1,
-      })}
-    >
-      {loading ? (
-        <ActivityIndicator color={colors.foreground} size="small" />
-      ) : (
-        <Text
-          style={{
-            color: colors.foreground,
-            fontSize: 17,
-            fontWeight: "600",
-            lineHeight: 22,
-          }}
-        >
-          {label}
-        </Text>
-      )}
-    </Pressable>
-  );
-}
 
 /** Title → markdown body → due-tasks list (desktop journal layout). */
 const JOURNAL_DOC_SQL = `SELECT id, journal_date, snippet FROM documents
@@ -125,7 +75,6 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   const [body, setBody] = useState<string | null>(null);
   const [bodyLoading, setBodyLoading] = useState(true);
   const [bodyError, setBodyError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
   const [draftBody, setDraftBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -230,16 +179,23 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     [dateSlug, localSnippet, title],
   );
 
-  const canEdit = Boolean(documentId) && !bodyLoading && !bodyError;
+  const displayBody = body ?? snippetBody;
+  const bodyReady = Boolean(documentId) && !bodyLoading && !bodyError;
 
-  const startEditing = useCallback(() => {
-    setDraftBody(body ?? snippetBody);
+  /** Body stays inline-editable — no Edit button. Seed once per open. */
+  useEffect(() => {
+    if (!bodyReady) return;
+    setDraftBody(displayBody);
     setSaveError(null);
-    setEditing(true);
-  }, [body, snippetBody]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed keys only
+  }, [dateSlug, bodyReady]);
 
   const saveEditing = useCallback(async () => {
-    if (!documentId || saving) return;
+    if (!documentId || saving || !bodyReady) return;
+    if (draftBody === displayBody) {
+      setSaveError(null);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
@@ -253,8 +209,6 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         },
       );
       setBody(getJournalDisplayBody(nextContent, dateSlug, title));
-      setEditing(false);
-      setDraftBody("");
     } catch (reason) {
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save journal.",
@@ -262,21 +216,30 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [client, dateSlug, documentId, draftBody, saving, title]);
-
-  useContentViewModeShortcut({
-    enabled: true,
-    editing,
-    canEnterEdit: canEdit && !saving,
-    onEnterEdit: startEditing,
-    onLeaveEdit: () => {
-      void saveEditing();
-    },
-  });
+  }, [
+    bodyReady,
+    client,
+    dateSlug,
+    displayBody,
+    documentId,
+    draftBody,
+    saving,
+    title,
+  ]);
 
   const listHeader = useMemo(
     () => (
       <View>
+        <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            paddingBottom: 12,
+          }}
+        >
+          <Text style={ui.detailTitle}>{title}</Text>
+        </View>
         <View
           style={{ paddingHorizontal: 16, paddingBottom: 20, minHeight: 24 }}
         >
@@ -284,16 +247,29 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             <ActivityIndicator color={colors.muted} />
           ) : bodyError ? (
             <Text style={ui.error}>{bodyError}</Text>
-          ) : body != null ? (
-            body.trim() ? (
-              <JournalMarkdownBody body={body} />
-            ) : (
-              <Text style={ui.rowMeta}>No content yet.</Text>
-            )
-          ) : snippetBody.trim() ? (
-            <Text style={ui.rowMeta}>{snippetBody}</Text>
           ) : (
-            <Text style={ui.rowMeta}>No content yet.</Text>
+            <>
+              <TextInput
+                value={draftBody}
+                onChangeText={setDraftBody}
+                placeholder="Write your journal entry…"
+                placeholderTextColor={colors.muted}
+                multiline
+                scrollEnabled={false}
+                textAlignVertical="top"
+                editable={bodyReady && !saving}
+                onBlur={() => {
+                  void saveEditing();
+                }}
+                style={{
+                  minHeight: 160,
+                  color: colors.foreground,
+                  fontSize: 15,
+                  lineHeight: 22,
+                }}
+              />
+              {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
+            </>
           )}
         </View>
 
@@ -320,108 +296,41 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         </View>
       </View>
     ),
-    [body, bodyError, bodyLoading, snippetBody],
+    [
+      bodyError,
+      bodyLoading,
+      bodyReady,
+      dateSlug,
+      draftBody,
+      saveEditing,
+      saveError,
+      saving,
+      title,
+      whoop,
+    ],
   );
 
-  // Whoop fetch lives in `whoop` above so view/edit layout swaps do not refetch.
   return (
     <>
       <Stack.Screen
         options={{
           ...tabDetailScreenOptions(),
           ...(inPadJournalSplit ? { headerBackVisible: false } : null),
-          headerRight: () =>
-            editing ? (
-              <HeaderAction
-                label="Save"
-                onPress={() => {
-                  void saveEditing();
-                }}
-                loading={saving}
-                disabled={saving}
-              />
-            ) : (
-              <HeaderAction
-                label="Edit"
-                onPress={startEditing}
-                disabled={!canEdit}
-              />
-            ),
         }}
       />
-      {editing ? (
-        <KeyboardAwareScrollView
-          style={ui.screen}
-          contentContainerStyle={styles.journalScrollContent}
-          keepEndVisibleWhileTyping
-        >
-          <DetailContentContainer constrained={isPad}>
-            <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
-            <View
-              style={{
-                paddingHorizontal: 16,
-                paddingTop: 8,
-                paddingBottom: 12,
-              }}
-            >
-              <Text style={ui.detailTitle}>{title}</Text>
-            </View>
-            <TextInput
-              value={draftBody}
-              onChangeText={setDraftBody}
-              placeholder="Write your journal entry…"
-              placeholderTextColor={colors.muted}
-              multiline
-              scrollEnabled={false}
-              textAlignVertical="top"
-              autoFocus
-              style={{
-                paddingHorizontal: 16,
-                minHeight: 280,
-                color: colors.foreground,
-                fontSize: 15,
-                lineHeight: 22,
-              }}
-            />
-            {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
-          </DetailContentContainer>
-        </KeyboardAwareScrollView>
-      ) : (
-        <GroupedTaskList
-          rows={rows}
-          emptyText="No tasks due on this date."
-          contentConstrained={isPad}
-          listHeader={
-            <View>
-              <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
-              <View
-                style={{
-                  paddingHorizontal: 16,
-                  paddingTop: 8,
-                  paddingBottom: 12,
-                }}
-              >
-                <Text style={ui.detailTitle}>{title}</Text>
-              </View>
-              {listHeader}
-            </View>
-          }
-          onPressRow={onPressRow}
-          onAddToStatus={(status) => {
-            router.push({
-              pathname: "/create/task",
-              params: { status, dueYmd: dateSlug },
-            });
-          }}
-        />
-      )}
+      <GroupedTaskList
+        rows={rows}
+        emptyText="No tasks due on this date."
+        contentConstrained={isPad}
+        listHeader={listHeader}
+        onPressRow={onPressRow}
+        onAddToStatus={(status) => {
+          router.push({
+            pathname: "/create/task",
+            params: { status, dueYmd: dateSlug },
+          });
+        }}
+      />
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  journalScrollContent: {
-    width: "100%",
-    flexGrow: 1,
-  },
-});

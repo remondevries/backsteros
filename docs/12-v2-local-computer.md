@@ -6,10 +6,12 @@ BacksterOS v2 runs **core** on a **local computer** (any always-on workstation y
 
 ```text
 local computer
+  · hub/ (menu-bar start/stop — recommended)
   · core/server (API)
   · Postgres
   · files / object storage
   · PowerSync
+  · PTY sidecar (agents)
 
 shells (UI only)
   · mobile/  — Expo (iPhone + iPad, adaptive layouts)
@@ -17,6 +19,17 @@ shells (UI only)
 ```
 
 Shells reach core via localhost or Tailscale. Public hosting portals (Next.js) are a later concern.
+
+### Starting local services
+
+Prefer the **BacksterOS Hub** menu-bar app ([`hub/`](../hub/README.md)):
+
+```bash
+pnpm --filter @backsteros/hub dev          # develop
+# or build/install: pnpm --filter @backsteros/hub build → BacksterOS Hub.app
+```
+
+Use **Start all** to bring up Docker (Postgres + PowerSync), core API (`:8788`), and PTY (`:3101`). Product desktop does **not** embed the API — start hub (or run `pnpm dev` / `pnpm --filter @backsteros/desktop pty` manually) before clients.
 
 ## Layout
 
@@ -35,13 +48,13 @@ Trusted shells on the Tailscale network (desktop localhost + **iPad**) may attac
 
 ## Agent sessions (local computer + Tailscale)
 
-The `pnpm pty` sidecar owns long-lived **Cursor ACP** agent sessions (T3-style). Closing a Chat WebSocket only **detaches** the viewer; the ACP session keeps running and the sidecar keeps projecting the turn into the shared transcript store.
+The `pnpm --filter @backsteros/desktop pty` sidecar owns long-lived **Cursor ACP** agent sessions (T3-style). Closing a Chat WebSocket only **detaches** the viewer; the ACP session keeps running and the sidecar keeps projecting the turn into the shared transcript store.
 
 **Chat = ACP only (ADR-025):** prompts, streaming, mode (`session/set_mode`), cancel, and permissions go through Cursor ACP. There is **no shared agent TTY pane**. Switching tasks does not stop background turns — leave/return reloads the projected transcript and re-subscribes to live events.
 
 - **Desktop** — task agent rail / codebase pane: Start → `POST /agent/acp/ensure` (+ bootstrap `POST /agent/prompt`) → Chat UI. Leave/return reattaches the event subscriber only.
 - **Activity** — ACP `busy` / activity events + transcript projection drive Working… indicators (including background tasks via session poll).
-- Run the sidecar for Tailscale with e.g. `PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=… pnpm pty` (token required when bound beyond loopback).
+- Run the sidecar for Tailscale with e.g. `PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=… pnpm --filter @backsteros/desktop pty` (token required when bound beyond loopback).
 - **Settings → Cursor** (desktop) — lists live ACP agent sessions (`GET /sessions?kind=agent`) and can **Kill** them (`DELETE /sessions/:id` or `POST /agent/stop`).
 - **Stop agent** cancels ACP, forgets the in-memory session, and clears `agentChatId` from the task when stopped from the UI.
 

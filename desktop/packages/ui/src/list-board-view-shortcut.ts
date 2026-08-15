@@ -1,5 +1,5 @@
 import type { ListBoardView } from "./list-board-view.js";
-import { isGoLeaderSequencePending } from "./go-leader-sequence-gate.js";
+import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
 
 export const LIST_BOARD_VIEW_LIST_KEY = "l";
 export const LIST_BOARD_VIEW_BOARD_KEY = "b";
@@ -54,6 +54,6 @@ export function hasListBoardViewShortcutModifiers(event: KeyboardEvent): boolean
     !event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    !isGoLeaderSequencePending()
+    !isAnyLeaderSequencePending()
   );
 }

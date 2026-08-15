@@ -526,7 +526,7 @@ export function SettingsCursorTab() {
 
           {offline ? (
             <p className="settings-cursor-status">
-              PTY sidecar unreachable. Run <code>pnpm pty</code>.
+              PTY sidecar unreachable. Run <code>pnpm --filter @backsteros/desktop pty</code>.
             </p>
           ) : null}
 

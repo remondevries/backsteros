@@ -22,12 +22,21 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
 } from "../use-grouped-list-pointer-reorder.js";
+import { useListMultiSelect } from "../use-list-multi-select.js";
+import {
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+} from "../task-id-column-width.js";
 import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "./list-keyboard-navigation-provider.js";
 import { StatusGroupSection } from "./status-group-section.js";
+import {
+  TaskBulkEditBar,
+  type TaskBulkPatch,
+} from "./task-bulk-edit-bar.js";
 import {
   TaskItemRow,
   type TaskItemRowTask,
@@ -41,11 +50,18 @@ export type ContactTasksListViewProps = {
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
+  /** Soft-delete all currently selected tasks (bulk trash). */
+  onBulkDelete?: (taskIds: string[]) => void | Promise<void>;
   /** Persist list drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: TaskReorderRequest) => void;
   selectedTaskId?: string | null;
   emptyMessage?: string;
   emptyHint?: string;
+  /**
+   * Fixed monospace width (in `ch`) for the task-id column.
+   * Prefer the global workspace max; defaults from the unscoped `tasks` prop.
+   */
+  taskIdColumnCh?: number;
 };
 
 /**
@@ -59,10 +75,12 @@ export function ContactTasksListView({
   onStatusChange,
   onPriorityChange,
   onDueDateChange,
+  onBulkDelete,
   onReorder,
   selectedTaskId = null,
   emptyMessage = "No tasks for this contact",
   emptyHint = "Tasks assigned to this contact will show up here.",
+  taskIdColumnCh: taskIdColumnChProp,
 }: ContactTasksListViewProps) {
   const scopedTasks = useMemo(
     () =>
@@ -71,6 +89,14 @@ export function ContactTasksListView({
           task.assigneeId === contactId || task.contactId === contactId,
       ),
     [contactId, tasks],
+  );
+  const taskIdColumnCh = useMemo(
+    () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(tasks),
+    [taskIdColumnChProp, tasks],
+  );
+  const taskIdColumnStyle = useMemo(
+    () => taskIdColumnCssVars(taskIdColumnCh),
+    [taskIdColumnCh],
   );
 
   const { tasks: optimisticTasks, patchTask } = useOptimisticTaskList(scopedTasks);
@@ -220,6 +246,35 @@ export function ContactTasksListView({
     enabled: itemIds.length > 0,
   });
 
+  const {
+    selectedIds,
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(itemIds);
+
+  const selectedTasks = useMemo(
+    () => localTasks.filter((task) => selectedIds.has(task.id)),
+    [localTasks, selectedIds],
+  );
+
+  const applyBulkPatch = async (patch: TaskBulkPatch) => {
+    const ids = [...selectedIds];
+    for (const taskId of ids) {
+      if (patch.status !== undefined) {
+        handleStatusChange(taskId, patch.status);
+      }
+      if (patch.priority !== undefined) {
+        handlePriorityChange(taskId, patch.priority);
+      }
+      if ("dueDate" in patch) {
+        handleDueDateChange(taskId, patch.dueDate ?? null);
+      }
+    }
+  };
+
   if (localTasks.length === 0) {
     return (
       <div className="contact-tasks-list__empty">
@@ -230,63 +285,95 @@ export function ContactTasksListView({
   }
 
   return (
-    <ul
-      className="contact-tasks-list"
-      role="list"
-      ref={listRef}
-      {...listContainerProps}
-    >
-      {groups.map((group) => {
-        const isCollapsed = collapsed.has(group.status);
-        const appendKey = taskGroupAppendOrderKey(group.status);
+    <div className="contact-tasks-list-host">
+      <ul
+        className={[
+          "contact-tasks-list",
+          hasBulkSelection ? "has-bulk-selection" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        role="list"
+        ref={listRef}
+        style={taskIdColumnStyle}
+        {...listContainerProps}
+      >
+        {groups.map((group) => {
+          const isCollapsed = collapsed.has(group.status);
+          const appendKey = taskGroupAppendOrderKey(group.status);
 
-        return (
-          <StatusGroupSection
-            key={group.status}
-            groupKey={group.status}
-            title={group.label}
-            collapsed={isCollapsed}
-            icon={
-              <TaskStatusIcon
-                status={group.status}
-                size={14}
-                title={group.label}
-              />
-            }
-            onToggle={() =>
-              setCollapsed((current) => {
-                const next = new Set(current);
-                if (next.has(group.status)) next.delete(group.status);
-                else next.add(group.status);
-                return next;
-              })
-            }
-            pointerReorderAppend={
-              canReorder ? bindAppendZone(group.status) : null
-            }
-            showPointerAppendIndicator={insertBeforeKey === appendKey}
-          >
-            {group.tasks.map((task) => (
-              <TaskItemRow
-                key={task.id}
-                task={task}
-                keyboardHighlighted={highlightedId === task.id}
-                onSelect={selectTask}
-                onStatusChange={handleStatusChange}
-                onPriorityChange={handlePriorityChange}
-                onDueDateChange={handleDueDateChange}
-                pointerReorderBind={
-                  canReorder ? bindItem(task.id, group.status) : null
+          return (
+            <StatusGroupSection
+              key={group.status}
+              groupKey={group.status}
+              title={group.label}
+              collapsed={isCollapsed}
+              icon={
+                <TaskStatusIcon
+                  status={group.status}
+                  size={14}
+                  title={group.label}
+                />
+              }
+              onToggle={() =>
+                setCollapsed((current) => {
+                  const next = new Set(current);
+                  if (next.has(group.status)) next.delete(group.status);
+                  else next.add(group.status);
+                  return next;
+                })
+              }
+              pointerReorderAppend={
+                canReorder ? bindAppendZone(group.status) : null
+              }
+              showPointerAppendIndicator={insertBeforeKey === appendKey}
+            >
+              {group.tasks.map((task) => (
+                <TaskItemRow
+                  key={task.id}
+                  task={task}
+                  keyboardHighlighted={highlightedId === task.id}
+                  onSelect={selectTask}
+                  selected={isSelected(task.id)}
+                  forceShowCheckbox={hasBulkSelection}
+                  onToggleSelected={(taskId, _checked, event) =>
+                    toggleSelected(taskId, Boolean(event.shiftKey))
+                  }
+                  onStatusChange={handleStatusChange}
+                  onPriorityChange={handlePriorityChange}
+                  onDueDateChange={handleDueDateChange}
+                  pointerReorderBind={
+                    canReorder ? bindItem(task.id, group.status) : null
+                  }
+                  dragging={draggingItemId === task.id}
+                  showDragInsertBefore={
+                    insertBeforeKey === taskOrderKey(task.id)
+                  }
+                />
+              ))}
+            </StatusGroupSection>
+          );
+        })}
+      </ul>
+      {hasBulkSelection ? (
+        <TaskBulkEditBar
+          selectedTasks={selectedTasks}
+          showProject={false}
+          showAssignee={false}
+          onClear={clearSelection}
+          onSelectAll={
+            selectedIds.size < itemIds.length ? selectAll : undefined
+          }
+          onApply={applyBulkPatch}
+          onDelete={
+            onBulkDelete
+              ? async () => {
+                  await onBulkDelete([...selectedIds]);
                 }
-                dragging={draggingItemId === task.id}
-                showDragInsertBefore={
-                  insertBeforeKey === taskOrderKey(task.id)
-                }
-              />
-            ))}
-          </StatusGroupSection>
-        );
-      })}
-    </ul>
+              : undefined
+          }
+        />
+      ) : null}
+    </div>
   );
 }

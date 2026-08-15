@@ -21,7 +21,7 @@ if (envVault) {
   });
 }
 
-const port = Number(process.env.PORT ?? 8787);
+const port = Number(process.env.PORT ?? 8788);
 
 const app = createApp();
 

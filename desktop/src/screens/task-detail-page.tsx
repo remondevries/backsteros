@@ -1,14 +1,16 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   RegisterEntityDeleteAction,
+  RegisterEntityDuplicateAction,
   RegisterPageTitle,
   TaskDetailSkeleton,
   TaskDetailView,
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
   buildSpellcheckSegments,
+  buildTaskProjectChangeRedirectPath,
   buildTasksDueHref,
   composeSpellcheckText,
   encodeTaskSlug,
@@ -16,6 +18,7 @@ import {
   getTaskDisplayId,
   getTasksDueFilterLabel,
   isTasksDueFilter,
+  resolveDuplicatedTaskHref,
   spellcheckHasChanges,
   toggleSpellcheckSegment,
   type TaskSpellcheckHighlight,
@@ -97,6 +100,7 @@ export function TaskDetailPage({
   breadcrumbItems: breadcrumbItemsProp,
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { taskId, taskSlug, dueFilter: dueFilterParam } = useParams<{
     taskId?: string;
     taskSlug?: string;
@@ -109,10 +113,12 @@ export function TaskDetailPage({
     backHrefProp ??
     (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
   const workspace = useDesktopWorkspaceData();
-  const { allTasks, projects, contacts } = workspace;
+  const { allTasks, projects, contacts, organizations } = workspace;
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
   const spellcheckNonceRef = useRef(0);
+  /** Keeps the open task stable while project-change URL rewrite catches up. */
+  const pinnedTaskIdRef = useRef<string | null>(null);
 
   const onSpellcheckApplied = useCallback(
     (payload: TaskSpellcheckAppliedPayload) => {
@@ -143,7 +149,7 @@ export function TaskDetailPage({
     [],
   );
 
-  const base =
+  const matchedByRoute =
     allTasks.find((entry) => {
       const contact = entry.contactId
         ? contacts.find((c) => c.id === entry.contactId)
@@ -156,6 +162,16 @@ export function TaskDetailPage({
         routeParam,
       );
     }) ?? null;
+
+  if (matchedByRoute) {
+    pinnedTaskIdRef.current = null;
+  }
+
+  const base =
+    matchedByRoute ??
+    (pinnedTaskIdRef.current
+      ? (allTasks.find((entry) => entry.id === pinnedTaskIdRef.current) ?? null)
+      : null);
 
   useEnsureProjectVault(base?.projectId);
 
@@ -330,6 +346,36 @@ export function TaskDetailPage({
     }
   }, [backHref, base, navigate, workspace]);
 
+  const handleDuplicateTask = useCallback(async () => {
+    if (!base) {
+      return { ok: false as const, error: "Task is required." };
+    }
+    try {
+      const created = await workspace.duplicateTask(base.id);
+      const project = base.projectId
+        ? (projects.find((entry) => entry.id === base.projectId) ?? null)
+        : null;
+      const contact = base.contactId
+        ? (contacts.find((entry) => entry.id === base.contactId) ?? null)
+        : null;
+      navigate(
+        resolveDuplicatedTaskHref({
+          id: created.id,
+          number: created.number,
+          projectKey: project?.key ?? base.projectKey ?? null,
+          contactKey: contact?.key ?? null,
+        }),
+      );
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error ? error.message : "Failed to duplicate task.",
+      };
+    }
+  }, [base, contacts, navigate, projects, workspace]);
+
   if (!task) {
     if (!workspace.ready) {
       return <TaskDetailSkeleton />;
@@ -370,12 +416,60 @@ export function TaskDetailPage({
     void workspace.patchTask(task.id, { assigneeId: next });
   };
   const patchProjectKey = (next: string | null) => {
+    const previousProjectKey = task.projectKey;
     const nextProject = next
       ? projects.find((entry) => entry.key === next) ?? null
       : null;
-    void workspace.patchTask(task.id, {
-      projectId: nextProject?.id ?? null,
+    const nextOrganization = nextProject?.organizationId
+      ? (organizations.find(
+          (entry) => entry.id === nextProject.organizationId,
+        ) ?? null)
+      : null;
+    const redirectBase = {
+      taskId: task.id,
+      taskNumber: task.number,
+      oldProjectKey: previousProjectKey,
+      newProjectKey: nextProject?.key ?? null,
+      newOrganizationRouteParam: nextProject
+        ? nextOrganization
+          ? String(
+              nextOrganization.number ??
+                nextOrganization.key ??
+                nextOrganization.id,
+            )
+          : null
+        : undefined,
+    } as const;
+
+    pinnedTaskIdRef.current = task.id;
+
+    // Prefer the durable task id until the server confirms the destination
+    // number — scope moves renumber when the old number is already taken.
+    const interimPath = buildTaskProjectChangeRedirectPath(location.pathname, {
+      ...redirectBase,
+      routeLeaf: nextProject ? "task-id" : "display-slug",
     });
+    if (interimPath !== location.pathname) {
+      navigate(interimPath, { replace: true });
+    }
+
+    void workspace
+      .patchTask(task.id, {
+        projectId: nextProject?.id ?? null,
+      })
+      .then((result) => {
+        if (!nextProject) return;
+        const confirmedNumber =
+          typeof result?.number === "number" ? result.number : task.number;
+        const prettyPath = buildTaskProjectChangeRedirectPath(interimPath, {
+          ...redirectBase,
+          taskNumber: confirmedNumber,
+          routeLeaf: "display-slug",
+        });
+        if (prettyPath !== interimPath) {
+          navigate(prettyPath, { replace: true });
+        }
+      });
   };
   const saveDescription = (description: string) => {
     void workspace.patchTask(task.id, { description });
@@ -431,7 +525,9 @@ export function TaskDetailPage({
       taskUpdatedAt={base?.updatedAt ?? null}
       contacts={contacts}
       contactAvatarSrc={contactAvatarSrc}
-      patchTaskValues={(values) => workspace.patchTask(task.id, values)}
+      patchTaskValues={async (values) => {
+        await workspace.patchTask(task.id, values);
+      }}
       onSpellcheckApplied={onSpellcheckApplied}
       spellcheckPending={Boolean(spellcheckHighlight)}
       onSpellcheckConfirm={() => setSpellcheckHighlight(null)}
@@ -444,6 +540,7 @@ export function TaskDetailPage({
   return (
     <>
       <RegisterPageTitle title={task.title} />
+      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
       <RegisterEntityDeleteAction
         entityLabel={deleteEntityLabel}
         onDelete={handleDeleteTask}
@@ -461,7 +558,9 @@ export function TaskDetailPage({
         agentChatId={base?.agentChatId ?? null}
         taskStatus={task.status}
         taskSummary={taskAgentSummary}
-        patchTaskValues={(values) => workspace.patchTask(task.id, values)}
+        patchTaskValues={async (values) => {
+          await workspace.patchTask(task.id, values);
+        }}
         autoStartOnReadyToStart={isCodebaseTask}
         preferWideTaskPanel={!isCodebaseTask}
         viewScope={isCodebaseTask ? "codebase" : "rail"}

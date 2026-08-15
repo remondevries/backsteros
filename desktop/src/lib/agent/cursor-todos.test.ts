@@ -5,7 +5,12 @@ import {
   applyCursorUpdateTodosToTurn,
   emptyAgentChatTurnUiState,
 } from "./agent-acp-activity";
-import { extractTodosAsPlan, mergePlanSteps, preferPlanSteps } from "./t3-port/cursor-todos";
+import {
+  extractTodosAsPlan,
+  mergePlanSteps,
+  planStepsWorkingSummary,
+  preferPlanSteps,
+} from "./t3-port/cursor-todos";
 
 describe("cursor todos (t3 port)", () => {
   it("extractTodosAsPlan maps statuses", () => {
@@ -66,6 +71,19 @@ describe("cursor todos (t3 port)", () => {
     );
     expect(preferred).toHaveLength(3);
     expect(preferred?.[0]?.status).toBe("completed");
+  });
+
+  it("planStepsWorkingSummary only says Working on while active", () => {
+    const steps = [
+      { step: "A", status: "completed" as const },
+      { step: "B", status: "inProgress" as const },
+    ];
+    expect(planStepsWorkingSummary(steps, { active: true })).toBe(
+      "Working on 1 to-do",
+    );
+    expect(planStepsWorkingSummary(steps, { active: false })).toBe(
+      "In progress · 1 to-do",
+    );
   });
 
   it("applyCursorUpdateTodosToTurn stores checklist on turn state", () => {

@@ -1,4 +1,4 @@
-import { isGoLeaderSequencePending } from "./go-leader-sequence-gate.js";
+import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
 function isListKeyboardNavigationKey(key: string): boolean {
@@ -72,7 +72,7 @@ export function shouldHandleListKeyboardNavigation(
     return false;
   }
 
-  if ((key === "j" || key === "k") && isGoLeaderSequencePending()) {
+  if ((key === "j" || key === "k") && isAnyLeaderSequencePending()) {
     return false;
   }
 
@@ -96,6 +96,14 @@ export function isListKeyboardActivateKey(
 
 export function shouldHandleListKeyboardActivate(event: KeyboardEvent): boolean {
   if (!isListKeyboardActivateKey(event)) {
+    return false;
+  }
+
+  // Shift+Space toggles row multi-select; plain Space / Enter open the item.
+  if (
+    event.shiftKey &&
+    (event.key === " " || event.key === "Spacebar" || event.code === "Space")
+  ) {
     return false;
   }
 

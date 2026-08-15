@@ -29,6 +29,7 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
 } from "../use-grouped-list-pointer-reorder.js";
+import { useListMultiSelect } from "../use-list-multi-select.js";
 import {
   DEFAULT_TASKS_DUE_FILTER,
   filterTasksByDueFilter,
@@ -36,6 +37,10 @@ import {
   TASKS_DUE_FILTERS,
   type TasksDueFilter,
 } from "../tasks-due-filters.js";
+import {
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+} from "../task-id-column-width.js";
 import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { KanbanBoard } from "./kanban-board.js";
@@ -51,6 +56,10 @@ import {
 } from "./list-keyboard-navigation-provider.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
+  TaskBulkEditBar,
+  type TaskBulkPatch,
+} from "./task-bulk-edit-bar.js";
+import {
   TaskItemRow,
   type TaskItemRowTask,
 } from "./task-item-row.js";
@@ -64,6 +73,8 @@ export type TasksOverviewViewProps = {
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
+  /** Soft-delete all currently selected tasks (bulk trash). */
+  onBulkDelete?: (taskIds: string[]) => void | Promise<void>;
   /** Persist list/board drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: TaskReorderRequest) => void;
   /** Create a task in a status group (Next due-tasks AddInboxTaskInline). */
@@ -90,6 +101,12 @@ export type TasksOverviewViewProps = {
   renderTaskTitleTrailing?: (task: TaskItemRowTask) => ReactNode;
   /** When true for a task, its status icon becomes the agent-working pulse. */
   isTaskAgentWorking?: (task: TaskItemRowTask) => boolean;
+  /**
+   * Fixed monospace width (in `ch`) for the task-id column.
+   * Prefer the global max across all workspace tasks so due filters do not
+   * resize the column.
+   */
+  taskIdColumnCh?: number;
 };
 
 export function TasksOverviewView({
@@ -100,6 +117,7 @@ export function TasksOverviewView({
   onDueDateChange,
   onProjectChange,
   onAssigneeChange,
+  onBulkDelete,
   onReorder,
   onCreateTask,
   onCreatedTask,
@@ -115,6 +133,7 @@ export function TasksOverviewView({
   selectedTaskId = null,
   renderTaskTitleTrailing,
   isTaskAgentWorking,
+  taskIdColumnCh: taskIdColumnChProp,
 }: TasksOverviewViewProps) {
   const [uncontrolledFilter, setUncontrolledFilter] =
     useState<TasksDueFilter>(initialFilter);
@@ -145,6 +164,14 @@ export function TasksOverviewView({
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
   const canReorder = Boolean(onReorder);
+  const taskIdColumnCh = useMemo(
+    () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(tasks),
+    [taskIdColumnChProp, tasks],
+  );
+  const taskIdColumnStyle = useMemo(
+    () => taskIdColumnCssVars(taskIdColumnCh),
+    [taskIdColumnCh],
+  );
 
   useEffect(() => {
     setLocalTasks(optimisticTasks);
@@ -330,6 +357,43 @@ export function TasksOverviewView({
     enabled: view === "list" && itemIds.length > 0,
   });
 
+  const {
+    selectedIds,
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(itemIds, {
+    selectAllShortcutEnabled: view === "list",
+  });
+
+  const selectedTasks = useMemo(
+    () => filtered.filter((task) => selectedIds.has(task.id)),
+    [filtered, selectedIds],
+  );
+
+  const applyBulkPatch = async (patch: TaskBulkPatch) => {
+    const ids = [...selectedIds];
+    for (const taskId of ids) {
+      if (patch.status !== undefined) {
+        handleStatusChange(taskId, patch.status);
+      }
+      if (patch.priority !== undefined) {
+        handlePriorityChange(taskId, patch.priority);
+      }
+      if ("dueDate" in patch) {
+        handleDueDateChange(taskId, patch.dueDate ?? null);
+      }
+      if ("projectKey" in patch) {
+        handleProjectChange(taskId, patch.projectKey ?? null);
+      }
+      if ("assigneeId" in patch) {
+        handleAssigneeChange(taskId, patch.assigneeId ?? null);
+      }
+    }
+  };
+
   const pillItems = TASKS_DUE_FILTERS.map((value) => ({
     value,
     label: getTasksDueFilterLabel(value),
@@ -337,9 +401,15 @@ export function TasksOverviewView({
 
   const listContent = (
     <ul
-      className="overview-grouped-list"
+      className={[
+        "overview-grouped-list",
+        hasBulkSelection ? "has-bulk-selection" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="list"
       ref={listRef}
+      style={taskIdColumnStyle}
       {...listContainerProps}
     >
       {groups.map((group) => {
@@ -417,6 +487,11 @@ export function TasksOverviewView({
                 task={task}
                 keyboardHighlighted={highlightedId === task.id}
                 onSelect={selectTask}
+                selected={isSelected(task.id)}
+                forceShowCheckbox={hasBulkSelection}
+                onToggleSelected={(taskId, _checked, event) =>
+                  toggleSelected(taskId, Boolean(event.shiftKey))
+                }
                 showProject={showProject}
                 titleTrailing={renderTaskTitleTrailing?.(task)}
                 agentWorking={isTaskAgentWorking?.(task) ?? false}
@@ -497,6 +572,28 @@ export function TasksOverviewView({
         onViewChange={setView}
         listContent={listContent}
         boardContent={boardContent}
+        listOverlay={
+          hasBulkSelection ? (
+            <TaskBulkEditBar
+              selectedTasks={selectedTasks}
+              showProject={showProject}
+              projectOptions={projectOptions}
+              assigneeOptions={assigneeOptions}
+              onClear={clearSelection}
+              onSelectAll={
+                selectedIds.size < itemIds.length ? selectAll : undefined
+              }
+              onApply={applyBulkPatch}
+              onDelete={
+                onBulkDelete
+                  ? async () => {
+                      await onBulkDelete([...selectedIds]);
+                    }
+                  : undefined
+              }
+            />
+          ) : null
+        }
       />
     </div>
   );

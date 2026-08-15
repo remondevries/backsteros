@@ -29,6 +29,11 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
 } from "../use-grouped-list-pointer-reorder.js";
+import { useListMultiSelect } from "../use-list-multi-select.js";
+import {
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+} from "../task-id-column-width.js";
 import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { KanbanBoard } from "./kanban-board.js";
@@ -43,6 +48,10 @@ import {
 import { StatusGroupSection } from "./status-group-section.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
+  TaskBulkEditBar,
+  type TaskBulkPatch,
+} from "./task-bulk-edit-bar.js";
+import {
   TaskItemRow,
   type TaskItemRowTask,
 } from "./task-item-row.js";
@@ -55,6 +64,8 @@ export type ProjectTasksViewProps = {
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
+  /** Soft-delete all currently selected tasks (bulk trash). */
+  onBulkDelete?: (taskIds: string[]) => void | Promise<void>;
   /** Persist list/board drag-reorder (status + sortOrder cascade on host). */
   onReorder?: (request: TaskReorderRequest) => void;
   /** Create a task in a status group (Next AddTaskInline). */
@@ -74,6 +85,11 @@ export type ProjectTasksViewProps = {
   renderTaskTitleTrailing?: (task: TaskItemRowTask) => ReactNode;
   /** When true for a task, its status icon becomes the agent-working pulse. */
   isTaskAgentWorking?: (task: TaskItemRowTask) => boolean;
+  /**
+   * Fixed monospace width (in `ch`) for the task-id column.
+   * Defaults to the widest display id among this project's tasks.
+   */
+  taskIdColumnCh?: number;
 };
 
 /**
@@ -86,6 +102,7 @@ export function ProjectTasksView({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onBulkDelete,
   onReorder,
   onCreateTask,
   onCreatedTask,
@@ -97,6 +114,7 @@ export function ProjectTasksView({
   selectedTaskId = null,
   renderTaskTitleTrailing,
   isTaskAgentWorking,
+  taskIdColumnCh: taskIdColumnChProp,
 }: ProjectTasksViewProps) {
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
@@ -118,6 +136,14 @@ export function ProjectTasksView({
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
   const canReorder = Boolean(onReorder);
+  const taskIdColumnCh = useMemo(
+    () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(tasks),
+    [taskIdColumnChProp, tasks],
+  );
+  const taskIdColumnStyle = useMemo(
+    () => taskIdColumnCssVars(taskIdColumnCh),
+    [taskIdColumnCh],
+  );
 
   useEffect(() => {
     setLocalTasks(optimisticTasks);
@@ -285,11 +311,51 @@ export function ProjectTasksView({
     enabled: view === "list" && itemIds.length > 0,
   });
 
+  const {
+    selectedIds,
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useListMultiSelect(itemIds, {
+    selectAllShortcutEnabled: view === "list",
+  });
+
+  const selectedTasks = useMemo(
+    () => localTasks.filter((task) => selectedIds.has(task.id)),
+    [localTasks, selectedIds],
+  );
+
+  const applyBulkPatch = async (patch: TaskBulkPatch) => {
+    const ids = [...selectedIds];
+    for (const taskId of ids) {
+      if (patch.status !== undefined) {
+        handleStatusChange(taskId, patch.status);
+      }
+      if (patch.priority !== undefined) {
+        handlePriorityChange(taskId, patch.priority);
+      }
+      if ("dueDate" in patch) {
+        handleDueDateChange(taskId, patch.dueDate ?? null);
+      }
+      if ("assigneeId" in patch) {
+        handleAssigneeChange(taskId, patch.assigneeId ?? null);
+      }
+    }
+  };
+
   const listContent = (
     <ul
-      className="project-tasks-list"
+      className={[
+        "project-tasks-list",
+        hasBulkSelection ? "has-bulk-selection" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="list"
       ref={listRef}
+      style={taskIdColumnStyle}
       {...listContainerProps}
     >
       {groups.map((group) => {
@@ -371,6 +437,11 @@ export function ProjectTasksView({
                 task={task}
                 keyboardHighlighted={highlightedId === task.id}
                 onSelect={selectTask}
+                selected={isSelected(task.id)}
+                forceShowCheckbox={hasBulkSelection}
+                onToggleSelected={(taskId, _checked, event) =>
+                  toggleSelected(taskId, Boolean(event.shiftKey))
+                }
                 showProject={false}
                 titleTrailing={renderTaskTitleTrailing?.(task)}
                 agentWorking={isTaskAgentWorking?.(task) ?? false}
@@ -446,6 +517,28 @@ export function ProjectTasksView({
         ariaLabel="Task view mode"
         listContent={listContent}
         boardContent={boardContent}
+        listOverlay={
+          hasBulkSelection ? (
+            <TaskBulkEditBar
+              selectedTasks={selectedTasks}
+              showProject={false}
+              showAssignee
+              assigneeOptions={assigneeOptions}
+              onClear={clearSelection}
+              onSelectAll={
+                selectedIds.size < itemIds.length ? selectAll : undefined
+              }
+              onApply={applyBulkPatch}
+              onDelete={
+                onBulkDelete
+                  ? async () => {
+                      await onBulkDelete([...selectedIds]);
+                    }
+                  : undefined
+              }
+            />
+          ) : null
+        }
       />
     </div>
   );

@@ -10,15 +10,23 @@ import type {
   UpdateTaskInput,
 } from "@backsteros/contracts";
 import {
+  bankAccountInputSchema,
   contactInputSchema,
+  financialCategoryInputSchema,
+  financialGoalInputSchema,
+  financialRecurringInputSchema,
   letterInputSchema,
   organizationInputSchema,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
+  bankAccounts,
   documents,
   contacts,
+  financialCategories,
+  financialGoals,
+  financialRecurrings,
   letters,
   mutationReceipts,
   organizations,
@@ -33,6 +41,7 @@ import { isSpacesConfigured } from "../lib/storage.js";
 import * as documentService from "./documents.js";
 import * as circleService from "./circle-domain.js";
 import { sanitizeWorkspaceSettings } from "./cursor-settings.js";
+import * as financeService from "./finance/finance.js";
 import * as taskProjectService from "./tasks-projects.js";
 
 const PULL_PAGE_SIZE = 100;
@@ -316,6 +325,10 @@ const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   "INVALID_CONTACT",
   "INVALID_LETTER",
   "INVALID_WORKSPACE_SETTINGS",
+  // Stale local assignee / contact ids should not block the upload queue.
+  "ASSIGNEE_NOT_FOUND",
+  "CONTACT_NOT_FOUND",
+  "PROJECT_NOT_FOUND",
 ]);
 
 function camelizePayload(
@@ -367,6 +380,114 @@ const letterKeys = {
   direction: "direction", original_filename: "originalFilename",
   sort_order: "sortOrder",
 };
+const bankAccountKeys = {
+  key: "key",
+  name: "name",
+  iban_or_mask: "ibanOrMask",
+  currency: "currency",
+  type: "type",
+  color: "color",
+  sort_order: "sortOrder",
+};
+const financialCategoryKeys = {
+  name: "name",
+  parent_id: "parentId",
+  kind: "kind",
+  listing: "listing",
+  icon: "icon",
+  budget_cents: "budgetCents",
+  sort_order: "sortOrder",
+};
+const financialGoalKeys = {
+  name: "name",
+  listing: "listing",
+  icon: "icon",
+  goal_amount_cents: "goalAmountCents",
+  start_date: "startDate",
+  end_date: "endDate",
+  contribution_cents: "contributionCents",
+  saving_mode: "savingMode",
+  sort_order: "sortOrder",
+};
+const financialRecurringKeys = {
+  name: "name",
+  icon: "icon",
+  category_id: "categoryId",
+  amount_cents: "amountCents",
+  next_date: "nextDate",
+  archived: "archived",
+  sort_order: "sortOrder",
+};
+
+function bankAccountSnapshot(row: typeof bankAccounts.$inferSelect) {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    iban_or_mask: row.ibanOrMask,
+    currency: row.currency,
+    type: row.type,
+    avatar_storage_key: row.avatarStorageKey,
+    avatar_content_type: row.avatarContentType,
+    color: row.color ?? null,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function financialCategorySnapshot(row: typeof financialCategories.$inferSelect) {
+  return {
+    id: row.id,
+    name: row.name,
+    parent_id: row.parentId,
+    kind: row.kind,
+    listing: row.listing,
+    icon: row.icon,
+    budget_cents: row.budgetCents,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function financialGoalSnapshot(row: typeof financialGoals.$inferSelect) {
+  return {
+    id: row.id,
+    name: row.name,
+    listing: row.listing,
+    icon: row.icon,
+    goal_amount_cents: row.goalAmountCents,
+    start_date: row.startDate,
+    end_date: row.endDate,
+    contribution_cents: row.contributionCents,
+    saving_mode: row.savingMode,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function financialRecurringSnapshot(
+  row: typeof financialRecurrings.$inferSelect,
+) {
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon,
+    category_id: row.categoryId,
+    amount_cents: row.amountCents,
+    next_date: row.nextDate,
+    archived: row.archived ? 1 : 0,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
 
 function mapProjectUpsert(
   payload: Record<string, unknown>,
@@ -738,6 +859,165 @@ export async function applySyncChange(
       );
       return { id: workspaceId, settings };
     }
+
+    case "bank_account": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await financeService.deleteBankAccount(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? bankAccountSnapshot(row) : null;
+      }
+      const existing = await financeService.getBankAccountById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, bankAccountKeys);
+      if (existing) {
+        const parsed = bankAccountInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_BANK_ACCOUNT");
+        const row = await financeService.updateBankAccount(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? bankAccountSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = bankAccountInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_BANK_ACCOUNT");
+      const row = await financeService.createBankAccount(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return bankAccountSnapshot(row);
+    }
+
+    case "financial_category": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await financeService.deleteFinancialCategory(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? financialCategorySnapshot(row) : null;
+      }
+      const existing = await financeService.getFinancialCategoryById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, financialCategoryKeys);
+      if (existing) {
+        const parsed = financialCategoryInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_FINANCIAL_CATEGORY");
+        const row = await financeService.updateFinancialCategory(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? financialCategorySnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = financialCategoryInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_FINANCIAL_CATEGORY");
+      const row = await financeService.createFinancialCategory(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return financialCategorySnapshot(row);
+    }
+
+    case "financial_goal": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await financeService.deleteFinancialGoal(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? financialGoalSnapshot(row) : null;
+      }
+      const existing = await financeService.getFinancialGoalById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, financialGoalKeys);
+      if (existing) {
+        const parsed = financialGoalInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_FINANCIAL_GOAL");
+        const row = await financeService.updateFinancialGoal(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? financialGoalSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = financialGoalInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_FINANCIAL_GOAL");
+      const row = await financeService.createFinancialGoal(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return financialGoalSnapshot(row);
+    }
+
+    case "financial_recurring": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await financeService.deleteFinancialRecurring(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? financialRecurringSnapshot(row) : null;
+      }
+      const existing = await financeService.getFinancialRecurringById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, financialRecurringKeys);
+      if (payload.archived !== undefined) {
+        const archived = asBoolean(payload.archived);
+        if (archived === undefined) delete payload.archived;
+        else payload.archived = archived;
+      }
+      if (existing) {
+        const parsed = financialRecurringInputSchema
+          .partial()
+          .safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_FINANCIAL_RECURRING");
+        const row = await financeService.updateFinancialRecurring(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? financialRecurringSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = financialRecurringInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_FINANCIAL_RECURRING");
+      const row = await financeService.createFinancialRecurring(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return financialRecurringSnapshot(row);
+    }
   }
 }
 
@@ -813,6 +1093,14 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "letter";
     case "workspace_settings":
       return "workspace_setting";
+    case "bank_accounts":
+      return "bank_account";
+    case "financial_categories":
+      return "financial_category";
+    case "financial_goals":
+      return "financial_goal";
+    case "financial_recurrings":
+      return "financial_recurring";
     default:
       return null;
   }

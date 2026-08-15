@@ -10,6 +10,7 @@ backsteros/
 ├── core/
 │   ├── server/     API (Hono + Postgres) — runs on a local computer
 │   └── packages/   contracts, api-client, powersync-schema
+├── hub/            macOS menu-bar start/stop for local services
 ├── mobile/         Expo (iPhone + iPad)
 ├── desktop/        Tauri 2 + Vite/React (macOS)
 └── legacy/         v1 snapshot (reference only)
@@ -19,13 +20,18 @@ backsteros/
 
 ## Quick start
 
+Root scripts are for **core / API / infra** only. Client apps live in their folders.
+
 ```bash
-pnpm db:up
-pnpm db:migrate
-pnpm --filter @backsteros/server dev   # http://localhost:8787/health
-pnpm dev:mobile                        # Expo
-pnpm dev:desktop                       # Tauri
+pnpm --filter @backsteros/hub dev      # menu bar → Start all (Docker + API + PTY)
+# or manually:
+pnpm db:up && pnpm db:migrate && pnpm dev   # core API on :8788
+
+pnpm --filter @backsteros/mobile dev   # Expo
+pnpm --filter @backsteros/desktop dev  # Tauri product UI
 ```
+
+Or from each package directory: `cd mobile && pnpm dev`, `cd desktop && pnpm dev`, `cd hub && pnpm dev`.
 
 ## For AI agents
 

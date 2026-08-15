@@ -3,11 +3,19 @@
 import type { DragEvent, ReactNode } from "react";
 
 import type { GroupedListPointerAppendBind } from "../use-grouped-list-pointer-reorder.js";
+import { PolishedCheckbox } from "./polished-checkbox.js";
 
 export type ProjectTypeGroupSectionListDrag = {
   appendOrderKey: string;
   isActive: (dataTransfer: DataTransfer) => boolean;
   onDrop: (dataTransfer: DataTransfer) => void;
+};
+
+export type ProjectTypeGroupSectionSelection = {
+  checked: boolean;
+  indeterminate?: boolean;
+  ariaLabel?: string;
+  onChange: (checked: boolean) => void;
 };
 
 export type ProjectTypeGroupSectionProps = {
@@ -18,9 +26,16 @@ export type ProjectTypeGroupSectionProps = {
   /** Optional + control (Areas page create-in-group). */
   onAdd?: () => void;
   addActionLabel?: string;
+  /** Optional content before header actions (e.g. Spent / Budget labels). */
+  trailing?: ReactNode;
   /** Optional delete control (nested custom areas) — shown on header hover. */
   onDelete?: () => void;
   deleteActionLabel?: string;
+  /**
+   * When set, swaps the chevron for a select checkbox on hover
+   * (or while selected).
+   */
+  selection?: ProjectTypeGroupSectionSelection | null;
   dragInsertBeforeKey?: string | null;
   onDragInsertBeforeKey?: (orderKey: string | null) => void;
   onListDragEnd?: () => void;
@@ -70,8 +85,10 @@ export function ProjectTypeGroupSection({
   children,
   onAdd,
   addActionLabel = "project",
+  trailing = null,
   onDelete,
   deleteActionLabel = "area",
+  selection = null,
   dragInsertBeforeKey = null,
   onDragInsertBeforeKey,
   onListDragEnd,
@@ -87,6 +104,10 @@ export function ProjectTypeGroupSection({
       listDrag != null &&
       dragInsertBeforeKey === listDrag.appendOrderKey;
   const showActions = Boolean(onAdd || onDelete);
+  const selectMode = selection != null;
+  const isSelected = Boolean(
+    selection && (selection.checked || selection.indeterminate),
+  );
 
   function handleHeaderDragOver(event: DragEvent) {
     if (!listDrag || !listDrag.isActive(event.dataTransfer)) return;
@@ -124,23 +145,47 @@ export function ProjectTypeGroupSection({
           type="button"
           className="project-type-subgroup__header"
           aria-expanded={!collapsed}
+          data-select={selectMode ? "true" : undefined}
+          data-selected={isSelected ? "true" : undefined}
           onClick={onToggle}
         >
-          <span className="project-type-subgroup__toggle" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path
-                d="M9 6l6 6-6 6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <span className="project-type-subgroup__toggle-slot">
+            <span
+              className="project-type-subgroup__toggle"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path
+                  d="M9 6l6 6-6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            {selection ? (
+              <span
+                className="project-type-subgroup__select"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <PolishedCheckbox
+                  checked={selection.checked}
+                  indeterminate={selection.indeterminate}
+                  ariaLabel={selection.ariaLabel ?? `Select ${title}`}
+                  onCheckedChange={(checked) => selection.onChange(checked)}
+                />
+              </span>
+            ) : null}
           </span>
           <span className="project-type-subgroup__label">{title}</span>
           <span className="project-type-subgroup__rule" aria-hidden="true" />
         </button>
+        {trailing ? (
+          <div className="project-type-subgroup__trailing">{trailing}</div>
+        ) : null}
         {showActions ? (
           <span className="project-type-subgroup__actions">
             {onAdd ? (

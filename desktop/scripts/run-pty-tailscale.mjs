@@ -38,6 +38,24 @@ const env = {
   PTY_AUTH_TOKEN: token,
 };
 
+// Finder/Dock-launched Hub has a tiny PATH; ensure Cursor Agent CLI is findable.
+const home = process.env.HOME || "";
+if (home) {
+  const extras = [
+    path.join(home, ".local/bin"),
+    path.join(home, "Library/pnpm"),
+    path.join(home, ".cargo/bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ];
+  const current = env.PATH || process.env.PATH || "";
+  const parts = current.split(":").filter(Boolean);
+  for (const extra of extras.reverse()) {
+    if (!parts.includes(extra)) parts.unshift(extra);
+  }
+  env.PATH = parts.join(":");
+}
+
 const child = spawn(
   process.execPath,
   [

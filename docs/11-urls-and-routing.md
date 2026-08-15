@@ -1,31 +1,29 @@
 # URLs, routing, and client split
 
-## Domains and paths
+## v2 hosts (local computer)
 
-Product and admin live as **path prefixes on the apex domain**. The API remains on
-**`service.backsteros.com`** (`api.backsteros.com` unavailable).
-
-| URL | Client folder | Purpose |
+| URL | Code | Purpose |
 | --- | --- | --- |
-| `https://backsteros.com/` | (optional landing) | Marketing; deep links into `/app` |
-| `https://backsteros.com/app` | `backsteros-app/` | **Product UI** — Next.js with `basePath: /app` |
-| `https://backsteros.com/admin` | `backsteros-admin/` | **Ops dashboard** — logs, sync health, API keys, storage — **not** task editing |
-| `https://service.backsteros.com` | `backsteros-api/` | REST, sync, OpenAPI (no HTML product UI) |
+| `http://127.0.0.1:8788` | `core/server/` | REST, sync upload, OpenAPI |
+| `http://127.0.0.1:8080` | Docker PowerSync | Sync stream (or Tailscale MagicDNS `:8080`) |
+| Desktop / mobile shells | `desktop/`, `mobile/` | UI only — talk to local core |
 
-Native desktop and mobile clients may share product concepts and API contracts,
-but they do not load the Next.js web build.
+Cloud product hosts (`backsteros.com/app`, `service.backsteros.com`) belonged to
+v1 / early hosting experiments and are **not** part of active v2.
 
-## Why two front-end codebases
+## Why separate shell codebases
 
-| | `backsteros-app` | `backsteros-admin` |
+| | `desktop/` | `mobile/` |
 | --- | --- | --- |
-| **User goal** | Do work (tasks, docs, letters) | Observe system (sync, errors, usage) |
-| **Data** | PowerSync + rich editors | Read-mostly metrics, logs, tables |
-| **Offline** | Required | Online-only is fine |
-| **Complexity** | CodeMirror, PDF, navigation | Charts, log tail, status cards |
-| **Audience** | Daily use | Owner / power user |
+| **User goal** | Do work on macOS | Do work on iPhone / iPad |
+| **Data** | PowerSync + rich editors | PowerSync + mobile layouts |
+| **Offline** | Required | Required |
+| **Share** | Contracts / api-client / schema only — **no** shared visual UI |
 
-Different UX and dependencies → **separate folders**, shared `backsteros-packages/api-client` and auth.
+## Historical note (v1 Next.js paths)
+
+Earlier docs described `backsteros.com/app` and `backsteros.com/admin` Next.js
+apps. Those live under `legacy/` for reference only — do not extend them.
 
 ## Cross-linking
 
@@ -37,23 +35,16 @@ Both apps may share:
 
 Do **not** merge into one SPA with heavy route guards — keeps bundles small and AI agent context clear.
 
-## Deployment
+## Deployment (v2)
 
 ```text
-backsteros.com/app/*     → Next.js backsteros-app (basePath /app)
-backsteros.com/admin/*   → backsteros-admin
-service.backsteros.com/* → backsteros-api (Hono)
+local computer
+  core/server     → http://127.0.0.1:8788
+  PowerSync       → http://127.0.0.1:8080  (Docker)
+  desktop/ / mobile/ → shells against local core (+ Tailscale when needed)
 ```
 
-The product app is a standalone Next.js server (`output: "standalone"`), not a
-static export. Nginx on the apex proxies `/app` to the Kamal proxy. Kamal still
-routes the container by an internal Host (`app.backsteros.com` on the shared
-proxy port); that hostname is **not** the public product URL.
-
-Public health probe: `GET https://backsteros.com/app/api/health`.
-
-Local `next dev` omits `NEXT_PUBLIC_BASE_PATH`, so the app runs at the origin root
-(e.g. `http://localhost:5173`). Production builds set `NEXT_PUBLIC_BASE_PATH=/app`.
+Cloud Kamal / nginx / Neon deployments are retired.
 
 ## Desktop and mobile
 
@@ -85,6 +76,17 @@ Not task CRUD. Examples:
 - Markdown editing (CodeMirror), PDF viewing
 - PowerSync offline
 - User settings (vault path N/A on cloud; sync preferences)
+
+## Desktop Finance routes (v2)
+
+| Path | Purpose |
+| --- | --- |
+| `/finance` | Full-width Finance; account picker dropdown; auto-select first account |
+| `/finance/:accountSlug` | Account detail (transactions) |
+| `/finance/:accountSlug/transactions` | Same (default section) |
+| `/finance/:accountSlug/imports` | Recent CSV import batches |
+
+No content side panel on Finance — switch/create accounts from the in-page dropdown. Transactions load via REST (`GET /api/v1/bank-accounts/:id/transactions`); bank accounts/categories may also appear via PowerSync Tier A.
 
 ## Auth
 

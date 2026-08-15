@@ -86,7 +86,7 @@ export function createApp() {
       },
       servers: [
         {
-          url: process.env.PUBLIC_API_URL ?? "http://localhost:8787",
+          url: process.env.PUBLIC_API_URL ?? "http://localhost:8788",
           description: "API base URL",
         },
       ],

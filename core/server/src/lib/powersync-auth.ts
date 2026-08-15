@@ -6,10 +6,54 @@ export function getPowerSyncAudience(): string {
   return process.env.POWERSYNC_AUDIENCE ?? "backsteros-powersync";
 }
 
-export function getPowerSyncUrl(): string | null {
-  const value = process.env.POWERSYNC_URL?.trim();
-  if (!value) return null;
+function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+/**
+ * Prefer loopback PowerSync for desktop Tauri / local Vite.
+ * WKWebView often never opens a sync stream to a Tailscale hostname even when
+ * REST to core works — mobile over Tailscale still needs POWERSYNC_URL.
+ */
+export function preferLocalPowerSyncEndpoint(input: {
+  origin?: string | null;
+  host?: string | null;
+}): boolean {
+  const origin = (input.origin ?? "").trim().toLowerCase();
+  const host = (input.host ?? "").trim().toLowerCase();
+  if (
+    origin.startsWith("tauri://") ||
+    origin.includes("://tauri.localhost") ||
+    origin.includes("://localhost:") ||
+    origin.includes("://127.0.0.1:")
+  ) {
+    return true;
+  }
+  if (
+    host === "localhost" ||
+    host.startsWith("localhost:") ||
+    host === "127.0.0.1" ||
+    host.startsWith("127.0.0.1:")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function getPowerSyncUrl(request?: {
+  origin?: string | null;
+  host?: string | null;
+}): string | null {
+  const publicUrl = process.env.POWERSYNC_URL?.trim();
+  const localUrl =
+    process.env.POWERSYNC_LOCAL_URL?.trim() || "http://127.0.0.1:8080";
+
+  if (request && preferLocalPowerSyncEndpoint(request)) {
+    return stripTrailingSlash(localUrl);
+  }
+
+  if (!publicUrl) return null;
+  return stripTrailingSlash(publicUrl);
 }
 
 export async function signPowerSyncToken(

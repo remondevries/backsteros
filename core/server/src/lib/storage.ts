@@ -156,22 +156,35 @@ export function buildStorageKey(
   }
 }
 
+/**
+ * Calendar day used for letter PDF filing.
+ * Prefer Received Date; fall back to today. Uses local calendar parts so a
+ * date-picker value stored as local midnight matches the UI day (not UTC).
+ */
+export function letterFilingCalendarParts(
+  receivedDate?: Date | string | null,
+  now: Date = new Date(),
+): { yyyy: string; mm: string; dd: string; dateStamp: string } {
+  const when =
+    receivedDate instanceof Date
+      ? receivedDate
+      : receivedDate
+        ? new Date(receivedDate)
+        : now;
+  const resolved = Number.isNaN(when.getTime()) ? now : when;
+  const yyyy = String(resolved.getFullYear());
+  const mm = String(resolved.getMonth() + 1).padStart(2, "0");
+  const dd = String(resolved.getDate()).padStart(2, "0");
+  return { yyyy, mm, dd, dateStamp: `${yyyy}-${mm}-${dd}` };
+}
+
 /** Letter PDFs: Letters/YYYY/MM/YYYY-MM-DD - Subject.pdf */
 export function buildLetterPdfStorageKey(input: {
   title: string;
   receivedDate?: Date | string | null;
   attachmentId?: string;
 }): string {
-  const when =
-    input.receivedDate instanceof Date
-      ? input.receivedDate
-      : input.receivedDate
-        ? new Date(input.receivedDate)
-        : new Date();
-  const yyyy = String(when.getUTCFullYear());
-  const mm = String(when.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(when.getUTCDate()).padStart(2, "0");
-  const dateStamp = `${yyyy}-${mm}-${dd}`;
+  const { yyyy, mm, dateStamp } = letterFilingCalendarParts(input.receivedDate);
   const subject = safeSegment(input.title.trim() || "Letter");
   const suffix = input.attachmentId
     ? ` (${safeSegment(input.attachmentId.slice(0, 8))})`
@@ -183,7 +196,7 @@ export function buildLetterPdfStorageKey(input: {
 /** Private/system blobs stay under .backsteros (not for Obsidian browsing). */
 export function buildPrivateStorageKey(
   _workspaceId: string,
-  category: "pdfs" | "avatars" | "attachments",
+  category: "pdfs" | "avatars" | "attachments" | "finance-imports",
   entityId: string,
   fileName: string,
 ): string {
@@ -200,6 +213,14 @@ export function buildPrivateStorageKey(
       ".backsteros",
       "attachments",
       "tasks",
+      safeSegment(entityId),
+      safeSegment(fileName),
+    );
+  }
+  if (category === "finance-imports") {
+    return path.posix.join(
+      ".backsteros",
+      "finance-imports",
       safeSegment(entityId),
       safeSegment(fileName),
     );
@@ -575,6 +596,37 @@ export async function deleteObject(
         ? String((error as { code?: unknown }).code)
         : "";
     if (code === "ENOENT") return;
+    throw error;
+  }
+}
+
+/** Move a vault object to a new key (no-op when keys match). */
+export async function moveObject(
+  fromKey: string,
+  toKey: string,
+  settingsVaultPath?: string | null,
+): Promise<void> {
+  if (fromKey === toKey) return;
+  const fromAbsolute = await absolutePathForKey(fromKey, settingsVaultPath);
+  const toAbsolute = await absolutePathForKey(toKey, settingsVaultPath);
+  await mkdir(path.dirname(toAbsolute), { recursive: true });
+  try {
+    await rename(fromAbsolute, toAbsolute);
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
+    if (code === "ENOENT") {
+      throw new Error("STORAGE_OBJECT_NOT_FOUND");
+    }
+    // Cross-device rename fallback.
+    if (code === "EXDEV") {
+      const bytes = await readFile(fromAbsolute);
+      await writeFile(toAbsolute, bytes);
+      await unlink(fromAbsolute);
+      return;
+    }
     throw error;
   }
 }

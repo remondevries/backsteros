@@ -1,6 +1,7 @@
 import { isJournalSectionPath } from "./journal.js";
 import {
   isContactSectionPath,
+  isFinanceSectionPath,
   isKnowledgeSectionPath,
   isOrganizationSectionPath,
 } from "./entity-routes.js";
@@ -18,6 +19,7 @@ export const CONTACTS_LIST_PANEL_WIDTH_KEY = "contacts-list-panel-width";
 export const ORGANIZATIONS_LIST_PANEL_WIDTH_KEY =
   "organizations-list-panel-width";
 export const LETTERS_LIST_PANEL_WIDTH_KEY = "letters-list-panel-width";
+export const FINANCE_LIST_PANEL_WIDTH_KEY = "finance-list-panel-width";
 
 /** Routes that show the left content side panel (list + detail). */
 export function shouldShowContentSidePanel(pathname: string): boolean {
@@ -29,6 +31,7 @@ export function shouldShowContentSidePanel(pathname: string): boolean {
     isLettersSectionPath(pathname) ||
     isContactSectionPath(pathname) ||
     isOrganizationSectionPath(pathname) ||
+    isFinanceSectionPath(pathname) ||
     isProjectDocumentsSectionPath(pathname) ||
     isProjectLettersSectionPath(pathname)
   );
@@ -49,6 +52,9 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   }
   if (isOrganizationSectionPath(pathname)) {
     return ORGANIZATIONS_LIST_PANEL_WIDTH_KEY;
+  }
+  if (isFinanceSectionPath(pathname)) {
+    return FINANCE_LIST_PANEL_WIDTH_KEY;
   }
   if (isLettersSectionPath(pathname)) {
     return LETTERS_LIST_PANEL_WIDTH_KEY;

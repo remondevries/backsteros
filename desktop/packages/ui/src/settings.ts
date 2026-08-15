@@ -4,6 +4,7 @@ export type SettingsTabId =
   | "api"
   | "cursor"
   | "github"
+  | "moneybird"
   | "whoop"
   | "storage";
 
@@ -58,6 +59,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Connect personal and organization repositories",
     group: "integration",
     href: "/settings/github",
+  },
+  {
+    id: "moneybird",
+    label: "Moneybird",
+    description: "Sales invoices and bookkeeping for Finance",
+    group: "integration",
+    href: "/settings/moneybird",
   },
   {
     id: "whoop",

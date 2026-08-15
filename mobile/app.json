@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "BacksterOS v2",
+    "name": "BacksterOS",
     "slug": "backsteros-v2",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -15,7 +15,7 @@
       "backgroundColor": "#000000",
       "icon": "./assets/icon.png",
       "infoPlist": {
-        "CFBundleDisplayName": "BacksterOS v2",
+        "CFBundleDisplayName": "BacksterOS",
         "NSLocalNetworkUsageDescription": "BacksterOS connects to your laptop over Tailscale for the agent terminal and local API.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,

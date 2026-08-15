@@ -109,6 +109,7 @@ const organizations = new Table({
   avatar_content_type: column.text,
   sort_order: column.integer,
   notes: column.text,
+  moneybird_contact_id: column.text,
   ...commonDates,
 });
 
@@ -202,6 +203,57 @@ const mentions = new Table({
   created_at: column.text,
 });
 
+const bank_accounts = new Table({
+  key: column.text,
+  name: column.text,
+  iban_or_mask: column.text,
+  currency: column.text,
+  type: column.text,
+  avatar_storage_key: column.text,
+  avatar_content_type: column.text,
+  color: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const financial_categories = new Table(
+  {
+    name: column.text,
+    parent_id: column.text,
+    kind: column.text,
+    listing: column.text,
+    icon: column.text,
+    budget_cents: column.integer,
+    sort_order: column.integer,
+    ...commonDates,
+  },
+  { indexes: { parent: ["parent_id"] } },
+);
+
+const financial_goals = new Table({
+  name: column.text,
+  listing: column.text,
+  icon: column.text,
+  goal_amount_cents: column.integer,
+  start_date: column.text,
+  end_date: column.text,
+  contribution_cents: column.integer,
+  saving_mode: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const financial_recurrings = new Table({
+  name: column.text,
+  icon: column.text,
+  category_id: column.text,
+  amount_cents: column.integer,
+  next_date: column.text,
+  archived: column.integer,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -213,6 +265,10 @@ export const appSchema = new Schema({
   areas,
   avatars,
   mentions,
+  bank_accounts,
+  financial_categories,
+  financial_goals,
+  financial_recurrings,
 });
 
 export type UploadEntry = {

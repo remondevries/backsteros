@@ -42,10 +42,11 @@ import {
   TASKS_DUE_FILTERS,
 } from "./tasks-due-filters.js";
 
-/** 1 = Tasks, 2 = Files, 3 = Commits, 4 = PRs (development / codebase layout). */
+/** 1 = Tasks, 2 = Files, 3 = Docs, 4 = Commits, 5 = PRs (codebase layout). */
 const CODEBASE_LIST_TABS: readonly CodebaseGithubListTab[] = [
   "tasks",
   "files",
+  "docs",
   "commits",
   "pulls",
 ];
@@ -63,6 +64,22 @@ export function isCodebaseWorkbenchMounted(): boolean {
   return document.querySelector("[data-codebase-workbench]") != null;
 }
 
+/**
+ * Visible org section tab hrefs from the mounted organization detail shell
+ * (finance tabs are conditional). Pipe-separated in `data-organization-section-hrefs`.
+ */
+function readOrganizationSectionTabHrefsFromDom(): string[] | null {
+  if (typeof document === "undefined") return null;
+  const host = document.querySelector("[data-organization-detail]");
+  const raw = host?.getAttribute("data-organization-section-hrefs");
+  if (!raw?.trim()) return null;
+  const hrefs = raw
+    .split("|")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return hrefs.length > 0 ? hrefs : null;
+}
+
 function resolveCodebaseListTabHrefs(
   projectKey: string,
   scope?: ProjectRouteScope | null,
@@ -74,9 +91,12 @@ function resolveCodebaseListTabHrefs(
 
 /**
  * Prefer development-layout tabs when the path is a workbench route
- * (files/commits/pulls) or the codebase workbench is mounted on the bare
+ * (files/docs/commits/pulls) or the codebase workbench is mounted on the bare
  * project overview. Otherwise keep the default Overview/Tasks/Documents/…
  * section tabs.
+ *
+ * `/documents` parses as the Docs workbench tab, but on general projects the
+ * workbench is not mounted — keep the standard Documents section tabs there.
  */
 function resolveProjectSectionTabHrefs(
   pathname: string,
@@ -85,10 +105,21 @@ function resolveProjectSectionTabHrefs(
 ): string[] {
   const workbench = parseCodebaseWorkbenchPath(pathname, projectKey);
   if (workbench != null) {
-    // files / commits / pulls are codebase-only routes.
-    if (workbench.tab !== "tasks" || isCodebaseWorkbenchMounted()) {
+    const docsWithoutWorkbench =
+      workbench.tab === "docs" && !isCodebaseWorkbenchMounted();
+    // files / docs / commits / pulls are codebase-only routes (when mounted).
+    if (
+      !docsWithoutWorkbench &&
+      (workbench.tab !== "tasks" || isCodebaseWorkbenchMounted())
+    ) {
       return resolveCodebaseListTabHrefs(projectKey, scope);
     }
+  }
+
+  // Board/list on `/tasks` (or other non-workbench path segments) still
+  // mounts the codebase workbench — keep 1–5 on Tasks/Files/Docs/Commits/PRs.
+  if (isCodebaseWorkbenchMounted()) {
+    return resolveCodebaseListTabHrefs(projectKey, scope);
   }
 
   if (scope?.kind === "organization") {
@@ -106,7 +137,7 @@ function resolveProjectSectionTabHrefs(
  * Ordered section tab hrefs for desktop routes (1 = first tab).
  * Matches Next resolveSectionTabHrefs for tasks due, projects areas,
  * and project/contact/organization entity sections. On codebase projects,
- * 1–4 map to Tasks / Files / Commits / PRs while that layout is active.
+ * 1–5 map to Tasks / Files / Docs / Commits / PRs while that layout is active.
  *
  * Task detail routes return null so 1–5 stay free for the task layout
  * (agent option keys, etc.) instead of jumping to Files / Documents / ….
@@ -174,7 +205,11 @@ export function resolveDesktopSectionTabHrefs(
 
   const organizationMatch = path.match(/^\/organizations\/([^/]+)(?:\/|$)/);
   if (organizationMatch && organizationMatch[1] !== "new") {
+    const fromDom = readOrganizationSectionTabHrefsFromDom();
+    if (fromDom) return fromDom;
     const slug = decodeURIComponent(organizationMatch[1]!);
+    // Fall back to every registered section when the detail shell is not mounted
+    // yet (e.g. early shortcut). Finance tabs may 404-redirect if empty.
     return ORGANIZATION_SECTIONS.map((section) =>
       getOrganizationSectionHref(slug, section.id),
     );

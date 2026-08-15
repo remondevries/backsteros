@@ -15,6 +15,12 @@ export const DROPDOWN_NONE_VALUE = "__none__";
 /** Sentinel for clearing project on task/letter surfaces (matches Next compose). */
 export const DROPDOWN_NO_PROJECT_VALUE = "__no_project__";
 
+/** Sentinel for clearing goal on finance transaction surfaces. */
+export const DROPDOWN_NO_GOAL_VALUE = "__no_goal__";
+
+/** Sentinel for clearing recurring on finance transaction surfaces. */
+export const DROPDOWN_NO_RECURRING_VALUE = "__no_recurring__";
+
 export type AssigneeDropdownContact = {
   id: string;
   name: string;

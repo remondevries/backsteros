@@ -67,6 +67,44 @@ test("throws a structured error for non-2xx JSON responses", async () => {
   );
 });
 
+test("surfaces Zod validation issues from Hono zValidator bodies", async () => {
+  const client = createApiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async () =>
+      Response.json(
+        {
+          success: false,
+          error: {
+            issues: [
+              {
+                code: "invalid_string",
+                validation: "datetime",
+                message: "Invalid datetime",
+                path: ["dueDate"],
+              },
+            ],
+            name: "ZodError",
+          },
+        },
+        { status: 400 },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      client.requestJson("/api/v1/tasks", {
+        method: "POST",
+        body: "{}",
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiClientError);
+      assert.equal(error.status, 400);
+      assert.equal(error.message, "dueDate: Invalid datetime");
+      return true;
+    },
+  );
+});
+
 test("serializes typed JSON requests and preserves route headers", async () => {
   let observed: { contentType: string | null; body: string } | null = null;
   const client = createApiClient({

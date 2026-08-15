@@ -8,7 +8,15 @@ import {
   resolveAgentSurfaceQuickOpenShortcut,
 } from "./agent-surface-quick-open-shortcut.ts";
 
-test("codebase projects expose Agent / Browser / Files / Plan / Diff", () => {
+test("codebase projects expose Agent / Browser / Files / Plan / Diff when diffs exist", () => {
+  assert.deepEqual(
+    listAgentSurfaceQuickOpenKinds({
+      isCodebaseProject: true,
+      diffAvailable: true,
+    }),
+    ["chat", "browser", "files", "plan", "diff"],
+  );
+  // Boolean shorthand keeps Diff (legacy callers / tests).
   assert.deepEqual(listAgentSurfaceQuickOpenKinds(true), [
     "chat",
     "browser",
@@ -16,6 +24,16 @@ test("codebase projects expose Agent / Browser / Files / Plan / Diff", () => {
     "plan",
     "diff",
   ]);
+});
+
+test("codebase projects hide Diff until there are file changes", () => {
+  assert.deepEqual(
+    listAgentSurfaceQuickOpenKinds({
+      isCodebaseProject: true,
+      diffAvailable: false,
+    }),
+    ["chat", "browser", "files", "plan"],
+  );
 });
 
 test("non-codebase projects hide Files and Diff", () => {
@@ -68,6 +86,35 @@ test("⌘1–⌘5 map by visible options on codebase projects when empty", () =>
   );
 });
 
+test("⌘5 is unavailable on codebase projects when Diff is hidden", () => {
+  assert.equal(
+    resolveAgentSurfaceQuickOpenShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit5",
+      },
+      { isCodebaseProject: true, diffAvailable: false },
+    ),
+    null,
+  );
+  assert.equal(
+    resolveAgentSurfaceQuickOpenShortcut(
+      {
+        altKey: false,
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        code: "Digit4",
+      },
+      { isCodebaseProject: true, diffAvailable: false },
+    ),
+    "plan",
+  );
+});
+
 test("⌘3 is Plan on non-codebase projects when empty", () => {
   assert.equal(
     resolveAgentSurfaceQuickOpenShortcut(
@@ -102,6 +149,13 @@ test("hotkey labels follow visible order", () => {
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("files", true), "⌘3");
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("plan", false), "⌘3");
   assert.equal(agentSurfaceQuickOpenHotkeyLabel("files", false), "");
+  assert.equal(
+    agentSurfaceQuickOpenHotkeyLabel("diff", {
+      isCodebaseProject: true,
+      diffAvailable: false,
+    }),
+    "",
+  );
 });
 
 test("with open tabs, ⌘N activates tab index instead of creating surfaces", () => {

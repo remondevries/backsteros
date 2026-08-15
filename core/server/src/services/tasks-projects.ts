@@ -21,6 +21,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
+import { nudgeDynamicIslandTasksRefresh } from "../lib/dynamic-island-nudge.js";
 import {
   areas,
   contacts,
@@ -749,6 +750,9 @@ export async function updateTask(
         actor,
         executor,
       );
+      nudgeDynamicIslandTasksRefresh(
+        `status:${existing.status}->${input.status}`,
+      );
     }
     if (
       input.assigneeId !== undefined &&
@@ -866,12 +870,15 @@ export async function listDueTasks(
 
 /**
  * Expanded inbox: triage capture (`inbox`), On Hold / In Review from any
- * project, and overdue open tasks (due before local today, not completed /
- * canceled / duplicated). Overdue matching is refined on clients by calendar day.
+ * project when not due in the future, and overdue open tasks (due before
+ * local today, not completed / canceled / duplicated). Matching is refined
+ * on clients by calendar day.
  */
 export async function listInboxTasks(workspaceId: string, executor: DbExecutor = db) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
+  const startOfTomorrow = new Date(startOfToday);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
 
   return executor
     .select()
@@ -882,7 +889,10 @@ export async function listInboxTasks(workspaceId: string, executor: DbExecutor =
         isNull(tasks.deletedAt),
         or(
           eq(tasks.inbox, true),
-          inArray(tasks.status, ["on_hold", "in_review"]),
+          and(
+            inArray(tasks.status, ["on_hold", "in_review"]),
+            or(isNull(tasks.dueDate), lt(tasks.dueDate, startOfTomorrow)),
+          ),
           and(
             isNotNull(tasks.dueDate),
             lt(tasks.dueDate, startOfToday),

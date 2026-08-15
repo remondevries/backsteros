@@ -1,5 +1,5 @@
 import { isKnowledgeSectionPath } from "./entity-routes.js";
-import { isGoLeaderSequencePending } from "./go-leader-sequence-gate.js";
+import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
 import { isNativeDatePickerOpen } from "./native-date-picker.js";
 import { isSearchableDropdownPanelOpen } from "./should-handle-list-keyboard-navigation.js";
 import {
@@ -48,7 +48,7 @@ export function shouldHandleDocumentTreeCreateFolderShortcut(
     isDocumentTreeCreateFolderShortcutKey(event) &&
     hasDocumentTreeCreateFolderShortcutModifiers(event) &&
     isDocumentLibrarySectionPath(pathname) &&
-    !isGoLeaderSequencePending() &&
+    !isAnyLeaderSequencePending() &&
     shouldHandleGlobalShortcut(event) &&
     !isSearchableDropdownPanelOpen() &&
     !isNativeDatePickerOpen() &&

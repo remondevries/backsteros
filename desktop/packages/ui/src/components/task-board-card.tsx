@@ -3,6 +3,7 @@
 import { useMemo, type ReactNode, type SyntheticEvent } from "react";
 
 import { getTaskDisplayId } from "../task-display-id.js";
+import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import {
   getTaskStatusLabel,
@@ -106,10 +107,9 @@ export function TaskBoardCard({
       className="task-kanban-card"
       onClick={() => onOpen?.(task.id)}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen?.(task.id);
-        }
+        if (!isDirectRoleButtonActivationKey(event)) return;
+        event.preventDefault();
+        onOpen?.(task.id);
       }}
     >
       <span className="task-kanban-card-top">

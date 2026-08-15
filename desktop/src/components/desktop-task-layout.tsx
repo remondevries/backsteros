@@ -158,6 +158,8 @@ export function DesktopTaskLayout({
   const previousTaskIdRef = useRef<string | null>(null);
   /** Tracks last observed status so Ready to Start auto-start is a transition. */
   const previousStatusRef = useRef<string | null>(null);
+  /** At most one Ready-to-Start auto-start per task visit (status can flap). */
+  const autoStartedTaskIdRef = useRef<string | null>(null);
   /** One viewer-reconcile attach per task/chat visit. */
   const reconcileKeyRef = useRef<string | null>(null);
   const {
@@ -338,6 +340,7 @@ export function DesktopTaskLayout({
     if (taskChanged) {
       reconcileKeyRef.current = null;
       previousStatusRef.current = null;
+      autoStartedTaskIdRef.current = null;
       setDetailCollapsed(false);
       setAgentCollapsed(false);
     }
@@ -352,25 +355,28 @@ export function DesktopTaskLayout({
     if (!layoutReady || !hasWorkingDirectory) return;
 
     const previous = previousStatusRef.current;
+    const canAutoStart =
+      status === "ready_to_start" &&
+      !agentChatId?.trim() &&
+      !creatingAgent &&
+      autoStartedTaskIdRef.current !== taskId;
+
     if (previous === null) {
       previousStatusRef.current = status;
       // Opened an unbound Ready to Start task — pick it up immediately.
-      if (
-        status === "ready_to_start" &&
-        !agentChatId?.trim() &&
-        !creatingAgent
-      ) {
+      if (canAutoStart) {
+        autoStartedTaskIdRef.current = taskId;
         void startAgentSession();
       }
       return;
     }
 
     previousStatusRef.current = status;
-    if (creatingAgent) return;
-    if (status !== "ready_to_start") return;
+    if (!canAutoStart) return;
     // Only on transition into Ready to Start (continuous agent loop).
     if (previous === "ready_to_start") return;
 
+    autoStartedTaskIdRef.current = taskId;
     void startAgentSession();
   }, [
     agentChatId,
@@ -379,6 +385,7 @@ export function DesktopTaskLayout({
     hasWorkingDirectory,
     layoutReady,
     startAgentSession,
+    taskId,
     taskStatus,
   ]);
 

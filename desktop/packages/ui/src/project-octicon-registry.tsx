@@ -155,7 +155,6 @@ import {
   FoldDownIcon,
   FoldUpIcon,
   GearIcon,
-  GiftIcon,
   GitBranchIcon,
   GitBranchCheckIcon,
   GitCommitIcon,
@@ -386,7 +385,22 @@ import {
 } from "@primer/octicons-react";
 
 import type { ProjectIconKey } from "./project-icon-keys.js";
+import { AirplaneIcon } from "./components/airplane-icon.js";
+import { AppleIcon } from "./components/apple-icon.js";
+import { BelastingdienstIcon } from "./components/belastingdienst-icon.js";
+import { CarIcon } from "./components/car-icon.js";
+import { CartIcon } from "./components/cart-icon.js";
+import { GiftIcon } from "./components/gift-icon.js";
+import { GymIcon } from "./components/gym-icon.js";
+import { LaptopIcon } from "./components/laptop-icon.js";
+import { MercedesBenzIcon } from "./components/mercedes-benz-icon.js";
+import { NetflixIcon } from "./components/netflix-icon.js";
+import { PetIcon } from "./components/pet-icon.js";
+import { PhoneIcon } from "./components/phone-icon.js";
+import { ShopIcon } from "./components/shop-icon.js";
+import { SpotifyIcon } from "./components/spotify-icon.js";
 import { TerminalConsoleIcon } from "./components/terminal-console-icon.js";
+import { WaterIcon } from "./components/water-icon.js";
 
 export type ProjectOcticonProps = SVGProps<SVGSVGElement> & {
   size?: number | string;
@@ -399,6 +413,8 @@ const OCTICON_BY_KEY = {
   "ai-model": AiModelIcon,
   "alert": AlertIcon,
   "alert-fill": AlertFillIcon,
+  "airplane": AirplaneIcon,
+  "apple": AppleIcon,
   "apps": AppsIcon,
   "archive": ArchiveIcon,
   "arrow-both": ArrowBothIcon,
@@ -412,6 +428,7 @@ const OCTICON_BY_KEY = {
   "arrow-up-left": ArrowUpLeftIcon,
   "arrow-up-right": ArrowUpRightIcon,
   "beaker": BeakerIcon,
+  "belastingdienst": BelastingdienstIcon,
   "bell": BellIcon,
   "bell-fill": BellFillIcon,
   "bell-slash": BellSlashIcon,
@@ -432,6 +449,8 @@ const OCTICON_BY_KEY = {
   "bug": BugIcon,
   "cache": CacheIcon,
   "calendar": CalendarIcon,
+  "car": CarIcon,
+  "cart": CartIcon,
   "check": CheckIcon,
   "check-circle": CheckCircleIcon,
   "check-circle-fill": CheckCircleFillIcon,
@@ -564,6 +583,7 @@ const OCTICON_BY_KEY = {
   "graph-bar-horizontal": GraphBarHorizontalIcon,
   "graph-bar-vertical": GraphBarVerticalIcon,
   "graph-stacked-area": GraphStackedAreaIcon,
+  "gym": GymIcon,
   "hash": HashIcon,
   "heading": HeadingIcon,
   "heart": HeartIcon,
@@ -592,6 +612,7 @@ const OCTICON_BY_KEY = {
   "kebab-horizontal": KebabHorizontalIcon,
   "key": KeyIcon,
   "key-asterisk": KeyAsteriskIcon,
+  "laptop": LaptopIcon,
   "law": LawIcon,
   "light-bulb": LightBulbIcon,
   "link": LinkIcon,
@@ -612,6 +633,7 @@ const OCTICON_BY_KEY = {
   "mcp": McpIcon,
   "megaphone": MegaphoneIcon,
   "mention": MentionIcon,
+  "mercedes-benz": MercedesBenzIcon,
   "meter": MeterIcon,
   "milestone": MilestoneIcon,
   "minimize": MinimizeIcon,
@@ -624,6 +646,7 @@ const OCTICON_BY_KEY = {
   "move-to-top": MoveToTopIcon,
   "multi-select": MultiSelectIcon,
   "mute": MuteIcon,
+  "netflix": NetflixIcon,
   "no-entry": NoEntryIcon,
   "no-entry-fill": NoEntryFillIcon,
   "node": NodeIcon,
@@ -646,6 +669,8 @@ const OCTICON_BY_KEY = {
   "person": PersonIcon,
   "person-add": PersonAddIcon,
   "person-fill": PersonFillIcon,
+  "pet": PetIcon,
+  "phone": PhoneIcon,
   "pin": PinIcon,
   "pin-slash": PinSlashIcon,
   "pivot-column": PivotColumnIcon,
@@ -692,6 +717,7 @@ const OCTICON_BY_KEY = {
   "shield-lock": ShieldLockIcon,
   "shield-slash": ShieldSlashIcon,
   "shield-x": ShieldXIcon,
+  "shop": ShopIcon,
   "sidebar-collapse": SidebarCollapseIcon,
   "sidebar-expand": SidebarExpandIcon,
   "sign-in": SignInIcon,
@@ -716,6 +742,7 @@ const OCTICON_BY_KEY = {
   "sparkles-fill": SparklesFillIcon,
   "split-view": SplitViewIcon,
   "sponsor-tiers": SponsorTiersIcon,
+  "spotify": SpotifyIcon,
   "square": SquareIcon,
   "square-circle": SquareCircleIcon,
   "square-fill": SquareFillIcon,
@@ -766,6 +793,7 @@ const OCTICON_BY_KEY = {
   "video": VideoIcon,
   "view-files": ViewFilesIcon,
   "vscode": VscodeIcon,
+  "water": WaterIcon,
   "webhook": WebhookIcon,
   "workflow": WorkflowIcon,
   "wrap": WrapIcon,

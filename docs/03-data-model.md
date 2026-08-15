@@ -39,11 +39,20 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 | User / settings | A | — | |
 | API key | — (server only) | — | |
 
+## Finance entities (Phase 9)
+
+| Entity | Tier | Notes |
+| --- | --- | --- |
+| Bank account | A | Small list; create account first, then import CSV into it |
+| Financial category | A | Lightweight taxonomy for triage/filter/bulk edit (not charts) |
+| Financial goal | A | Savings goals (active / ready to spend / archive) with target amount + contribution plan |
+| Financial import batch | — (server audit) | Raw CSV in vault (`.backsteros/finance-imports/…`) |
+| Financial transaction | C | Append-only **ledger** fields; classification (`organizationId`, `projectId`, `categoryId`, `goalId`, `notes`) is patchable; paginated REST; **no** PowerSync |
+
 ## Future entities
 
 | Entity | Tier | Notes |
 | --- | --- | --- |
-| Financial transaction | C | Append-only ledger in Postgres; paginated API |
 | Workout session | B header, C sets | Sync session list; sets via API pages |
 | Attachment | B metadata, D blob | Same as letters |
 
@@ -81,7 +90,7 @@ PowerSync may mirror Postgres via replication; sync events remain the audit trai
 
 - **Metadata fields:** last-write-wins per field with `updated_at`
 - **Document body:** version bump; if editor is dirty, prompt or merge (see live documents)
-- **Money / transactions:** server-only append; no client delete
+- **Money / transactions:** ledger fields server-append only; no client delete of money rows; classification fields last-write-wins
 
 ## Circle schema reference
 

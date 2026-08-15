@@ -5,6 +5,8 @@ export const PROJECT_ICON_KEYS = [
   "ai-model",
   "alert",
   "alert-fill",
+  "airplane",
+  "apple",
   "apps",
   "archive",
   "arrow-both",
@@ -18,6 +20,7 @@ export const PROJECT_ICON_KEYS = [
   "arrow-up-left",
   "arrow-up-right",
   "beaker",
+  "belastingdienst",
   "bell",
   "bell-fill",
   "bell-slash",
@@ -38,6 +41,8 @@ export const PROJECT_ICON_KEYS = [
   "bug",
   "cache",
   "calendar",
+  "car",
+  "cart",
   "check",
   "check-circle",
   "check-circle-fill",
@@ -170,6 +175,7 @@ export const PROJECT_ICON_KEYS = [
   "graph-bar-horizontal",
   "graph-bar-vertical",
   "graph-stacked-area",
+  "gym",
   "hash",
   "heading",
   "heart",
@@ -198,6 +204,7 @@ export const PROJECT_ICON_KEYS = [
   "kebab-horizontal",
   "key",
   "key-asterisk",
+  "laptop",
   "law",
   "light-bulb",
   "link",
@@ -218,6 +225,7 @@ export const PROJECT_ICON_KEYS = [
   "mcp",
   "megaphone",
   "mention",
+  "mercedes-benz",
   "meter",
   "milestone",
   "minimize",
@@ -230,6 +238,7 @@ export const PROJECT_ICON_KEYS = [
   "move-to-top",
   "multi-select",
   "mute",
+  "netflix",
   "no-entry",
   "no-entry-fill",
   "node",
@@ -252,6 +261,8 @@ export const PROJECT_ICON_KEYS = [
   "person",
   "person-add",
   "person-fill",
+  "pet",
+  "phone",
   "pin",
   "pin-slash",
   "pivot-column",
@@ -298,6 +309,7 @@ export const PROJECT_ICON_KEYS = [
   "shield-lock",
   "shield-slash",
   "shield-x",
+  "shop",
   "sidebar-collapse",
   "sidebar-expand",
   "sign-in",
@@ -322,6 +334,7 @@ export const PROJECT_ICON_KEYS = [
   "sparkles-fill",
   "split-view",
   "sponsor-tiers",
+  "spotify",
   "square",
   "square-circle",
   "square-fill",
@@ -372,6 +385,7 @@ export const PROJECT_ICON_KEYS = [
   "video",
   "view-files",
   "vscode",
+  "water",
   "webhook",
   "workflow",
   "wrap",
@@ -385,10 +399,59 @@ export const PROJECT_ICON_KEYS = [
 
 export type ProjectIconKey = (typeof PROJECT_ICON_KEYS)[number];
 
+/** Brand / product logos shown in a separate picker section. */
+export const PROJECT_BRAND_ICON_KEYS = [
+  "apple",
+  "copilot",
+  "copilot-error",
+  "copilot-warning",
+  "dependabot",
+  "lockup-github",
+  "logo-gist",
+  "logo-github",
+  "mark-github",
+  "mercedes-benz",
+  "netflix",
+  "spotify",
+  "vscode",
+  "belastingdienst",
+] as const satisfies readonly ProjectIconKey[];
+
+export type ProjectBrandIconKey = (typeof PROJECT_BRAND_ICON_KEYS)[number];
+
+const PROJECT_BRAND_ICON_KEY_SET = new Set<string>(PROJECT_BRAND_ICON_KEYS);
+
 export function formatProjectIconLabel(key: ProjectIconKey): string {
   return key.replaceAll("-", " ");
 }
 
 export function isProjectIconKey(value: string): value is ProjectIconKey {
   return (PROJECT_ICON_KEYS as readonly string[]).includes(value);
+}
+
+export function isProjectBrandIconKey(
+  value: string,
+): value is ProjectBrandIconKey {
+  return PROJECT_BRAND_ICON_KEY_SET.has(value);
+}
+
+export function partitionProjectIconKeys(keys: readonly ProjectIconKey[]): {
+  general: ProjectIconKey[];
+  brand: ProjectIconKey[];
+} {
+  const general: ProjectIconKey[] = [];
+  const brand: ProjectIconKey[] = [];
+  for (const key of keys) {
+    if (isProjectBrandIconKey(key)) {
+      brand.push(key);
+    } else {
+      general.push(key);
+    }
+  }
+  brand.sort(
+    (a, b) =>
+      PROJECT_BRAND_ICON_KEYS.indexOf(a as ProjectBrandIconKey) -
+      PROJECT_BRAND_ICON_KEYS.indexOf(b as ProjectBrandIconKey),
+  );
+  return { general, brand };
 }

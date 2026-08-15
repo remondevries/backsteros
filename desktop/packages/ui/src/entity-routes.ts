@@ -6,6 +6,8 @@ export type OrganizationListItem = {
   avatarStorageKey?: string | null;
   avatarUpdatedAt?: number | null;
   avatarSrc?: string | null;
+  /** Linked Moneybird contact id when set. */
+  moneybirdContactId?: string | null;
 };
 
 export function getOrganizationsHref(numberOrId?: number | string): string {
@@ -24,6 +26,52 @@ export function isOrganizationSectionPath(pathname: string): boolean {
   return (
     pathname === "/organizations" || pathname.startsWith("/organizations/")
   );
+}
+
+export type BankAccountListItem = {
+  id: string;
+  name: string;
+  key?: string | null;
+  ibanOrMask?: string | null;
+  type?: string | null;
+};
+
+export function getSelectedBankAccountSlugFromPathname(
+  pathname: string,
+): string | null {
+  const match = pathname.match(/^\/finance\/([^/]+)/);
+  if (!match) return null;
+  const slug = decodeURIComponent(match[1]!);
+  // Reserved finance nav segments are not bank-account slugs.
+  if (
+    slug === "dashboard" ||
+    slug === "transactions" ||
+    slug === "goals" ||
+    slug === "cashflow" ||
+    slug === "accounts" ||
+    slug === "investments" ||
+    slug === "categories" ||
+    slug === "recurrings"
+  ) {
+    return null;
+  }
+  return slug;
+}
+
+export function isFinanceSectionPath(pathname: string): boolean {
+  return pathname === "/finance" || pathname.startsWith("/finance/");
+}
+
+export function bankAccountMatchesSlug(
+  account: BankAccountListItem,
+  slug: string | null,
+): boolean {
+  if (!slug) return false;
+  if (account.id === slug) return true;
+  if (account.key && account.key.toLowerCase() === slug.toLowerCase()) {
+    return true;
+  }
+  return false;
 }
 
 export function organizationMatchesSlug(

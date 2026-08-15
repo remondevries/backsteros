@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 
+import { createdTaskDetailHref } from "../lib/created-task-href";
 import { getDefaultAssigneeId, syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { endOfLocalDayIso, formatTaskDueMetaLabel } from "../lib/task-due-date";
@@ -117,8 +118,6 @@ export function InboxCreateTaskScreen() {
     }
     return projectIdParam ? "ready_to_start" : "triage";
   }, [projectIdParam, statusParam]);
-  const openedFromTasks = (segments as string[]).includes("tasks");
-
   const client = useMobileApiClient();
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
@@ -321,15 +320,9 @@ export function InboxCreateTaskScreen() {
           sortOrder: Date.now(),
         }),
       });
-      if (projectId) {
-        router.replace(`/task/${created.id}`);
-      } else if (contactIdParam) {
-        router.replace(`/task/${created.id}`);
-      } else if (openedFromTasks) {
-        router.replace(`/(app)/tasks/${created.id}`);
-      } else {
-        router.replace(`/(app)/inbox/${created.id}`);
-      }
+      // Stay inside `(app)` when create was opened from a tab — replacing onto
+      // root `/task/:id` can unmount the tab navigator (floating nav disappears).
+      router.replace(createdTaskDetailHref(created.id, segments as string[]));
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not create task.",

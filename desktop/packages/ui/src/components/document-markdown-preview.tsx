@@ -30,6 +30,7 @@ import {
 import { useMentionNavigationPathname } from "../mentions/mention-navigation-context.js";
 import { EMPTY_MENTION_CATALOG } from "../mentions/empty-catalog.js";
 import {
+  listItemLeadingNewlinesContinueList,
   matchListItemOpener,
   resolveMentionLayout,
   type MentionChipLayout,
@@ -983,18 +984,29 @@ function renderParagraphWithMentions(
       }
 
       if (consumed.leadingNewlines) {
+        // One `\n` is the normal next-line separator between list items in the
+        // editor — keep a single <ul>/<ol>. Two+ newlines are a blank row.
+        // Emitting a lone `\n` into a <p> creates the empty gap preview used to
+        // show between mention chips in a list.
         if (listItems.length > 0) {
-          break;
+          if (
+            !listItemLeadingNewlinesContinueList(consumed.leadingNewlines)
+          ) {
+            break;
+          }
+        } else if (
+          !listItemLeadingNewlinesContinueList(consumed.leadingNewlines)
+        ) {
+          flushBlockGroup();
+          inlineRun.push(
+            <span
+              key={`${keyPrefix}-ws-list-${index}`}
+              className="content-markdown-preview-prewrap"
+            >
+              {consumed.leadingNewlines}
+            </span>,
+          );
         }
-        flushBlockGroup();
-        inlineRun.push(
-          <span
-            key={`${keyPrefix}-ws-list-${index}`}
-            className="content-markdown-preview-prewrap"
-          >
-            {consumed.leadingNewlines}
-          </span>,
-        );
       }
 
       if (listOrdered == null) {

@@ -6,7 +6,7 @@ export type DesktopAvatarActionResult =
 
 export async function uploadDesktopAvatar(
   client: BacksterosApiClient,
-  kind: "contact" | "organization",
+  kind: "contact" | "organization" | "bank_account",
   entityId: string,
   file: File,
 ): Promise<DesktopAvatarActionResult> {
@@ -24,7 +24,7 @@ export async function uploadDesktopAvatar(
 
 export async function removeDesktopAvatar(
   client: BacksterosApiClient,
-  kind: "contact" | "organization",
+  kind: "contact" | "organization" | "bank_account",
   entityId: string,
 ): Promise<DesktopAvatarActionResult> {
   try {

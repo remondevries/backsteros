@@ -1,4 +1,5 @@
 import { SignIn } from "@clerk/clerk-react";
+import { DevelopmentAdeLogoIcon } from "@backsteros/ui";
 
 /**
  * Embedded Clerk sign-in for the Tauri SPA — shown when a publishable key is
@@ -12,7 +13,10 @@ export function SignInScreen() {
   return (
     <div className="desktop-sign-in">
       <div className="desktop-sign-in-panel">
-        <h1 className="desktop-sign-in-brand">BacksterOS</h1>
+        <h1 className="desktop-sign-in-brand">
+          <span className="desktop-sign-in-brand-thin">Backster</span>
+          <span className="desktop-sign-in-brand-bold">OS</span>
+        </h1>
         <p className="desktop-sign-in-copy">Sign in to sync your workspace.</p>
         <SignIn
           routing="hash"
@@ -29,12 +33,26 @@ export function SignInScreen() {
   );
 }
 
+/** Fallback loading UI matching `index.html` boot splash (logo + brand). */
 export function SignInLoadingScreen() {
   return (
-    <div className="desktop-sign-in" role="status" aria-live="polite">
+    <div
+      className="desktop-sign-in"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading BacksterOS"
+    >
       <div className="desktop-sign-in-panel">
-        <h1 className="desktop-sign-in-brand">BacksterOS</h1>
-        <p className="desktop-sign-in-copy">Loading session…</p>
+        <div className="desktop-sign-in-brand-row">
+          <DevelopmentAdeLogoIcon
+            className="desktop-sign-in-logo desktop-sign-in-logo--spin"
+            size={28}
+          />
+          <h1 className="desktop-sign-in-brand">
+            <span className="desktop-sign-in-brand-thin">Backster</span>
+            <span className="desktop-sign-in-brand-bold">OS</span>
+          </h1>
+        </div>
       </div>
     </div>
   );

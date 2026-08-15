@@ -27,19 +27,57 @@ import {
 } from "./agent-stream-errors.mjs";
 import { summarizeAskQuestion } from "./agent-acp-ask.mjs";
 import {
+  permissionLooksLikeFileMutation,
   permissionLooksLikeFileRead,
   prepareSessionMcp,
 } from "./agent-acp-mcp.mjs";
+import {
+  normalizeAcpModelId,
+  resolveAcpModelForPrompt,
+  shouldApplyAcpModelConfig,
+} from "./agent-acp-model.mjs";
 
 export { summarizeAskQuestion } from "./agent-acp-ask.mjs";
 export {
+  permissionLooksLikeFileMutation,
   permissionLooksLikeFileRead,
   prepareSessionMcp,
 } from "./agent-acp-mcp.mjs";
+export {
+  normalizeAcpModelId,
+  resolveAcpModelForPrompt,
+  shouldApplyAcpModelConfig,
+} from "./agent-acp-model.mjs";
 
-const AGENT_BIN = process.env.CURSOR_AGENT_BIN?.trim() || "agent";
+/**
+ * Resolve the Cursor Agent CLI binary.
+ * Hub / Finder-launched processes often lack ~/.local/bin on PATH (GUI default
+ * PATH is /usr/bin:/bin…), which previously crashed the PTY sidecar with
+ * `spawn agent ENOENT` and left Chat showing WebKit's opaque "Load failed".
+ */
+function resolveAgentBin() {
+  const configured = process.env.CURSOR_AGENT_BIN?.trim();
+  if (configured) return configured;
+
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, ".local/bin/agent"),
+    path.join(home, ".local/bin/cursor-agent"),
+    "/opt/homebrew/bin/agent",
+    "/usr/local/bin/agent",
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      /* ignore */
+    }
+  }
+  return "agent";
+}
+
 /** Bump when spawn/isolation behavior changes so old ACP processes are restarted. */
-const ACP_RUNTIME_VERSION = 3;
+const ACP_RUNTIME_VERSION = 4;
 
 const USER_MCP_PATH = path.join(os.homedir(), ".cursor", "mcp.json");
 const USER_MCP_BACKUP_PATH = path.join(
@@ -57,7 +95,10 @@ const PROVIDER_FATAL_RE =
  *   sessionId: string,
  *   cwd: string,
  *   busy: boolean,
+ *   promptsInFlight: number,
  *   modeId: "agent" | "ask" | "plan" | "debug" | null,
+ *   accessMode: "supervised" | "auto_accept_edits" | "full_access",
+ *   modelId: string | null,
  * }} AcpTaskSession */
 
 /** @type {import("node:child_process").ChildProcessWithoutNullStreams | null} */
@@ -353,9 +394,28 @@ function sendRequest(method, params, timeoutMs = 120_000, options = {}) {
     });
     if (method === "session/prompt" && sessionId) {
       promptRequestBySession.set(sessionId, id);
-      assistantDraftBySession.set(sessionId, "");
+      if (options.resetDraft !== false) {
+        assistantDraftBySession.set(sessionId, "");
+      }
     }
   });
+}
+
+/**
+ * Reject every in-flight session/prompt waiter for a session (cancel / teardown).
+ * @param {string} sessionId
+ * @param {Error} error
+ */
+function rejectAllSessionPromptWaiters(sessionId, error) {
+  const sid = sessionId.trim().toLowerCase();
+  if (!sid) return;
+  for (const [reqId, waiter] of [...pending.entries()]) {
+    if (waiter.method !== "session/prompt") continue;
+    if ((waiter.sessionId || "").trim().toLowerCase() !== sid) continue;
+    pending.delete(reqId);
+    waiter.reject(error);
+  }
+  promptRequestBySession.delete(sid);
 }
 
 /**
@@ -376,22 +436,46 @@ function sendNotification(method, params) {
  * @param {number} id
  * @param {unknown} result
  */
+/** @type {{ id: number, result: unknown } | null} */
+let lastTestRpcResponse = null;
+
 function sendResponse(id, result) {
+  lastTestRpcResponse = { id, result };
   if (!child?.stdin.writable) return;
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`);
+}
+
+/** Test helper: last JSON-RPC response attempted (even without an ACP child). */
+export function __testTakeLastRpcResponse() {
+  const value = lastTestRpcResponse;
+  lastTestRpcResponse = null;
+  return value;
+}
+
+/** Test helper: expose permission option selection. */
+export function __testPermissionOutcome(params, preference = "once") {
+  return permissionOutcome(params, preference);
 }
 
 /**
  * Cancel pending permission / ask_question RPCs for a session (ACP requires
  * `cancelled` outcomes when the client sends session/cancel).
+ * Also clears orphans with null sessionId that belong to the same task.
  * @param {string} sessionId
  * @param {string} [reason]
  */
 function cancelPendingUiRequestsForSession(sessionId, reason = "cancelled") {
   const sid = sessionId.trim().toLowerCase();
   if (!sid) return;
+  const taskId = taskIdBySessionId.get(sid) || null;
   for (const [requestId, pendingReq] of [...pendingUiRequests.entries()]) {
-    if ((pendingReq.sessionId || "").toLowerCase() !== sid) continue;
+    const pendingSid = (pendingReq.sessionId || "").toLowerCase();
+    const sameSession = pendingSid === sid;
+    const orphanForTask =
+      !pendingSid &&
+      taskId &&
+      (pendingReq.taskId || "").trim() === taskId;
+    if (!sameSession && !orphanForTask) continue;
     clearTimeout(pendingReq.timer);
     pendingUiRequests.delete(requestId);
     try {
@@ -444,33 +528,44 @@ function formatRpcError(error) {
 
 /**
  * Pick an allow/reject option from ACP permission options.
+ * Prefer ACP `kind` (allow_once / allow_always / reject_*) like t3 CursorAdapter;
+ * fall back to optionId/name regex for older payloads.
  * @param {unknown} params
  * @param {"always" | "once" | "reject"} [preference]
  */
 function permissionOutcome(params, preference = "once") {
   const p = params && typeof params === "object" ? params : {};
   const options =
-    /** @type {{ optionId?: string, id?: string, name?: string }[]} */ (
+    /** @type {{ optionId?: string, id?: string, name?: string, kind?: string }[]} */ (
       /** @type {{ options?: unknown, permissionOptions?: unknown }} */ (p)
         .options ||
         /** @type {{ permissionOptions?: unknown }} */ (p).permissionOptions ||
         []
     );
-  const allowAlways = options.find((o) =>
-    /allow-always|allow_always|always/i.test(
-      `${o.optionId ?? ""} ${o.id ?? ""} ${o.name ?? ""}`,
-    ),
-  );
-  const allowOnce = options.find((o) =>
-    /allow-once|allow_once|(^|[^a-z])allow([^a-z]|$)/i.test(
-      `${o.optionId ?? ""} ${o.id ?? ""} ${o.name ?? ""}`,
-    ),
-  );
-  const reject = options.find((o) =>
-    /reject|deny|cancel/i.test(
-      `${o.optionId ?? ""} ${o.id ?? ""} ${o.name ?? ""}`,
-    ),
-  );
+  const optionKey = (o) =>
+    `${o.optionId ?? ""} ${o.id ?? ""} ${o.name ?? ""} ${o.kind ?? ""}`;
+  const byKind = (kind) =>
+    options.find(
+      (o) => String(o.kind ?? "").trim().toLowerCase() === kind,
+    );
+  const allowAlways =
+    byKind("allow_always") ||
+    options.find((o) =>
+      /allow-always|allow_always|always/i.test(optionKey(o)),
+    );
+  const allowOnce =
+    byKind("allow_once") ||
+    options.find((o) =>
+      /allow-once|allow_once|(^|[^a-z])allow([^a-z]|$)/i.test(optionKey(o)),
+    );
+  const reject =
+    byKind("reject_once") ||
+    byKind("reject_always") ||
+    options.find((o) => {
+      const kind = String(o.kind ?? "").trim().toLowerCase();
+      if (kind.startsWith("reject")) return true;
+      return /reject|deny|cancel/i.test(optionKey(o));
+    });
 
   if (preference === "reject") {
     const chosen = reject || options.find((o) => !allowAlways && !allowOnce);
@@ -485,6 +580,11 @@ function permissionOutcome(params, preference = "once") {
   const chosen = allowOnce || allowAlways || options[0];
   const optionId = chosen?.optionId || chosen?.id || "allow-once";
   return { outcome: { outcome: "selected", optionId } };
+}
+
+/** @param {unknown} result */
+function permissionCancelledOutcome() {
+  return { outcome: { outcome: "cancelled" } };
 }
 
 /**
@@ -774,37 +874,42 @@ export function __testClearSessions() {
 }
 
 /**
- * Normalize Chat UI answers into T3/Cursor `{ answers: Record<id, label|labels> }`.
- * Accepts either the T3 record shape or a legacy `{ questionId, selectedOptionIds }[]`.
+ * Resolve option labels / ids against a question's options → option ids.
+ * @param {{ id: string, label: string }[]} options
+ * @param {string[]} values
+ * @returns {string[]}
+ */
+function resolveAskOptionIds(options, values) {
+  /** @type {string[]} */
+  const out = [];
+  for (const value of values) {
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) continue;
+    const byId = options.find((opt) => opt.id === trimmed);
+    if (byId) {
+      out.push(byId.id);
+      continue;
+    }
+    const byLabel = options.find((opt) => opt.label === trimmed);
+    if (byLabel) {
+      out.push(byLabel.id);
+      continue;
+    }
+    // Free-text / unknown: keep as-is so the agent still receives a signal.
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * Normalize Chat UI answers into Cursor ACP docs shape:
+ * `{ questionId, selectedOptionIds }[]`.
+ * Accepts the docs array, or a legacy T3 record of labels / option ids.
  * @param {unknown} answers
  * @param {unknown} params
- * @returns {Record<string, string | string[]> | null}
+ * @returns {{ questionId: string, selectedOptionIds: string[] }[] | null}
  */
 function normalizeAskAnswersForAcp(answers, params) {
-  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
-    /** @type {Record<string, string | string[]>} */
-    const out = {};
-    for (const [key, value] of Object.entries(
-      /** @type {Record<string, unknown>} */ (answers),
-    )) {
-      const id = String(key ?? "").trim();
-      if (!id) continue;
-      if (typeof value === "string" && value.trim()) {
-        out[id] = value.trim();
-        continue;
-      }
-      if (Array.isArray(value)) {
-        const labels = value
-          .map((entry) => String(entry ?? "").trim())
-          .filter(Boolean);
-        if (labels.length === 1) out[id] = labels[0];
-        else if (labels.length > 1) out[id] = labels;
-      }
-    }
-    return Object.keys(out).length > 0 ? out : null;
-  }
-
-  if (!Array.isArray(answers) || answers.length === 0) return null;
   const summary = summarizeAskQuestion(params);
   /** @type {Map<string, { id: string, label: string }[]>} */
   const optionsByQuestion = new Map();
@@ -815,39 +920,80 @@ function normalizeAskAnswersForAcp(answers, params) {
     );
   }
 
-  /** @type {Record<string, string | string[]>} */
-  const out = {};
-  for (const entry of answers) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = /** @type {Record<string, unknown>} */ (entry);
-    const questionId = String(row.questionId ?? "").trim();
-    if (!questionId) continue;
-    const selectedIds = Array.isArray(row.selectedOptionIds)
-      ? row.selectedOptionIds.map((id) => String(id ?? "").trim()).filter(Boolean)
-      : [];
-    const selectedLabels = Array.isArray(row.selectedOptionLabels)
-      ? row.selectedOptionLabels
-          .map((label) => String(label ?? "").trim())
-          .filter(Boolean)
-      : [];
-    if (typeof row.customAnswer === "string" && row.customAnswer.trim()) {
-      out[questionId] = row.customAnswer.trim();
-      continue;
+  if (Array.isArray(answers) && answers.length > 0) {
+    /** @type {{ questionId: string, selectedOptionIds: string[] }[]} */
+    const out = [];
+    for (const entry of answers) {
+      if (!entry || typeof entry !== "object") continue;
+      const row = /** @type {Record<string, unknown>} */ (entry);
+      const questionId = String(row.questionId ?? "").trim();
+      if (!questionId) continue;
+      const options = optionsByQuestion.get(questionId) ?? [];
+      if (typeof row.customAnswer === "string" && row.customAnswer.trim()) {
+        out.push({
+          questionId,
+          selectedOptionIds: resolveAskOptionIds(options, [
+            row.customAnswer.trim(),
+          ]),
+        });
+        continue;
+      }
+      const selectedIds = Array.isArray(row.selectedOptionIds)
+        ? row.selectedOptionIds
+            .map((id) => String(id ?? "").trim())
+            .filter(Boolean)
+        : [];
+      if (selectedIds.length > 0) {
+        out.push({
+          questionId,
+          selectedOptionIds: resolveAskOptionIds(options, selectedIds),
+        });
+        continue;
+      }
+      const selectedLabels = Array.isArray(row.selectedOptionLabels)
+        ? row.selectedOptionLabels
+            .map((label) => String(label ?? "").trim())
+            .filter(Boolean)
+        : [];
+      if (selectedLabels.length > 0) {
+        out.push({
+          questionId,
+          selectedOptionIds: resolveAskOptionIds(options, selectedLabels),
+        });
+      }
     }
-    if (selectedLabels.length > 0) {
-      out[questionId] =
-        selectedLabels.length === 1 ? selectedLabels[0] : selectedLabels;
-      continue;
-    }
-    if (selectedIds.length === 0) continue;
-    const options = optionsByQuestion.get(questionId) ?? [];
-    const labels = selectedIds.map((optionId) => {
-      const match = options.find((opt) => opt.id === optionId);
-      return match?.label || optionId;
-    });
-    out[questionId] = labels.length === 1 ? labels[0] : labels;
+    return out.length > 0 ? out : null;
   }
-  return Object.keys(out).length > 0 ? out : null;
+
+  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+    /** @type {{ questionId: string, selectedOptionIds: string[] }[]} */
+    const out = [];
+    for (const [key, value] of Object.entries(
+      /** @type {Record<string, unknown>} */ (answers),
+    )) {
+      const questionId = String(key ?? "").trim();
+      if (!questionId) continue;
+      const options = optionsByQuestion.get(questionId) ?? [];
+      /** @type {string[]} */
+      const values = [];
+      if (typeof value === "string" && value.trim()) {
+        values.push(value.trim());
+      } else if (Array.isArray(value)) {
+        for (const entry of value) {
+          const trimmed = String(entry ?? "").trim();
+          if (trimmed) values.push(trimmed);
+        }
+      }
+      if (values.length === 0) continue;
+      out.push({
+        questionId,
+        selectedOptionIds: resolveAskOptionIds(options, values),
+      });
+    }
+    return out.length > 0 ? out : null;
+  }
+
+  return null;
 }
 
 /**
@@ -871,25 +1017,35 @@ export function respondAcpUiRequest(options) {
   }
 
   if (pendingReq.kind === "ask_question" && !options.skipped) {
-    let answerMap = normalizeAskAnswersForAcp(
+    let answerRows = normalizeAskAnswersForAcp(
       options.answers,
       pendingReq.params,
     );
-    if (!answerMap && options.optionId?.trim()) {
+    if (!answerRows && options.optionId?.trim()) {
       const summary = summarizeAskQuestion(pendingReq.params);
       const first = summary.questions[0] ?? null;
       const questionId = String(first?.id || "0");
       const optionId = options.optionId.trim();
       const match = first?.options?.find((opt) => opt.id === optionId);
-      answerMap = { [questionId]: match?.label || optionId };
+      answerRows = [
+        {
+          questionId,
+          selectedOptionIds: [match?.id || optionId],
+        },
+      ];
     }
-    if (!answerMap) {
+    if (!answerRows) {
       return { ok: false, error: "Ask answers are required." };
     }
     clearTimeout(pendingReq.timer);
     pendingUiRequests.delete(requestId);
-    // T3 CursorAdapter: return { answers: Record<questionId, label|labels> }.
-    sendResponse(pendingReq.rpcId, { answers: answerMap });
+    // Cursor ACP docs: outcome.answered + selectedOptionIds (not label maps).
+    sendResponse(pendingReq.rpcId, {
+      outcome: {
+        outcome: "answered",
+        answers: answerRows,
+      },
+    });
     emit({
       type: "ui-request-cleared",
       requestId,
@@ -1112,6 +1268,88 @@ function handleStdoutMessage(msg) {
       return;
     }
 
+    const accessMode = taskId ? getAcpAccessMode(taskId) : "supervised";
+
+    // Auto-accept edits: built-in file mutations only (not execute/MCP).
+    if (accessMode === "auto_accept_edits" && permissionLooksLikeFileMutation(params)) {
+      const enriched = toolCallUpdateFromPermission(params);
+      if (enriched) {
+        emit({
+          type: "session-update",
+          taskId,
+          sessionId: sessionId || null,
+          update: enriched,
+        });
+      }
+      emit({
+        type: "permission",
+        requestId: null,
+        auto: true,
+        autoAcceptEdits: true,
+        taskId,
+        sessionId: sessionId || null,
+        title: summary.title,
+        detail: summary.detail,
+        options: summary.options,
+        params,
+      });
+      sendResponse(rpcId, permissionOutcome(params, "once"));
+      return;
+    }
+
+    // Full access: auto-approve write/exec/MCP without Chat UI (T3 Full access).
+    if (accessMode === "full_access") {
+      const enriched = toolCallUpdateFromPermission(params);
+      if (enriched) {
+        emit({
+          type: "session-update",
+          taskId,
+          sessionId: sessionId || null,
+          update: enriched,
+        });
+      }
+      emit({
+        type: "permission",
+        requestId: null,
+        auto: true,
+        fullAccess: true,
+        taskId,
+        sessionId: sessionId || null,
+        title: summary.title,
+        detail: summary.detail,
+        options: summary.options,
+        params,
+      });
+      sendResponse(
+        rpcId,
+        permissionOutcome(params, "always") ||
+          permissionOutcome(params, "once"),
+      );
+      return;
+    }
+
+    // Never enqueue UI RPCs without a task binding — cancel so the agent
+    // does not hang on an orphan the Chat UI cannot replay.
+    if (!taskId) {
+      console.warn(
+        `[acp] permission unresolved (source=${resolved.source}); cancelling`,
+      );
+      sendResponse(rpcId, permissionCancelledOutcome());
+      emit({
+        type: "permission",
+        requestId: null,
+        auto: false,
+        cancelled: true,
+        taskId: null,
+        sessionId: sessionId || null,
+        title: summary.title,
+        detail: summary.detail,
+        options: summary.options,
+        params,
+      });
+      return;
+    }
+
     const requestId = `perm-${rpcId}-${Date.now().toString(36)}`;
     enqueueUiRequest(
       requestId,
@@ -1120,7 +1358,8 @@ function handleStdoutMessage(msg) {
       taskId,
       sessionId || null,
       params,
-      () => permissionOutcome(params, "once"),
+      // Timeout must not silently allow writes/exec/MCP (t3 blocks forever).
+      () => permissionCancelledOutcome(),
     );
     emit({
       type: "permission",
@@ -1151,6 +1390,27 @@ function handleStdoutMessage(msg) {
 
     if (method === "cursor/ask_question" && rpcId != null) {
       const summary = summarizeAskQuestion(params);
+      if (!taskId) {
+        console.warn(
+          `[acp] ask_question unresolved (source=${resolved.source}); cancelling`,
+        );
+        sendResponse(rpcId, {
+          outcome: { outcome: "cancelled" },
+        });
+        emit({
+          type: "ask-question",
+          requestId: null,
+          cancelled: true,
+          taskId: null,
+          sessionId: sessionId || null,
+          title: summary.title,
+          detail: summary.detail,
+          options: summary.options,
+          questions: summary.questions,
+          params,
+        });
+        return;
+      }
       const requestId = `ask-${rpcId}-${Date.now().toString(36)}`;
       enqueueUiRequest(
         requestId,
@@ -1181,9 +1441,11 @@ function handleStdoutMessage(msg) {
     }
 
     if (method === "cursor/create_plan") {
-      // t3 accepts create_plan and surfaces plan markdown in the UI.
+      // Cursor ACP docs: outcome.accepted | rejected | cancelled.
       if (rpcId != null) {
-        sendResponse(rpcId, { accepted: true });
+        sendResponse(rpcId, {
+          outcome: { outcome: "accepted" },
+        });
       }
       emit({
         type: "cursor-create-plan",
@@ -1280,12 +1542,33 @@ export async function ensureAcpProcess() {
     };
 
     try {
-      const proc = spawn(AGENT_BIN, ["acp"], {
+      const agentBin = resolveAgentBin();
+      const proc = spawn(agentBin, ["acp"], {
         stdio: ["pipe", "pipe", "pipe"],
         env: process.env,
         cwd: process.env.HOME || process.cwd(),
       });
       child = proc;
+
+      // Without an 'error' listener, ENOENT (missing `agent` on PATH) becomes an
+      // unhandled event and kills the whole PTY sidecar.
+      const spawnFailed = new Promise((_, reject) => {
+        proc.once("error", (error) => {
+          if (child === proc) {
+            child = null;
+            authenticated = false;
+            runtimeVersion = 0;
+            endMcpIsolation();
+          }
+          const detail =
+            error && typeof error === "object" && "code" in error && error.code === "ENOENT"
+              ? `Cursor Agent CLI not found (tried ${agentBin}). Install it or put \`agent\` on PATH (often ~/.local/bin), then restart PTY.`
+              : error instanceof Error
+                ? error.message
+                : String(error);
+          reject(new Error(detail));
+        });
+      });
 
       stdoutRl = readline.createInterface({ input: proc.stdout });
       stdoutRl.on("line", (line) => {
@@ -1311,26 +1594,41 @@ export async function ensureAcpProcess() {
         }
       });
 
-      await sendRequest(
-        "initialize",
-        {
-          protocolVersion: 1,
-          clientCapabilities: {
-            fs: { readTextFile: false, writeTextFile: false },
-            terminal: false,
-          },
-          clientInfo: { name: "backsteros", version: "0.1.0" },
-        },
-        20_000,
-      );
+      await Promise.race([
+        (async () => {
+          await sendRequest(
+            "initialize",
+            {
+              protocolVersion: 1,
+              clientCapabilities: {
+                fs: { readTextFile: false, writeTextFile: false },
+                terminal: false,
+                _meta: {
+                  parameterizedModelPicker: true,
+                },
+              },
+              clientInfo: { name: "backsteros", version: "0.1.0" },
+            },
+            20_000,
+          );
 
-      await sendRequest("authenticate", { methodId: "cursor_login" }, 20_000);
+          await sendRequest(
+            "authenticate",
+            { methodId: "cursor_login" },
+            20_000,
+          );
+        })(),
+        spawnFailed,
+      ]);
+
       authenticated = true;
       runtimeVersion = ACP_RUNTIME_VERSION;
       // Restore the user's MCP servers ASAP — tools are already bound into this
       // process; the IDE should see the real config again.
       releaseIsolation();
-      console.log("[acp] process ready (authenticated, MCP restored)");
+      console.log(
+        `[acp] process ready (authenticated, MCP restored, bin=${agentBin})`,
+      );
       return true;
     } catch (error) {
       releaseIsolation();
@@ -1369,7 +1667,15 @@ function rememberSession(taskId, sessionId, cwd, options = {}) {
     sessionId: sid,
     cwd,
     busy,
+    promptsInFlight:
+      options.keepBusy === true && sameSession
+        ? previous?.promptsInFlight ?? 0
+        : 0,
     modeId: sameSession ? previous?.modeId ?? null : null,
+    accessMode: sameSession
+      ? previous?.accessMode ?? "supervised"
+      : "supervised",
+    modelId: sameSession ? previous?.modelId ?? null : null,
   });
   taskIdBySessionId.set(sid, id);
 }
@@ -1382,11 +1688,48 @@ export function clearAcpBusy(taskId) {
   if (!taskId) {
     for (const session of sessionsByTaskId.values()) {
       session.busy = false;
+      session.promptsInFlight = 0;
     }
     return;
   }
   const session = sessionsByTaskId.get(taskId.trim());
-  if (session) session.busy = false;
+  if (session) {
+    session.busy = false;
+    session.promptsInFlight = 0;
+  }
+}
+
+/**
+ * @param {string | null | undefined} mode
+ * @returns {"supervised" | "auto_accept_edits" | "full_access"}
+ */
+export function normalizeAcpAccessMode(mode) {
+  if (mode === "full_access") return "full_access";
+  if (mode === "auto_accept_edits") return "auto_accept_edits";
+  return "supervised";
+}
+
+/**
+ * @param {string} taskId
+ * @param {"supervised" | "auto_accept_edits" | "full_access"} mode
+ */
+export function setAcpAccessMode(taskId, mode) {
+  const id = taskId.trim();
+  const session = sessionsByTaskId.get(id);
+  const accessMode = normalizeAcpAccessMode(mode);
+  if (session) {
+    session.accessMode = accessMode;
+  }
+  return { taskId: id, accessMode };
+}
+
+/**
+ * @param {string} taskId
+ * @returns {"supervised" | "auto_accept_edits" | "full_access"}
+ */
+export function getAcpAccessMode(taskId) {
+  const session = sessionsByTaskId.get(taskId.trim());
+  return normalizeAcpAccessMode(session?.accessMode);
 }
 
 /**
@@ -1434,8 +1777,13 @@ export async function ensureAcpSession(options) {
   const wanted = options.sessionId?.trim().toLowerCase() || null;
 
   if (existing && (!wanted || existing.sessionId === wanted)) {
-    // Ensure must never leave a sticky busy lock from a crashed/failed turn.
-    existing.busy = false;
+    // Heal sticky busy only when no prompt RPC is in flight. Clearing busy on
+    // every ensure let stacked /agent/prompt calls re-enter mid-turn.
+    const reqId = promptRequestBySession.get(existing.sessionId);
+    const hasInFlight = reqId != null && pending.has(reqId);
+    if (!hasInFlight) {
+      existing.busy = false;
+    }
     existing.cwd = cwd || existing.cwd;
     return {
       sessionId: existing.sessionId,
@@ -1505,9 +1853,20 @@ export function getAcpSession(taskId) {
  *   images?: { mimeType: string, data: string }[] | null,
  * }} options
  */
+/**
+ * @param {{
+ *   taskId: string,
+ *   prompt: string,
+ *   modeId?: string | null,
+ *   images?: { mimeType: string, data: string }[] | null,
+ *   allowConcurrent?: boolean,
+ *   resetDraft?: boolean,
+ * }} options
+ */
 export async function acpPrompt(options) {
   const taskId = options.taskId.trim();
   const text = options.prompt.trim();
+  const allowConcurrent = options.allowConcurrent === true;
   if (!taskId) throw new Error("taskId is required");
   if (!text && !(Array.isArray(options.images) && options.images.length > 0)) {
     throw new Error("prompt is required");
@@ -1517,12 +1876,15 @@ export async function acpPrompt(options) {
   if (!session) {
     throw new Error("No ACP session for this task. Call ensure first.");
   }
-  if (session.busy) {
+  if (session.busy && !allowConcurrent) {
     const reqId = promptRequestBySession.get(session.sessionId);
-    const hasInFlight = reqId != null && pending.has(reqId);
+    const hasInFlight =
+      (session.promptsInFlight ?? 0) > 0 ||
+      (reqId != null && pending.has(reqId));
     if (!hasInFlight) {
       // Stale lock from a failed/cancelled turn — heal and continue.
       session.busy = false;
+      session.promptsInFlight = 0;
     } else {
       throw new Error(
         "Agent is already working on this task. Wait for it to finish, or press Stop.",
@@ -1532,24 +1894,22 @@ export async function acpPrompt(options) {
 
   const desiredMode = normalizeCursorModeId(options.modeId);
   if (desiredMode && session.modeId !== desiredMode) {
-    try {
-      await acpSetMode({ taskId, modeId: desiredMode });
-    } catch (error) {
-      console.warn(
-        "[acp] set_mode before prompt failed:",
-        formatRpcError(error),
-      );
-    }
+    // Fail the turn rather than prompt in the wrong mode (chip would lie).
+    await acpSetMode({ taskId, modeId: desiredMode });
   }
 
   await ensureAcpProcess();
+  const isFirstFlight = (session.promptsInFlight ?? 0) === 0;
+  session.promptsInFlight = (session.promptsInFlight ?? 0) + 1;
   session.busy = true;
-  emit({
-    type: "activity",
-    taskId,
-    sessionId: session.sessionId,
-    activity: "working",
-  });
+  if (isFirstFlight) {
+    emit({
+      type: "activity",
+      taskId,
+      sessionId: session.sessionId,
+      activity: "working",
+    });
+  }
 
   /** @type {Array<Record<string, unknown>>} */
   const promptBlocks = [];
@@ -1570,15 +1930,24 @@ export async function acpPrompt(options) {
     throw new Error("prompt is required");
   }
 
+  /** @type {unknown} */
+  let result = null;
+  /** @type {string | null} */
+  let terminalError = null;
+  /** @type {boolean} */
+  let completedOk = false;
   try {
-    const result = await sendRequest(
+    result = await sendRequest(
       "session/prompt",
       {
         sessionId: session.sessionId,
         prompt: promptBlocks,
       },
       10 * 60_000,
-      { sessionId: session.sessionId },
+      {
+        sessionId: session.sessionId,
+        resetDraft: options.resetDraft !== false && isFirstFlight,
+      },
     );
     const draft = stripTransientAgentStreamError(
       assistantDraftBySession.get(session.sessionId) || "",
@@ -1586,12 +1955,7 @@ export async function acpPrompt(options) {
     if (PROVIDER_FATAL_RE.test(draft)) {
       throw new Error(draft.slice(0, 500));
     }
-    emit({
-      type: "prompt-complete",
-      taskId,
-      sessionId: session.sessionId,
-      result,
-    });
+    completedOk = true;
     return result;
   } catch (error) {
     const formatted = formatRpcError(error);
@@ -1605,32 +1969,57 @@ export async function acpPrompt(options) {
         console.warn(
           `[acp] ignoring WritableIterable teardown after draft (${draft.length} chars)`,
         );
+        completedOk = true;
+        result = null;
+        return null;
+      }
+    }
+    terminalError = formatted;
+    throw new Error(formatted);
+  } finally {
+    session.promptsInFlight = Math.max(0, (session.promptsInFlight ?? 1) - 1);
+    if (session.promptsInFlight === 0) {
+      session.busy = false;
+      if (completedOk) {
         emit({
           type: "prompt-complete",
           taskId,
           sessionId: session.sessionId,
-          result: null,
+          result,
         });
-        return null;
+      } else if (terminalError) {
+        emit({
+          type: "prompt-error",
+          taskId,
+          sessionId: session.sessionId,
+          error: terminalError,
+        });
       }
+      assistantDraftBySession.delete(session.sessionId);
+      emit({
+        type: "activity",
+        taskId,
+        sessionId: session.sessionId,
+        activity: "idle",
+      });
     }
-    emit({
-      type: "prompt-error",
-      taskId,
-      sessionId: session.sessionId,
-      error: formatted,
-    });
-    throw new Error(formatted);
-  } finally {
-    session.busy = false;
-    assistantDraftBySession.delete(session.sessionId);
-    emit({
-      type: "activity",
-      taskId,
-      sessionId: session.sessionId,
-      activity: "idle",
-    });
   }
+}
+
+/**
+ * Same-turn steer: additional session/prompt while the active turn is running.
+ * @param {{
+ *   taskId: string,
+ *   prompt: string,
+ *   images?: { mimeType: string, data: string }[] | null,
+ * }} options
+ */
+export async function acpSteer(options) {
+  return acpPrompt({
+    ...options,
+    allowConcurrent: true,
+    resetDraft: false,
+  });
 }
 
 /**
@@ -1648,6 +2037,83 @@ export function normalizeCursorModeId(value) {
   if (trimmed === "ask") return "ask";
   if (trimmed === "plan") return "plan";
   return null;
+}
+
+/**
+ * Pin / apply Cursor ACP model (`session/set_config_option` configId=model).
+ * @param {{
+ *   taskId: string,
+ *   modelId?: string | null,
+ * }} options
+ */
+export async function acpSetModel(options) {
+  const taskId = options.taskId.trim();
+  const modelId = normalizeAcpModelId(options.modelId);
+  if (!taskId) throw new Error("taskId is required");
+
+  const session = sessionsByTaskId.get(taskId);
+  if (!session) {
+    throw new Error("No ACP session for this task. Call ensure first.");
+  }
+  if (session.modelId === modelId) {
+    return { modelId, unchanged: true, sessionId: session.sessionId };
+  }
+
+  if (shouldApplyAcpModelConfig(modelId)) {
+    await ensureAcpProcess();
+    try {
+      await sendRequest(
+        "session/set_config_option",
+        {
+          sessionId: session.sessionId,
+          configId: "model",
+          value: modelId,
+        },
+        15_000,
+      );
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(formatRpcError(error));
+    }
+  }
+
+  session.modelId = modelId;
+  emit({
+    type: "model-changed",
+    taskId,
+    sessionId: session.sessionId,
+    modelId,
+    source: "client",
+  });
+  console.log(`[acp] session model task=${taskId} model=${modelId}`);
+  return { modelId, unchanged: false, sessionId: session.sessionId };
+}
+
+/**
+ * Ensure the session has a model pin before prompting.
+ * Existing pin wins over a stale requested/global preference.
+ *
+ * @param {{
+ *   taskId: string,
+ *   requestedModelId?: string | null,
+ *   forceRequested?: boolean,
+ * }} options
+ */
+export async function ensureAcpSessionModel(options) {
+  const taskId = options.taskId.trim();
+  if (!taskId) throw new Error("taskId is required");
+  const session = sessionsByTaskId.get(taskId);
+  if (!session) {
+    throw new Error("No ACP session for this task. Call ensure first.");
+  }
+  const resolved = resolveAcpModelForPrompt({
+    sessionModelId: session.modelId,
+    requestedModelId: options.requestedModelId,
+    forceRequested: options.forceRequested === true,
+  });
+  if (session.modelId === resolved) {
+    return { modelId: resolved, unchanged: true, sessionId: session.sessionId };
+  }
+  return acpSetModel({ taskId, modelId: resolved });
 }
 
 /**
@@ -1701,8 +2167,10 @@ export async function acpSetMode(options) {
 export async function acpCancel(taskId) {
   const id = taskId.trim();
   const session = sessionsByTaskId.get(id);
-  clearAcpBusy(id);
-  if (!session) return false;
+  if (!session) {
+    clearAcpBusy(id);
+    return false;
+  }
 
   cancelPendingUiRequestsForSession(session.sessionId, "session/cancel");
 
@@ -1712,17 +2180,16 @@ export async function acpCancel(taskId) {
     sendNotification("session/cancel", { sessionId: session.sessionId });
   } catch (error) {
     console.warn("[acp] cancel failed:", formatRpcError(error));
+    clearAcpBusy(id);
     return false;
   }
 
-  // Unblock the local session/prompt waiter; Cursor aborts asynchronously.
-  const reqId = promptRequestBySession.get(session.sessionId);
-  const waiter = reqId != null ? pending.get(reqId) : null;
-  if (waiter && reqId != null) {
-    pending.delete(reqId);
-    promptRequestBySession.delete(session.sessionId);
-    waiter.reject(new Error("Cancelled"));
-  }
+  // Unblock every local session/prompt waiter; Cursor aborts asynchronously.
+  rejectAllSessionPromptWaiters(
+    session.sessionId,
+    new Error("Cancelled"),
+  );
+  clearAcpBusy(id);
 
   return true;
 }

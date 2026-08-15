@@ -51,6 +51,7 @@ import {
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
 import { SettingsCursorTab } from "../components/settings-cursor-tab";
+import { SettingsMoneybirdTab } from "../components/settings-moneybird-tab";
 
 function ClerkAccountEmailCard() {
   const { user } = useUser();
@@ -625,7 +626,7 @@ function SettingsGithubTab({
   }, [refresh]);
 
   // After the OAuth popup returns, Clerk may have a new GitHub token before
-  // React Query/status catches up — reload user + status on focus.
+  // React Query/status catches up — reload user + status on focus / soft notify.
   useEffect(() => {
     function onFocus() {
       void (async () => {
@@ -637,16 +638,26 @@ function SettingsGithubTab({
         void refresh().catch(() => undefined);
       })();
     }
+    function onGithubStatusRefresh() {
+      onFocus();
+    }
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener(
+      "backsteros:github-status-refresh",
+      onGithubStatusRefresh,
+    );
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(
+        "backsteros:github-status-refresh",
+        onGithubStatusRefresh,
+      );
+    };
   }, [refresh, user]);
 
   const connectLabel =
     status?.connected ||
-    user?.externalAccounts.some(
-      (account) =>
-        account.provider === "github" || account.provider === "oauth_github",
-    )
+    user?.externalAccounts.some((account) => account.provider === "github")
       ? "Reconnect GitHub"
       : "Connect GitHub";
 
@@ -786,6 +797,11 @@ export function SettingsPage() {
     <SettingsDetailLayout>
       {activeTab === "whoop" ? (
         <SettingsWhoopTab title={meta.label} description={meta.description} />
+      ) : activeTab === "moneybird" ? (
+        <SettingsMoneybirdTab
+          title={meta.label}
+          description={meta.description}
+        />
       ) : activeTab === "storage" ? (
         <SettingsStorageTab title={meta.label} description={meta.description} />
       ) : activeTab === "github" ? (

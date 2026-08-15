@@ -10,6 +10,7 @@ export function ProjectsSidePanelIcon({
   collapsed?: boolean;
   rail?: "start" | "end";
 }) {
+  const railWidth = 1.5;
   const railX = rail === "end" ? 10.5 : 4;
   return (
     <svg
@@ -31,11 +32,14 @@ export function ProjectsSidePanelIcon({
         <rect
           x={railX}
           y="5"
-          width={collapsed ? 0 : 1.5}
+          width={railWidth}
           height="6"
           rx="0.75"
           style={{
-            transitionProperty: "width",
+            transform: collapsed ? "scaleX(0)" : "scaleX(1)",
+            transformBox: "fill-box",
+            transformOrigin: rail === "end" ? "right center" : "left center",
+            transitionProperty: "transform",
             transitionDuration: "250ms",
           }}
         />

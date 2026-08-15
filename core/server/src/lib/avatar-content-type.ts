@@ -3,12 +3,26 @@ const AVATAR_MIME_TYPES = new Set([
   "image/png",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ]);
+
+function looksLikeSvg(bytes: Uint8Array): boolean {
+  const head = new TextDecoder("utf-8", { fatal: false })
+    .decode(bytes.slice(0, 512))
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
+  if (head.startsWith("<svg")) return true;
+  if (head.startsWith("<?xml") && head.includes("<svg")) return true;
+  if (head.startsWith("<!doctype svg")) return true;
+  return false;
+}
 
 export function normalizeAvatarMimeType(value: string | null | undefined): string | null {
   const mime = value?.split(";")[0]?.trim().toLowerCase() ?? "";
   if (!mime) return null;
   if (mime === "image/jpg" || mime === "image/pjpeg") return "image/jpeg";
+  if (mime === "image/svg") return "image/svg+xml";
   if (AVATAR_MIME_TYPES.has(mime)) return mime;
   return null;
 }
@@ -49,6 +63,9 @@ export function sniffAvatarContentType(bytes: Uint8Array): string | null {
     bytes[11] === 0x50
   ) {
     return "image/webp";
+  }
+  if (looksLikeSvg(bytes)) {
+    return "image/svg+xml";
   }
   return null;
 }

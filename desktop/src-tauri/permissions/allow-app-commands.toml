@@ -9,6 +9,11 @@ description = "Allows reading host CPU, memory, and disk usage for the status ba
 commands.allow = ["system_stats"]
 
 [[permission]]
+identifier = "allow-cursor-usage"
+description = "Allows reading local Cursor session usage for the sidebar credits bar."
+commands.allow = ["cursor_usage"]
+
+[[permission]]
 identifier = "allow-oauth-windows"
 description = "Allows closing OAuth popup windows after Clerk sign-in."
 commands.allow = ["close_oauth_windows"]

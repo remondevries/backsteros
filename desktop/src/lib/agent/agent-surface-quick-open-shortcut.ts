@@ -3,6 +3,7 @@ import type { AgentSurfaceTabKind } from "./agent-surface-tabs.ts";
 /**
  * Primary surfaces offered from the empty picker / + menu / ⌘N hotkeys.
  * Files and Diff are codebase-project only.
+ * Diff is omitted until the agent has produced reviewable file changes.
  */
 export const AGENT_SURFACE_QUICK_OPEN_BASE_KINDS = [
   "chat",
@@ -30,6 +31,12 @@ export type AgentSurfaceQuickOpenOption = {
   /** Files needs a project working directory. */
   needsCwd: boolean;
   codebaseOnly: boolean;
+};
+
+export type AgentSurfaceQuickOpenVisibility = {
+  isCodebaseProject: boolean;
+  /** When false, Diff is hidden (no agent file changes yet). Default true. */
+  diffAvailable?: boolean;
 };
 
 const QUICK_OPEN_OPTIONS: readonly AgentSurfaceQuickOpenOption[] = [
@@ -70,19 +77,35 @@ const QUICK_OPEN_OPTIONS: readonly AgentSurfaceQuickOpenOption[] = [
   },
 ];
 
-/** Ordered options for the current project type. */
+function normalizeQuickOpenVisibility(
+  visibility: boolean | AgentSurfaceQuickOpenVisibility,
+): Required<AgentSurfaceQuickOpenVisibility> {
+  if (typeof visibility === "boolean") {
+    return { isCodebaseProject: visibility, diffAvailable: true };
+  }
+  return {
+    isCodebaseProject: visibility.isCodebaseProject,
+    diffAvailable: visibility.diffAvailable ?? true,
+  };
+}
+
+/** Ordered options for the current project type / diff availability. */
 export function listAgentSurfaceQuickOpenOptions(
-  isCodebaseProject: boolean,
+  visibility: boolean | AgentSurfaceQuickOpenVisibility,
 ): AgentSurfaceQuickOpenOption[] {
-  return QUICK_OPEN_OPTIONS.filter(
-    (option) => isCodebaseProject || !option.codebaseOnly,
-  );
+  const { isCodebaseProject, diffAvailable } =
+    normalizeQuickOpenVisibility(visibility);
+  return QUICK_OPEN_OPTIONS.filter((option) => {
+    if (!isCodebaseProject && option.codebaseOnly) return false;
+    if (option.kind === "diff" && !diffAvailable) return false;
+    return true;
+  });
 }
 
 export function listAgentSurfaceQuickOpenKinds(
-  isCodebaseProject: boolean,
+  visibility: boolean | AgentSurfaceQuickOpenVisibility,
 ): AgentSurfaceQuickOpenKind[] {
-  return listAgentSurfaceQuickOpenOptions(isCodebaseProject).map(
+  return listAgentSurfaceQuickOpenOptions(visibility).map(
     (option) => option.kind,
   );
 }
@@ -146,7 +169,7 @@ export type AgentSurfaceDigitShortcut =
  */
 export function resolveAgentSurfaceDigitShortcut(
   event: DigitShortcutEvent,
-  options: { isCodebaseProject: boolean; tabCount: number },
+  options: AgentSurfaceQuickOpenVisibility & { tabCount: number },
 ): AgentSurfaceDigitShortcut | null {
   const digit = resolveAgentSurfaceDigitIndex(event);
   if (digit == null) return null;
@@ -156,23 +179,23 @@ export function resolveAgentSurfaceDigitShortcut(
     return { action: "activate-tab", index: digit - 1 };
   }
 
-  const kind = listAgentSurfaceQuickOpenKinds(options.isCodebaseProject)[
-    digit - 1
-  ];
+  const kind = listAgentSurfaceQuickOpenKinds(options)[digit - 1];
   return kind ? { action: "quick-open", kind } : null;
 }
 
 /**
  * ⌘1–⌘N (⌃1–⌃N) open primary surfaces when the empty picker is showing.
- * Codebase: Agent, Browser, Files, Plan, Diff
+ * Codebase with diffs: Agent, Browser, Files, Plan, Diff
+ * Codebase without diffs: Agent, Browser, Files, Plan
  * Other: Agent, Browser, Plan
  */
 export function resolveAgentSurfaceQuickOpenShortcut(
   event: DigitShortcutEvent,
-  isCodebaseProject: boolean,
+  visibility: boolean | AgentSurfaceQuickOpenVisibility,
 ): AgentSurfaceQuickOpenKind | null {
+  const normalized = normalizeQuickOpenVisibility(visibility);
   const result = resolveAgentSurfaceDigitShortcut(event, {
-    isCodebaseProject,
+    ...normalized,
     tabCount: 0,
   });
   return result?.action === "quick-open" ? result.kind : null;
@@ -181,9 +204,9 @@ export function resolveAgentSurfaceQuickOpenShortcut(
 /** Display label for picker cards (Mac-first desktop shell). */
 export function agentSurfaceQuickOpenHotkeyLabel(
   kind: AgentSurfaceQuickOpenKind,
-  isCodebaseProject: boolean,
+  visibility: boolean | AgentSurfaceQuickOpenVisibility,
 ): string {
-  const index = listAgentSurfaceQuickOpenKinds(isCodebaseProject).indexOf(kind);
+  const index = listAgentSurfaceQuickOpenKinds(visibility).indexOf(kind);
   if (index < 0) return "";
   return `⌘${index + 1}`;
 }

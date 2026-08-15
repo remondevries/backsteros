@@ -16,10 +16,12 @@ import {
   getOrganizationIdFromProjectsPathname,
   isOrganizationProjectsListPathname,
 } from "./organization-sections.js";
+import { isCodebaseWorkbenchMounted } from "./section-tab-hrefs.js";
 import {
   getProjectsListAreaHref,
   parseProjectAreaFilterFromLocation,
 } from "./project-areas.js";
+import { isTaskDetailPath } from "./properties-panel.js";
 import { shouldHandleProjectTaskViewShortcut } from "./should-handle-project-task-view-shortcut.js";
 import {
   buildTasksDueHref,
@@ -35,9 +37,27 @@ function isProjectsListPathname(pathname: string): boolean {
 function isProjectTasksPathname(pathname: string): boolean {
   const path = pathname.replace(/\/+$/, "") || "/";
   return (
-    /^\/projects\/[^/]+\/tasks(?:\/|$)/.test(path) ||
-    /^\/organizations\/[^/]+\/projects\/[^/]+\/tasks(?:\/|$)/.test(path)
+    /^\/projects\/[^/]+\/tasks\/?$/.test(path) ||
+    /^\/organizations\/[^/]+\/projects\/[^/]+\/tasks\/?$/.test(path)
   );
+}
+
+/**
+ * Codebase workbench Tasks surface: bare project path (or `/tasks` list),
+ * while the workbench is mounted. Board toggles must stay on this base so
+ * the left sidebar is not replaced by default project section chrome.
+ */
+function resolveCodebaseWorkbenchTasksBase(
+  pathname: string,
+): string | null {
+  if (!isCodebaseWorkbenchMounted()) return null;
+  if (isTaskDetailPath(pathname)) return null;
+
+  const path = pathname.replace(/\/+$/, "") || "/";
+  const match = path.match(
+    /^((?:\/organizations\/[^/]+)?\/projects\/[^/]+)(?:\/tasks)?$/,
+  );
+  return match?.[1] ?? null;
 }
 
 function buildProjectTasksHref(
@@ -45,10 +65,13 @@ function buildProjectTasksHref(
   view: ListBoardView,
 ): string {
   const path = pathname.replace(/\/+$/, "") || "/";
+  const codebaseBase = resolveCodebaseWorkbenchTasksBase(path);
   const base =
+    codebaseBase ??
     path.match(
       /^((?:\/organizations\/[^/]+)?\/projects\/[^/]+\/tasks)/,
-    )?.[1] ?? path;
+    )?.[1] ??
+    path;
   if (view === "board") {
     return `${base}?${LIST_BOARD_VIEW_SEARCH_PARAM}=board`;
   }
@@ -83,7 +106,11 @@ export function useListBoardViewShortcuts({
       const onProjectsListPage = isProjectsListPathname(pathname);
       const onOrganizationProjectsListPage =
         isOrganizationProjectsListPathname(pathname);
-      const onProjectTasksPage = isProjectTasksPathname(pathname);
+      const codebaseWorkbenchTasksBase =
+        resolveCodebaseWorkbenchTasksBase(pathname);
+      const onProjectTasksPage =
+        isProjectTasksPathname(pathname) ||
+        codebaseWorkbenchTasksBase != null;
 
       if (
         !onDueTasksPage &&

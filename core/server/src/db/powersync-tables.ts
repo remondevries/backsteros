@@ -14,6 +14,10 @@ export const POWERSYNC_PUBLICATION_TABLES = [
   "avatars",
   "mentions",
   "workspace_settings",
+  "bank_accounts",
+  "financial_categories",
+  "financial_goals",
+  "financial_recurrings",
 ] as const;
 
 export type PowerSyncPublicationTable =

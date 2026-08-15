@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
   // PowerSync workers code-split; Vite 7 defaults to iife which Rollup rejects.
   worker: {
     format: "es",
+    plugins: () => [wasm(), topLevelAwait()],
   },
 
   // Tauri webviews are modern; avoid downleveling that breaks TLA/wasm transforms.
@@ -53,8 +54,13 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, but keep workspace UI
+      // packages watched so `pnpm --filter @backsteros/ui build` hot-reloads.
+      ignored: [
+        "**/src-tauri/**",
+        "**/node_modules/**",
+        "!**/node_modules/@backsteros/**",
+      ],
     },
   },
 }));

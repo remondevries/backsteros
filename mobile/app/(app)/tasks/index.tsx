@@ -3,7 +3,6 @@ import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -37,7 +36,8 @@ import { colors } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 import { useLocalQuery } from "../../../lib/use-local-query";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
-import { useRestFallbackGate } from "../../../lib/use-rest-fallback-gate";
+import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
+import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
 import { useSectionTabShortcuts } from "../../../lib/use-section-tab-shortcuts";
 
 export default function TasksScreen() {
@@ -89,7 +89,7 @@ export default function TasksScreen() {
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
 
-  const [restRows, setRestRows] = useState<GroupedTaskRow[]>([]);
+  const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
 
@@ -97,8 +97,6 @@ export default function TasksScreen() {
     () => (syncedTasks ?? []).map((row) => withDisplayId(row)),
     [syncedTasks],
   );
-
-  const useRest = useRestFallbackGate(localRows.length);
 
   const reloadRest = useCallback(async () => {
     setRestLoading(true);
@@ -128,18 +126,18 @@ export default function TasksScreen() {
           ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
           : detail,
       );
-      setRestRows([]);
     } finally {
       setRestLoading(false);
     }
   }, [apiUrl, client]);
 
-  useEffect(() => {
-    if (useRest) void reloadRest();
-  }, [reloadRest, useRest]);
+  useRestListHydration(reloadRest);
 
-  const allRows: GroupedTaskRow[] =
-    localRows.length > 0 ? localRows : restRows;
+  const allRows = resolveSyncedOrRestRows({
+    localRows,
+    restRows,
+    connected: powerSync.connected,
+  });
 
   const rows = useMemo(
     () => filterTasksByDueFilter(allRows, dueFilter),
@@ -147,16 +145,18 @@ export default function TasksScreen() {
   );
 
   const waitingForSync =
-    localRows.length === 0 &&
-    !useRest &&
+    allRows.length === 0 &&
+    restRows == null &&
     (powerSync.status === "connecting" ||
       powerSync.status === "idle" ||
       syncLoading);
 
   const loading =
-    allRows.length === 0 &&
-    (useRest ? restLoading : waitingForSync || syncLoading);
-  const error = useRest && allRows.length === 0 ? restError : null;
+    allRows.length === 0 && (restLoading || waitingForSync || syncLoading);
+  const error =
+    allRows.length === 0 && restError && !powerSync.connected
+      ? restError
+      : null;
 
   const onPressRow = useCallback(
     (row: GroupedTaskRow) => {
@@ -186,8 +186,8 @@ export default function TasksScreen() {
     <GroupedTaskList
       rows={rows}
       emptyText={getTasksDueFilterEmptyMessage(dueFilter)}
-      refreshing={useRest ? restLoading : false}
-      onRefresh={useRest ? () => void reloadRest() : undefined}
+      refreshing={restLoading}
+      onRefresh={() => void reloadRest()}
       onPressRow={onPressRow}
       onAddToStatus={(status) => {
         router.push({

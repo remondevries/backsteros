@@ -4,31 +4,57 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
 import {
+  bankAccountInputSchema,
+  bankAccountCashflowQuerySchema,
+  bankAccountsMonthIncomeQuerySchema,
+  workspaceCashflowQuerySchema,
+  financeSpendPanelQuerySchema,
+  financeAssetsDebtQuerySchema,
+  batchUpdateFinancialTransactionsSchema,
+  batchDeleteFinancialTransactionsSchema,
   createApiKeySchema,
   createDocumentSchema,
   createProjectSchema,
   createTaskSchema,
   createTaskCommentSchema,
   createTaskActivitySchema,
+  financialCategoryInputSchema,
+  financialGoalInputSchema,
+  financialRecurringInputSchema,
+  listFinancialTransactionsQuerySchema,
   projectFsCreateEntrySchema,
   projectFsWriteFileSchema,
   reorderLetterAttachmentsSchema,
   spellcheckRequestSchema,
   updateApiKeySchema,
+  updateBankAccountSchema,
   updateCursorSettingsSchema,
   updateDocumentContentSchema,
   updateDocumentSchema,
+  updateFinancialCategorySchema,
+  updateFinancialGoalSchema,
+  updateFinancialRecurringSchema,
+  updateFinancialTransactionSchema,
+  updateMoneybirdSettingsSchema,
   updateProjectSchema,
   updateTaskSchema,
   updateTaskCommentSchema,
   updateVaultStorageSettingsSchema,
+  moneybirdSalesInvoicesQuerySchema,
+  moneybirdInvoiceRevenueQuerySchema,
   researchRequestSchema,
 } from "@backsteros/contracts";
 
 import {
   toApiKey,
   toArea,
+  toBankAccount,
   toDocument,
+  toFinancialCategory,
+  toFinancialGoal,
+  toFinancialRecurring,
+  toFinancialImportBatch,
+  toFinancialTransaction,
   toProject,
   toSearchResult,
   toTask,
@@ -42,11 +68,18 @@ import {
   resolveAvatarContentType,
   sniffAvatarContentType,
 } from "../lib/avatar-content-type.js";
-import { MAX_AVATAR_BYTES, MAX_TASK_IMAGE_BYTES } from "../lib/upload-limits.js";
+import {
+  MAX_AVATAR_BYTES,
+  MAX_TASK_IMAGE_BYTES,
+  MAX_UPLOAD_BYTES,
+} from "../lib/upload-limits.js";
 import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import * as circleService from "../services/circle-domain.js";
+import * as financeService from "../services/finance/finance.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";
+import * as moneybirdSettingsService from "../services/moneybird-settings.js";
+import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import {
   AgentPtyUnavailableError,
   getAgentPtyConnection,
@@ -85,6 +118,7 @@ const organizationSchema = z.object({
   country: z.string().max(128).nullable().optional(),
   sortOrder: z.number().int().optional(),
   notes: z.string().max(20_000).nullable().optional(),
+  moneybirdContactId: z.string().max(64).nullable().optional(),
 });
 const contactSocialAccountSchema = z.object({
   platform: z.string().min(1).max(64),
@@ -1404,6 +1438,15 @@ export function registerApiRoutes(app: Hono) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
         }
+        if (error instanceof Error && error.message === "ASSIGNEE_NOT_FOUND") {
+          return c.json(
+            { error: "Assignee not found", code: "assignee_not_found" },
+            400,
+          );
+        }
+        if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+          return c.json(notFound("Contact"), 404);
+        }
         throw error;
       }
     },
@@ -2184,7 +2227,7 @@ export function registerApiRoutes(app: Hono) {
       ) {
         return c.json(
           {
-            error: "Avatar must be a JPG, PNG, WebP, or GIF up to 5 MB",
+            error: "Avatar must be a JPG, PNG, WebP, GIF, or SVG up to 5 MB",
             code: "bad_request",
           },
           400,
@@ -2315,6 +2358,139 @@ export function registerApiRoutes(app: Hono) {
       );
     }
   });
+  app.get("/api/v1/settings/moneybird", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await moneybirdSettingsService.getMoneybirdSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/moneybird", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateMoneybirdSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid Moneybird settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await moneybirdSettingsService.updateMoneybirdSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/moneybird/administrations", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    try {
+      const administrations =
+        await moneybirdSettingsService.listMoneybirdAdministrations(
+          auth.workspaceId,
+        );
+      return c.json({ administrations });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list Moneybird administrations";
+      const status =
+        error instanceof MoneybirdApiError && error.status === 401 ? 400 : 400;
+      return c.json({ error: message, code: "bad_request" }, status);
+    }
+  });
+  app.get("/api/v1/settings/moneybird/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await moneybirdSettingsService.testMoneybirdConnection(auth.workspaceId),
+    );
+  });
+  app.get(
+    "/api/v1/finance/moneybird/invoices",
+    zValidator("query", moneybirdSalesInvoicesQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const page = query.page ?? 1;
+      const perPage = query.perPage ?? 50;
+      try {
+        const result =
+          await moneybirdSettingsService.listMoneybirdSalesInvoicesPage(
+            auth.workspaceId,
+            {
+              page,
+              perPage,
+              filter: query.filter,
+            },
+          );
+        return c.json({
+          invoices: result.invoices,
+          page: result.page,
+          perPage: result.perPage,
+          hasMore: result.hasMore,
+          totalPages: result.totalPages,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not list Moneybird invoices";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.get("/api/v1/finance/moneybird/invoices/:invoiceId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const invoiceId = c.req.param("invoiceId")?.trim() ?? "";
+    if (!invoiceId) {
+      return c.json({ error: "Invoice id is required", code: "bad_request" }, 400);
+    }
+    try {
+      return c.json(
+        await moneybirdSettingsService.getMoneybirdSalesInvoiceDetail(
+          auth.workspaceId,
+          invoiceId,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof MoneybirdApiError && error.status === 404) {
+        return c.json({ error: "Invoice not found", code: "not_found" }, 404);
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not load Moneybird invoice";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.get(
+    "/api/v1/finance/moneybird/invoice-revenue",
+    zValidator("query", moneybirdInvoiceRevenueQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const year = c.req.valid("query").year ?? new Date().getFullYear();
+      try {
+        const revenue =
+          await moneybirdSettingsService.getMoneybirdInvoiceRevenue(
+            auth.workspaceId,
+            year,
+          );
+        return c.json(revenue);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load Moneybird invoice revenue";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/agent-pty/connection", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
@@ -2511,6 +2687,478 @@ export function registerApiRoutes(app: Hono) {
 
     return c.json({ results: rows.map(toSearchResult) });
   });
+
+  app.get("/api/v1/bank-accounts", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const rows = await financeService.listBankAccounts(auth.workspaceId);
+    return c.json({ bankAccounts: rows.map(toBankAccount) });
+  });
+  app.get("/api/v1/bank-accounts/balances", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const balances = await financeService.listBankAccountBalances(
+      auth.workspaceId,
+    );
+    return c.json({ balances });
+  });
+  app.get(
+    "/api/v1/finance/assets-debt",
+    zValidator("query", financeAssetsDebtQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const range = c.req.valid("query").range ?? "1M";
+      const series = await financeService.getFinanceAssetsDebt(
+        auth.workspaceId,
+        range,
+      );
+      return c.json(series);
+    },
+  );
+  app.get(
+    "/api/v1/bank-accounts/month-income",
+    zValidator("query", bankAccountsMonthIncomeQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const month =
+        c.req.valid("query").month ??
+        (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        })();
+      const result = await financeService.getBankAccountsMonthIncome(
+        auth.workspaceId,
+        month,
+      );
+      return c.json(result);
+    },
+  );
+  app.get(
+    "/api/v1/bank-accounts/:id/cashflow",
+    zValidator("query", bankAccountCashflowQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const year =
+        c.req.valid("query").year ?? new Date().getFullYear();
+      const cashflow = await financeService.getBankAccountCashflow(
+        auth.workspaceId,
+        c.req.param("id"),
+        year,
+      );
+      return cashflow
+        ? c.json(cashflow)
+        : c.json(notFound("Bank account"), 404);
+    },
+  );
+  app.get(
+    "/api/v1/finance/cashflow",
+    zValidator("query", workspaceCashflowQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const year = query.year ?? new Date().getFullYear();
+      const cashflow = await financeService.getWorkspaceCashflow(
+        auth.workspaceId,
+        year,
+        query.asOf,
+      );
+      return c.json(cashflow);
+    },
+  );
+  app.get(
+    "/api/v1/finance/spend-panel",
+    zValidator("query", financeSpendPanelQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const panel = await financeService.getFinanceSpendPanel(
+        auth.workspaceId,
+        query.month,
+        query.historyMonths,
+      );
+      return c.json(panel);
+    },
+  );
+  app.get("/api/v1/bank-accounts/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const row = await financeService.getBankAccountById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row ? c.json(toBankAccount(row)) : c.json(notFound("Bank account"), 404);
+  });
+  app.post(
+    "/api/v1/bank-accounts",
+    zValidator("json", bankAccountInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.createBankAccount(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(toBankAccount(row), 201);
+    },
+  );
+  app.patch(
+    "/api/v1/bank-accounts/:id",
+    zValidator("json", updateBankAccountSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.updateBankAccount(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row
+        ? c.json(toBankAccount(row))
+        : c.json(notFound("Bank account"), 404);
+    },
+  );
+  app.delete("/api/v1/bank-accounts/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const row = await financeService.deleteBankAccount(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row ? c.body(null, 204) : c.json(notFound("Bank account"), 404);
+  });
+
+  app.get("/api/v1/financial-categories", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const rows = await financeService.listFinancialCategories(auth.workspaceId);
+    return c.json({ categories: rows.map(toFinancialCategory) });
+  });
+  app.post(
+    "/api/v1/financial-categories",
+    zValidator("json", financialCategoryInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.createFinancialCategory(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(toFinancialCategory(row), 201);
+    },
+  );
+  app.patch(
+    "/api/v1/financial-categories/:id",
+    zValidator("json", updateFinancialCategorySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.updateFinancialCategory(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row
+        ? c.json(toFinancialCategory(row))
+        : c.json(notFound("Financial category"), 404);
+    },
+  );
+  app.delete("/api/v1/financial-categories/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const row = await financeService.deleteFinancialCategory(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row
+      ? c.body(null, 204)
+      : c.json(notFound("Financial category"), 404);
+  });
+
+  app.get("/api/v1/financial-goals", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const [rows, savedByGoalId] = await Promise.all([
+      financeService.listFinancialGoals(auth.workspaceId),
+      financeService.sumSavedCentsByGoalId(auth.workspaceId),
+    ]);
+    return c.json({
+      goals: rows.map((row) =>
+        toFinancialGoal(row, savedByGoalId.get(row.id) ?? 0),
+      ),
+    });
+  });
+  app.post(
+    "/api/v1/financial-goals",
+    zValidator("json", financialGoalInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.createFinancialGoal(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(toFinancialGoal(row, 0), 201);
+    },
+  );
+  app.patch(
+    "/api/v1/financial-goals/:id",
+    zValidator("json", updateFinancialGoalSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const id = c.req.param("id");
+      const row = await financeService.updateFinancialGoal(
+        auth.workspaceId,
+        id,
+        c.req.valid("json"),
+      );
+      if (!row) return c.json(notFound("Financial goal"), 404);
+      const savedCents = await financeService.getGoalSavedCents(
+        auth.workspaceId,
+        id,
+      );
+      return c.json(toFinancialGoal(row, savedCents));
+    },
+  );
+  app.delete("/api/v1/financial-goals/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const row = await financeService.deleteFinancialGoal(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row
+      ? c.body(null, 204)
+      : c.json(notFound("Financial goal"), 404);
+  });
+
+  app.get("/api/v1/financial-recurrings", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const rows = await financeService.listFinancialRecurrings(auth.workspaceId);
+    return c.json({ recurrings: rows.map(toFinancialRecurring) });
+  });
+  app.post(
+    "/api/v1/financial-recurrings",
+    zValidator("json", financialRecurringInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.createFinancialRecurring(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(toFinancialRecurring(row), 201);
+    },
+  );
+  app.patch(
+    "/api/v1/financial-recurrings/:id",
+    zValidator("json", updateFinancialRecurringSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.updateFinancialRecurring(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row
+        ? c.json(toFinancialRecurring(row))
+        : c.json(notFound("Financial recurring"), 404);
+    },
+  );
+  app.delete("/api/v1/financial-recurrings/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const row = await financeService.deleteFinancialRecurring(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row
+      ? c.body(null, 204)
+      : c.json(notFound("Financial recurring"), 404);
+  });
+
+  const toListTransactionFilters = (
+    query: z.infer<typeof listFinancialTransactionsQuerySchema>,
+  ) => ({
+    q: query.q,
+    from: query.from,
+    to: query.to,
+    month: query.month,
+    organizationId: query.organizationId,
+    projectId: query.projectId,
+    categoryId: query.categoryId,
+    goalId: query.goalId,
+    recurringId: query.recurringId,
+    categoryIds: query.categoryIds
+      ? query.categoryIds
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined,
+    uncategorized: query.uncategorized === "true",
+    unassignedOrg: query.unassignedOrg === "true",
+    unassignedGoal: query.unassignedGoal === "true",
+    unassignedRecurring: query.unassignedRecurring === "true",
+    amountSign: query.amountSign,
+    limit: query.limit,
+    cursor: query.cursor,
+    includeTotal: query.includeTotal === "true",
+  });
+
+  app.get(
+    "/api/v1/transactions",
+    zValidator("query", listFinancialTransactionsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const result = await financeService.listTransactions(
+        auth.workspaceId,
+        null,
+        toListTransactionFilters(query),
+      );
+      if (!result) return c.json(forbidden(), 403);
+      return c.json({
+        transactions: result.transactions.map(toFinancialTransaction),
+        nextCursor: result.nextCursor,
+        ...(result.total !== undefined ? { total: result.total } : {}),
+      });
+    },
+  );
+
+  app.get(
+    "/api/v1/bank-accounts/:id/transactions",
+    zValidator("query", listFinancialTransactionsQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const query = c.req.valid("query");
+      const result = await financeService.listTransactions(
+        auth.workspaceId,
+        c.req.param("id"),
+        toListTransactionFilters(query),
+      );
+      if (!result) return c.json(notFound("Bank account"), 404);
+      return c.json({
+        transactions: result.transactions.map(toFinancialTransaction),
+        nextCursor: result.nextCursor,
+        ...(result.total !== undefined ? { total: result.total } : {}),
+      });
+    },
+  );
+
+  app.patch(
+    "/api/v1/transactions/:id",
+    zValidator("json", updateFinancialTransactionSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.updateTransaction(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      if (row === "account_not_found") {
+        return c.json(notFound("Bank account"), 404);
+      }
+      return row
+        ? c.json(toFinancialTransaction(row))
+        : c.json(notFound("Transaction"), 404);
+    },
+  );
+
+  app.post(
+    "/api/v1/transactions/batch",
+    zValidator("json", batchUpdateFinancialTransactionsSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      const rows = await financeService.batchUpdateTransactions(
+        auth.workspaceId,
+        body.ids,
+        body.patch,
+      );
+      if (rows === "account_not_found") {
+        return c.json(notFound("Bank account"), 404);
+      }
+      return c.json({
+        updated: rows.length,
+        transactions: rows.map(toFinancialTransaction),
+      });
+    },
+  );
+
+  app.post(
+    "/api/v1/transactions/batch-delete",
+    zValidator("json", batchDeleteFinancialTransactionsSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const body = c.req.valid("json");
+      const deleted = await financeService.batchDeleteTransactions(
+        auth.workspaceId,
+        body.ids,
+      );
+      return c.json({ deleted });
+    },
+  );
+
+  app.get("/api/v1/bank-accounts/:id/imports", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const rows = await financeService.listImportBatches(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!rows) return c.json(notFound("Bank account"), 404);
+    return c.json({ imports: rows.map(toFinancialImportBatch) });
+  });
+
+  app.post(
+    "/api/v1/bank-accounts/:id/imports",
+    bodyLimit({
+      maxSize: MAX_UPLOAD_BYTES,
+      onError: (c) =>
+        c.json(
+          { error: "CSV too large", code: "payload_too_large" },
+          413,
+        ),
+    }),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      if (bytes.byteLength === 0) {
+        return c.json({ error: "Empty CSV body", code: "bad_request" }, 400);
+      }
+      try {
+        const result = await financeService.importBankCsv(
+          auth.workspaceId,
+          c.req.param("id"),
+          bytes,
+          c.req.header("X-Filename") ?? "import.csv",
+        );
+        if (!result) return c.json(notFound("Bank account"), 404);
+        return c.json(result, 201);
+      } catch (error) {
+        return c.json(
+          {
+            error: error instanceof Error ? error.message : "Import failed",
+            code: "bad_request",
+          },
+          400,
+        );
+      }
+    },
+  );
 
   app.get("/api/v1/api-keys", async (c) => {
     const auth = getAuth(c);

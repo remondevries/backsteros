@@ -40,6 +40,12 @@ export type LettersSidePanelViewProps = {
   pathname: string;
   items: LetterListItem[];
   Link: LettersSidePanelLinkComponent;
+  /**
+   * Immediate create (preferred). When set, the plus control is a button and
+   * does not navigate to compose.
+   */
+  onAdd?: () => void;
+  /** Fallback compose route when `onAdd` is not provided. */
   composeHref?: string;
   onCompose?: () => void;
   /** Override letter detail href (defaults to global `/letters/:slug`). */
@@ -55,6 +61,7 @@ export function LettersSidePanelView({
   pathname,
   items,
   Link,
+  onAdd,
   composeHref = "/letters/new",
   onCompose,
   getLetterHref = (letter) => getLettersHref(letter.number),
@@ -72,14 +79,25 @@ export function LettersSidePanelView({
       <ContentSidePanelHeader
         title="Letters"
         actions={
-          <Link
-            to={composeHref}
-            className="app-side-panel-section-action"
-            aria-label="Upload letter"
-            onClick={onCompose}
-          >
-            <SidePanelPlusIcon />
-          </Link>
+          onAdd ? (
+            <button
+              type="button"
+              className="app-side-panel-section-action"
+              aria-label="Create letter"
+              onClick={onAdd}
+            >
+              <SidePanelPlusIcon />
+            </button>
+          ) : (
+            <Link
+              to={composeHref}
+              className="app-side-panel-section-action"
+              aria-label="Upload letter"
+              onClick={onCompose}
+            >
+              <SidePanelPlusIcon />
+            </Link>
+          )
         }
       />
       <div className="app-content-side-panel-main">

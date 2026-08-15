@@ -251,10 +251,18 @@ fn show_desktop_overlay(app: &AppHandle, mode: OverlayMode, path: &str) -> Resul
     Ok(())
 }
 
+/// Must match `APP_WEBVIEW_DATA_STORE_ID` in `lib.rs` so the overlay shares
+/// Clerk cookies / localStorage with the main window.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+const APP_WEBVIEW_DATA_STORE_ID: [u8; 16] = [
+    0xb4, 0xc7, 0x5e, 0x20, 0x05, 0xde, 0x4b, 0x0a, 0x9e, 0x11, 0x82, 0x3f,
+    0x6d, 0x41, 0xc0, 0x01,
+];
+
 pub fn create_overlay_window(app: &App) -> Result<(), String> {
     let base_url = app_web_base_url(app.handle())?;
     let url = parse_app_url(&base_url, OVERLAY_PALETTE_PATH)?;
-    let builder = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::External(url))
+    let mut builder = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::External(url))
         .title("")
         .decorations(false)
         .transparent(true)
@@ -268,6 +276,11 @@ pub fn create_overlay_window(app: &App) -> Result<(), String> {
         .background_color(Color(0, 0, 0, 0))
         .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT_MIN)
         .center();
+
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        builder = builder.data_store_identifier(APP_WEBVIEW_DATA_STORE_ID);
+    }
 
     builder.build().map_err(|error| error.to_string())?;
 
@@ -300,14 +313,15 @@ pub fn register_desktop_global_shortcuts(
                 return;
             }
 
+            // Open in-app palette on the main window (shared Clerk session).
             let handle = app.clone();
-            let handle_for_main = app.clone();
-            let _ = handle.run_on_main_thread(move || {
-                let _ = show_desktop_overlay(
-                    &handle_for_main,
-                    OverlayMode::Palette,
-                    OVERLAY_PALETTE_PATH,
-                );
+            let _ = handle.clone().run_on_main_thread(move || {
+                let _ = focus_main_window(handle.clone());
+                if let Some(main) = handle.get_webview_window("main") {
+                    let _ = main.eval(
+                        "window.dispatchEvent(new CustomEvent('backsteros:toggle-command-palette'))",
+                    );
+                }
             });
         })?;
 
@@ -317,14 +331,17 @@ pub fn register_desktop_global_shortcuts(
                 return;
             }
 
+            // Open in-app compose on the main window (shared Clerk session).
+            // The separate overlay webview historically had its own WKWebView
+            // data store and rendered unsigned-in / black.
             let handle = app.clone();
-            let handle_for_main = app.clone();
-            let _ = handle.run_on_main_thread(move || {
-                let _ = show_desktop_overlay(
-                    &handle_for_main,
-                    OverlayMode::Compose,
-                    OVERLAY_COMPOSE_PATH,
-                );
+            let _ = handle.clone().run_on_main_thread(move || {
+                let _ = focus_main_window(handle.clone());
+                if let Some(main) = handle.get_webview_window("main") {
+                    let _ = main.eval(
+                        "window.dispatchEvent(new CustomEvent('backsteros:open-compose'))",
+                    );
+                }
             });
         })?;
 

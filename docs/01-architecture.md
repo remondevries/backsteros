@@ -79,14 +79,16 @@ Desktop mirrors the web product UX in a Vite SPA; it does not run the Next build
 
 Clients hold: UI state, local SQLite cache (via PowerSync), optional small content cache for open files.
 
-## Hosting (target)
+## Hosting (v2 — local computer)
 
 | Component | Host |
 | --- | --- |
-| `backsteros-api` + PowerSync | VM (e.g. Kamal on DO droplet) or managed |
-| PostgreSQL | **Neon** (prod); Docker Postgres (local dev) |
-| Object storage | Backblaze B2 or Cloudflare R2 |
-| Meilisearch | Sidecar on same VM or small dedicated instance |
+| `core/server` + PowerSync | Local computer (Docker Compose + `pnpm` processes) |
+| PostgreSQL | Docker Postgres (`localhost:5433`) |
+| Object / file storage | Local vault path (`BACKSTEROS_VAULT_PATH` / Settings → Storage) |
+| Meilisearch | Optional local sidecar (when search is enabled) |
+
+Cloud hosts (Neon, droplet Kamal deploys) are **out of scope** for active v2 work.
 
 ## Auth model
 

@@ -5,6 +5,8 @@ import {
   type NavigationItemIconId,
   type RouteFamily,
 } from "./navigation.js";
+import { isEntityRouteId } from "./navigation-trail/entity-route-uuid.js";
+import { getPrimedTabTitle } from "./primed-tab-title.js";
 
 export type ProductTab = {
   id: string;
@@ -30,8 +32,55 @@ export function normalizeTabHref(href: string): string {
   return path!.replace(/\/+$/, "") || "/";
 }
 
+/** Display slugs like `in-8` / `abc-12` — OK as interim tab labels. */
+function isDisplayEntitySlug(segment: string): boolean {
+  return /^[a-z][a-z0-9]*-\d+$/i.test(segment);
+}
+
+function looksLikeRawEntityId(segment: string): boolean {
+  if (isEntityRouteId(segment)) return true;
+  if (isDisplayEntitySlug(segment)) return false;
+  // Local/optimistic ids, long opaque tokens, etc.
+  return segment.length >= 20;
+}
+
+function fallbackTitleForEntityPath(normalized: string): string {
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length === 0) return titleForPath(normalized);
+
+  if (segments[0] === "projects" && segments.length === 2) {
+    return "Project";
+  }
+
+  const last = segments.at(-1);
+  if (!last) return titleForPath(normalized);
+
+  // Avoid flashing UUID / opaque ids in the tab before RegisterPageTitle runs.
+  if (looksLikeRawEntityId(decodeURIComponent(last))) {
+    if (segments[0] === "inbox") return "Task";
+    if (segments[0] === "letters") return "Letter";
+    if (segments.includes("tasks")) return "Task";
+    if (segments.includes("documents") || segments[0] === "knowledge") {
+      return "Document";
+    }
+    return "Page";
+  }
+
+  if (segments.includes("tasks")) {
+    return "Task";
+  }
+
+  return titleForPath(normalized);
+}
+
 export function getTabTitleForHref(href: string): string {
   const normalized = normalizeTabHref(href);
+
+  const primed = getPrimedTabTitle(normalized);
+  if (primed) {
+    return primed;
+  }
+
   const navMatch = navigation.find((item) => item.href === normalized);
   if (navMatch) {
     return navMatch.label;
@@ -40,7 +89,7 @@ export function getTabTitleForHref(href: string): string {
   if (journalDate) {
     return decodeURIComponent(journalDate);
   }
-  return titleForPath(normalized);
+  return fallbackTitleForEntityPath(normalized);
 }
 
 export function resolveTabNavIconId(
@@ -60,6 +109,7 @@ export function resolveTabNavIconId(
     projects: "projects",
     development: "development",
     letters: "letters",
+    finance: "finance",
     contacts: "contacts",
     organizations: "organizations",
     settings: "settings",
@@ -90,8 +140,23 @@ export function syncActiveTabToPath(
 ): ProductTabsState {
   const normalized = normalizeTabHref(pathname);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-  if (!activeTab || activeTab.href === normalized) {
+  if (!activeTab) {
     return state;
+  }
+
+  // Same path: still apply a primed entity title so a tab that was left on a
+  // generic "Projects"/"Project" label catches up when the name is known.
+  if (activeTab.href === normalized) {
+    const primed = getPrimedTabTitle(normalized);
+    if (!primed || activeTab.title === primed) {
+      return state;
+    }
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === state.activeTabId ? { ...tab, title: primed } : tab,
+      ),
+    };
   }
 
   return {

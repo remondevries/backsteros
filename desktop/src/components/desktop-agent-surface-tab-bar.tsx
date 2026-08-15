@@ -66,6 +66,8 @@ export type DesktopAgentSurfaceTabBarProps = {
   cwdAvailable?: boolean;
   /** Files + Diff only appear for codebase projects. */
   isCodebaseProject?: boolean;
+  /** Diff only appears once the agent has produced file changes. */
+  diffAvailable?: boolean;
   /** Controlled add-menu open state (⌥T is handled by the parent when tabs exist). */
   addMenuOpen: boolean;
   onAddMenuOpenChange: (open: boolean) => void;
@@ -80,6 +82,7 @@ export function DesktopAgentSurfaceTabBar({
   activeId,
   cwdAvailable = true,
   isCodebaseProject = false,
+  diffAvailable = false,
   addMenuOpen,
   onAddMenuOpenChange,
   onActivate,
@@ -91,13 +94,16 @@ export function DesktopAgentSurfaceTabBar({
   const showAddButton = tabs.length > 0;
   const menuItems = useMemo(() => {
     const hasChatTab = tabs.some((tab) => tab.kind === "chat");
-    return listAgentSurfaceQuickOpenOptions(isCodebaseProject)
+    return listAgentSurfaceQuickOpenOptions({
+      isCodebaseProject,
+      diffAvailable,
+    })
       .filter((option) => !(option.kind === "chat" && hasChatTab))
       .map((option) => ({
         ...option,
         Icon: KIND_ICONS[option.kind],
       }));
-  }, [isCodebaseProject, tabs]);
+  }, [diffAvailable, isCodebaseProject, tabs]);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const addWrapRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);

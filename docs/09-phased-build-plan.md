@@ -7,14 +7,14 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 **Workspace:** `~/code/backsteros/` (planning at root + code subfolders)
 
 - [x] Architecture docs
-- [x] User reviews and approves stack (Clerk, Neon, monorepo)
-- [x] Choose domain names (`backsteros.com`, `service.backsteros.com`)
+- [x] User reviews and approves stack (Clerk, local Docker Postgres, monorepo)
+- [x] Local-computer core host model (v2) — no cloud API required
 
 ---
 
 ## Phase 1 — API foundation (in progress)
 
-**Create code in:** `backsteros-api/`, `backsteros-packages/contracts/` (inside workspace)
+**Create code in:** `core/server/`, `core/packages/contracts/` (inside workspace)
 
 | Task | Output | Status |
 | --- | --- | --- |
@@ -22,12 +22,11 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 | Hono + contracts skeleton | `/health`, OpenAPI | Done |
 | Auth (session + API keys) | Clerk + `sk_live_` keys | Done (local) |
 | REST `/api/v1/tasks`, `/projects` | CRUD | Done (local) |
-| Neon project + connection string | Prod DB | **User** |
-| Deploy API to VM | Kamal on DO droplet | **User** |
+| Docker Postgres + PowerSync | Local DB / sync | Done |
 
 **Exit criteria:** Create task via REST; API key auth works. ✅ locally
 
-**User setup:** See `backsteros-api/README.md`
+**User setup:** See `core/server/README.md`
 
 **No mobile/desktop yet.** Prove API with curl + Bruno/Postman.
 
@@ -150,7 +149,15 @@ match the web app closely — not a Next sidecar and not Expo.
 
 ## Phase 9 — Future domains
 
-- Financial transactions (Tier C, append-only)
+### Finance v1 (desktop-first) — in progress
+
+| Task | Output |
+| --- | --- |
+| Bank accounts + categories (Tier A) | Postgres + PowerSync + REST |
+| CSV import (ING NL / AMEX NL) | `POST /bank-accounts/:id/imports` |
+| Transactions (Tier C) | Paginated list + classification PATCH/batch |
+| Desktop Finance UI | Account switcher dropdown, month→week list, search, bulk edit |
+
 - Workout logs (Tier B/C split)
 - Client portals (scoped API keys)
 - backsteros-agent integration via API

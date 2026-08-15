@@ -1,4 +1,13 @@
+/** Min window width for the iPad list|detail workbench. */
+export const CODEBASE_PAD_SPLIT_MIN_WIDTH = 700;
+
+/**
+ * Codebase project sections.
+ * Overview matches the default project type (iPhone requirement); iPad keeps
+ * list|detail for Tasks / Files / Commits / PRs under the same tab strip.
+ */
 export const CODEBASE_WORKBENCH_TABS = [
+  { id: "overview", label: "Overview" },
   { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
   { id: "commits", label: "Commits" },
@@ -8,4 +17,12 @@ export const CODEBASE_WORKBENCH_TABS = [
 export type CodebaseWorkbenchTabId =
   (typeof CODEBASE_WORKBENCH_TABS)[number]["id"];
 
-export const DEFAULT_CODEBASE_WORKBENCH_TAB: CodebaseWorkbenchTabId = "tasks";
+export const DEFAULT_CODEBASE_WORKBENCH_TAB: CodebaseWorkbenchTabId =
+  "overview";
+
+/** @deprecated Use CODEBASE_WORKBENCH_TABS — same tabs on phone and pad. */
+export const CODEBASE_PHONE_SECTIONS = CODEBASE_WORKBENCH_TABS;
+
+export type CodebasePhoneSectionId = CodebaseWorkbenchTabId;
+
+export const DEFAULT_CODEBASE_PHONE_SECTION = DEFAULT_CODEBASE_WORKBENCH_TAB;

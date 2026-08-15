@@ -5,9 +5,6 @@ import {
   isContentEditModeActive,
 } from "@backsteros/ui";
 
-import { toggleDesktopOverlayPalette } from "./desktop-overlay";
-import { isTauriRuntime } from "./whoop";
-
 export const COMMAND_PALETTE_GLOBAL_SHORTCUT = "CmdOrCtrl+Alt+K";
 
 export function isCommandPaletteGlobalShortcut(
@@ -24,8 +21,9 @@ export function isCommandPaletteGlobalShortcut(
 }
 
 /**
- * In-window ⌘⌥K fallback when the webview consumes the global shortcut,
- * plus browser-dev open of in-app palette when not in Tauri.
+ * ⌘⌥K opens the in-app command palette (main-window session).
+ * Packaged Tauri used a separate overlay webview that did not share Clerk
+ * cookies unless data stores matched — prefer the main-window palette.
  */
 export function useCommandPaletteGlobalShortcut({
   enabled = true,
@@ -54,12 +52,6 @@ export function useCommandPaletteGlobalShortcut({
 
       event.preventDefault();
       event.stopPropagation();
-
-      if (isTauriRuntime()) {
-        void toggleDesktopOverlayPalette();
-        return;
-      }
-
       onOpenPalette();
     }
 

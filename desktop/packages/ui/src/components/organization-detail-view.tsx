@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { rememberOrganizationSection } from "../entity-section-memory.js";
 import {
+  getOrganizationSectionHref,
   ORGANIZATION_SECTIONS,
+  resolveVisibleOrganizationSections,
+  type OrganizationSectionConfig,
   type OrganizationSectionId,
 } from "../organization-sections.js";
 import { OrganizationIcon } from "./organization-icon.js";
@@ -29,11 +32,18 @@ export type OrganizationDetailViewProps = {
   renderSection?: (sectionId: OrganizationSectionId) => ReactNode;
   /** Optional create-contact control shown on the Contacts section nav. */
   contactsNavAction?: ReactNode;
+  /**
+   * Visible pill tabs. Defaults to base sections only (no finance tabs).
+   * Pass {@link resolveVisibleOrganizationSections} when invoices/transactions exist.
+   */
+  sections?: readonly OrganizationSectionConfig[];
+  /** Route slug used for ⌥[/] section-tab shortcuts via data attribute. */
+  organizationSlug?: string;
 };
 
 /**
  * Organization detail shell — Overview / Projects / Letters / Contacts
- * matching Next.js OrganizationNav + section screens.
+ * (+ Transactions / Invoices when linked finance data exists).
  */
 export function OrganizationDetailView({
   organization,
@@ -45,6 +55,8 @@ export function OrganizationDetailView({
   initialSection = "overview",
   renderSection,
   contactsNavAction,
+  sections: sectionsProp,
+  organizationSlug,
 }: OrganizationDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<OrganizationSectionId>(initialSection);
@@ -56,17 +68,33 @@ export function OrganizationDetailView({
     }
   };
 
+  const sections = sectionsProp ?? resolveVisibleOrganizationSections();
+
   useEffect(() => {
     rememberOrganizationSection(section);
   }, [section]);
 
-  const sectionItems = ORGANIZATION_SECTIONS.map((entry) => ({
+  const sectionItems = sections.map((entry) => ({
     value: entry.id,
     label: entry.label,
   }));
 
+  const sectionTabHrefs = useMemo(() => {
+    if (!organizationSlug) return null;
+    return sections
+      .map((entry) => getOrganizationSectionHref(organizationSlug, entry.id))
+      .join("|");
+  }, [organizationSlug, sections]);
+
   return (
-    <div className="organization-detail" data-content-detail>
+    <div
+      className="organization-detail"
+      data-content-detail
+      data-organization-detail=""
+      {...(sectionTabHrefs
+        ? { "data-organization-section-hrefs": sectionTabHrefs }
+        : {})}
+    >
       <div className="organization-detail__nav">
         <div className="organization-detail__nav-row">
           <PillNav

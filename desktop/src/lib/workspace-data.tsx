@@ -18,9 +18,11 @@ import type {
   TaskLink,
 } from "@backsteros/contracts";
 import {
+  allocateUniqueProjectKey,
   buildInboxTaskListItem,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
+  toApiDueDateIso,
   type ContactListItem,
   type InboxListItem,
   type JournalListItem,
@@ -37,14 +39,17 @@ import {
   fillMissingAgentChatIdFromApi,
   fillMissingCodebaseFieldsFromApi,
   fillMissingLinksFromApi,
+  fillMissingMoneybirdContactIdFromApi,
   fillMissingParentFromApi,
   fillMissingTypeFromApi,
   mergeLocalAndApiByUpdatedAt,
+  preservePendingApiRows,
 } from "./merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "./powersync-context";
 import { getDesktopPublicEnvironment } from "./env";
 import { rememberProjectTypes } from "./project-type-cache";
 import { noteLocalTaskStatusPatch } from "./agent/agent-status-notifications";
+import { nudgeDynamicIslandTasksRefresh } from "./dynamic-island-nudge";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -82,6 +87,34 @@ function parseTaskLinks(value: unknown): TaskLink[] {
       typeof (item as { url?: unknown }).url === "string" &&
       typeof (item as { createdAt?: unknown }).createdAt === "string",
   );
+}
+
+const TERMINAL_TASK_STATUSES = new Set([
+  "completed",
+  "canceled",
+  "duplicated",
+]);
+
+function cloneTaskLinksForDuplicate(links: TaskLink[]): TaskLink[] {
+  const createdAt = new Date().toISOString();
+  return links.map((link) => ({
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    url: link.url,
+    createdAt,
+  }));
+}
+
+function resolveDuplicateTaskStatus(source: ApiTask): string {
+  if (!TERMINAL_TASK_STATUSES.has(source.status)) {
+    return source.status;
+  }
+  if (source.inbox || (!source.projectId && !source.contactId)) {
+    return "triage";
+  }
+  return "ready_to_start";
 }
 
 function mapTask(
@@ -198,6 +231,7 @@ function mapOrganization(org: ApiOrganization): OrganizationListItem {
     key: org.key ?? undefined,
     avatarStorageKey: org.avatarStorageKey ?? null,
     avatarUpdatedAt: asEpoch(org.updatedAt),
+    moneybirdContactId: org.moneybirdContactId ?? null,
   };
 }
 
@@ -241,7 +275,10 @@ export type DesktopWorkspaceData = {
   contactDetails: Record<string, ApiContact>;
   organizationDetails: Record<string, ApiOrganization>;
   letterRecords: Record<string, ApiLetter>;
-  patchTask: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchTask: (
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<{ number?: number } | void>;
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchContact: (id: string, values: Record<string, unknown>) => Promise<void>;
@@ -281,6 +318,7 @@ export type DesktopWorkspaceData = {
     priority?: number;
     assigneeId?: string | null;
     dueDate?: string | null;
+    links?: TaskLink[];
   }) => Promise<{ id: string; number: number | null }>;
   createProjectTask: (input: {
     projectId: string;
@@ -290,7 +328,20 @@ export type DesktopWorkspaceData = {
     priority?: number;
     assigneeId?: string | null;
     dueDate?: string | null;
+    links?: TaskLink[];
   }) => Promise<{ id: string; number: number | null }>;
+  /** Create a copy of an existing task (new id/number; no agent chat). */
+  duplicateTask: (
+    sourceId: string,
+  ) => Promise<{ id: string; number: number | null }>;
+  /**
+   * Create a copy of an existing project (new id/key). Optionally copies
+   * tasks; never copies agent chats, github repo, or local working directory.
+   */
+  duplicateProject: (
+    sourceId: string,
+    options?: { includeTasks?: boolean },
+  ) => Promise<{ id: string; key: string }>;
   createLetter: (input: {
     title: string;
     body?: string;
@@ -370,7 +421,13 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     authenticated
       ? `SELECT * FROM tasks WHERE deleted_at IS NULL AND (
            inbox = 1
-           OR status IN ('on_hold', 'in_review')
+           OR (
+             status IN ('on_hold', 'in_review')
+             AND (
+               due_date IS NULL
+               OR date(due_date) <= date('now', 'localtime')
+             )
+           )
            OR (
              due_date IS NOT NULL
              AND date(due_date) < date('now', 'localtime')
@@ -436,39 +493,13 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
 
   const syncEpoch = powerSync.lastSyncedAt?.getTime() ?? 0;
 
-  // Areas / organizations are created via REST (not PowerSync writeback). Always
-  // hydrate from API so creates survive navigation even when PowerSync is the
-  // primary source for other entities — local SQLite may lag or omit rows.
+  // Always hydrate lists from REST when signed in. PowerSync remains the
+  // primary merge source once local rows exist, but packaged desktop builds
+  // can be "ready" with an empty SQLite if the sync stream never connects
+  // (e.g. Tailscale PowerSync endpoint from WKWebView) — without this, Projects
+  // / Tasks / Inbox stay empty even though core has data.
   useEffect(() => {
     if (!authenticated) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [areasBody, orgsBody, contactsBody] = await Promise.all([
-          client.requestJson<{ areas: ApiArea[] }>("/api/v1/areas"),
-          client.requestJson<{ organizations: ApiOrganization[] }>(
-            "/api/v1/organizations",
-          ),
-          client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
-        ]);
-        if (cancelled) return;
-        setApiAreas(areasBody.areas);
-        setApiOrganizations(orgsBody.organizations);
-        setApiContacts(contactsBody.contacts);
-      } catch {
-        // PowerSync / empty list remains usable.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated, client]);
-
-  // Soft-revalidate documents + tasks + projects from API when sync checkpoints
-  // advance so mergeLocalAndApiByUpdatedAt can surface remote creates / newer
-  // columns (e.g. task.links, project.type) if local SQLite is stale.
-  useEffect(() => {
-    if (!authenticated || !powerSync.ready || !syncEpoch) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -480,6 +511,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
           areasBody,
           orgsBody,
           contactsBody,
+          lettersBody,
         ] = await Promise.all([
           client.requestJson<{ documents: ApiDocument[] }>(
             "/api/v1/documents",
@@ -492,6 +524,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
             "/api/v1/organizations",
           ),
           client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
+          client.requestJson<{ letters: ApiLetter[] }>("/api/v1/letters"),
         ]);
         if (cancelled) return;
         setApiDocuments(documentsBody.documents);
@@ -501,14 +534,26 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         setApiAreas(areasBody.areas);
         setApiOrganizations(orgsBody.organizations);
         setApiContacts(contactsBody.contacts);
+        setApiLetters((current) =>
+          preservePendingApiRows(current, lettersBody.letters),
+        );
       } catch {
-        // PowerSync remains the primary source.
+        // Soft-fail: keep whatever we already have. Mark hydrate attempted so
+        // `ready` can leave the skeleton when PowerSync is still connecting.
+        setApiProjects((current) => current ?? []);
+        setApiTasks((current) => current ?? []);
+        setApiInboxTasks((current) => current ?? []);
+        setApiAreas((current) => current ?? []);
+        setApiOrganizations((current) => current ?? []);
+        setApiContacts((current) => current ?? []);
+        setApiDocuments((current) => current ?? []);
+        setApiLetters((current) => current ?? []);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [authenticated, client, powerSync.ready, syncEpoch]);
+  }, [authenticated, client, syncEpoch]);
 
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
@@ -528,13 +573,16 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
 
   const organizationsById = useMemo(() => {
     const map = new Map<string, ApiOrganization>();
-    const rows = mergeLocalAndApiByUpdatedAt(
-      localOrganizations.data?.map(
-        (row) => snakeRow(row) as ApiOrganization,
+    const rows = fillMissingMoneybirdContactIdFromApi(
+      mergeLocalAndApiByUpdatedAt(
+        localOrganizations.data?.map(
+          (row) => snakeRow(row) as ApiOrganization,
+        ),
+        apiOrganizations,
       ),
       apiOrganizations,
     );
-    for (const org of rows) map.set(org.id, org);
+    for (const organization of rows) map.set(organization.id, organization);
     return map;
   }, [apiOrganizations, localOrganizations.data]);
 
@@ -568,17 +616,22 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     ),
     apiInboxTasks,
   );
-  const rawLetters =
-    localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ??
-    apiLetters ??
-    [];
+  // Merge like contacts/projects — an empty PowerSync snapshot must not hide
+  // REST letters (create then navigate used to vanish from the side list).
+  const rawLetters = mergeLocalAndApiByUpdatedAt(
+    localLetters.data?.map((row) => snakeRow(row) as ApiLetter),
+    apiLetters,
+  );
   const rawContacts = mergeLocalAndApiByUpdatedAt(
     localContacts.data?.map((row) => snakeRow(row) as ApiContact),
     apiContacts,
   );
-  const rawOrganizations = mergeLocalAndApiByUpdatedAt(
-    localOrganizations.data?.map(
-      (row) => snakeRow(row) as ApiOrganization,
+  const rawOrganizations = fillMissingMoneybirdContactIdFromApi(
+    mergeLocalAndApiByUpdatedAt(
+      localOrganizations.data?.map(
+        (row) => snakeRow(row) as ApiOrganization,
+      ),
+      apiOrganizations,
     ),
     apiOrganizations,
   );
@@ -829,8 +882,39 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   }, [authenticated, client]);
 
   const patchViaPowerSyncOrApi = useCallback(
-    async (table: string, id: string, values: Record<string, unknown>) => {
+    async (
+      table: string,
+      id: string,
+      values: Record<string, unknown>,
+    ): Promise<{ number?: number } | void> => {
       const path = entityPatchPath(table, id);
+
+      const applyTaskServerRow = async (row: ApiTask | null | undefined) => {
+        if (!row || table !== "tasks") return;
+        const serverValues: Record<string, unknown> = {
+          ...values,
+          ...(typeof row.number === "number" ? { number: row.number } : {}),
+          ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
+        };
+        applyApiTaskPatch(id, serverValues);
+        // Scope moves renumber server-side; keep local SQLite in sync so the
+        // display id / route slug match before PowerSync pull catches up.
+        if (
+          powerSync.ready &&
+          powerSync.patchMetadata &&
+          typeof row.number === "number" &&
+          row.number !== values.number
+        ) {
+          try {
+            await powerSync.patchMetadata("tasks", id, {
+              number: row.number,
+            });
+          } catch (error) {
+            console.warn("[desktop] local task number sync failed", error);
+          }
+        }
+      };
+
       // Match Next.js: optimistic local SQLite + REST so other clients see
       // changes even when the PowerSync upload queue is slow or stalled.
       if (powerSync.ready && powerSync.patchMetadata) {
@@ -864,21 +948,34 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         if (table === "tasks") {
           // Optimistic so agentChatId / status show in lists before REST returns.
           applyApiTaskPatch(id, values);
+          if (typeof values.status === "string") {
+            nudgeDynamicIslandTasksRefresh();
+          }
         }
         if (!authenticated) return;
         try {
-          await client.requestJson(path, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(values),
-          });
+          const updated =
+            table === "tasks"
+              ? await client.requestJson<ApiTask>(path, {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(values),
+                })
+              : await client.requestJson(path, {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(values),
+                });
           if (table === "tasks") {
-            applyApiTaskPatch(id, values);
+            await applyTaskServerRow(updated as ApiTask);
             // Re-fetch when links / agent chat binding change so merge can fill
             // local SQLite gaps (stale schema often omits new columns).
             if ("links" in values || "agentChatId" in values) {
               void softRefreshApiTasks();
             }
+            return typeof (updated as ApiTask)?.number === "number"
+              ? { number: (updated as ApiTask).number }
+              : undefined;
           }
           if (table === "projects") {
             applyApiProjectPatch(id, values);
@@ -893,6 +990,9 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
               void softRefreshApiProjects();
             }
           }
+          if (table === "organizations") {
+            applyApiOrganizationPatch(id, values);
+          }
         } catch (error) {
           // Local write + upload queue remain the source of truth if REST fails —
           // except agent chat binding, which must land in Postgres.
@@ -901,21 +1001,34 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
               ? error
               : new Error("Could not persist agent chat on the task.");
           }
+          if ("moneybirdContactId" in values) {
+            throw error instanceof Error
+              ? error
+              : new Error("Could not link Moneybird contact on the organization.");
+          }
         }
         return;
       }
       if (!authenticated) return;
+      if (table === "tasks") {
+        const updated = await client.requestJson<ApiTask>(path, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(values),
+        });
+        await applyTaskServerRow(updated);
+        if ("links" in values || "agentChatId" in values) {
+          void softRefreshApiTasks();
+        }
+        return typeof updated?.number === "number"
+          ? { number: updated.number }
+          : undefined;
+      }
       await client.requestJson(path, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(values),
       });
-      if (table === "tasks") {
-        applyApiTaskPatch(id, values);
-        if ("links" in values || "agentChatId" in values) {
-          void softRefreshApiTasks();
-        }
-      }
       if (table === "projects") {
         applyApiProjectPatch(id, values);
         if (
@@ -1091,6 +1204,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     }) => {
       const name = input.name.trim();
       if (!name) throw new Error("Project name is required.");
+      if (!authenticated) throw new Error("Sign in to create projects.");
       const base = name
         .trim()
         .toUpperCase()
@@ -1106,32 +1220,40 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         organizationId: input.organizationId ?? null,
         ...(input.type ? { type: input.type } : {}),
       };
+      // API-first (same as tasks / orgs): PowerSync-only creates skip vault
+      // setup and can vanish or 404 until upload succeeds.
+      const project = await client.requestJson<ApiProject>("/api/v1/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setApiProjects((rows) => {
+        if (!rows) return [project];
+        if (rows.some((entry) => entry.id === project.id)) return rows;
+        return [project, ...rows];
+      });
       if (powerSync.ready && powerSync.createMetadata) {
-        const id = await powerSync.createMetadata(
-          "projects",
-          toSnakeFields(body),
-        );
-        // Vault folders are created on first open / agent start once the row
-        // has synced to the core API (PowerSync create skips POST /projects).
-        return { id, key };
+        try {
+          await powerSync.createMetadata(
+            "projects",
+            toSnakeFields({
+              key: project.key,
+              name: project.name,
+              status: project.status,
+              area: input.area ?? null,
+              sortOrder: body.sortOrder,
+              organizationId: project.organizationId ?? null,
+              ...(project.type ? { type: project.type } : {}),
+            }),
+            project.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
       }
-      if (!authenticated) throw new Error("Sign in to create projects.");
-      const project = await client.requestJson<{ id: string; key: string }>(
-        "/api/v1/projects",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
       return { id: project.id, key: project.key };
     },
-    [
-      authenticated,
-      client,
-      powerSync,
-      toSnakeFields,
-    ],
+    [authenticated, client, powerSync, toSnakeFields],
   );
 
   const createArea = useCallback(
@@ -1187,36 +1309,73 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       priority?: number;
       assigneeId?: string | null;
       dueDate?: string | null;
+      links?: TaskLink[];
     }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Task title is required.");
+      if (!authenticated) throw new Error("Sign in to create inbox tasks.");
       const body = {
         title,
-        description: input.description?.trim() || null,
+        ...(input.description?.trim()
+          ? { description: input.description.trim() }
+          : {}),
         status: input.status ?? "triage",
         priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
-        dueDate: input.dueDate ?? null,
+        dueDate: toApiDueDateIso(input.dueDate),
         inbox: true,
         projectId: null,
+        ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      if (powerSync.ready && powerSync.createMetadata) {
-        const id = await powerSync.createMetadata(
-          "tasks",
-          toSnakeFields(body),
-        );
-        return { id, number: null };
-      }
-      if (!authenticated) throw new Error("Sign in to create inbox tasks.");
-      const task = await client.requestJson<{ id: string; number?: number }>(
-        "/api/v1/tasks",
-        {
+      // API-first so the task has a durable id + number before navigation
+      // (PowerSync-only creates raced the query and showed "Task not found").
+      let task: ApiTask;
+      try {
+        task = await client.requestJson<ApiTask>("/api/v1/tasks", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
-        },
-      );
+        });
+      } catch (error) {
+        // Stale default assignee — retry unassigned once.
+        if (
+          body.assigneeId &&
+          error instanceof Error &&
+          (error.message.toLowerCase().includes("assignee") ||
+            ("code" in error &&
+              (error as { code?: string }).code === "assignee_not_found"))
+        ) {
+          task = await client.requestJson<ApiTask>("/api/v1/tasks", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...body, assigneeId: null }),
+          });
+        } else {
+          throw error;
+        }
+      }
+      setApiTasks((rows) => {
+        if (!rows) return [task];
+        if (rows.some((entry) => entry.id === task.id)) return rows;
+        return [task, ...rows];
+      });
+      setApiInboxTasks((rows) => {
+        if (!rows) return [task];
+        if (rows.some((entry) => entry.id === task.id)) return rows;
+        return [task, ...rows];
+      });
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "tasks",
+            toSnakeFields({ ...body, number: task.number }),
+            task.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
       return { id: task.id, number: task.number ?? null };
     },
     [authenticated, client, powerSync, toSnakeFields],
@@ -1231,40 +1390,317 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       priority?: number;
       assigneeId?: string | null;
       dueDate?: string | null;
+      links?: TaskLink[];
     }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Task title is required.");
       if (!input.projectId.trim()) throw new Error("Project is required.");
+      if (!authenticated) throw new Error("Sign in to create tasks.");
       const body = {
         projectId: input.projectId,
         title,
-        description: input.description?.trim() || null,
+        ...(input.description?.trim()
+          ? { description: input.description.trim() }
+          : {}),
         status: input.status ?? "ready_to_start",
         priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
-        dueDate: input.dueDate ?? null,
+        dueDate: toApiDueDateIso(input.dueDate),
         inbox: false,
+        ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      if (powerSync.ready && powerSync.createMetadata) {
-        const id = await powerSync.createMetadata(
-          "tasks",
-          toSnakeFields(body),
-        );
-        return { id, number: null };
-      }
-      if (!authenticated) throw new Error("Sign in to create tasks.");
-      const task = await client.requestJson<{ id: string; number?: number }>(
-        "/api/v1/tasks",
-        {
+      // API-first — same rationale as createInboxTask / createLetter.
+      let task: ApiTask;
+      try {
+        task = await client.requestJson<ApiTask>("/api/v1/tasks", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
-        },
-      );
+        });
+      } catch (error) {
+        if (
+          body.assigneeId &&
+          error instanceof Error &&
+          (error.message.toLowerCase().includes("assignee") ||
+            ("code" in error &&
+              (error as { code?: string }).code === "assignee_not_found"))
+        ) {
+          task = await client.requestJson<ApiTask>("/api/v1/tasks", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...body, assigneeId: null }),
+          });
+        } else {
+          throw error;
+        }
+      }
+      setApiTasks((rows) => {
+        if (!rows) return [task];
+        if (rows.some((entry) => entry.id === task.id)) return rows;
+        return [task, ...rows];
+      });
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "tasks",
+            toSnakeFields({ ...body, number: task.number }),
+            task.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
       return { id: task.id, number: task.number ?? null };
     },
     [authenticated, client, powerSync, toSnakeFields],
+  );
+
+  const createTaskFromBody = useCallback(
+    async (body: Record<string, unknown>) => {
+      let task: ApiTask;
+      try {
+        task = await client.requestJson<ApiTask>("/api/v1/tasks", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch (error) {
+        if (
+          body.assigneeId &&
+          error instanceof Error &&
+          (error.message.toLowerCase().includes("assignee") ||
+            ("code" in error &&
+              (error as { code?: string }).code === "assignee_not_found"))
+        ) {
+          task = await client.requestJson<ApiTask>("/api/v1/tasks", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...body, assigneeId: null }),
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      setApiTasks((rows) => {
+        if (!rows) return [task];
+        if (rows.some((entry) => entry.id === task.id)) return rows;
+        return [task, ...rows];
+      });
+      if (task.inbox) {
+        setApiInboxTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+      }
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "tasks",
+            toSnakeFields({ ...body, number: task.number }),
+            task.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
+      return task;
+    },
+    [client, powerSync, toSnakeFields],
+  );
+
+  const duplicateTask = useCallback(
+    async (sourceId: string) => {
+      if (!authenticated) throw new Error("Sign in to duplicate tasks.");
+      const source =
+        rawTasks.find((entry) => entry.id === sourceId) ??
+        rawInboxTasks.find((entry) => entry.id === sourceId) ??
+        null;
+      if (!source) {
+        throw new Error("Task not found.");
+      }
+
+      const title = source.title.trim();
+      if (!title) throw new Error("Task title is required.");
+
+      const links = cloneTaskLinksForDuplicate(parseTaskLinks(source.links));
+      const body = {
+        title,
+        ...(source.description?.trim()
+          ? { description: source.description.trim() }
+          : {}),
+        status: resolveDuplicateTaskStatus(source),
+        priority: source.priority ?? 0,
+        sortOrder: Date.now(),
+        assigneeId: resolveCreateAssigneeId(source.assigneeId),
+        dueDate: toApiDueDateIso(source.dueDate),
+        projectId: source.projectId ?? null,
+        contactId: source.contactId ?? null,
+        inbox: Boolean(source.inbox),
+        ...(links.length > 0 ? { links } : {}),
+      };
+
+      const task = await createTaskFromBody(body);
+      return { id: task.id, number: task.number ?? null };
+    },
+    [
+      authenticated,
+      createTaskFromBody,
+      rawInboxTasks,
+      rawTasks,
+    ],
+  );
+
+  const duplicateProject = useCallback(
+    async (sourceId: string, options?: { includeTasks?: boolean }) => {
+      if (!authenticated) throw new Error("Sign in to duplicate projects.");
+      const source =
+        rawProjects.find((entry) => entry.id === sourceId) ?? null;
+      if (!source) {
+        throw new Error("Project not found.");
+      }
+
+      const name = source.name.trim();
+      if (!name) throw new Error("Project name is required.");
+
+      const existingKeys = rawProjects.map((project) => project.key);
+      const keyCandidates = [
+        allocateUniqueProjectKey(source.key, existingKeys),
+        ...Array.from({ length: 12 }, (_, index) =>
+          allocateUniqueProjectKey(
+            `${source.key}${index + 2}`,
+            existingKeys,
+          ),
+        ),
+      ];
+      const uniqueCandidates = [...new Set(keyCandidates)];
+
+      const bodyBase = {
+        name: `${name} copy`,
+        ...(source.summary?.trim() ? { summary: source.summary.trim() } : {}),
+        ...(source.description?.trim()
+          ? { description: source.description.trim() }
+          : {}),
+        organizationId: source.organizationId ?? null,
+        areaId: source.areaId ?? null,
+        area: source.area ?? null,
+        startDate: source.startDate ?? null,
+        dueDate: source.dueDate ?? null,
+        icon: source.icon ?? null,
+        color: source.color ?? null,
+        type: source.type ?? "general",
+        status: source.status ?? "backlog",
+        priority: source.priority ?? 0,
+        sortOrder: -Date.now(),
+      };
+
+      let project: ApiProject | null = null;
+      let lastError: unknown = null;
+      for (const key of uniqueCandidates) {
+        try {
+          project = await client.requestJson<ApiProject>("/api/v1/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...bodyBase, key }),
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+          const isKeyConflict =
+            error instanceof Error &&
+            (error.message.toLowerCase().includes("project key") ||
+              ("code" in error &&
+                (error as { code?: string }).code === "project_key_exists"));
+          if (!isKeyConflict) {
+            throw error;
+          }
+          existingKeys.push(key);
+        }
+      }
+      if (!project) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("Failed to duplicate project.");
+      }
+      const createdProject = project;
+
+      setApiProjects((rows) => {
+        if (!rows) return [createdProject];
+        if (rows.some((entry) => entry.id === createdProject.id)) return rows;
+        return [createdProject, ...rows];
+      });
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "projects",
+            toSnakeFields({
+              key: createdProject.key,
+              name: createdProject.name,
+              status: createdProject.status,
+              area: createdProject.area ?? null,
+              sortOrder: bodyBase.sortOrder,
+              organizationId: createdProject.organizationId ?? null,
+              ...(createdProject.type ? { type: createdProject.type } : {}),
+            }),
+            createdProject.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
+
+      if (options?.includeTasks) {
+        const sourceTasks = [...rawTasks, ...rawInboxTasks]
+          .filter((task) => task.projectId === source.id && !task.deletedAt)
+          .sort((a, b) => {
+            const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+            if (order !== 0) return order;
+            return (a.number ?? 0) - (b.number ?? 0);
+          });
+
+        // Deduplicate by id (task may appear in both lists).
+        const seen = new Set<string>();
+        let sortBase = Date.now();
+        for (const sourceTask of sourceTasks) {
+          if (seen.has(sourceTask.id)) continue;
+          seen.add(sourceTask.id);
+          const title = sourceTask.title.trim();
+          if (!title) continue;
+          const links = cloneTaskLinksForDuplicate(
+            parseTaskLinks(sourceTask.links),
+          );
+          await createTaskFromBody({
+            projectId: createdProject.id,
+            title,
+            ...(sourceTask.description?.trim()
+              ? { description: sourceTask.description.trim() }
+              : {}),
+            status: resolveDuplicateTaskStatus(sourceTask),
+            priority: sourceTask.priority ?? 0,
+            sortOrder: sortBase++,
+            assigneeId: resolveCreateAssigneeId(sourceTask.assigneeId),
+            dueDate: toApiDueDateIso(sourceTask.dueDate),
+            contactId: sourceTask.contactId ?? null,
+            inbox: false,
+            ...(links.length > 0 ? { links } : {}),
+          });
+        }
+      }
+
+      return { id: createdProject.id, key: createdProject.key };
+    },
+    [
+      authenticated,
+      client,
+      createTaskFromBody,
+      powerSync,
+      rawInboxTasks,
+      rawProjects,
+      rawTasks,
+      toSnakeFields,
+    ],
   );
 
   const createLetter = useCallback(
@@ -1287,25 +1723,35 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         contactId: input.contactId ?? null,
         status: input.status ?? "triage",
         dueDate: input.dueDate ?? null,
-        receivedDate: input.receivedDate ?? null,
+        // Default Received Date to today so PDF filing has a date immediately;
+        // callers can still override or clear it later.
+        receivedDate: input.receivedDate ?? new Date().toISOString(),
         context: input.body?.trim() || null,
         sortOrder: -Date.now(),
       };
       if (!authenticated) throw new Error("Sign in to create letters.");
       // API-first (Next parity): PDF upload needs a server id immediately.
-      const letter = await client.requestJson<{
-        id: string;
-        number: number | null;
-      }>("/api/v1/letters", {
+      const letter = await client.requestJson<ApiLetter>("/api/v1/letters", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
+      });
+      // Optimistic list seed — same pattern as createInboxTask — so the side
+      // panel shows the letter before PowerSync download catches up.
+      setApiLetters((rows) => {
+        if (!rows) return [letter];
+        if (rows.some((entry) => entry.id === letter.id)) {
+          return rows.map((entry) =>
+            entry.id === letter.id ? letter : entry,
+          );
+        }
+        return [letter, ...rows];
       });
       if (powerSync.ready && powerSync.createMetadata) {
         try {
           await powerSync.createMetadata(
             "letters",
-            toSnakeFields({ ...body, number: letter.number }),
+            toSnakeFields(letter as unknown as Record<string, unknown>),
             letter.id,
           );
         } catch {
@@ -1615,8 +2061,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   );
 
   // PowerSync `ready` only means the DB handle is up. Until the first watch
-  // emission, merged lists are empty — treat that as not ready so detail
-  // pages show skeletons instead of "not found".
+  // emission, merged lists can still be empty — prefer skeletons over "not found".
   const queriesHydrating =
     authenticated &&
     powerSync.ready &&
@@ -1629,9 +2074,26 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       localAreas.loading ||
       localDocuments.loading);
 
+  // Packaged WKWebView data-store resets (and slow/failed PowerSync connects)
+  // must not leave Projects/Tasks on an endless skeleton when REST already
+  // returned rows.
+  const apiHydrated =
+    apiProjects !== null ||
+    apiTasks !== null ||
+    apiInboxTasks !== null ||
+    apiOrganizations !== null ||
+    apiAreas !== null ||
+    apiContacts !== null ||
+    apiDocuments !== null ||
+    apiLetters !== null;
+
   return {
     source,
-    ready: !authenticated || (powerSync.ready && !queriesHydrating),
+    ready:
+      !authenticated ||
+      apiHydrated ||
+      (powerSync.ready && !queriesHydrating) ||
+      powerSync.status === "error",
     tasks: mappedTasks,
     inboxTasks: mappedInboxTasks,
     allTasks,
@@ -1692,19 +2154,27 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     letterRecords: Object.fromEntries(
       rawLetters.map((letter) => [letter.id, letter]),
     ),
-    patchTask: (id, values) => {
+    patchTask: async (id, values) => {
       if (typeof values.status === "string") {
         noteLocalTaskStatusPatch(id);
       }
-      return patchViaPowerSyncOrApi("tasks", id, values);
+      const result = await patchViaPowerSyncOrApi("tasks", id, values);
+      nudgeDynamicIslandTasksRefresh();
+      window.setTimeout(() => nudgeDynamicIslandTasksRefresh(), 600);
+      return result;
     },
-    patchProject: (id, values) =>
-      patchViaPowerSyncOrApi("projects", id, values),
-    patchLetter: (id, values) => patchViaPowerSyncOrApi("letters", id, values),
-    patchContact: (id, values) =>
-      patchViaPowerSyncOrApi("contacts", id, values),
-    patchOrganization: (id, values) =>
-      patchViaPowerSyncOrApi("organizations", id, values),
+    patchProject: async (id, values) => {
+      await patchViaPowerSyncOrApi("projects", id, values);
+    },
+    patchLetter: async (id, values) => {
+      await patchViaPowerSyncOrApi("letters", id, values);
+    },
+    patchContact: async (id, values) => {
+      await patchViaPowerSyncOrApi("contacts", id, values);
+    },
+    patchOrganization: async (id, values) => {
+      await patchViaPowerSyncOrApi("organizations", id, values);
+    },
     softDeleteTask: (id) => softDeleteViaPowerSyncOrApi("tasks", id),
     softDeleteProject: (id) => softDeleteViaPowerSyncOrApi("projects", id),
     softDeleteLetter: (id) => softDeleteViaPowerSyncOrApi("letters", id),
@@ -1719,6 +2189,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     softDeleteArea,
     createInboxTask,
     createProjectTask,
+    duplicateTask,
+    duplicateProject,
     createLetter,
     createKnowledgeDocument,
     createProjectDocument,

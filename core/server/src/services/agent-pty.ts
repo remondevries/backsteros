@@ -19,7 +19,7 @@ export function getAgentPtyConnection(): AgentPtyConnection {
 
   if (!publicUrl || !token) {
     throw new AgentPtyUnavailableError(
-      "Agent terminal unavailable — configure AGENT_PTY_PUBLIC_URL and AGENT_PTY_AUTH_TOKEN on core, and run `pnpm pty` with matching PTY_AUTH_TOKEN.",
+      "Agent terminal unavailable — configure AGENT_PTY_PUBLIC_URL and AGENT_PTY_AUTH_TOKEN on core, and run `pnpm --filter @backsteros/desktop pty` with matching PTY_AUTH_TOKEN.",
     );
   }
 

@@ -199,6 +199,20 @@ export function cursorAgentCtrlDExit(): string {
   return "\x04\x04";
 }
 
+/** Optimistic Start-agent user bubble before ensure returns a real chatId. */
+export type PendingBootstrapPrompt = {
+  taskId: string;
+  prompt: string;
+  messageId: string;
+  createdAt: number;
+  images?: {
+    id: string;
+    name: string;
+    mimeType: string;
+    dataBase64?: string;
+  }[];
+};
+
 export type AgentAttachRequest = {
   taskId: string;
   chatId: string;

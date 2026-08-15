@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Link as RouterLink,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 
 import {
   DocumentsEmptyCreateView,
@@ -12,6 +17,7 @@ import {
   PROJECTS_LIST_BOARD_STORAGE_KEY,
   PROJECT_SECTIONS,
   ProjectDetailView,
+  ProjectDocumentsSidePanelView,
   ProjectDocumentsView,
   ProjectLettersView,
   ProjectOverviewSkeleton,
@@ -19,13 +25,18 @@ import {
   ProjectTasksView,
   ProjectsOverviewView,
   RegisterEntityDeleteAction,
+  RegisterEntityDuplicateAction,
   RegisterPageTitle,
+  primeTabTitle,
+  LIST_BOARD_VIEW_SEARCH_PARAM,
   TASKS_LIST_BOARD_STORAGE_KEY,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
+  buildDocumentTree,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildProjectKeyRenameRedirectPath,
+  findDocumentTreeNodeById,
   formatLetterDisplayId,
   getFirstLetterInListOrder,
   getOrganizationProjectHref,
@@ -55,6 +66,7 @@ import {
   type ProjectSectionId,
   type ProjectStatus,
   type TaskStatus,
+  type TreeReorderRequest,
   projectReorderPatches,
   taskReorderPatches,
 } from "@backsteros/ui";
@@ -172,6 +184,12 @@ export function ProjectsPage({
   const [composePdfUploading, setComposePdfUploading] = useState(false);
   const [letterStatusOverride, setLetterStatusOverride] =
     useState<TaskStatus | null>(null);
+  /** Title/number from the latest create — `onCreatedTask` may close over a stale tasks list. */
+  const pendingCreatedTaskRef = useRef<{
+    title: string;
+    number: number | null;
+  } | null>(null);
+  const pendingCreatedProjectNameRef = useRef<string | null>(null);
 
   const { allTasks: tasks, letters, organizations, contacts } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
@@ -531,6 +549,34 @@ export function ProjectsPage({
     }
   }, [navigate, projectBackHref, selected, workspace]);
 
+  const handleDuplicateProject = useCallback(
+    async (options?: { includeTasks?: boolean }) => {
+      if (!selected) {
+        return { ok: false as const, error: "Project is required." };
+      }
+      try {
+        const created = await workspace.duplicateProject(selected.id, {
+          includeTasks: Boolean(options?.includeTasks),
+        });
+        const href = organizationRouteParam
+          ? getOrganizationProjectHref(organizationRouteParam, created.key)
+          : getScopedProjectBasePath(created.key, routeScope);
+        primeTabTitle(href, `${selected.name} copy`);
+        navigate(href);
+        return { ok: true as const };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to duplicate project.",
+        };
+      }
+    },
+    [navigate, organizationRouteParam, routeScope, selected, workspace],
+  );
+
   const handleDeleteLetter = useCallback(async () => {
     if (!selectedLetter || !selected) {
       return { ok: false as const, error: "Letter is required." };
@@ -674,11 +720,15 @@ export function ProjectsPage({
           const match = projects.find(
             (entry) => entry.key.toLowerCase() === key.toLowerCase(),
           );
+          const href = `/projects/${key}`;
+          if (match?.name) {
+            primeTabTitle(href, match.name);
+          }
           const state: ProjectLocationState = {
             from: "projects",
             ...(match?.type ? { projectType: match.type } : {}),
           };
-          navigate(`/projects/${key}`, { state });
+          navigate(href, { state });
         }}
         onStatusChange={(projectId, status) => {
           void workspace.patchProject(projectId, { status });
@@ -702,22 +752,36 @@ export function ProjectsPage({
                 organizationMatchesSlug(org, organizationRouteParam),
               )?.id ?? null)
             : null;
+          pendingCreatedProjectNameRef.current = name;
           return workspace.createProject({
             name,
             status,
             organizationId,
           });
         }}
-        onCreatedProject={(_id, key) => {
+        onCreatedProject={(id, key) => {
           if (!key) return;
+          const pendingName = pendingCreatedProjectNameRef.current;
+          pendingCreatedProjectNameRef.current = null;
+          const createdName =
+            pendingName ??
+            projects.find((entry) => entry.id === id)?.name ??
+            projects.find(
+              (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+            )?.name;
           if (organizationRouteParam) {
-            navigate(
-              getOrganizationProjectHref(organizationRouteParam, key),
+            const href = getOrganizationProjectHref(
+              organizationRouteParam,
+              key,
             );
+            if (createdName) primeTabTitle(href, createdName);
+            navigate(href);
             return;
           }
+          const href = `/projects/${key}`;
+          if (createdName) primeTabTitle(href, createdName);
           const state: ProjectLocationState = { from: "projects" };
-          navigate(`/projects/${key}`, { state });
+          navigate(href, { state });
         }}
         onReorder={(request) => {
           const patches = projectReorderPatches(projects, request);
@@ -758,9 +822,14 @@ export function ProjectsPage({
     project.type === "codebase"
       ? "codebase"
       : (project.type ?? navType ?? cachedType ?? "general");
+  // Tasks (list or board) and Docs stay in the codebase workbench so the left
+  // Tasks/Files/Docs/Commits/PRs sidebar remains; only letters/updates use the
+  // default project section chrome.
   const isCodebaseWorkbench =
     effectiveType === "codebase" &&
     (activeSection === "overview" ||
+      activeSection === "tasks" ||
+      activeSection === "documents" ||
       isCodebaseWorkbenchPath(location.pathname, projectKey));
 
   const patchSelected = (
@@ -821,8 +890,18 @@ export function ProjectsPage({
 
   function navigateProjectTasksView(nextView: ListBoardView) {
     persistListBoardView(nextView, TASKS_LIST_BOARD_STORAGE_KEY);
-    const base = getScopedProjectSectionHref(projectKey, "tasks", routeScope);
-    navigate(nextView === "board" ? `${base}?view=board` : base);
+    // Codebase projects keep list/board on the workbench base path so the
+    // left sidebar stays mounted (same as list view). Default projects use
+    // the `/tasks` section route.
+    const base =
+      effectiveType === "codebase"
+        ? getScopedProjectBasePath(projectKey, routeScope)
+        : getScopedProjectSectionHref(projectKey, "tasks", routeScope);
+    navigate(
+      nextView === "board"
+        ? `${base}?${LIST_BOARD_VIEW_SEARCH_PARAM}=board`
+        : base,
+    );
   }
 
   function renderSection(sectionId: ProjectSectionId) {
@@ -847,15 +926,14 @@ export function ProjectsPage({
           }
           onSelectTask={(id) => {
             const task = projectTasks.find((entry) => entry.id === id);
-            if (task?.number != null) {
-              navigate(
-                getScopedProjectTaskHref(projectKey, task.number, routeScope),
-              );
-              return;
+            const href =
+              task?.number != null
+                ? getScopedProjectTaskHref(projectKey, task.number, routeScope)
+                : `${getScopedProjectSectionHref(projectKey, "tasks", routeScope)}/${id}`;
+            if (task?.title) {
+              primeTabTitle(href, task.title);
             }
-            navigate(
-              `${getScopedProjectSectionHref(projectKey, "tasks", routeScope)}/${id}`,
-            );
+            navigate(href);
           }}
           onStatusChange={(taskId, status) => {
             void workspace.patchTask(taskId, { status });
@@ -871,6 +949,11 @@ export function ProjectsPage({
           onAssigneeChange={(taskId, assigneeId) => {
             void workspace.patchTask(taskId, { assigneeId });
           }}
+          onBulkDelete={async (taskIds) => {
+            for (const taskId of taskIds) {
+              await workspace.softDeleteTask(taskId);
+            }
+          }}
           onReorder={(request) => {
             const patches = taskReorderPatches(projectTasks, request);
             for (const patch of patches) {
@@ -880,24 +963,32 @@ export function ProjectsPage({
               });
             }
           }}
-          onCreateTask={({ status, title }) =>
-            workspace.createProjectTask({
+          onCreateTask={async ({ status, title }) => {
+            const created = await workspace.createProjectTask({
               projectId: project.id,
               title,
               status,
-            })
-          }
+            });
+            pendingCreatedTaskRef.current = {
+              title,
+              number: created?.number ?? null,
+            };
+            return created;
+          }}
           onCreatedTask={(taskId) => {
+            const pending = pendingCreatedTaskRef.current;
+            pendingCreatedTaskRef.current = null;
             const task = tasks.find((entry) => entry.id === taskId);
-            if (task?.number != null) {
-              navigate(
-                getScopedProjectTaskHref(projectKey, task.number, routeScope),
-              );
-              return;
+            const number = task?.number ?? pending?.number ?? null;
+            const title = task?.title ?? pending?.title ?? null;
+            const href =
+              number != null
+                ? getScopedProjectTaskHref(projectKey, number, routeScope)
+                : `${getScopedProjectSectionHref(projectKey, "tasks", routeScope)}/${taskId}`;
+            if (title) {
+              primeTabTitle(href, title);
             }
-            navigate(
-              `${getScopedProjectSectionHref(projectKey, "tasks", routeScope)}/${taskId}`,
-            );
+            navigate(href);
           }}
         />
       );
@@ -930,49 +1021,56 @@ export function ProjectsPage({
                 const orgId =
                   payload.organizationId ?? project.organizationId ?? null;
                 void (async () => {
-                  const created = await workspace.createLetter({
-                    title: payload.title,
-                    body: payload.body,
-                    status: payload.status,
-                    organizationId: orgId,
-                    contactId: payload.contactId,
-                    projectId: project.id,
-                    dueDate: payload.dueDate
-                      ? payload.dueDate.toISOString()
-                      : null,
-                    receivedDate: payload.receivedDate
-                      ? payload.receivedDate.toISOString()
-                      : null,
-                  });
-                  setOmittedLetterIds([]);
-                  if (payload.pdfFile) {
-                    setComposePdfUploading(true);
-                    const upload = await uploadLetterPdfFile(
-                      client,
-                      created.id,
-                      payload.pdfFile,
-                    );
-                    setComposePdfUploading(false);
-                    if (!upload.ok) {
-                      console.error(upload.error);
-                      return;
+                  try {
+                    const created = await workspace.createLetter({
+                      title: payload.title,
+                      body: payload.body,
+                      status: payload.status,
+                      organizationId: orgId,
+                      contactId: payload.contactId,
+                      projectId: project.id,
+                      dueDate: payload.dueDate
+                        ? payload.dueDate.toISOString()
+                        : null,
+                      receivedDate: payload.receivedDate
+                        ? payload.receivedDate.toISOString()
+                        : null,
+                    });
+                    setOmittedLetterIds([]);
+                    if (payload.navigateAfterCreate !== false) {
+                      // Navigate immediately so the letter appears in the list;
+                      // PDF upload continues afterward and must not block create.
+                      if (created.number != null) {
+                        navigate(
+                          getScopedProjectLetterHref(
+                            projectKey,
+                            created.number,
+                            routeScope,
+                          ),
+                          { replace: true },
+                        );
+                      } else {
+                        navigate(
+                          `${getScopedProjectSectionHref(projectKey, "letters", routeScope)}/${created.id}`,
+                          { replace: true },
+                        );
+                      }
                     }
+                    if (payload.pdfFile) {
+                      setComposePdfUploading(true);
+                      const upload = await uploadLetterPdfFile(
+                        client,
+                        created.id,
+                        payload.pdfFile,
+                      );
+                      setComposePdfUploading(false);
+                      if (!upload.ok) {
+                        console.error(upload.error);
+                      }
+                    }
+                  } catch (error) {
+                    console.error("[desktop] create project letter", error);
                   }
-                  if (created.number != null) {
-                    navigate(
-                      getScopedProjectLetterHref(
-                        projectKey,
-                        created.number,
-                        routeScope,
-                      ),
-                      { replace: true },
-                    );
-                    return;
-                  }
-                  navigate(
-                    `${getScopedProjectSectionHref(projectKey, "letters", routeScope)}/${created.id}`,
-                    { replace: true },
-                  );
                 })();
               }}
             />
@@ -1304,6 +1402,11 @@ export function ProjectsPage({
     return (
       <>
         <RegisterPageTitle title={project.name} />
+        <RegisterEntityDuplicateAction
+          confirm="project"
+          entityLabel={`project "${project.name}"`}
+          onDuplicate={handleDuplicateProject}
+        />
         <RegisterEntityDeleteAction
           entityLabel={`project "${project.name}"`}
           onDelete={handleDeleteProject}
@@ -1335,6 +1438,128 @@ export function ProjectsPage({
           routeScope={routeScope}
           pathname={location.pathname}
           tasksPanel={renderSection("tasks")}
+          docsPanel={renderSection("documents")}
+          docsListPanel={
+            <ProjectDocumentsSidePanelView
+              variant="embedded"
+              pathname={location.pathname}
+              items={projectDocuments}
+              Link={RouterLink}
+              getDocumentHref={(pathOrId) =>
+                getScopedProjectDocumentHref(projectKey, pathOrId, routeScope)
+              }
+              onAdd={(parentFolderId) => {
+                void workspace
+                  .createProjectDocument({
+                    projectId: project.id,
+                    title: "Untitled",
+                    parentId: parentFolderId,
+                  })
+                  .then((created) => {
+                    const item: KnowledgeListItem = {
+                      id: created.id,
+                      title: "Untitled",
+                      path: created.path,
+                      projectId: project.id,
+                      kind: "document",
+                      parentId: parentFolderId,
+                    };
+                    setLocalDocuments((current) =>
+                      current.some((entry) => entry.id === created.id)
+                        ? current
+                        : [...current, item],
+                    );
+                    setPendingEditDocumentId(created.id);
+                    setOmittedDocumentIds([]);
+                    setComposingDocument(false);
+                    navigate(
+                      getScopedProjectDocumentHref(
+                        projectKey,
+                        created.path || created.id,
+                        routeScope,
+                      ),
+                    );
+                  });
+              }}
+              onCreateFolder={async ({ title, parentId }) => {
+                try {
+                  const created = await workspace.createProjectFolder({
+                    projectId: project.id,
+                    title,
+                    parentId,
+                  });
+                  const item: KnowledgeListItem = {
+                    id: created.id,
+                    title,
+                    path: created.path,
+                    projectId: project.id,
+                    kind: "folder",
+                    parentId,
+                  };
+                  setLocalDocuments((current) =>
+                    current.some((entry) => entry.id === created.id)
+                      ? current
+                      : [...current, item],
+                  );
+                  return { ok: true as const };
+                } catch (error) {
+                  return {
+                    ok: false as const,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Could not create folder.",
+                  };
+                }
+              }}
+              onRename={(id, title) => workspace.renameDocument(id, title)}
+              onDelete={(id) => workspace.deleteDocument(id)}
+              onReorderTreeItem={(request: TreeReorderRequest) => {
+                const tree = buildDocumentTree(
+                  projectDocuments.map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    path: item.path ?? item.id,
+                    kind:
+                      item.kind === "folder"
+                        ? ("folder" as const)
+                        : ("document" as const),
+                    parentId: item.parentId ?? null,
+                    sortOrder: item.sortOrder ?? 0,
+                    icon: item.icon ?? null,
+                  })),
+                );
+                void (async () => {
+                  if (request.fromParentId !== request.toParentId) {
+                    await workspace.moveDocument(
+                      request.itemId,
+                      request.toParentId,
+                    );
+                    return;
+                  }
+                  const parent =
+                    request.toParentId === null
+                      ? null
+                      : findDocumentTreeNodeById(tree, request.toParentId);
+                  const siblings =
+                    parent === null
+                      ? tree
+                      : parent.type === "folder"
+                        ? parent.children
+                        : [];
+                  const ids = siblings
+                    .filter((node) => node.id !== request.itemId)
+                    .map((node) => node.id);
+                  const insertAt = request.beforeId
+                    ? ids.indexOf(request.beforeId)
+                    : -1;
+                  if (insertAt === -1) ids.push(request.itemId);
+                  else ids.splice(insertAt, 0, request.itemId);
+                  await workspace.reorderDocuments(ids);
+                })();
+              }}
+            />
+          }
           onCreateOrganizationFromQuery={(query) => {
             void workspace
               .createOrganization({ name: query })
@@ -1399,10 +1624,17 @@ export function ProjectsPage({
     <>
       <RegisterPageTitle title={project.name} />
       {activeSection === "overview" ? (
-        <RegisterEntityDeleteAction
-          entityLabel={`project "${project.name}"`}
-          onDelete={handleDeleteProject}
-        />
+        <>
+          <RegisterEntityDuplicateAction
+            confirm="project"
+            entityLabel={`project "${project.name}"`}
+            onDuplicate={handleDuplicateProject}
+          />
+          <RegisterEntityDeleteAction
+            entityLabel={`project "${project.name}"`}
+            onDelete={handleDeleteProject}
+          />
+        </>
       ) : null}
       <ProjectDetailView
         project={{

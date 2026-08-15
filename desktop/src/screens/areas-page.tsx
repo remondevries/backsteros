@@ -5,6 +5,7 @@ import {
   AreasOverviewView,
   ProjectsListSkeleton,
   RegisterPageTitle,
+  primeTabTitle,
   projectAreaReorderPatches,
   type NestedAreaRef,
   type ProjectArea,
@@ -83,11 +84,13 @@ export function AreasPage() {
           const match = projects.find(
             (entry) => entry.key.toLowerCase() === key.toLowerCase(),
           );
+          const href = `/projects/${key}`;
+          if (match?.name) primeTabTitle(href, match.name);
           const state: ProjectLocationState = {
             from: "areas",
             ...(match?.type ? { projectType: match.type } : {}),
           };
-          navigate(`/projects/${key}`, { state });
+          navigate(href, { state });
         }}
         onStatusChange={(projectId, status) => {
           setProjectOverlay((current) => ({

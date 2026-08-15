@@ -13,12 +13,13 @@ import {
 } from "../lib/map-task-row";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
+import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
-import { useRestFallbackGate } from "../lib/use-rest-fallback-gate";
+import { useRestListHydration } from "../lib/use-rest-list-hydration";
 import {
   GroupedTaskList,
   type GroupedTaskRow,
@@ -78,7 +79,13 @@ export function InboxListPane({
     `${TASK_LIST_SELECT}
      WHERE t.deleted_at IS NULL AND (
        t.inbox = 1
-       OR t.status IN ('on_hold', 'in_review')
+       OR (
+         t.status IN ('on_hold', 'in_review')
+         AND (
+           t.due_date IS NULL
+           OR date(t.due_date) <= date('now', 'localtime')
+         )
+       )
        OR (
          t.due_date IS NOT NULL
          AND date(t.due_date) < date('now', 'localtime')
@@ -88,7 +95,7 @@ export function InboxListPane({
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
 
-  const [restRows, setRestRows] = useState<GroupedTaskRow[]>([]);
+  const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
 
@@ -105,8 +112,6 @@ export function InboxListPane({
         .map((row) => withDisplayId(row)),
     [syncedTasks],
   );
-
-  const useRest = useRestFallbackGate(localRows.length);
 
   const reloadRest = useCallback(async () => {
     setRestLoading(true);
@@ -142,30 +147,31 @@ export function InboxListPane({
           ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
           : detail,
       );
-      setRestRows([]);
+      // Keep prior REST snapshot on transient failures.
     } finally {
       setRestLoading(false);
     }
   }, [apiUrl, client]);
 
-  useEffect(() => {
-    if (useRest) void reloadRest();
-  }, [reloadRest, useRest]);
+  useRestListHydration(reloadRest);
 
-  const rows: GroupedTaskRow[] =
-    localRows.length > 0 ? localRows : restRows;
+  const rows = resolveSyncedOrRestRows({
+    localRows,
+    restRows,
+    connected: powerSync.connected,
+  });
 
   const waitingForSync =
-    localRows.length === 0 &&
-    !useRest &&
+    rows.length === 0 &&
+    restRows == null &&
     (powerSync.status === "connecting" ||
       powerSync.status === "idle" ||
       syncLoading);
 
   const loading =
-    rows.length === 0 &&
-    (useRest ? restLoading : waitingForSync || syncLoading);
-  const error = useRest && rows.length === 0 ? restError : null;
+    rows.length === 0 && (restLoading || waitingForSync || syncLoading);
+  const error =
+    rows.length === 0 && restError && !powerSync.connected ? restError : null;
 
   useEffect(() => {
     if (!autoSelectFirst || !isPad) return;
@@ -230,8 +236,8 @@ export function InboxListPane({
       groupByStatus="inbox"
       rowLayout="inbox"
       selectedId={pathSelectedId}
-      refreshing={useRest ? restLoading : false}
-      onRefresh={useRest ? () => void reloadRest() : undefined}
+      refreshing={restLoading}
+      onRefresh={() => void reloadRest()}
       onPressRow={onPressRow}
     />
   );

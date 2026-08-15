@@ -67,6 +67,10 @@ type Props = {
   onCreateOrganizationFromQuery?: (query: string) => void;
   /** Project task list shown in the main pane on the Tasks tab. */
   tasksPanel?: ReactNode;
+  /** Project documents tree shown in the list pane on the Docs tab. */
+  docsListPanel?: ReactNode;
+  /** Document detail / empty-create shown in the main pane on the Docs tab. */
+  docsPanel?: ReactNode;
   fs?: ProjectFsClient;
 };
 
@@ -117,6 +121,8 @@ export function CodebaseProjectWorkbench({
   onProjectPatched,
   onCreateOrganizationFromQuery,
   tasksPanel,
+  docsListPanel,
+  docsPanel,
   fs = projectFs,
 }: Props) {
   const navigate = useNavigate();
@@ -133,6 +139,7 @@ export function CodebaseProjectWorkbench({
         commitSha: null,
         pullNumber: null,
         filePath: null,
+        documentPath: null,
       },
     [pathname, project.key],
   );
@@ -230,6 +237,7 @@ export function CodebaseProjectWorkbench({
       commitSha?: string | null;
       pullNumber?: number | null;
       filePath?: string | null;
+      documentPath?: string | null;
     }) => {
       navigate(
         getCodebaseWorkbenchHref(
@@ -246,6 +254,10 @@ export function CodebaseProjectWorkbench({
                 : selection.pullNumber,
             filePath:
               next.filePath !== undefined ? next.filePath : selection.filePath,
+            documentPath:
+              next.documentPath !== undefined
+                ? next.documentPath
+                : selection.documentPath,
           },
           routeScope,
         ),
@@ -266,9 +278,10 @@ export function CodebaseProjectWorkbench({
         commitSha: null,
         pullNumber: null,
         filePath: tab === "files" ? activeFilePath : null,
+        documentPath: tab === "docs" ? selection.documentPath : null,
       });
     },
-    [activeFilePath, navigateSelection],
+    [activeFilePath, navigateSelection, selection.documentPath],
   );
 
   const handleSelectCommit = useCallback(
@@ -575,6 +588,20 @@ export function CodebaseProjectWorkbench({
         </div>
       </div>
     );
+  } else if (selection.tab === "docs") {
+    detail = (
+      <div className="codebase-project-workbench__docs">
+        {docsPanel ?? (
+          <div className="console-pane">
+            <div className="console-pane-body">
+              <div className="console-github-pane-status">
+                <p>Select a document from the list.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   } else if (selection.tab === "tasks") {
     detail = (
       <div className="codebase-project-workbench__tasks" data-list-board-view>
@@ -638,6 +665,7 @@ export function CodebaseProjectWorkbench({
               setFileTreeRefreshToken((token) => token + 1);
             }}
             fileTreeRefreshToken={fileTreeRefreshToken}
+            docsListPanel={docsListPanel}
             githubRefreshToken={githubRefreshToken}
             showHeader
             organizations={organizations}

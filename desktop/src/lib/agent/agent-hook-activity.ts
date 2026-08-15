@@ -241,6 +241,52 @@ function diffContentFromHookInput(input: unknown): unknown[] | undefined {
 }
 
 /**
+ * Prefer an existing ACP toolCallId when hooks only give a synthetic id / path.
+ * Prevents duplicate Read/Edit rows from the dual ACP+hooks stream.
+ */
+function resolveHookToolCallId(
+  state: AgentChatTurnUiState,
+  toolName: string,
+  toolUseId: string | null,
+  toolInput: unknown,
+): string | null {
+  if (toolUseId && !toolUseId.startsWith("hook-")) {
+    if (state.activities.some((item) => item.id === toolUseId)) {
+      return toolUseId;
+    }
+    // Cursor sometimes reuses the real toolUseId — keep it even if not seen yet.
+    if (!toolUseId.startsWith("call_") && toolUseId.length > 4) {
+      return toolUseId;
+    }
+    return toolUseId;
+  }
+  const path = filePathFromInput(toolInput);
+  const kind = mapToolNameToKind(toolName);
+  const pathNeedle = path
+    ? path.replace(/\\/g, "/").split("/").slice(-2).join("/")
+    : "";
+  const match = state.activities.find((item) => {
+    if (item.kind !== "tool") return false;
+    if (kind && item.toolKind && item.toolKind !== kind) return false;
+    if (!pathNeedle) {
+      return item.status === "in_progress" || item.status === "pending";
+    }
+    const detail = `${item.detail ?? ""} ${item.title ?? ""}`.replace(
+      /\\/g,
+      "/",
+    );
+    return detail.includes(pathNeedle) || detail.endsWith(pathNeedle);
+  });
+  if (match) return match.id;
+  return (
+    toolUseId ||
+    (toolName
+      ? `hook-${toolName}-${path || state.activities.length}`
+      : null)
+  );
+}
+
+/**
  * Apply one Cursor agent-hook frame to the live Chat turn chrome.
  */
 export function applyAgentHookEventToTurn(
@@ -264,12 +310,13 @@ export function applyAgentHookEventToTurn(
 
   const toolName =
     typeof message.toolName === "string" ? message.toolName.trim() : "";
-  const toolUseId =
+  const rawToolUseId =
     typeof message.toolUseId === "string" && message.toolUseId.trim()
       ? message.toolUseId.trim()
-      : toolName
-        ? `hook-${toolName}-${filePathFromInput(message.toolInput) || state.activities.length}`
-        : null;
+      : null;
+  const toolUseId = toolName
+    ? resolveHookToolCallId(state, toolName, rawToolUseId, message.toolInput)
+    : rawToolUseId;
 
   if (toolName && isTodoTool(toolName)) {
     const todos = todosFromToolInput(message.toolInput);

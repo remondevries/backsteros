@@ -96,4 +96,33 @@ describe("resolveGroupedListPointerDropTarget", () => {
     vi.spyOn(document, "elementsFromPoint").mockReturnValue([item]);
     expect(resolveGroupedListPointerDropTarget(1, 1, "a")).toBeNull();
   });
+
+  it("prefers nested child items over ancestor section items", () => {
+    document.body.innerHTML = `
+      <div ${LIST_REORDER_ITEM_ATTR}="parent" ${LIST_REORDER_GROUP_ATTR}="listing:regular" id="section">
+        <div id="child-wrap" ${LIST_REORDER_ITEM_ATTR}="child" ${LIST_REORDER_GROUP_ATTR}="parent:parent"></div>
+      </div>
+    `;
+    const child = document.getElementById("child-wrap")!;
+    vi.spyOn(document, "elementsFromPoint").mockReturnValue([child]);
+    expect(resolveGroupedListPointerDropTarget(1, 1, "other")).toEqual({
+      kind: "before-item",
+      itemId: "child",
+      groupKey: "parent:parent",
+    });
+  });
+
+  it("prefers append zones nested inside item hosts", () => {
+    document.body.innerHTML = `
+      <div ${LIST_REORDER_ITEM_ATTR}="parent" ${LIST_REORDER_GROUP_ATTR}="listing:regular" id="section">
+        <div ${LIST_REORDER_APPEND_ATTR}="parent:parent" id="append"></div>
+      </div>
+    `;
+    const append = document.getElementById("append")!;
+    vi.spyOn(document, "elementsFromPoint").mockReturnValue([append]);
+    expect(resolveGroupedListPointerDropTarget(1, 1, "other")).toEqual({
+      kind: "append-group",
+      groupKey: "parent:parent",
+    });
+  });
 });

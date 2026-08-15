@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 env:
-  VITE_API_URL: https://service.backsteros.com
+  VITE_API_URL: http://127.0.0.1:8787
   VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: pnpm --filter @backsteros/desktop tauri:build
+        run: pnpm --filter @backsteros/desktop build
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
@@ -100,7 +100,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --filter @backsteros/desktop tauri:build
+        run: pnpm --filter @backsteros/desktop build
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows

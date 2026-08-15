@@ -68,7 +68,6 @@ export default function LettersScreen() {
     rows: sourceRows,
     loading,
     error,
-    useRest,
     restLoading,
     reload,
   } = useSyncedOrRest<LetterRow, LetterRow>({
@@ -178,7 +177,7 @@ export default function LettersScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={useRest ? restLoading : false}
+            refreshing={restLoading}
             onRefresh={() => {
               search.open();
               void reload();

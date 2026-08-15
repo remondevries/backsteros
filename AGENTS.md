@@ -10,6 +10,7 @@ Read this file first when working in **`~/code/backsteros/`**. Specs live at the
 ├── core/
 │   ├── server/           ← API (Hono + Postgres + OpenAPI)
 │   └── packages/         ← contracts, api-client, powersync-schema
+├── hub/                  ← macOS menu-bar local service start/stop
 ├── mobile/               ← Expo (iPhone + iPad)
 ├── desktop/              ← Tauri 2 + Vite/React
 └── legacy/               ← v1 snapshot (reference only)

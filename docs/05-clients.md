@@ -56,8 +56,8 @@ backsteros-desktop/
   `backsteros-app` (same screens, flows, and interaction model).
 - Implementation is a **Vite build** loaded by Tauri, not the Next.js standalone
   deployment. Next-only concerns (middleware, RSC, App Router handlers such as
-  web avatars / settings proxies) stay on the web host; desktop talks to
-  `service.backsteros.com` (and PowerSync) directly via shared clients.
+  web avatars / settings proxies) stay in `legacy/`; desktop talks to
+  local core (`http://127.0.0.1:8788` / Tailscale) and PowerSync directly via shared clients.
 - **Desktop-first shared UI:** polish product chrome and detail views in
   `@backsteros/ui` for **desktop first**. Do **not** deepen Next’s use of shared
   layout/detail views until desktop is the robust reference. Web keeps local

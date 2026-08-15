@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { EntityDeleteConfirmModal } from "./entity-delete-confirm-modal.js";
 import { EntityDeleteMenu } from "./entity-delete-menu.js";
+import { EntityDuplicateConfirmModal } from "./entity-duplicate-confirm-modal.js";
 import { EntityHeaderActionsProvider } from "./entity-header-actions-context.js";
 import { useEntityDeleteShortcut } from "./use-entity-delete-shortcut.js";
 
@@ -17,6 +18,7 @@ export function EntityHeaderActionsShell({ children }: { children: ReactNode }) 
     <EntityHeaderActionsProvider>
       <EntityDeleteShortcutListener />
       <EntityDeleteConfirmModal />
+      <EntityDuplicateConfirmModal />
       {children}
     </EntityHeaderActionsProvider>
   );

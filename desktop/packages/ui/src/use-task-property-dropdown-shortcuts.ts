@@ -6,11 +6,16 @@ import { isLetterDetailPath } from "./letters.js";
 import { isLetterPdfToggleShortcut } from "./letter-pdf-toggle-shortcut.js";
 import { openTaskPropertyDropdown } from "./open-task-property-dropdown.js";
 import { shouldHandleTaskPropertyDropdownNavigation } from "./should-handle-task-property-dropdown-shortcut.js";
-import { resolveTaskPropertyDropdownOpenCandidatesFromEvent } from "./task-property-dropdown-keys.js";
+import {
+  pageHasFinanceTxPropertyHotkeyTargets,
+  resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent,
+  resolveTaskPropertyDropdownOpenCandidatesFromEvent,
+} from "./task-property-dropdown-keys.js";
 
 /**
  * S/P/A/D (and shift variants) open property dropdowns on the highlighted row
  * or compose modal — matches Next useTaskPropertyDropdownShortcuts.
+ * On finance transaction lists, ⇧C / A / M open category / account / merchant.
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,
@@ -43,6 +48,19 @@ export function useTaskPropertyDropdownShortcuts({
 
       if (!shouldHandleTaskPropertyDropdownNavigation(event)) {
         return;
+      }
+
+      if (pageHasFinanceTxPropertyHotkeyTargets()) {
+        const financeIds =
+          resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent(event);
+        if (
+          financeIds.length > 0 &&
+          openTaskPropertyDropdown(financeIds)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
       }
 
       const dropdownIds =

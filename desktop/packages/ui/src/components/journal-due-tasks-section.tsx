@@ -6,8 +6,13 @@ import { DOCUMENT_CONTENT_MAX_WIDTH } from "../document-editor-theme.js";
 import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
 import { groupTasksByStatus } from "../group-tasks-by-status.js";
+import {
+  computeTaskDisplayIdColumnCh,
+  taskIdColumnCssVars,
+} from "../task-id-column-width.js";
 import { getTaskDueDateYmd } from "../tasks-due-filters.js";
 import type { TaskStatus } from "../task-status.js";
+import { useListMultiSelect } from "../use-list-multi-select.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -26,6 +31,11 @@ export type JournalDueTasksSectionProps = {
   isLoading?: boolean;
   calendarTimeZone?: string;
   onSelectTask?: (taskId: string) => void;
+  /**
+   * Fixed monospace width (in `ch`) for the task-id column.
+   * Prefer the global workspace max; defaults from the unfiltered `tasks` prop.
+   */
+  taskIdColumnCh?: number;
 };
 
 /** Tasks whose due calendar date matches the journal entry `YYYY-MM-DD`. */
@@ -45,6 +55,7 @@ export function JournalDueTasksSection({
   isLoading = false,
   calendarTimeZone,
   onSelectTask,
+  taskIdColumnCh: taskIdColumnChProp,
 }: JournalDueTasksSectionProps) {
   const tasks = useMemo(
     () =>
@@ -54,6 +65,14 @@ export function JournalDueTasksSection({
         calendarTimeZone,
       ),
     [allTasks, calendarTimeZone, dateSlug],
+  );
+  const taskIdColumnCh = useMemo(
+    () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(allTasks),
+    [allTasks, taskIdColumnChProp],
+  );
+  const taskIdColumnStyle = useMemo(
+    () => taskIdColumnCssVars(taskIdColumnCh),
+    [taskIdColumnCh],
   );
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
@@ -103,6 +122,12 @@ export function JournalDueTasksSection({
     enabled: itemIds.length > 0,
   });
 
+  const {
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+  } = useListMultiSelect(itemIds);
+
   return (
     <section
       className="journal-due-tasks-section"
@@ -140,8 +165,14 @@ export function JournalDueTasksSection({
       ) : (
         <ul
           ref={listRef}
-          className="journal-due-tasks-section__list"
+          className={[
+            "journal-due-tasks-section__list",
+            hasBulkSelection ? "has-bulk-selection" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           role="list"
+          style={taskIdColumnStyle}
           {...listContainerProps}
         >
           {showStatusGrouping ? (
@@ -170,6 +201,11 @@ export function JournalDueTasksSection({
                       showDueMeta={false}
                       keyboardHighlighted={highlightedId === task.id}
                       onSelect={onSelectTask}
+                      selected={isSelected(task.id)}
+                      forceShowCheckbox={hasBulkSelection}
+                      onToggleSelected={(taskId, _checked, event) =>
+                        toggleSelected(taskId, Boolean(event.shiftKey))
+                      }
                     />
                   ))}
                 </StatusGroupSection>
@@ -183,6 +219,11 @@ export function JournalDueTasksSection({
                 showDueMeta={false}
                 keyboardHighlighted={highlightedId === task.id}
                 onSelect={onSelectTask}
+                selected={isSelected(task.id)}
+                forceShowCheckbox={hasBulkSelection}
+                onToggleSelected={(taskId, _checked, event) =>
+                  toggleSelected(taskId, Boolean(event.shiftKey))
+                }
               />
             ))
           )}

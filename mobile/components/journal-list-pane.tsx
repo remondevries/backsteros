@@ -24,7 +24,8 @@ import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
-import { useRestFallbackGate } from "../lib/use-rest-fallback-gate";
+import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
+import { useRestListHydration } from "../lib/use-rest-list-hydration";
 
 export type JournalListRow = {
   id: string;
@@ -89,14 +90,13 @@ export function JournalListPane({
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<JournalListRow>(JOURNAL_SQL);
 
-  const [restRows, setRestRows] = useState<JournalListRow[]>([]);
+  const [restRows, setRestRows] = useState<JournalListRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
   const [userRefreshing, setUserRefreshing] = useState(false);
 
   const todaySlug = getTodayJournalDateSlug();
   const localRows = syncedRows ?? [];
-  const useRest = useRestFallbackGate(localRows.length);
 
   const reloadRest = useCallback(async () => {
     setRestLoading(true);
@@ -122,30 +122,28 @@ export function JournalListPane({
           ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
           : detail,
       );
-      setRestRows([]);
     } finally {
       setRestLoading(false);
     }
   }, [apiUrl, client]);
 
-  useEffect(() => {
-    if (useRest) void reloadRest();
-  }, [reloadRest, useRest]);
+  useRestListHydration(reloadRest);
 
-  const rows = useMemo(() => {
-    if (localRows.length > 0) return localRows;
-    if (useRest) return restRows;
-    return localRows;
-  }, [localRows, restRows, useRest]);
+  const rows = resolveSyncedOrRestRows({
+    localRows,
+    restRows,
+    connected: powerSync.connected,
+  });
 
   const loading =
     rows.length === 0 &&
-    (useRest
-      ? restLoading
-      : powerSync.status === "connecting" ||
-        powerSync.status === "idle" ||
-        syncLoading);
-  const error = useRest && rows.length === 0 ? restError : null;
+    (restLoading ||
+      (restRows == null &&
+        (powerSync.status === "connecting" ||
+          powerSync.status === "idle" ||
+          syncLoading)));
+  const error =
+    rows.length === 0 && restError && !powerSync.connected ? restError : null;
 
   useEffect(() => {
     if (!autoSelectFirst || !isPad) return;
@@ -212,14 +210,13 @@ export function JournalListPane({
   });
 
   const onRefresh = useCallback(async () => {
-    if (!useRest) return;
     setUserRefreshing(true);
     try {
       await reloadRest();
     } finally {
       setUserRefreshing(false);
     }
-  }, [reloadRest, useRest]);
+  }, [reloadRest]);
 
   if (loading) {
     return (

@@ -45,8 +45,8 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 
 - SQL for tasks, money, workouts, audit trails
 - PowerSync replication from Postgres
-- **Prod host:** [Neon](https://neon.tech) (Free → Launch). **Dev:** Docker Compose locally.
-- Neon: official PowerSync integration; enable logical replication in console for Phase 3.
+- **Postgres host:** Docker Compose locally (`localhost:5433`). Cloud Postgres (e.g. Neon) is not used for active v2 work.
+- Logical replication is enabled in the local compose Postgres image for PowerSync.
 
 ## Blobs — B2 or R2
 

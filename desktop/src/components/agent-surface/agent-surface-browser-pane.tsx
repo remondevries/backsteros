@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from "lucide-react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { isBlockingModalOpen } from "@backsteros/ui";
 
 import {
   agentBrowserCreate,
@@ -134,6 +135,10 @@ export function AgentSurfaceBrowserPane({
         return;
       }
       if (event.key !== "l" && event.key !== "L") return;
+      // Compose / add-link / delete modals own the keyboard while open.
+      if (isBlockingModalOpen()) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       focusAddressBar();

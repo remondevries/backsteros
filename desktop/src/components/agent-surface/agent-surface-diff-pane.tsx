@@ -3,31 +3,13 @@ import { FileDiff } from "lucide-react";
 
 import type { AgentChatActivityItem } from "../../lib/agent/agent-acp-activity";
 import type { AgentChatMessage } from "../../lib/agent/agent-chat-transcript";
-import {
-  collectChangedFilesFromActivities,
-  type AgentChatChangedFile,
-} from "../../lib/agent/agent-chat-timeline";
+import { latestAgentChatChangedFiles } from "../../lib/agent/agent-chat-timeline";
 import { DesktopAgentChatDiffPanel } from "../desktop-agent-chat-diff-panel";
 
 export type AgentSurfaceDiffPaneProps = {
   messages: readonly AgentChatMessage[];
   liveActivities?: readonly AgentChatActivityItem[];
 };
-
-function latestChangedFiles(
-  messages: readonly AgentChatMessage[],
-  liveActivities: readonly AgentChatActivityItem[] | undefined,
-): AgentChatChangedFile[] {
-  const live = collectChangedFilesFromActivities(liveActivities);
-  if (live.length > 0) return live;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (!message || message.role !== "assistant") continue;
-    const files = collectChangedFilesFromActivities(message.activities);
-    if (files.length > 0) return files;
-  }
-  return [];
-}
 
 /**
  * Diff surface — single Pierre-based file list + viewer (no duplicate sidebar).
@@ -37,7 +19,7 @@ export function AgentSurfaceDiffPane({
   liveActivities,
 }: AgentSurfaceDiffPaneProps) {
   const files = useMemo(
-    () => latestChangedFiles(messages, liveActivities),
+    () => latestAgentChatChangedFiles(messages, liveActivities),
     [liveActivities, messages],
   );
 

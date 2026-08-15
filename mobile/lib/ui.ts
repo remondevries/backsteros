@@ -62,32 +62,6 @@ export const ui = StyleSheet.create({
     letterSpacing: 0.2,
     backgroundColor: colors.background,
   },
-  /** Nested project-type label under a status group — plain text, no chrome. */
-  typeSubheader: {
-    paddingHorizontal: spacing.screenX,
-    paddingTop: 10,
-    paddingBottom: 4,
-    color: "rgba(255, 255, 255, 0.38)",
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.15,
-    backgroundColor: colors.background,
-  },
-  typeSubheaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.screenX,
-    paddingTop: 10,
-    paddingBottom: 4,
-    backgroundColor: colors.background,
-  },
-  typeSubheaderLabel: {
-    color: "rgba(255, 255, 255, 0.38)",
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.15,
-  },
   row: {
     paddingHorizontal: spacing.screenX,
     paddingVertical: spacing.rowY,

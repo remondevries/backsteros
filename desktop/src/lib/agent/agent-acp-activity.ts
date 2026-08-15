@@ -46,6 +46,8 @@ export type AgentChatActivityItem = {
   toolKind?: string;
   /** File edit preview when the tool emitted a diff. */
   diff?: AgentChatActivityDiff;
+  /** t3 work-log collapse key (`tool:${toolCallId}`) for lifecycle merge. */
+  collapseKey?: string;
 };
 
 export type AgentChatTurnPhase =
@@ -118,13 +120,14 @@ export function activitiesFromSegments(
 export function assistantDraftFromSegments(
   segments: readonly AgentChatTurnSegment[],
 ): string {
+  // Match sidecar projector (.join("")) so dual writers don't diverge on text.
   return segments
     .filter(
       (segment): segment is Extract<AgentChatTurnSegment, { kind: "text" }> =>
         segment.kind === "text",
     )
     .map((segment) => segment.text)
-    .join("\n\n");
+    .join("");
 }
 
 /** Legacy / settle fallback: one work block then one text block. */
@@ -643,6 +646,8 @@ export function finalizeTurnSegments(
 /**
  * Flush held tool calls into the timeline and mark open rows complete
  * (T3 end-of-turn: pending tools without detail still surface once settled).
+ * Plan step statuses are left as Cursor sent them — active spinner chrome is
+ * gated by live turn (`PlanTodoList active`), not by inventing completions.
  */
 export function sealTurnUiState(
   state: AgentChatTurnUiState,
@@ -785,16 +790,20 @@ export function applyAcpSessionUpdateToTurn(
         status,
         toolKind,
         diff,
+        collapseKey: `tool:${toolCallId}`,
       };
       const toolingPhase =
         state.phase === "responding" ? "responding" : "tooling";
 
-      // T3 shouldEmitToolCallUpdate: hold until detail exists (or completed).
+      // T3 shouldEmitToolCallUpdate: hold until detail exists; skip unchanged.
       if (
         !shouldEmitToolActivity({
           detail: activity.detail,
+          title: activity.title,
           status: activity.status,
           alreadyVisible: Boolean(existingVisible),
+          previousTitle: existingVisible?.title,
+          previousDetail: existingVisible?.detail,
         })
       ) {
         return {

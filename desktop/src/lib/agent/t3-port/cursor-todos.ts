@@ -113,12 +113,18 @@ export function planStepsEqual(
 
 export function planStepsWorkingSummary(
   steps: readonly AgentChatPlanStep[],
+  options?: { active?: boolean },
 ): string | null {
   if (steps.length === 0) return null;
   const inProgress = steps.filter((s) => s.status === "inProgress").length;
   const completed = steps.filter((s) => s.status === "completed").length;
   if (inProgress > 0) {
-    return `Working on ${inProgress} to-do${inProgress === 1 ? "" : "s"}`;
+    // Only say “Working on…” while the turn is live — settled turns with
+    // leftover inProgress steps otherwise look like the agent is still busy.
+    if (options?.active) {
+      return `Working on ${inProgress} to-do${inProgress === 1 ? "" : "s"}`;
+    }
+    return `In progress · ${inProgress} to-do${inProgress === 1 ? "" : "s"}`;
   }
   if (completed === steps.length) {
     return `Completed ${completed} to-do${completed === 1 ? "" : "s"}`;

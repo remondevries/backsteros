@@ -456,17 +456,24 @@ export function deriveToolActivityPresentation(input: {
 }
 
 /**
- * T3 shouldEmitToolCallUpdate: hold in-progress rows until detail exists,
- * unless the row is already visible or the tool finished.
+ * T3 shouldEmitToolCallUpdate: hold until detail exists; once visible, only
+ * re-emit when title/detail change or the tool finishes (suppress status spam).
  */
 export function shouldEmitToolActivity(input: {
   detail?: string;
+  title?: string;
   status?: string;
   alreadyVisible: boolean;
+  previousTitle?: string;
+  previousDetail?: string;
 }): boolean {
-  if (input.alreadyVisible) return true;
   if (input.status === "completed" || input.status === "failed") return true;
-  return Boolean(input.detail?.trim());
+  if (!input.detail?.trim()) return false;
+  if (!input.alreadyVisible) return true;
+  return (
+    (input.previousTitle ?? "") !== (input.title ?? "") ||
+    (input.previousDetail ?? "") !== (input.detail ?? "")
+  );
 }
 
 export { formatPathForDetail, truncateDetail };

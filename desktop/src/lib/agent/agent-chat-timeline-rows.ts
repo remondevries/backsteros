@@ -27,10 +27,17 @@ export type AgentChatTimelineLiveRow = {
   id: "live";
 };
 
+/** T3 `working-indicator-row` — own list item so “Working for…” stays pinned at end. */
+export type AgentChatTimelineWorkingRow = {
+  kind: "working";
+  id: "working";
+};
+
 export type AgentChatTimelineRow =
   | AgentChatTimelineUserRow
   | AgentChatTimelineAssistantRow
-  | AgentChatTimelineLiveRow;
+  | AgentChatTimelineLiveRow
+  | AgentChatTimelineWorkingRow;
 
 export type DeriveAgentChatTimelineRowsInput = {
   messages: readonly AgentChatMessage[];
@@ -81,6 +88,12 @@ export function deriveAgentChatTimelineRows(
 
   if (showTurnChrome) {
     rows.push({ kind: "live", id: "live" });
+  }
+  // Match T3: append working chrome as its own row after live content so the
+  // pulsing “Working for…” indicator is not buried inside a tall live cell
+  // (and so LegendList maintainScrollAtEnd keeps it in view).
+  if (working) {
+    rows.push({ kind: "working", id: "working" });
   }
 
   return rows;

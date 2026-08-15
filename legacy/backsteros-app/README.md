@@ -43,15 +43,9 @@ this UI — they always use `NEXT_PUBLIC_API_URL` from the deploy environment.
 | Mode | App talks to | Data |
 | --- | --- | --- |
 | **Dev** | `http://127.0.0.1:8787` | Local API → Docker Postgres (`:5433`) + local PowerSync (`:8080`) |
-| **Prod** | `https://service.backsteros.com` | Production API → Neon |
 
-Selection is stored in `localStorage` (`backsteros.backend-mode`) only under
-`next dev`. Switching reloads the app and uses separate PowerSync SQLite files
-per mode so caches do not mix.
-
-Keep the local API `DATABASE_URL` pointed at Docker for Dev isolation. Neon
-remains behind the production API (and optionally `DATABASE_URL_NEON` in the API
-`.env` for reference).
+Cloud / Neon “Prod” mode is retired (v2 is local-computer only). This folder is
+`legacy/` reference — do not extend.
 
 Useful checks:
 

@@ -28,26 +28,24 @@ import {
   resolveCommandPaletteSearchContext,
   type CommandPaletteSearchContext,
 } from "../command-palette/search-context.js";
+import {
+  DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
+  FINANCE_GO_LETTER_HINT,
+  financeGoNavigationItemSearchValue,
+  type FinanceGoNavigationItem,
+} from "../finance-nav.js";
 import { navigation } from "../navigation.js";
+import { isCommandPaletteToggleKey } from "../command-palette-toggle-key.js";
 import {
   useCommandPalette,
   type CommandPaletteMode,
 } from "./command-palette-context.js";
+import { FinanceSectionNavIcon } from "./finance-side-panel-nav-view.js";
 import { NavigationItemIcon } from "./navigation-item-icon.js";
 import { SearchNavIcon } from "./sidebar-nav-icons.js";
 
 /** Native desktop menus (Tauri) dispatch this when ⌘K / Ctrl+K is pressed. */
 export const TOGGLE_COMMAND_PALETTE_EVENT = "backsteros:toggle-command-palette";
-
-function isCommandPaletteToggleKey(event: KeyboardEvent): boolean {
-  if (event.altKey || event.shiftKey) {
-    return false;
-  }
-  if (!(event.metaKey || event.ctrlKey)) {
-    return false;
-  }
-  return event.key.toLowerCase() === "k" || event.code === "KeyK";
-}
 
 const FILTER_PLACEHOLDERS: Partial<Record<CommandPaletteFilterMode, string>> = {
   projects: "Search projects…",
@@ -78,6 +76,7 @@ export type CommandPaletteViewProps = {
     options?: { searchParams?: URLSearchParams },
   ) => Promise<CommandPaletteHit[]> | CommandPaletteHit[];
   goItems?: GoNavigationItem[];
+  financeGoItems?: readonly FinanceGoNavigationItem[];
   destinations?: {
     id: string;
     label: string;
@@ -118,11 +117,14 @@ export function CommandPaletteView({
   resolveContextIds,
   search,
   goItems = DEFAULT_GO_NAVIGATION_ITEMS,
+  financeGoItems = DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
   destinations,
   shortcutHint = "⌘K",
 }: CommandPaletteViewProps) {
   const { open, setOpen, mode, toggle, openSearch } = useCommandPalette();
   const isGoMode = mode === "go";
+  const isFinanceGoMode = mode === "finance-go";
+  const isLeaderNavMode = isGoMode || isFinanceGoMode;
   const inputRef = useRef<HTMLInputElement>(null);
   const lastToggleAtRef = useRef(0);
   const [filter, setFilter] = useState<CommandPaletteFilterState>(
@@ -194,7 +196,7 @@ export function CommandPaletteView({
       // Debounce: macOS may deliver both the native menu accelerator and a
       // residual keydown; without this the palette would open then immediately close.
       const now = Date.now();
-      if (now - lastToggleAtRef.current < 120) {
+      if (now - lastToggleAtRef.current < 350) {
         return;
       }
       lastToggleAtRef.current = now;
@@ -261,10 +263,10 @@ export function CommandPaletteView({
     };
     focusInput();
     return () => cancelAnimationFrame(frame);
-  }, [open, isGoMode]);
+  }, [open, isLeaderNavMode]);
 
   useEffect(() => {
-    if (!open || isGoMode) return;
+    if (!open || isLeaderNavMode) return;
     const query = filter.searchTerm.trim();
     if (!query) {
       setHits((current) => (current.length === 0 ? current : []));
@@ -323,14 +325,14 @@ export function CommandPaletteView({
     activeSearchContext,
     filter.mode,
     filter.searchTerm,
-    isGoMode,
+    isLeaderNavMode,
     navDestinations,
     open,
     search,
   ]);
 
   const trimmed = filter.searchTerm.trim();
-  const showWorkspaceResults = !isGoMode && trimmed.length > 0;
+  const showWorkspaceResults = !isLeaderNavMode && trimmed.length > 0;
   const sections = commandPaletteSectionsForMode(filter.mode);
   const groupedResults = useMemo(() => {
     const grouped = Object.fromEntries(
@@ -348,10 +350,12 @@ export function CommandPaletteView({
 
   const inputPlaceholder = isGoMode
     ? `Type a letter… ${NAVIGATION_GO_LETTER_HINT}`
-    : (FILTER_PLACEHOLDERS[filter.mode] ??
-      "Search everything… (p t d l k c o + Tab or space)");
+    : isFinanceGoMode
+      ? `Type a letter… ${FINANCE_GO_LETTER_HINT}`
+      : (FILTER_PLACEHOLDERS[filter.mode] ??
+        "Search everything… (p t d l k c o + Tab or space)");
 
-  const showContextBreadcrumb = !isGoMode && contextBreadcrumb.length > 0;
+  const showContextBreadcrumb = !isLeaderNavMode && contextBreadcrumb.length > 0;
 
   function closeAndNavigate(href: string) {
     setOpen(false);
@@ -420,10 +424,10 @@ export function CommandPaletteView({
     <Command.Dialog
       open={open}
       onOpenChange={setOpen}
-      label={isGoMode ? "Go to" : "Navigate Backsteros"}
+      label={isGoMode ? "Go to" : isFinanceGoMode ? "Finance go to" : "Navigate Backsteros"}
       overlayClassName="command-overlay"
       contentClassName="command-dialog"
-      shouldFilter={isGoMode || !showWorkspaceResults}
+      shouldFilter={isLeaderNavMode || !showWorkspaceResults}
     >
       <div className="command-chrome">
         {showContextBreadcrumb ? (
@@ -459,6 +463,13 @@ export function CommandPaletteView({
             <span className="command-filter-chip" aria-label="Go filter active">
               Go
             </span>
+          ) : isFinanceGoMode ? (
+            <span
+              className="command-filter-chip"
+              aria-label="Finance filter active"
+            >
+              Finance
+            </span>
           ) : (
             <SearchNavIcon />
           )}
@@ -467,21 +478,21 @@ export function CommandPaletteView({
             autoFocus
             className="command-input"
             placeholder={inputPlaceholder}
-            value={isGoMode ? goQuery : filter.searchTerm}
+            value={isLeaderNavMode ? goQuery : filter.searchTerm}
             onValueChange={(value: string) => {
-              if (isGoMode) {
+              if (isLeaderNavMode) {
                 setGoQuery(value);
                 return;
               }
               setSearchTerm(value);
             }}
             onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
-              const inputValue = isGoMode ? goQuery : filter.searchTerm;
+              const inputValue = isLeaderNavMode ? goQuery : filter.searchTerm;
               const inputEmpty = inputValue.length === 0;
               const notComposing = !event.nativeEvent.isComposing;
 
               if (
-                isGoMode &&
+                isLeaderNavMode &&
                 event.key === "Backspace" &&
                 inputEmpty &&
                 notComposing
@@ -492,7 +503,7 @@ export function CommandPaletteView({
               }
 
               if (
-                !isGoMode &&
+                !isLeaderNavMode &&
                 event.key === "Tab" &&
                 event.shiftKey &&
                 inputEmpty &&
@@ -505,7 +516,7 @@ export function CommandPaletteView({
               }
 
               if (
-                !isGoMode &&
+                !isLeaderNavMode &&
                 event.key === "Tab" &&
                 !event.shiftKey &&
                 notComposing
@@ -521,13 +532,13 @@ export function CommandPaletteView({
                 inputEmpty &&
                 notComposing;
 
-              if (!isGoMode && isClearKey && hasContextLayers) {
+              if (!isLeaderNavMode && isClearKey && hasContextLayers) {
                 event.preventDefault();
                 clearAllContextLayers();
               }
             }}
           />
-          {!isGoMode ? <kbd>{shortcutHint}</kbd> : null}
+          {!isLeaderNavMode ? <kbd>{shortcutHint}</kbd> : null}
         </div>
         <Command.List className="command-list">
           {isGoMode ? (
@@ -561,6 +572,26 @@ export function CommandPaletteView({
                     }}
                   >
                     <NavigationItemIcon navId={item.id} />
+                    <span className="command-item-label">{item.label}</span>
+                    <small>{item.hint}</small>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            </>
+          ) : isFinanceGoMode ? (
+            <>
+              <Command.Empty className="command-empty">
+                No destination found.
+              </Command.Empty>
+              <Command.Group heading="Finance">
+                {financeGoItems.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    value={financeGoNavigationItemSearchValue(item)}
+                    className="command-item"
+                    onSelect={() => closeAndNavigate(item.href)}
+                  >
+                    <FinanceSectionNavIcon id={item.id} />
                     <span className="command-item-label">{item.label}</span>
                     <small>{item.hint}</small>
                   </Command.Item>

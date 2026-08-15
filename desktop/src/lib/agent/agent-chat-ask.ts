@@ -1,7 +1,12 @@
 /**
  * T3-aligned pending user-input helpers (see pendingUserInput.ts / ComposerPendingUserInputPanel).
- * Answers sent to Cursor ACP are label maps: Record<questionId, label | labels>.
+ * UI drafts stay label-based; ACP wire answers use Cursor docs selectedOptionIds.
  */
+
+export type AskAnswerWireRow = {
+  questionId: string;
+  selectedOptionIds: string[];
+};
 
 export type AskQuestionOption = {
   id: string;
@@ -180,16 +185,38 @@ export function deriveAskProgress(
   };
 }
 
-/** T3 buildPendingUserInputAnswers → ACP `{ answers }` record of labels. */
+/**
+ * Map draft labels / custom text → Cursor ACP
+ * `{ questionId, selectedOptionIds }[]` (docs wire shape).
+ */
 export function buildAskAnswersPayload(
   questions: readonly AskQuestionItem[],
   drafts: Record<string, AskQuestionDraft>,
-): Record<string, string | string[]> | null {
-  const answers: Record<string, string | string[]> = {};
+): AskAnswerWireRow[] | null {
+  const answers: AskAnswerWireRow[] = [];
   for (const question of questions) {
-    const answer = resolveAskAnswer(question, drafts[question.id]);
-    if (answer == null) return null;
-    answers[question.id] = answer;
+    const draft = drafts[question.id];
+    const custom = (draft?.customAnswer ?? "").trim();
+    if (custom) {
+      const match = question.options.find(
+        (opt) => opt.label === custom || opt.id === custom,
+      );
+      answers.push({
+        questionId: question.id,
+        selectedOptionIds: [match?.id ?? custom],
+      });
+      continue;
+    }
+    const selectedLabels = normalizeLabels(draft?.selectedOptionLabels);
+    if (selectedLabels.length === 0) return null;
+    const selectedOptionIds: string[] = [];
+    for (const label of selectedLabels) {
+      const match = question.options.find(
+        (opt) => opt.label === label || opt.id === label,
+      );
+      selectedOptionIds.push(match?.id ?? label);
+    }
+    answers.push({ questionId: question.id, selectedOptionIds });
   }
-  return Object.keys(answers).length > 0 ? answers : null;
+  return answers.length > 0 ? answers : null;
 }

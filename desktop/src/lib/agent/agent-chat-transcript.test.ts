@@ -140,6 +140,73 @@ test("repairInvertedUserAssistantPairs keeps follow-up user below prior agent tu
   );
 });
 
+test("repairInvertedUserAssistantPairs does not rewrite mid-thread after fuzzy damage", () => {
+  const sealed: AgentChatMessage = {
+    id: "a-sealed",
+    role: "assistant",
+    text: "Prior reply",
+    createdAt: 10,
+  };
+  const open: AgentChatMessage = {
+    id: "a-open",
+    role: "assistant",
+    text: "",
+    createdAt: 20,
+    activities: [
+      { id: "t1", kind: "thought", title: "Thinking", status: "in_progress" },
+    ],
+  };
+  const followUp: AgentChatMessage = {
+    id: "u-follow",
+    role: "user",
+    text: "are you done with this task?",
+    createdAt: 30,
+  };
+  const orphanedBootstrap: AgentChatMessage = {
+    id: "u-bootstrap",
+    role: "user",
+    text: "Implement this Backsteros task.",
+    createdAt: 15,
+  };
+  const repaired = repairInvertedUserAssistantPairs([
+    sealed,
+    open,
+    followUp,
+    orphanedBootstrap,
+  ]);
+  assert.deepEqual(
+    repaired.map((message) => message.id),
+    ["a-sealed", "a-open", "u-follow", "u-bootstrap"],
+  );
+});
+
+test("merge keeps repeated identical bootstrap user prompts distinct", () => {
+  const bootstrap = "Implement this Backsteros task. ".repeat(8).trim();
+  const remote: AgentChatMessage[] = [
+    { id: "u1", role: "user", text: bootstrap, createdAt: 1 },
+    { id: "a1", role: "assistant", text: "One", createdAt: 2 },
+    { id: "u2", role: "user", text: bootstrap, createdAt: 3 },
+    { id: "a2", role: "assistant", text: "Two", createdAt: 4 },
+    { id: "u3", role: "user", text: bootstrap, createdAt: 5 },
+    {
+      id: "a3",
+      role: "assistant",
+      text: "",
+      createdAt: 6,
+      activities: [
+        { id: "t1", kind: "thought", title: "Thinking", status: "in_progress" },
+      ],
+    },
+    { id: "u4", role: "user", text: "are you done?", createdAt: 7 },
+  ];
+  const local = [...remote];
+  const merged = mergeAgentChatTranscripts(remote, local);
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["u1", "a1", "u2", "a2", "u3", "a3", "u4"],
+  );
+});
+
 test("merge keeps first-seen order and fuzzy-acks sidecar user ids", () => {
   const localUser: AgentChatMessage = {
     id: "local-u",

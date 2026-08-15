@@ -9,7 +9,7 @@
     <!--
       Critical boot styles: paint the branded loading screen before JS/CSS
       bundles arrive so the native WebView never flashes white.
-      Matches SignInLoadingScreen (app chrome is dark-first).
+      Lives outside #root so React mount does not remount a second splash.
       Overlay webviews strip this splash (see inline script below).
     -->
     <style>
@@ -34,8 +34,10 @@
       }
 
       .boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
         display: flex;
-        min-height: 100%;
         align-items: center;
         justify-content: center;
         padding: 32px 24px;
@@ -59,17 +61,39 @@
         text-align: center;
       }
 
+      .boot-splash__brand-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .boot-splash__logo {
+        display: block;
+        flex-shrink: 0;
+        width: 28px;
+        height: 28px;
+        animation: boot-splash-spin 1.15s linear infinite;
+      }
+
+      @keyframes boot-splash-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       .boot-splash__brand {
         margin: 0;
         font-size: 28px;
-        font-weight: 650;
         letter-spacing: -0.03em;
+        line-height: 1;
       }
 
-      .boot-splash__copy {
-        margin: 0 0 8px;
-        color: rgb(255 255 255 / 0.55);
-        line-height: 1.5;
+      .boot-splash__brand-thin {
+        font-weight: 200;
+      }
+
+      .boot-splash__brand-bold {
+        font-weight: 700;
       }
 
       /* Transparent compose / command-palette overlay webview */
@@ -87,14 +111,105 @@
   </head>
 
   <body>
-    <div id="root">
-      <div class="boot-splash" id="boot-splash" role="status" aria-live="polite">
-        <div class="boot-splash__panel">
-          <h1 class="boot-splash__brand">BacksterOS</h1>
-          <p class="boot-splash__copy">Loading session…</p>
+    <div
+      class="boot-splash"
+      id="boot-splash"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading BacksterOS"
+    >
+      <div class="boot-splash__panel">
+        <div class="boot-splash__brand-row">
+          <!-- Sidepanel mark (DevelopmentAdeLogoIcon) — spins while booting -->
+          <svg
+            class="boot-splash__logo"
+            width="28"
+            height="28"
+            viewBox="0 0 84 84"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <g clip-path="url(#boot_clip0)">
+              <path
+                d="M16.0635 -1.99551C25.835 -11.7665 43.1726 -11.6821 54.8239 -0.0309414L65.2054 10.3505C76.8567 22.0018 76.9417 39.3401 67.1706 49.1116C57.3993 58.883 40.0603 58.7985 28.4089 47.147L18.0274 36.7655C6.3761 25.1141 6.29218 7.77585 16.0635 -1.99551Z"
+                stroke="url(#boot_paint0)"
+                stroke-width="15"
+              />
+              <path
+                d="M17.0633 35.1211C26.9048 25.28 44.081 25.3433 55.4515 36.7134L65.6831 46.9451C77.0535 58.3156 77.1166 75.4917 67.2755 85.3332C57.434 95.1747 40.2572 95.1121 28.8866 83.7416L18.655 73.5099C7.2847 62.1393 7.22187 44.9625 17.0633 35.1211Z"
+                stroke="url(#boot_paint1)"
+                stroke-width="15"
+              />
+              <path
+                d="M85.3341 16.0637C95.1051 25.8351 95.0207 43.1727 83.3696 54.824L72.9881 65.2055C61.3368 76.8568 43.9985 76.9418 34.227 67.1708C24.4556 57.3994 24.5402 40.0605 36.1916 28.409L46.5731 18.0275C58.2245 6.37622 75.5628 6.2923 85.3341 16.0637Z"
+                stroke="url(#boot_paint2)"
+                stroke-width="15"
+              />
+              <path
+                d="M48.2177 17.0634C58.0588 26.9049 57.9954 44.0811 46.6253 55.4516L36.3937 65.6832C25.0232 77.0537 7.84705 77.1168 -1.9945 67.2756C-11.836 57.4341 -11.7734 40.2573 -0.402821 28.8867L9.82882 18.6551C21.1994 7.28482 38.3763 7.222 48.2177 17.0634Z"
+                stroke="url(#boot_paint3)"
+                stroke-width="15"
+              />
+            </g>
+            <defs>
+              <linearGradient
+                id="boot_paint0"
+                x1="53.863"
+                y1="60.9134"
+                x2="51.5916"
+                y2="22.4553"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="white" />
+                <stop offset="1" stop-color="#999999" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient
+                id="boot_paint1"
+                x1="30.7148"
+                y1="22.0666"
+                x2="32.5306"
+                y2="61.1837"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="white" />
+                <stop offset="1" stop-color="#999999" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient
+                id="boot_paint2"
+                x1="22.4252"
+                y1="53.8631"
+                x2="60.8833"
+                y2="51.5917"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="white" />
+                <stop offset="1" stop-color="#999999" stop-opacity="0" />
+              </linearGradient>
+              <linearGradient
+                id="boot_paint3"
+                x1="61.2722"
+                y1="30.7149"
+                x2="22.1551"
+                y2="32.5307"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stop-color="white" />
+                <stop offset="1" stop-color="#999999" stop-opacity="0" />
+              </linearGradient>
+              <clipPath id="boot_clip0">
+                <rect width="84" height="84" fill="white" />
+              </clipPath>
+            </defs>
+          </svg>
+          <h1 class="boot-splash__brand">
+            <span class="boot-splash__brand-thin">Backster</span
+            ><span class="boot-splash__brand-bold">OS</span>
+          </h1>
         </div>
       </div>
     </div>
+    <div id="root"></div>
     <script>
       // Overlay windows must stay transparent — never flash the boot splash.
       if (location.pathname.startsWith("/desktop-overlay")) {

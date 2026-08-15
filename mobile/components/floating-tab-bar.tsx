@@ -1,6 +1,6 @@
 import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Platform,
   Pressable,
@@ -246,6 +246,9 @@ export function FloatingTabBar({
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreMounted, setMoreMounted] = useState(false);
   const [hasSlotWidth, setHasSlotWidth] = useState(false);
+  // RN Modal can detach FullWindowOverlay on iOS — remount when becoming visible again.
+  const [overlayEpoch, setOverlayEpoch] = useState(0);
+  const wasHiddenRef = useRef(hidden);
   const bottom = Math.max(insets.bottom, 10);
 
   const visibility = useSharedValue(hidden ? 0 : 1);
@@ -299,7 +302,10 @@ export function FloatingTabBar({
   useEffect(() => {
     if (hidden) {
       setMoreOpen(false);
+    } else if (wasHiddenRef.current) {
+      setOverlayEpoch((epoch) => epoch + 1);
     }
+    wasHiddenRef.current = hidden;
     visibility.value = withTiming(hidden ? 0 : 1, {
       duration: VISIBILITY_MS,
       easing: VISIBILITY_EASING,
@@ -580,7 +586,7 @@ export function FloatingTabBar({
   );
 
   if (Platform.OS === "ios") {
-    return <FullWindowOverlay>{bar}</FullWindowOverlay>;
+    return <FullWindowOverlay key={overlayEpoch}>{bar}</FullWindowOverlay>;
   }
 
   return bar;

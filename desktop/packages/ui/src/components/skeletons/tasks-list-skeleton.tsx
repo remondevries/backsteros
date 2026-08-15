@@ -35,6 +35,10 @@ function TaskRowSkeleton({ index }: { index: number }) {
       >
         <SkeletonBlock
           as="span"
+          className="inline-block h-3.5 w-[18px] shrink-0 rounded"
+        />
+        <SkeletonBlock
+          as="span"
           className="inline-block h-3.5 w-3.5 shrink-0 rounded-full"
         />
         <SkeletonBlock
@@ -64,7 +68,7 @@ function TaskRowSkeleton({ index }: { index: number }) {
 
 /**
  * Tasks list loading state: real status group headers with item-shaped
- * skeleton rows — matching TaskItemRow (priority · id · status · title · props).
+ * skeleton rows — matching TaskItemRow (check · priority · id · status · title · props).
  */
 export function TasksListSkeleton({
   itemsPerGroup = 3,

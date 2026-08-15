@@ -1,17 +1,29 @@
-import type { Organization as ApiOrganization } from "@backsteros/contracts";
+import type {
+  BankAccount,
+  FinancialCategory,
+  FinancialGoal,
+  FinancialRecurring,
+  FinancialTransaction,
+  MoneybirdSalesInvoiceDetail,
+  MoneybirdSalesInvoiceSummary,
+  Organization as ApiOrganization,
+} from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   AvatarUpload,
+  buildMoneybirdContactInvoicesFilter,
+  buildMoneybirdInvoicesFilter,
   EntityDetailLayout,
+  FinanceInvoicesView,
   OrganizationContactsListView,
   OrganizationDetailView,
-  ORGANIZATION_SECTIONS,
-  ProjectsOverviewView,
+  OrganizationTransactionsSection,
   RegisterEntityDeleteAction,
   RegisterPageTitle,
   ScopedLettersListView,
+  ProjectsOverviewView,
   buildOrganizationProjectsHref,
   getLettersHref,
   getOrganizationContactHref,
@@ -21,11 +33,14 @@ import {
   groupItemsByAlphaLetter,
   getUniqueListItemRouteParam,
   isOrganizationSectionId,
+  localCalendarYear,
   organizationMatchesSlug,
   parseListBoardViewFromLocation,
   parseOrganizationSectionId,
   persistListBoardView,
+  primeTabTitle,
   PROJECTS_LIST_BOARD_STORAGE_KEY,
+  resolveVisibleOrganizationSections,
   type ListBoardView,
   type OrganizationOverviewDetails,
   type OrganizationSectionId,
@@ -47,12 +62,44 @@ import { type ProjectLocationState } from "../lib/project-type-cache";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 
+type MoneybirdInvoicesListResponse = {
+  invoices: MoneybirdSalesInvoiceSummary[];
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+  totalPages: number;
+};
+
 function orgSlug(org: {
   number?: number | null;
   key?: string | null;
   id: string;
 }) {
   return org.number ?? org.key ?? org.id;
+}
+
+async function fetchAllOrganizationTransactions(
+  client: {
+    requestJson: <T>(path: string) => Promise<T>;
+  },
+  organizationId: string,
+): Promise<FinancialTransaction[]> {
+  const rows: FinancialTransaction[] = [];
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams({
+      organizationId,
+      limit: "500",
+    });
+    if (cursor) params.set("cursor", cursor);
+    const body = await client.requestJson<{
+      transactions: FinancialTransaction[];
+      nextCursor: string | null;
+    }>(`/api/v1/transactions?${params}`);
+    rows.push(...body.transactions);
+    cursor = body.nextCursor;
+  } while (cursor);
+  return rows;
 }
 
 export function OrganizationsPage() {
@@ -98,13 +145,87 @@ export function OrganizationsPage() {
     : null;
 
   const activeSection = parseOrganizationSectionId(sectionParam);
+  const [hasTransactions, setHasTransactions] = useState(false);
+  const [hasInvoices, setHasInvoices] = useState(false);
+  const [financeProbeReady, setFinanceProbeReady] = useState(false);
+
+  const [orgTransactions, setOrgTransactions] = useState<
+    FinancialTransaction[]
+  >([]);
+  const [orgTransactionsLoading, setOrgTransactionsLoading] = useState(false);
+  const [financeCategories, setFinanceCategories] = useState<
+    FinancialCategory[]
+  >([]);
+  const [financeAccounts, setFinanceAccounts] = useState<BankAccount[]>([]);
+  const [financeGoals, setFinanceGoals] = useState<FinancialGoal[]>([]);
+  const [financeRecurrings, setFinanceRecurrings] = useState<
+    FinancialRecurring[]
+  >([]);
+
+  const [orgInvoices, setOrgInvoices] = useState<MoneybirdSalesInvoiceSummary[]>(
+    [],
+  );
+  const [orgInvoicesLoading, setOrgInvoicesLoading] = useState(false);
+  const [orgInvoicesError, setOrgInvoicesError] = useState<string | null>(null);
+  const [orgInvoicesConnected, setOrgInvoicesConnected] = useState(false);
+  const [orgInvoicesPage, setOrgInvoicesPage] = useState(1);
+  const [orgInvoicesTotalPages, setOrgInvoicesTotalPages] = useState(1);
+  const [orgInvoicesHasMore, setOrgInvoicesHasMore] = useState(false);
+  const [orgInvoicesYear, setOrgInvoicesYear] = useState(() =>
+    localCalendarYear(),
+  );
+  const [orgInvoiceStatusIds, setOrgInvoiceStatusIds] = useState<string[]>([]);
+  const [selectedOrgInvoiceId, setSelectedOrgInvoiceId] = useState<
+    string | null
+  >(null);
+  const [orgInvoiceDetail, setOrgInvoiceDetail] =
+    useState<MoneybirdSalesInvoiceDetail | null>(null);
+  const [orgInvoiceDetailLoading, setOrgInvoiceDetailLoading] = useState(false);
+  const [orgInvoiceDetailError, setOrgInvoiceDetailError] = useState<
+    string | null
+  >(null);
+
+  const visibleSections = useMemo(
+    () =>
+      resolveVisibleOrganizationSections({
+        hasTransactions,
+        hasInvoices,
+      }),
+    [hasInvoices, hasTransactions],
+  );
+
   const sectionLabel =
     activeSection === "overview"
       ? null
-      : (ORGANIZATION_SECTIONS.find((entry) => entry.id === activeSection)
-          ?.label ?? null);
+      : (visibleSections.find((entry) => entry.id === activeSection)?.label ??
+        null);
 
   const selectedSlugValue = selected ? String(orgSlug(selected)) : null;
+
+  const moneybirdContactId =
+    details?.moneybirdContactId?.trim() ||
+    (
+      selected
+        ? organizations.find((entry) => entry.id === selected.id)
+        : null
+    )?.moneybirdContactId?.trim() ||
+    null;
+
+  const accountAvatarSrcById = useDesktopAvatarSrcMap(
+    "bank_account",
+    financeAccounts,
+  );
+
+  const orgListItem = useMemo(() => {
+    if (!selected) return null;
+    return {
+      id: selected.id,
+      name: selected.name,
+      number: selected.number,
+      key: selected.key,
+      moneybirdContactId: moneybirdContactId,
+    };
+  }, [moneybirdContactId, selected]);
 
   useEffect(() => {
     if (slug) return;
@@ -130,6 +251,274 @@ export function OrganizationsPage() {
       });
     }
   }, [navigate, sectionParam, selected, selectedSlugValue]);
+
+  useEffect(() => {
+    if (!selected || !financeProbeReady || !selectedSlugValue) return;
+    const visibleIds = new Set(visibleSections.map((entry) => entry.id));
+    if (!visibleIds.has(activeSection)) {
+      navigate(getOrganizationSectionHref(selectedSlugValue, "overview"), {
+        replace: true,
+      });
+    }
+  }, [
+    activeSection,
+    financeProbeReady,
+    navigate,
+    selected,
+    selectedSlugValue,
+    visibleSections,
+  ]);
+
+  useEffect(() => {
+    if (!selected) {
+      setHasTransactions(false);
+      setHasInvoices(false);
+      setFinanceProbeReady(false);
+      return;
+    }
+    let cancelled = false;
+    setFinanceProbeReady(false);
+    setHasTransactions(false);
+    setHasInvoices(false);
+    void (async () => {
+      const contactId =
+        details?.moneybirdContactId?.trim() ||
+        moneybirdContactId ||
+        null;
+      try {
+        const [txProbe, invoiceProbe] = await Promise.all([
+          client.requestJson<{ transactions: FinancialTransaction[] }>(
+            `/api/v1/transactions?${new URLSearchParams({
+              organizationId: selected.id,
+              limit: "1",
+            })}`,
+          ),
+          contactId
+            ? client
+                .requestJson<MoneybirdInvoicesListResponse>(
+                  `/api/v1/finance/moneybird/invoices?${new URLSearchParams({
+                    page: "1",
+                    perPage: "1",
+                    filter: buildMoneybirdContactInvoicesFilter(contactId),
+                  })}`,
+                )
+                .catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setHasTransactions(txProbe.transactions.length > 0);
+        setHasInvoices(
+          Boolean(invoiceProbe && invoiceProbe.invoices.length > 0),
+        );
+        setOrgInvoicesConnected(invoiceProbe != null);
+      } catch {
+        if (cancelled) return;
+        setHasTransactions(false);
+        setHasInvoices(false);
+      } finally {
+        if (!cancelled) setFinanceProbeReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, details?.moneybirdContactId, moneybirdContactId, selected]);
+
+  useEffect(() => {
+    if (!selected || activeSection !== "transactions") return;
+    let cancelled = false;
+    setOrgTransactionsLoading(true);
+    void (async () => {
+      try {
+        const [transactions, categoriesBody, accountsBody, goalsBody, recurringsBody] =
+          await Promise.all([
+            fetchAllOrganizationTransactions(client, selected.id),
+            client.requestJson<{ categories: FinancialCategory[] }>(
+              "/api/v1/financial-categories",
+            ),
+            client.requestJson<{ bankAccounts: BankAccount[] }>(
+              "/api/v1/bank-accounts",
+            ),
+            client.requestJson<{ goals: FinancialGoal[] }>(
+              "/api/v1/financial-goals",
+            ),
+            client.requestJson<{ recurrings: FinancialRecurring[] }>(
+              "/api/v1/financial-recurrings",
+            ),
+          ]);
+        if (cancelled) return;
+        setOrgTransactions(transactions);
+        setFinanceCategories(categoriesBody.categories);
+        setFinanceAccounts(accountsBody.bankAccounts);
+        setFinanceGoals(goalsBody.goals);
+        setFinanceRecurrings(recurringsBody.recurrings);
+      } catch {
+        if (cancelled) return;
+        setOrgTransactions([]);
+      } finally {
+        if (!cancelled) setOrgTransactionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, client, selected]);
+
+  useEffect(() => {
+    if (!selected || activeSection !== "invoices" || !moneybirdContactId) {
+      return;
+    }
+    let cancelled = false;
+    setOrgInvoicesLoading(true);
+    setOrgInvoicesError(null);
+    void (async () => {
+      try {
+        const filter = buildMoneybirdInvoicesFilter(
+          orgInvoicesYear,
+          orgInvoiceStatusIds,
+          { contactId: moneybirdContactId },
+        );
+        const body = await client.requestJson<MoneybirdInvoicesListResponse>(
+          `/api/v1/finance/moneybird/invoices?${new URLSearchParams({
+            page: String(orgInvoicesPage),
+            perPage: "50",
+            filter,
+          })}`,
+        );
+        if (cancelled) return;
+        setOrgInvoices(body.invoices);
+        setOrgInvoicesPage(body.page);
+        setOrgInvoicesTotalPages(body.totalPages);
+        setOrgInvoicesHasMore(body.hasMore);
+        setOrgInvoicesConnected(true);
+      } catch (error) {
+        if (cancelled) return;
+        setOrgInvoices([]);
+        setOrgInvoicesHasMore(false);
+        setOrgInvoicesTotalPages(1);
+        setOrgInvoicesError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load Moneybird invoices",
+        );
+      } finally {
+        if (!cancelled) setOrgInvoicesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    client,
+    moneybirdContactId,
+    orgInvoiceStatusIds,
+    orgInvoicesPage,
+    orgInvoicesYear,
+    selected,
+  ]);
+
+  useEffect(() => {
+    setSelectedOrgInvoiceId(null);
+  }, [orgInvoicesPage, orgInvoicesYear, orgInvoiceStatusIds, selected?.id]);
+
+  useEffect(() => {
+    if (activeSection !== "invoices" || !selectedOrgInvoiceId) {
+      setOrgInvoiceDetail(null);
+      setOrgInvoiceDetailError(null);
+      setOrgInvoiceDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOrgInvoiceDetailLoading(true);
+    setOrgInvoiceDetailError(null);
+    void (async () => {
+      try {
+        const detail = await client.requestJson<MoneybirdSalesInvoiceDetail>(
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`,
+        );
+        if (cancelled) return;
+        setOrgInvoiceDetail(detail);
+      } catch (error) {
+        if (cancelled) return;
+        setOrgInvoiceDetail(null);
+        setOrgInvoiceDetailError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load invoice detail",
+        );
+      } finally {
+        if (!cancelled) setOrgInvoiceDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, client, selectedOrgInvoiceId]);
+
+  const patchOrgTransaction = useCallback(
+    async (
+      id: string,
+      patch: {
+        categoryId?: string | null;
+        organizationId?: string | null;
+        goalId?: string | null;
+        recurringId?: string | null;
+        projectId?: string | null;
+        notes?: string | null;
+        bankAccountId?: string | null;
+      },
+    ) => {
+      const updated = await client.requestJson<FinancialTransaction>(
+        `/api/v1/transactions/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        },
+      );
+      setOrgTransactions((current) => {
+        const next = current
+          .map((row) => (row.id === id ? updated : row))
+          .filter((row) => row.organizationId === selected?.id);
+        setHasTransactions(next.length > 0);
+        return next;
+      });
+    },
+    [client, selected?.id],
+  );
+
+  const bulkPatchOrgTransactions = useCallback(
+    async (
+      ids: string[],
+      patch: {
+        categoryId?: string | null;
+        organizationId?: string | null;
+        goalId?: string | null;
+        recurringId?: string | null;
+        projectId?: string | null;
+        notes?: string | null;
+        bankAccountId?: string | null;
+      },
+    ) => {
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const chunk = ids.slice(offset, offset + 500);
+        await client.requestJson("/api/v1/transactions/batch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: chunk, patch }),
+        });
+      }
+      if (!selected) return;
+      const refreshed = await fetchAllOrganizationTransactions(
+        client,
+        selected.id,
+      );
+      setOrgTransactions(refreshed);
+      setHasTransactions(refreshed.length > 0);
+    },
+    [client, selected],
+  );
 
   useDesktopSectionBreadcrumb(
     selected
@@ -282,13 +671,12 @@ export function OrganizationsPage() {
             const match = projects.find(
               (entry) => entry.key.toLowerCase() === key.toLowerCase(),
             );
+            const href = getOrganizationProjectHref(organizationSlug, key);
+            if (match?.name) primeTabTitle(href, match.name);
             const state: ProjectLocationState | undefined = match?.type
               ? { projectType: match.type }
               : undefined;
-            navigate(
-              getOrganizationProjectHref(organizationSlug, key),
-              state ? { state } : undefined,
-            );
+            navigate(href, state ? { state } : undefined);
           }}
           onStatusChange={(projectId, status: ProjectStatus) => {
             void workspace.patchProject(projectId, { status });
@@ -313,10 +701,16 @@ export function OrganizationsPage() {
               organizationId: organization.id,
             });
           }}
-          onCreatedProject={(_id, key) => {
-            if (key) {
-              navigate(getOrganizationProjectHref(organizationSlug, key));
-            }
+          onCreatedProject={(id, key) => {
+            if (!key) return;
+            const href = getOrganizationProjectHref(organizationSlug, key);
+            const match =
+              projects.find((entry) => entry.id === id) ??
+              projects.find(
+                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+              );
+            if (match?.name) primeTabTitle(href, match.name);
+            navigate(href);
           }}
           onReorder={(request) => {
             const patches = projectReorderPatches(orgProjects, request);
@@ -366,6 +760,70 @@ export function OrganizationsPage() {
       );
     }
 
+    if (sectionId === "transactions") {
+      return (
+        <div className="organization-detail__finance-section">
+          <OrganizationTransactionsSection
+            transactions={orgTransactions}
+            loading={orgTransactionsLoading}
+            categories={financeCategories}
+            accounts={financeAccounts}
+            accountAvatarSrcById={accountAvatarSrcById}
+            organizations={organizations}
+            projects={projects}
+            goals={financeGoals}
+            recurrings={financeRecurrings}
+            emptyLabel="No transactions linked to this organization."
+            onPatchTransaction={(id, patch) => {
+              void patchOrgTransaction(id, patch);
+            }}
+            onBulkPatchTransactions={(ids, patch) => {
+              void bulkPatchOrgTransactions(ids, patch);
+            }}
+            onCreateOrganizationFromQuery={(query) =>
+              workspace.createOrganization({ name: query })
+            }
+          />
+        </div>
+      );
+    }
+
+    if (sectionId === "invoices") {
+      return (
+        <div className="organization-detail__finance-section">
+          <FinanceInvoicesView
+            embedded
+            hideOrganizationFilter
+            invoices={orgInvoices}
+            loading={orgInvoicesLoading}
+            error={orgInvoicesError}
+            connected={orgInvoicesConnected}
+            page={orgInvoicesPage}
+            totalPages={orgInvoicesTotalPages}
+            hasMore={orgInvoicesHasMore}
+            onPageChange={setOrgInvoicesPage}
+            year={orgInvoicesYear}
+            latestYear={localCalendarYear()}
+            onYearChange={(nextYear) => {
+              setOrgInvoicesYear(nextYear);
+              setOrgInvoicesPage(1);
+            }}
+            filterStatusIds={orgInvoiceStatusIds}
+            onFilterStatusIdsChange={(values) => {
+              setOrgInvoiceStatusIds(values);
+              setOrgInvoicesPage(1);
+            }}
+            organizations={orgListItem ? [orgListItem] : []}
+            selectedInvoiceId={selectedOrgInvoiceId}
+            onSelectedInvoiceChange={setSelectedOrgInvoiceId}
+            invoiceDetail={orgInvoiceDetail}
+            invoiceDetailLoading={orgInvoiceDetailLoading}
+            invoiceDetailError={orgInvoiceDetailError}
+          />
+        </div>
+      );
+    }
+
     return null;
   }
 
@@ -396,7 +854,11 @@ export function OrganizationsPage() {
           postalCode: details?.postalCode ?? null,
           country: details?.country ?? null,
           summary: details?.summary ?? null,
+          moneybirdContactId:
+            details?.moneybirdContactId ?? moneybirdContactId,
         }}
+        organizationSlug={organizationSlug}
+        sections={visibleSections}
         section={activeSection}
         onSectionChange={handleSectionChange}
         renderSection={renderSection}

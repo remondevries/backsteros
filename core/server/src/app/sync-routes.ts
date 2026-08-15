@@ -185,7 +185,10 @@ export function registerSyncRoutes(app: Hono) {
 
   app.get("/api/v1/powersync/token", async (c) => {
     const auth = getAuth(c);
-    const endpoint = getPowerSyncUrl();
+    const endpoint = getPowerSyncUrl({
+      origin: c.req.header("origin"),
+      host: c.req.header("host"),
+    });
     if (!endpoint) {
       return c.json(
         { error: "PowerSync is not configured", code: "powersync_unconfigured" },

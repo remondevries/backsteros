@@ -1,13 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useDesktopApi } from "../api-context";
 import { ensureProjectVault } from "../ensure-project-vault";
 import { buildReadyToStartAgentPrompt } from "./agent-launch";
+import { readAgentChatMode } from "./agent-chat-mode";
 import { readAgentChatModelId } from "./agent-chat-model";
 import {
   createAgentChatMessage,
   publishAgentChatTranscriptMessage,
   saveAgentChatTranscript,
+  type AgentChatImageAttachment,
 } from "./agent-chat-transcript";
 import { useDesktopAgentStatus } from "./agent-status-context";
 import {
@@ -15,7 +17,10 @@ import {
   markLiveAgentWorkingForTask,
 } from "./clear-live-agent-working";
 import { normalizeWorkingDirectory } from "./project-workspace";
-import { startTaskAgentSession } from "./start-task-agent-session";
+import {
+  IMAGE_ONLY_BOOTSTRAP_PROMPT,
+  startTaskAgentSession,
+} from "./start-task-agent-session";
 
 export type DesktopTaskAgentSessionSummary = {
   number: number;
@@ -53,19 +58,35 @@ export function useDesktopTaskAgentSession({
   automateTaskStatus = false,
 }: UseDesktopTaskAgentSessionOptions) {
   const { client } = useDesktopApi();
-  const { requestAttach, requestEnd, focusAgentTab, setTaskResearchWorking } =
-    useDesktopAgentStatus();
+  const {
+    requestAttach,
+    requestEnd,
+    focusAgentTab,
+    setTaskResearchWorking,
+    setPendingBootstrapPrompt,
+  } = useDesktopAgentStatus();
 
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
+  /** State lags one render — ref blocks concurrent Start / auto-start races. */
+  const creatingAgentRef = useRef(false);
 
   const hasSession = Boolean(agentChatId?.trim());
 
   const startAgentSession = useCallback(
-    async (options?: { prompt?: string }) => {
-      if (creatingAgent) return;
+    async (options?: {
+      prompt?: string;
+      images?: readonly AgentChatImageAttachment[];
+      mode?: string | null;
+    }) => {
+      if (creatingAgentRef.current) return;
+      creatingAgentRef.current = true;
       setCreatingAgent(true);
       setAgentError(null);
+      // Immediate feedback — Chat Working… + focus before vault/ensure/prompt.
+      setTaskResearchWorking(taskId, true);
+      markLiveAgentWorkingForTask(taskId);
+      focusAgentTab();
       try {
         let workingDirectory = normalizeWorkingDirectory(
           taskSummary.workingDirectory,
@@ -89,35 +110,51 @@ export function useDesktopTaskAgentSession({
             "Configure a vault folder in Settings → Storage (or set a local working directory) before starting the agent.",
           );
         }
+        const imagePayload = (options?.images ?? [])
+          .filter((image) => image.dataBase64)
+          .map((image) => ({
+            mimeType: image.mimeType,
+            data: image.dataBase64!,
+          }));
         const customPrompt = options?.prompt?.trim();
         const prompt =
           customPrompt ||
-          buildReadyToStartAgentPrompt({
-            id: taskId,
-            number: taskSummary.number,
-            title: taskSummary.title,
-            description: taskSummary.description,
-            projectKey: taskSummary.projectKey,
-            workingDirectory,
-          });
-        // Optimistic — list/activity pulses should light up before ACP attaches
-        // (bootstrap prompt is fire-and-forget; WebSocket hooks often miss it).
-        setTaskResearchWorking(taskId, true);
-        markLiveAgentWorkingForTask(taskId);
+          (imagePayload.length > 0
+            ? IMAGE_ONLY_BOOTSTRAP_PROMPT
+            : buildReadyToStartAgentPrompt({
+                id: taskId,
+                number: taskSummary.number,
+                title: taskSummary.title,
+                description: taskSummary.description,
+                projectKey: taskSummary.projectKey,
+                workingDirectory,
+              }));
+        // Optimistic user bubble + Working… before ensure/prompt round-trips.
+        const bootstrap = createAgentChatMessage("user", prompt, {
+          images: options?.images ? [...options.images] : undefined,
+        });
+        setPendingBootstrapPrompt({
+          taskId,
+          prompt,
+          messageId: bootstrap.id,
+          createdAt: bootstrap.createdAt,
+          images: options?.images ? [...options.images] : undefined,
+        });
         const result = await startTaskAgentSession({
           taskId,
           cwd: workingDirectory,
           prompt,
           model: readAgentChatModelId(),
+          mode: options?.mode ?? readAgentChatMode(),
+          images: imagePayload,
         });
         if (!result.ok) {
+          setPendingBootstrapPrompt(null);
           clearLiveAgentWorkingForTask(taskId);
           throw new Error(result.error);
         }
-        const bootstrap = createAgentChatMessage("user", prompt);
         saveAgentChatTranscript(result.chatId, [bootstrap]);
         publishAgentChatTranscriptMessage(result.chatId, bootstrap);
-        focusAgentTab();
         requestAttach({
           taskId,
           chatId: result.chatId,
@@ -132,24 +169,28 @@ export function useDesktopTaskAgentSession({
             : { activityActor: "agent" }),
           agentChatId: result.chatId,
         });
+        setPendingBootstrapPrompt(null);
       } catch (err) {
+        setPendingBootstrapPrompt(null);
         clearLiveAgentWorkingForTask(taskId);
+        setTaskResearchWorking(taskId, false);
         setAgentError(
           err instanceof Error
             ? err.message
             : "Could not create agent session.",
         );
       } finally {
+        creatingAgentRef.current = false;
         setCreatingAgent(false);
       }
     },
     [
       automateTaskStatus,
       client,
-      creatingAgent,
       focusAgentTab,
       patchTaskValues,
       requestAttach,
+      setPendingBootstrapPrompt,
       setTaskResearchWorking,
       taskId,
       taskSummary,

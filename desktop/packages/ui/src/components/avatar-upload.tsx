@@ -4,12 +4,22 @@ import { useEffect, useRef, useState } from "react";
 
 export type AvatarActionResult = { ok: true } | { ok: false; error: string };
 
+export type AvatarUploadShape = "circle" | "rounded-square";
+
 export type AvatarUploadProps = {
   displayName: string;
   avatarSrc: string | null;
   onUpload: (file: File) => Promise<AvatarActionResult>;
-  onRemove: () => Promise<AvatarActionResult>;
+  onRemove?: () => Promise<AvatarActionResult>;
   onSuccess?: () => void;
+  /** Defaults to circle (contacts/orgs). Bank accounts use rounded-square. */
+  shape?: AvatarUploadShape;
+  /** When true, accept SVG uploads in addition to raster formats. */
+  allowSvg?: boolean;
+  /** Hide format hint under the control. */
+  showHint?: boolean;
+  /** Show the "Remove avatar" text control. Default true when onRemove is set. */
+  showRemove?: boolean;
 };
 
 function AvatarPlaceholder({ name }: { name: string }) {
@@ -22,7 +32,8 @@ function AvatarPlaceholder({ name }: { name: string }) {
 }
 
 /**
- * Circular avatar upload/remove control — matches Next AvatarUpload behavior.
+ * Avatar upload/remove control — circular by default (contacts/orgs),
+ * optional rounded-square + SVG for bank logos.
  */
 export function AvatarUpload({
   displayName,
@@ -30,6 +41,10 @@ export function AvatarUpload({
   onUpload,
   onRemove,
   onSuccess,
+  shape = "circle",
+  allowSvg = false,
+  showHint = true,
+  showRemove,
 }: AvatarUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +57,18 @@ export function AvatarUpload({
 
   const hasAvatar = Boolean(avatarSrc);
   const showImage = Boolean(avatarSrc) && !imageFailed;
+  const canShowRemove = (showRemove ?? Boolean(onRemove)) && Boolean(onRemove);
+  const accept = allowSvg
+    ? "image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg"
+    : "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
+  const hint = allowSvg
+    ? "JPG, PNG, WebP, GIF, or SVG up to 5 MB"
+    : "JPG, PNG, WebP, or GIF up to 5 MB";
+  const overlayLabel = pending
+    ? "Saving…"
+    : hasAvatar
+      ? "Change"
+      : "Upload";
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -67,6 +94,7 @@ export function AvatarUpload({
   }
 
   async function handleRemove() {
+    if (!onRemove) return;
     setError(null);
     setPending(true);
     try {
@@ -85,6 +113,8 @@ export function AvatarUpload({
     }
   }
 
+  const showMeta = showHint || (canShowRemove && hasAvatar) || Boolean(error);
+
   return (
     <div className="avatar-upload">
       <div className="avatar-upload__frame">
@@ -92,6 +122,9 @@ export function AvatarUpload({
           type="button"
           className={[
             "avatar-upload__button",
+            shape === "rounded-square"
+              ? "avatar-upload__button--rounded-square"
+              : null,
             showImage ? "avatar-upload__button--image" : null,
           ]
             .filter(Boolean)
@@ -110,14 +143,12 @@ export function AvatarUpload({
           ) : (
             <AvatarPlaceholder name={displayName} />
           )}
-          <span className="avatar-upload__overlay">
-            {pending ? "Saving…" : "Change"}
-          </span>
+          <span className="avatar-upload__overlay">{overlayLabel}</span>
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+          accept={accept}
           className="avatar-upload__file"
           onChange={(event) => {
             void handleFileChange(event);
@@ -126,26 +157,28 @@ export function AvatarUpload({
         />
       </div>
 
-      <div className="avatar-upload__meta">
-        <p className="avatar-upload__hint">JPG, PNG, WebP, or GIF up to 5 MB</p>
-        {hasAvatar ? (
-          <button
-            type="button"
-            className="avatar-upload__remove"
-            onClick={() => {
-              void handleRemove();
-            }}
-            disabled={pending}
-          >
-            Remove avatar
-          </button>
-        ) : null}
-        {error ? (
-          <p className="avatar-upload__error" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
+      {showMeta ? (
+        <div className="avatar-upload__meta">
+          {showHint ? <p className="avatar-upload__hint">{hint}</p> : null}
+          {canShowRemove && hasAvatar ? (
+            <button
+              type="button"
+              className="avatar-upload__remove"
+              onClick={() => {
+                void handleRemove();
+              }}
+              disabled={pending}
+            >
+              Remove avatar
+            </button>
+          ) : null}
+          {error ? (
+            <p className="avatar-upload__error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

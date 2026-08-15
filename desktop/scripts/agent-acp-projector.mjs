@@ -37,8 +37,13 @@ import { stripTransientAgentStreamError } from "./agent-stream-errors.mjs";
  * @typedef {{
  *   taskId: string,
  *   chatId: string,
+ *   turnId: string,
+ *   turnStatus: "running" | "completed" | "interrupted" | "failed",
  *   messageId: string,
  *   workedStartedAt: number,
+ *   turnCompletedAt: number | null,
+ *   cancelRequested: boolean,
+ *   checkpointId: string | null,
  *   activities: Activity[],
  *   segments: Segment[],
  *   assistantDraft: string,
@@ -62,11 +67,17 @@ function newId(prefix) {
 }
 
 function emptyTurn(taskId, chatId) {
+  const startedAt = Date.now();
   return {
     taskId,
     chatId,
+    turnId: newId("turn"),
+    turnStatus: /** @type {const} */ ("running"),
     messageId: newId("asst"),
-    workedStartedAt: Date.now(),
+    workedStartedAt: startedAt,
+    turnCompletedAt: null,
+    cancelRequested: false,
+    checkpointId: null,
     activities: [],
     segments: [],
     assistantDraft: "",
@@ -203,17 +214,36 @@ function parseStatus(status) {
 
 /**
  * @param {LiveTurn} turn
+ * @param {{ seal?: boolean }} [options]
  */
-function persistTurn(turn) {
+function persistTurn(turn, options = {}) {
+  // Mid-turn: stamp createdAt at turn begin for stable ordering. On seal, advance
+  // createdAt to now so "Worked for…" can use it as the end time (UI uses
+  // createdAt as endedAt). Reusing workedStartedAt for both made every turn "<1s".
+  const createdAt =
+    options.seal === true ? Date.now() : turn.workedStartedAt;
   upsertAssistantTurnTimeline(turn.chatId, {
     id: turn.messageId,
     text: stripTransientAgentStreamError(turn.assistantDraft),
-    createdAt: turn.workedStartedAt,
+    createdAt,
     activities: turn.activities,
     segments: turn.segments,
     planSteps: turn.planSteps.length > 0 ? turn.planSteps : undefined,
     proposedPlanMarkdown: turn.proposedPlanMarkdown,
     workedStartedAt: turn.workedStartedAt,
+    turnId: turn.turnId,
+    turnStatus: turn.turnStatus,
+    turnStartedAt: turn.workedStartedAt,
+    turnCompletedAt: turn.turnCompletedAt,
+    turnOutcome:
+      turn.turnStatus === "interrupted"
+        ? "interrupted"
+        : turn.turnStatus === "failed"
+          ? "failed"
+          : turn.turnStatus === "completed"
+            ? "completed"
+            : undefined,
+    checkpointId: turn.checkpointId,
   });
   turn.dirty = false;
 }
@@ -236,16 +266,65 @@ function schedulePersist(taskId) {
 
 /**
  * @param {string} taskId
+ * @returns {LiveTurn | null}
+ */
+export function getAcpProjectedTurn(taskId) {
+  const id = taskId.trim();
+  if (!id) return null;
+  return liveByTaskId.get(id) ?? null;
+}
+
+/**
+ * Mint a durable turn once per running ACP turn. Reuses the active turn when
+ * activity:working fires after /agent/prompt already began projection.
+ * @param {string} taskId
  * @param {string} chatId
+ * @returns {LiveTurn | null}
  */
 export function beginAcpProjectedTurn(taskId, chatId) {
   const id = taskId.trim();
   const cid = chatId.trim().toLowerCase();
   if (!id || !cid) return null;
+  const existing = liveByTaskId.get(id);
+  if (
+    existing &&
+    existing.chatId === cid &&
+    existing.turnStatus === "running"
+  ) {
+    return existing;
+  }
   const turn = emptyTurn(id, cid);
   liveByTaskId.set(id, turn);
   turn.dirty = true;
   schedulePersist(id);
+  return turn;
+}
+
+/**
+ * @param {string} taskId
+ * @param {string | null | undefined} checkpointId
+ */
+export function setAcpProjectedTurnCheckpoint(taskId, checkpointId) {
+  const turn = getAcpProjectedTurn(taskId);
+  if (!turn) return null;
+  const id =
+    typeof checkpointId === "string" && checkpointId.trim()
+      ? checkpointId.trim()
+      : null;
+  if (turn.checkpointId === id) return turn;
+  turn.checkpointId = id;
+  turn.dirty = true;
+  schedulePersist(taskId);
+  return turn;
+}
+
+/**
+ * @param {string} taskId
+ */
+export function markAcpTurnCancelRequested(taskId) {
+  const turn = getAcpProjectedTurn(taskId);
+  if (!turn || turn.turnStatus !== "running") return null;
+  turn.cancelRequested = true;
   return turn;
 }
 
@@ -891,16 +970,23 @@ export function presentAcpToolActivity(update, existing) {
 }
 
 /**
- * T3 shouldEmitToolCallUpdate: hold in-progress rows until detail exists.
+ * T3 shouldEmitToolCallUpdate: hold until detail; once visible only emit on
+ * title/detail change or completion (suppress status-only spam).
  * @param {Activity} activity
- * @param {boolean} alreadyVisible
+ * @param {Activity | undefined} previous
  */
-function shouldEmitToolActivity(activity, alreadyVisible) {
-  if (alreadyVisible) return true;
+function shouldEmitToolActivity(activity, previous) {
   if (activity.status === "completed" || activity.status === "failed") {
     return true;
   }
-  return Boolean(activity.detail && String(activity.detail).trim());
+  if (!activity.detail || !String(activity.detail).trim()) {
+    return false;
+  }
+  if (!previous) return true;
+  return (
+    (previous.title ?? "") !== (activity.title ?? "") ||
+    (previous.detail ?? "") !== (activity.detail ?? "")
+  );
 }
 
 /**
@@ -959,7 +1045,7 @@ export function projectAcpSessionUpdate(taskId, chatId, update) {
       }
       const activity = presentAcpToolActivity(mergedUpdate, existing);
       // T3 shouldEmitToolCallUpdate: hold until path/query detail arrives.
-      if (!shouldEmitToolActivity(activity, Boolean(existingVisible))) {
+      if (!shouldEmitToolActivity(activity, existingVisible)) {
         turn.pendingTools = {
           ...turn.pendingTools,
           [activity.id]: activity,
@@ -1181,8 +1267,9 @@ export function projectCursorCreatePlan(taskId, chatId, params) {
  * @param {string} taskId
  * @param {string | null | undefined} chatId
  * @param {string | null | undefined} finalText
+ * @param {{ status?: "completed" | "interrupted" | "failed" }} [options]
  */
-export function sealAcpProjectedTurn(taskId, chatId, finalText) {
+export function sealAcpProjectedTurn(taskId, chatId, finalText, options = {}) {
   const id = taskId.trim();
   const turn = liveByTaskId.get(id);
   const cid =
@@ -1190,8 +1277,14 @@ export function sealAcpProjectedTurn(taskId, chatId, finalText) {
     turn?.chatId ||
     "";
   if (!id || !cid) return null;
+  const status =
+    options.status === "interrupted" || options.status === "failed"
+      ? options.status
+      : "completed";
 
   if (turn) {
+    turn.turnStatus = status;
+    turn.turnCompletedAt = Date.now();
     // Flush held tool calls (waiting for detail) before sealing — T3 end-of-turn.
     for (const pending of Object.values(turn.pendingTools)) {
       turn.segments = upsertActivityInSegments(turn.segments, {
@@ -1256,7 +1349,7 @@ export function sealAcpProjectedTurn(taskId, chatId, finalText) {
       clearTimeout(timer);
       flushTimers.delete(id);
     }
-    persistTurn(turn);
+    persistTurn(turn, { seal: true });
     liveByTaskId.delete(id);
     return turn;
   }
@@ -1286,7 +1379,10 @@ export function listProjectedTurns() {
   return [...liveByTaskId.values()].map((t) => ({
     taskId: t.taskId,
     chatId: t.chatId,
+    turnId: t.turnId,
+    turnStatus: t.turnStatus,
     messageId: t.messageId,
     workedStartedAt: t.workedStartedAt,
+    checkpointId: t.checkpointId,
   }));
 }

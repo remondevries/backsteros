@@ -2,8 +2,7 @@
 
 Backend for **BacksterOS** — Hono + PostgreSQL + OpenAPI.
 
-**v2 host:** local computer (see `docs/12-v2-local-computer.md`)  
-**Optional remote:** `https://service.backsteros.com`
+**v2 host:** local computer (see `docs/12-v2-local-computer.md`)
 
 ## Quick start (local)
 
@@ -13,7 +12,7 @@ From the workspace root:
 # 1. Start Postgres (+ PowerSync when needed)
 pnpm db:up
 
-# 2. Configure env — DATABASE_URL must target Docker Postgres (:5433), not Neon
+# 2. Configure env — DATABASE_URL must target Docker Postgres (:5433)
 cp core/server/.env.example core/server/.env
 # Edit CLERK_SECRET_KEY when you have Clerk set up
 
@@ -27,17 +26,17 @@ pnpm --filter @backsteros/server db:seed
 pnpm --filter @backsteros/server dev
 ```
 
-- Health: http://localhost:8787/health  
-- OpenAPI: http://localhost:8787/api/v1/openapi.json
+- Health: http://localhost:8788/health  
+- OpenAPI: http://localhost:8788/api/v1/openapi.json
 
 ## Test with curl
 
 ```bash
 export API_KEY="sk_live_..."  # from db:seed
 
-curl http://localhost:8787/health
+curl http://localhost:8788/health
 
-curl -X POST http://localhost:8787/api/v1/tasks \
+curl -X POST http://localhost:8788/api/v1/tasks \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"title":"My task"}'

@@ -8,6 +8,13 @@ const DEFAULT_MODEL_ID = "auto";
 
 let cachedModelId: string | null = null;
 
+export function normalizeAgentChatModelId(
+  modelId: string | null | undefined,
+): string {
+  const trimmed = typeof modelId === "string" ? modelId.trim() : "";
+  return trimmed || DEFAULT_MODEL_ID;
+}
+
 export function readAgentChatModelId(): string {
   if (cachedModelId) return cachedModelId;
   if (typeof window === "undefined") return DEFAULT_MODEL_ID;
@@ -22,7 +29,7 @@ export function readAgentChatModelId(): string {
 }
 
 export function writeAgentChatModelId(modelId: string): void {
-  const id = modelId.trim() || DEFAULT_MODEL_ID;
+  const id = normalizeAgentChatModelId(modelId);
   cachedModelId = id;
   if (typeof window === "undefined") return;
   try {
@@ -30,6 +37,20 @@ export function writeAgentChatModelId(modelId: string): void {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Composer chip value: live session pin if present, else global last-picked.
+ */
+export function resolveEffectiveAgentChatModelId(input: {
+  sessionModelId?: string | null;
+  globalModelId?: string | null;
+}): string {
+  const session = input.sessionModelId?.trim();
+  if (session) return session;
+  return normalizeAgentChatModelId(
+    input.globalModelId ?? readAgentChatModelId(),
+  );
 }
 
 /** Short label for the composer chip (T3-style truncated name). */

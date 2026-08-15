@@ -9,6 +9,8 @@ export const ORGANIZATION_SECTION_IDS = [
   "projects",
   "letters",
   "contacts",
+  "transactions",
+  "invoices",
 ] as const;
 
 export type OrganizationSectionId = (typeof ORGANIZATION_SECTION_IDS)[number];
@@ -23,7 +25,36 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "projects", label: "Projects" },
   { id: "letters", label: "Letters" },
   { id: "contacts", label: "Contacts" },
+  { id: "transactions", label: "Transactions" },
+  { id: "invoices", label: "Invoices" },
 ];
+
+/** Always-visible org tabs (finance tabs are opt-in when linked data exists). */
+export const ORGANIZATION_BASE_SECTION_IDS = [
+  "overview",
+  "projects",
+  "letters",
+  "contacts",
+] as const satisfies readonly OrganizationSectionId[];
+
+export type VisibleOrganizationSectionsOptions = {
+  hasTransactions?: boolean;
+  hasInvoices?: boolean;
+};
+
+/**
+ * Organization pill tabs. Transactions / Invoices only appear when the org has
+ * linked financial rows (or Moneybird invoices via `moneybirdContactId`).
+ */
+export function resolveVisibleOrganizationSections(
+  options: VisibleOrganizationSectionsOptions = {},
+): OrganizationSectionConfig[] {
+  return ORGANIZATION_SECTIONS.filter((section) => {
+    if (section.id === "transactions") return Boolean(options.hasTransactions);
+    if (section.id === "invoices") return Boolean(options.hasInvoices);
+    return true;
+  });
+}
 
 export function isOrganizationSectionId(
   value: string,

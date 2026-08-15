@@ -1,9 +1,10 @@
 import type { GithubCommit, GithubPullRequest } from "@backsteros/contracts";
 import { useRouter } from "expo-router";
-import { useCallback, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { StyleSheet, useWindowDimensions, View } from "react-native";
 
 import {
+  CODEBASE_PAD_SPLIT_MIN_WIDTH,
   CODEBASE_WORKBENCH_TABS,
   DEFAULT_CODEBASE_WORKBENCH_TAB,
   type CodebaseWorkbenchTabId,
@@ -12,6 +13,7 @@ import { isPadDevice } from "../lib/device";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { PillNav } from "./pill-nav";
+import { ProjectOverviewPanel } from "./project-overview-panel";
 import { ProjectTasksPanel } from "./project-tasks-panel";
 import { CodebaseProjectProperties } from "./codebase/codebase-project-properties";
 import {
@@ -24,9 +26,7 @@ import {
   GithubCommitList,
   GithubPullRequestList,
 } from "./codebase/github-lists";
-import {
-  ProjectFsFileEditor,
-} from "./codebase/project-fs-file-editor";
+import { ProjectFsFileEditor } from "./codebase/project-fs-file-editor";
 import { ProjectFsTree } from "./codebase/project-fs-tree";
 
 const LIST_PANE_WIDTH = 340;
@@ -36,19 +36,30 @@ type Props = {
   /** Bumped after returning from GitHub OAuth. */
   githubRefreshToken?: number;
   onTitleChange?: (title: string) => void;
+  /** Notify parent when the active section changes (for header Edit on Overview). */
+  onPhoneSectionChange?: (section: CodebaseWorkbenchTabId) => void;
+  descriptionOverride?: string | null;
+  onDescriptionLoaded?: (description: string) => void;
 };
 
 /**
- * API-only codebase workbench: Tasks | Files | Commits | PRs.
- * iPad: list | detail columns. iPhone: list full-width; detail via stack push.
+ * Codebase workbench tabs: Overview | Tasks | Files | Commits | PRs.
+ * Overview uses the same ProjectOverviewPanel as default projects.
+ * iPad: Tasks/Files/Commits/PRs use list|detail columns; Overview is full-width.
+ * iPhone: single-column lists (detail pushed on the stack).
  */
 export function CodebaseProjectWorkbench({
   projectId,
   githubRefreshToken = 0,
   onTitleChange,
+  onPhoneSectionChange,
+  descriptionOverride = null,
+  onDescriptionLoaded,
 }: Props) {
   const router = useRouter();
-  const isPad = isPadDevice();
+  const { width: windowWidth } = useWindowDimensions();
+  const usePadSplit =
+    isPadDevice() && windowWidth >= CODEBASE_PAD_SPLIT_MIN_WIDTH;
 
   const [tab, setTab] = useState<CodebaseWorkbenchTabId>(
     DEFAULT_CODEBASE_WORKBENCH_TAB,
@@ -62,6 +73,10 @@ export function CodebaseProjectWorkbench({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fileRefreshToken, setFileRefreshToken] = useState(0);
 
+  useEffect(() => {
+    onPhoneSectionChange?.(tab);
+  }, [onPhoneSectionChange, tab]);
+
   const handleTabChange = useCallback((next: CodebaseWorkbenchTabId) => {
     setTab(next);
     if (next !== "commits") setSelectedCommit(null);
@@ -72,155 +87,179 @@ export function CodebaseProjectWorkbench({
   const handleSelectCommit = useCallback(
     (commit: GithubCommit) => {
       setSelectedCommit(commit);
-      if (!isPad) {
+      if (!usePadSplit) {
         router.push({
           pathname: "/project/[id]/commit/[sha]",
           params: { id: projectId, sha: commit.sha },
         });
       }
     },
-    [isPad, projectId, router],
+    [usePadSplit, projectId, router],
   );
 
   const handleSelectPull = useCallback(
     (pull: GithubPullRequest) => {
       setSelectedPull(pull);
-      if (!isPad) {
+      if (!usePadSplit) {
         router.push({
           pathname: "/project/[id]/pull/[number]",
           params: { id: projectId, number: String(pull.number) },
         });
       }
     },
-    [isPad, projectId, router],
+    [usePadSplit, projectId, router],
   );
 
   const handleSelectFile = useCallback(
     (path: string) => {
       setSelectedFilePath(path);
-      if (!isPad) {
+      if (!usePadSplit) {
         router.push({
           pathname: "/project/[id]/file",
           params: { id: projectId, path },
         });
       }
     },
-    [isPad, projectId, router],
+    [usePadSplit, projectId, router],
   );
 
-  const filesTree = (
-    <ProjectFsTree
-      projectId={projectId}
-      selectedPath={selectedFilePath}
-      onSelectFile={handleSelectFile}
-      onClearSelection={() => setSelectedFilePath(null)}
-      onTreeChanged={() => setFileRefreshToken((token) => token + 1)}
-    />
-  );
+  let body: React.ReactNode;
 
-  const listBody =
-    tab === "tasks" ? (
-      <CodebaseProjectProperties
+  if (tab === "overview") {
+    body = (
+      <ProjectOverviewPanel
         projectId={projectId}
-        onNameChange={onTitleChange}
+        layout={usePadSplit ? "wide" : "stacked"}
+        descriptionOverride={descriptionOverride}
+        onDescriptionLoaded={onDescriptionLoaded}
       />
-    ) : tab === "files" ? (
-      filesTree
-    ) : tab === "commits" ? (
-      <GithubCommitList
+    );
+  } else if (!usePadSplit) {
+    body =
+      tab === "tasks" ? (
+        <View style={styles.phoneTasks}>
+          <ProjectTasksPanel projectId={projectId} />
+        </View>
+      ) : tab === "files" ? (
+        <ProjectFsTree
+          projectId={projectId}
+          selectedPath={null}
+          onSelectFile={handleSelectFile}
+          onClearSelection={() => {}}
+        />
+      ) : tab === "commits" ? (
+        <GithubCommitList
+          projectId={projectId}
+          selectedCommitSha={null}
+          onSelectCommit={handleSelectCommit}
+          githubRefreshToken={githubRefreshToken}
+        />
+      ) : (
+        <GithubPullRequestList
+          projectId={projectId}
+          selectedPullNumber={null}
+          onSelectPull={handleSelectPull}
+          githubRefreshToken={githubRefreshToken}
+        />
+      );
+  } else {
+    const filesTree = (
+      <ProjectFsTree
         projectId={projectId}
-        selectedCommitSha={selectedCommit?.sha ?? null}
-        onSelectCommit={handleSelectCommit}
-        githubRefreshToken={githubRefreshToken}
-      />
-    ) : (
-      <GithubPullRequestList
-        projectId={projectId}
-        selectedPullNumber={selectedPull?.number ?? null}
-        onSelectPull={handleSelectPull}
-        githubRefreshToken={githubRefreshToken}
+        selectedPath={selectedFilePath}
+        onSelectFile={handleSelectFile}
+        onClearSelection={() => setSelectedFilePath(null)}
+        onTreeChanged={() => setFileRefreshToken((token) => token + 1)}
       />
     );
 
-  const detailBody =
-    tab === "tasks" ? (
-      <View style={styles.tasksDetail}>
-        <ProjectTasksPanel projectId={projectId} />
-      </View>
-    ) : tab === "files" ? (
-      <ProjectFsFileEditor
-        projectId={projectId}
-        openPath={selectedFilePath}
-        refreshToken={fileRefreshToken}
-      />
-    ) : tab === "commits" ? (
-      selectedCommit ? (
-        <GithubCommitDetail
+    const listBody =
+      tab === "tasks" ? (
+        <CodebaseProjectProperties
           projectId={projectId}
-          commit={selectedCommit}
+          onNameChange={onTitleChange}
+        />
+      ) : tab === "files" ? (
+        filesTree
+      ) : tab === "commits" ? (
+        <GithubCommitList
+          projectId={projectId}
+          selectedCommitSha={selectedCommit?.sha ?? null}
+          onSelectCommit={handleSelectCommit}
+          githubRefreshToken={githubRefreshToken}
+        />
+      ) : (
+        <GithubPullRequestList
+          projectId={projectId}
+          selectedPullNumber={selectedPull?.number ?? null}
+          onSelectPull={handleSelectPull}
+          githubRefreshToken={githubRefreshToken}
+        />
+      );
+
+    const detailBody =
+      tab === "tasks" ? (
+        <View style={styles.tasksDetail}>
+          <ProjectTasksPanel projectId={projectId} />
+        </View>
+      ) : tab === "files" ? (
+        <ProjectFsFileEditor
+          projectId={projectId}
+          openPath={selectedFilePath}
+          refreshToken={fileRefreshToken}
+        />
+      ) : tab === "commits" ? (
+        selectedCommit ? (
+          <GithubCommitDetail
+            projectId={projectId}
+            commit={selectedCommit}
+            repository={null}
+          />
+        ) : (
+          <GithubCommitDetailEmpty />
+        )
+      ) : selectedPull ? (
+        <GithubPullRequestDetail
+          projectId={projectId}
+          pullRequest={selectedPull}
           repository={null}
         />
       ) : (
-        <GithubCommitDetailEmpty />
-      )
-    ) : selectedPull ? (
-      <GithubPullRequestDetail
-        projectId={projectId}
-        pullRequest={selectedPull}
-        repository={null}
-      />
-    ) : (
-      <GithubPullRequestDetailEmpty />
-    );
-
-  const tabs = (
-    <View style={styles.tabs}>
-      <PillNav
-        accessibilityLabel="Codebase workbench"
-        value={tab}
-        onChange={handleTabChange}
-        density="content"
-        items={CODEBASE_WORKBENCH_TABS.map((entry) => ({
-          value: entry.id,
-          label: entry.label,
-        }))}
-      />
-    </View>
-  );
-
-  if (!isPad) {
-    const phoneBody =
-      tab === "tasks" ? (
-        <View style={styles.phoneTasks}>
-          <View style={styles.phoneProperties}>
-            <CodebaseProjectProperties
-              projectId={projectId}
-              onNameChange={onTitleChange}
-            />
-          </View>
-          <View style={styles.tasksDetail}>
-            <ProjectTasksPanel projectId={projectId} />
-          </View>
-        </View>
-      ) : (
-        listBody
+        <GithubPullRequestDetailEmpty />
       );
 
-    return (
-      <View style={styles.rootPhone}>
-        {tabs}
-        <View style={styles.phoneBody}>{phoneBody}</View>
+    body = (
+      <View style={styles.splitRow}>
+        <View style={styles.listPane}>
+          <View style={styles.listBody}>{listBody}</View>
+        </View>
+        <View style={styles.detailPane}>{detailBody}</View>
       </View>
     );
   }
 
   return (
     <View style={styles.root}>
-      <View style={styles.listPane}>
-        {tabs}
-        <View style={styles.listBody}>{listBody}</View>
+      <View style={styles.tabs}>
+        <PillNav
+          accessibilityLabel="Codebase project sections"
+          value={tab}
+          onChange={handleTabChange}
+          density="content"
+          items={CODEBASE_WORKBENCH_TABS.map((entry) => ({
+            value: entry.id,
+            label: entry.label,
+          }))}
+        />
       </View>
-      <View style={styles.detailPane}>{detailBody}</View>
+      <View
+        style={[
+          styles.body,
+          tab !== "overview" && !usePadSplit ? styles.bodyPhonePad : null,
+        ]}
+      >
+        {body}
+      </View>
     </View>
   );
 }
@@ -228,15 +267,26 @@ export function CodebaseProjectWorkbench({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    flexDirection: "row",
-    minHeight: 0,
-    backgroundColor: colors.background,
-  },
-  rootPhone: {
-    flex: 1,
     flexDirection: "column",
     minHeight: 0,
     backgroundColor: colors.background,
+  },
+  tabs: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingTop: 4,
+  },
+  body: {
+    flex: 1,
+    minHeight: 0,
+  },
+  bodyPhonePad: {
+    paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+  },
+  splitRow: {
+    flex: 1,
+    flexDirection: "row",
+    minHeight: 0,
   },
   listPane: {
     width: LIST_PANE_WIDTH,
@@ -254,24 +304,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     minHeight: 0,
   },
-  phoneBody: {
-    flex: 1,
-    minHeight: 0,
-    paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-  },
   phoneTasks: {
     flex: 1,
     minHeight: 0,
-  },
-  phoneProperties: {
-    maxHeight: 280,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  tabs: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    paddingTop: 4,
   },
   tasksDetail: {
     flex: 1,

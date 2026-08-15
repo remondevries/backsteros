@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useMobilePowerSync } from "./powersync-context";
+import { resolveSyncedOrRestRows } from "./resolve-synced-or-rest-rows";
 import { useLocalQuery } from "./use-local-query";
-import { useRestFallbackGate } from "./use-rest-fallback-gate";
+import { useRestListHydration } from "./use-rest-list-hydration";
 
 type UseSyncedOrRestOptions<TLocal extends Record<string, unknown>, TRow> = {
   sql: string;
@@ -10,8 +11,8 @@ type UseSyncedOrRestOptions<TLocal extends Record<string, unknown>, TRow> = {
   params?: readonly unknown[];
   mapLocal: (rows: TLocal[]) => TRow[];
   /**
-   * REST fallback when PowerSync fails or takes too long on a cold device
-   * (empty SQLite). Prefer waiting for sync before hitting the API.
+   * REST hydrate (desktop parity). Always fetched so filtered lists can drop
+   * stale SQLite rows when the PowerSync stream is offline.
    */
   fetchRest: () => Promise<TRow[]>;
 };
@@ -20,16 +21,16 @@ type UseSyncedOrRestResult<TRow> = {
   rows: TRow[];
   loading: boolean;
   error: string | null;
+  /** True when the UI is primarily showing REST (sync offline or cold empty). */
   useRest: boolean;
-  /** True while a REST fetch is in flight (for pull-to-refresh when `useRest`). */
+  /** True while a REST fetch is in flight (for pull-to-refresh). */
   restLoading: boolean;
   reload: () => Promise<void>;
 };
 
 /**
- * Prefer PowerSync watch results; fall back to REST only after sync fails or
- * stalls — avoids a stampede of failed API calls while PowerSync is still
- * connecting on a fresh iPhone.
+ * Prefer live PowerSync watches when connected; fall back to REST membership
+ * when the sync stream is offline so removals/updates from other clients show up.
  */
 export function useSyncedOrRest<
   TLocal extends Record<string, unknown>,
@@ -45,7 +46,7 @@ export function useSyncedOrRest<
     sql,
     params,
   );
-  const [restRows, setRestRows] = useState<TRow[]>([]);
+  const [restRows, setRestRows] = useState<TRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
 
@@ -59,8 +60,6 @@ export function useSyncedOrRest<
     [syncedRows],
   );
 
-  const useRest = useRestFallbackGate(localRows.length);
-
   const reloadRest = useCallback(async () => {
     setRestLoading(true);
     setRestError(null);
@@ -68,37 +67,39 @@ export function useSyncedOrRest<
       setRestRows(await fetchRestRef.current());
     } catch (reason) {
       setRestError(reason instanceof Error ? reason.message : String(reason));
-      setRestRows([]);
+      // Keep prior REST snapshot on transient failures.
     } finally {
       setRestLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (useRest) void reloadRest();
-  }, [reloadRest, useRest]);
+  useRestListHydration(reloadRest);
 
-  const rows = localRows.length > 0 ? localRows : restRows;
+  const rows = resolveSyncedOrRestRows({
+    localRows,
+    restRows,
+    connected: powerSync.connected,
+  });
+
+  const useRest =
+    (!powerSync.connected && restRows != null) ||
+    (localRows.length === 0 && restRows != null);
 
   const waitingForSync =
-    localRows.length === 0 &&
-    !useRest &&
+    rows.length === 0 &&
+    restRows == null &&
     (powerSync.status === "connecting" ||
       powerSync.status === "idle" ||
       syncLoading);
 
   const loading =
-    rows.length === 0 &&
-    (useRest ? restLoading : waitingForSync || syncLoading);
-  const error = useRest && rows.length === 0 ? restError : null;
+    rows.length === 0 && (restLoading || waitingForSync || syncLoading);
+  const error =
+    rows.length === 0 && restError && !powerSync.connected ? restError : null;
 
   const reload = useCallback(async () => {
-    // Pull-to-refresh: refresh REST rows only. Never recreate PowerSync here —
-    // overlapping OP-SQLite opens exhaust native threads on device.
-    if (useRest) {
-      await reloadRest();
-    }
-  }, [reloadRest, useRest]);
+    await reloadRest();
+  }, [reloadRest]);
 
   return {
     rows,

@@ -5,6 +5,7 @@ import {
   collectChangedFilesFromActivities,
   formatChatDuration,
   previousUserMessageCreatedAt,
+  turnFoldLabel,
   turnWorkedLabel,
 } from "./agent-chat-timeline";
 import type { AgentChatMessage } from "./agent-chat-transcript";
@@ -32,6 +33,25 @@ describe("agent-chat-timeline", () => {
         activityCount: 3,
       }),
     ).toBe("Worked · 3 steps");
+  });
+
+  it("builds interrupted fold labels like T3", () => {
+    expect(
+      turnFoldLabel({
+        outcome: "interrupted",
+        startedAt: 1_000,
+        endedAt: 48_000,
+        activityCount: 2,
+      }),
+    ).toBe("You stopped after 47s");
+    expect(
+      turnFoldLabel({
+        outcome: "interrupted",
+        startedAt: null,
+        endedAt: null,
+        activityCount: 2,
+      }),
+    ).toBe("You stopped this response");
   });
 
   it("collects unique changed files from edit tools", () => {

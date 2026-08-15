@@ -12,6 +12,8 @@ export type DesktopAgentCollapsedStripProps = {
   tabs: AgentSurfaceTab[];
   activeId: string | null;
   isCodebaseProject?: boolean;
+  /** Diff only appears once the agent has produced file changes. */
+  diffAvailable?: boolean;
   cwdAvailable?: boolean;
   chatAvailable?: boolean;
   onActivateTab: (id: string) => void;
@@ -29,6 +31,7 @@ export function DesktopAgentCollapsedStrip({
   tabs,
   activeId,
   isCodebaseProject = false,
+  diffAvailable = false,
   cwdAvailable = true,
   chatAvailable = true,
   onActivateTab,
@@ -36,7 +39,8 @@ export function DesktopAgentCollapsedStrip({
   onExpand,
 }: DesktopAgentCollapsedStripProps) {
   const hasOpenTabs = tabs.length > 0;
-  const ghostOptions = listAgentSurfaceQuickOpenOptions(isCodebaseProject).filter(
+  const visibility = { isCodebaseProject, diffAvailable };
+  const ghostOptions = listAgentSurfaceQuickOpenOptions(visibility).filter(
     (option) => {
       if (option.kind === "chat") return chatAvailable;
       if (option.needsCwd) return cwdAvailable;
@@ -90,7 +94,7 @@ export function DesktopAgentCollapsedStrip({
           : ghostOptions.map((option) => {
               const hotkey = agentSurfaceQuickOpenHotkeyLabel(
                 option.kind,
-                isCodebaseProject,
+                visibility,
               );
               return (
                 <button

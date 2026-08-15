@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
+
 /**
  * Global C shortcut to open compose (matches Next useComposeShortcut).
  */
@@ -19,6 +21,7 @@ export function useComposeShortcut({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (commandPaletteOpen) return;
+      if (isAnyLeaderSequencePending()) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }

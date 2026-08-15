@@ -6,7 +6,7 @@ function required(name: string, value: string | undefined): string {
 }
 
 /** Default local core origin (v2 — never production). */
-export const LOCAL_CORE_API_URL = "http://127.0.0.1:8787";
+export const LOCAL_CORE_API_URL = "http://127.0.0.1:8788";
 
 export type DesktopPublicEnvironment = {
   apiUrl: string;

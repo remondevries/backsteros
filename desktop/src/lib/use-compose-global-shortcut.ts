@@ -5,9 +5,6 @@ import {
   isContentEditModeActive,
 } from "@backsteros/ui";
 
-import { toggleDesktopOverlayCompose } from "../lib/desktop-overlay";
-import { isTauriRuntime } from "../lib/whoop";
-
 export const COMPOSE_GLOBAL_SHORTCUT = "CmdOrCtrl+Alt+C";
 
 export function isComposeGlobalShortcut(
@@ -25,8 +22,9 @@ export function isComposeGlobalShortcut(
 }
 
 /**
- * In-window ⌘⌥C fallback when the webview consumes the global shortcut,
- * plus browser-dev open of in-app compose when not in Tauri.
+ * ⌘⌥C opens the in-app compose modal (main-window session).
+ * Packaged Tauri used a separate overlay webview that did not share Clerk
+ * cookies, so compose rendered blank / unsigned-in.
  */
 export function useComposeGlobalShortcut({
   enabled = true,
@@ -61,12 +59,6 @@ export function useComposeGlobalShortcut({
 
       event.preventDefault();
       event.stopPropagation();
-
-      if (isTauriRuntime()) {
-        void toggleDesktopOverlayCompose();
-        return;
-      }
-
       onCompose();
     }
 

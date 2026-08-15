@@ -177,6 +177,13 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
   },
   { id: "letters", letter: "l", hint: "G L", label: "Letters", href: "/letters" },
   {
+    id: "finance",
+    letter: "f",
+    hint: "G F",
+    label: "Finance",
+    href: "/finance/dashboard",
+  },
+  {
     id: "contacts",
     letter: "c",
     hint: "G C",
@@ -196,7 +203,7 @@ export function goNavigationItemSearchValue(item: GoNavigationItem): string {
   return `${item.label} ${item.letter} ${item.href}`;
 }
 
-/** Letters shown in the Go-mode placeholder (e.g. "i j k t p l c o"). */
+/** Letters shown in the Go-mode placeholder (e.g. "i j k t a p d l f c o"). */
 export const NAVIGATION_GO_LETTER_HINT = DEFAULT_GO_NAVIGATION_ITEMS.map(
   (item) => item.letter,
 ).join(" ");

@@ -76,6 +76,17 @@ export function matchListItemOpener(content: string): {
   };
 }
 
+/**
+ * Whether leading newlines before a list marker should stay inside the current
+ * list. A single `\n` is the editor's next-line separator; two or more are a
+ * blank row and should end the list (matching preview blank paragraphs).
+ */
+export function listItemLeadingNewlinesContinueList(
+  leadingNewlines: string,
+): boolean {
+  return leadingNewlines.length < 2;
+}
+
 function isMentionOnOwnLine(
   segments: MentionSegment[],
   mentionIndex: number,

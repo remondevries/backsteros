@@ -3,6 +3,9 @@ import {
   submitPtyAgentPrompt,
 } from "../pty";
 
+/** t3 IMAGE_ONLY_BOOTSTRAP_PROMPT — Cursor ACP needs a non-empty text block. */
+export const IMAGE_ONLY_BOOTSTRAP_PROMPT = "Please review the attached image(s).";
+
 export type StartTaskAgentSessionResult =
   | {
       ok: true;
@@ -21,6 +24,9 @@ export async function startTaskAgentSession(options: {
   cwd: string;
   prompt?: string | null;
   model?: string | null;
+  /** UI mode (build/ask/plan) or Cursor mode id — applied before bootstrap prompt. */
+  mode?: string | null;
+  images?: { mimeType: string; data: string }[] | null;
 }): Promise<StartTaskAgentSessionResult> {
   const taskId = options.taskId.trim();
   const cwd = options.cwd.trim();
@@ -37,7 +43,13 @@ export async function startTaskAgentSession(options: {
     return { ok: false, error: acp.error };
   }
 
-  const bootstrap = options.prompt?.trim();
+  const images = (options.images ?? []).filter(
+    (image) =>
+      image.mimeType.startsWith("image/") && image.data.trim().length > 0,
+  );
+  const bootstrap =
+    options.prompt?.trim() ||
+    (images.length > 0 ? IMAGE_ONLY_BOOTSTRAP_PROMPT : "");
   if (bootstrap) {
     void submitPtyAgentPrompt({
       taskId,
@@ -45,6 +57,8 @@ export async function startTaskAgentSession(options: {
       chatId: acp.chatId,
       cwd,
       model: options.model,
+      mode: options.mode,
+      images,
     }).then((result) => {
       if (!result.ok) {
         console.warn("[agent] bootstrap ACP prompt failed:", result.error);
