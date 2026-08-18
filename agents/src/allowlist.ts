@@ -8,7 +8,6 @@ export type RouteRule = {
  * Everything under /api/v1 that is not matched is rejected before proxying.
  */
 export const ALLOWED_ROUTES: RouteRule[] = [
-  { methods: ["GET"], pattern: /^\/api\/v1\/openapi\.json$/ },
   { methods: ["GET"], pattern: /^\/api\/v1\/search$/ },
   { methods: ["GET"], pattern: /^\/api\/v1\/global-search$/ },
 
@@ -44,10 +43,8 @@ export const ALLOWED_ROUTES: RouteRule[] = [
 
   { methods: ["GET"], pattern: /^\/api\/v1\/letters$/ },
   { methods: ["GET"], pattern: /^\/api\/v1\/letters\/inbox$/ },
-  { methods: ["POST"], pattern: /^\/api\/v1\/letters$/ },
-  { methods: ["GET", "PATCH", "DELETE"], pattern: /^\/api\/v1\/letters\/[^/]+$/ },
+  { methods: ["GET"], pattern: /^\/api\/v1\/letters\/[^/]+$/ },
   { methods: ["GET"], pattern: /^\/api\/v1\/letters\/[^/]+\/relations$/ },
-  { methods: ["POST"], pattern: /^\/api\/v1\/letters\/[^/]+\/triage$/ },
 ];
 
 /** Hard blocks even if a broad pattern would otherwise match. */

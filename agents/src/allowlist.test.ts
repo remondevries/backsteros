@@ -10,10 +10,15 @@ test("allows task and document agent routes", () => {
   assert.equal(isRouteAllowed("PATCH", "/api/v1/documents/doc_1/content"), true);
 });
 
-test("allows letter metadata and extracted text without PDF or attachments", () => {
+test("allows letter read-only routes without PDF or attachments", () => {
   assert.equal(isRouteAllowed("GET", "/api/v1/letters"), true);
+  assert.equal(isRouteAllowed("GET", "/api/v1/letters/inbox"), true);
   assert.equal(isRouteAllowed("GET", "/api/v1/letters/letter_1"), true);
   assert.equal(isRouteAllowed("GET", "/api/v1/letters/letter_1/relations"), true);
+  assert.equal(isRouteAllowed("POST", "/api/v1/letters"), false);
+  assert.equal(isRouteAllowed("PATCH", "/api/v1/letters/letter_1"), false);
+  assert.equal(isRouteAllowed("DELETE", "/api/v1/letters/letter_1"), false);
+  assert.equal(isRouteAllowed("POST", "/api/v1/letters/letter_1/triage"), false);
   assert.equal(isRouteAllowed("GET", "/api/v1/letters/letter_1/pdf"), false);
   assert.equal(isRouteAllowed("PUT", "/api/v1/letters/letter_1/pdf"), false);
   assert.equal(isRouteAllowed("GET", "/api/v1/letters/letter_1/attachments"), false);
@@ -39,8 +44,9 @@ test("blocks task images and project filesystem", () => {
   assert.equal(isRouteAllowed("GET", "/api/v1/projects/proj_1/github/pulls"), false);
 });
 
-test("allows OpenAPI and search", () => {
-  assert.equal(isRouteAllowed("GET", "/api/v1/openapi.json"), true);
+test("blocks journal and allows search only", () => {
+  assert.equal(isRouteAllowed("GET", "/api/v1/journal/2026-01-01"), false);
+  assert.equal(isRouteAllowed("GET", "/api/v1/openapi.json"), false);
   assert.equal(isRouteAllowed("GET", "/api/v1/search"), true);
   assert.equal(isRouteAllowed("GET", "/api/v1/global-search"), true);
 });

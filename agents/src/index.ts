@@ -9,7 +9,7 @@ if (!upstreamUrl) {
 }
 
 const port = Number(process.env.PORT ?? 3080);
-const hostname = process.env.LISTEN_HOST ?? "0.0.0.0";
+const hostname = process.env.LISTEN_HOST ?? "127.0.0.1";
 const requestTimeoutMs = process.env.REQUEST_TIMEOUT_MS
   ? Number(process.env.REQUEST_TIMEOUT_MS)
   : undefined;

@@ -44,7 +44,6 @@ export function createApp(options: AgentsAppOptions) {
       ok: true as const,
       service: "backsteros-agents",
       version: "0.1.0",
-      upstream,
     }),
   );
 

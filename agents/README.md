@@ -19,9 +19,9 @@ Proxied `/api/v1` routes (everything else returns `403`):
 | --- | --- |
 | Tasks | list, read, write, comments, activities, batch, reorder, move, triage — **not** task images |
 | Markdown | documents CRUD + `/content` |
-| Letters | metadata + `extractedText` on `GET /api/v1/letters/{id}` — **not** PDF or attachment bytes |
+| Letters | read-only: list, inbox, `GET /letters/{id}` (metadata + `extractedText`), relations — **not** writes, PDF, or attachments |
 | Context | `GET /projects`, `GET /projects/{id}`, relations |
-| Discovery | `GET /search`, `GET /global-search`, `GET /openapi.json` |
+| Discovery | `GET /search`, `GET /global-search` |
 
 Blocked at the door (never forwarded):
 
@@ -52,7 +52,7 @@ cp env.example .env
 | --- | --- |
 | `CORE_UPSTREAM_URL` | Tailscale URL to core (required), no trailing slash |
 | `PORT` | Listen port (default `3080`) |
-| `LISTEN_HOST` | Bind address (default `0.0.0.0`) |
+| `LISTEN_HOST` | Bind address (default `127.0.0.1`; Caddy on the VPS terminates TLS and proxies locally) |
 | `REQUEST_TIMEOUT_MS` | Upstream timeout (default `120000`) |
 
 ## Run locally (dev)
