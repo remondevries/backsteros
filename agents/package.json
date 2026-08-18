@@ -1,0 +1,23 @@
+{
+  "name": "@backsteros/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "VPS HTTPS door for Grok Bot agents → BacksterOS core over Tailscale",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.4",
+    "hono": "^4.12.30"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
