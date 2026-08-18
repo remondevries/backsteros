@@ -5,6 +5,7 @@ packages:
   - desktop
   - desktop/packages/*
   - hub
+  - agents
 allowBuilds:
   '@clerk/shared': true
   '@journeyapps/wa-sqlite': true
