@@ -1,5 +1,12 @@
 const JOURNAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Path segments under /journal that are pages, not date slugs. */
+export const JOURNAL_RESERVED_SLUGS = new Set(["habits"]);
+
+export function isJournalReservedSlug(value: string): boolean {
+  return JOURNAL_RESERVED_SLUGS.has(value);
+}
+
 export function formatJournalDateSlug(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -70,11 +77,19 @@ export function getSelectedJournalDateFromPathname(
     return undefined;
   }
 
-  return decodeURIComponent(match[1]!);
+  const slug = decodeURIComponent(match[1]!);
+  if (isJournalReservedSlug(slug) || !isValidJournalDateSlug(slug)) {
+    return undefined;
+  }
+
+  return slug;
 }
 
 export function isJournalDetailPath(pathname: string): boolean {
-  return /^\/journal\/[^/]+$/.test(pathname);
+  const match = pathname.match(/^\/journal\/([^/]+)$/);
+  if (!match) return false;
+  const slug = decodeURIComponent(match[1]!);
+  return !isJournalReservedSlug(slug) && isValidJournalDateSlug(slug);
 }
 
 export function isJournalSectionPath(pathname: string): boolean {

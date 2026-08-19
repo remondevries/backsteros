@@ -18,8 +18,7 @@ import {
 import { colors, spacing } from "../../lib/theme";
 import { useLocalQuery } from "../../lib/use-local-query";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
-import { FileIcon } from "../file-icon";
-import { FolderIcon } from "../folder-icon";
+import { FileTypeIcon } from "../file-type-icon";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -290,11 +289,11 @@ export function ProjectFsTree({
                 accessibilityHint="Long press to delete"
               >
                 <View style={styles.rowIcon}>
-                  {item.kind === "directory" ? (
-                    <FolderIcon size={16} color={colors.foreground} />
-                  ) : (
-                    <FileIcon size={16} color={colors.foreground} />
-                  )}
+                  <FileTypeIcon
+                    pathValue={item.path}
+                    kind={item.kind === "directory" ? "directory" : "file"}
+                    size={16}
+                  />
                 </View>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}

@@ -18,6 +18,7 @@ export const POWERSYNC_PUBLICATION_TABLES = [
   "financial_categories",
   "financial_goals",
   "financial_recurrings",
+  "habits",
 ] as const;
 
 export type PowerSyncPublicationTable =

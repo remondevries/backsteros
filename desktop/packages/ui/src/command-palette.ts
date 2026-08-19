@@ -151,7 +151,15 @@ export type GoNavigationItem = {
 
 export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
   { id: "inbox", letter: "i", hint: "G I", label: "Inbox", href: "/inbox" },
+  { id: "email", letter: "e", hint: "G E", label: "Email", href: "/email" },
   { id: "journal", letter: "j", hint: "G J", label: "Journal", href: "/journal" },
+  {
+    id: "habits",
+    letter: "h",
+    hint: "G H",
+    label: "Habit Tracker",
+    href: "/journal/habits",
+  },
   {
     id: "knowledge",
     letter: "k",
@@ -203,7 +211,7 @@ export function goNavigationItemSearchValue(item: GoNavigationItem): string {
   return `${item.label} ${item.letter} ${item.href}`;
 }
 
-/** Letters shown in the Go-mode placeholder (e.g. "i j k t a p d l f c o"). */
+/** Letters shown in the Go-mode placeholder (e.g. "i e j k t a p d l f c o"). */
 export const NAVIGATION_GO_LETTER_HINT = DEFAULT_GO_NAVIGATION_ITEMS.map(
   (item) => item.letter,
 ).join(" ");

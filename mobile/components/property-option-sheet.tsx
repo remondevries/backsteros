@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../lib/theme";
+import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { useKeyboardBottomInset } from "../lib/use-keyboard-bottom-inset";
 import { TextInput } from "./app-text-input";
 
@@ -253,6 +254,9 @@ export function PropertyOptionSheet<T extends string | number | null>({
   const [mounted, setMounted] = useState(visible);
   const slide = useRef(new Animated.Value(visible ? 0 : 1)).current;
   const fade = useRef(new Animated.Value(visible ? 1 : 0)).current;
+
+  // Floating tab bar is FullWindowOverlay on iOS — hide while this Modal is up.
+  useHideTabBar(mounted && !embedded);
 
   useEffect(() => {
     if (visible) {

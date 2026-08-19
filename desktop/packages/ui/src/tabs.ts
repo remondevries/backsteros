@@ -85,6 +85,9 @@ export function getTabTitleForHref(href: string): string {
   if (navMatch) {
     return navMatch.label;
   }
+  if (normalized === "/journal/habits" || normalized.startsWith("/journal/habits/")) {
+    return "Habit Tracker";
+  }
   const journalDate = normalized.match(/^\/journal\/([^/]+)$/)?.[1];
   if (journalDate) {
     return decodeURIComponent(journalDate);
@@ -102,6 +105,7 @@ export function resolveTabNavIconId(
   }
   const mapped: Record<RouteFamily, NavigationItemIconId> = {
     inbox: "inbox",
+    email: "email",
     journal: "journal",
     knowledge: "knowledge",
     tasks: "tasks",
@@ -114,6 +118,9 @@ export function resolveTabNavIconId(
     organizations: "organizations",
     settings: "settings",
   };
+  if (family === "journal" && segments[1] === "habits") {
+    return "habits";
+  }
   return mapped[family] ?? null;
 }
 

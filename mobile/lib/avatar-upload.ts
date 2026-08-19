@@ -28,7 +28,13 @@ export async function pickAvatarImage(): Promise<PickedAvatarImage | null> {
   let result: Awaited<ReturnType<DocumentPickerModule["getDocumentAsync"]>>;
   try {
     result = await DocumentPicker.getDocumentAsync({
-      type: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+      type: [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "image/svg+xml",
+      ],
       copyToCacheDirectory: true,
       multiple: false,
     });
@@ -49,7 +55,7 @@ export async function pickAvatarImage(): Promise<PickedAvatarImage | null> {
 
   const name = asset.name?.trim() || "avatar.jpg";
   const mimeType = asset.mimeType?.trim() || guessMimeType(name);
-  if (!mimeType.startsWith("image/")) {
+  if (!mimeType.startsWith("image/") && mimeType !== "image/svg+xml") {
     throw new Error("Please choose an image file.");
   }
 
@@ -61,13 +67,14 @@ function guessMimeType(filename: string): string {
   if (lower.endsWith(".png")) return "image/png";
   if (lower.endsWith(".webp")) return "image/webp";
   if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
   return "image/jpeg";
 }
 
-/** Upload a local image as a contact/organization avatar. */
+/** Upload a local image as a contact / organization / bank-account avatar. */
 export async function uploadAvatarFromUri(
   client: BacksterosApiClient,
-  kind: "contact" | "organization",
+  kind: "contact" | "organization" | "bank_account",
   entityId: string,
   uri: string,
   mimeType: string,

@@ -221,3 +221,35 @@ export function fillMissingAgentChatIdFromApi<
     return { ...row, agentChatId: api.agentChatId };
   });
 }
+
+/**
+ * PowerSync can keep habit-day rows after the server soft-deletes them
+ * (`deleted_at IS NULL` sync query). REST is the membership snapshot — drop
+ * local-only habit tasks so today's chips don't double up.
+ */
+export function dropStaleLocalHabitTasks<
+  T extends { id: string; habitId?: string | null },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (apiRows == null || apiRows.length === 0) return mergedRows;
+  const apiIds = new Set(apiRows.map((row) => row.id));
+  return mergedRows.filter((row) => {
+    if (row.habitId == null || String(row.habitId).trim() === "") return true;
+    return apiIds.has(row.id);
+  });
+}
+
+/** Copy `habitId` from API when local/PowerSync omitted the column. */
+export function fillMissingHabitIdFromApi<
+  T extends { id: string; habitId?: string | null },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    if (row.habitId != null && String(row.habitId).trim() !== "") {
+      return row;
+    }
+    const api = apiById.get(row.id);
+    if (!api?.habitId) return row;
+    return { ...row, habitId: api.habitId };
+  });
+}

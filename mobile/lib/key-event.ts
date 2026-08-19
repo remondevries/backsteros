@@ -22,7 +22,12 @@ type KeyEventListener = (event: KeyPressEvent | KeyReleaseEvent) => void;
 
 type UseKeyEventListener = (
   listener: KeyEventListener,
-  options?: { listenOnMount?: boolean; captureModifiers?: boolean },
+  options?: {
+    listenOnMount?: boolean;
+    captureModifiers?: boolean;
+    listenToRelease?: boolean;
+    preventReload?: boolean;
+  },
 ) => void;
 
 const noopListener: UseKeyEventListener = () => {};
@@ -81,7 +86,12 @@ const useKeyEventListenerSafe: UseKeyEventListener = (() => {
 
 export function useKeyEventListener(
   listener: KeyEventListener,
-  options?: { listenOnMount?: boolean; captureModifiers?: boolean },
+  options?: {
+    listenOnMount?: boolean;
+    captureModifiers?: boolean;
+    listenToRelease?: boolean;
+    preventReload?: boolean;
+  },
 ) {
   useKeyEventListenerSafe(listener, options);
 }

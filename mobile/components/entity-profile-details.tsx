@@ -21,8 +21,9 @@ export type ProfileDetailField = {
   onPress?: () => void;
   navigateHref?: string | null;
   navigateLabel?: string;
-  /** When set with editing, renders an inline text field. */
+  /** When set, renders an inline text field (always-editable profiles). */
   onChangeText?: (value: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   multiline?: boolean;
   keyboardType?: KeyboardTypeOptions;
@@ -33,24 +34,16 @@ type Props = {
   fields: readonly ProfileDetailField[];
   /** Section heading — omit to hide (org/contact profile cards). */
   title?: string | null;
-  editing?: boolean;
 };
 
 /**
  * Profile-style detail fields — label above value, full-width rows.
- * Used on contact / organization overview instead of property chips.
+ * Used on contact / organization overview (always-editable like desktop).
  */
-export function EntityProfileDetails({
-  fields,
-  title = null,
-  editing = false,
-}: Props) {
+export function EntityProfileDetails({ fields, title = null }: Props) {
   const router = useRouter();
-  const visible = editing
-    ? fields
-    : fields.filter((field) => !field.empty || field.onPress);
 
-  if (visible.length === 0) {
+  if (fields.length === 0) {
     return (
       <View style={styles.section}>
         {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
@@ -63,15 +56,14 @@ export function EntityProfileDetails({
     <View style={styles.section}>
       {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
       <View style={styles.card}>
-        {visible.map((field, index) => {
-          const navigateHref =
-            !editing && field.navigateHref?.trim()
-              ? field.navigateHref.trim()
-              : null;
-          const valueColor = field.empty ? colors.muted : colors.foreground;
-          const canEditInline = editing && Boolean(field.onChangeText);
-          const canPress =
-            Boolean(field.onPress) && (!editing || !canEditInline);
+        {fields.map((field, index) => {
+          const navigateHref = field.navigateHref?.trim()
+            ? field.navigateHref.trim()
+            : null;
+          const canEditInline = Boolean(field.onChangeText);
+          const canPress = Boolean(field.onPress) && !canEditInline;
+          const valueColor =
+            field.empty && !canEditInline ? colors.muted : colors.foreground;
 
           const body = (
             <>
@@ -80,6 +72,7 @@ export function EntityProfileDetails({
                 <TextInput
                   value={field.value}
                   onChangeText={field.onChangeText}
+                  onBlur={field.onBlur}
                   placeholder={field.placeholder ?? field.label}
                   placeholderTextColor={colors.muted}
                   multiline={field.multiline}
@@ -110,7 +103,7 @@ export function EntityProfileDetails({
               key={field.key}
               style={[
                 styles.row,
-                index < visible.length - 1 ? styles.rowBorder : null,
+                index < fields.length - 1 ? styles.rowBorder : null,
               ]}
             >
               {canPress ? (

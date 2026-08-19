@@ -24,7 +24,9 @@ import {
   EntityHeaderActionsShell,
   FinanceSidePanelNavView,
   HistoryEntryIcon,
+  HabitSidePanelView,
   InboxSidePanelView,
+  EmailSidePanelView,
   JournalSidePanelView,
   KnowledgeSidePanelView,
   LettersSidePanelView,
@@ -50,6 +52,8 @@ import {
   getInboxAttentionKeyboardItemIds,
   getInboxItemHref,
   getInboxTaskRouteHref,
+  getHabitTrackerHref,
+  HABIT_TRACKER_ALL_ID,
   getJournalHref,
   getKnowledgeHref,
   getLettersHref,
@@ -63,19 +67,31 @@ import {
   getScopedProjectTaskHref,
   getSelectedContactSlugFromPathname,
   getSelectedInboxSlugFromPathname,
+  getSelectedHabitIdFromPathname,
   getSelectedJournalDateFromPathname,
   getSelectedKnowledgeSlugFromPathname,
   getSelectedLetterSlugFromPathname,
   getSelectedOrganizationSlugFromPathname,
+  getSelectedFinanceNavIdFromPathname,
   getSelectedProjectDocumentPathFromPathname,
   getUniqueListItemRouteParam,
   type ClientLinkProps,
+  getTaskDueDateYmd,
   getTodayJournalDateSlug,
   groupItemsByAlphaLetter,
+  groupBankAccountsForFinanceNav,
+  FINANCE_NAV_ITEMS,
+  financeSidePanelAccountKeyboardId,
+  resolveFinanceSidePanelHref,
   isContactSectionPath,
+  isEmailPath,
+  getEmailComposeHref,
   isFinanceSectionPath,
+  isFinanceAccountPath,
   isInboxPath,
+  isJournalHabitsPath,
   isJournalSectionPath,
+  isValidJournalDateSlug,
   isKnowledgeSectionPath,
   isLettersSectionPath,
   isOrganizationSectionPath,
@@ -103,6 +119,7 @@ import {
   useListBoardViewShortcuts,
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
   installSelectAllShortcutListeners,
   installClearSelectionShortcutListeners,
   useNavigationHistory,
@@ -120,7 +137,9 @@ import {
   createProductTab,
   primeTabTitle,
   type ContactsSidePanelViewProps,
+  type FinanceAccountGroupId,
   type FinanceSidePanelNavViewProps,
+  type HabitSidePanelViewProps,
   type InboxSidePanelViewProps,
   type JournalSidePanelViewProps,
   type KnowledgeSidePanelViewProps,
@@ -135,6 +154,7 @@ import type { BankAccount } from "@backsteros/contracts";
 import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
+import { useAgentMailMailboxes } from "../lib/use-agentmail-mailboxes";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -386,7 +406,8 @@ function DesktopJournalSidePanel({
       onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
       [key: string]: unknown;
     }) {
-      const dateSlug = String(to).replace(/^\/journal\/?/, "");
+      const rawSlug = String(to).replace(/^\/journal\/?/, "");
+      const dateSlug = isValidJournalDateSlug(rawSlug) ? rawSlug : "";
       return (
         <RouterLink
           to={to}
@@ -447,6 +468,131 @@ function DesktopJournalSidePanel({
             setIsCreating(false);
           }
         })();
+      }}
+    />
+  );
+}
+
+function DesktopHabitSidePanel({
+  onNavigate,
+  pathname,
+}: Omit<
+  HabitSidePanelViewProps,
+  | "items"
+  | "Link"
+  | "highlightedId"
+  | "listRef"
+  | "listContainerProps"
+  | "onToggleToday"
+  | "onCreateHabit"
+  | "createDisabled"
+  | "createError"
+> & {
+  onNavigate: (href: string) => void;
+  pathname: string;
+}) {
+  const listRef = useRef<HTMLElement>(null);
+  const workspace = useDesktopWorkspaceData();
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [completedCollapsed, setCompletedCollapsed] = useState(false);
+  const [inactiveCollapsed, setInactiveCollapsed] = useState(false);
+  const todayYmd = getTodayJournalDateSlug();
+  const items = useMemo(() => {
+    return workspace.habits.map((habit) => {
+      const todayTask = workspace.allTasks.find((task) => {
+        if (task.habitId !== habit.id) return false;
+        return getTaskDueDateYmd(task.dueDate) === todayYmd;
+      });
+      return {
+        ...habit,
+        todayTaskId: todayTask?.id ?? null,
+        todayTaskStatus: (todayTask?.status ?? null) as typeof habit.todayTaskStatus,
+        checked: todayTask?.status === "completed",
+      };
+    });
+  }, [todayYmd, workspace.allTasks, workspace.habits]);
+  const openItems = useMemo(
+    () => items.filter((item) => item.todayTaskId && !item.checked),
+    [items],
+  );
+  const completedItems = useMemo(
+    () => items.filter((item) => item.todayTaskId && item.checked),
+    [items],
+  );
+  const inactiveItems = useMemo(
+    () => items.filter((item) => !item.todayTaskId),
+    [items],
+  );
+  const selectedId =
+    getSelectedHabitIdFromPathname(pathname) ?? HABIT_TRACKER_ALL_ID;
+  const itemIds = useMemo(
+    () => [
+      HABIT_TRACKER_ALL_ID,
+      ...openItems.map((item) => item.id),
+      ...(completedCollapsed ? [] : completedItems.map((item) => item.id)),
+      ...(inactiveCollapsed ? [] : inactiveItems.map((item) => item.id)),
+    ],
+    [
+      completedCollapsed,
+      completedItems,
+      inactiveCollapsed,
+      inactiveItems,
+      openItems,
+    ],
+  );
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds,
+    selectedId,
+    onNavigate: (habitId) => {
+      onNavigate(getHabitTrackerHref(habitId));
+    },
+    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
+    enabled: true,
+  });
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
+  );
+
+  return (
+    <HabitSidePanelView
+      pathname={pathname}
+      items={items}
+      Link={RouterLink}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
+      highlightedId={highlightedId}
+      createDisabled={isCreating}
+      createError={createError}
+      completedCollapsed={completedCollapsed}
+      onToggleCompletedGroup={() => {
+        setCompletedCollapsed((current) => !current);
+      }}
+      inactiveCollapsed={inactiveCollapsed}
+      onToggleInactiveGroup={() => {
+        setInactiveCollapsed((current) => !current);
+      }}
+      onToggleToday={(habit, checked) => {
+        if (!habit.todayTaskId) return;
+        void workspace.patchTask(habit.todayTaskId, {
+          status: checked ? "completed" : "ready_to_start",
+        });
+      }}
+      onCreateHabit={async ({ title, icon }) => {
+        setIsCreating(true);
+        setCreateError(null);
+        try {
+          const habit = await workspace.createHabit({ title, icon });
+          onNavigate(getHabitTrackerHref(habit.id));
+        } catch (error) {
+          setCreateError(
+            error instanceof Error ? error.message : "Could not create habit.",
+          );
+          throw error;
+        } finally {
+          setIsCreating(false);
+        }
       }}
     />
   );
@@ -867,12 +1013,27 @@ function DesktopFinanceSidePanel({
   Link,
   collapsed,
   onToggleCollapse,
+  onExpand,
 }: Pick<
   FinanceSidePanelNavViewProps,
   "pathname" | "Link" | "collapsed" | "onToggleCollapse"
->) {
+> & {
+  onExpand?: () => void;
+}) {
+  const navigate = useNavigate();
   const { client } = useDesktopApi();
+  const listRef = useRef<HTMLElement>(null);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<
+    Record<FinanceAccountGroupId, boolean>
+  >({
+    credit_cards: true,
+    savings: true,
+    investments: true,
+    bank_accounts: true,
+  });
+  const pendingKeyboardExpandRef = useRef(false);
+  const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
 
   useEffect(() => {
     let cancelled = false;
@@ -901,6 +1062,66 @@ function DesktopFinanceSidePanel({
     accounts,
   );
 
+  const groups = useMemo(
+    () => groupBankAccountsForFinanceNav(accounts),
+    [accounts],
+  );
+
+  const itemIds = useMemo(() => {
+    const ids: string[] = FINANCE_NAV_ITEMS.map((item) => item.id);
+    for (const group of groups) {
+      if (!expandedGroups[group.id]) continue;
+      for (const account of group.accounts) {
+        ids.push(
+          financeSidePanelAccountKeyboardId(account.key ?? account.id),
+        );
+      }
+    }
+    return ids;
+  }, [expandedGroups, groups]);
+
+  const selectedId = useMemo(() => {
+    const navId = getSelectedFinanceNavIdFromPathname(pathname);
+    if (navId) return navId;
+    if (!isFinanceAccountPath(pathname)) return null;
+    const slug = decodeURIComponent(
+      pathname.split("/").filter(Boolean)[1] ?? "",
+    );
+    return slug ? financeSidePanelAccountKeyboardId(slug) : null;
+  }, [pathname]);
+
+  useEffect(() => {
+    if (activeZone === LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL && collapsed) {
+      pendingKeyboardExpandRef.current = true;
+      onExpand?.();
+    }
+  }, [activeZone, collapsed, onExpand]);
+
+  useEffect(() => {
+    if (collapsed || !pendingKeyboardExpandRef.current) return;
+    pendingKeyboardExpandRef.current = false;
+    setActiveZone(LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL, {
+      preferSidepanelForJk: true,
+      activate: true,
+    });
+  }, [collapsed, setActiveZone]);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds,
+    selectedId,
+    onNavigate: (itemId) => {
+      const href = resolveFinanceSidePanelHref(itemId);
+      if (href) navigate(href);
+    },
+    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
+    enabled: itemIds.length > 0,
+  });
+
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
+  );
+
   return (
     <FinanceSidePanelNavView
       pathname={pathname}
@@ -909,6 +1130,11 @@ function DesktopFinanceSidePanel({
       Link={Link}
       collapsed={collapsed}
       onToggleCollapse={onToggleCollapse}
+      highlightedId={highlightedId}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
+      expandedGroups={expandedGroups}
+      onExpandedGroupsChange={setExpandedGroups}
     />
   );
 }
@@ -1027,6 +1253,13 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       documentId: todayJournalDocumentId,
     });
   }, [client, todayJournalDocumentId, todayJournalSlug, workspace.ready]);
+
+  useEffect(() => {
+    if (!workspace.ready) return;
+    void workspace.reloadHabits().catch(() => {
+      // Rollover runs again when Habit Tracker is opened.
+    });
+  }, [todayJournalSlug, workspace.ready, workspace.reloadHabits]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1159,6 +1392,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     commandPaletteOpen,
     commandPaletteMode: mode,
     openGo,
+    openFinanceGo,
     closePalette,
     onNavigate: navigateTo,
   });
@@ -1524,6 +1758,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const pathname = location.pathname;
   const navigationTrail = parseNavigationTrailPath(pathname);
   const panelPathname = navigationTrail?.sourceHref ?? pathname;
+  const agentMail = useAgentMailMailboxes(isEmailPath(panelPathname));
 
   const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
   const projectRouteScope = getProjectRouteScopeFromPathname(panelPathname);
@@ -1665,6 +1900,26 @@ function AppShellInner({ children }: { children?: ReactNode }) {
               agentStatus,
             });
           }}
+        />
+      );
+    } else if (isEmailPath(panelPathname)) {
+      sidePanelBody = (
+        <EmailSidePanelView
+          pathname={panelPathname}
+          mailboxes={agentMail.mailboxes}
+          items={agentMail.messages}
+          loading={agentMail.loading}
+          messagesLoading={agentMail.messagesLoading}
+          apiKeyConfigured={agentMail.apiKeyConfigured}
+          Link={RouterLink}
+          onCompose={() => navigateTo(getEmailComposeHref())}
+        />
+      );
+    } else if (isJournalHabitsPath(panelPathname)) {
+      sidePanelBody = (
+        <DesktopHabitSidePanel
+          onNavigate={navigateTo}
+          pathname={panelPathname}
         />
       );
     } else if (isJournalSectionPath(panelPathname)) {
@@ -1937,6 +2192,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           onToggleCollapse={() =>
             setSidePanelCollapsed((current) => !current)
           }
+          onExpand={() => setSidePanelCollapsed(false)}
         />
       );
     }
@@ -2031,12 +2287,23 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         renderTabIcon={(tab) => {
           // Inbox tabs always keep the inbox glyph — status/working icons
           // are for task detail tabs elsewhere (projects, tasks, etc.).
+          // Email tabs stay on the envelope until message entities exist.
           if (isInboxPath(tab.href)) {
             return createElement(HistoryEntryIcon, {
               display: {
                 kind: "navigate",
                 navId: "inbox",
                 badgeLabel: "Inbox",
+                title: tab.title,
+              },
+            });
+          }
+          if (isEmailPath(tab.href)) {
+            return createElement(HistoryEntryIcon, {
+              display: {
+                kind: "navigate",
+                navId: "email",
+                badgeLabel: "Email",
                 title: tab.title,
               },
             });

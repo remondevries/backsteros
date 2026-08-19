@@ -1,15 +1,36 @@
 import { Stack } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
-import { InboxHeader, InboxHeaderPlus } from "../../../components/inbox-header";
+import { InboxHeader } from "../../../components/inbox-header";
 import { InboxListPane } from "../../../components/inbox-list-pane";
 import { isPadDevice } from "../../../lib/device";
+import {
+  PadSidePanelCollapsedRail,
+  usePadSidePanelCollapsed,
+} from "../../../lib/pad-side-panel-collapse";
 import { tabDetailScreenOptions } from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 const LIST_PANE_WIDTH = 360;
 
+/**
+ * iPad task routes: black canvas (not transparent, not surface). Transparent
+ * stack layers were revealing the empty-index PadContentFrame / a full-width
+ * surface under Chat; only the left column should be carded.
+ */
+function padTaskSurfaceOptions() {
+  return {
+    ...tabDetailScreenOptions({ embedded: false }),
+    headerShown: false,
+    headerBackVisible: false,
+    contentStyle: { backgroundColor: colors.background },
+    headerStyle: { backgroundColor: colors.background },
+  };
+}
+
 export default function InboxLayout() {
+  const { collapsed, setCollapsed } = usePadSidePanelCollapsed("inbox");
+
   if (!isPadDevice()) {
     return (
       <Stack
@@ -22,10 +43,7 @@ export default function InboxLayout() {
         <Stack.Screen
           name="index"
           options={{
-            // Native header so interactive pop keeps liquid-glass back chrome
-            // (custom `header:` replacements drop the glass mid-swipe).
-            title: "Inbox",
-            headerRight: () => <InboxHeaderPlus />,
+            header: () => <InboxHeader />,
             contentStyle: { backgroundColor: colors.background },
           }}
         />
@@ -35,20 +53,30 @@ export default function InboxLayout() {
     );
   }
 
-  // iPad: desktop-style list | detail — list stays mounted; Stack shows
-  // index (empty), [id] (task), or new (compose) in the detail pane.
   return (
     <View style={styles.split}>
-      <View style={styles.listPane}>
-        <InboxHeader />
-        <View style={styles.listBody}>
-          <InboxListPane autoSelectFirst />
+      {collapsed ? (
+        <PadSidePanelCollapsedRail
+          onExpand={() => setCollapsed(false)}
+          accessibilityLabel="Show Inbox list"
+        />
+      ) : (
+        <View style={styles.listPane}>
+          <InboxHeader onToggleCollapse={() => setCollapsed(true)} />
+          <View style={styles.listBody}>
+            <InboxListPane autoSelectFirst />
+          </View>
         </View>
-      </View>
-      <View style={styles.detailPane}>
+      )}
+      {/*
+        Canvas column (not PadContentFrame): task screens own their own detail
+        card + floating agent. Empty index / new still wrap in PadContentFrame.
+      */}
+      <View style={styles.canvas}>
         <Stack
           screenOptions={{
             contentStyle: { backgroundColor: colors.background },
+            headerStyle: { backgroundColor: colors.background },
             gestureEnabled: true,
             fullScreenGestureEnabled: true,
           }}
@@ -60,12 +88,17 @@ export default function InboxLayout() {
               contentStyle: { backgroundColor: colors.background },
             }}
           />
-          <Stack.Screen name="new" options={tabDetailScreenOptions()} />
+          <Stack.Screen
+            name="new"
+            options={{
+              ...padTaskSurfaceOptions(),
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          />
           <Stack.Screen
             name="[id]"
             options={{
-              ...tabDetailScreenOptions(),
-              headerBackVisible: false,
+              ...padTaskSurfaceOptions(),
               animation: "fade",
               animationDuration: 220,
             }}
@@ -86,17 +119,17 @@ const styles = StyleSheet.create({
   listPane: {
     width: LIST_PANE_WIDTH,
     flexShrink: 0,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.border,
     minHeight: 0,
+    backgroundColor: colors.background,
   },
   listBody: {
     flex: 1,
     minHeight: 0,
   },
-  detailPane: {
+  canvas: {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
+    backgroundColor: colors.background,
   },
 });

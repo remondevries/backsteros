@@ -132,7 +132,9 @@ export {
 
 export {
   InboxNavIcon,
+  EmailNavIcon,
   TasksNavIcon,
+  HabitsNavIcon,
   JournalNavIcon,
   KnowledgeBaseNavIcon,
   ContactsNavIcon,
@@ -206,6 +208,7 @@ export {
 
 export {
   INBOX_TASK_LIST_PANEL_WIDTH_KEY,
+  EMAIL_LIST_PANEL_WIDTH_KEY,
   JOURNAL_LIST_PANEL_WIDTH_KEY,
   KNOWLEDGE_LIST_PANEL_WIDTH_KEY,
   DOCUMENTS_LIST_PANEL_WIDTH_KEY,
@@ -215,6 +218,7 @@ export {
   shouldShowContentSidePanel,
   getContentSidePanelWidthKey,
   isInboxPath,
+  isEmailPath,
   getSelectedInboxSlugFromPathname,
 } from "./content-side-panel.js";
 
@@ -243,6 +247,7 @@ export {
   getFirstInboxItemHref,
   getInboxAttentionGroupKey,
   getInboxAttentionGroupLabel,
+  getInboxHrefAfterRemovingItem,
   getInboxItemDisplayId,
   getInboxItemHref,
   getInboxItemRouteSlug,
@@ -251,7 +256,9 @@ export {
   getProjectTaskHref,
   getInboxAttentionKeyboardItemIds,
   groupInboxItemsByAttentionStatus,
+  isAgentInboxPending,
   isInboxOverdueTask,
+  pickIdAfterRemoving,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
   INBOX_ATTENTION_REAL_STATUSES,
@@ -262,6 +269,30 @@ export {
   type InboxListItem,
   type InboxTaskListItem,
 } from "./inbox-items.js";
+
+export {
+  emailListItemIsSelected,
+  emailMailboxLabel,
+  getEmailComposeHref,
+  getEmailDraftHref,
+  getEmailItemHref,
+  getEmailListItemHref,
+  getSelectedEmailIdFromPathname,
+  groupEmailItemsByMailbox,
+  filterEmailListItems,
+  isEmailComposePath,
+  parseEmailDraftPath,
+  parseEmailMessagePath,
+  parseReplyToAddress,
+  replySubject,
+  EMAIL_COMPOSE_PATH,
+  type EmailDraftPath,
+  type EmailListItem,
+  type EmailListItemKind,
+  type EmailMailbox,
+  type EmailMailboxGroup,
+  type EmailMessagePath,
+} from "./email.js";
 
 export { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
 
@@ -280,6 +311,47 @@ export {
   InboxSidePanelView,
   type InboxSidePanelViewProps,
 } from "./components/inbox-side-panel-view.js";
+export {
+  EmailSidePanelView,
+  type EmailSidePanelViewProps,
+} from "./components/email-side-panel-view.js";
+export {
+  EmailDraftActions,
+  type EmailDraftActionsProps,
+  type EmailDraftBodyMode,
+  useEmailDraftBodyModeShortcuts,
+} from "./components/email-draft-actions.js";
+export {
+  EmailDraftSignOffShell,
+  type EmailDraftSignOffShellProps,
+} from "./components/email-draft-sign-off-shell.js";
+export {
+  EmailComposeChrome,
+  type EmailComposeChromeProps,
+} from "./components/email-compose-chrome.js";
+export {
+  EmailComposeBodyStage,
+  type EmailComposeBodyStageProps,
+} from "./components/email-compose-body-stage.js";
+export {
+  EmailMessageReplyBar,
+  type EmailMessageReplyBarProps,
+} from "./components/email-message-reply-bar.js";
+
+export {
+  EmailThreadMessageCard,
+  type EmailThreadMessageCardProps,
+} from "./components/email-thread-message-card.js";
+export {
+  EmailThreadView,
+  type EmailDraftActionsConfig,
+  type EmailThreadViewProps,
+} from "./components/email-thread-view.js";
+export {
+  EmailPropertiesDisplay,
+  type EmailPropertiesDisplayProps,
+  type EmailPropertiesDisplayThread,
+} from "./components/email-properties-display.js";
 export {
   AddInboxTaskInline,
   type AddInboxTaskInlineProps,
@@ -374,8 +446,62 @@ export {
   getJournalHref,
   getSelectedJournalDateFromPathname,
   isJournalDetailPath,
+  isJournalReservedSlug,
   isJournalSectionPath,
 } from "./journal.js";
+
+export {
+  HABIT_TRACKER_ALL_ID,
+  JOURNAL_NAV_ITEMS,
+  getHabitTrackerHref,
+  getJournalNavHref,
+  getSelectedHabitIdFromPathname,
+  getSelectedJournalNavIdFromPathname,
+  isJournalHabitsPath,
+  isJournalNavId,
+  type JournalNavId,
+  type JournalNavItem,
+} from "./journal-nav.js";
+
+export {
+  HABIT_CADENCE_OPTIONS,
+  getHabitCadenceLabel,
+  isHabitDueYmd,
+  parseHabitCadence,
+} from "./habit-cadence.js";
+
+export {
+  HABIT_SORT_OPTIONS,
+  getHabitSortLabel,
+  parseHabitSort,
+} from "./habit-sort.js";
+
+export {
+  deriveHabitTimelineMinimapItems,
+  habitTimelineSectionId,
+  type HabitTimelineMinimapItem,
+} from "./habit-timeline-minimap.js";
+
+export {
+  buildHabitDayHeatByYmd,
+  buildHabitMonthGrids,
+  buildHabitTimelineGrids,
+  buildHabitYearMonthGrids,
+  earliestHabitInstanceYmd,
+  focusYmdForHabitSort,
+  habitInstanceCounts,
+  isoWeekNumber,
+  startOfWeekYmd,
+  type HabitDayHeat,
+  type HabitDayHeatEntry,
+  type HabitDayHeatLevel,
+  type HabitDayHeatTone,
+  type HabitGridCell,
+  type HabitGridCellState,
+  type HabitGridInstance,
+  type HabitMonthGrid,
+  type HabitSortGranularity,
+} from "./habit-month-grid.js";
 
 export {
   JournalSidePanelView,
@@ -383,6 +509,20 @@ export {
   type JournalSidePanelLinkComponent,
   type JournalListItem,
 } from "./components/journal-side-panel-view.js";
+
+export {
+  HabitSidePanelView,
+  type HabitListItem,
+  type HabitSidePanelLinkComponent,
+  type HabitSidePanelViewProps,
+} from "./components/habit-side-panel-view.js";
+
+export {
+  HabitTrackerView,
+  type HabitDayRecordStatus,
+  type HabitTrackerProjectOption,
+  type HabitTrackerViewProps,
+} from "./components/habit-tracker-view.js";
 
 export {
   JournalDetailLayout,
@@ -430,6 +570,7 @@ export {
   DROPDOWN_NO_PROJECT_VALUE,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
+  buildEmailMailboxDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   resolveDropdownNone,
@@ -511,6 +652,7 @@ export {
 export {
   FinanceTransactionsView,
   FinanceTransactionDetailPanel,
+  TransactionActionsMenu,
   type FinanceBankAccountCreateInput,
   type FinanceTransactionDetailPanelProps,
   type FinanceTransactionPatch,
@@ -537,6 +679,9 @@ export {
 export {
   FinanceSidePanelNavView,
   FinanceSectionNavIcon,
+  financeSidePanelAccountKeyboardId,
+  parseFinanceSidePanelKeyboardId,
+  resolveFinanceSidePanelHref,
   type FinanceSidePanelLinkComponent,
   type FinanceSidePanelNavViewProps,
 } from "./components/finance-side-panel-nav-view.js";
@@ -866,6 +1011,7 @@ export {
   ApiKeysSettingsSectionView,
   type ApiKeysSettingsSectionViewProps,
   type SettingsApiKeyItem,
+  type SettingsApiKeyContactOption,
 } from "./components/api-keys-settings-section-view.js";
 
 export {
@@ -1143,6 +1289,11 @@ export {
   useListClearSelectionShortcut,
   useListDismissDetailShortcut,
   installClearSelectionShortcutListeners,
+  shouldYieldListKeyboardEscapeToShortcutStack,
+  isListDetailPanelOpen,
+  ENTITY_TITLE_INPUT_ATTRIBUTE,
+  isEntityTitleInputFocused,
+  isOverviewNameEditorInputFocused,
 } from "./use-list-clear-selection-shortcut.js";
 
 export {
@@ -1265,6 +1416,15 @@ export {
   TaskWorkbenchRow,
   type TaskWorkbenchRowProps,
 } from "./components/task-workbench-row.js";
+
+export {
+  HabitCheckChips,
+  TasksTodayHabitsChips,
+  collapseHabitItemsByHabitId,
+  type HabitCheckChipItem,
+  type HabitCheckChipsProps,
+  type TasksTodayHabitsChipsProps,
+} from "./components/tasks-today-habits-chips.js";
 
 export {
   TasksOverviewView,
@@ -1486,6 +1646,7 @@ export {
   TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS,
   LEGACY_INBOX_TASK_PROPERTIES_PANEL_WIDTH_KEY,
   LETTER_PROPERTIES_PANEL_WIDTH_KEY,
+  EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
   isTaskDetailPath,
 } from "./properties-panel.js";
 
@@ -2017,8 +2178,17 @@ export {
 export {
   JournalDueTasksSection,
   filterTasksDueOnJournalDate,
+  isHabitLinkedTask,
+  type JournalDayListMode,
   type JournalDueTasksSectionProps,
 } from "./components/journal-due-tasks-section.js";
+
+export {
+  JournalHabitsList,
+  countHabitDayOutcomes,
+  type JournalHabitDayItem,
+  type JournalHabitsListProps,
+} from "./components/journal-habits-section.js";
 
 export {
   NAVIGATION_TRAIL_KINDS,
@@ -2108,9 +2278,16 @@ export {
 export {
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
   TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE,
+  FINANCE_FILTER_SCOPE_ATTRIBUTE,
+  FINANCE_BULK_SCOPE_ATTRIBUTE,
   resolveTaskPropertyDropdownOpenCandidatesFromEvent,
   resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent,
+  resolveFinanceChromeDropdownOpenCandidatesFromEvent,
   pageHasFinanceTxPropertyHotkeyTargets,
+  pageHasFinanceChromeHotkeyTargets,
+  shouldYieldComposeToFinanceTxCategory,
+  shouldYieldGoNavigationToFinanceTxGoal,
+  isFinanceTxDetailPanelOpen,
   resolveTaskPropertyDropdownIdFromEvent,
   resolveTaskPropertyDropdownId,
   isTaskPropertyDropdownShortcutKey,
@@ -2496,7 +2673,11 @@ export {
   registerFocusedListKeyboardItemResolver,
 } from "./focused-list-keyboard-item.js";
 
-export { openTaskPropertyDropdown } from "./open-task-property-dropdown.js";
+export {
+  openTaskPropertyDropdown,
+  openFinanceChromeDropdown,
+  openFinanceTxPropertyDropdown,
+} from "./open-task-property-dropdown.js";
 export { isContentSidePanelToggleShortcut } from "./content-side-panel-toggle-shortcut.js";
 
 export {
@@ -2566,6 +2747,7 @@ export {
   isInboxPathname,
   getDefaultListKeyboardNavZone,
   shouldAutoSwitchJkToMainList,
+  filterListKeyboardNavZonesForTab,
   type ListKeyboardNavZone,
   type ApplyListKeyboardNavZoneOptions,
 } from "./list-keyboard-nav-zone.js";

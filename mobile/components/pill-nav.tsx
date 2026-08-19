@@ -79,6 +79,7 @@ export function PillNav<T extends string>({
 const styles = StyleSheet.create({
   headerHost: {
     maxWidth: 520,
+    alignSelf: "center",
   },
   row: {
     flexDirection: "row",

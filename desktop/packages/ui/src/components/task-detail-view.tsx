@@ -13,6 +13,7 @@ import {
   TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS,
   TASK_PROPERTIES_PANEL_WIDTH_KEY,
 } from "../properties-panel.js";
+import { isAgentInboxPending } from "../inbox-items.js";
 import {
   spellcheckHasChanges,
   spellcheckMarkRanges,
@@ -116,6 +117,8 @@ export type TaskDetailViewProps = {
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
   onCreateAssigneeFromQuery?: (query: string) => void;
+  /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
+  onAgentInboxApprove?: () => void;
 };
 
 export function TaskDetailView({
@@ -145,9 +148,11 @@ export function TaskDetailView({
   assigneeNavigateHref,
   projectNavigateHref,
   onCreateAssigneeFromQuery,
+  onAgentInboxApprove,
 }: TaskDetailViewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [usePropertiesRail, setUsePropertiesRail] = useState(false);
+  const agentInboxPending = isAgentInboxPending(task);
 
   useEffect(() => {
     const node = rootRef.current;
@@ -444,6 +449,8 @@ export function TaskDetailView({
           assigneeNavigateHref={assigneeNavigateHref}
           projectNavigateHref={projectNavigateHref}
           onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+          agentInboxPending={agentInboxPending}
+          onAgentInboxApprove={onAgentInboxApprove}
         />
       }
       dock={<FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>}

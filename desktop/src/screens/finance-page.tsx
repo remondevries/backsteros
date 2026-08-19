@@ -18,6 +18,7 @@ import type {
 } from "@backsteros/contracts";
 import {
   AccountActionsMenu,
+  TransactionActionsMenu,
   CategoryActionsMenu,
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
@@ -1565,6 +1566,10 @@ export function FinancePage() {
     if (!showTransactions || !transactionsChrome?.hasSelection) return null;
     return (
       <div className="finance-categories-chrome-actions">
+        <TransactionActionsMenu
+          transaction={transactionsChrome.transaction}
+          onDelete={transactionsChrome.onDelete}
+        />
         <button
           type="button"
           className="finance-categories-chrome-toggle"
@@ -2545,6 +2550,22 @@ export function FinancePage() {
     lastClickedIdRef.current = null;
   }, [deleteTransactionsByIds, selectedIds]);
 
+  const handleDeleteTransaction = useCallback(
+    async (id: string) => {
+      await deleteTransactionsByIds([id]);
+      setSelectedIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      if (lastClickedIdRef.current === id) {
+        lastClickedIdRef.current = null;
+      }
+    },
+    [deleteTransactionsByIds],
+  );
+
   const handleCreateAccount = useCallback(
     async (input: {
       name: string;
@@ -3343,6 +3364,7 @@ export function FinancePage() {
         }}
         onBulkPatch={handleBulkPatch}
         onBulkDelete={handleBulkDelete}
+        onDeleteTransaction={handleDeleteTransaction}
         onCreateOrganizationFromQuery={(query) =>
           workspace.createOrganization({ name: query })
         }

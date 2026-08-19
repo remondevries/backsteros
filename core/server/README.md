@@ -77,7 +77,8 @@ Health still exposes `spacesConfigured` as “storage configured” for older cl
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm dev` | Dev server (workspace root) |
+| `pnpm dev` | API dev server (`tsx watch`, rebuilds contracts on start) |
+| `pnpm dev:all` | Contracts `tsc --watch` + API (restarts when contracts rebuild) |
 | `pnpm db:migrate` | Apply Drizzle migrations |
 | `pnpm --filter @backsteros/server db:seed` | Create bootstrap API key (dev) |
 | `pnpm db:powersync-setup` | Create/update `powersync` publication + grants (Tier A/B tables) |

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   Platform,
@@ -10,6 +10,7 @@ import {
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   naturalLanguageDueDatePreview,
@@ -22,6 +23,8 @@ import {
   parseYmdLocal,
 } from "../lib/task-due-date";
 import { colors } from "../lib/theme";
+import { useHideTabBar } from "../lib/tab-bar-visibility";
+import { DueDateCalendar } from "./due-date-calendar";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -63,6 +66,8 @@ export type DueDatePropertySheetProps = {
   /** Extra preset rows before Today (e.g. current custom date label). */
   includeCurrentSelection?: boolean;
   emptyLabel?: string;
+  /** When false, omit “No due date” and ignore NL clear (habit next-due). */
+  allowClear?: boolean;
 };
 
 /**
@@ -77,12 +82,40 @@ export function DueDatePropertySheet({
   embedded = false,
   includeCurrentSelection = true,
   emptyLabel = "No due date",
+  allowClear = true,
 }: DueDatePropertySheetProps) {
+  const insets = useSafeAreaInsets();
   const [nativeOpen, setNativeOpen] = useState(false);
+  /** Hide the option sheet before presenting the iOS date Modal (Modals don't stack). */
+  const [dismissingForNative, setDismissingForNative] = useState(false);
   const [draftDate, setDraftDate] = useState(() =>
     parseSelectedToDate(selected),
   );
   const suppressSheetCloseRef = useRef(false);
+  const nativeOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // FullWindowOverlay tab bar sits above RN Modal — hide for sheet + date picker.
+  useHideTabBar(visible || nativeOpen || dismissingForNative);
+
+  const clearNativeOpenTimer = useCallback(() => {
+    if (nativeOpenTimerRef.current != null) {
+      clearTimeout(nativeOpenTimerRef.current);
+      nativeOpenTimerRef.current = null;
+    }
+  }, []);
+
+  const resetNativeFlow = useCallback(() => {
+    clearNativeOpenTimer();
+    setNativeOpen(false);
+    setDismissingForNative(false);
+  }, [clearNativeOpenTimer]);
+
+  useEffect(() => {
+    if (visible) return;
+    resetNativeFlow();
+  }, [resetNativeFlow, visible]);
+
+  useEffect(() => () => clearNativeOpenTimer(), [clearNativeOpenTimer]);
 
   const options = useMemo<PropertyOption<string | null>[]>(() => {
     const todayIso = dueIsoForOffset(0);
@@ -90,12 +123,15 @@ export function DueDatePropertySheet({
     const weekIso = dueIsoForOffset(7);
     const presetValues = new Set([todayIso, tomorrowIso, weekIso, null]);
 
-    const rows: PropertyOption<string | null>[] = [
-      {
+    const rows: PropertyOption<string | null>[] = [];
+    if (allowClear) {
+      rows.push({
         value: null,
         label: emptyLabel,
         icon: <TaskDueDateIcon active={false} size={14} />,
-      },
+      });
+    }
+    rows.push(
       {
         value: todayIso,
         label: "Today",
@@ -111,7 +147,7 @@ export function DueDatePropertySheet({
         label: "In 7 days",
         icon: <TaskDueDateIcon active size={14} />,
       },
-    ];
+    );
 
     if (
       includeCurrentSelection &&
@@ -119,7 +155,7 @@ export function DueDatePropertySheet({
       !presetValues.has(selected) &&
       !rows.some((row) => row.value === selected)
     ) {
-      rows.splice(1, 0, {
+      rows.splice(allowClear ? 1 : 0, 0, {
         value: selected,
         label: formatTaskDueMetaLabel(selected) ?? selected.slice(0, 10),
         icon: <TaskDueDateIcon active size={14} />,
@@ -133,39 +169,53 @@ export function DueDatePropertySheet({
     });
 
     return rows;
-  }, [emptyLabel, includeCurrentSelection, selected]);
+  }, [allowClear, emptyLabel, includeCurrentSelection, selected]);
 
   const openNative = useCallback(() => {
     setDraftDate(parseSelectedToDate(selected));
-    setNativeOpen(true);
-  }, [selected]);
+    // Dismiss the option-sheet Modal first. Presenting another Modal while one
+    // is still closing fails silently on iOS (iPhone + iPad).
+    setDismissingForNative(true);
+    clearNativeOpenTimer();
+    nativeOpenTimerRef.current = setTimeout(() => {
+      nativeOpenTimerRef.current = null;
+      setNativeOpen(true);
+    }, 320);
+  }, [clearNativeOpenTimer, selected]);
 
   const closeNative = useCallback(() => {
+    clearNativeOpenTimer();
     setNativeOpen(false);
-  }, []);
+    setDismissingForNative(false);
+  }, [clearNativeOpenTimer]);
 
   const commitNative = useCallback(
     (date: Date) => {
       onSelect(toDueIsoFromDate(date));
-      setNativeOpen(false);
+      resetNativeFlow();
       onClose();
     },
-    [onClose, onSelect],
+    [onClose, onSelect, resetNativeFlow],
   );
 
   const handleNativeChange = useCallback(
     (event: DateTimePickerEvent, date?: Date) => {
-      if (Platform.OS === "android") {
-        setNativeOpen(false);
-        if (event.type === "dismissed" || !date) {
-          return;
-        }
-        commitNative(date);
+      if (Platform.OS !== "android") return;
+      setNativeOpen(false);
+      setDismissingForNative(false);
+      if (event.type === "dismissed" || !date) {
         return;
       }
-      if (date) {
-        setDraftDate(date);
-      }
+      commitNative(date);
+    },
+    [commitNative],
+  );
+
+  const handleCalendarSelect = useCallback(
+    (ymd: string) => {
+      const date = parseYmdLocal(ymd);
+      if (!date) return;
+      commitNative(date);
     },
     [commitNative],
   );
@@ -189,13 +239,18 @@ export function DueDatePropertySheet({
       suppressSheetCloseRef.current = false;
       return;
     }
+    if (dismissingForNative || nativeOpen) {
+      // Backdrop/dismiss while transitioning into the date picker — ignore.
+      return;
+    }
     onClose();
-  }, [onClose]);
+  }, [dismissingForNative, nativeOpen, onClose]);
 
   const handleQuerySubmit = useCallback(
     (query: string) => {
       const result = parseNaturalLanguageDueDate(query);
       if (result.kind === "clear") {
+        if (!allowClear) return false;
         onSelect(null);
         return true;
       }
@@ -207,7 +262,7 @@ export function DueDatePropertySheet({
       }
       return false;
     },
-    [onSelect],
+    [allowClear, onSelect],
   );
 
   const handleQueryPreview = useCallback(
@@ -215,11 +270,14 @@ export function DueDatePropertySheet({
     [],
   );
 
+  const optionSheetVisible =
+    visible && !nativeOpen && !dismissingForNative;
+
   return (
     <>
       <PropertyOptionSheet
         embedded={embedded}
-        visible={visible && !nativeOpen}
+        visible={optionSheetVisible}
         title={title}
         options={options}
         selected={selected}
@@ -244,11 +302,15 @@ export function DueDatePropertySheet({
           visible={nativeOpen}
           transparent
           animationType="fade"
+          presentationStyle="overFullScreen"
           onRequestClose={closeNative}
         >
           <Pressable style={styles.backdrop} onPress={closeNative}>
             <Pressable
-              style={styles.sheet}
+              style={[
+                styles.sheet,
+                { paddingBottom: Math.max(24, insets.bottom + 12) },
+              ]}
               onPress={(event) => event.stopPropagation()}
             >
               <View style={styles.sheetHeader}>
@@ -261,31 +323,13 @@ export function DueDatePropertySheet({
                   <Text style={styles.headerAction}>Cancel</Text>
                 </Pressable>
                 <Text style={styles.sheetTitle}>Pick a date</Text>
-                <Pressable
-                  onPress={() => commitNative(draftDate)}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Done"
-                >
-                  <Text
-                    style={[styles.headerAction, styles.headerActionPrimary]}
-                  >
-                    Done
-                  </Text>
-                </Pressable>
+                <View style={styles.headerSpacer} />
               </View>
-              <DateTimePicker
-                value={draftDate}
-                mode="date"
-                display="spinner"
-                themeVariant="dark"
-                onChange={handleNativeChange}
-                style={styles.picker}
+              <DueDateCalendar
+                key={formatLocalYmd(draftDate)}
+                value={formatLocalYmd(draftDate)}
+                onSelect={handleCalendarSelect}
               />
-              <Text style={styles.hint}>
-                {formatTaskDueMetaLabel(formatLocalYmd(draftDate)) ??
-                  formatLocalYmd(draftDate)}
-              </Text>
             </Pressable>
           </Pressable>
         </Modal>
@@ -304,7 +348,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     backgroundColor: colors.surface,
-    paddingBottom: 24,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
@@ -327,19 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minWidth: 64,
   },
-  headerActionPrimary: {
-    color: colors.foreground,
-    fontWeight: "600",
-    textAlign: "right",
-  },
-  picker: {
-    alignSelf: "stretch",
-    height: 216,
-  },
-  hint: {
-    textAlign: "center",
-    color: colors.muted,
-    fontSize: 13,
-    paddingBottom: 8,
+  headerSpacer: {
+    minWidth: 64,
   },
 });

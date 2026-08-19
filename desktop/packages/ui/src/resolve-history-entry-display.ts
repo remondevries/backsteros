@@ -98,6 +98,7 @@ const TOP_LEVEL_NAV: Record<
   { navId: NavigationItemIconId; badgeLabel: string }
 > = {
   "/inbox": { navId: "inbox", badgeLabel: "Inbox" },
+  "/email": { navId: "email", badgeLabel: "Email" },
   "/journal": { navId: "journal", badgeLabel: "Journal" },
   "/knowledge": { navId: "knowledge", badgeLabel: "Knowledge" },
   "/tasks": { navId: "tasks", badgeLabel: "Tasks" },
@@ -229,6 +230,16 @@ export function resolveHistoryEntryDisplay(
     };
   }
 
+  const emailDetailMatch = pathname.match(/^\/email\/([^/]+)\/([^/]+)$/);
+  if (emailDetailMatch) {
+    return {
+      kind: "navigate",
+      navId: "email",
+      badgeLabel: "Email",
+      title,
+    };
+  }
+
   const projectTaskMatch = pathname.match(
     /^\/projects\/[^/]+\/tasks\/([^/]+)$/,
   );
@@ -292,6 +303,15 @@ export function resolveHistoryEntryDisplay(
       navId: "letters",
       badgeLabel: "New",
       title,
+    };
+  }
+
+  if (pathname === "/journal/habits" || pathname.startsWith("/journal/habits/")) {
+    return {
+      kind: "journal",
+      navId: "habits",
+      badgeLabel: "Habits",
+      title: title === pathname ? "Habit Tracker" : title,
     };
   }
 

@@ -15,7 +15,9 @@ import {
   AreasNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
+  EmailNavIcon,
   FinanceNavIcon,
+  HabitsNavIcon,
   InboxNavIcon,
   JournalNavIcon,
   KnowledgeBaseNavIcon,
@@ -58,7 +60,9 @@ const NAVIGATION_ICONS: Record<
   ComponentType<{ className?: string }>
 > = {
   inbox: InboxNavIcon,
+  email: EmailNavIcon,
   journal: JournalNavIcon,
+  habits: HabitsNavIcon,
   knowledge: KnowledgeBaseNavIcon,
   tasks: TasksNavIcon,
   areas: AreasNavIcon,
@@ -109,9 +113,11 @@ export function HistoryEntryIcon({
       );
     }
 
+    const JournalKindIcon =
+      display.navId === "habits" ? HabitsNavIcon : JournalNavIcon;
     return (
       <span className="app-side-panel-history-entry-icon" aria-hidden="true">
-        <JournalNavIcon className={ICON_CLASS} />
+        <JournalKindIcon className={ICON_CLASS} />
       </span>
     );
   }

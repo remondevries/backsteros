@@ -4,6 +4,8 @@ import { TrashIcon } from "@primer/octicons-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { FINANCE_BULK_SCOPE_ATTRIBUTE } from "../task-property-dropdown-keys.js";
+
 export type FinanceBulkBarProps = {
   selectionCount: number;
   /** Dropdowns / field editors rendered between Select all and Clear. */
@@ -198,6 +200,7 @@ export function FinanceBulkBar({
           className="finance-bulk-bar"
           role="toolbar"
           aria-label={ariaLabel}
+          {...{ [FINANCE_BULK_SCOPE_ATTRIBUTE]: "" }}
         >
           <span className="finance-bulk-bar__count">
             {selectionCount} selected

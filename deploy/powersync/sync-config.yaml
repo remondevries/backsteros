@@ -1,7 +1,8 @@
 # PowerSync sync streams — Tier A/B metadata for BacksterOS.
 # Includes: projects, tasks, documents (index), organizations, contacts,
 # areas, letters (metadata), avatars (index), mentions, workspace_settings,
-# bank_accounts, financial_categories, financial_goals, financial_recurrings.
+# bank_accounts, financial_categories, financial_goals, financial_recurrings,
+# habits.
 # Never Tier C/D (PDF bytes, full markdown bodies, financial_transactions) —
 # see docs/03-data-model.md.
 
@@ -13,7 +14,7 @@ streams:
     auto_subscribe: true
     queries:
       - SELECT id, key, name, summary, description, organization_id, area_id, area, start_date, due_date, icon, color, type, github_repository, local_working_directory, status, priority, sort_order, created_at, updated_at, deleted_at FROM projects WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
-      - SELECT id, project_id, contact_id, assignee_id, number, title, description, status, priority, sort_order, due_date, triaged_at, inbox, links, agent_chat_id, completed_at, created_at, updated_at, deleted_at FROM tasks WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
+      - SELECT id, project_id, contact_id, assignee_id, number, title, description, status, priority, sort_order, due_date, triaged_at, inbox, links, agent_chat_id, habit_id, completed_at, agent_created_at, agent_inbox_approved_at, created_at, updated_at, deleted_at FROM tasks WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
       - SELECT id, type, project_id, parent_id, kind, icon, sort_order, journal_date, path, title, storage_key, content_type, byte_size, checksum, snippet, content_version, content_etag, created_at, updated_at, deleted_at FROM documents WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
       - SELECT id, number, key, name, summary, phone, email, website, address, city, postal_code, country, avatar_storage_key, avatar_content_type, sort_order, notes, moneybird_contact_id, created_at, updated_at, deleted_at FROM organizations WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
       - SELECT id, number, key, organization_id, name, email, title, summary, avatar_storage_key, avatar_content_type, sort_order, phone, role, notes, address, city, postal_code, country, social_accounts, created_at, updated_at, deleted_at FROM contacts WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
@@ -26,3 +27,4 @@ streams:
       - SELECT id, name, parent_id, kind, listing, icon, budget_cents, sort_order, created_at, updated_at, deleted_at FROM financial_categories WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
       - SELECT id, name, listing, icon, goal_amount_cents, start_date, end_date, contribution_cents, saving_mode, sort_order, created_at, updated_at, deleted_at FROM financial_goals WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
       - SELECT id, name, icon, category_id, amount_cents, next_date, archived, sort_order, created_at, updated_at, deleted_at FROM financial_recurrings WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL
+      - SELECT id, title, icon, description, project_id, cadence, cadence_anchor_ymd, sort_order, created_at, updated_at, deleted_at FROM habits WHERE workspace_id = auth.parameter('workspace_id') AND deleted_at IS NULL

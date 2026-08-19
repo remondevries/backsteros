@@ -1,22 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  buildContactDropdownOptions,
+  DROPDOWN_NONE_VALUE,
+  type AssigneeDropdownContact,
+} from "./dropdown-options.js";
+import {
+  SearchableDropdown,
+  type SearchableDropdownOption,
+} from "./searchable-dropdown.js";
 
 export type SettingsApiKeyItem = {
   id: string;
   name: string;
   prefix: string;
   scopes: string[];
+  contactId: string | null;
   createdAt: string;
 };
 
+export type SettingsApiKeyContactOption = AssigneeDropdownContact;
+
 export type ApiKeysSettingsSectionViewProps = {
   apiKeys: SettingsApiKeyItem[];
+  contacts?: SettingsApiKeyContactOption[];
   loading?: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
-  onCreate?: (name: string) => Promise<string | null>;
+  onCreate?: (
+    name: string,
+    contactId: string | null,
+  ) => Promise<string | null>;
   onRename?: (id: string, name: string) => Promise<boolean>;
+  onSetContact?: (id: string, contactId: string | null) => Promise<boolean>;
   onRevoke?: (id: string) => Promise<boolean>;
 };
 
@@ -31,13 +49,48 @@ function formatCreatedAt(value: string): string {
   }
 }
 
+function ApiKeyContactDropdown({
+  value,
+  options,
+  disabled,
+  ariaLabel,
+  searchPlaceholder,
+  onChange,
+}: {
+  value: string | null;
+  options: SearchableDropdownOption<string>[];
+  disabled?: boolean;
+  ariaLabel: string;
+  searchPlaceholder: string;
+  onChange: (contactId: string | null) => void;
+}) {
+  return (
+    <SearchableDropdown
+      value={value ?? DROPDOWN_NONE_VALUE}
+      options={options}
+      onChange={(next) => {
+        onChange(next === DROPDOWN_NONE_VALUE ? null : next);
+      }}
+      disabled={disabled}
+      searchPlaceholder={searchPlaceholder}
+      ariaLabel={ariaLabel}
+    />
+  );
+}
+
 function ApiKeyRow({
   apiKey,
+  contacts,
+  contactOptions,
   onRename,
+  onSetContact,
   onRevoke,
 }: {
   apiKey: SettingsApiKeyItem;
+  contacts: SettingsApiKeyContactOption[];
+  contactOptions: SearchableDropdownOption<string>[];
   onRename?: (id: string, name: string) => Promise<boolean>;
+  onSetContact?: (id: string, contactId: string | null) => Promise<boolean>;
   onRevoke?: (id: string) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -49,6 +102,9 @@ function ApiKeyRow({
   useEffect(() => {
     if (!editing) setName(apiKey.name);
   }, [apiKey.name, editing]);
+
+  const contactName =
+    contacts.find((contact) => contact.id === apiKey.contactId)?.name ?? null;
 
   async function saveName() {
     const nextName = name.trim();
@@ -125,7 +181,27 @@ function ApiKeyRow({
               <span>{apiKey.scopes.join(", ")}</span>
               <span aria-hidden="true">·</span>
               <span>Created {formatCreatedAt(apiKey.createdAt)}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {contactName
+                  ? `Contact ${contactName}`
+                  : "No contact attached"}
+              </span>
             </p>
+            {onSetContact && contacts.length > 0 ? (
+              <div className="api-key-contact-field">
+                <span>Contact</span>
+                <ApiKeyContactDropdown
+                  value={apiKey.contactId}
+                  options={contactOptions}
+                  ariaLabel={`Contact for ${apiKey.name}`}
+                  searchPlaceholder="Set contact…"
+                  onChange={(next) => {
+                    void onSetContact(apiKey.id, next);
+                  }}
+                />
+              </div>
+            ) : null}
           </>
         )}
       </div>
@@ -184,17 +260,24 @@ function ApiKeyRow({
 
 export function ApiKeysSettingsSectionView({
   apiKeys,
+  contacts = [],
   loading = false,
   errorMessage,
   onRetry,
   onCreate,
   onRename,
+  onSetContact,
   onRevoke,
 }: ApiKeysSettingsSectionViewProps) {
   const [draft, setDraft] = useState("");
+  const [draftContactId, setDraftContactId] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const contactOptions = useMemo(
+    () => buildContactDropdownOptions(contacts),
+    [contacts],
+  );
 
   async function createKey(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -202,11 +285,12 @@ export function ApiKeysSettingsSectionView({
     if (!name || !onCreate) return;
     setSaving(true);
     setCopied(false);
-    const nextSecret = await onCreate(name);
+    const nextSecret = await onCreate(name, draftContactId);
     setSaving(false);
     if (nextSecret) {
       setSecret(nextSecret);
       setDraft("");
+      setDraftContactId(null);
     }
   }
 
@@ -225,8 +309,9 @@ export function ApiKeysSettingsSectionView({
       <section className="settings-card">
         <h2>Create API key</h2>
         <p>
-          Generate a bearer token for external apps and agents. The full secret
-          is shown once when created — store it securely.
+          Generate a bearer token for an external app or agent. Attach a contact
+          so comments and activity show that person. The full secret is shown
+          once when created — store it securely.
         </p>
 
         <form
@@ -238,11 +323,24 @@ export function ApiKeysSettingsSectionView({
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Client portal"
+              placeholder="Sander · Grok"
               autoComplete="off"
               disabled={saving || !onCreate}
             />
           </label>
+          {contacts.length > 0 ? (
+            <div className="settings-field">
+              <span>Contact</span>
+              <ApiKeyContactDropdown
+                value={draftContactId}
+                options={contactOptions}
+                disabled={saving || !onCreate}
+                ariaLabel="Contact for this API key"
+                searchPlaceholder="Set contact…"
+                onChange={setDraftContactId}
+              />
+            </div>
+          ) : null}
           <button type="submit" disabled={!draft.trim() || saving || !onCreate}>
             {saving ? "Creating…" : "Create key"}
           </button>
@@ -277,7 +375,9 @@ export function ApiKeysSettingsSectionView({
 
       <section className="settings-card">
         <h2>API keys</h2>
-        <p>Rename or revoke keys used by external clients.</p>
+        <p>
+          Rename, attach a contact, or revoke keys used by external clients.
+        </p>
 
         {loading && apiKeys.length === 0 ? (
           <p className="settings-hint">Loading keys…</p>
@@ -305,7 +405,10 @@ export function ApiKeysSettingsSectionView({
                 key={apiKey.id}
                 apiKey={apiKey}
                 onRename={onRename}
+                onSetContact={onSetContact}
                 onRevoke={onRevoke}
+                contacts={contacts}
+                contactOptions={contactOptions}
               />
             ))}
           </div>

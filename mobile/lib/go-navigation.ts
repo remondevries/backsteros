@@ -8,9 +8,11 @@ export type GoNavigationHref =
   | "/knowledge"
   | "/tasks"
   | "/areas"
+  | "/habits"
   | "/projects"
   | "/development"
   | "/letters"
+  | "/finance"
   | "/contacts"
   | "/organizations";
 
@@ -28,9 +30,11 @@ export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
   { id: "knowledge", letter: "k", label: "Knowledge Base", href: "/knowledge" },
   { id: "tasks", letter: "t", label: "Tasks", href: "/tasks" },
   { id: "areas", letter: "a", label: "Areas", href: "/areas" },
+  { id: "habits", letter: "h", label: "Habit Tracker", href: "/habits" },
   { id: "projects", letter: "p", label: "Projects", href: "/projects" },
   { id: "development", letter: "d", label: "Development", href: "/development" },
   { id: "letters", letter: "l", label: "Letters", href: "/letters" },
+  { id: "finance", letter: "f", label: "Finance", href: "/finance" },
   { id: "contacts", letter: "c", label: "Contacts", href: "/contacts" },
   {
     id: "organizations",

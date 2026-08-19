@@ -24,7 +24,9 @@ import { DevelopmentPage } from "./screens/development-page";
 import { ContactsPage } from "./screens/contacts-page";
 import { DesktopOverlayComposePage } from "./screens/desktop-overlay-compose-page";
 import { DesktopOverlayPalettePage } from "./screens/desktop-overlay-palette-page";
+import { EmailPage } from "./screens/email-page";
 import { InboxPage } from "./screens/inbox-page";
+import { HabitTrackerPage } from "./screens/habit-tracker-page";
 import { JournalPage } from "./screens/journal-page";
 import { KnowledgePage } from "./screens/knowledge-page";
 import { LettersPage } from "./screens/letters-page";
@@ -369,7 +371,16 @@ export default function App() {
         <Route index element={<StartupRedirect />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="inbox/:itemId" element={<InboxPage />} />
+        <Route path="email" element={<EmailPage />} />
+        <Route path="email/compose" element={<EmailPage />} />
+        <Route
+          path="email/:inboxId/drafts/:draftId"
+          element={<EmailPage />}
+        />
+        <Route path="email/:inboxId/:messageId" element={<EmailPage />} />
         <Route path="journal" element={<JournalPage />} />
+        <Route path="journal/habits" element={<HabitTrackerPage />} />
+        <Route path="journal/habits/:habitId" element={<HabitTrackerPage />} />
         <Route path="journal/:dateSlug" element={<JournalPage />} />
         <Route path="tasks" element={<TaskListPage />} />
         <Route

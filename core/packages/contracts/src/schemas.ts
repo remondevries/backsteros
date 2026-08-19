@@ -380,7 +380,13 @@ export const taskSchema = z.object({
   links: z.array(taskLinkSchema),
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
+  /** Habit definition this daily instance belongs to, if any. */
+  habitId: z.string().nullable().optional(),
   completedAt: z.string().datetime().nullable(),
+  /** Set when created via API key or agent actor. */
+  agentCreatedAt: z.string().datetime().nullable().optional(),
+  /** User sign-off timestamp; clears Agents inbox subgroup. */
+  agentInboxApprovedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -400,20 +406,26 @@ export const createTaskSchema = z.object({
   inbox: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
+  habitId: z.string().nullable().optional(),
+  /**
+   * Who should be attributed on activity rows for this write.
+   * `agent` also flags the task for the Agents inbox subgroup.
+   */
+  activityActor: z.enum(["user", "agent"]).optional(),
 });
 
 export const updateTaskSchema = createTaskSchema
   .partial()
   .extend({
-    /**
-     * Who should be attributed on activity rows for this write.
-     * `agent` records a system/agent actor even when the request is authenticated.
-     */
-    activityActor: z.enum(["user", "agent"]).optional(),
+    /** Clerk-only sign-off — removes task from Agents inbox subgroup. */
+    agentInboxApproved: z.boolean().optional(),
   })
   .refine(
     (value) =>
-      Object.keys(value).filter((key) => key !== "activityActor").length > 0,
+      Object.keys(value).filter(
+        (key) => key !== "activityActor" && key !== "agentInboxApproved",
+      ).length > 0 ||
+      value.agentInboxApproved === true,
     {
       message: "At least one field is required",
     },
@@ -424,6 +436,7 @@ export const taskCommentSchema = z.object({
   taskId: z.string(),
   parentCommentId: z.string().nullable(),
   authorUserId: z.string().nullable(),
+  authorContactId: z.string().nullable(),
   authorEmail: z.string().nullable(),
   /** Display name: user profile name when available, else email local-part. */
   authorName: z.string(),
@@ -486,6 +499,7 @@ export const taskActivitySchema = z.object({
   taskId: z.string(),
   type: taskActivityTypeSchema,
   actorUserId: z.string().nullable(),
+  actorContactId: z.string().nullable(),
   actorEmail: z.string().nullable(),
   actorName: z.string(),
   data: z.record(z.unknown()),
@@ -497,6 +511,7 @@ export const apiKeySchema = z.object({
   name: z.string(),
   prefix: z.string(),
   scopes: z.array(apiKeyScopeSchema),
+  contactId: z.string().nullable(),
   createdAt: z.string().datetime(),
   revokedAt: z.string().datetime().nullable(),
 });
@@ -504,10 +519,14 @@ export const apiKeySchema = z.object({
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(128),
   scopes: z.array(apiKeyScopeSchema).min(1),
+  contactId: z.string().nullable().optional(),
 });
 
 export const updateApiKeySchema = z.object({
-  name: z.string().min(1).max(128),
+  name: z.string().min(1).max(128).optional(),
+  contactId: z.string().nullable().optional(),
+}).refine((value) => value.name !== undefined || value.contactId !== undefined, {
+  message: "At least one field is required",
 });
 
 export const createApiKeyResponseSchema = z.object({
@@ -1358,6 +1377,173 @@ export const moneybirdTestConnectionResultSchema = z.object({
   administrationName: z.string().nullable(),
   invoiceSampleCount: z.number().int().nullable(),
 });
+
+/** AgentMail integration (API key + inbox). */
+export const agentMailInboxSchema = z.object({
+  inboxId: z.string(),
+  email: z.string(),
+  displayName: z.string().nullable(),
+  podId: z.string().nullable(),
+  contactId: z.string().nullable().optional(),
+  contactName: z.string().nullable().optional(),
+});
+export const agentMailSettingsSchema = z.object({
+  apiKeyConfigured: z.boolean(),
+  apiKeyPreview: z.string().nullable(),
+  /** First selected inbox — kept for older clients. */
+  inboxId: z.string().nullable(),
+  inboxEmail: z.string().nullable(),
+  inboxDisplayName: z.string().nullable(),
+  inboxIds: z.array(z.string()),
+  inboxes: z.array(agentMailInboxSchema),
+  organizationId: z.string().nullable(),
+  connected: z.boolean(),
+  replyGreetingTemplate: z.string(),
+  replySignOffTemplateEn: z.string(),
+  replySignOffTemplateNl: z.string(),
+});
+export const updateAgentMailSettingsSchema = z.object({
+  /** Set to a new key, or empty string to clear. Omit to leave unchanged. */
+  apiKey: z.string().optional(),
+  /** Set to an inbox id, or null/empty to clear. Omit to leave unchanged. */
+  inboxId: z.string().nullable().optional(),
+  /** Replace the selected inbox list. Empty array clears selection. */
+  inboxIds: z.array(z.string()).optional(),
+  replyGreetingTemplate: z.string().max(500).optional(),
+  replySignOffTemplateEn: z.string().max(500).optional(),
+  replySignOffTemplateNl: z.string().max(500).optional(),
+  /** Merge inbox id → contact id (null clears). Only selected inboxes are kept. */
+  inboxContacts: z
+    .record(z.string().min(1), z.string().min(1).nullable())
+    .optional(),
+});
+export const agentMailInboxesResponseSchema = z.object({
+  inboxes: z.array(agentMailInboxSchema),
+});
+export const agentMailTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  organizationId: z.string().nullable(),
+  inboxEmail: z.string().nullable(),
+  inboxCount: z.number().int().nullable(),
+});
+export const agentMailListItemKindSchema = z.enum(["message", "draft"]);
+export const agentMailConceptDraftSchema = z.object({
+  draftId: z.string(),
+  inboxId: z.string(),
+  subject: z.string().nullable(),
+  from: z.string().nullable(),
+  to: z.array(z.string()),
+  /** Full assembled draft text stored in AgentMail. */
+  text: z.string().nullable(),
+  /** Editable body without greeting/sign-off. */
+  body: z.string().nullable(),
+  greeting: z.string().nullable(),
+  signOff: z.string().nullable(),
+  preview: z.string().nullable(),
+  updatedAt: z.string(),
+});
+export const agentMailMessageSchema = z.object({
+  kind: agentMailListItemKindSchema.default("message"),
+  inboxId: z.string(),
+  threadId: z.string().optional(),
+  messageId: z.string(),
+  draftId: z.string().nullable().optional(),
+  inReplyToMessageId: z.string().nullable().optional(),
+  conceptDraftId: z.string().nullable().optional(),
+  conceptPreview: z.string().nullable().optional(),
+  subject: z.string(),
+  from: z.string(),
+  preview: z.string().nullable(),
+  timestamp: z.string(),
+});
+export const agentMailMessagesResponseSchema = z.object({
+  messages: z.array(agentMailMessageSchema),
+});
+export const emailThreadMetadataSchema = z.object({
+  id: z.string(),
+  inboxId: z.string(),
+  threadKey: z.string(),
+  organizationId: z.string().nullable(),
+  organizationName: z.string().nullable().optional(),
+  contactId: z.string().nullable(),
+  contactName: z.string().nullable().optional(),
+  assigneeId: z.string().nullable(),
+  assigneeName: z.string().nullable().optional(),
+  status: taskStatusSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export const updateEmailThreadMetadataSchema = z.object({
+  organizationId: z.string().nullable().optional(),
+  contactId: z.string().nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
+  status: taskStatusSchema.optional(),
+});
+export const agentMailMessageDetailSchema = agentMailMessageSchema
+  .omit({ kind: true, draftId: true, inReplyToMessageId: true })
+  .extend({
+    kind: agentMailListItemKindSchema.default("message"),
+    draftId: z.string().nullable().optional(),
+    inReplyToMessageId: z.string().nullable().optional(),
+    text: z.string().nullable(),
+    html: z.string().nullable(),
+    extractedText: z.string().nullable(),
+    extractedHtml: z.string().nullable(),
+    inboxEmail: z.string().nullable().optional(),
+    conceptDraft: agentMailConceptDraftSchema.nullable().optional(),
+    threadMetadata: emailThreadMetadataSchema.optional(),
+  });
+export const agentMailDraftDetailSchema = z.object({
+  inboxId: z.string(),
+  draftId: z.string(),
+  subject: z.string().nullable(),
+  preview: z.string().nullable(),
+  text: z.string().nullable(),
+  body: z.string().nullable().optional(),
+  greeting: z.string().nullable().optional(),
+  signOff: z.string().nullable().optional(),
+  html: z.string().nullable(),
+  inReplyTo: z.string().nullable(),
+  from: z.string().nullable().optional(),
+  to: z.array(z.string()),
+  updatedAt: z.string(),
+  createdAt: z.string(),
+});
+export const emailConceptReplyInputSchema = z.object({
+  body: z.string().min(1).max(100_000),
+});
+export const emailConceptReplyResponseSchema = z.object({
+  draftId: z.string(),
+  inboxId: z.string(),
+  inReplyToMessageId: z.string(),
+});
+export const emailComposeDraftInputSchema = z.object({
+  to: z.string().min(1).max(500),
+  subject: z.string().max(500),
+  body: z.string().min(1).max(100_000),
+  composeSessionId: z.string().min(1).max(200).optional(),
+});
+export const emailComposeDraftResponseSchema = z.object({
+  draftId: z.string(),
+  inboxId: z.string(),
+  composeSessionId: z.string(),
+});
+export const emailSendDraftResponseSchema = z.object({
+  inboxId: z.string(),
+  messageId: z.string(),
+  threadId: z.string().optional(),
+  subject: z.string(),
+  inReplyToMessageId: z.string().nullable().optional(),
+});
+export const emailDeleteDraftResponseSchema = z.object({
+  inboxId: z.string(),
+  draftId: z.string(),
+});
+export const updateAgentMailDraftSchema = z.object({
+  /** Editable body without greeting/sign-off. */
+  body: z.string().max(100_000),
+});
 export const moneybirdSalesInvoiceSchema = z.object({
   id: z.string(),
   invoiceId: z.string().nullable(),
@@ -1718,6 +1904,63 @@ export const whoopSnapshotSchema = z.object({
   sleepStages: whoopSleepStagesSchema.optional(),
 });
 
+export const habitCadenceSchema = z.enum([
+  "daily",
+  "every_2_days",
+  "weekly",
+  "monthly",
+]);
+
+export const createHabitSchema = z.object({
+  title: z.string().min(1).max(500),
+  icon: z.string().max(128).nullable().optional(),
+  cadence: habitCadenceSchema.optional(),
+  /** Defaults to the Health project when omitted. */
+  projectId: z.string().min(1).optional(),
+});
+
+export const updateHabitSchema = z
+  .object({
+    title: z.string().min(1).max(500).optional(),
+    icon: z.string().max(128).nullable().optional(),
+    description: z.string().max(10000).nullable().optional(),
+    cadence: habitCadenceSchema.optional(),
+    projectId: z.string().min(1).optional(),
+    /**
+     * Reschedule the habit's current open day task to this workspace-local YMD
+     * (today or future). Also re-anchors the cadence schedule to that day.
+     */
+    nextDueYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+/** Record (or update) a habit day as completed or skipped. */
+export const recordHabitDaySchema = z.object({
+  dueYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  status: z.enum(["completed", "canceled"]),
+});
+
+export const habitSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  /** Optional plain-text notes (same pattern as task.description). */
+  description: z.string().nullable(),
+  /** Project habit day tasks are filed under. */
+  projectId: z.string(),
+  cadence: habitCadenceSchema,
+  /** Workspace-local YMD the cadence schedule is anchored to. */
+  cadenceAnchorYmd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  sortOrder: z.number().int(),
+  todayTaskId: z.string().nullable(),
+  todayTaskStatus: taskStatusSchema.nullable(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
 export const whoopDayResultSchema = z.object({
   authenticated: z.boolean(),
   snapshot: whoopSnapshotSchema.nullable(),
@@ -1734,6 +1977,11 @@ export const whoopSettingsStatusSchema = z.object({
 
 export type Project = z.infer<typeof projectSchema>;
 export type Task = z.infer<typeof taskSchema>;
+export type Habit = z.infer<typeof habitSchema>;
+export type HabitCadence = z.infer<typeof habitCadenceSchema>;
+export type CreateHabitInput = z.infer<typeof createHabitSchema>;
+export type UpdateHabitInput = z.infer<typeof updateHabitSchema>;
+export type RecordHabitDayInput = z.infer<typeof recordHabitDaySchema>;
 export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;
 export type TaskActivity = z.infer<typeof taskActivitySchema>;
@@ -1862,6 +2110,45 @@ export type MoneybirdAdministrationSummary = z.infer<
 >;
 export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
+>;
+export type AgentMailSettings = z.infer<typeof agentMailSettingsSchema>;
+export type UpdateAgentMailSettingsInput = z.infer<
+  typeof updateAgentMailSettingsSchema
+>;
+export type AgentMailInboxSummary = z.infer<typeof agentMailInboxSchema>;
+export type AgentMailTestConnectionResult = z.infer<
+  typeof agentMailTestConnectionResultSchema
+>;
+export type AgentMailConceptDraft = z.infer<typeof agentMailConceptDraftSchema>;
+export type AgentMailMessage = z.infer<typeof agentMailMessageSchema>;
+export type AgentMailMessageDetail = z.infer<
+  typeof agentMailMessageDetailSchema
+>;
+export type AgentMailDraftDetail = z.infer<typeof agentMailDraftDetailSchema>;
+export type EmailConceptReplyInput = z.infer<
+  typeof emailConceptReplyInputSchema
+>;
+export type EmailConceptReplyResponse = z.infer<
+  typeof emailConceptReplyResponseSchema
+>;
+export type EmailComposeDraftInput = z.infer<
+  typeof emailComposeDraftInputSchema
+>;
+export type EmailComposeDraftResponse = z.infer<
+  typeof emailComposeDraftResponseSchema
+>;
+export type EmailSendDraftResponse = z.infer<
+  typeof emailSendDraftResponseSchema
+>;
+export type EmailDeleteDraftResponse = z.infer<
+  typeof emailDeleteDraftResponseSchema
+>;
+export type UpdateAgentMailDraftInput = z.infer<
+  typeof updateAgentMailDraftSchema
+>;
+export type EmailThreadMetadata = z.infer<typeof emailThreadMetadataSchema>;
+export type UpdateEmailThreadMetadataInput = z.infer<
+  typeof updateEmailThreadMetadataSchema
 >;
 export type MoneybirdSalesInvoiceSummary = z.infer<
   typeof moneybirdSalesInvoiceSchema

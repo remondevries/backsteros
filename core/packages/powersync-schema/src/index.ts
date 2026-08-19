@@ -52,7 +52,10 @@ const tasks = new Table(
     inbox: column.integer,
     links: column.text,
     agent_chat_id: column.text,
+    habit_id: column.text,
     completed_at: column.text,
+    agent_created_at: column.text,
+    agent_inbox_approved_at: column.text,
     ...commonDates,
   },
   {
@@ -60,6 +63,7 @@ const tasks = new Table(
       status: ["status"],
       project: ["project_id"],
       contact: ["contact_id"],
+      habit: ["habit_id"],
     },
   },
 );
@@ -254,6 +258,17 @@ const financial_recurrings = new Table({
   ...commonDates,
 });
 
+const habits = new Table({
+  title: column.text,
+  icon: column.text,
+  description: column.text,
+  project_id: column.text,
+  cadence: column.text,
+  cadence_anchor_ymd: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -269,6 +284,7 @@ export const appSchema = new Schema({
   financial_categories,
   financial_goals,
   financial_recurrings,
+  habits,
 });
 
 export type UploadEntry = {

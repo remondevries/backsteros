@@ -429,10 +429,14 @@ function normalizeEmail(email: string | null | undefined): string | null {
 }
 
 function resolveCommentAvatarSrc(
-  comment: Pick<TaskComment, "authorUserId" | "authorEmail">,
+  comment: Pick<TaskComment, "authorUserId" | "authorContactId" | "authorEmail">,
   avatarByEmail: ReadonlyMap<string, string | null> | undefined,
+  avatarByContactId: ReadonlyMap<string, string | null> | undefined,
   currentUser: { email: string | null; imageUrl: string | null },
 ): string | null {
+  if (comment.authorContactId) {
+    return avatarByContactId?.get(comment.authorContactId) ?? null;
+  }
   if (comment.authorUserId == null) return null;
   const email = normalizeEmail(comment.authorEmail);
   if (!email) return null;
@@ -445,8 +449,12 @@ function resolveCommentAvatarSrc(
 }
 
 function isAgentComment(
-  comment: Pick<TaskComment, "authorUserId" | "authorName" | "body">,
+  comment: Pick<
+    TaskComment,
+    "authorUserId" | "authorContactId" | "authorName" | "body"
+  >,
 ): boolean {
+  if (comment.authorContactId) return false;
   if (comment.authorUserId == null) return true;
   if (comment.authorName.trim() === "Agent") return true;
   // Production API may still attribute observer comments to the signed-in user
@@ -457,8 +465,9 @@ function isAgentComment(
 
 /** True when replies on this thread should resume the agent (not plain reply). */
 function isAgentAuthoredForContinue(
-  comment: Pick<TaskComment, "authorUserId" | "authorName">,
+  comment: Pick<TaskComment, "authorUserId" | "authorContactId" | "authorName">,
 ): boolean {
+  if (comment.authorContactId) return false;
   if (comment.authorUserId == null) return true;
   return comment.authorName.trim() === "Agent";
 }
@@ -1591,6 +1600,7 @@ export function TaskActivityPanel({
                     avatarSrc={resolveCommentAvatarSrc(
                       comment,
                       avatarByEmail,
+                      assigneeAvatarById,
                       currentUserAvatar,
                     )}
                     resolved={isResolved}
@@ -1611,6 +1621,7 @@ export function TaskActivityPanel({
                         avatarSrc={resolveCommentAvatarSrc(
                           reply,
                           avatarByEmail,
+                          assigneeAvatarById,
                           currentUserAvatar,
                         )}
                         isAgent={isAgentComment(reply)}

@@ -95,6 +95,21 @@ export const workspaceIntegrationSecrets = pgTable(
     cursorApiKey: text("cursor_api_key"),
     moneybirdApiToken: text("moneybird_api_token"),
     moneybirdAdministrationId: text("moneybird_administration_id"),
+    agentmailApiKey: text("agentmail_api_key"),
+    agentmailInboxId: text("agentmail_inbox_id"),
+    agentmailInboxIds: jsonb("agentmail_inbox_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    agentmailInboxContacts: jsonb("agentmail_inbox_contacts")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    agentmailReplyGreetingTemplate: text("agentmail_reply_greeting_template"),
+    agentmailReplySignOffTemplate: text("agentmail_reply_sign_off_template"),
+    agentmailReplySignOffTemplateEn: text("agentmail_reply_sign_off_template_en"),
+    agentmailReplySignOffTemplateNl: text("agentmail_reply_sign_off_template_nl"),
+    agentmailReplySignOffName: text("agentmail_reply_sign_off_name"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -214,6 +229,9 @@ export const apiKeys = pgTable(
     prefix: text("prefix").notNull(),
     keyHash: text("key_hash").notNull(),
     scopes: text("scopes").array().notNull(),
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -223,6 +241,7 @@ export const apiKeys = pgTable(
     index("api_keys_prefix_idx").on(table.prefix),
     index("api_keys_workspace_id_idx").on(table.workspaceId),
     index("api_keys_user_id_idx").on(table.userId),
+    index("api_keys_contact_id_idx").on(table.contactId),
   ],
 );
 
@@ -307,8 +326,18 @@ export const tasks = pgTable(
       .default(sql`'[]'::jsonb`),
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
+    /** Habit definition this daily instance belongs to, if any. */
+    habitId: text("habit_id").references(() => habits.id, {
+      onDelete: "set null",
+    }),
     legacySource: text("legacy_source"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** Set when created via API key or agent actor — inbox Agents subgroup. */
+    agentCreatedAt: timestamp("agent_created_at", { withTimezone: true }),
+    /** User sign-off removes the task from the Agents inbox subgroup. */
+    agentInboxApprovedAt: timestamp("agent_inbox_approved_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -325,6 +354,12 @@ export const tasks = pgTable(
     index("tasks_assignee_id_idx").on(table.assigneeId),
     index("tasks_workspace_due_date_idx").on(table.workspaceId, table.dueDate),
     index("tasks_status_idx").on(table.status),
+    index("tasks_habit_id_idx").on(table.habitId),
+    uniqueIndex("tasks_habit_due_unique")
+      .on(table.habitId, table.dueDate)
+      .where(
+        sql`${table.habitId} is not null and ${table.deletedAt} is null and ${table.dueDate} is not null`,
+      ),
     index("tasks_deleted_at_idx").on(table.deletedAt),
     uniqueIndex("tasks_workspace_scope_number_unique").on(
       table.workspaceId,
@@ -336,6 +371,41 @@ export const tasks = pgTable(
       sql`coalesce('project:' || ${table.projectId}, 'contact:' || ${table.contactId}, '__inbox__')`,
       table.number,
     ),
+  ],
+);
+
+/** Habit definitions that spawn daily Health-project tasks. */
+export const habits = pgTable(
+  "habits",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    icon: text("icon"),
+    /** Optional plain-text description (same idea as task.description). */
+    description: text("description"),
+    /** Project habit day tasks are filed under (defaults to Health). */
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    cadence: text("cadence").notNull().default("daily"),
+    cadenceAnchorYmd: text("cadence_anchor_ymd").notNull(),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("habits_workspace_id_idx").on(table.workspaceId),
+    index("habits_project_id_idx").on(table.projectId),
+    index("habits_deleted_at_idx").on(table.deletedAt),
   ],
 );
 
@@ -353,6 +423,9 @@ export const taskComments = pgTable(
     /** When set, this row is a reply to another comment on the same task. */
     parentCommentId: text("parent_comment_id"),
     authorUserId: text("author_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    authorContactId: text("author_contact_id").references(() => contacts.id, {
       onDelete: "set null",
     }),
     /** Denormalized for display without joining users. */
@@ -376,6 +449,7 @@ export const taskComments = pgTable(
     index("task_comments_deleted_at_idx").on(table.deletedAt),
     index("task_comments_parent_comment_id_idx").on(table.parentCommentId),
     index("task_comments_resolved_at_idx").on(table.resolvedAt),
+    index("task_comments_author_contact_id_idx").on(table.authorContactId),
     foreignKey({
       columns: [table.parentCommentId],
       foreignColumns: [table.id],
@@ -403,6 +477,9 @@ export const taskActivities = pgTable(
     actorUserId: text("actor_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    actorContactId: text("actor_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
     actorEmail: text("actor_email"),
     /** Denormalized Clerk/user display name at write time. */
     actorName: text("actor_name"),
@@ -419,6 +496,7 @@ export const taskActivities = pgTable(
     index("task_activities_workspace_id_idx").on(table.workspaceId),
     index("task_activities_created_at_idx").on(table.createdAt),
     index("task_activities_type_idx").on(table.type),
+    index("task_activities_actor_contact_id_idx").on(table.actorContactId),
   ],
 );
 
@@ -945,11 +1023,47 @@ export const financialTransactions = pgTable(
   ],
 );
 
+export const emailThreads = pgTable(
+  "email_threads",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    inboxId: text("inbox_id").notNull(),
+    threadKey: text("thread_key").notNull(),
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    assigneeId: text("assignee_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").notNull().default("triage"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("email_threads_workspace_inbox_thread_key_idx").on(
+      table.workspaceId,
+      table.inboxId,
+      table.threadKey,
+    ),
+    index("email_threads_workspace_id_idx").on(table.workspaceId),
+    index("email_threads_organization_id_idx").on(table.organizationId),
+    index("email_threads_contact_id_idx").on(table.contactId),
+    index("email_threads_assignee_id_idx").on(table.assigneeId),
+  ],
+);
+
 export type DbUser = typeof users.$inferSelect;
 export type DbApiKey = typeof apiKeys.$inferSelect;
 export type DbProject = typeof projects.$inferSelect;
 export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
+export type DbHabit = typeof habits.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;
 export type DbDocument = typeof documents.$inferSelect;
@@ -966,3 +1080,4 @@ export type DbFinancialGoal = typeof financialGoals.$inferSelect;
 export type DbFinancialRecurring = typeof financialRecurrings.$inferSelect;
 export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;
 export type DbFinancialTransaction = typeof financialTransactions.$inferSelect;
+export type DbEmailThread = typeof emailThreads.$inferSelect;

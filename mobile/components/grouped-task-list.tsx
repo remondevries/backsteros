@@ -26,7 +26,10 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailContentContainer } from "./detail-content-container";
 import { InboxListItemRow } from "./inbox-list-item-row";
 import { ProjectTypeGroupHeader } from "./project-type-group-header";
-import { StatusGroupHeader } from "./status-group-header";
+import {
+  StatusGroupHeader,
+  statusGroupEmptySectionFooter,
+} from "./status-group-header";
 import { TaskItemListRow } from "./task-item-list-row";
 import { TaskPropertyPills } from "./task-property-pills";
 import { TaskStatusIcon } from "./task-status-icon";
@@ -331,11 +334,13 @@ export function GroupedTaskList({
     ],
   );
 
+  const stickyHeaders = isPad && Boolean(groupByStatus);
+
   const renderSectionHeader = useCallback(
     ({ section }: { section: Section }) => {
       if (!groupByStatus) return null;
       const onAdd =
-        onAddToStatus && section.status !== "overdue"
+        onAddToStatus && section.status !== "overdue" && section.status !== "agents"
           ? () => {
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -371,7 +376,21 @@ export function GroupedTaskList({
         />,
       );
     },
-    [collapsed, constrain, groupByStatus, onAddToStatus, toggleStatus],
+    [
+      collapsed,
+      constrain,
+      groupByStatus,
+      onAddToStatus,
+      toggleStatus,
+    ],
+  );
+
+  const renderSectionFooter = useCallback(
+    ({ section }: { section: Section }) => {
+      if (!groupByStatus) return null;
+      return statusGroupEmptySectionFooter(sections, section);
+    },
+    [groupByStatus, sections],
   );
 
   const listHeaderElement = listHeader ? (
@@ -384,16 +403,22 @@ export function GroupedTaskList({
       style={ui.screen}
       sections={sections as SectionListData<GroupedTaskRow, Section>[]}
       keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={isPad && Boolean(groupByStatus)}
+      stickySectionHeadersEnabled={stickyHeaders}
       refreshing={refreshing}
       onRefresh={onRefresh}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={listHeaderElement}
-      ListEmptyComponent={constrain(<Text style={ui.empty}>{emptyText}</Text>)}
+      ListEmptyComponent={
+        emptyText
+          ? constrain(<Text style={ui.empty}>{emptyText}</Text>)
+          : null
+      }
       renderSectionHeader={renderSectionHeader}
+      renderSectionFooter={renderSectionFooter}
       renderItem={renderItem}
       contentContainerStyle={{
         width: "100%",
+        paddingTop: listHeader ? 0 : 8,
         paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
       }}
     />

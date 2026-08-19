@@ -56,7 +56,7 @@ export function ProjectOverviewIcon({
         type="button"
         className="project-overview-icon__trigger"
         disabled={!interactive || pending}
-        aria-label={`Change project icon for ${name}`}
+        aria-label={`Change icon for ${name}`}
         onClick={() => {
           if (interactive) setPickerOpen(true);
         }}

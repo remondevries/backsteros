@@ -3,7 +3,12 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { ApiKeyScope, CreateApiKeyInput } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { apiKeys, workspaceSettings, workspaces } from "../db/schema.js";
+import {
+  apiKeys,
+  contacts,
+  workspaceSettings,
+  workspaces,
+} from "../db/schema.js";
 import {
   apiKeyLookupPrefix,
   generateApiKeySecret,
@@ -19,6 +24,28 @@ export async function listApiKeys(workspaceId: string) {
     .orderBy(desc(apiKeys.createdAt));
 }
 
+async function resolveKeyContactId(
+  workspaceId: string,
+  contactId: string | null | undefined,
+) {
+  if (contactId == null || contactId === "") return null;
+  const [row] = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.id, contactId),
+        eq(contacts.workspaceId, workspaceId),
+        isNull(contacts.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) {
+    throw new Error("CONTACT_NOT_FOUND");
+  }
+  return row.id;
+}
+
 export async function createApiKey(
   workspaceId: string,
   userId: string,
@@ -26,6 +53,10 @@ export async function createApiKey(
 ) {
   const secret = generateApiKeySecret();
   const id = newId();
+  const contactId = await resolveKeyContactId(
+    workspaceId,
+    input.contactId,
+  );
 
   const [row] = await db
     .insert(apiKeys)
@@ -37,6 +68,7 @@ export async function createApiKey(
       prefix: apiKeyLookupPrefix(secret),
       keyHash: hashApiKey(secret),
       scopes: input.scopes as ApiKeyScope[],
+      contactId,
     })
     .returning();
 
@@ -62,11 +94,20 @@ export async function revokeApiKey(workspaceId: string, id: string) {
 export async function updateApiKey(
   workspaceId: string,
   id: string,
-  input: { name: string },
+  input: { name?: string; contactId?: string | null },
 ) {
+  const patch: { name?: string; contactId?: string | null } = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.contactId !== undefined) {
+    patch.contactId = await resolveKeyContactId(workspaceId, input.contactId);
+  }
+  if (patch.name === undefined && patch.contactId === undefined) {
+    return null;
+  }
+
   const [row] = await db
     .update(apiKeys)
-    .set({ name: input.name })
+    .set(patch)
     .where(
       and(
         eq(apiKeys.id, id),
@@ -110,6 +151,7 @@ export async function createBootstrapApiKey(
         prefix: apiKeyLookupPrefix(secret),
         keyHash: hashApiKey(secret),
         scopes,
+        contactId: null,
       })
       .returning();
   });

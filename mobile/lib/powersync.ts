@@ -65,6 +65,7 @@ const tasks = new Table(
     links: column.text,
     agent_chat_id: column.text,
     completed_at: column.text,
+    habit_id: column.text,
     ...commonDates,
   },
   {
@@ -72,6 +73,7 @@ const tasks = new Table(
       status: ["status"],
       project: ["project_id"],
       contact: ["contact_id"],
+      habit: ["habit_id"],
     },
   },
 );
@@ -214,6 +216,70 @@ const mentions = new Table({
   created_at: column.text,
 });
 
+// Finance Tier A/B tables — mirrors `core/packages/powersync-schema`.
+// Transactions are Tier C (REST only) and intentionally not synced.
+const bank_accounts = new Table({
+  key: column.text,
+  name: column.text,
+  iban_or_mask: column.text,
+  currency: column.text,
+  type: column.text,
+  avatar_storage_key: column.text,
+  avatar_content_type: column.text,
+  color: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const financial_categories = new Table(
+  {
+    name: column.text,
+    parent_id: column.text,
+    kind: column.text,
+    listing: column.text,
+    icon: column.text,
+    budget_cents: column.integer,
+    sort_order: column.integer,
+    ...commonDates,
+  },
+  { indexes: { parent: ["parent_id"] } },
+);
+
+const financial_goals = new Table({
+  name: column.text,
+  listing: column.text,
+  icon: column.text,
+  goal_amount_cents: column.integer,
+  start_date: column.text,
+  end_date: column.text,
+  contribution_cents: column.integer,
+  saving_mode: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const financial_recurrings = new Table({
+  name: column.text,
+  icon: column.text,
+  category_id: column.text,
+  amount_cents: column.integer,
+  next_date: column.text,
+  archived: column.integer,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const habits = new Table({
+  title: column.text,
+  icon: column.text,
+  description: column.text,
+  project_id: column.text,
+  cadence: column.text,
+  cadence_anchor_ymd: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -225,6 +291,11 @@ export const appSchema = new Schema({
   areas,
   avatars,
   mentions,
+  bank_accounts,
+  financial_categories,
+  financial_goals,
+  financial_recurrings,
+  habits,
 });
 
 export type UploadEntry = {

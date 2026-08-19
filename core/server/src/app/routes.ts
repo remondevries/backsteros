@@ -14,6 +14,9 @@ import {
   batchDeleteFinancialTransactionsSchema,
   createApiKeySchema,
   createDocumentSchema,
+  createHabitSchema,
+  updateHabitSchema,
+  recordHabitDaySchema,
   createProjectSchema,
   createTaskSchema,
   createTaskCommentSchema,
@@ -36,6 +39,11 @@ import {
   updateFinancialRecurringSchema,
   updateFinancialTransactionSchema,
   updateMoneybirdSettingsSchema,
+  updateAgentMailSettingsSchema,
+  updateEmailThreadMetadataSchema,
+  updateAgentMailDraftSchema,
+  emailConceptReplyInputSchema,
+  emailComposeDraftInputSchema,
   updateProjectSchema,
   updateTaskSchema,
   updateTaskCommentSchema,
@@ -79,7 +87,10 @@ import * as circleService from "../services/circle-domain.js";
 import * as financeService from "../services/finance/finance.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
+import * as agentmailSettingsService from "../services/agentmail-settings.js";
+import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
+import { AgentMailApiError } from "../lib/agentmail-client.js";
 import {
   AgentPtyUnavailableError,
   getAgentPtyConnection,
@@ -90,6 +101,7 @@ import {
   SpellcheckError,
   spellcheckText,
 } from "../services/cursor-spellcheck.js";
+import * as habitService from "../services/habits.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
@@ -97,6 +109,7 @@ import * as taskActivityService from "../services/task-activities.js";
 import * as taskCommentService from "../services/task-comments.js";
 import * as taskImageService from "../services/task-images.js";
 import * as taskProjectService from "../services/tasks-projects.js";
+import { writeActorFromAuth } from "../lib/write-actor.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
 import * as whoopService from "../services/whoop.js";
 
@@ -1353,6 +1366,7 @@ export function registerApiRoutes(app: Hono) {
         c.req.param("id"),
         body.type,
         body.data,
+        writeActorFromAuth(auth),
       );
       if (!row) return c.json(notFound("Task"), 404);
       return c.json(toTaskActivity(row), 201);
@@ -1368,15 +1382,11 @@ export function registerApiRoutes(app: Hono) {
         return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
       }
       const body = c.req.valid("json");
-      const isAgent = body.activityActor === "agent";
       const row = await taskCommentService.createTaskComment(
         auth.workspaceId,
         c.req.param("id"),
         body,
-        {
-          userId: isAgent ? null : auth.userId,
-          kind: isAgent ? "agent" : "user",
-        },
+        writeActorFromAuth(auth, body.activityActor),
       );
       if (!row) return c.json(notFound("Task"), 404);
       return c.json(toTaskComment(row), 201);
@@ -1426,12 +1436,15 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
+        const body = c.req.valid("json");
+        const { activityActor, ...createInput } = body;
         const row = await taskProjectService.createTask(
           auth.workspaceId,
-          c.req.valid("json"),
+          createInput,
           undefined,
           undefined,
-          { userId: auth.userId },
+          writeActorFromAuth(auth, activityActor),
+          { authKind: auth.kind },
         );
         return c.json(toTask(row), 201);
       } catch (error) {
@@ -1463,16 +1476,14 @@ export function registerApiRoutes(app: Hono) {
 
       try {
         const body = c.req.valid("json");
-        const { activityActor, ...patch } = body;
+        const { activityActor, agentInboxApproved, ...patch } = body;
         const row = await taskProjectService.updateTask(
           auth.workspaceId,
           c.req.param("id"),
-          patch,
+          { ...patch, agentInboxApproved },
           undefined,
-          {
-            userId: auth.userId,
-            kind: activityActor === "agent" ? "agent" : "user",
-          },
+          writeActorFromAuth(auth, activityActor),
+          { allowAgentInboxApproval: auth.kind === "clerk" },
         );
         if (!row) {
           return c.json(notFound("Task"), 404);
@@ -1797,7 +1808,7 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       ids.data.ids,
       patch.data,
-      { userId: auth.userId },
+      writeActorFromAuth(auth),
     );
     return c.json({ tasks: rows.map(toTask) });
   });
@@ -1826,7 +1837,7 @@ export function registerApiRoutes(app: Hono) {
       c.req.param("id"),
       { projectId: parsed.data.projectId, inbox: parsed.data.projectId === null },
       undefined,
-      { userId: auth.userId },
+      writeActorFromAuth(auth),
     );
     if (!row) return c.json(notFound("Task"), 404);
     return c.json(toTask(row));
@@ -1849,7 +1860,7 @@ export function registerApiRoutes(app: Hono) {
         inbox: false,
       },
       undefined,
-      { userId: auth.userId },
+      writeActorFromAuth(auth),
     );
     if (!row) return c.json(notFound("Task"), 404);
     return c.json(toTask(row));
@@ -1867,6 +1878,107 @@ export function registerApiRoutes(app: Hono) {
     }
     return c.json(toDocument(row));
   });
+
+  app.get("/api/v1/habits", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    return c.json({ habits: await habitService.listHabits(auth.workspaceId) });
+  });
+
+  app.get("/api/v1/habits/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const row = await habitService.getHabitById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!row) return c.json(notFound("Habit"), 404);
+    return c.json(row);
+  });
+
+  app.post(
+    "/api/v1/habits",
+    zValidator("json", createHabitSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      const row = await habitService.createHabit(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(row, 201);
+    },
+  );
+
+  app.patch(
+    "/api/v1/habits/:id",
+    zValidator("json", updateHabitSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      try {
+        const row = await habitService.updateHabit(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return row ? c.json(row) : c.json(notFound("Habit"), 404);
+      } catch (error) {
+        if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
+          return c.json(notFound("Project"), 404);
+        }
+        if (error instanceof Error && error.message === "HABIT_NEXT_DUE_IN_PAST") {
+          return c.json(
+            {
+              error: {
+                code: "HABIT_NEXT_DUE_IN_PAST",
+                message: "Next due date must be today or in the future.",
+              },
+            },
+            400,
+          );
+        }
+        if (error instanceof Error && error.message === "HABIT_DAY_EXISTS") {
+          return c.json(
+            {
+              error: {
+                code: "HABIT_DAY_EXISTS",
+                message: "A habit day already exists for that date.",
+              },
+            },
+            409,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/habits/:id/days",
+    zValidator("json", recordHabitDaySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      try {
+        const result = await habitService.recordHabitDay(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        if (!result) return c.json(notFound("Habit"), 404);
+        return c.json(toTask(result.task), result.created ? 201 : 200);
+      } catch (error) {
+        if (error instanceof Error && error.message === "HABIT_DAY_IN_FUTURE") {
+          return c.json(
+            { error: "Cannot record a future habit day", code: "bad_request" },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
 
   app.get("/api/v1/whoop/status", async (c) => {
     const auth = getAuth(c);
@@ -2408,6 +2520,353 @@ export function registerApiRoutes(app: Hono) {
       await moneybirdSettingsService.testMoneybirdConnection(auth.workspaceId),
     );
   });
+  app.get("/api/v1/settings/agentmail", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    try {
+      return c.json(
+        await agentmailSettingsService.getAgentMailSettings(auth.workspaceId),
+      );
+    } catch (error) {
+      console.error("AgentMail settings read failed:", error);
+      return c.json(
+        {
+          error: agentmailSettingsService.formatAgentMailSettingsError(error),
+          code: "bad_request" as const,
+        },
+        400,
+      );
+    }
+  });
+  app.patch("/api/v1/settings/agentmail", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateAgentMailSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid AgentMail settings", code: "bad_request" },
+        400,
+      );
+    }
+    try {
+      return c.json(
+        await agentmailSettingsService.updateAgentMailSettings(
+          auth.workspaceId,
+          parsed.data,
+        ),
+      );
+    } catch (error) {
+      console.error("AgentMail settings update failed:", error);
+      return c.json(
+        {
+          error: agentmailSettingsService.formatAgentMailSettingsError(error),
+          code: "bad_request" as const,
+        },
+        400,
+      );
+    }
+  });
+  app.get("/api/v1/settings/agentmail/inboxes", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    try {
+      const inboxes = await agentmailSettingsService.listAgentMailInboxes(
+        auth.workspaceId,
+      );
+      return c.json({ inboxes });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list AgentMail inboxes";
+      const status =
+        error instanceof AgentMailApiError && error.status === 401 ? 400 : 400;
+      return c.json({ error: message, code: "bad_request" }, status);
+    }
+  });
+  app.get("/api/v1/settings/agentmail/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await agentmailSettingsService.testAgentMailConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/email/messages", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    try {
+      const messages = await agentmailSettingsService.listAgentMailMessages(
+        auth.workspaceId,
+      );
+      return c.json({ messages });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list AgentMail messages";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.get(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.getAgentMailMessage(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load AgentMail message";
+        const status =
+          error instanceof AgentMailApiError && error.status === 404
+            ? 404
+            : 400;
+        return c.json(
+          { error: message, code: status === 404 ? "not_found" : "bad_request" },
+          status,
+        );
+      }
+    },
+  );
+  app.get("/api/v1/email/inboxes/:inboxId/drafts/:draftId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const inboxId = decodeURIComponent(c.req.param("inboxId"));
+    const draftId = decodeURIComponent(c.req.param("draftId"));
+    try {
+      return c.json(
+        await agentmailSettingsService.getAgentMailDraft(
+          auth.workspaceId,
+          inboxId,
+          draftId,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof AgentMailApiError && error.status === 404) {
+        return c.json({ error: error.message, code: "not_found" }, 404);
+      }
+      const message =
+        error instanceof Error ? error.message : "Could not load AgentMail draft";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/concept-reply",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+      }
+      const parsed = emailConceptReplyInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { error: parsed.error.message, code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await agentmailSettingsService.upsertEmailConceptReply(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+            parsed.data.body,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError) {
+          return c.json(
+            {
+              error: error.message,
+              code: error.status === 404 ? "not_found" : "bad_request",
+            },
+            error.status === 404 ? 404 : 400,
+          );
+        }
+        const message =
+          error instanceof Error ? error.message : "Could not save reply concept";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/compose-draft",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body", code: "bad_request" }, 400);
+      }
+      const parsed = emailComposeDraftInputSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json(
+          { error: parsed.error.message, code: "bad_request" },
+          400,
+        );
+      }
+      try {
+        return c.json(
+          await agentmailSettingsService.upsertEmailComposeDraft(
+            auth.workspaceId,
+            inboxId,
+            parsed.data,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError) {
+          return c.json(
+            {
+              error: error.message,
+              code: error.status === 404 ? "not_found" : "bad_request",
+            },
+            error.status === 404 ? 404 : 400,
+          );
+        }
+        const message =
+          error instanceof Error ? error.message : "Could not save compose draft";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/drafts/:draftId/send",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const draftId = decodeURIComponent(c.req.param("draftId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.sendAgentMailDraft(
+            auth.workspaceId,
+            inboxId,
+            draftId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError) {
+          return c.json(
+            {
+              error: error.message,
+              code: error.status === 404 ? "not_found" : "bad_request",
+            },
+            error.status === 404 ? 404 : 400,
+          );
+        }
+        const message =
+          error instanceof Error ? error.message : "Could not send draft";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.delete("/api/v1/email/inboxes/:inboxId/drafts/:draftId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const inboxId = decodeURIComponent(c.req.param("inboxId"));
+    const draftId = decodeURIComponent(c.req.param("draftId"));
+    try {
+      return c.json(
+        await agentmailSettingsService.deleteAgentMailDraft(
+          auth.workspaceId,
+          inboxId,
+          draftId,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof AgentMailApiError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.status === 404 ? "not_found" : "bad_request",
+          },
+          error.status === 404 ? 404 : 400,
+        );
+      }
+      const message =
+        error instanceof Error ? error.message : "Could not delete draft";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
+  app.patch(
+    "/api/v1/email/inboxes/:inboxId/drafts/:draftId",
+    zValidator("json", updateAgentMailDraftSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const draftId = decodeURIComponent(c.req.param("draftId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.updateAgentMailDraft(
+            auth.workspaceId,
+            inboxId,
+            draftId,
+            c.req.valid("json").body,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error ? error.message : "Could not update draft";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.patch(
+    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/metadata",
+    zValidator("json", updateEmailThreadMetadataSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const threadKey = decodeURIComponent(c.req.param("threadKey"));
+      try {
+        const row = await emailThreadsService.updateEmailThreadMetadata(
+          auth.workspaceId,
+          inboxId,
+          threadKey,
+          c.req.valid("json"),
+        );
+        if (!row) {
+          return c.json({ error: "Thread not found", code: "not_found" }, 404);
+        }
+        return c.json(row);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not update email thread metadata";
+        const code =
+          message.endsWith("_NOT_FOUND") ? "not_found" : "bad_request";
+        return c.json({ error: message, code }, code === "not_found" ? 404 : 400);
+      }
+    },
+  );
   app.get(
     "/api/v1/finance/moneybird/invoices",
     zValidator("query", moneybirdSalesInvoicesQuerySchema),
@@ -3054,6 +3513,21 @@ export function registerApiRoutes(app: Hono) {
     },
   );
 
+  app.get(
+    "/api/v1/transactions/:id",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+      const row = await financeService.getTransactionById(
+        auth.workspaceId,
+        c.req.param("id"),
+      );
+      return row
+        ? c.json(toFinancialTransaction(row))
+        : c.json(notFound("Transaction"), 404);
+    },
+  );
+
   app.patch(
     "/api/v1/transactions/:id",
     zValidator("json", updateFinancialTransactionSchema),
@@ -3179,13 +3653,19 @@ export function registerApiRoutes(app: Hono) {
         return c.json(unauthorized(), 401);
       }
 
-      const { row, secret } = await apiKeyService.createApiKey(
-        auth.workspaceId,
-        auth.userId,
-        c.req.valid("json"),
-      );
-
-      return c.json({ apiKey: toApiKey(row), secret }, 201);
+      try {
+        const { row, secret } = await apiKeyService.createApiKey(
+          auth.workspaceId,
+          auth.userId,
+          c.req.valid("json"),
+        );
+        return c.json({ apiKey: toApiKey(row), secret }, 201);
+      } catch (error) {
+        if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+          return c.json(notFound("Contact"), 404);
+        }
+        throw error;
+      }
     },
   );
 
@@ -3198,16 +3678,22 @@ export function registerApiRoutes(app: Hono) {
         return c.json(unauthorized(), 401);
       }
 
-      const row = await apiKeyService.updateApiKey(
-        auth.workspaceId,
-        c.req.param("id"),
-        c.req.valid("json"),
-      );
-      if (!row) {
-        return c.json(notFound("API key"), 404);
+      try {
+        const row = await apiKeyService.updateApiKey(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        if (!row) {
+          return c.json(notFound("API key"), 404);
+        }
+        return c.json(toApiKey(row));
+      } catch (error) {
+        if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
+          return c.json(notFound("Contact"), 404);
+        }
+        throw error;
       }
-
-      return c.json(toApiKey(row));
     },
   );
 

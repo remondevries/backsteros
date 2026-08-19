@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  Fragment,
   type ReactNode,
 } from "react";
 
@@ -37,6 +38,7 @@ import {
   TASKS_DUE_FILTERS,
   type TasksDueFilter,
 } from "../tasks-due-filters.js";
+import { isHabitLinkedTask } from "./journal-due-tasks-section.js";
 import {
   computeTaskDisplayIdColumnCh,
   taskIdColumnCssVars,
@@ -64,9 +66,19 @@ import {
   type TaskItemRowTask,
 } from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import {
+  TasksTodayHabitsChips,
+  type HabitCheckChipItem,
+} from "./tasks-today-habits-chips.js";
 
 export type TasksOverviewViewProps = {
   tasks: TaskItemRowTask[];
+  /**
+   * Habit day chips shown above Triage on the Today due filter only.
+   * Check-off only — not navigable task rows.
+   */
+  todayHabits?: readonly HabitCheckChipItem[];
+  onToggleTodayHabit?: (item: HabitCheckChipItem, checked: boolean) => void;
   onSelectTask?: (taskId: string) => void;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
@@ -111,6 +123,8 @@ export type TasksOverviewViewProps = {
 
 export function TasksOverviewView({
   tasks,
+  todayHabits = [],
+  onToggleTodayHabit,
   onSelectTask,
   onStatusChange,
   onPriorityChange,
@@ -318,7 +332,11 @@ export function TasksOverviewView({
   );
 
   const filtered = useMemo(
-    () => filterTasksByDueFilter(localTasks, filter),
+    () =>
+      filterTasksByDueFilter(
+        localTasks.filter((task) => !isHabitLinkedTask(task)),
+        filter,
+      ),
     [localTasks, filter],
   );
   // Next DueTasksList always keeps empty status groups so the chrome stays put.
@@ -415,9 +433,17 @@ export function TasksOverviewView({
       {groups.map((group) => {
         const isCollapsed = collapsed.has(group.status);
         const appendKey = taskGroupAppendOrderKey(group.status);
+        const habitsAboveTriage =
+          filter === "today" && group.status === "triage" ? (
+            <TasksTodayHabitsChips
+              items={todayHabits}
+              onToggle={onToggleTodayHabit}
+            />
+          ) : null;
         return (
-          <StatusGroupSection
-            key={group.status}
+          <Fragment key={group.status}>
+            {habitsAboveTriage}
+            <StatusGroupSection
             groupKey={group.status}
             title={group.label}
             collapsed={isCollapsed}
@@ -510,6 +536,7 @@ export function TasksOverviewView({
               />
             ))}
           </StatusGroupSection>
+          </Fragment>
         );
       })}
     </ul>

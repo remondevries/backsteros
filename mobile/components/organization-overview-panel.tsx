@@ -1,16 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Text,
-  View,
-} from "react-native";
+import type { Organization } from "@backsteros/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import {
   pickAvatarImage,
   uploadAvatarFromUri,
 } from "../lib/avatar-upload";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
-import { formatAddress } from "../lib/format-address";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
@@ -18,10 +14,10 @@ import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { TextInput } from "./app-text-input";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
-import { TextInput } from "./app-text-input";
 
 type OrganizationOverviewRow = {
   id: string;
@@ -41,37 +37,8 @@ type OrganizationOverviewRow = {
 
 type Props = {
   organizationId: string;
-  editing?: boolean;
-  draftName?: string;
-  draftSummary?: string;
-  draftPhone?: string;
-  draftEmail?: string;
-  draftWebsite?: string;
-  draftAddress?: string;
-  draftCity?: string;
-  draftPostalCode?: string;
-  draftCountry?: string;
-  onDraftNameChange?: (value: string) => void;
-  onDraftSummaryChange?: (value: string) => void;
-  onDraftPhoneChange?: (value: string) => void;
-  onDraftEmailChange?: (value: string) => void;
-  onDraftWebsiteChange?: (value: string) => void;
-  onDraftAddressChange?: (value: string) => void;
-  onDraftCityChange?: (value: string) => void;
-  onDraftPostalCodeChange?: (value: string) => void;
-  onDraftCountryChange?: (value: string) => void;
-  saveError?: string | null;
-  onDetailsLoaded?: (details: {
-    name: string;
-    summary: string;
-    phone: string;
-    email: string;
-    website: string;
-    address: string;
-    city: string;
-    postalCode: string;
-    country: string;
-  }) => void;
+  /** Keep the shell header title in sync when the name is saved. */
+  onNameChange?: (name: string) => void;
 };
 
 const DETAIL_SQL = `SELECT
@@ -81,40 +48,47 @@ const DETAIL_SQL = `SELECT
  WHERE deleted_at IS NULL AND id = ?
  LIMIT 1`;
 
-/** Organization overview — profile layout; edit keeps the same structure. */
+type OrganizationFields = {
+  name: string;
+  summary: string;
+  phone: string;
+  email: string;
+  website: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+};
+
+/**
+ * Organization overview — always-editable fields (desktop / journal parity).
+ * Saves each field on blur.
+ */
 export function OrganizationOverviewPanel({
   organizationId,
-  editing = false,
-  draftName = "",
-  draftSummary = "",
-  draftPhone = "",
-  draftEmail = "",
-  draftWebsite = "",
-  draftAddress = "",
-  draftCity = "",
-  draftPostalCode = "",
-  draftCountry = "",
-  onDraftNameChange,
-  onDraftSummaryChange,
-  onDraftPhoneChange,
-  onDraftEmailChange,
-  onDraftWebsiteChange,
-  onDraftAddressChange,
-  onDraftCityChange,
-  onDraftPostalCodeChange,
-  onDraftCountryChange,
-  saveError = null,
-  onDetailsLoaded,
+  onNameChange,
 }: Props) {
   const powerSync = useMobilePowerSync();
-  const onDetailsLoadedRef = useRef(onDetailsLoaded);
-  onDetailsLoadedRef.current = onDetailsLoaded;
-
   const client = useMobileApiClient();
+  const onNameChangeRef = useRef(onNameChange);
+  onNameChangeRef.current = onNameChange;
+  const hydratedIdRef = useRef<string | null>(null);
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<OrganizationOverviewRow>(DETAIL_SQL, [organizationId]);
 
+  const [fields, setFields] = useState<OrganizationFields>({
+    name: "",
+    summary: "",
+    phone: "",
+    email: "",
+    website: "",
+    address: "",
+    city: "",
+    postalCode: "",
+    country: "",
+  });
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [avatarOverride, setAvatarOverride] = useState<string | null>(null);
   const [avatarStorageKeyOverride, setAvatarStorageKeyOverride] = useState<
     string | null
@@ -126,32 +100,20 @@ export function OrganizationOverviewPanel({
   useHideTabBar(pickingAvatar);
 
   useEffect(() => {
+    hydratedIdRef.current = null;
     setAvatarOverride(null);
     setAvatarStorageKeyOverride(null);
     setAvatarError(null);
+    setSaveError(null);
   }, [organizationId]);
 
   const organization = syncedRows?.[0] ?? null;
 
-  const avatarStorageKey =
-    avatarStorageKeyOverride ?? organization?.avatar_storage_key ?? null;
-
-  const avatarSrcById = useEntityAvatarSrcMap(
-    "organization",
-    organization
-      ? [
-          {
-            id: organization.id,
-            avatarStorageKey,
-          },
-        ]
-      : [],
-    client,
-  );
-
   useEffect(() => {
-    if (!organization || !onDetailsLoadedRef.current) return;
-    onDetailsLoadedRef.current({
+    if (!organization) return;
+    if (hydratedIdRef.current === organizationId) return;
+    hydratedIdRef.current = organizationId;
+    const next: OrganizationFields = {
       name: organization.name?.trim() || "",
       summary: organization.summary ?? "",
       phone: organization.phone ?? "",
@@ -161,8 +123,87 @@ export function OrganizationOverviewPanel({
       city: organization.city ?? "",
       postalCode: organization.postal_code ?? "",
       country: organization.country ?? "",
-    });
-  }, [organization]);
+    };
+    setFields(next);
+    onNameChangeRef.current?.(next.name || "Untitled");
+  }, [organization, organizationId]);
+
+  const avatarStorageKey =
+    avatarStorageKeyOverride ?? organization?.avatar_storage_key ?? null;
+
+  const avatarSrcById = useEntityAvatarSrcMap(
+    "organization",
+    organization
+      ? [{ id: organization.id, avatarStorageKey }]
+      : [],
+    client,
+  );
+
+  const persist = useCallback(
+    async (patch: Partial<OrganizationFields>) => {
+      setSaveError(null);
+      const apiBody: Record<string, string | null> = {};
+      const sqliteValues: Record<string, string | null> = {};
+
+      const mapField = (
+        apiKey: string,
+        sqliteKey: string,
+        value: string | undefined,
+      ) => {
+        if (value === undefined) return;
+        const trimmed = value.trim() || null;
+        apiBody[apiKey] = trimmed;
+        sqliteValues[sqliteKey] = trimmed;
+      };
+
+      mapField("name", "name", patch.name);
+      mapField("summary", "summary", patch.summary);
+      mapField("phone", "phone", patch.phone);
+      mapField("email", "email", patch.email);
+      mapField("website", "website", patch.website);
+      mapField("address", "address", patch.address);
+      mapField("city", "city", patch.city);
+      mapField("postalCode", "postal_code", patch.postalCode);
+      mapField("country", "country", patch.country);
+
+      if (Object.keys(apiBody).length === 0) return;
+
+      try {
+        if (powerSync.ready) {
+          await powerSync.patchOrganization(organizationId, sqliteValues);
+          void client
+            .requestJson<Organization>(
+              `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(apiBody),
+              },
+            )
+            .catch(() => {});
+        } else {
+          await client.requestJson<Organization>(
+            `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(apiBody),
+            },
+          );
+        }
+        if (patch.name !== undefined) {
+          onNameChangeRef.current?.(patch.name.trim() || "Untitled");
+        }
+      } catch (reason) {
+        setSaveError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not save organization.",
+        );
+      }
+    },
+    [client, organizationId, powerSync],
+  );
 
   async function onChangeAvatar() {
     if (pickingAvatar || uploadingAvatar) return;
@@ -230,95 +271,72 @@ export function OrganizationOverviewPanel({
     );
   }
 
-  const name = editing
-    ? draftName
-    : organization.name?.trim() || "Untitled";
-  const website = editing
-    ? draftWebsite
-    : organization.website?.trim() || "";
-  const summary = editing
-    ? draftSummary
-    : organization.summary?.trim() || "";
   const displayId =
     organization.number != null
       ? `O-${organization.number}`
       : organization.key?.trim() || null;
-  const address = formatAddress({
-    address: editing ? draftAddress : organization.address,
-    city: editing ? draftCity : organization.city,
-    postalCode: editing ? draftPostalCode : organization.postal_code,
-    country: editing ? draftCountry : organization.country,
-  });
-  const avatarSrc = avatarOverride ?? avatarSrcById[organization.id] ?? null;
+  const avatarSrc =
+    avatarOverride ?? avatarSrcById[organization.id] ?? null;
 
-  const profileFields = editing
-    ? [
-        {
-          key: "phone",
-          label: "Phone",
-          value: draftPhone,
-          onChangeText: onDraftPhoneChange,
-          placeholder: "Phone",
-          keyboardType: "phone-pad" as const,
-        },
-        {
-          key: "email",
-          label: "Email",
-          value: draftEmail,
-          onChangeText: onDraftEmailChange,
-          placeholder: "Email",
-          keyboardType: "email-address" as const,
-          autoCapitalize: "none" as const,
-        },
-        {
-          key: "address",
-          label: "Address",
-          value: draftAddress,
-          onChangeText: onDraftAddressChange,
-          placeholder: "Street and number",
-        },
-        {
-          key: "city",
-          label: "City",
-          value: draftCity,
-          onChangeText: onDraftCityChange,
-          placeholder: "City",
-        },
-        {
-          key: "postalCode",
-          label: "Postal code",
-          value: draftPostalCode,
-          onChangeText: onDraftPostalCodeChange,
-          placeholder: "Postal code",
-        },
-        {
-          key: "country",
-          label: "Country",
-          value: draftCountry,
-          onChangeText: onDraftCountryChange,
-          placeholder: "Country",
-        },
-      ]
-    : [
-        {
-          key: "phone",
-          label: "Phone",
-          value: organization.phone?.trim() || "—",
-          empty: !organization.phone?.trim(),
-        },
-        {
-          key: "email",
-          label: "Email",
-          value: organization.email?.trim() || "—",
-          empty: !organization.email?.trim(),
-        },
-        {
-          key: "address",
-          label: "Address",
-          value: address || "—",
-          empty: !address,
-        },
-      ];
+  const profileFields = [
+    {
+      key: "phone",
+      label: "Phone",
+      value: fields.phone,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, phone: value })),
+      onBlur: () => void persist({ phone: fields.phone }),
+      placeholder: "+31 …",
+      keyboardType: "phone-pad" as const,
+    },
+    {
+      key: "email",
+      label: "Email",
+      value: fields.email,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, email: value })),
+      onBlur: () => void persist({ email: fields.email }),
+      placeholder: "name@example.com",
+      keyboardType: "email-address" as const,
+      autoCapitalize: "none" as const,
+    },
+    {
+      key: "address",
+      label: "Address",
+      value: fields.address,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, address: value })),
+      onBlur: () => void persist({ address: fields.address }),
+      placeholder: "Street and number",
+    },
+    {
+      key: "city",
+      label: "City",
+      value: fields.city,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, city: value })),
+      onBlur: () => void persist({ city: fields.city }),
+      placeholder: "City",
+    },
+    {
+      key: "postalCode",
+      label: "Postal code",
+      value: fields.postalCode,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, postalCode: value })),
+      onBlur: () => void persist({ postalCode: fields.postalCode }),
+      placeholder: "Postal code",
+    },
+    {
+      key: "country",
+      label: "Country",
+      value: fields.country,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, country: value })),
+      onBlur: () => void persist({ country: fields.country }),
+      placeholder: "Country",
+    },
+  ];
 
   return (
     <KeyboardAwareScrollView
@@ -332,60 +350,64 @@ export function OrganizationOverviewPanel({
       <View style={profileStyles.header}>
         <EntityProfileAvatar
           kind="organization"
-          name={name.trim() || "Untitled"}
+          name={fields.name.trim() || "Untitled"}
           src={avatarSrc}
-          onPressEdit={editing ? () => void onChangeAvatar() : undefined}
+          onPressEdit={() => void onChangeAvatar()}
           uploading={uploadingAvatar || pickingAvatar}
         />
         {displayId ? (
           <Text style={profileStyles.displayId}>{displayId}</Text>
         ) : null}
-        {editing ? (
-          <TextInput
-            value={draftName}
-            onChangeText={onDraftNameChange}
-            placeholder="Organization name"
-            placeholderTextColor={colors.muted}
-            autoFocus
-            style={profileStyles.nameInput}
-          />
-        ) : (
-          <Text style={profileStyles.name}>{name}</Text>
-        )}
-        {editing ? (
-          <TextInput
-            value={draftWebsite}
-            onChangeText={onDraftWebsiteChange}
-            placeholder="Website"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            keyboardType="url"
-            style={profileStyles.subtitleInput}
-          />
-        ) : website ? (
-          <Text style={profileStyles.subtitle}>{website}</Text>
-        ) : null}
+        <TextInput
+          value={fields.name}
+          onChangeText={(value) =>
+            setFields((prev) => ({ ...prev, name: value }))
+          }
+          onBlur={() => {
+            const trimmed = fields.name.trim();
+            if (!trimmed) {
+              setFields((prev) => ({
+                ...prev,
+                name: organization.name?.trim() || "",
+              }));
+              return;
+            }
+            void persist({ name: trimmed });
+          }}
+          placeholder="Organization name"
+          placeholderTextColor={colors.muted}
+          style={profileStyles.nameInput}
+        />
+        <TextInput
+          value={fields.website}
+          onChangeText={(value) =>
+            setFields((prev) => ({ ...prev, website: value }))
+          }
+          onBlur={() => void persist({ website: fields.website })}
+          placeholder="Website"
+          placeholderTextColor={colors.muted}
+          autoCapitalize="none"
+          keyboardType="url"
+          style={profileStyles.subtitleInput}
+        />
       </View>
 
-      <EntityProfileDetails fields={profileFields} editing={editing} />
+      <EntityProfileDetails fields={profileFields} />
 
       <View style={profileStyles.summaryBlock}>
         <Text style={profileStyles.summaryLabel}>Note</Text>
-        {editing ? (
-          <TextInput
-            value={draftSummary}
-            onChangeText={onDraftSummaryChange}
-            placeholder="Add a note…"
-            placeholderTextColor={colors.muted}
-            multiline
-            scrollEnabled={false}
-            style={profileStyles.summaryInput}
-          />
-        ) : summary ? (
-          <Text style={profileStyles.summary}>{summary}</Text>
-        ) : (
-          <Text style={profileStyles.summaryEmpty}>No note yet.</Text>
-        )}
+        <TextInput
+          value={fields.summary}
+          onChangeText={(value) =>
+            setFields((prev) => ({ ...prev, summary: value }))
+          }
+          onBlur={() => void persist({ summary: fields.summary })}
+          placeholder="Add a note…"
+          placeholderTextColor={colors.muted}
+          multiline
+          scrollEnabled={false}
+          style={profileStyles.summaryInput}
+        />
       </View>
 
       {avatarError ? <Text style={ui.error}>{avatarError}</Text> : null}

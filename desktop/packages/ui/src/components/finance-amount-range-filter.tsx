@@ -20,6 +20,7 @@ import {
   isFullAmountRange,
   type AmountRangeDomain,
 } from "../filter-finance-transactions.js";
+import { TASK_PROPERTY_DROPDOWN_ATTRIBUTE } from "../task-property-dropdown-keys.js";
 
 const PANEL_WIDTH = 320;
 const PANEL_GAP = 6;
@@ -393,6 +394,7 @@ export function FinanceAmountRangeFilter({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Filter by amount"
+          {...{ [TASK_PROPERTY_DROPDOWN_ATTRIBUTE]: "amount" }}
           onClick={() => setOpen((current) => !current)}
         >
           <span className="property-dropdown-trigger__label">

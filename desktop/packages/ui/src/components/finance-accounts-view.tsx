@@ -35,6 +35,26 @@ import {
   useGroupedListPointerReorder,
 } from "../use-grouped-list-pointer-reorder.js";
 import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../keyboard-nav-item.js";
+import {
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
+} from "../list-keyboard-nav-zone.js";
+import {
+  ENTITY_TITLE_INPUT_ATTRIBUTE,
+  useListDismissDetailShortcut,
+} from "../use-list-clear-selection-shortcut.js";
+import {
+  focusAndSelectTitleInput,
+  useTitleRenameShortcut,
+} from "../title-rename-shortcut.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "./list-keyboard-navigation-provider.js";
+import {
   AvatarUpload,
   type AvatarActionResult,
 } from "./avatar-upload.js";
@@ -326,6 +346,10 @@ export function FinanceAccountsView({
   >({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
 
   const canReorder = Boolean(onReorder);
 
@@ -372,9 +396,39 @@ export function FinanceAccountsView({
     (accountId: string) => {
       if (consumeClickSuppression()) return;
       setSelectedId(accountId);
+      setDetailCollapsed(false);
     },
     [consumeClickSuppression],
   );
+
+  const closeAccountDetail = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  useListDismissDetailShortcut({
+    enabled: selectedId != null,
+    onDismiss: closeAccountDetail,
+  });
+
+  const keyboardItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsedGroups[group.id]) continue;
+      for (const account of group.accounts) {
+        ids.push(account.id);
+      }
+    }
+    return ids;
+  }, [collapsedGroups, groups]);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId,
+    onNavigate: selectAccount,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0,
+  });
 
   const {
     containerRef,
@@ -501,7 +555,12 @@ export function FinanceAccountsView({
             colorKey={overview.colorKey}
           />
 
-          <ul className="overview-grouped-list" role="list">
+          <ul
+            className="overview-grouped-list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
             {groups.map((group) => {
               const collapsed = Boolean(collapsedGroups[group.id]);
               const appendKey = financeAccountGroupAppendOrderKey(group.id);
@@ -569,6 +628,7 @@ export function FinanceAccountsView({
                           ]
                             .filter(Boolean)
                             .join(" ")}
+                          {...keyboardNavItemProps(account.id)}
                         >
                           <div
                             className={[
@@ -576,6 +636,9 @@ export function FinanceAccountsView({
                               canPointerReorder
                                 ? "finance-categories-view__row-main--draggable"
                                 : null,
+                              keyboardNavListItemClass(
+                                highlightedId === account.id,
+                              ),
                             ]
                               .filter(Boolean)
                               .join(" ")}
@@ -810,6 +873,15 @@ function AccountDetailPanel({
   const [localError, setLocalError] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const syncedForId = useRef<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      focusAndSelectTitleInput(titleInputRef.current);
+    }, []),
+    { enabled: Boolean(account && onUpdate) },
+  );
+
   const nonCashflowCategoryIds = useMemo(
     () => buildNonCashflowCategoryIdSet(categories),
     [categories],
@@ -962,15 +1034,25 @@ function AccountDetailPanel({
           <div className="finance-categories-view__detail-heading">
             {onUpdate ? (
               <input
+                ref={titleInputRef}
                 className="finance-categories-view__detail-title-input"
                 value={name}
                 disabled={pending}
                 aria-label="Account name"
+                {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
                 onChange={(event) => setName(event.target.value)}
                 onBlur={() => {
                   void commitName();
                 }}
                 onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.nativeEvent.stopImmediatePropagation();
+                    setName(account.name);
+                    event.currentTarget.blur();
+                    return;
+                  }
                   if (event.key === "Enter") {
                     event.currentTarget.blur();
                   }
@@ -1078,6 +1160,7 @@ function AccountDetailPanel({
         goals={goals}
         recurrings={recurrings}
         emptyLabel={`No transactions in ${cashflowYear ?? localCalendarYear()}.`}
+        listKeyboardNavZone={LIST_KEYBOARD_NAV_ZONE_CONTENT}
         onPatchTransaction={onPatchTransaction}
         onBulkPatchTransactions={onBulkPatchTransactions}
         onBulkDeleteTransactions={onBulkDeleteTransactions}

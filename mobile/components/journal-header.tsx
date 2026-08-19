@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 
 import { isPadDevice } from "../lib/device";
 import { getTodayJournalDateSlug } from "../lib/journal";
+import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
 import {
   TabStackHeader,
   TabStackHeaderPlusButton,
@@ -25,12 +26,17 @@ const JOURNAL_DATES_SQL = `SELECT id, journal_date FROM documents
 type Props = {
   /** Fired after create-today fails (list can show the banner). */
   onCreateTodayError?: (message: string | null) => void;
+  /** iPad: collapse the list side panel. */
+  onToggleCollapse?: () => void;
 };
 
 /**
  * Journal list header — plus opens/creates today's entry when missing.
  */
-export function JournalHeader({ onCreateTodayError }: Props = {}) {
+export function JournalHeader({
+  onCreateTodayError,
+  onToggleCollapse,
+}: Props = {}) {
   const router = useRouter();
   const client = useMobileApiClient();
   const isPad = isPadDevice();
@@ -109,6 +115,14 @@ export function JournalHeader({ onCreateTodayError }: Props = {}) {
             onPress={onCreateToday}
             disabled={isCreatingToday}
             accessibilityLabel="Open today's journal"
+          />
+        ) : null
+      }
+      trailingActions={
+        onToggleCollapse ? (
+          <PadSidePanelCollapseButton
+            onCollapse={onToggleCollapse}
+            accessibilityLabel="Hide Journal list"
           />
         ) : null
       }

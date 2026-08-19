@@ -205,7 +205,9 @@ function isCanonicalEntityRedirect(fromHref: string, toHref: string): boolean {
   }
 
   if (
-    (section === "inbox" || section === "letters") &&
+    (section === "inbox" ||
+      section === "email" ||
+      section === "letters") &&
     segmentsMatchExcept(fromSegments, toSegments, 1)
   ) {
     const fromEntity = decodeURIComponent(fromSegments[1] ?? "");

@@ -51,7 +51,7 @@ export function OrganizationContactsPanel({ organizationId }: Props) {
     [apiUrl],
   );
 
-  const { rows, loading, error, useRest, restLoading, reload } =
+  const { rows, loading, error, pullRefreshing, reload } =
     useSyncedOrRest<ContactRow, ContactRow>({
       sql: CONTACTS_SQL,
       params: [organizationId],
@@ -129,7 +129,7 @@ export function OrganizationContactsPanel({ organizationId }: Props) {
       data={rows}
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
-      refreshing={useRest ? restLoading : false}
+      refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}

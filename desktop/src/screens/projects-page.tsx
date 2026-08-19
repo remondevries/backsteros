@@ -843,9 +843,10 @@ export function ProjectsPage({
 
   const projectTasks = tasks.filter(
     (task) =>
-      task.projectId === project.id ||
-      (task.projectKey &&
-        task.projectKey.toLowerCase() === projectKey.toLowerCase()),
+      !task.habitId &&
+      (task.projectId === project.id ||
+        (task.projectKey &&
+          task.projectKey.toLowerCase() === projectKey.toLowerCase())),
   );
 
   const projectList = workspace.projects;

@@ -46,6 +46,26 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerItemBind,
 } from "../use-grouped-list-pointer-reorder.js";
+import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../keyboard-nav-item.js";
+import {
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
+} from "../list-keyboard-nav-zone.js";
+import {
+  ENTITY_TITLE_INPUT_ATTRIBUTE,
+  useListDismissDetailShortcut,
+} from "../use-list-clear-selection-shortcut.js";
+import {
+  focusAndSelectTitleInput,
+  useTitleRenameShortcut,
+} from "../title-rename-shortcut.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "./list-keyboard-navigation-provider.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { useEntityHeaderActionsContext } from "./entity-actions/entity-header-actions-context.js";
 import { EntityDetailLayout } from "./entity-detail-layout.js";
@@ -1123,6 +1143,14 @@ function GoalDetailPanel({
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const autoPromoteRef = useRef(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      focusAndSelectTitleInput(titleInputRef.current);
+    }, []),
+    { enabled: Boolean(goal) },
+  );
 
   useEffect(() => {
     if (!goal) return;
@@ -1505,15 +1533,25 @@ function GoalDetailPanel({
           </button>
           <div className="finance-categories-view__detail-heading">
             <input
+              ref={titleInputRef}
               className="finance-categories-view__detail-title-input"
               value={name}
               disabled={pending}
               aria-label="Goal name"
+              {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
               onChange={(event) => setName(event.target.value)}
               onBlur={() => {
                 void commitName();
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.nativeEvent.stopImmediatePropagation();
+                  setName(goal.name);
+                  event.currentTarget.blur();
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.currentTarget.blur();
                 }
@@ -1737,6 +1775,7 @@ function GoalDetailPanel({
           goals={goals}
           recurrings={recurrings}
           emptyLabel="No transactions linked to this goal."
+          listKeyboardNavZone={LIST_KEYBOARD_NAV_ZONE_CONTENT}
           onPatchTransaction={onPatchTransaction}
           onBulkPatchTransactions={onBulkPatchTransactions}
           onBulkDeleteTransactions={onBulkDeleteTransactions}
@@ -1756,6 +1795,7 @@ function GoalDetailPanel({
 function GoalRow({
   goal,
   selected,
+  highlighted = false,
   onSelect,
   pointerReorderBind = null,
   dragging = false,
@@ -1763,6 +1803,7 @@ function GoalRow({
 }: {
   goal: FinancialGoal;
   selected: boolean;
+  highlighted?: boolean;
   onSelect: () => void;
   pointerReorderBind?: GroupedListPointerItemBind | null;
   dragging?: boolean;
@@ -1782,6 +1823,7 @@ function GoalRow({
       ]
         .filter(Boolean)
         .join(" ")}
+      {...keyboardNavItemProps(goal.id)}
     >
       <div
         className={[
@@ -1789,6 +1831,7 @@ function GoalRow({
           canPointerReorder
             ? "finance-categories-view__row-main--draggable"
             : null,
+          keyboardNavListItemClass(highlighted),
         ]
           .filter(Boolean)
           .join(" ")}
@@ -1987,6 +2030,10 @@ export function FinanceGoalsView({
   const [createState, setCreateState] = useState<CreateModalState>(null);
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
 
   const canReorder = Boolean(onReorder);
 
@@ -2030,9 +2077,39 @@ export function FinanceGoalsView({
     (goalId: string) => {
       if (consumeClickSuppression()) return;
       setSelectedId(goalId);
+      setDetailCollapsed(false);
     },
     [consumeClickSuppression],
   );
+
+  const closeGoalDetail = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  useListDismissDetailShortcut({
+    enabled: selectedId != null,
+    onDismiss: closeGoalDetail,
+  });
+
+  const keyboardItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsed[group.id]) continue;
+      for (const goal of group.goals) {
+        ids.push(goal.id);
+      }
+    }
+    return ids;
+  }, [collapsed, groups]);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId,
+    onNavigate: selectGoal,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0,
+  });
 
   const {
     containerRef,
@@ -2124,7 +2201,12 @@ export function FinanceGoalsView({
             slices={overview.slices}
           />
 
-          <ul className="overview-grouped-list" role="list">
+          <ul
+            className="overview-grouped-list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
             {groups.map((group) => {
               const isCollapsed = Boolean(collapsed[group.id]);
               const showColumnHeaders = group.id === "active";
@@ -2176,6 +2258,7 @@ export function FinanceGoalsView({
                         key={goal.id}
                         goal={goal}
                         selected={selectedId === goal.id}
+                        highlighted={highlightedId === goal.id}
                         onSelect={() => selectGoal(goal.id)}
                         pointerReorderBind={
                           canReorder

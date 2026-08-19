@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type FocusEvent,
   type ReactElement,
+  type ReactNode,
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
@@ -17,7 +18,10 @@ import { createPortal } from "react-dom";
 export type TooltipSide = "top" | "bottom";
 
 export type TooltipProps = {
+  /** Plain-text label (also used for empty checks / a11y summary). */
   label: string;
+  /** Optional rich body; when set, rendered instead of `label`. */
+  content?: ReactNode;
   children: ReactElement;
   side?: TooltipSide;
   /** Delay before showing (ms). */
@@ -46,6 +50,7 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
  */
 export function Tooltip({
   label,
+  content,
   children,
   side = "top",
   openDelay = 350,
@@ -57,6 +62,7 @@ export function Tooltip({
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentId = useId();
   const trimmed = label.trim();
+  const hasBody = Boolean(content) || Boolean(trimmed);
 
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
@@ -66,12 +72,12 @@ export function Tooltip({
   }, []);
 
   const scheduleOpen = useCallback(() => {
-    if (disabled || !trimmed) return;
+    if (disabled || !hasBody) return;
     clearOpenTimer();
     openTimerRef.current = setTimeout(() => {
       setOpen(true);
     }, openDelay);
-  }, [clearOpenTimer, disabled, openDelay, trimmed]);
+  }, [clearOpenTimer, disabled, hasBody, openDelay]);
 
   const close = useCallback(() => {
     clearOpenTimer();
@@ -145,7 +151,7 @@ export function Tooltip({
     "aria-describedby"?: string;
   }>;
 
-  const show = open && !disabled && Boolean(trimmed);
+  const show = open && !disabled && hasBody;
 
   const trigger = cloneElement(child, {
     ref: mergeRefs(child.props.ref, triggerRef),
@@ -186,10 +192,16 @@ export function Tooltip({
             <span
               id={contentId}
               role="tooltip"
-              className={["ui-tooltip", className].filter(Boolean).join(" ")}
+              className={[
+                "ui-tooltip",
+                content ? "ui-tooltip--rich" : "",
+                className,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               style={style}
             >
-              {trimmed}
+              {content ?? trimmed}
             </span>,
             document.body,
           )

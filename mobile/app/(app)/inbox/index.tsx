@@ -1,8 +1,8 @@
-import { Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { InboxListPane } from "../../../components/inbox-list-pane";
 import { isPadDevice } from "../../../lib/device";
-import { colors } from "../../../lib/theme";
+import { PadContentFrame } from "../../../lib/pad-side-panel-collapse";
 import { ui } from "../../../lib/ui";
 
 /**
@@ -13,21 +13,23 @@ import { ui } from "../../../lib/ui";
 export default function InboxScreen() {
   if (isPadDevice()) {
     return (
-      <View style={styles.empty}>
-        <Text style={ui.empty}>Select a task from the inbox.</Text>
-      </View>
+      <PadContentFrame>
+        <View style={styles.empty}>
+          <Text style={ui.empty}>Inbox is empty.</Text>
+        </View>
+      </PadContentFrame>
     );
   }
 
   return <InboxListPane />;
 }
 
-const styles = {
+const styles = StyleSheet.create({
   empty: {
     flex: 1,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
     paddingHorizontal: 24,
   },
-};
+});

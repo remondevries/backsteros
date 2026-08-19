@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { CONTENT_DETAIL_TITLE_CLASS } from "./content-detail-title-header.js";
+import { ENTITY_TITLE_INPUT_ATTRIBUTE } from "../use-list-clear-selection-shortcut.js";
 
 export type OverviewNameEditorProps = {
   value: string;
@@ -178,6 +179,7 @@ export function OverviewNameEditor({
           ref={inputRef}
           type="text"
           value={draft}
+          {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
             onChange={(event) => {
               const next = event.target.value;
               setDraft(next);
@@ -187,6 +189,8 @@ export function OverviewNameEditor({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
+                event.stopPropagation();
+                event.nativeEvent.stopImmediatePropagation();
                 cancelEditing();
                 return;
               }

@@ -103,6 +103,7 @@ async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
           userId: null,
           clerkUserId: verified.payload.sub,
           apiKeyId: null,
+          contactId: null,
           workspaceId: verified.payload.workspace_id,
           membershipRole: "member",
           scopes: [],

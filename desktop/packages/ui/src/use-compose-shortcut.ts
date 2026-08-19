@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 
 import { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
+import { shouldYieldComposeToFinanceTxCategory } from "./task-property-dropdown-keys.js";
 
 /**
  * Global C shortcut to open compose (matches Next useComposeShortcut).
+ * Yields only while a finance transaction row is keyboard-highlighted.
  */
 export function useComposeShortcut({
   enabled = true,
@@ -29,6 +31,11 @@ export function useComposeShortcut({
         (event.key.length === 1 && event.key.toLowerCase() === "c") ||
         event.code === "KeyC";
       if (!isC) return;
+
+      // Highlighted transaction owns plain C for category.
+      if (shouldYieldComposeToFinanceTxCategory()) {
+        return;
+      }
 
       const target = event.target;
       if (target instanceof HTMLElement) {

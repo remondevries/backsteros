@@ -23,6 +23,11 @@ type Props = {
   addActionLabel?: string;
   /** Optional trailing control when `onAdd` is not enough. */
   trailing?: ReactNode;
+  /**
+   * @deprecated Prefer `StatusGroupEmptySectionGap` via `renderSectionFooter`
+   * so sticky headers stay flush while empty groups still get a gap.
+   */
+  spaced?: boolean;
 };
 
 function StatusGroupPlusIcon() {
@@ -38,6 +43,42 @@ function StatusGroupPlusIcon() {
   );
 }
 
+/** Vertical gap between consecutive status headers when a section has no rows. */
+export const STATUS_GROUP_EMPTY_SECTION_GAP = 10;
+
+/**
+ * Render after an empty/collapsed status section so the next header does not
+ * sit flush. Use as `renderSectionFooter` — not header margin — so sticky
+ * headers still stick without a gap above them.
+ */
+export function StatusGroupEmptySectionGap() {
+  return (
+    <View
+      style={styles.emptySectionGap}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
+  );
+}
+
+/**
+ * Footer for empty status sections (SectionList never emits separators when
+ * `data` is empty, so collapsed / unused statuses would otherwise touch).
+ */
+export function statusGroupEmptySectionFooter<
+  T extends { data: readonly unknown[]; status: string },
+>(sections: readonly T[], section: T) {
+  if (section.data.length > 0) return null;
+  const index = sections.findIndex((entry) => entry.status === section.status);
+  if (index < 0 || index >= sections.length - 1) return null;
+  return <StatusGroupEmptySectionGap />;
+}
+
+/** @deprecated Use `StatusGroupEmptySectionGap` / `statusGroupEmptySectionFooter`. */
+export function StatusGroupSectionSeparator() {
+  return null;
+}
+
 /**
  * Desktop-parity status group header — solid base + status tint gradient,
  * status icon, and title (see `.status-group-header-row`).
@@ -51,6 +92,7 @@ export function StatusGroupHeader({
   onAdd,
   addActionLabel = "task",
   trailing,
+  spaced = false,
 }: Props) {
   const from = parseCssHexColor(gradient.from);
   const to = parseCssHexColor(gradient.to);
@@ -116,7 +158,7 @@ export function StatusGroupHeader({
 
   return (
     <View
-      style={styles.row}
+      style={[styles.row, spaced ? styles.rowSpaced : null]}
       onLayout={(event) => {
         const { width, height } = event.nativeEvent.layout;
         onLayout(width, height);
@@ -145,6 +187,12 @@ export function StatusGroupHeader({
 }
 
 const styles = StyleSheet.create({
+  emptySectionGap: {
+    height: STATUS_GROUP_EMPTY_SECTION_GAP,
+  },
+  rowSpaced: {
+    marginTop: STATUS_GROUP_EMPTY_SECTION_GAP,
+  },
   row: {
     position: "relative",
     overflow: "hidden",
@@ -152,11 +200,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     marginHorizontal: 8,
-    marginTop: 8,
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: 6,
-    backgroundColor: "#000000",
+    // Match canvas or iPad content card — never force pure black over surface.
+    backgroundColor: colors.surface,
   },
   main: {
     flex: 1,

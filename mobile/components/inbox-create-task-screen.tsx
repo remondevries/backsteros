@@ -10,6 +10,7 @@ import {
 
 import { createdTaskDetailHref } from "../lib/created-task-href";
 import { getDefaultAssigneeId, syncDefaultAssigneeIdFromSettings } from "../lib/default-assignee";
+import { isPadDevice } from "../lib/device";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { endOfLocalDayIso, formatTaskDueMetaLabel } from "../lib/task-due-date";
 import {
@@ -335,7 +336,7 @@ export function InboxCreateTaskScreen() {
     <>
       <Stack.Screen
         options={{
-          ...tabDetailScreenOptions(),
+          ...tabDetailScreenOptions({ embedded: isPadDevice() }),
           headerRight: () => (
             <Pressable
               onPress={() => {

@@ -4,6 +4,7 @@ export const routeFamilies = [
   "areas",
   "tasks",
   "inbox",
+  "email",
   "contacts",
   "organizations",
   "knowledge",
@@ -17,7 +18,9 @@ export type RouteFamily = (typeof routeFamilies)[number];
 
 export type NavigationItemIconId =
   | "inbox"
+  | "email"
   | "journal"
+  | "habits"
   | "tasks"
   | "areas"
   | "projects"
@@ -32,7 +35,7 @@ export type NavigationItemIconId =
 export type NavigationSectionId = "primary" | "workspace" | "people" | "system";
 
 export type NavigationItem = {
-  href: `/${RouteFamily}`;
+  href: `/${string}`;
   label: string;
   icon: NavigationItemIconId;
   section: NavigationSectionId;
@@ -40,7 +43,14 @@ export type NavigationItem = {
 
 export const navigation: NavigationItem[] = [
   { href: "/inbox", label: "Inbox", icon: "inbox", section: "primary" },
+  { href: "/email", label: "Email", icon: "email", section: "primary" },
   { href: "/journal", label: "Journal", icon: "journal", section: "primary" },
+  {
+    href: "/journal/habits",
+    label: "Habit Tracker",
+    icon: "habits",
+    section: "primary",
+  },
   { href: "/tasks", label: "Tasks", icon: "tasks", section: "workspace" },
   { href: "/areas", label: "Areas", icon: "areas", section: "workspace" },
   {
@@ -113,6 +123,12 @@ export const routeCopy: Record<
     singular: "inbox item",
     accent: "#b68cff",
   },
+  email: {
+    title: "Email",
+    description: "Incoming mail from connected inboxes",
+    singular: "message",
+    accent: "#6aa4e8",
+  },
   contacts: {
     title: "Contacts",
     description: "People connected to your work",
@@ -165,7 +181,14 @@ export function isNavigationPathActive(
   pathname: string,
   href: string,
 ): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
+  const matches = pathname === href || pathname.startsWith(`${href}/`);
+  if (!matches) return false;
+  return !navigation.some(
+    (item) =>
+      item.href !== href &&
+      item.href.startsWith(`${href}/`) &&
+      (pathname === item.href || pathname.startsWith(`${item.href}/`)),
+  );
 }
 
 export function titleForPath(pathname: string) {

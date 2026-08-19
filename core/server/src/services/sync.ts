@@ -12,6 +12,8 @@ import type {
 import {
   bankAccountInputSchema,
   contactInputSchema,
+  createHabitSchema,
+  updateHabitSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
@@ -27,6 +29,7 @@ import {
   financialCategories,
   financialGoals,
   financialRecurrings,
+  habits,
   letters,
   mutationReceipts,
   organizations,
@@ -42,6 +45,7 @@ import * as documentService from "./documents.js";
 import * as circleService from "./circle-domain.js";
 import { sanitizeWorkspaceSettings } from "./cursor-settings.js";
 import * as financeService from "./finance/finance.js";
+import * as habitService from "./habits.js";
 import * as taskProjectService from "./tasks-projects.js";
 
 const PULL_PAGE_SIZE = 100;
@@ -103,7 +107,10 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     inbox: row.inbox,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
+    habit_id: row.habitId ?? null,
     completed_at: row.completedAt?.toISOString() ?? null,
+    agent_created_at: row.agentCreatedAt?.toISOString() ?? null,
+    agent_inbox_approved_at: row.agentInboxApprovedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -329,6 +336,7 @@ const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   "ASSIGNEE_NOT_FOUND",
   "CONTACT_NOT_FOUND",
   "PROJECT_NOT_FOUND",
+  "INVALID_HABIT",
 ]);
 
 function camelizePayload(
@@ -409,6 +417,13 @@ const financialGoalKeys = {
   saving_mode: "savingMode",
   sort_order: "sortOrder",
 };
+const habitKeys = {
+  title: "title",
+  icon: "icon",
+  cadence: "cadence",
+  cadence_anchor_ymd: "cadenceAnchorYmd",
+  sort_order: "sortOrder",
+};
 const financialRecurringKeys = {
   name: "name",
   icon: "icon",
@@ -482,6 +497,20 @@ function financialRecurringSnapshot(
     amount_cents: row.amountCents,
     next_date: row.nextDate,
     archived: row.archived ? 1 : 0,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function habitSnapshot(row: typeof habits.$inferSelect) {
+  return {
+    id: row.id,
+    title: row.title,
+    icon: row.icon,
+    cadence: row.cadence,
+    cadence_anchor_ymd: row.cadenceAnchorYmd,
     sort_order: row.sortOrder,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -565,6 +594,7 @@ function mapTaskUpsert(
     agentChatId: asNullableString(
       payload.agent_chat_id ?? payload.agentChatId,
     ),
+    habitId: asNullableString(payload.habit_id ?? payload.habitId),
   };
 }
 
@@ -687,6 +717,7 @@ export async function applySyncChange(
           inbox: input.inbox,
           links: input.links,
           agentChatId: input.agentChatId,
+          habitId: input.habitId,
         },
         change.entity_id,
         executor,
@@ -1018,6 +1049,50 @@ export async function applySyncChange(
       );
       return financialRecurringSnapshot(row);
     }
+
+    case "habit": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await habitService.deleteHabitRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? habitSnapshot(row) : null;
+      }
+      const existing = await habitService.getHabitRow(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, habitKeys);
+      if (existing) {
+        const parsed = updateHabitSchema.safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_HABIT");
+        const updated = await habitService.updateHabit(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        if (!updated) return null;
+        const row = await habitService.getHabitRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? habitSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = createHabitSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_HABIT");
+      const row = await habitService.createHabitRow(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return habitSnapshot(row);
+    }
   }
 }
 
@@ -1101,6 +1176,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "financial_goal";
     case "financial_recurrings":
       return "financial_recurring";
+    case "habits":
+      return "habit";
     default:
       return null;
   }

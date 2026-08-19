@@ -16,9 +16,14 @@ import {
   RegisterEntityDeleteAction,
   RegisterPageIcon,
   buildJournalTaskTrailHref,
+  countHabitDayOutcomes,
+  collapseHabitItemsByHabitId,
   formatJournalEntryTitle,
   getDocumentEditorBody,
+  getTaskDueDateYmd,
+  isHabitLinkedTask,
   mergeJournalContent,
+  type JournalHabitDayItem,
 } from "@backsteros/ui";
 
 import { JournalWhoopLeading } from "../components/journal-whoop-leading";
@@ -387,6 +392,59 @@ function JournalEntryDetail({
   );
 }
 
+function useJournalDayHabitItems(dateSlug: string): JournalHabitDayItem[] {
+  const workspace = useDesktopWorkspaceData();
+  const settings = useDesktopResource<{
+    settings: Record<string, unknown>;
+  }>((api) => api.requestJson("/api/v1/settings"));
+  const calendarTimeZone = String(
+    settings.data?.settings.timezone ??
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+
+  return useMemo((): JournalHabitDayItem[] => {
+    const habitById = new Map(
+      workspace.habits.map((habit) => [habit.id, habit] as const),
+    );
+    const items = workspace.allTasks
+      .filter(
+        (task) =>
+          isHabitLinkedTask(task) &&
+          getTaskDueDateYmd(task.dueDate, calendarTimeZone) === dateSlug,
+      )
+      .map((task) => {
+        const habit = habitById.get(task.habitId!);
+        const { completedCount, missedCount } = countHabitDayOutcomes(
+          workspace.allTasks,
+          task.habitId!,
+        );
+        return {
+          habitId: task.habitId!,
+          taskId: task.id,
+          title: habit?.title ?? task.title ?? "Habit",
+          icon: habit?.icon ?? null,
+          checked: task.status === "completed",
+          completedCount,
+          missedCount,
+          sortOrder: habit?.sortOrder ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      })
+      .map(({ sortOrder: _sortOrder, ...item }) => item);
+    return collapseHabitItemsByHabitId(items);
+  }, [
+    calendarTimeZone,
+    dateSlug,
+    workspace.allTasks,
+    workspace.habits,
+  ]);
+}
+
 function JournalDueTasksFooter({
   dateSlug,
   onSelectTask,
@@ -402,14 +460,21 @@ function JournalDueTasksFooter({
     settings.data?.settings.timezone ??
       Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
+  const habits = useJournalDayHabitItems(dateSlug);
 
   return (
     <JournalDueTasksSection
       dateSlug={dateSlug}
       tasks={workspace.allTasks}
+      habits={habits}
       isLoading={!workspace.ready || settings.loading}
       calendarTimeZone={calendarTimeZone}
       onSelectTask={onSelectTask}
+      onToggleHabit={(item, checked) => {
+        void workspace.patchTask(item.taskId, {
+          status: checked ? "completed" : "ready_to_start",
+        });
+      }}
     />
   );
 }

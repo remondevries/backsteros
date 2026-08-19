@@ -556,6 +556,7 @@ async function createTaskWithExecutor(
   id: string,
   executor: DbExecutor,
   actor?: TaskWriteActor | null,
+  options?: { authKind?: "api_key" | "clerk" },
 ) {
   if (input.projectId) {
     const project = await getProjectById(workspaceId, input.projectId, executor);
@@ -585,6 +586,8 @@ async function createTaskWithExecutor(
     executor,
   );
   const status = input.status ?? "ready_to_start";
+  const agentInbox =
+    options?.authKind === "api_key" || actor?.kind === "agent";
 
   const [row] = await executor
     .insert(tasks)
@@ -605,7 +608,9 @@ async function createTaskWithExecutor(
       inbox: input.inbox ?? (!input.projectId && !input.contactId),
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
+      habitId: input.habitId ?? null,
       completedAt: status === "completed" ? new Date() : null,
+      agentCreatedAt: agentInbox ? new Date() : null,
     })
     .returning();
 
@@ -644,12 +649,20 @@ export async function createTask(
   id = newId(),
   executor?: DbExecutor,
   actor?: TaskWriteActor | null,
+  options?: { authKind?: "api_key" | "clerk" },
 ) {
   if (executor) {
-    return createTaskWithExecutor(workspaceId, input, id, executor, actor);
+    return createTaskWithExecutor(
+      workspaceId,
+      input,
+      id,
+      executor,
+      actor,
+      options,
+    );
   }
   return db.transaction((tx) =>
-    createTaskWithExecutor(workspaceId, input, id, tx, actor),
+    createTaskWithExecutor(workspaceId, input, id, tx, actor, options),
   );
 }
 
@@ -659,6 +672,7 @@ export async function updateTask(
   input: UpdateTaskInput,
   executor: DbExecutor = db,
   actor?: TaskWriteActor | null,
+  options?: { allowAgentInboxApproval?: boolean },
 ) {
   const existing = await getTaskById(workspaceId, id, executor);
   if (!existing) {
@@ -703,6 +717,16 @@ export async function updateTask(
         ? null
         : existing.completedAt;
 
+  let agentInboxApprovedAt = existing.agentInboxApprovedAt;
+  if (
+    input.agentInboxApproved === true &&
+    options?.allowAgentInboxApproval &&
+    existing.agentCreatedAt &&
+    !existing.agentInboxApprovedAt
+  ) {
+    agentInboxApprovedAt = new Date();
+  }
+
   const [row] = await executor
     .update(tasks)
     .set({
@@ -734,7 +758,9 @@ export async function updateTask(
           : undefined),
       links: input.links,
       agentChatId: input.agentChatId,
+      habitId: input.habitId,
       completedAt,
+      agentInboxApprovedAt,
       updatedAt: new Date(),
     })
     .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
@@ -897,6 +923,10 @@ export async function listInboxTasks(workspaceId: string, executor: DbExecutor =
             isNotNull(tasks.dueDate),
             lt(tasks.dueDate, startOfToday),
             sql`${tasks.status} not in ('completed', 'canceled', 'duplicated')`,
+          ),
+          and(
+            isNotNull(tasks.agentCreatedAt),
+            isNull(tasks.agentInboxApprovedAt),
           ),
         ),
       ),

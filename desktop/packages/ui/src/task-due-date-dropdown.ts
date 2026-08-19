@@ -34,7 +34,9 @@ export function buildTaskDueDateDropdownOptions(
   currentDueDate: string | null | undefined,
   now = new Date(),
   noDueDateLabel = "No due date",
+  options?: { allowClear?: boolean },
 ): SearchableDropdownOption[] {
+  const allowClear = options?.allowClear !== false;
   const today = formatLocalYmd(now);
   const tomorrow = formatLocalYmd(addLocalDays(now, 1));
   const nextWeek = formatLocalYmd(addLocalDays(now, 7));
@@ -58,26 +60,28 @@ export function buildTaskDueDateDropdownOptions(
     });
   }
 
-  const options: SearchableDropdownOption[] = presetEntries.map(
+  const result: SearchableDropdownOption[] = presetEntries.map(
     (entry, index) => ({
       ...entry,
       shortcut: searchableDropdownShortcut(index),
     }),
   );
 
-  options.push({
+  result.push({
     value: TASK_PICK_DUE_DATE_VALUE,
     label: "Pick a date…",
-    shortcut: searchableDropdownShortcut(options.length),
+    shortcut: searchableDropdownShortcut(result.length),
     searchTerms: "custom calendar pick choose date",
   });
 
-  options.push({
-    value: TASK_NO_DUE_DATE_VALUE,
-    label: noDueDateLabel,
-    shortcut: searchableDropdownShortcut(options.length),
-    searchTerms: "none clear remove",
-  });
+  if (allowClear) {
+    result.push({
+      value: TASK_NO_DUE_DATE_VALUE,
+      label: noDueDateLabel,
+      shortcut: searchableDropdownShortcut(result.length),
+      searchTerms: "none clear remove",
+    });
+  }
 
-  return options;
+  return result;
 }

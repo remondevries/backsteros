@@ -26,6 +26,8 @@ export type TaskDetailModel = {
   display_id: string | null;
   description: string | null;
   agent_chat_id: string | null;
+  agent_created_at: string | null;
+  agent_inbox_approved_at: string | null;
 };
 
 type SyncedDetailRow = {
@@ -45,6 +47,8 @@ type SyncedDetailRow = {
   assignee_name: string | null;
   description: string | null;
   agent_chat_id: string | null;
+  agent_created_at: string | null;
+  agent_inbox_approved_at: string | null;
 };
 
 function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
@@ -75,6 +79,8 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
     ),
     description: row.description,
     agent_chat_id: row.agent_chat_id,
+    agent_created_at: row.agent_created_at ?? null,
+    agent_inbox_approved_at: row.agent_inbox_approved_at ?? null,
   };
 }
 
@@ -110,6 +116,8 @@ function mapApiTask(
     ),
     description: task.description,
     agent_chat_id: task.agentChatId,
+    agent_created_at: task.agentCreatedAt ?? null,
+    agent_inbox_approved_at: task.agentInboxApprovedAt ?? null,
   };
 }
 

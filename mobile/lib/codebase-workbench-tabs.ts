@@ -20,6 +20,20 @@ export type CodebaseWorkbenchTabId =
 export const DEFAULT_CODEBASE_WORKBENCH_TAB: CodebaseWorkbenchTabId =
   "overview";
 
+/**
+ * Left-pane list toggles on iPad — same set as desktop
+ * (`Tasks | Files | Commits | PRs`). Overview stays a full-width section.
+ */
+export const CODEBASE_PAD_LIST_TABS = [
+  { id: "tasks", label: "Tasks" },
+  { id: "files", label: "Files" },
+  { id: "commits", label: "Commits" },
+  { id: "pulls", label: "PRs" },
+] as const satisfies ReadonlyArray<{
+  id: CodebaseWorkbenchTabId;
+  label: string;
+}>;
+
 /** @deprecated Use CODEBASE_WORKBENCH_TABS — same tabs on phone and pad. */
 export const CODEBASE_PHONE_SECTIONS = CODEBASE_WORKBENCH_TABS;
 

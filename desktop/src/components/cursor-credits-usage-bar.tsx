@@ -41,7 +41,7 @@ function UsageBar({ label, percent }: { label: string; percent: number }) {
 
 /**
  * Sidebar footer: Cursor monthly included Auto / API usage toward the plan
- * allowance (same data as the legacy development console rail).
+ * allowance, plus weekly Grok Bot quota when the account includes it.
  */
 export function CursorCreditsUsageBar() {
   const [usage, setUsage] = useState<CursorUsage | null>(null);
@@ -120,6 +120,9 @@ export function CursorCreditsUsageBar() {
       )}
       <UsageBar label="Auto" percent={usage.autoPercentUsed} />
       <UsageBar label="API" percent={usage.apiPercentUsed} />
+      {usage.grokBotPercentUsed != null ? (
+        <UsageBar label="Grok Bot" percent={usage.grokBotPercentUsed} />
+      ) : null}
     </div>
   );
 }

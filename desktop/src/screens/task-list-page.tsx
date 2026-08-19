@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -11,12 +11,17 @@ import {
   computeTaskDisplayIdColumnCh,
   getDefaultDueDateYmdForTasksDueFilter,
   getInboxTaskRouteSlugForTask,
+  getTaskDueDateYmd,
+  getTodayJournalDateSlug,
+  isHabitLinkedTask,
   parseListBoardViewFromLocation,
   parseTasksDueFilterFromLocation,
   parseYmdLocal,
   persistListBoardView,
   primeTabTitle,
   taskReorderPatches,
+  collapseHabitItemsByHabitId,
+  type HabitCheckChipItem,
 } from "@backsteros/ui";
 
 import {
@@ -38,6 +43,12 @@ export function TaskListPage() {
   const agentStatus = useDesktopAgentStatusOptional();
 
   useDesktopSectionBreadcrumb([{ label: "Tasks" }]);
+
+  useEffect(() => {
+    void workspace.reloadHabits().catch(() => {
+      // Chips still render from whatever tasks we already have.
+    });
+  }, [workspace.reloadHabits]);
 
   const dueFilter =
     parseTasksDueFilterFromLocation(location.pathname, location.search) ??
@@ -76,6 +87,39 @@ export function TaskListPage() {
     [workspace.allTasks],
   );
 
+  const todayHabits = useMemo((): HabitCheckChipItem[] => {
+    const todayYmd = getTodayJournalDateSlug();
+    const habitById = new Map(
+      workspace.habits.map((habit) => [habit.id, habit] as const),
+    );
+    const items = workspace.allTasks
+      .filter(
+        (task) =>
+          isHabitLinkedTask(task) &&
+          task.status !== "canceled" &&
+          getTaskDueDateYmd(task.dueDate) === todayYmd,
+      )
+      .map((task) => {
+        const habit = habitById.get(task.habitId!);
+        return {
+          habitId: task.habitId!,
+          taskId: task.id,
+          title: habit?.title ?? task.title ?? "Habit",
+          icon: habit?.icon ?? null,
+          checked: task.status === "completed",
+          sortOrder: habit?.sortOrder ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      })
+      .map(({ sortOrder: _sortOrder, ...item }) => item);
+    return collapseHabitItemsByHabitId(items);
+  }, [workspace.allTasks, workspace.habits]);
+
   const pendingCreatedTaskTitleRef = useRef<string | null>(null);
 
   const navigateToTask = (id: string, titleHint?: string | null) => {
@@ -113,6 +157,12 @@ export function TaskListPage() {
   return (
     <TasksOverviewView
       tasks={workspace.tasks}
+      todayHabits={todayHabits}
+      onToggleTodayHabit={(item, checked) => {
+        void workspace.patchTask(item.taskId, {
+          status: checked ? "completed" : "ready_to_start",
+        });
+      }}
       projectOptions={projectOptions}
       assigneeOptions={assigneeOptions}
       taskIdColumnCh={taskIdColumnCh}

@@ -6,8 +6,24 @@ import {
   fillMissingLinksFromApi,
   fillMissingTypeFromApi,
   mergeLocalAndApiByUpdatedAt,
+  dropStaleLocalHabitTasks,
   preservePendingApiRows,
 } from "./merge-local-and-api.ts";
+
+test("dropStaleLocalHabitTasks removes local-only habit day copies", () => {
+  const dropped = dropStaleLocalHabitTasks(
+    [
+      { id: "keep", habitId: "h1" },
+      { id: "stale", habitId: "h1" },
+      { id: "normal", habitId: null },
+    ],
+    [{ id: "keep", habitId: "h1" }],
+  );
+  assert.deepEqual(
+    dropped.map((row) => row.id),
+    ["keep", "normal"],
+  );
+});
 
 test("mergeLocalAndApiByUpdatedAt prefers newer API row", () => {
   const merged = mergeLocalAndApiByUpdatedAt(

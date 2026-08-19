@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,28 +12,52 @@ import { buildReadyToStartAgentPrompt } from "../../lib/agent/agent-launch";
 import {
   createAgentChatMessage,
   loadAgentChatTranscript,
+  mergeTranscriptMessages,
   publishAgentChatTranscriptMessage,
   saveAgentChatTranscript,
   syncAgentChatTranscript,
   type AgentChatMessage,
 } from "../../lib/agent/agent-chat-transcript";
 import {
+  latestAgentChatChangedFiles,
+  latestAgentChatPlan,
+} from "../../lib/agent/agent-chat-changed-files";
+import {
+  hydrateAgentChatAccessMode,
+  writeAgentChatAccessMode,
+  type AgentChatAccessMode,
+} from "../../lib/agent/agent-chat-access-mode";
+import {
+  agentChatModeToCursorModeId,
+  hydrateAgentChatMode,
+  writeAgentChatMode,
+  type AgentChatMode,
+} from "../../lib/agent/agent-chat-mode";
+import {
   cancelPtyAcpTurn,
   ensurePtyAcpSession,
   fetchAgentPtyConnection,
   findPtySessionForTask,
   killPtySession,
+  respondPtyAcpUiRequest,
+  setPtyAcpAccessMode,
+  setPtyAgentMode,
   setStoredPtySessionId,
   submitPtyAgentPrompt,
 } from "../../lib/agent/agent-pty";
 import {
   hydrateAgentChatModelId,
 } from "../../lib/agent/agent-chat-model";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
+import {
+  useAgentAcpUiRequests,
+  type AgentAcpUiRequest,
+} from "../../lib/agent/use-agent-acp-ui-requests";
+import { isPadDevice } from "../../lib/device";
 import { colors } from "../../lib/theme";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
 import { AgentChatComposer } from "./agent-chat-composer";
 import { AgentChatTranscript } from "./agent-chat-transcript";
+import type { AgentChatChangedFile } from "../../lib/agent/agent-chat-changed-files";
 
 type Props = {
   taskId: string;
@@ -48,13 +72,27 @@ type Props = {
   cwd: string | null;
   agentChatId: string | null;
   onAgentChatIdChange: (chatId: string | null) => void | Promise<void>;
+  /**
+   * Host registers end-session here so closing the Chat tab ends the ACP
+   * session (desktop parity — no in-pane Stop button).
+   */
+  endSessionRef?: MutableRefObject<(() => Promise<void>) | null>;
+  /** Notify host when changed files / plan payloads update. */
+  onAgentSurfaceDataChange?: (data: {
+    changedFiles: AgentChatChangedFile[];
+    proposedPlanMarkdown: string | null;
+    planSteps: NonNullable<AgentChatMessage["planSteps"]>;
+  }) => void;
+  /** Open the Diff surface tab (from changed-files row). */
+  onOpenDiff?: () => void;
 };
 
 type PaneStatus = "idle" | "connecting" | "ready" | "error";
 
 /**
- * iPad codebase right pane: Start / Stop agent (same lifecycle as desktop),
- * Chat-only via Cursor ACP on the laptop sidecar (T3-style; no agent TUI).
+ * Mobile agent chat pane: Chat-only via Cursor ACP on the laptop sidecar.
+ * Start by sending a message; closing the Chat tab ends the session (no Stop
+ * header — desktop parity).
  */
 export function CodebaseTaskAgentPane({
   taskId,
@@ -67,6 +105,9 @@ export function CodebaseTaskAgentPane({
   cwd,
   agentChatId,
   onAgentChatIdChange,
+  endSessionRef,
+  onAgentSurfaceDataChange,
+  onOpenDiff,
 }: Props) {
   const client = useMobileApiClient();
   const [status, setStatus] = useState<PaneStatus>("idle");
@@ -76,6 +117,11 @@ export function CodebaseTaskAgentPane({
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
+  const [agentMode, setAgentMode] = useState<AgentChatMode>("build");
+  const [accessMode, setAccessMode] =
+    useState<AgentChatAccessMode>("supervised");
+  const [uiRequest, setUiRequest] = useState<AgentAcpUiRequest | null>(null);
+  const [connection, setConnection] = useState<AgentPtyConnection | null>(null);
 
   const chatIdRef = useRef<string | null>(
     agentChatId?.trim().toLowerCase() || null,
@@ -90,13 +136,56 @@ export function CodebaseTaskAgentPane({
 
   const workingDirectory = cwd?.trim() || null;
   const hasSession = Boolean(agentChatId?.trim());
-  const agentButtonMode: "create" | "end" = !hasSession ? "create" : "end";
   const working = activity === "working";
   const sessionReady = hasSession && status === "ready";
+  const chatCanvasBg = isPadDevice() ? "transparent" : colors.background;
 
   useEffect(() => {
     void hydrateAgentChatModelId();
+    void hydrateAgentChatMode().then(setAgentMode);
   }, []);
+
+  useEffect(() => {
+    void hydrateAgentChatAccessMode(taskId).then(setAccessMode);
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!onAgentSurfaceDataChange) return;
+    const changedFiles = latestAgentChatChangedFiles(messages);
+    const plan = latestAgentChatPlan(messages);
+    onAgentSurfaceDataChange({
+      changedFiles,
+      proposedPlanMarkdown: plan.proposedPlanMarkdown,
+      planSteps: plan.planSteps,
+    });
+  }, [messages, onAgentSurfaceDataChange]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    const connection = connectionRef.current;
+    if (!connection) return;
+    void setPtyAcpAccessMode(connection, {
+      taskId,
+      mode: accessMode,
+      cwd: workingDirectory,
+    });
+  }, [accessMode, sessionReady, taskId, workingDirectory]);
+
+  useAgentAcpUiRequests({
+    connection,
+    taskId,
+    chatId: agentChatId,
+    cwd: workingDirectory,
+    enabled: sessionReady,
+    onUiRequest: setUiRequest,
+    onUiRequestCleared: (requestId) => {
+      setUiRequest((current) => {
+        if (!requestId) return null;
+        if (current?.requestId === requestId) return null;
+        return current;
+      });
+    },
+  });
 
   useEffect(() => {
     chatIdRef.current = agentChatId?.trim().toLowerCase() || null;
@@ -121,21 +210,22 @@ export function CodebaseTaskAgentPane({
     const applyRemote = (loaded: AgentChatMessage[]) => {
       if (cancelled) return;
       setMessages((prev) => {
-        if (loaded.length > 0) return loaded;
-        if (prev.length > 0) {
-          void saveAgentChatTranscript(id, prev);
-          return prev;
+        if (loaded.length === 0) {
+          if (prev.length > 0) {
+            void saveAgentChatTranscript(id, prev);
+            return prev;
+          }
+          return [];
         }
-        return [];
+        return mergeTranscriptMessages(loaded, prev);
       });
     };
 
     void loadAgentChatTranscript(id).then((loaded) => {
       if (cancelled) return;
       setMessages((prev) => {
-        if (loaded.length > 0) return loaded;
-        if (prev.length > 0) return prev;
-        return [];
+        if (loaded.length === 0) return prev;
+        return mergeTranscriptMessages(loaded, prev);
       });
     });
 
@@ -155,13 +245,14 @@ export function CodebaseTaskAgentPane({
           void syncAgentChatTranscript(connection, id).then((loaded) => {
             if (cancelled || loaded.length === 0) return;
             setMessages((prev) => {
+              const merged = mergeTranscriptMessages(loaded, prev);
               if (
-                prev.length === loaded.length &&
-                prev[prev.length - 1]?.id === loaded[loaded.length - 1]?.id
+                merged.length === prev.length &&
+                merged[merged.length - 1]?.id === prev[prev.length - 1]?.id
               ) {
                 return prev;
               }
-              return loaded;
+              return merged;
             });
           });
         }, 2500);
@@ -287,23 +378,6 @@ export function CodebaseTaskAgentPane({
     });
   }, []);
 
-  const handleSend = useCallback(() => {
-    const text = draft.trim();
-    if (!text || working) return;
-    const ok = submitChatPrompt(text);
-    if (!ok) {
-      setSendError(
-        sessionReady
-          ? "Agent session is not ready yet. Wait a moment and try again."
-          : "Start an agent first.",
-      );
-      return;
-    }
-    setSendError(null);
-    appendMessage("user", text);
-    setDraft("");
-  }, [appendMessage, draft, sessionReady, submitChatPrompt, working]);
-
   const connectSession = useCallback(
     async (chatId: string) => {
       if (!workingDirectory) {
@@ -331,6 +405,7 @@ export function CodebaseTaskAgentPane({
         return;
       }
       connectionRef.current = discovered.connection;
+      setConnection(discovered.connection);
       chatIdRef.current = chatId.toLowerCase();
 
       const acp = await ensurePtyAcpSession(discovered.connection, {
@@ -364,83 +439,187 @@ export function CodebaseTaskAgentPane({
     void connectSession(chatId);
   }, [agentChatId, connectSession, workingDirectory]);
 
-  const startAgentSession = useCallback(async () => {
-    if (busy) return;
-    if (!workingDirectory) {
-      setError(
-        "The agent needs a working directory on this project (set it from desktop).",
-      );
-      setStatus("error");
+  const startAgentSession = useCallback(
+    async (options?: { prompt?: string }) => {
+      if (busy) return;
+      if (!workingDirectory) {
+        setError(
+          "The agent needs a working directory on this project (set it from desktop).",
+        );
+        setStatus("error");
+        return;
+      }
+
+      setBusy("create");
+      setError(null);
+      try {
+        const discovered = await fetchAgentPtyConnection(client);
+        if (!discovered.ok) {
+          throw new Error(discovered.error);
+        }
+        connectionRef.current = discovered.connection;
+        setConnection(discovered.connection);
+
+        const acp = await ensurePtyAcpSession(discovered.connection, {
+          taskId,
+          cwd: workingDirectory,
+        });
+        if (!acp.ok) {
+          throw new Error(acp.error);
+        }
+
+        const customPrompt = options?.prompt?.trim();
+        const prompt =
+          customPrompt ||
+          buildReadyToStartAgentPrompt({
+            id: taskId,
+            number: taskNumber,
+            title: taskTitle,
+            description: taskDescription,
+            projectKey,
+            displayId: taskDisplayId,
+            workingDirectory,
+          });
+
+        sessionIsNewRef.current = true;
+        bootstrapPromptRef.current = prompt;
+        sessionIdRef.current = acp.sessionId;
+        await setStoredPtySessionId(taskId, acp.sessionId);
+        connectKeyRef.current = null;
+        setActivity("working");
+        await onAgentChatIdChange(acp.chatId);
+
+        void submitPtyAgentPrompt(discovered.connection, {
+          taskId,
+          prompt,
+          chatId: acp.chatId,
+          cwd: workingDirectory,
+        }).then((result) => {
+          if (!result.ok) {
+            setError(result.error);
+            setActivity("idle");
+          }
+        });
+      } catch (err) {
+        sessionIsNewRef.current = false;
+        bootstrapPromptRef.current = null;
+        setStatus("error");
+        setError(
+          err instanceof Error ? err.message : "Could not create agent session.",
+        );
+      } finally {
+        setBusy(null);
+      }
+    },
+    [
+      busy,
+      client,
+      onAgentChatIdChange,
+      projectKey,
+      taskDescription,
+      taskDisplayId,
+      taskId,
+      taskNumber,
+      taskTitle,
+      workingDirectory,
+    ],
+  );
+
+  const handleAgentModeChange = useCallback(
+    (mode: AgentChatMode) => {
+      setAgentMode(mode);
+      void writeAgentChatMode(mode);
+      if (!hasSession) return;
+      const connection = connectionRef.current;
+      if (!connection) return;
+      void setPtyAgentMode(connection, {
+        taskId,
+        mode: agentChatModeToCursorModeId(mode),
+        chatId: chatIdRef.current,
+        cwd: workingDirectory,
+      });
+    },
+    [hasSession, taskId, workingDirectory],
+  );
+
+  const handleAccessModeChange = useCallback(
+    (mode: AgentChatAccessMode) => {
+      setAccessMode(mode);
+      void writeAgentChatAccessMode(taskId, mode);
+    },
+    [taskId],
+  );
+
+  const handleRespondUiRequest = useCallback(
+    async (optionId: string, preference?: "once" | "always" | "reject") => {
+      const request = uiRequest;
+      const connection = connectionRef.current;
+      if (!request || !connection) return;
+      const result = await respondPtyAcpUiRequest(connection, {
+        requestId: request.requestId,
+        optionId,
+        preference: preference ?? null,
+      });
+      if (!result.ok) {
+        setSendError(result.error);
+        return;
+      }
+      setUiRequest(null);
+    },
+    [uiRequest],
+  );
+
+  const handleSend = useCallback(() => {
+    const text = draft.trim();
+    if (!text || working || busy) return;
+
+    const lower = text.toLowerCase();
+    if (lower === "/clear") {
+      setDraft("");
+      setSendError(null);
+      setMessages([]);
+      const chatId = chatIdRef.current;
+      if (chatId) void saveAgentChatTranscript(chatId, []);
+      // Closing + restarting Chat is the durable clear; locally wipe for UX.
+      return;
+    }
+    if (lower === "/ask" || lower === "/plan" || lower === "/build") {
+      const nextMode: AgentChatMode =
+        lower === "/ask" ? "ask" : lower === "/plan" ? "plan" : "build";
+      setDraft("");
+      handleAgentModeChange(nextMode);
       return;
     }
 
-    setBusy("create");
-    setError(null);
-    try {
-      const discovered = await fetchAgentPtyConnection(client);
-      if (!discovered.ok) {
-        throw new Error(discovered.error);
-      }
-      connectionRef.current = discovered.connection;
-
-      const acp = await ensurePtyAcpSession(discovered.connection, {
-        taskId,
-        cwd: workingDirectory,
-      });
-      if (!acp.ok) {
-        throw new Error(acp.error);
-      }
-
-      const prompt = buildReadyToStartAgentPrompt({
-        id: taskId,
-        number: taskNumber,
-        title: taskTitle,
-        description: taskDescription,
-        projectKey,
-        displayId: taskDisplayId,
-        workingDirectory,
-      });
-
-      sessionIsNewRef.current = true;
-      bootstrapPromptRef.current = prompt;
-      sessionIdRef.current = acp.sessionId;
-      await setStoredPtySessionId(taskId, acp.sessionId);
-      connectKeyRef.current = null;
-      setActivity("working");
-      await onAgentChatIdChange(acp.chatId);
-
-      void submitPtyAgentPrompt(discovered.connection, {
-        taskId,
-        prompt,
-        chatId: acp.chatId,
-        cwd: workingDirectory,
-      }).then((result) => {
-        if (!result.ok) {
-          setError(result.error);
-          setActivity("idle");
-        }
-      });
-    } catch (err) {
-      sessionIsNewRef.current = false;
-      bootstrapPromptRef.current = null;
-      setStatus("error");
-      setError(
-        err instanceof Error ? err.message : "Could not create agent session.",
-      );
-    } finally {
-      setBusy(null);
+    if (!hasSession) {
+      setSendError(null);
+      setDraft("");
+      appendMessage("user", text);
+      void startAgentSession({ prompt: text });
+      return;
     }
+    const ok = submitChatPrompt(text);
+    if (!ok) {
+      setSendError(
+        sessionReady
+          ? "Agent session is not ready yet. Wait a moment and try again."
+          : "Agent session is not ready yet.",
+      );
+      return;
+    }
+    setSendError(null);
+    appendMessage("user", text);
+    setDraft("");
   }, [
+    appendMessage,
     busy,
-    client,
-    onAgentChatIdChange,
-    projectKey,
-    taskDescription,
-    taskDisplayId,
-    taskId,
-    taskNumber,
-    taskTitle,
-    workingDirectory,
+    draft,
+    handleAgentModeChange,
+    hasSession,
+    sessionReady,
+    startAgentSession,
+    submitChatPrompt,
+    working,
   ]);
 
   const endAgentSession = useCallback(async () => {
@@ -492,18 +671,17 @@ export function CodebaseTaskAgentPane({
     }
   }, [agentChatId, busy, client, onAgentChatIdChange, taskId]);
 
-  const onAgentButtonClick = useCallback(() => {
-    if (busy) return;
-    if (agentButtonMode === "create") {
-      void startAgentSession();
-      return;
-    }
-    void endAgentSession();
-  }, [agentButtonMode, busy, endAgentSession, startAgentSession]);
+  useEffect(() => {
+    if (!endSessionRef) return;
+    endSessionRef.current = () => endAgentSession();
+    return () => {
+      endSessionRef.current = null;
+    };
+  }, [endAgentSession, endSessionRef]);
 
   if (!workingDirectory) {
     return (
-      <View style={styles.gate}>
+      <View style={[styles.gate, { backgroundColor: chatCanvasBg }]}>
         <Text style={styles.gateTitle}>Working directory required</Text>
         <Text style={styles.gateBody}>
           Set a local working directory for this project on desktop, then reopen
@@ -513,11 +691,10 @@ export function CodebaseTaskAgentPane({
     );
   }
 
-  const showStartGate = !hasSession;
   const showConnecting = hasSession && status === "connecting";
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: chatCanvasBg }]}>
       {error ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{error}</Text>
@@ -540,112 +717,108 @@ export function CodebaseTaskAgentPane({
         </View>
       ) : null}
 
-      {showStartGate ? (
-        <View style={styles.gate}>
-          <Text style={styles.gateTitle}>No agent on this task</Text>
-          <Text style={styles.gateBody}>
-            Start an agent to open a Cursor session on your laptop. Stop clears
-            the binding and ends the ACP session — same as desktop.
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              busy === "create" ? "Creating agent" : "Start Agent"
-            }
-            disabled={Boolean(busy)}
-            onPress={onAgentButtonClick}
-            style={({ pressed }) => [
-              styles.startBtn,
-              busy ? styles.agentBtnBusy : null,
-              pressed && !busy ? { opacity: 0.85 } : null,
-            ]}
-          >
-            <Text style={styles.startBtnLabel}>
-              {busy === "create" ? "Creating…" : "Start agent"}
-            </Text>
-          </Pressable>
-        </View>
-      ) : (
-        <>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Agent chat</Text>
-            <View style={styles.headerActions}>
-              {working ? (
-                <Text style={styles.workingLabel}>Working…</Text>
-              ) : activity === "idle" ? (
-                <Text style={styles.idleLabel}>Idle</Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  busy === "end" ? "Stopping agent" : "Stop agent"
-                }
-                disabled={Boolean(busy)}
-                onPress={onAgentButtonClick}
-                style={({ pressed }) => [
-                  styles.agentBtn,
-                  styles.agentBtnActive,
-                  busy ? styles.agentBtnBusy : null,
-                  pressed && !busy ? { opacity: 0.85 } : null,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.agentDot,
-                    working ? styles.agentDotWorking : null,
-                  ]}
-                />
-                <Text style={styles.agentBtnLabel}>
-                  {busy === "end" ? "Stopping…" : "Stop"}
-                </Text>
-              </Pressable>
-            </View>
+      <View style={styles.body}>
+        {showConnecting ? (
+          <View style={styles.loading}>
+            <ActivityIndicator color={colors.muted} />
+            <Text style={styles.loadingText}>Connecting over Tailscale…</Text>
           </View>
-
-          <View style={styles.body}>
-            {showConnecting ? (
-              <View style={styles.loading}>
-                <ActivityIndicator color={colors.muted} />
-                <Text style={styles.loadingText}>
-                  Connecting over Tailscale…
-                </Text>
-              </View>
-            ) : (
-              <>
-                <AgentChatTranscript
-                  messages={messages}
-                  working={working}
-                  emptyHint="Send a message to talk to the agent."
-                />
-                <View style={styles.footer}>
-                  {sendError ? (
-                    <Text style={styles.sendError} accessibilityRole="alert">
-                      {sendError}
-                    </Text>
+        ) : (
+          <>
+            <AgentChatTranscript
+              messages={messages}
+              working={working || busy === "create"}
+              onOpenDiff={onOpenDiff}
+              emptyHint={
+                hasSession
+                  ? "Send a message to talk to the agent."
+                  : "Send a message to start the agent."
+              }
+            />
+            {uiRequest ? (
+              <View style={styles.uiRequest}>
+                <Text style={styles.uiRequestTitle}>{uiRequest.title}</Text>
+                {uiRequest.detail ? (
+                  <Text style={styles.uiRequestDetail}>{uiRequest.detail}</Text>
+                ) : null}
+                <View style={styles.uiRequestActions}>
+                  {uiRequest.options.map((option) => (
+                    <Pressable
+                      key={option.id}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        void handleRespondUiRequest(option.id);
+                      }}
+                      style={({ pressed }) => [
+                        styles.uiRequestBtn,
+                        pressed ? { opacity: 0.85 } : null,
+                      ]}
+                    >
+                      <Text style={styles.uiRequestBtnLabel}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                  {uiRequest.options.length === 0 ? (
+                    <>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                          void handleRespondUiRequest("allow", "once");
+                        }}
+                        style={styles.uiRequestBtn}
+                      >
+                        <Text style={styles.uiRequestBtnLabel}>Allow</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                          void handleRespondUiRequest("reject", "reject");
+                        }}
+                        style={[styles.uiRequestBtn, styles.uiRequestBtnReject]}
+                      >
+                        <Text style={styles.uiRequestBtnLabel}>Reject</Text>
+                      </Pressable>
+                    </>
                   ) : null}
-                  <AgentChatComposer
-                    value={draft}
-                    onChange={(next) => {
-                      setDraft(next);
-                      if (sendError) setSendError(null);
-                    }}
-                    onSend={handleSend}
-                    onCancel={interruptChat}
-                    onModelChange={handleModelChange}
-                    running={working}
-                    disabled={!sessionReady && !working}
-                    placeholder={
-                      sessionReady
-                        ? "Message the agent…"
-                        : "Connecting to agent…"
-                    }
-                  />
                 </View>
-              </>
-            )}
-          </View>
-        </>
-      )}
+              </View>
+            ) : null}
+            <View style={styles.footer}>
+              {sendError ? (
+                <Text style={styles.sendError} accessibilityRole="alert">
+                  {sendError}
+                </Text>
+              ) : null}
+              <AgentChatComposer
+                value={draft}
+                onChange={(next) => {
+                  setDraft(next);
+                  if (sendError) setSendError(null);
+                }}
+                onSend={handleSend}
+                onCancel={interruptChat}
+                onModelChange={handleModelChange}
+                agentMode={agentMode}
+                onAgentModeChange={handleAgentModeChange}
+                accessMode={accessMode}
+                onAccessModeChange={handleAccessModeChange}
+                running={working || busy === "create"}
+                disabled={
+                  Boolean(busy) || (hasSession && !sessionReady && !working)
+                }
+                placeholder={
+                  !hasSession
+                    ? "Message to start the agent…"
+                    : sessionReady
+                      ? "Message the agent…"
+                      : "Connecting to agent…"
+                }
+              />
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 }
@@ -654,42 +827,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: "#0f1115",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-    zIndex: 2,
-  },
-  headerTitle: {
-    color: "rgba(255,255,255,0.72)",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.02,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  workingLabel: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  idleLabel: {
-    color: "rgba(255,255,255,0.35)",
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.04,
   },
   body: {
     flex: 1,
@@ -698,58 +835,54 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexShrink: 0,
-    paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+    // iPad: CodebaseTaskLayout already clears the floating tab pill with
+    // PAD_CONTENT_INSET above it — don't double-stack FLOATING_TAB_BAR_CLEARANCE.
+    paddingBottom: 0,
+  },
+  uiRequest: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    padding: 12,
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  uiRequestTitle: {
+    color: colors.foreground,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  uiRequestDetail: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  uiRequestActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  uiRequestBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.buttonBg,
+  },
+  uiRequestBtnReject: {
+    backgroundColor: "rgba(220, 38, 38, 0.85)",
+  },
+  uiRequestBtnLabel: {
+    color: colors.buttonText,
+    fontSize: 13,
+    fontWeight: "600",
   },
   sendError: {
     paddingHorizontal: 12,
     paddingTop: 6,
     color: "#ff7b72",
     fontSize: 12,
-  },
-  agentBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: "rgba(15,17,21,0.82)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.14)",
-  },
-  agentBtnActive: {
-    backgroundColor: "rgba(248, 81, 73, 0.28)",
-    borderColor: "rgba(248, 81, 73, 0.5)",
-  },
-  agentBtnBusy: {
-    opacity: 0.65,
-  },
-  agentBtnLabel: {
-    color: "rgba(255,255,255,0.92)",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  agentDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#3fb950",
-  },
-  agentDotWorking: {
-    backgroundColor: "#d29922",
-  },
-  startBtn: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: colors.buttonBg,
-  },
-  startBtnLabel: {
-    color: colors.buttonText,
-    fontSize: 14,
-    fontWeight: "600",
   },
   loading: {
     flex: 1,
@@ -766,7 +899,6 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: "center",
     gap: 10,
-    backgroundColor: "#0f1115",
   },
   gateTitle: {
     color: colors.foreground,

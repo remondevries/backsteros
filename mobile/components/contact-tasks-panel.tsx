@@ -31,6 +31,7 @@ type Props = {
 
 const TASKS_SQL = `${TASK_LIST_SELECT}
  WHERE t.deleted_at IS NULL
+   AND t.habit_id IS NULL
    AND (t.contact_id = ? OR t.assignee_id = ?)
  ORDER BY t.sort_order ASC, t.updated_at DESC`;
 
@@ -53,7 +54,7 @@ export function ContactTasksPanel({ contactId }: Props) {
     [apiUrl],
   );
 
-  const { rows, loading, error, useRest, restLoading, reload } =
+  const { rows, loading, error, pullRefreshing, reload } =
     useSyncedOrRest<SyncedTaskRow, GroupedTaskRow>({
       sql: TASKS_SQL,
       params: [contactId, contactId],
@@ -81,7 +82,8 @@ export function ContactTasksPanel({ contactId }: Props) {
           return (tasksBody.tasks ?? [])
             .filter(
               (task) =>
-                task.contactId === contactId || task.assigneeId === contactId,
+                !task.habitId &&
+                (task.contactId === contactId || task.assigneeId === contactId),
             )
             .map((task) =>
               mapApiTaskToRow(task, projectsById, contactsById),
@@ -115,7 +117,7 @@ export function ContactTasksPanel({ contactId }: Props) {
     <GroupedTaskList
       rows={rows}
       emptyText="No tasks for this contact."
-      refreshing={useRest ? restLoading : false}
+      refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}

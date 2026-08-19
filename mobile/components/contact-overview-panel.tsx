@@ -1,10 +1,6 @@
 import type { Contact } from "@backsteros/contracts";
-import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Text,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import {
   pickAvatarImage,
@@ -12,7 +8,6 @@ import {
 } from "../lib/avatar-upload";
 import { organizationDetailHref } from "../lib/detail-href";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
-import { formatAddress } from "../lib/format-address";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
@@ -20,11 +15,11 @@ import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { TextInput } from "./app-text-input";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
-import { TextInput } from "./app-text-input";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -52,37 +47,8 @@ type NamedOptionRow = { id: string; name: string | null };
 
 type Props = {
   contactId: string;
-  editing?: boolean;
-  draftName?: string;
-  draftSummary?: string;
-  draftEmail?: string;
-  draftPhone?: string;
-  draftTitle?: string;
-  draftAddress?: string;
-  draftCity?: string;
-  draftPostalCode?: string;
-  draftCountry?: string;
-  onDraftNameChange?: (value: string) => void;
-  onDraftSummaryChange?: (value: string) => void;
-  onDraftEmailChange?: (value: string) => void;
-  onDraftPhoneChange?: (value: string) => void;
-  onDraftTitleChange?: (value: string) => void;
-  onDraftAddressChange?: (value: string) => void;
-  onDraftCityChange?: (value: string) => void;
-  onDraftPostalCodeChange?: (value: string) => void;
-  onDraftCountryChange?: (value: string) => void;
-  saveError?: string | null;
-  onDetailsLoaded?: (details: {
-    name: string;
-    summary: string;
-    email: string;
-    phone: string;
-    title: string;
-    address: string;
-    city: string;
-    postalCode: string;
-    country: string;
-  }) => void;
+  /** Keep the shell header title in sync when the name is saved. */
+  onNameChange?: (name: string) => void;
 };
 
 const ORGANIZATIONS_SQL = `SELECT id, name FROM organizations
@@ -98,44 +64,48 @@ const DETAIL_SQL = `SELECT
  WHERE c.deleted_at IS NULL AND c.id = ?
  LIMIT 1`;
 
-/** Contact overview — same profile edit pattern as organizations. */
-export function ContactOverviewPanel({
-  contactId,
-  editing = false,
-  draftName = "",
-  draftSummary = "",
-  draftEmail = "",
-  draftPhone = "",
-  draftTitle = "",
-  draftAddress = "",
-  draftCity = "",
-  draftPostalCode = "",
-  draftCountry = "",
-  onDraftNameChange,
-  onDraftSummaryChange,
-  onDraftEmailChange,
-  onDraftPhoneChange,
-  onDraftTitleChange,
-  onDraftAddressChange,
-  onDraftCityChange,
-  onDraftPostalCodeChange,
-  onDraftCountryChange,
-  saveError = null,
-  onDetailsLoaded,
-}: Props) {
-  const powerSync = useMobilePowerSync();
-  const onDetailsLoadedRef = useRef(onDetailsLoaded);
-  onDetailsLoadedRef.current = onDetailsLoaded;
+type ContactFields = {
+  name: string;
+  summary: string;
+  email: string;
+  phone: string;
+  title: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+};
 
+/**
+ * Contact overview — always-editable fields (desktop / journal parity).
+ * Saves each field on blur.
+ */
+export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
+  const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
+  const onNameChangeRef = useRef(onNameChange);
+  onNameChangeRef.current = onNameChange;
+  const hydratedIdRef = useRef<string | null>(null);
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<ContactOverviewRow>(DETAIL_SQL, [contactId]);
   const { data: organizationRows } =
     useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
 
+  const [fields, setFields] = useState<ContactFields>({
+    name: "",
+    summary: "",
+    email: "",
+    phone: "",
+    title: "",
+    address: "",
+    city: "",
+    postalCode: "",
+    country: "",
+  });
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
   const [avatarOverride, setAvatarOverride] = useState<string | null>(null);
   const [avatarStorageKeyOverride, setAvatarStorageKeyOverride] = useState<
@@ -148,37 +118,22 @@ export function ContactOverviewPanel({
   useHideTabBar(pickingAvatar);
 
   useEffect(() => {
+    hydratedIdRef.current = null;
     setAvatarOverride(null);
     setAvatarStorageKeyOverride(null);
     setAvatarError(null);
+    setSaveError(null);
+    setPropertyError(null);
   }, [contactId]);
 
   const contact = syncedRows?.[0] ?? null;
   const organizations = organizationRows ?? [];
 
-  const avatarStorageKey =
-    avatarStorageKeyOverride ?? contact?.avatar_storage_key ?? null;
-
-  const avatarSrcById = useEntityAvatarSrcMap(
-    "contact",
-    contact
-      ? [
-          {
-            id: contact.id,
-            avatarStorageKey,
-          },
-        ]
-      : [],
-    client,
-  );
-
   useEffect(() => {
-    setOrganizationId(contact?.organization_id ?? null);
-  }, [contact?.organization_id, contactId]);
-
-  useEffect(() => {
-    if (!contact || !onDetailsLoadedRef.current) return;
-    onDetailsLoadedRef.current({
+    if (!contact) return;
+    if (hydratedIdRef.current === contactId) return;
+    hydratedIdRef.current = contactId;
+    const next: ContactFields = {
       name: contact.name?.trim() || "",
       summary: contact.summary ?? "",
       email: contact.email ?? "",
@@ -188,44 +143,93 @@ export function ContactOverviewPanel({
       city: contact.city ?? "",
       postalCode: contact.postal_code ?? "",
       country: contact.country ?? "",
-    });
-  }, [contact]);
+    };
+    setFields(next);
+    setOrganizationId(contact.organization_id ?? null);
+    onNameChangeRef.current?.(next.name || "Untitled");
+  }, [contact, contactId]);
 
-  async function patchOrganization(nextId: string | null) {
-    setPropertyError(null);
-    try {
-      const sqliteValues = { organization_id: nextId };
-      const apiValues = { organizationId: nextId };
-      if (powerSync.ready) {
-        await powerSync.patchContact(contactId, sqliteValues);
-        void client
-          .requestJson<Contact>(
+  const avatarStorageKey =
+    avatarStorageKeyOverride ?? contact?.avatar_storage_key ?? null;
+
+  const avatarSrcById = useEntityAvatarSrcMap(
+    "contact",
+    contact
+      ? [{ id: contact.id, avatarStorageKey }]
+      : [],
+    client,
+  );
+
+  const persist = useCallback(
+    async (
+      patch: Partial<ContactFields> & { organizationId?: string | null },
+    ) => {
+      setSaveError(null);
+      const apiBody: Record<string, string | null> = {};
+      const sqliteValues: Record<string, string | null> = {};
+
+      const mapField = (
+        apiKey: string,
+        sqliteKey: string,
+        value: string | undefined,
+      ) => {
+        if (value === undefined) return;
+        const trimmed = value.trim() || null;
+        apiBody[apiKey] = trimmed;
+        sqliteValues[sqliteKey] = trimmed;
+      };
+
+      mapField("name", "name", patch.name);
+      mapField("summary", "summary", patch.summary);
+      mapField("email", "email", patch.email);
+      mapField("phone", "phone", patch.phone);
+      mapField("title", "title", patch.title);
+      mapField("address", "address", patch.address);
+      mapField("city", "city", patch.city);
+      mapField("postalCode", "postal_code", patch.postalCode);
+      mapField("country", "country", patch.country);
+
+      if (patch.organizationId !== undefined) {
+        apiBody.organizationId = patch.organizationId;
+        sqliteValues.organization_id = patch.organizationId;
+      }
+
+      if (Object.keys(apiBody).length === 0) return;
+
+      try {
+        if (powerSync.ready) {
+          await powerSync.patchContact(contactId, sqliteValues);
+          void client
+            .requestJson<Contact>(
+              `/api/v1/contacts/${encodeURIComponent(contactId)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(apiBody),
+              },
+            )
+            .catch(() => {});
+        } else {
+          await client.requestJson<Contact>(
             `/api/v1/contacts/${encodeURIComponent(contactId)}`,
             {
               method: "PATCH",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(apiValues),
+              body: JSON.stringify(apiBody),
             },
-          )
-          .catch(() => {});
-      } else {
-        await client.requestJson<Contact>(
-          `/api/v1/contacts/${encodeURIComponent(contactId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(apiValues),
-          },
+          );
+        }
+        if (patch.name !== undefined) {
+          onNameChangeRef.current?.(patch.name.trim() || "Untitled");
+        }
+      } catch (reason) {
+        setSaveError(
+          reason instanceof Error ? reason.message : "Could not save contact.",
         );
       }
-    } catch (reason) {
-      setPropertyError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not update organization.",
-      );
-    }
-  }
+    },
+    [client, contactId, powerSync],
+  );
 
   async function onChangeAvatar() {
     if (pickingAvatar || uploadingAvatar) return;
@@ -304,115 +308,85 @@ export function ContactOverviewPanel({
     contact.organization_name?.trim() ||
     null;
 
-  const name = editing ? draftName : contact.name?.trim() || "Untitled";
-  const title = editing ? draftTitle : contact.title?.trim() || "";
-  const summary = editing
-    ? draftSummary
-    : contact.summary?.trim() || "";
   const displayId =
     contact.number != null
       ? `C-${contact.number}`
       : contact.key?.trim() || null;
-  const address = formatAddress({
-    address: editing ? draftAddress : contact.address,
-    city: editing ? draftCity : contact.city,
-    postalCode: editing ? draftPostalCode : contact.postal_code,
-    country: editing ? draftCountry : contact.country,
-  });
   const avatarSrc = avatarOverride ?? avatarSrcById[contact.id] ?? null;
 
-  const profileFields = editing
-    ? [
-        {
-          key: "organization",
-          label: "Organization",
-          value: organizationLabel || "Add organization",
-          empty: !organizationLabel,
-          icon: organizationLabel ? (
-            <OrganizationIcon size={16} color={colors.muted} />
-          ) : undefined,
-          onPress: () => setPickerOpen(true),
-        },
-        {
-          key: "email",
-          label: "Email",
-          value: draftEmail,
-          onChangeText: onDraftEmailChange,
-          placeholder: "Email",
-          keyboardType: "email-address" as const,
-          autoCapitalize: "none" as const,
-        },
-        {
-          key: "phone",
-          label: "Phone",
-          value: draftPhone,
-          onChangeText: onDraftPhoneChange,
-          placeholder: "Phone",
-          keyboardType: "phone-pad" as const,
-        },
-        {
-          key: "address",
-          label: "Address",
-          value: draftAddress,
-          onChangeText: onDraftAddressChange,
-          placeholder: "Street and number",
-        },
-        {
-          key: "city",
-          label: "City",
-          value: draftCity,
-          onChangeText: onDraftCityChange,
-          placeholder: "City",
-        },
-        {
-          key: "postalCode",
-          label: "Postal code",
-          value: draftPostalCode,
-          onChangeText: onDraftPostalCodeChange,
-          placeholder: "Postal code",
-        },
-        {
-          key: "country",
-          label: "Country",
-          value: draftCountry,
-          onChangeText: onDraftCountryChange,
-          placeholder: "Country",
-        },
-      ]
-    : [
-        {
-          key: "organization",
-          label: "Organization",
-          value: organizationLabel || "Add organization",
-          empty: !organizationLabel,
-          icon: organizationLabel ? (
-            <OrganizationIcon size={16} color={colors.muted} />
-          ) : undefined,
-          onPress: () => setPickerOpen(true),
-          navigateHref: organizationId
-            ? organizationDetailHref(organizationId)
-            : null,
-          navigateLabel: "Open organization",
-        },
-        {
-          key: "email",
-          label: "Email",
-          value: contact.email?.trim() || "—",
-          empty: !contact.email?.trim(),
-        },
-        {
-          key: "phone",
-          label: "Phone",
-          value: contact.phone?.trim() || "—",
-          empty: !contact.phone?.trim(),
-        },
-        {
-          key: "address",
-          label: "Address",
-          value: address || "—",
-          empty: !address,
-        },
-      ];
+  const profileFields = [
+    {
+      key: "organization",
+      label: "Organization",
+      value: organizationLabel || "Add organization",
+      empty: !organizationLabel,
+      icon: organizationLabel ? (
+        <OrganizationIcon size={16} color={colors.muted} />
+      ) : undefined,
+      onPress: () => setPickerOpen(true),
+      navigateHref: organizationId
+        ? organizationDetailHref(organizationId)
+        : null,
+      navigateLabel: "Open organization",
+    },
+    {
+      key: "email",
+      label: "Email",
+      value: fields.email,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, email: value })),
+      onBlur: () => void persist({ email: fields.email }),
+      placeholder: "name@example.com",
+      keyboardType: "email-address" as const,
+      autoCapitalize: "none" as const,
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      value: fields.phone,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, phone: value })),
+      onBlur: () => void persist({ phone: fields.phone }),
+      placeholder: "+31 …",
+      keyboardType: "phone-pad" as const,
+    },
+    {
+      key: "address",
+      label: "Address",
+      value: fields.address,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, address: value })),
+      onBlur: () => void persist({ address: fields.address }),
+      placeholder: "Street and number",
+    },
+    {
+      key: "city",
+      label: "City",
+      value: fields.city,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, city: value })),
+      onBlur: () => void persist({ city: fields.city }),
+      placeholder: "City",
+    },
+    {
+      key: "postalCode",
+      label: "Postal code",
+      value: fields.postalCode,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, postalCode: value })),
+      onBlur: () => void persist({ postalCode: fields.postalCode }),
+      placeholder: "Postal code",
+    },
+    {
+      key: "country",
+      label: "Country",
+      value: fields.country,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, country: value })),
+      onBlur: () => void persist({ country: fields.country }),
+      placeholder: "Country",
+    },
+  ];
 
   return (
     <>
@@ -427,58 +401,62 @@ export function ContactOverviewPanel({
         <View style={profileStyles.header}>
           <EntityProfileAvatar
             kind="contact"
-            name={name.trim() || "Untitled"}
+            name={fields.name.trim() || "Untitled"}
             src={avatarSrc}
-            onPressEdit={editing ? () => void onChangeAvatar() : undefined}
+            onPressEdit={() => void onChangeAvatar()}
             uploading={uploadingAvatar || pickingAvatar}
           />
           {displayId ? (
             <Text style={profileStyles.displayId}>{displayId}</Text>
           ) : null}
-          {editing ? (
-            <TextInput
-              value={draftName}
-              onChangeText={onDraftNameChange}
-              placeholder="Contact name"
-              placeholderTextColor={colors.muted}
-              autoFocus
-              style={profileStyles.nameInput}
-            />
-          ) : (
-            <Text style={profileStyles.name}>{name}</Text>
-          )}
-          {editing ? (
-            <TextInput
-              value={draftTitle}
-              onChangeText={onDraftTitleChange}
-              placeholder="Title"
-              placeholderTextColor={colors.muted}
-              style={profileStyles.subtitleInput}
-            />
-          ) : title ? (
-            <Text style={profileStyles.subtitle}>{title}</Text>
-          ) : null}
+          <TextInput
+            value={fields.name}
+            onChangeText={(value) =>
+              setFields((prev) => ({ ...prev, name: value }))
+            }
+            onBlur={() => {
+              const trimmed = fields.name.trim();
+              if (!trimmed) {
+                setFields((prev) => ({
+                  ...prev,
+                  name: contact.name?.trim() || "",
+                }));
+                return;
+              }
+              void persist({ name: trimmed });
+            }}
+            placeholder="Contact name"
+            placeholderTextColor={colors.muted}
+            style={profileStyles.nameInput}
+          />
+          <TextInput
+            value={fields.title}
+            onChangeText={(value) =>
+              setFields((prev) => ({ ...prev, title: value }))
+            }
+            onBlur={() => void persist({ title: fields.title })}
+            placeholder="Title"
+            placeholderTextColor={colors.muted}
+            style={profileStyles.subtitleInput}
+          />
         </View>
 
-        <EntityProfileDetails fields={profileFields} editing={editing} />
+        <EntityProfileDetails fields={profileFields} />
 
         <View style={profileStyles.summaryBlock}>
           <Text style={profileStyles.summaryLabel}>Note</Text>
-          {editing ? (
-            <TextInput
-              value={draftSummary}
-              onChangeText={onDraftSummaryChange}
-              placeholder="Add a note…"
-              placeholderTextColor={colors.muted}
-              multiline
-              scrollEnabled={false}
-              style={profileStyles.summaryInput}
-            />
-          ) : summary ? (
-            <Text style={profileStyles.summary}>{summary}</Text>
-          ) : (
-            <Text style={profileStyles.summaryEmpty}>No note yet.</Text>
-          )}
+          <TextInput
+            value={fields.summary}
+            onChangeText={(value) =>
+              setFields((prev) => ({ ...prev, summary: value }))
+            }
+            onBlur={() => void persist({ summary: fields.summary })}
+            placeholder="Add a note…"
+            placeholderTextColor={colors.muted}
+            multiline
+            scrollEnabled={false}
+            style={profileStyles.summaryInput}
+          />
         </View>
 
         {avatarError ? <Text style={ui.error}>{avatarError}</Text> : null}
@@ -494,7 +472,14 @@ export function ContactOverviewPanel({
         onSelect={(value) => {
           setOrganizationId(value);
           setPickerOpen(false);
-          void patchOrganization(value);
+          setPropertyError(null);
+          void (async () => {
+            try {
+              await persist({ organizationId: value });
+            } catch {
+              setPropertyError("Could not update organization.");
+            }
+          })();
         }}
         onClose={() => setPickerOpen(false)}
       />

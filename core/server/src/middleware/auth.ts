@@ -23,6 +23,7 @@ export type AuthContext = {
   userId: string | null;
   clerkUserId: string | null;
   apiKeyId: string | null;
+  contactId: string | null;
   workspaceId: string;
   membershipRole: string | null;
   scopes: ApiKeyScope[];
@@ -86,6 +87,7 @@ export async function authenticateApiKey(secret: string): Promise<AuthContext | 
     userId: row.userId,
     clerkUserId: null,
     apiKeyId: row.id,
+    contactId: row.contactId,
     workspaceId: row.workspaceId,
     membershipRole: null,
     scopes: row.scopes as ApiKeyScope[],
@@ -187,6 +189,7 @@ export async function authenticateClerk(
     userId,
     clerkUserId,
     apiKeyId: null,
+    contactId: null,
     workspaceId: membership.workspaceId,
     membershipRole: membership.role,
     scopes: [],

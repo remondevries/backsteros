@@ -1,4 +1,5 @@
 import { isJournalSectionPath } from "./journal.js";
+import { isFinanceSectionPath } from "./entity-routes.js";
 import { shouldHandleGlobalShortcut } from "./shortcut-guards.js";
 
 export type ListKeyboardNavZone = "sidepanel" | "content" | "main";
@@ -44,10 +45,10 @@ export function getDefaultListKeyboardNavZone(
   return "sidepanel";
 }
 
-/** Journal keeps j/k on entry dates until the user presses Tab to reach due tasks. */
+/** Journal / Finance keep j/k on the side panel until the user presses Tab. */
 export function shouldAutoSwitchJkToMainList(pathname: string): boolean {
   const path = pathname.replace(/\/+$/, "") || "/";
-  return !isJournalSectionPath(path);
+  return !isJournalSectionPath(path) && !isFinanceSectionPath(path);
 }
 
 export function shouldHandleListKeyboardZoneTab(event: KeyboardEvent): boolean {
@@ -156,6 +157,27 @@ export function resolveListKeyboardNavTabTargetZone(
   }
 
   return stepListKeyboardNavZone(current, direction, available);
+}
+
+/**
+ * While a right detail pane is open (or main+content lists both exist), Tab
+ * cycles between the main list and the detail list — not the left nav.
+ * Left nav rejoins the Tab cycle only when the detail is closed.
+ */
+export function filterListKeyboardNavZonesForTab(
+  available: ListKeyboardNavZone[],
+  detailOpen = false,
+): ListKeyboardNavZone[] {
+  const keepFocusInMainContent =
+    detailOpen ||
+    (available.includes("main") && available.includes("content"));
+
+  if (!keepFocusInMainContent || !available.includes("main")) {
+    return available;
+  }
+
+  const withoutSidepanel = available.filter((zone) => zone !== "sidepanel");
+  return withoutSidepanel.length > 0 ? withoutSidepanel : available;
 }
 
 export type ApplyListKeyboardNavZoneOptions = {

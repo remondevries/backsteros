@@ -10,6 +10,8 @@ export type CursorUsage = {
   remainingCents?: number | null;
   displayMessage?: string | null;
   billingCycleEndMs?: number | null;
+  grokBotPercentUsed?: number | null;
+  grokBotResetMs?: number | null;
   error?: string | null;
   sampledAt: number;
 };
@@ -43,6 +45,9 @@ export function cursorUsageTitle(usage: CursorUsage | null): string {
     `Auto ${formatPlanPercent(usage.autoPercentUsed)}`,
     `API ${formatPlanPercent(usage.apiPercentUsed)}`,
   ];
+  if (usage.grokBotPercentUsed != null) {
+    parts.push(`Grok Bot ${formatPlanPercent(usage.grokBotPercentUsed)}`);
+  }
   if (
     usage.remainingCents != null &&
     usage.limitCents != null &&
@@ -60,6 +65,14 @@ export function cursorUsageTitle(usage: CursorUsage | null): string {
     if (!Number.isNaN(end.getTime())) {
       parts.push(
         `Resets ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
+      );
+    }
+  }
+  if (usage.grokBotResetMs != null) {
+    const end = new Date(usage.grokBotResetMs);
+    if (!Number.isNaN(end.getTime())) {
+      parts.push(
+        `Grok Bot resets ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`,
       );
     }
   }

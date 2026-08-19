@@ -54,6 +54,7 @@ export const SYNCED_METADATA_TABLES = [
   "workspace_settings",
   "bank_accounts",
   "financial_categories",
+  "habits",
 ] as const;
 
 export type SyncedMetadataTable = (typeof SYNCED_METADATA_TABLES)[number];

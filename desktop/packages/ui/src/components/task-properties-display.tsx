@@ -35,6 +35,8 @@ export type TaskPropertiesDisplayTask = {
   assigneeName?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
+  agentCreatedAt?: number | Date | null;
+  agentInboxApprovedAt?: number | Date | null;
 };
 
 export type TaskPropertiesDisplayProps = {
@@ -52,6 +54,8 @@ export type TaskPropertiesDisplayProps = {
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
   onCreateAssigneeFromQuery?: (query: string) => void;
+  agentInboxPending?: boolean;
+  onAgentInboxApprove?: () => void;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -76,6 +80,8 @@ export function TaskPropertiesDisplay({
   assigneeNavigateHref,
   projectNavigateHref,
   onCreateAssigneeFromQuery,
+  agentInboxPending = false,
+  onAgentInboxApprove,
 }: TaskPropertiesDisplayProps) {
   const disabled = task == null;
   const status = migrateLegacyTaskStatus(task?.status ?? "triage");
@@ -225,6 +231,16 @@ export function TaskPropertiesDisplay({
             </button>
           )}
         </EntityPropertiesSection>
+
+        {agentInboxPending && onAgentInboxApprove ? (
+          <button
+            type="button"
+            className="task-agent-inbox-approve-button"
+            onClick={onAgentInboxApprove}
+          >
+            Approve
+          </button>
+        ) : null}
       </div>
     </div>
   );

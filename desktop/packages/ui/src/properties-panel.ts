@@ -9,6 +9,8 @@ export const TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS = [
 
 export const LETTER_PROPERTIES_PANEL_WIDTH_KEY = "letter-properties-panel-width";
 
+export const EMAIL_PROPERTIES_PANEL_WIDTH_KEY = "email-properties-panel-width";
+
 export function isTaskDetailPath(pathname: string): boolean {
   return (
     /^\/inbox\/[^/]+$/.test(pathname) ||

@@ -523,6 +523,284 @@ html:has(.desktop-overlay-root--palette) .command-list {
   min-width: 0;
 }
 
+.desktop-task-layout__detail-body > .inbox-detail-layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.desktop-task-layout__detail-body > .inbox-detail-layout .inbox-detail-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.inbox-detail-layout--compose {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.desktop-email-compose {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.75rem 1rem;
+}
+
+.desktop-email-compose .inbox-detail-body--email {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.email-compose-agent--inline .desktop-agent-chat__footer {
+  position: static;
+}
+
+.email-agent-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.email-agent-prompt__error {
+  margin: 0;
+  padding: 0 4px;
+  color: #f87171;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.email-agent-prompt__shell {
+  position: relative;
+  width: 100%;
+}
+
+.email-agent-prompt__host {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  border-radius: 22px;
+  background: color-mix(
+    in srgb,
+    var(--chat-composer-glass-surface) var(--glass-opacity),
+    transparent
+  );
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+
+.email-agent-prompt__host::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--chat-composer-outline);
+  box-shadow: inset 0 1px var(--chat-composer-highlight);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.email-agent-prompt__host:focus-within::after {
+  border-color: color-mix(in srgb, white 10%, transparent);
+  box-shadow:
+    inset 0 1px color-mix(in srgb, white 5%, transparent),
+    0 0 0 1px color-mix(in srgb, white 4%, transparent);
+}
+
+.email-agent-prompt__host--inactive {
+  opacity: 0.72;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .email-agent-prompt__host {
+    background: var(--chat-composer-glass-surface);
+  }
+}
+
+.email-agent-prompt__inner {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  margin: 1px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.email-agent-prompt__input-row {
+  display: flex;
+  align-items: stretch;
+  padding: 14px 12px 8px;
+}
+
+@media (min-width: 640px) {
+  .email-agent-prompt__input-row {
+    padding: 16px 16px 8px;
+  }
+}
+
+.email-agent-prompt__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 70px;
+  max-height: 200px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.625;
+  outline: none;
+}
+
+.email-agent-prompt__input::placeholder {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+}
+
+.email-agent-prompt__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.email-agent-prompt__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+@media (min-width: 640px) {
+  .email-agent-prompt__toolbar {
+    padding: 0 12px 12px;
+  }
+}
+
+.email-agent-prompt__send {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 92%, transparent);
+  color: var(--background);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.24);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.email-agent-prompt__send:hover:not(:disabled) {
+  background: var(--foreground);
+  transform: scale(1.05);
+}
+
+.email-agent-prompt__send:active:not(:disabled) {
+  transform: scale(0.98);
+  box-shadow: none;
+}
+
+.email-agent-prompt__send:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.email-agent-prompt__send--busy,
+.email-agent-prompt__send--busy:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.email-agent-prompt__send-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.email-agent-prompt__send-icon--spin {
+  animation: desktop-agent-chat-spin 0.9s linear infinite;
+}
+
+.desktop-agent-chat--composer-only {
+  display: block;
+  width: 100%;
+  min-height: 0;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__body {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__body-main,
+.desktop-agent-chat--composer-only .desktop-agent-chat__body-main-content,
+.desktop-agent-chat--composer-only .desktop-agent-chat__pane--chat {
+  min-height: 0;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__transcript-host {
+  display: none;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__footer {
+  position: static;
+  inset: auto;
+  padding: 0;
+  pointer-events: auto;
+  background: none;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__footer-inner {
+  margin: 0;
+  max-width: none;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__composer,
+.desktop-agent-chat--composer-only .desktop-agent-chat__composer-anchor {
+  max-width: none;
+  width: 100%;
+}
+
+.desktop-agent-chat--composer-only .desktop-agent-chat__glass-host {
+  border-radius: 10px;
+}
+
+.desktop-task-layout__terminal-body[hidden] {
+  display: none !important;
+}
+
 .desktop-task-layout__detail-body[hidden] {
   display: none !important;
 }
@@ -621,6 +899,12 @@ html:has(.desktop-overlay-root--palette) .command-list {
 
 .desktop-task-layout__terminal.is-collapsed .desktop-agent-chat {
   pointer-events: none;
+}
+
+.desktop-task-layout__terminal.is-collapsed
+  .desktop-agent-chat
+  .desktop-terminal-strip {
+  pointer-events: auto;
 }
 
 .desktop-task-layout__terminal.is-collapsed .desktop-agent-collapsed-strip {
@@ -5227,6 +5511,22 @@ html:has(.desktop-overlay-root--palette) .command-list {
   overflow: hidden;
 }
 
+/* Habit tracker: sticky header + internal timeline scroll. */
+.page-scroll:has([data-habit-tracker]) {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-scroll:has([data-habit-tracker]) > .habit-tracker {
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+}
+
 .page-scroll:has(.finance-detail) > .inbox-detail-layout {
   min-height: 0;
   height: 100%;
@@ -6408,6 +6708,7 @@ html:has(.desktop-overlay-root--palette) .command-list {
 }
 
 .finance-tx-row__cell-inner--org {
+  position: relative;
   display: flex;
   width: 100%;
   max-width: 100%;
@@ -6415,12 +6716,52 @@ html:has(.desktop-overlay-root--palette) .command-list {
   gap: 8px;
 }
 
+.finance-tx-row__recurring-dropdown {
+  flex: none;
+}
+
+.finance-tx-row__recurring-trigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  cursor: pointer;
+}
+
+.finance-tx-row__recurring-trigger.is-filled {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.finance-tx-row__recurring-trigger:hover,
+.finance-tx-row__recurring-trigger.is-open {
+  color: var(--foreground);
+}
+
+/* Invisible 1×1 hit target mounted only on the keyboard-highlighted row so
+   the R hotkey can open recurring without rendering a badge for every row. */
+.finance-tx-row__recurring-trigger.is-hotkey-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+}
+
 .finance-tx-row__recurring-badge {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  color: inherit;
 }
 
 .finance-tx-row__recurring-badge svg {
@@ -6450,6 +6791,35 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .finance-tx-row__cell-inner--org .searchable-dropdown-root {
   flex: 0 1 auto;
   max-width: min(46%, 16rem);
+}
+
+/*
+ * Highlight-only R hotkey mount: leave the org flex/gap flow or the
+ * description shifts on focus. Higher specificity than the row dropdown
+ * `position: relative` / org max-width rules above.
+ */
+.finance-tx-row__cell-inner--org
+  > .property-dropdown.finance-tx-row__recurring-dropdown--hotkey-only,
+.finance-tx-row__cell-inner
+  > .property-dropdown.finance-tx-row__recurring-dropdown--hotkey-only,
+.finance-tx-row__cell-inner--org
+  > .searchable-dropdown-root.finance-tx-row__recurring-dropdown--hotkey-only,
+.finance-tx-row__cell-inner
+  > .searchable-dropdown-root.finance-tx-row__recurring-dropdown--hotkey-only {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  display: block;
+  width: 0;
+  height: 0;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  flex: none;
+  pointer-events: none;
 }
 
 .finance-tx-row__dropdown-trigger {

@@ -15,6 +15,7 @@ import {
   SearchableDropdown,
   type SearchableDropdownOption,
 } from "./searchable-dropdown.js";
+import { FINANCE_FILTER_SCOPE_ATTRIBUTE } from "../task-property-dropdown-keys.js";
 
 export const FINANCE_FILTER_ALL_VALUE = "__all__";
 
@@ -130,6 +131,7 @@ export function FinanceTransactionsFilterBar({
   return (
     <div
       className={["finance-filter-bar", className].filter(Boolean).join(" ")}
+      {...{ [FINANCE_FILTER_SCOPE_ATTRIBUTE]: "" }}
     >
       <div className="finance-filter-bar__row">
         <div className="finance-filter-bar__shell">
@@ -207,6 +209,7 @@ export function FinanceTransactionsFilterBar({
             <SearchableDropdown
               ariaLabel="Filter by category"
               className="property-dropdown"
+              taskPropertyDropdownId="category"
               triggerClassName={FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME}
               multiple
               values={filterCategoryIds}
@@ -221,6 +224,7 @@ export function FinanceTransactionsFilterBar({
             <SearchableDropdown
               ariaLabel="Filter by organization"
               className="property-dropdown"
+              taskPropertyDropdownId="organization"
               triggerClassName={FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME}
               value={filterOrganizationId ?? FINANCE_FILTER_ALL_VALUE}
               options={organizationOptions}
@@ -238,6 +242,7 @@ export function FinanceTransactionsFilterBar({
             <SearchableDropdown
               ariaLabel="Filter by goal"
               className="property-dropdown"
+              taskPropertyDropdownId="goal"
               triggerClassName={FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME}
               value={filterGoalId ?? FINANCE_FILTER_ALL_VALUE}
               options={goalOptions}
@@ -255,6 +260,7 @@ export function FinanceTransactionsFilterBar({
             <SearchableDropdown
               ariaLabel="Filter by recurring"
               className="property-dropdown"
+              taskPropertyDropdownId="recurring"
               triggerClassName={FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME}
               value={filterRecurringId ?? FINANCE_FILTER_ALL_VALUE}
               options={recurringOptions}

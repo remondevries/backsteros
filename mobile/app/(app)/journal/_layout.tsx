@@ -6,15 +6,30 @@ import { JournalHeader } from "../../../components/journal-header";
 import { JournalListPane } from "../../../components/journal-list-pane";
 import { isPadDevice } from "../../../lib/device";
 import {
+  PadContentFrame,
+  PadSidePanelCollapsedRail,
+  usePadSidePanelCollapsed,
+} from "../../../lib/pad-side-panel-collapse";
+import {
   tabDetailScreenOptions,
   tabRootScreenOptions,
 } from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
-const LIST_PANE_WIDTH = 320;
+const LIST_PANE_WIDTH = 256;
+
+function padDetailOptions() {
+  return {
+    ...tabDetailScreenOptions({ embedded: true }),
+    // Title + Whoop live in scrolling content — no empty sticky header.
+    headerShown: false,
+    headerBackVisible: false,
+  };
+}
 
 export default function JournalLayout() {
   const [createTodayError, setCreateTodayError] = useState<string | null>(null);
+  const { collapsed, setCollapsed } = usePadSidePanelCollapsed("journal");
 
   if (!isPadDevice()) {
     return (
@@ -31,24 +46,32 @@ export default function JournalLayout() {
     );
   }
 
-  // iPad: desktop-style list | detail — list stays mounted; Stack shows
-  // index (empty) or [dateSlug] (entry) in the detail pane.
   return (
     <View style={styles.split}>
-      <View style={styles.listPane}>
-        <JournalHeader onCreateTodayError={setCreateTodayError} />
-        <View style={styles.listBody}>
-          <JournalListPane
-            autoSelectFirst
-            rowLayout="sidePanel"
-            createTodayError={createTodayError}
+      {collapsed ? (
+        <PadSidePanelCollapsedRail
+          onExpand={() => setCollapsed(false)}
+          accessibilityLabel="Show Journal list"
+        />
+      ) : (
+        <View style={styles.listPane}>
+          <JournalHeader
+            onCreateTodayError={setCreateTodayError}
+            onToggleCollapse={() => setCollapsed(true)}
           />
+          <View style={styles.listBody}>
+            <JournalListPane
+              autoSelectFirst
+              createTodayError={createTodayError}
+            />
+          </View>
         </View>
-      </View>
-      <View style={styles.detailPane}>
+      )}
+      <PadContentFrame>
         <Stack
           screenOptions={{
-            contentStyle: { backgroundColor: colors.background },
+            contentStyle: { backgroundColor: colors.surface },
+            headerStyle: { backgroundColor: colors.surface },
             gestureEnabled: true,
             fullScreenGestureEnabled: true,
           }}
@@ -57,20 +80,19 @@ export default function JournalLayout() {
             name="index"
             options={{
               headerShown: false,
-              contentStyle: { backgroundColor: colors.background },
+              contentStyle: { backgroundColor: colors.surface },
             }}
           />
           <Stack.Screen
             name="[dateSlug]"
             options={{
-              ...tabDetailScreenOptions(),
-              headerBackVisible: false,
+              ...padDetailOptions(),
               animation: "fade",
               animationDuration: 220,
             }}
           />
         </Stack>
-      </View>
+      </PadContentFrame>
     </View>
   );
 }
@@ -85,17 +107,11 @@ const styles = StyleSheet.create({
   listPane: {
     width: LIST_PANE_WIDTH,
     flexShrink: 0,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.border,
     minHeight: 0,
+    backgroundColor: colors.background,
   },
   listBody: {
     flex: 1,
-    minHeight: 0,
-  },
-  detailPane: {
-    flex: 1,
-    minWidth: 0,
     minHeight: 0,
   },
 });

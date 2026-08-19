@@ -30,12 +30,12 @@ type Props = {
   onModelChange?: (modelId: string) => void;
 };
 
-function ChevronIcon() {
+function ChevronIcon({ color = "rgba(163,163,163,0.95)" }: { color?: string }) {
   return (
     <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
       <Path
         d="M3 4.5 6 7.5 9 4.5"
-        stroke="#a3a3a3"
+        stroke={color}
         strokeWidth={1.4}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -244,9 +244,9 @@ const styles = StyleSheet.create({
   sheet: {
     maxHeight: "70%",
     borderRadius: 16,
-    backgroundColor: "#12141a",
+    backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: colors.border,
     paddingTop: 14,
     paddingBottom: 10,
     overflow: "hidden",
@@ -264,10 +264,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: colors.inputBg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.08)",
-    color: "#f7f9ff",
+    borderColor: colors.border,
+    color: colors.foreground,
     fontSize: 14,
   },
   list: {
@@ -297,12 +297,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
   },
   optionName: {
-    color: "#f7f9ff",
+    color: colors.foreground,
     fontSize: 13,
     fontWeight: "600",
   },
   optionId: {
-    color: "rgba(163,163,163,0.8)",
+    color: colors.muted,
     fontSize: 11,
   },
 });

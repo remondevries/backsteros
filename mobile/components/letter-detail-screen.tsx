@@ -1,5 +1,5 @@
 import type { Letter, LetterAttachment } from "@backsteros/contracts";
-import { Stack } from "expo-router";
+import { Stack, useSegments } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
   organizationDetailHref,
   projectDetailHref,
 } from "../lib/detail-href";
+import { isPadDevice } from "../lib/device";
 import {
   asLetterTaskStatus,
   dueIsoForOffset,
@@ -50,6 +51,7 @@ import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import {
   FLOATING_PDF_DOCK_CLEARANCE,
   FloatingComposeActionPill,
+  LETTER_PDF_UPLOAD_ICON_COLOR,
 } from "./floating-compose-action-pill";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
@@ -87,6 +89,9 @@ type ContactOptionRow = LetterContactOptionRow;
 export function LetterDetailScreen({ letterId }: Props) {
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
+  const segments = useSegments();
+  const inPadLettersSplit =
+    isPadDevice() && (segments as string[]).includes("letters");
 
   const detailSql = letterId ? LETTER_DETAIL_SQL : LETTER_DETAIL_EMPTY_SQL;
   const detailParams = useMemo(
@@ -746,8 +751,9 @@ export function LetterDetailScreen({ letterId }: Props) {
     <>
       <Stack.Screen
         options={{
-          ...tabDetailScreenOptions(),
+          ...tabDetailScreenOptions({ embedded: isPadDevice() }),
           title: "",
+          ...(inPadLettersSplit ? { headerBackVisible: false } : null),
         }}
       />
       <KeyboardAwareScrollView
@@ -835,6 +841,7 @@ export function LetterDetailScreen({ letterId }: Props) {
       ) : null}
 
       <FloatingComposeActionPill
+        compact
         onPress={() => {
           void onUploadPdf();
         }}
@@ -872,9 +879,9 @@ export function LetterDetailScreen({ letterId }: Props) {
         }
       >
         {picking || uploading ? (
-          <ActivityIndicator color={colors.foreground} size="small" />
+          <ActivityIndicator color={LETTER_PDF_UPLOAD_ICON_COLOR} size="small" />
         ) : (
-          <PlusIcon size={22} color={colors.foreground} />
+          <PlusIcon size={14} color={LETTER_PDF_UPLOAD_ICON_COLOR} />
         )}
       </FloatingComposeActionPill>
 

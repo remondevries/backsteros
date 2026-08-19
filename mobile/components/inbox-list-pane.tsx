@@ -18,6 +18,7 @@ import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
+import { useRestReloadFlags } from "../lib/use-rest-reload-flags";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useRestListHydration } from "../lib/use-rest-list-hydration";
 import {
@@ -53,6 +54,8 @@ type InboxSyncedRow = GroupedTaskRow & {
   contact_id?: string | null;
   project_key?: string | null;
   inbox?: boolean | number | null;
+  agent_created_at?: string | null;
+  agent_inbox_approved_at?: string | null;
 };
 
 /**
@@ -80,6 +83,10 @@ export function InboxListPane({
      WHERE t.deleted_at IS NULL AND (
        t.inbox = 1
        OR (
+         t.agent_created_at IS NOT NULL
+         AND t.agent_inbox_approved_at IS NULL
+       )
+       OR (
          t.status IN ('on_hold', 'in_review')
          AND (
            t.due_date IS NULL
@@ -97,7 +104,13 @@ export function InboxListPane({
 
   const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
-  const [restLoading, setRestLoading] = useState(false);
+  const {
+    restLoading,
+    pullRefreshing,
+    beginReload,
+    endReload,
+    markHydrated,
+  } = useRestReloadFlags();
 
   const localRows = useMemo(
     () =>
@@ -107,14 +120,16 @@ export function InboxListPane({
             inbox: row.inbox,
             status: row.status,
             due_date: row.due_date,
+            agent_created_at: row.agent_created_at,
+            agent_inbox_approved_at: row.agent_inbox_approved_at,
           }),
         )
         .map((row) => withDisplayId(row)),
     [syncedTasks],
   );
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = beginReload(opts);
     setRestError(null);
     try {
       const [tasksBody, projectsBody, contactsBody] = await Promise.all([
@@ -135,10 +150,13 @@ export function InboxListPane({
               inbox: task.inbox,
               status: task.status,
               dueDate: task.dueDate,
+              agentCreatedAt: task.agentCreatedAt,
+              agentInboxApprovedAt: task.agentInboxApprovedAt,
             }),
           )
           .map((task) => mapApiTaskToRow(task, projectsById, contactsById)),
       );
+      markHydrated();
     } catch (reason) {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
@@ -149,9 +167,9 @@ export function InboxListPane({
       );
       // Keep prior REST snapshot on transient failures.
     } finally {
-      setRestLoading(false);
+      endReload(userPull);
     }
-  }, [apiUrl, client]);
+  }, [apiUrl, beginReload, client, endReload, markHydrated]);
 
   useRestListHydration(reloadRest);
 
@@ -236,8 +254,8 @@ export function InboxListPane({
       groupByStatus="inbox"
       rowLayout="inbox"
       selectedId={pathSelectedId}
-      refreshing={restLoading}
-      onRefresh={() => void reloadRest()}
+      refreshing={pullRefreshing}
+      onRefresh={() => void reloadRest({ userPull: true })}
       onPressRow={onPressRow}
     />
   );

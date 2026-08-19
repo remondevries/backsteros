@@ -197,17 +197,48 @@ function createFetcher(options: ApiClientOptions): ApiFetcher {
     const body = isBinaryBody(args.rawBody) ? args.rawBody : args.body;
     // Token resolve can outlive a React effect cleanup; bail before fetch so
     // aborted loads reject as AbortError instead of WebKit's opaque "Load failed".
-    throwIfAborted(args.fetchOptions?.signal);
+    const timedFetchOptions = withRequestTimeout(args.fetchOptions);
+    throwIfAborted(timedFetchOptions.signal);
     const response = await fetchImpl(args.path, {
-      ...args.fetchOptions,
+      ...timedFetchOptions,
       method: args.method,
       headers,
       body: body as BodyInit | null | undefined,
-      credentials: args.fetchOptions?.credentials ?? options.credentials,
+      credentials: timedFetchOptions.credentials ?? options.credentials,
     });
     const parsed = await parseResponse(response);
     if (!response.ok) throw new ApiClientError(response.status, parsed, response.headers);
     return { status: response.status, body: parsed, headers: response.headers };
+  };
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
+function mergeAbortSignals(
+  userSignal: AbortSignal | null | undefined,
+  timeoutMs: number,
+): AbortSignal | undefined {
+  if (typeof AbortSignal === "undefined") return userSignal ?? undefined;
+  const timeoutSignal =
+    "timeout" in AbortSignal
+      ? (AbortSignal as typeof AbortSignal & {
+          timeout: (ms: number) => AbortSignal;
+        }).timeout(timeoutMs)
+      : undefined;
+  if (!timeoutSignal) return userSignal ?? undefined;
+  if (!userSignal) return timeoutSignal;
+  if ("any" in AbortSignal) {
+    return (AbortSignal as typeof AbortSignal & {
+      any: (signals: AbortSignal[]) => AbortSignal;
+    }).any([userSignal, timeoutSignal]);
+  }
+  return userSignal;
+}
+
+function withRequestTimeout(init: RequestInit = {}): RequestInit {
+  return {
+    ...init,
+    signal: mergeAbortSignals(init.signal, DEFAULT_REQUEST_TIMEOUT_MS),
   };
 }
 
@@ -221,12 +252,13 @@ async function rawRequest(
   // Token resolve can outlive a React effect cleanup; bail before fetch so
   // aborted loads reject as AbortError instead of WebKit's opaque "Load failed".
   const headers = await authorizationHeaders(options);
-  throwIfAborted(init.signal);
+  const timedInit = withRequestTimeout(init);
+  throwIfAborted(timedInit.signal);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
-    ...init,
+    ...timedInit,
     headers,
-    credentials: init.credentials ?? options.credentials,
+    credentials: timedInit.credentials ?? options.credentials,
   });
   const parsed = await parseResponse(response);
   if (!response.ok) throw new ApiClientError(response.status, parsed, response.headers);
@@ -241,12 +273,13 @@ async function rawBinaryRequest(
   const fetchImpl = options.fetch ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("A fetch implementation is required");
   const headers = await authorizationHeaders(options);
-  throwIfAborted(init.signal);
+  const timedInit = withRequestTimeout(init);
+  throwIfAborted(timedInit.signal);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
-    ...init,
+    ...timedInit,
     headers,
-    credentials: init.credentials ?? options.credentials,
+    credentials: timedInit.credentials ?? options.credentials,
   });
   if (!response.ok) {
     const parsed = await parseResponse(response);

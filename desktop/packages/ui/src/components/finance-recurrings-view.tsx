@@ -31,6 +31,26 @@ import {
   useGroupedListPointerReorder,
   type GroupedListPointerItemBind,
 } from "../use-grouped-list-pointer-reorder.js";
+import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../keyboard-nav-item.js";
+import {
+  LIST_KEYBOARD_NAV_ZONE_CONTENT,
+  LIST_KEYBOARD_NAV_ZONE_MAIN,
+} from "../list-keyboard-nav-zone.js";
+import {
+  ENTITY_TITLE_INPUT_ATTRIBUTE,
+  useListDismissDetailShortcut,
+} from "../use-list-clear-selection-shortcut.js";
+import {
+  focusAndSelectTitleInput,
+  useTitleRenameShortcut,
+} from "../title-rename-shortcut.js";
+import {
+  useListKeyboardNavigation,
+  useListKeyboardNavigationContainerProps,
+} from "./list-keyboard-navigation-provider.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { EntityActionsMenu } from "./entity-actions/entity-actions-menu.js";
 import { useEntityHeaderActionsContext } from "./entity-actions/entity-header-actions-context.js";
@@ -421,6 +441,7 @@ function CreateRecurringModal({
 function RecurringRow({
   recurring,
   selected,
+  highlighted = false,
   onSelect,
   pointerReorderBind = null,
   dragging = false,
@@ -428,6 +449,7 @@ function RecurringRow({
 }: {
   recurring: FinancialRecurring;
   selected: boolean;
+  highlighted?: boolean;
   onSelect: () => void;
   pointerReorderBind?: GroupedListPointerItemBind | null;
   dragging?: boolean;
@@ -446,6 +468,7 @@ function RecurringRow({
       ]
         .filter(Boolean)
         .join(" ")}
+      {...keyboardNavItemProps(recurring.id)}
     >
       <div
         className={[
@@ -453,6 +476,7 @@ function RecurringRow({
           canPointerReorder
             ? "finance-categories-view__row-main--draggable"
             : null,
+          keyboardNavListItemClass(highlighted),
         ]
           .filter(Boolean)
           .join(" ")}
@@ -548,6 +572,14 @@ function RecurringDetailPanel({
   );
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      focusAndSelectTitleInput(titleInputRef.current);
+    }, []),
+    { enabled: Boolean(recurring) },
+  );
 
   useEffect(() => {
     if (!recurring) return;
@@ -744,15 +776,25 @@ function RecurringDetailPanel({
               <RecurringIcon icon={recurring.icon} size={28} />
             </button>
             <input
+              ref={titleInputRef}
               className="finance-recurrings-view__title-input"
               value={name}
               disabled={pending}
               aria-label="Recurring name"
+              {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
               onChange={(event) => setName(event.target.value)}
               onBlur={() => {
                 void commitName();
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.nativeEvent.stopImmediatePropagation();
+                  setName(recurring.name);
+                  event.currentTarget.blur();
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.currentTarget.blur();
                 }
@@ -833,6 +875,7 @@ function RecurringDetailPanel({
         goals={goals}
         recurrings={recurrings}
         emptyLabel="No transactions linked to this recurring."
+        listKeyboardNavZone={LIST_KEYBOARD_NAV_ZONE_CONTENT}
         onPatchTransaction={onPatchTransaction}
         onBulkPatchTransactions={onBulkPatchTransactions}
         onBulkDeleteTransactions={onBulkDeleteTransactions}
@@ -1009,6 +1052,10 @@ export function FinanceRecurringsView({
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const rolledNextDatesRef = useRef(new Set<string>());
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
 
   const canReorder = Boolean(onReorder);
 
@@ -1060,9 +1107,39 @@ export function FinanceRecurringsView({
     (id: string) => {
       if (consumeClickSuppression()) return;
       setSelectedId(id);
+      setDetailCollapsed(false);
     },
     [consumeClickSuppression],
   );
+
+  const closeRecurringDetail = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  useListDismissDetailShortcut({
+    enabled: selectedId != null,
+    onDismiss: closeRecurringDetail,
+  });
+
+  const keyboardItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsed[group.id]) continue;
+      for (const row of group.items) {
+        ids.push(row.id);
+      }
+    }
+    return ids;
+  }, [collapsed, groups]);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId,
+    onNavigate: selectRecurring,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0,
+  });
 
   // Persist rolled-forward next dates so past months do not stick as "future".
   // Archived recurrings keep their stored nextDate unchanged.
@@ -1163,7 +1240,12 @@ export function FinanceRecurringsView({
         }
       >
         <div className="finance-categories-view__list-pane">
-          <ul className="overview-grouped-list" role="list">
+          <ul
+            className="overview-grouped-list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
             {groups.map((group) => {
               const isCollapsed = Boolean(collapsed[group.id]);
               const appendKey = financeRecurringGroupAppendOrderKey(group.id);
@@ -1214,6 +1296,7 @@ export function FinanceRecurringsView({
                         key={row.id}
                         recurring={row}
                         selected={selectedId === row.id}
+                        highlighted={highlightedId === row.id}
                         onSelect={() => selectRecurring(row.id)}
                         pointerReorderBind={
                           canReorder

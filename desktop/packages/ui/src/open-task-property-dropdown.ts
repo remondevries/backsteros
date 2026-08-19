@@ -4,6 +4,8 @@ import { resolveComposeModalPropertyScope } from "./compose-modal-shortcut-targe
 import { KEYBOARD_NAV_ITEM_ATTR } from "./keyboard-nav-item.js";
 import { resolveTaskListPropertyScope } from "./resolve-task-list-property-scope.js";
 import {
+  FINANCE_BULK_SCOPE_ATTRIBUTE,
+  FINANCE_FILTER_SCOPE_ATTRIBUTE,
   TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE,
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
   type TaskPropertyDropdownId,
@@ -20,6 +22,10 @@ const TASK_DETAIL_PROPERTY_SCOPE_SELECTORS = [
   ".finance-categories-view__detail",
 ] as const;
 
+function isInertSubtree(element: Element): boolean {
+  return element.closest("[inert]") !== null;
+}
+
 export function getTaskPropertyDropdownTrigger(
   id: TaskPropertyDropdownId,
   scope?: ParentNode | null,
@@ -31,6 +37,9 @@ export function getTaskPropertyDropdownTrigger(
 
   for (const root of roots) {
     if (!(root instanceof HTMLElement) || !root.isConnected) {
+      continue;
+    }
+    if (isInertSubtree(root)) {
       continue;
     }
 
@@ -81,6 +90,24 @@ function resolveTaskBulkPropertyScope(): HTMLElement | null {
   return scope instanceof HTMLElement && scope.isConnected ? scope : null;
 }
 
+function resolveFinanceBulkScope(): HTMLElement | null {
+  const scope = document.querySelector(`[${FINANCE_BULK_SCOPE_ATTRIBUTE}]`);
+  return scope instanceof HTMLElement &&
+    scope.isConnected &&
+    !isInertSubtree(scope)
+    ? scope
+    : null;
+}
+
+function resolveFinanceFilterScope(): HTMLElement | null {
+  const scope = document.querySelector(`[${FINANCE_FILTER_SCOPE_ATTRIBUTE}]`);
+  return scope instanceof HTMLElement &&
+    scope.isConnected &&
+    !isInertSubtree(scope)
+    ? scope
+    : null;
+}
+
 function resolveTaskDetailPropertyScopes(): ParentNode[] {
   const scopes: ParentNode[] = [];
   for (const selector of TASK_DETAIL_PROPERTY_SCOPE_SELECTORS) {
@@ -112,6 +139,57 @@ function tryOpenInScope(
     }
 
     trigger.click();
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Shift+hotkeys: prefer finance bulk bar when a selection is active, otherwise
+ * the floating filter bar. Panels anchor to the trigger (same as a mouse click).
+ */
+export function openFinanceChromeDropdown(
+  id: TaskPropertyDropdownId | TaskPropertyDropdownId[],
+): boolean {
+  const ids = Array.isArray(id) ? id : [id];
+  requestCloseSearchableDropdowns();
+
+  const bulkScope = resolveFinanceBulkScope();
+  if (bulkScope && tryOpenInScope(bulkScope, ids)) {
+    return true;
+  }
+
+  const filterScope = resolveFinanceFilterScope();
+  if (filterScope && tryOpenInScope(filterScope, ids)) {
+    return true;
+  }
+
+  return false;
+}
+
+function resolveFinanceTxDetailScope(): HTMLElement | null {
+  const detail = document.querySelector(".finance-transactions-view__detail");
+  return detail instanceof HTMLElement && detail.isConnected ? detail : null;
+}
+
+/**
+ * Finance transaction property hotkeys: prefer the open right detail panel,
+ * otherwise the keyboard-highlighted list row.
+ */
+export function openFinanceTxPropertyDropdown(
+  id: TaskPropertyDropdownId | TaskPropertyDropdownId[],
+): boolean {
+  const ids = Array.isArray(id) ? id : [id];
+  requestCloseSearchableDropdowns();
+
+  const detailScope = resolveFinanceTxDetailScope();
+  if (detailScope && tryOpenInScope(detailScope, ids)) {
+    return true;
+  }
+
+  const listScope = resolveTaskListPropertyScope();
+  if (listScope && tryOpenInScope(listScope, ids, { centerPlacement: true })) {
     return true;
   }
 

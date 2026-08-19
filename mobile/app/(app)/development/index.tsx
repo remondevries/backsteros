@@ -21,7 +21,10 @@ import { ProjectProgressRing } from "../../../components/project-progress-ring";
 import { ProjectStatusIcon } from "../../../components/project-status-icon";
 import { ProjectTypeGroupHeader } from "../../../components/project-type-group-header";
 import { SectionListHeader } from "../../../components/section-list-header";
-import { StatusGroupHeader } from "../../../components/status-group-header";
+import {
+  StatusGroupHeader,
+  statusGroupEmptySectionFooter,
+} from "../../../components/status-group-header";
 import { TerminalConsoleIcon } from "../../../components/terminal-console-icon";
 import { projectDetailHref } from "../../../lib/detail-href";
 import { isPadDevice } from "../../../lib/device";
@@ -54,6 +57,7 @@ import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
 import { usePullToRevealSearch } from "../../../lib/use-pull-to-reveal-search";
 import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
 import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
+import { useRestReloadFlags } from "../../../lib/use-rest-reload-flags";
 
 type SyncedProjectRow = {
   id: string;
@@ -186,7 +190,14 @@ export default function DevelopmentScreen() {
   const [collapsedOrgs, setCollapsedOrgs] = useState<Set<string>>(
     () => new Set(),
   );
-  const search = usePullToRevealSearch();
+  const {
+    restLoading,
+    pullRefreshing,
+    beginReload,
+    endReload,
+    markHydrated,
+  } = useRestReloadFlags();
+  const search = usePullToRevealSearch({ suppress: pullRefreshing });
 
   const { data: syncedProjects, isLoading: syncLoading } =
     useLocalQuery<SyncedProjectRow>(PROJECTS_SQL);
@@ -204,7 +215,6 @@ export default function DevelopmentScreen() {
     Record<string, ProjectTaskProgress>
   >({});
   const [restError, setRestError] = useState<string | null>(null);
-  const [restLoading, setRestLoading] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -253,8 +263,8 @@ export default function DevelopmentScreen() {
     [syncedOrganizations],
   );
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = beginReload(opts);
     setRestError(null);
     try {
       const [projectsBody, orgsBody, tasksBody] = await Promise.all([
@@ -302,6 +312,7 @@ export default function DevelopmentScreen() {
           })),
         ),
       );
+      markHydrated();
     } catch (reason) {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
@@ -311,9 +322,9 @@ export default function DevelopmentScreen() {
           : detail,
       );
     } finally {
-      setRestLoading(false);
+      endReload(userPull);
     }
-  }, [apiUrl, client]);
+  }, [apiUrl, beginReload, client, endReload, markHydrated]);
 
   useRestListHydration(reloadRest);
 
@@ -409,7 +420,13 @@ export default function DevelopmentScreen() {
     return localProgress;
   }, [localProgress, restProgress, restRows]);
 
+  const hasShownDataRef = useRef(false);
+  if (sourceRows.length > 0) hasShownDataRef.current = true;
+
+  // Full-screen spinner only on first load — keep the list mounted so
+  // remounts / brief empty sync windows cannot jump layout or re-arm search.
   const loading =
+    !hasShownDataRef.current &&
     sourceRows.length === 0 &&
     (restLoading ||
       (restRows == null &&
@@ -463,16 +480,16 @@ export default function DevelopmentScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={restLoading}
+            refreshing={pullRefreshing}
             onRefresh={() => {
-              search.open();
-              void reloadRest();
+              void reloadRest({ userPull: true });
             }}
             tintColor={colors.muted}
             colors={[colors.muted]}
           />
         }
         contentContainerStyle={{
+          paddingTop: isPad ? 0 : 8,
           paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
         }}
         ListHeaderComponent={isPad ? <ProjectOverviewListHeader /> : null}
@@ -492,6 +509,9 @@ export default function DevelopmentScreen() {
             onToggle={() => toggleStatusGroup(section.status)}
           />
         )}
+        renderSectionFooter={({ section }) =>
+          statusGroupEmptySectionFooter(sections, section)
+        }
         renderItem={({ item }) => {
           if (item.kind === "org-header") {
             return (
@@ -499,6 +519,7 @@ export default function DevelopmentScreen() {
                 title={item.label}
                 collapsed={item.collapsed}
                 onToggle={() => toggleOrg(item.collapseKey)}
+                spaced
               />
             );
           }

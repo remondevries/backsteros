@@ -1,5 +1,5 @@
 import { BlurView } from "expo-blur";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Platform,
@@ -25,10 +25,13 @@ import { isPadDevice } from "../lib/device";
 import { colors } from "../lib/theme";
 import {
   AreasNavIcon,
+  FinanceNavIcon,
+  HabitsNavIcon,
   KnowledgeBaseNavIcon,
   LettersNavIcon,
   MoreNavIcon,
   SettingsNavIcon,
+  TasksNavIcon,
 } from "./nav-icons";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { OrganizationIcon } from "./organization-icon";
@@ -55,19 +58,23 @@ const IPAD_PRIMARY_ROUTES = [
   "areas",
   "development",
   "letters",
+  "finance",
   "knowledge",
 ] as const;
+const IPAD_MORE_SECTION_ROUTES = new Set([
+  "habits",
+  "projects",
+  "contacts",
+  "organizations",
+]);
 const PHONE_MORE_SECTION_ROUTES = new Set([
+  "habits",
   "areas",
   "projects",
   "development",
   "letters",
+  "finance",
   "knowledge",
-  "contacts",
-  "organizations",
-]);
-const IPAD_MORE_SECTION_ROUTES = new Set([
-  "projects",
   "contacts",
   "organizations",
 ]);
@@ -205,7 +212,7 @@ function TabItem({
     // Expo Router href navigation (same as Go shortcuts) — tab
     // `navigation.navigate` no-ops from the floating bar while deep in a tab stack.
     if (!event.defaultPrevented) {
-      router.navigate(`/${route.name}`);
+      router.navigate(`/${route.name}` as Href);
     }
   };
 
@@ -249,7 +256,8 @@ export function FloatingTabBar({
   // RN Modal can detach FullWindowOverlay on iOS — remount when becoming visible again.
   const [overlayEpoch, setOverlayEpoch] = useState(0);
   const wasHiddenRef = useRef(hidden);
-  const bottom = Math.max(insets.bottom, 10);
+  // iPad: flush to the bottom edge. Phone keeps a small gap above the home indicator.
+  const bottom = IS_IPAD ? 0 : Math.max(insets.bottom, 10);
 
   const visibility = useSharedValue(hidden ? 0 : 1);
   const moreProgress = useSharedValue(0);
@@ -353,7 +361,7 @@ export function FloatingTabBar({
 
   const moreItems = useMemo<MoreMenuItem[]>(() => {
     const go = (name: string) => {
-      router.navigate(`/${name}`);
+      router.navigate(`/${name}` as Href);
     };
     const overflow: MoreMenuItem[] = [];
     if (!PRIMARY_ROUTES.has("areas")) {
@@ -364,6 +372,12 @@ export function FloatingTabBar({
         icon: (color) => <AreasNavIcon color={color} size={18} />,
       });
     }
+    overflow.push({
+      key: "habits",
+      label: "Habit Tracker",
+      onPress: () => go("habits"),
+      icon: (color) => <HabitsNavIcon color={color} size={18} />,
+    });
     if (!PRIMARY_ROUTES.has("projects")) {
       overflow.push({
         key: "projects",
@@ -386,6 +400,14 @@ export function FloatingTabBar({
         label: "Letters",
         onPress: () => go("letters"),
         icon: (color) => <LettersNavIcon color={color} size={18} />,
+      });
+    }
+    if (!PRIMARY_ROUTES.has("finance")) {
+      overflow.push({
+        key: "finance",
+        label: "Finance",
+        onPress: () => go("finance"),
+        icon: (color) => <FinanceNavIcon color={color} size={18} />,
       });
     }
     if (!PRIMARY_ROUTES.has("knowledge")) {
@@ -627,13 +649,14 @@ const styles = StyleSheet.create({
   },
   moreMenuHost: {
     position: "absolute",
-    left: 0,
     right: 0,
     bottom: PILL_HEIGHT + 10,
     zIndex: 3,
+    // Hug menu content — don’t stretch to the full primary pill width.
+    alignItems: "flex-end",
   },
   moreMenuPill: {
-    width: "100%",
+    alignSelf: "flex-end",
   },
   moreMenuList: {
     zIndex: 2,
@@ -659,8 +682,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   moreMenuItemLabel: {
-    flex: 1,
-    minWidth: 0,
     color: colors.foreground,
     fontSize: 15,
     fontWeight: "500",

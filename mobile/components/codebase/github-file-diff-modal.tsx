@@ -9,7 +9,6 @@ import {
 } from "../../lib/github-diff";
 import { useHideTabBar } from "../../lib/tab-bar-visibility";
 import { colors, spacing } from "../../lib/theme";
-import { ui } from "../../lib/ui";
 
 type Props = {
   visible: boolean;
@@ -40,7 +39,12 @@ export function GithubFileDiffModal({ visible, file, onClose }: Props) {
       presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <View style={[ui.screen, { paddingTop: insets.top }]}>
+      <View
+        style={[
+          styles.root,
+          { paddingTop: insets.top },
+        ]}
+      >
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={2}>
@@ -70,7 +74,7 @@ export function GithubFileDiffModal({ visible, file, onClose }: Props) {
         </View>
 
         {!file ? (
-          <View style={ui.centered}>
+          <View style={styles.centered}>
             <Text style={styles.empty}>No file selected.</Text>
           </View>
         ) : !file.patch ? (
@@ -126,6 +130,17 @@ export function GithubFileDiffModal({ visible, file, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    // Modal + transparent `ui.screen` paints system white on iOS — force dark.
+    backgroundColor: colors.background,
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+  },
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -164,13 +179,16 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
+    backgroundColor: colors.background,
   },
   diffBlock: {
     minWidth: "100%",
     paddingVertical: 8,
+    backgroundColor: colors.background,
   },
   line: {
     paddingHorizontal: 12,
@@ -214,6 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 24,
     justifyContent: "center",
+    backgroundColor: colors.background,
   },
   empty: {
     color: colors.muted,

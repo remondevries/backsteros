@@ -3,7 +3,8 @@ import { and, asc, desc, eq, gte, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { taskActivities, tasks, users } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
-import { activityActorName, authorDisplayName } from "./task-comments.js";
+import type { TaskWriteActor } from "../lib/write-actor.js";
+import { resolveWriteActorProfile } from "./task-comments.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -28,11 +29,7 @@ const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
 /** Rapid edits of the same property within this window update the prior row. */
 export const ACTIVITY_COALESCE_WINDOW_MS = 30_000;
 
-export type TaskWriteActor = {
-  userId: string | null;
-  /** When `agent`, activity is attributed to Agent even if a user is authenticated. */
-  kind?: "user" | "agent";
-};
+export type { TaskWriteActor } from "../lib/write-actor.js";
 
 export type TaskActivityListRow = typeof taskActivities.$inferSelect & {
   userDisplayName: string | null;
@@ -55,33 +52,11 @@ function activityValuesEqual(a: unknown, b: unknown): boolean {
 }
 
 async function resolveActorProfile(
+  workspaceId: string,
   actor: TaskWriteActor | null | undefined,
   executor: DbExecutor,
-): Promise<{
-  userId: string | null;
-  email: string | null;
-  name: string | null;
-}> {
-  if (!actor || actor.kind === "agent" || !actor.userId) {
-    return {
-      userId: null,
-      email: null,
-      name: actor?.kind === "agent" ? "Agent" : null,
-    };
-  }
-  const [user] = await executor
-    .select({
-      email: users.email,
-      displayName: users.displayName,
-    })
-    .from(users)
-    .where(eq(users.id, actor.userId))
-    .limit(1);
-  const email = user?.email ?? null;
-  const name =
-    user?.displayName?.trim() ||
-    (email ? authorDisplayName(email) : null);
-  return { userId: actor.userId, email, name };
+) {
+  return resolveWriteActorProfile(workspaceId, actor, executor);
 }
 
 export async function recordTaskActivity(
@@ -92,13 +67,15 @@ export async function recordTaskActivity(
   actor: TaskWriteActor | null | undefined,
   executor: DbExecutor = db,
 ) {
-  const resolved = await resolveActorProfile(actor, executor);
+  const resolved = await resolveActorProfile(workspaceId, actor, executor);
 
   if (COALESCEABLE_ACTIVITY_TYPES.has(type)) {
     const since = new Date(Date.now() - ACTIVITY_COALESCE_WINDOW_MS);
-    const actorMatch = resolved.userId
-      ? eq(taskActivities.actorUserId, resolved.userId)
-      : isNull(taskActivities.actorUserId);
+    const actorMatch = resolved.contactId
+      ? eq(taskActivities.actorContactId, resolved.contactId)
+      : resolved.userId
+        ? eq(taskActivities.actorUserId, resolved.userId)
+        : isNull(taskActivities.actorUserId);
     const [recent] = await executor
       .select()
       .from(taskActivities)
@@ -144,6 +121,7 @@ export async function recordTaskActivity(
           data: merged,
           actorEmail: resolved.email ?? recent.actorEmail,
           actorName: resolved.name ?? recent.actorName,
+          actorContactId: resolved.contactId ?? recent.actorContactId,
           createdAt: new Date(),
         })
         .where(eq(taskActivities.id, recent.id))
@@ -160,6 +138,7 @@ export async function recordTaskActivity(
       taskId,
       type,
       actorUserId: resolved.userId,
+      actorContactId: resolved.contactId,
       actorEmail: resolved.email,
       actorName: resolved.name,
       data,
@@ -173,6 +152,7 @@ export async function createClientTaskActivity(
   taskId: string,
   type: Extract<TaskActivityType, "agent_worked">,
   data: Record<string, unknown>,
+  actor: TaskWriteActor | null = { userId: null, kind: "agent" },
   executor: DbExecutor = db,
 ) {
   const [task] = await executor
@@ -193,7 +173,7 @@ export async function createClientTaskActivity(
     taskId,
     type,
     { ...data },
-    { userId: null, kind: "agent" },
+    actor,
     executor,
   );
 }
@@ -223,6 +203,7 @@ export async function listTaskActivities(
       taskId: taskActivities.taskId,
       type: taskActivities.type,
       actorUserId: taskActivities.actorUserId,
+      actorContactId: taskActivities.actorContactId,
       actorEmail: taskActivities.actorEmail,
       actorName: taskActivities.actorName,
       data: taskActivities.data,
@@ -243,4 +224,4 @@ export async function listTaskActivities(
   return rows;
 }
 
-export { activityActorName, authorDisplayName };
+export { activityActorName, authorDisplayName } from "./task-comments.js";

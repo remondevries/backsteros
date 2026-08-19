@@ -1,21 +1,35 @@
 import type { Task } from "@backsteros/contracts";
 import { useUser } from "@clerk/clerk-expo";
+import { useNavigation } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 
 import { noteLocalTaskStatusPatch } from "../lib/agent-status-notifications";
+import {
+  flattenInboxAttentionOrder,
+  isAgentInboxPending,
+  pickIdAfterRemoving,
+  taskBelongsInInbox,
+} from "../lib/inbox-attention";
+import { readAgentSurfaceTabs } from "../lib/agent/agent-surface-tabs";
 import { isPadDevice } from "../lib/device";
 import { projectDetailHref } from "../lib/detail-href";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
-import { tabDetailScreenOptions } from "../lib/tab-stack-options";
+import {
+  TabStackHeaderBackButton,
+  tabDetailScreenOptions,
+} from "../lib/tab-stack-options";
 import {
   formatTaskDueMetaLabel,
 } from "../lib/task-due-date";
@@ -33,24 +47,28 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../lib/task-status";
+import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useTaskDetail } from "../lib/use-task-detail";
-import { CodebaseTaskAgentPane } from "./agent/codebase-task-agent-pane";
+import { PhoneTaskSurfacesSlide } from "./agent/surfaces/phone-task-surfaces-slide";
+import { SurfacesActivePulseDot } from "./agent/surfaces/surfaces-active-pulse-dot";
+import {
+  TaskAgentSurfacesHost,
+  type SurfaceTabsController,
+} from "./agent/surfaces/task-agent-surfaces-host";
 import { CodebaseTaskLayout } from "./codebase/codebase-task-layout";
 import { ContactAvatarIcon } from "./contact-avatar-icon";
 import { ContactPersonIcon } from "./contact-person-icon";
-import { DetailContentContainer } from "./detail-content-container";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
-import { DetailWithPropertiesLayout } from "./detail-with-properties-layout";
-import { EntityPropertiesSection } from "./entity-properties-section";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { ProjectIcon } from "./project-icon";
+import { ProjectsSidePanelIcon } from "./projects-side-panel-icon";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -87,12 +105,36 @@ const CONTACTS_SQL = `SELECT id, name, avatar_storage_key FROM contacts
   WHERE deleted_at IS NULL
   ORDER BY name COLLATE NOCASE ASC`;
 
-/** Stable style ref — avoid rebuilding native header mid interactive pop. */
-const DETAIL_HEADER_TITLE_STYLE = {
-  color: colors.muted,
-  fontSize: 13,
-  fontFamily: "Menlo",
-  fontWeight: "400" as const,
+/** Lightweight inbox snapshot for Approve neighbor selection. */
+const INBOX_NAV_SQL = `${TASK_LIST_SELECT}
+ WHERE t.deleted_at IS NULL AND (
+   t.inbox = 1
+   OR (
+     t.agent_created_at IS NOT NULL
+     AND t.agent_inbox_approved_at IS NULL
+   )
+   OR (
+     t.status IN ('on_hold', 'in_review')
+     AND (
+       t.due_date IS NULL
+       OR date(t.due_date) <= date('now', 'localtime')
+     )
+   )
+   OR (
+     t.due_date IS NOT NULL
+     AND date(t.due_date) < date('now', 'localtime')
+     AND t.status NOT IN ('completed', 'canceled', 'duplicated')
+   )
+ )
+ ORDER BY t.sort_order ASC, t.updated_at DESC`;
+
+type InboxNavRow = {
+  id: string;
+  status: string | null;
+  inbox?: boolean | number | null;
+  due_date?: string | null;
+  agent_created_at?: string | null;
+  agent_inbox_approved_at?: string | null;
 };
 
 function asTaskStatus(value: string | null | undefined): TaskStatus {
@@ -105,12 +147,13 @@ function asTaskStatus(value: string | null | undefined): TaskStatus {
 export function TaskDetailScreen({ taskId }: Props) {
   const segments = useSegments();
   const router = useRouter();
+  const navigation = useNavigation();
   const powerSync = useMobilePowerSync();
   const { user } = useUser();
 
   const client = useMobileApiClient();
-  const inPadInboxSplit =
-    isPadDevice() && (segments as string[]).includes("inbox");
+  const inInboxRoute = (segments as string[]).includes("inbox");
+  const inPadInboxSplit = isPadDevice() && inInboxRoute;
 
   const requestJson = useCallback(
     <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
@@ -130,6 +173,9 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
   const { data: syncedContacts } = useLocalQuery<ContactOptionRow>(CONTACTS_SQL);
+  const { data: inboxNavRows } = useLocalQuery<InboxNavRow>(
+    inInboxRoute ? INBOX_NAV_SQL : "SELECT id FROM tasks WHERE 0",
+  );
 
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
@@ -151,6 +197,45 @@ export function TaskDetailScreen({ taskId }: Props) {
     id: string;
     name: string;
   } | null>(null);
+  const [phoneSurfacesOpen, setPhoneSurfacesOpen] = useState(false);
+  const [padSurfacesCollapsed, setPadSurfacesCollapsed] = useState(false);
+  const [padDetailCollapsed, setPadDetailCollapsed] = useState(false);
+  const [phoneTabsController, setPhoneTabsController] =
+    useState<SurfaceTabsController | null>(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const phoneContentSlide = useRef(new Animated.Value(0)).current;
+  const phoneSurfacesOpenRef = useRef(phoneSurfacesOpen);
+  phoneSurfacesOpenRef.current = phoneSurfacesOpen;
+  const iosPushEasing = useMemo(() => Easing.bezier(0.32, 0.72, 0, 1), []);
+
+  useEffect(() => {
+    if (isPadDevice()) return;
+    Animated.timing(phoneContentSlide, {
+      toValue: phoneSurfacesOpen ? 1 : 0,
+      duration: 350,
+      easing: iosPushEasing,
+      useNativeDriver: true,
+    }).start();
+  }, [iosPushEasing, phoneContentSlide, phoneSurfacesOpen]);
+
+  const togglePhoneSurfaces = useCallback(() => {
+    setPhoneSurfacesOpen((open) => !open);
+  }, []);
+
+  const closePhoneSurfaces = useCallback(() => {
+    setPhoneSurfacesOpen(false);
+  }, []);
+
+  // Swipe / hardware back while surfaces are open → return to the task.
+  useEffect(() => {
+    if (isPadDevice()) return;
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      if (!phoneSurfacesOpenRef.current) return;
+      event.preventDefault();
+      closePhoneSurfaces();
+    });
+    return unsubscribe;
+  }, [closePhoneSurfaces, navigation]);
 
   useEffect(() => {
     setLocalTitle(null);
@@ -162,7 +247,45 @@ export function TaskDetailScreen({ taskId }: Props) {
     setPicker(null);
     setPropertyError(null);
     setMovedToProject(null);
+    setPhoneSurfacesOpen(false);
+    setPadSurfacesCollapsed(false);
+    setPadDetailCollapsed(false);
+    setPhoneTabsController(null);
   }, [taskId]);
+
+  // Keep the bound chat id in sync with PowerSync / API so other devices
+  // (and navigate-away) pick up the same session.
+  useEffect(() => {
+    if (!task) return;
+    const fromSync = task.agent_chat_id?.trim() || null;
+    if (fromSync) {
+      setLocalAgentChatId(fromSync);
+    }
+  }, [task?.id, task?.agent_chat_id]);
+
+  // Desktop fillMissingAgentChatIdFromApi — local sync can lag or omit the field.
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+    void client
+      .requestJson<Task>(`/api/v1/tasks/${encodeURIComponent(taskId)}`)
+      .then((remote) => {
+        if (cancelled) return;
+        const remoteId = remote.agentChatId?.trim() || null;
+        if (!remoteId) return;
+        setLocalAgentChatId(remoteId);
+        applyTaskRowOverride(taskId, { agent_chat_id: remoteId });
+        if (powerSync.ready) {
+          void powerSync.patchTask(taskId, { agent_chat_id: remoteId });
+        }
+      })
+      .catch(() => {
+        /* offline — rely on PowerSync */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, powerSync, taskId]);
 
   useEffect(() => {
     if (!task) return;
@@ -272,7 +395,11 @@ export function TaskDetailScreen({ taskId }: Props) {
       if (key === "dueDate") sqliteValues.due_date = value;
       else if (key === "assigneeId") sqliteValues.assignee_id = value;
       else if (key === "projectId") sqliteValues.project_id = value;
-      else if (key === "inbox") sqliteValues.inbox = value ? 1 : 0;
+      else if (key === "agentInboxApproved") {
+        if (value === true) {
+          sqliteValues.agent_inbox_approved_at = new Date().toISOString();
+        }
+      } else if (key === "inbox") sqliteValues.inbox = value ? 1 : 0;
       else sqliteValues[key] = value;
     }
     applyTaskRowOverride(task.id, {
@@ -489,21 +616,98 @@ export function TaskDetailScreen({ taskId }: Props) {
       : []),
   ];
 
-  const detailScreenOptions = useMemo(
-    () => ({
-      ...tabDetailScreenOptions(),
-      // Native back chevron + task id as left-aligned title (no custom headerLeft).
-      title: task?.display_id ?? "",
+  const phoneHasOpenSurfaceTabs =
+    (phoneTabsController?.state.tabs.length ??
+      readAgentSurfaceTabs(taskId).tabs.length) > 0;
+
+  const detailScreenOptions = useMemo(() => {
+    const base = {
+      // iPad: solid black canvas (not `embedded` surface). Only the left task
+      // column is carded inside CodebaseTaskLayout; chat floats on the shell.
+      ...tabDetailScreenOptions({ embedded: false }),
+      // Task id lives above the title in content (letter/detail parity).
+      title: "",
+      headerTitle: (): ReactNode => null,
       headerTitleAlign: "left" as const,
-      headerTitleStyle: DETAIL_HEADER_TITLE_STYLE,
-      // Always keep the native header — property sheets must not leave it hidden.
-      headerShown: true,
-      ...(inPadInboxSplit ? { headerBackVisible: false } : null),
-    }),
-    // Only re-apply when the visible header chrome actually changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- task?.display_id
-    [inPadInboxSplit, task?.display_id],
-  );
+      // iPad: no stack header — Back lives in the left task column so the
+      // right chat/surfaces pane can sit flush to the top of the canvas.
+      headerShown: !isPadDevice(),
+      ...(isPadDevice()
+        ? {
+            headerBackVisible: false,
+            headerLeft: () => null,
+            contentStyle: { backgroundColor: colors.background },
+            headerStyle: { backgroundColor: colors.background },
+          }
+        : null),
+    };
+
+    if (isPadDevice()) return base;
+
+    // Task page: stack back returns to wherever the user came from. Surfaces
+    // open as a full-window push overlay (header stays put underneath).
+    return {
+      ...base,
+      header: undefined,
+      // Custom left replaces native back so a sticky headerLeft: null from the
+      // surfaces header cannot leave this screen without a way back.
+      headerBackVisible: false,
+      headerLeft: (props: {
+        canGoBack?: boolean;
+        tintColor?: string;
+      }): ReactNode => {
+        if (!props.canGoBack && !navigation.canGoBack()) {
+          return null;
+        }
+        return (
+          <TabStackHeaderBackButton
+            tintColor={props.tintColor}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+                return;
+              }
+              router.back();
+            }}
+          />
+        );
+      },
+      headerRight: (): ReactNode => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show surfaces"
+          accessibilityState={{ expanded: false }}
+          hitSlop={8}
+          onPress={togglePhoneSurfaces}
+          style={({ pressed }) => [
+            styles.headerToggle,
+            pressed ? { opacity: 0.55 } : null,
+          ]}
+        >
+          <ProjectsSidePanelIcon
+            size={18}
+            rail="end"
+            collapsed={false}
+            color={colors.foreground}
+          />
+          <SurfacesActivePulseDot visible={phoneHasOpenSurfaceTabs} />
+        </Pressable>
+      ),
+    };
+  }, [
+    navigation,
+    phoneHasOpenSurfaceTabs,
+    router,
+    togglePhoneSurfaces,
+  ]);
+
+  const handlePadDetailBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    router.back();
+  }, [navigation, router]);
 
   if (loading) {
     return (
@@ -530,32 +734,43 @@ export function TaskDetailScreen({ taskId }: Props) {
     );
   }
 
-  const useSideProperties = isPadDevice() && !isCodebaseTask;
-  const useCodebasePadLayout = isPadDevice() && isCodebaseTask;
+  const usePadSurfacesLayout = isPadDevice();
   /** Nested Modals only when phone chips sheet hosts pickers. */
-  const embedPropertySheets = !useSideProperties;
+  const embedPropertySheets = !usePadSurfacesLayout;
 
-  const propertyEditor = useSideProperties ? (
-    <>
-      <EntityPropertiesSection title="Properties">
-        <DetailPropertyEditorRows
-          rows={propertyRows}
-          onPressRow={(key) => setPicker(key as PickerKind)}
-          variant="card"
-        />
-      </EntityPropertiesSection>
-      <EntityPropertiesSection title="Project">
-        <DetailPropertyEditorRows
-          rows={projectRows}
-          onPressRow={(key) => setPicker(key as PickerKind)}
-          variant="card"
-        />
-      </EntityPropertiesSection>
-      {propertyError ? (
-        <Text style={[ui.error, { paddingTop: 4 }]}>{propertyError}</Text>
-      ) : null}
-    </>
-  ) : (
+  const agentInboxPending = task
+    ? isAgentInboxPending({
+        agent_created_at: task.agent_created_at,
+        agent_inbox_approved_at: task.agent_inbox_approved_at,
+      })
+    : false;
+
+  function approveAgentInbox() {
+    if (!task) return;
+    const orderedIds = flattenInboxAttentionOrder(
+      inboxNavRows.filter((row) =>
+        taskBelongsInInbox({
+          inbox: row.inbox,
+          status: row.status,
+          due_date: row.due_date,
+          agent_created_at: row.agent_created_at,
+          agent_inbox_approved_at: row.agent_inbox_approved_at,
+        }),
+      ),
+    ).map((row) => row.id);
+    const nextId = inInboxRoute
+      ? pickIdAfterRemoving(orderedIds, task.id)
+      : null;
+    void patchProperty({ agentInboxApproved: true });
+    if (!inInboxRoute) return;
+    if (nextId) {
+      router.replace(`/(app)/inbox/${nextId}`);
+      return;
+    }
+    router.replace("/(app)/inbox");
+  }
+
+  const propertyEditor = (
     <>
       <DetailPropertyEditorRows
         rows={allPropertyRows}
@@ -566,6 +781,22 @@ export function TaskDetailScreen({ taskId }: Props) {
       ) : null}
     </>
   );
+
+  const agentApproveButton = agentInboxPending ? (
+    <View style={styles.agentApproveWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Approve"
+        style={({ pressed }) => [
+          styles.agentApproveButton,
+          pressed ? styles.agentApproveButtonPressed : null,
+        ]}
+        onPress={approveAgentInbox}
+      >
+        <Text style={styles.agentApproveButtonLabel}>Approve</Text>
+      </Pressable>
+    </View>
+  ) : null;
 
   const propertySheets = (
     <>
@@ -670,8 +901,39 @@ export function TaskDetailScreen({ taskId }: Props) {
   );
 
   /** Title/description stay editable inline — save on blur, no header Edit/Save. */
+  const showPadDetailBack =
+    usePadSurfacesLayout && !inPadInboxSplit && navigation.canGoBack();
+  const showPadDetailToggle = usePadSurfacesLayout;
+
   const titleDescriptionEditors = (
     <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
+      {showPadDetailBack || showPadDetailToggle ? (
+        <View style={styles.padDetailChrome}>
+          {showPadDetailBack ? (
+            <TabStackHeaderBackButton
+              label="Back"
+              onPress={handlePadDetailBack}
+            />
+          ) : (
+            <View style={styles.padDetailChromeSpacer} />
+          )}
+          {showPadDetailToggle ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Hide task details"
+              accessibilityState={{ expanded: true }}
+              hitSlop={8}
+              onPress={() => setPadDetailCollapsed(true)}
+              style={({ pressed }) => [
+                styles.padDetailToggle,
+                pressed ? { opacity: 0.55 } : null,
+              ]}
+            >
+              <ProjectsSidePanelIcon size={18} color={colors.foreground} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {movedToProject ? (
         <Pressable
           onPress={() => router.push(projectDetailHref(movedToProject.id))}
@@ -684,6 +946,9 @@ export function TaskDetailScreen({ taskId }: Props) {
             <Text style={styles.movedBannerLink}>{movedToProject.name}</Text>.
           </Text>
         </Pressable>
+      ) : null}
+      {task.display_id ? (
+        <Text style={ui.detailId}>{task.display_id}</Text>
       ) : null}
       <TextInput
         value={draftTitle}
@@ -733,15 +998,14 @@ export function TaskDetailScreen({ taskId }: Props) {
     >
       {titleDescriptionEditors}
 
-      {useSideProperties ? null : (
-        <DetailPropertiesInlineShell
-          modalTitle="Task properties"
-          chips={propertyChips}
-          overlay={propertySheets}
-        >
-          {propertyEditor}
-        </DetailPropertiesInlineShell>
-      )}
+      <DetailPropertiesInlineShell
+        modalTitle="Task properties"
+        chips={propertyChips}
+        overlay={propertySheets}
+      >
+        {propertyEditor}
+      </DetailPropertiesInlineShell>
+      {agentApproveButton}
 
       <TaskActivityPanel
         taskId={task.id}
@@ -752,57 +1016,69 @@ export function TaskDetailScreen({ taskId }: Props) {
     </KeyboardAwareScrollView>
   );
 
-  const alwaysEditMainPad = (
-    <KeyboardAwareScrollView
-      style={ui.screen}
-      contentContainerStyle={styles.detailScrollContent}
-      bottomClearance={FLOATING_TAB_BAR_CLEARANCE}
-      keepEndVisibleWhileTyping
-    >
-      <DetailContentContainer constrained>
-        {titleDescriptionEditors}
-        <TaskActivityPanel
-          taskId={task.id}
-          feedRevision={activityFeedRevision}
-          requestJson={requestJson}
-          currentUser={currentUser}
-        />
-      </DetailContentContainer>
-    </KeyboardAwareScrollView>
-  );
+  const surfacesHostProps = {
+    taskId: task.id,
+    taskNumber: task.number,
+    taskTitle: task.title,
+    taskDescription: task.description,
+    taskDisplayId: task.display_id,
+    projectId: task.project_id,
+    projectKey: task.project_key,
+    projectLabel: task.project_name ?? "Task",
+    cwd: task.project_local_working_directory,
+    isCodebaseProject: isCodebaseTask,
+    agentChatId: localAgentChatId ?? task.agent_chat_id,
+    onAgentChatIdChange,
+    onHide: usePadSurfacesLayout
+      ? () => setPadSurfacesCollapsed(true)
+      : undefined,
+    collapsed: usePadSurfacesLayout ? padSurfacesCollapsed : false,
+    onExpand: usePadSurfacesLayout
+      ? () => setPadSurfacesCollapsed(false)
+      : undefined,
+    hideInlineTabBar: !usePadSurfacesLayout,
+    onTabsControllerChange: !usePadSurfacesLayout
+      ? setPhoneTabsController
+      : undefined,
+  } as const;
+
+  const phoneContentTranslateX = phoneContentSlide.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -Math.round(windowWidth * 0.3)],
+  });
 
   return (
     <>
       <Stack.Screen options={detailScreenOptions} />
-      {useCodebasePadLayout ? (
+      {usePadSurfacesLayout ? (
         <CodebaseTaskLayout
           detail={alwaysEditMain}
-          agent={
-            <CodebaseTaskAgentPane
-              taskId={task.id}
-              taskNumber={task.number}
-              taskTitle={task.title}
-              taskDescription={task.description}
-              taskDisplayId={task.display_id}
-              projectId={task.project_id!}
-              projectKey={task.project_key}
-              projectLabel={task.project_name ?? "Task"}
-              cwd={task.project_local_working_directory}
-              agentChatId={localAgentChatId ?? task.agent_chat_id}
-              onAgentChatIdChange={onAgentChatIdChange}
-            />
-          }
+          surfacesCollapsed={padSurfacesCollapsed}
+          detailCollapsed={padDetailCollapsed}
+          onExpandDetail={() => setPadDetailCollapsed(false)}
+          agent={<TaskAgentSurfacesHost {...surfacesHostProps} />}
         />
-      ) : useSideProperties ? (
-        <>
-          <DetailWithPropertiesLayout
-            main={alwaysEditMainPad}
-            properties={propertyEditor}
-          />
-          {propertySheets}
-        </>
       ) : (
-        alwaysEditMain
+        <View style={styles.phoneRoot}>
+          <Animated.View
+            style={[
+              styles.phoneContent,
+              {
+                transform: [{ translateX: phoneContentTranslateX }],
+              },
+            ]}
+            pointerEvents={phoneSurfacesOpen ? "none" : "auto"}
+          >
+            {alwaysEditMain}
+          </Animated.View>
+          <PhoneTaskSurfacesSlide
+            visible={phoneSurfacesOpen}
+            keepMounted={phoneHasOpenSurfaceTabs}
+            onBack={closePhoneSurfaces}
+            controller={phoneTabsController}
+            {...surfacesHostProps}
+          />
+        </View>
       )}
     </>
   );
@@ -810,9 +1086,39 @@ export function TaskDetailScreen({ taskId }: Props) {
 
 /** Full pane width so DetailContentContainer maxWidth can center. */
 const styles = StyleSheet.create({
-  detailScrollContent: {
-    width: "100%",
-    flexGrow: 1,
+  phoneRoot: {
+    flex: 1,
+    minHeight: 0,
+  },
+  phoneContent: {
+    flex: 1,
+    minHeight: 0,
+  },
+  headerToggle: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+    borderRadius: 8,
+  },
+  padDetailChrome: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 2,
+  },
+  padDetailChromeSpacer: {
+    flex: 1,
+  },
+  padDetailToggle: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    marginRight: -6,
   },
   movedBanner: {
     paddingVertical: 10,
@@ -831,5 +1137,29 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontWeight: "600",
     textDecorationLine: "underline",
+  },
+  agentApproveWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  agentApproveButton: {
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    paddingHorizontal: 12,
+  },
+  agentApproveButtonPressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+  },
+  agentApproveButtonLabel: {
+    color: colors.foreground,
+    fontSize: 13,
+    fontWeight: "500",
+    letterSpacing: -0.1,
   },
 });

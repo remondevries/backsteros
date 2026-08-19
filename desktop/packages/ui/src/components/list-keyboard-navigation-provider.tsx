@@ -32,6 +32,7 @@ import { stepListKeyboardIndex } from "../list-keyboard-nav-index.js";
 import {
   getDefaultListKeyboardNavZone,
   getListKeyboardNavTabDirection,
+  filterListKeyboardNavZonesForTab,
   LIST_KEYBOARD_NAV_CONTENT_PRIORITY,
   LIST_KEYBOARD_NAV_ZONE_ORDER,
   resolveActiveListKeyboardNavZone,
@@ -48,6 +49,10 @@ import {
   shouldHandleListKeyboardActivate,
   shouldHandleListKeyboardNavigation,
 } from "../should-handle-list-keyboard-navigation.js";
+import {
+  isListDetailPanelOpen,
+  shouldYieldListKeyboardEscapeToShortcutStack,
+} from "../use-list-clear-selection-shortcut.js";
 import { isBlockingModalOpen } from "../shortcut-guards.js";
 import { useCommandPalette } from "./command-palette-context.js";
 
@@ -633,6 +638,11 @@ function ListKeyboardNavigationGlobalListener({
         escapeReturnsToSidepanelRef.current &&
         shouldHandleListKeyboardEscape(event, commandPaletteOpen)
       ) {
+        // Detail open / multi-select: another window capture listener owns Escape.
+        // Yield even if that listener is registered after this one.
+        if (shouldYieldListKeyboardEscapeToShortcutStack()) {
+          return;
+        }
         const currentZone = activeZoneRef.current;
         if (currentZone === "main" || currentZone === "content") {
           const sidepanel = pickBestRegistrationInZone(
@@ -653,7 +663,10 @@ function ListKeyboardNavigationGlobalListener({
       }
 
       if (shouldHandleListKeyboardZoneTab(event)) {
-        const available = getAvailableKeyboardNavZones(registrationsRef.current);
+        const available = filterListKeyboardNavZonesForTab(
+          getAvailableKeyboardNavZones(registrationsRef.current),
+          isListDetailPanelOpen(),
+        );
         if (available.length === 0) {
           event.preventDefault();
           return;
@@ -667,10 +680,9 @@ function ListKeyboardNavigationGlobalListener({
           )?.zone ??
           available[0]!;
         const direction = getListKeyboardNavTabDirection(event);
-        const currentHasItems = zoneHasNavigableItems(
-          registrationsRef.current,
-          currentZone,
-        );
+        const currentHasItems =
+          available.includes(currentZone) &&
+          zoneHasNavigableItems(registrationsRef.current, currentZone);
         const nextZone = resolveListKeyboardNavTabTargetZone(
           currentZone,
           direction,
@@ -975,6 +987,9 @@ export function useListKeyboardNavigationContainerProps(
   return {
     tabIndex: -1,
     "data-list-keyboard-nav-container": true,
+    ...(zone
+      ? { "data-list-keyboard-nav-zone": zone }
+      : {}),
     onPointerDownCapture: (event: PointerEvent<HTMLElement>) => {
       event.currentTarget.focus({ preventScroll: true });
       if (zone) {

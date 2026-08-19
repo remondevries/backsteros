@@ -11,6 +11,7 @@ import {
 } from "./task-status";
 
 export const INBOX_ATTENTION_STATUS_ORDER = [
+  "agents",
   "overdue",
   "triage",
   "on_hold",
@@ -36,6 +37,24 @@ function isInactiveTaskStatus(status: string | null | undefined): boolean {
   return INACTIVE_TASK_STATUSES.has(migrateLegacyTaskStatus(status));
 }
 
+function hasTimestamp(value: unknown): boolean {
+  return value != null && value !== "";
+}
+
+export function isAgentInboxPending(input: {
+  agent_created_at?: string | null;
+  agentCreatedAt?: string | number | null;
+  agent_inbox_approved_at?: string | null;
+  agentInboxApprovedAt?: string | number | null;
+}): boolean {
+  const created =
+    input.agent_created_at ?? input.agentCreatedAt ?? null;
+  if (!hasTimestamp(created)) return false;
+  const approved =
+    input.agent_inbox_approved_at ?? input.agentInboxApprovedAt ?? null;
+  return !hasTimestamp(approved);
+}
+
 export function isInboxOverdueTask(
   input: {
     due_date?: string | null;
@@ -56,9 +75,14 @@ export function taskBelongsInInbox(
     status?: string | null;
     due_date?: string | null;
     dueDate?: string | number | Date | null;
+    agent_created_at?: string | null;
+    agentCreatedAt?: string | number | null;
+    agent_inbox_approved_at?: string | null;
+    agentInboxApprovedAt?: string | number | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  if (isAgentInboxPending(input)) return true;
   if (input.inbox === true || input.inbox === 1) return true;
   const status = migrateLegacyTaskStatus(input.status);
   if (
@@ -79,9 +103,14 @@ export function getInboxAttentionGroupKey(
     status?: string | null;
     due_date?: string | null;
     dueDate?: string | number | Date | null;
+    agent_created_at?: string | null;
+    agentCreatedAt?: string | number | null;
+    agent_inbox_approved_at?: string | null;
+    agentInboxApprovedAt?: string | number | null;
   },
   referenceDate: Date = new Date(),
 ): InboxAttentionStatus | "other" {
+  if (isAgentInboxPending(input)) return "agents";
   if (isInboxOverdueTask(input, referenceDate)) return "overdue";
   const status = migrateLegacyTaskStatus(input.status);
   if (input.inbox === true || input.inbox === 1 || status === "triage") {
@@ -93,6 +122,7 @@ export function getInboxAttentionGroupKey(
 }
 
 export function getInboxAttentionGroupLabel(status: string): string {
+  if (status === "agents") return "Agents";
   if (status === "overdue") return "Overdue";
   return getTaskStatusLabel(status);
 }
@@ -108,6 +138,10 @@ export function groupInboxRowsByAttentionStatus<
     inbox?: boolean | number | null;
     status?: string | null;
     due_date?: string | null;
+    agent_created_at?: string | null;
+    agentCreatedAt?: string | number | null;
+    agent_inbox_approved_at?: string | null;
+    agentInboxApprovedAt?: string | number | null;
   },
 >(rows: readonly T[], referenceDate: Date = new Date()): InboxAttentionGroup<T>[] {
   const buckets = new Map<string, T[]>();
@@ -137,4 +171,35 @@ export function groupInboxRowsByAttentionStatus<
     groups.push({ status: "other", label: "Other", data: other });
   }
   return groups;
+}
+
+/**
+ * After dismissing an inbox row (e.g. agent Approve), pick the neighbor to open:
+ * prefer the item above, else the next item, else null (empty inbox).
+ */
+export function pickIdAfterRemoving(
+  orderedIds: readonly string[],
+  removedId: string,
+): string | null {
+  const index = orderedIds.indexOf(removedId);
+  if (index === -1) {
+    return orderedIds.find((id) => id !== removedId) ?? null;
+  }
+  if (index > 0) {
+    return orderedIds[index - 1] ?? null;
+  }
+  if (index + 1 < orderedIds.length) {
+    return orderedIds[index + 1] ?? null;
+  }
+  return null;
+}
+
+/** Flat visual order matching attention-grouped inbox sections. */
+export function flattenInboxAttentionOrder<T extends { id: string }>(
+  rows: readonly T[],
+  referenceDate: Date = new Date(),
+): T[] {
+  return groupInboxRowsByAttentionStatus(rows, referenceDate).flatMap(
+    (group) => group.data,
+  );
 }

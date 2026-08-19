@@ -1,3 +1,4 @@
+import { isEmailPath } from "./email.js";
 import { isJournalSectionPath } from "./journal.js";
 import {
   isContactSectionPath,
@@ -11,7 +12,10 @@ import {
 } from "./letters.js";
 import { isProjectDocumentsSectionPath } from "./should-handle-document-tree-create-folder-shortcut.js";
 
+export { isEmailPath } from "./email.js";
+
 export const INBOX_TASK_LIST_PANEL_WIDTH_KEY = "inbox-task-list-panel-width";
+export const EMAIL_LIST_PANEL_WIDTH_KEY = "email-list-panel-width";
 export const JOURNAL_LIST_PANEL_WIDTH_KEY = "journal-list-panel-width";
 export const KNOWLEDGE_LIST_PANEL_WIDTH_KEY = "knowledge-list-panel-width";
 export const DOCUMENTS_LIST_PANEL_WIDTH_KEY = "documents-list-panel-width";
@@ -26,6 +30,7 @@ export function shouldShowContentSidePanel(pathname: string): boolean {
   return (
     pathname === "/inbox" ||
     pathname.startsWith("/inbox/") ||
+    isEmailPath(pathname) ||
     isJournalSectionPath(pathname) ||
     isKnowledgeSectionPath(pathname) ||
     isLettersSectionPath(pathname) ||
@@ -61,6 +66,9 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   }
   if (isJournalSectionPath(pathname)) {
     return JOURNAL_LIST_PANEL_WIDTH_KEY;
+  }
+  if (isEmailPath(pathname)) {
+    return EMAIL_LIST_PANEL_WIDTH_KEY;
   }
   return INBOX_TASK_LIST_PANEL_WIDTH_KEY;
 }

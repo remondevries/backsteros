@@ -12,6 +12,7 @@ import {
   encodeTaskSlug,
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
+  getInboxHrefAfterRemovingItem,
   getInboxItemDisplayId,
   getInboxTaskRouteSlugForTask,
   getProjectTaskHref,
@@ -341,6 +342,11 @@ export function InboxPage() {
           assigneeName: assignee?.name ?? null,
           projectKey: project?.key ?? resolvedProjectKey,
           projectName: project?.name ?? selectedTask.projectName ?? null,
+          agentCreatedAt: selectedTaskRecord?.agentCreatedAt ?? selectedTask.agentCreatedAt ?? null,
+          agentInboxApprovedAt:
+            selectedTaskRecord?.agentInboxApprovedAt ??
+            selectedTask.agentInboxApprovedAt ??
+            null,
           description:
             workspace.taskDescriptions[selectedTask.id] ??
             selectedTask.description ??
@@ -412,6 +418,16 @@ export function InboxPage() {
               assigneeId: created.id,
             });
           });
+        }}
+        onAgentInboxApprove={() => {
+          const nextHref = getInboxHrefAfterRemovingItem(
+            workspace.inboxItems,
+            selectedTask.id,
+          );
+          void workspace.patchTask(selectedTask.id, {
+            agentInboxApproved: true,
+          });
+          navigate(nextHref ?? "/inbox", { replace: true });
         }}
         belowDescription={
           <DesktopTaskActivityPanel

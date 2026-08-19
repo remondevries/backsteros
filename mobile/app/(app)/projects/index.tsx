@@ -22,7 +22,10 @@ import { ProjectProgressRing } from "../../../components/project-progress-ring";
 import { ProjectStatusIcon } from "../../../components/project-status-icon";
 import { ProjectTypeGroupHeader } from "../../../components/project-type-group-header";
 import { ProjectsHeader } from "../../../components/projects-header";
-import { StatusGroupHeader } from "../../../components/status-group-header";
+import {
+  StatusGroupHeader,
+  statusGroupEmptySectionFooter,
+} from "../../../components/status-group-header";
 import { projectDetailHref } from "../../../lib/detail-href";
 import { isPadDevice } from "../../../lib/device";
 import { getMobileEnvironment } from "../../../lib/env";
@@ -165,7 +168,8 @@ export default function ProjectsScreen() {
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
     () => new Set(),
   );
-  const search = usePullToRevealSearch();
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const search = usePullToRevealSearch({ suppress: pullRefreshing });
 
   const onAreaTabIndex = useCallback((index: number) => {
     const next = PROJECT_AREA_FILTERS[index];
@@ -189,6 +193,8 @@ export default function ProjectsScreen() {
   >({});
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
+  const restRowsRef = useRef(restRows);
+  restRowsRef.current = restRows;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -211,8 +217,13 @@ export default function ProjectsScreen() {
     [syncedProjects],
   );
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = opts?.userPull === true;
+    if (userPull) {
+      setPullRefreshing(true);
+    } else if (restRowsRef.current == null) {
+      setRestLoading(true);
+    }
     setRestError(null);
     try {
       const [projectsBody, tasksBody] = await Promise.all([
@@ -253,6 +264,7 @@ export default function ProjectsScreen() {
           : detail,
       );
     } finally {
+      if (userPull) setPullRefreshing(false);
       setRestLoading(false);
     }
   }, [apiUrl, client]);
@@ -365,7 +377,13 @@ export default function ProjectsScreen() {
     return localProgress;
   }, [localProgress, restProgress, restRows]);
 
+  const hasShownDataRef = useRef(false);
+  if (sourceRows.length > 0) hasShownDataRef.current = true;
+
+  // Full-screen spinner only on first load — keep the list mounted so
+  // remounts / brief empty sync windows cannot jump layout or re-arm search.
   const loading =
+    !hasShownDataRef.current &&
     sourceRows.length === 0 &&
     (restLoading ||
       (restRows == null &&
@@ -419,16 +437,16 @@ export default function ProjectsScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={restLoading}
+            refreshing={pullRefreshing}
             onRefresh={() => {
-              search.open();
-              void reloadRest();
+              void reloadRest({ userPull: true });
             }}
             tintColor={colors.muted}
             colors={[colors.muted]}
           />
         }
         contentContainerStyle={{
+          paddingTop: isPad ? 0 : 8,
           paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
         }}
         ListHeaderComponent={isPad ? <ProjectOverviewListHeader /> : null}
@@ -448,6 +466,9 @@ export default function ProjectsScreen() {
             onToggle={() => toggleStatusGroup(section.status)}
           />
         )}
+        renderSectionFooter={({ section }) =>
+          statusGroupEmptySectionFooter(sections, section)
+        }
         renderItem={({ item }) => {
           if (item.kind === "type-header") {
             return (
@@ -455,6 +476,7 @@ export default function ProjectsScreen() {
                 title={item.label}
                 collapsed={item.collapsed}
                 onToggle={() => toggleTypeGroup(item.collapseKey)}
+                spaced
               />
             );
           }

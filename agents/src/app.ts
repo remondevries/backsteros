@@ -31,6 +31,20 @@ function buildProxyHeaders(incoming: Headers): Headers {
   return headers;
 }
 
+function cloneMutableResponse(response: Response): Response {
+  const headers = new Headers();
+  response.headers.forEach((value, key) => {
+    if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) {
+      headers.append(key, value);
+    }
+  });
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function createApp(options: AgentsAppOptions) {
   const upstream = options.upstreamUrl.replace(/\/$/, "");
   const timeoutMs = options.requestTimeoutMs ?? 120_000;
@@ -80,11 +94,10 @@ export function createApp(options: AgentsAppOptions) {
       }
 
       const upstreamResponse = await fetch(target, init);
-      return new Response(upstreamResponse.body, {
-        status: upstreamResponse.status,
-        statusText: upstreamResponse.statusText,
-        headers: upstreamResponse.headers,
-      });
+      // Fetch Response headers are immutable in Node/undici. Returning them
+      // (or `new Response(body, fetchRes)`) makes Hono's secureHeaders crash
+      // with TypeError: immutable. Copy into a fresh Headers object first.
+      return cloneMutableResponse(upstreamResponse);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Upstream request failed";

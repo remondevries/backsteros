@@ -67,13 +67,23 @@ import {
   keyboardNavListItemClass,
 } from "../keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
-import { useListClearSelectionShortcut } from "../use-list-clear-selection-shortcut.js";
+import type { ListKeyboardNavZone } from "../list-keyboard-nav-zone.js";
+import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../list-keyboard-nav-zone.js";
+import {
+  ENTITY_TITLE_INPUT_ATTRIBUTE,
+  useListClearSelectionShortcut,
+  useListDismissDetailShortcut,
+} from "../use-list-clear-selection-shortcut.js";
 import { useListSelectAllShortcut } from "../use-list-select-all-shortcut.js";
 import { useListToggleHighlightedSelectionShortcut } from "../use-list-toggle-highlighted-selection-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "./list-keyboard-navigation-provider.js";
+import {
+  focusAndSelectTitleInput,
+  useTitleRenameShortcut,
+} from "../title-rename-shortcut.js";
 import {
   formatMoneyInput,
   moneyCentsToInput,
@@ -1233,6 +1243,14 @@ function CategoryDetailPanel({
   const [budget, setBudget] = useState(moneyCentsToInput(category?.budgetCents));
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      focusAndSelectTitleInput(titleInputRef.current);
+    }, []),
+    { enabled: Boolean(category) },
+  );
 
   useEffect(() => {
     if (!category) return;
@@ -1358,15 +1376,25 @@ function CategoryDetailPanel({
           </button>
           <div className="finance-categories-view__detail-heading">
             <input
+              ref={titleInputRef}
               className="finance-categories-view__detail-title-input"
               value={name}
               disabled={pending}
               aria-label="Category name"
+              {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
               onChange={(event) => setName(event.target.value)}
               onBlur={() => {
                 void commitName();
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.nativeEvent.stopImmediatePropagation();
+                  setName(category.name);
+                  event.currentTarget.blur();
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.currentTarget.blur();
                 }
@@ -1498,6 +1526,7 @@ function CategoryDetailPanel({
         goals={goals}
         recurrings={recurrings}
         emptyLabel="No transactions in this category."
+        listKeyboardNavZone={LIST_KEYBOARD_NAV_ZONE_CONTENT}
         onPatchTransaction={onPatchTransaction}
         onBulkPatchTransactions={onBulkPatchTransactions}
         onBulkDeleteTransactions={onBulkDeleteTransactions}
@@ -1689,8 +1718,8 @@ export function FinanceTransactionsPanelList({
   exitingTransactionIds = null,
   groupByMonth = true,
   showFilterBar = true,
-  /** When false, omit the Recurring column (same as main Finance → Transactions). */
   showRecurringColumn = true,
+  listKeyboardNavZone = LIST_KEYBOARD_NAV_ZONE_MAIN,
   onOpenTransaction,
   onPatchTransaction,
   onBulkPatchTransactions,
@@ -1725,6 +1754,11 @@ export function FinanceTransactionsPanelList({
    * show as a badge in the org cell (matches main Finance → Transactions).
    */
   showRecurringColumn?: boolean;
+  /**
+   * Keyboard zone for nested transaction j/k. Detail panels use `content` so
+   * the parent entity list can keep `main`.
+   */
+  listKeyboardNavZone?: ListKeyboardNavZone;
   /** Opens a single-transaction detail (e.g. dashboard overlay). */
   onOpenTransaction?: (tx: FinancialTransaction) => void;
   onPatchTransaction?: (
@@ -1747,7 +1781,7 @@ export function FinanceTransactionsPanelList({
   const lastClickedRef = useRef<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_MAIN,
+    listKeyboardNavZone,
   );
   const shiftHeld = useKeyHeld("Shift");
   const [filterSearch, setFilterSearch] = useState("");
@@ -1958,7 +1992,7 @@ export function FinanceTransactionsPanelList({
     itemIds: keyboardItemIds,
     selectedId: activeTransactionId,
     onNavigate: openTransactionById,
-    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    zone: listKeyboardNavZone,
     enabled: keyboardItemIds.length > 0,
   });
 
@@ -2752,6 +2786,7 @@ export function FinanceTransactionsPanelList({
                               <SearchableDropdown
                                 ariaLabel="Recurring"
                                 className="property-dropdown"
+                                taskPropertyDropdownId="recurring"
                                 triggerClassName="property-dropdown-trigger--inline-chip finance-tx-row__dropdown-trigger"
                                 value={tx.recurringId}
                                 options={recurringOptions}
@@ -2913,6 +2948,7 @@ export function FinanceTransactionsPanelList({
             <SearchableDropdown
               ariaLabel="Bulk set category"
               className="property-dropdown"
+              taskPropertyDropdownId="category"
               triggerClassName={withBulkDropdownFillState(
                 FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                 bulkCategoryValue,
@@ -2937,6 +2973,7 @@ export function FinanceTransactionsPanelList({
             <SearchableDropdown
               ariaLabel="Bulk set organization"
               className="property-dropdown"
+              taskPropertyDropdownId="organization"
               triggerClassName={withBulkDropdownFillState(
                 FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                 bulkOrgValue,
@@ -2967,6 +3004,7 @@ export function FinanceTransactionsPanelList({
             <SearchableDropdown
               ariaLabel="Bulk move to account"
               className="property-dropdown"
+              taskPropertyDropdownId="account"
               triggerClassName={withBulkDropdownFillState(
                 FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                 bulkAccountValue,
@@ -2988,6 +3026,7 @@ export function FinanceTransactionsPanelList({
             <SearchableDropdown
               ariaLabel="Bulk set goal"
               className="property-dropdown"
+              taskPropertyDropdownId="goal"
               triggerClassName={withBulkDropdownFillState(
                 FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                 bulkGoalValue,
@@ -3012,6 +3051,7 @@ export function FinanceTransactionsPanelList({
             <SearchableDropdown
               ariaLabel="Bulk set recurring"
               className="property-dropdown"
+              taskPropertyDropdownId="recurring"
               triggerClassName={withBulkDropdownFillState(
                 FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                 bulkRecurringValue,
@@ -3046,6 +3086,7 @@ function CategoryRow({
   category,
   depth,
   selected,
+  highlighted = false,
   spentCents,
   showAmounts,
   onSelect,
@@ -3057,6 +3098,7 @@ function CategoryRow({
   category: FinancialCategory;
   depth: 0 | 1;
   selected: boolean;
+  highlighted?: boolean;
   spentCents: number;
   showAmounts: boolean;
   onSelect: () => void;
@@ -3079,6 +3121,7 @@ function CategoryRow({
       ]
         .filter(Boolean)
         .join(" ")}
+      {...keyboardNavItemProps(category.id)}
       {...(pointerReorderBind ?? {})}
     >
       <div
@@ -3087,6 +3130,7 @@ function CategoryRow({
           canPointerReorder
             ? "finance-categories-view__row-main--draggable"
             : null,
+          keyboardNavListItemClass(highlighted),
         ]
           .filter(Boolean)
           .join(" ")}
@@ -3251,6 +3295,10 @@ export function FinanceCategoriesView({
   const [createState, setCreateState] = useState<CreateModalState>(null);
   const [createPending, setCreatePending] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listContainerProps = useListKeyboardNavigationContainerProps(
+    LIST_KEYBOARD_NAV_ZONE_MAIN,
+  );
 
   const canReorder = Boolean(onReorder);
 
@@ -3309,9 +3357,47 @@ export function FinanceCategoriesView({
     (categoryId: string) => {
       if (consumeClickSuppression()) return;
       setSelectedId(categoryId);
+      setDetailCollapsed(false);
     },
     [consumeClickSuppression],
   );
+
+  const closeCategoryDetail = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
+  useListDismissDetailShortcut({
+    enabled: selectedId != null,
+    onDismiss: closeCategoryDetail,
+  });
+
+  const keyboardItemIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsed[group.id]) continue;
+      for (const node of group.roots) {
+        ids.push(node.category.id);
+        if (
+          node.children.length > 0 &&
+          !collapsedParents[node.category.id]
+        ) {
+          for (const child of node.children) {
+            ids.push(child.id);
+          }
+        }
+      }
+    }
+    return ids;
+  }, [collapsed, collapsedParents, groups]);
+
+  const { highlightedId } = useListKeyboardNavigation({
+    containerRef: listRef,
+    itemIds: keyboardItemIds,
+    selectedId,
+    onNavigate: selectCategory,
+    zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
+    enabled: keyboardItemIds.length > 0,
+  });
 
   const {
     containerRef,
@@ -3447,7 +3533,12 @@ export function FinanceCategoriesView({
             slices={overview.slices}
           />
 
-          <ul className="overview-grouped-list" role="list">
+          <ul
+            className="overview-grouped-list"
+            role="list"
+            ref={listRef}
+            {...listContainerProps}
+          >
             {groups.map((group) => {
               const isCollapsed = Boolean(collapsed[group.id]);
               const showColumnHeaders = group.id === "regular";
@@ -3536,6 +3627,10 @@ export function FinanceCategoriesView({
                               "backlog",
                             )}
                             highlighted={selectedId === node.category.id}
+                            keyboardNavItemId={node.category.id}
+                            keyboardHighlighted={
+                              highlightedId === node.category.id
+                            }
                             persistentChevron
                             icon={
                               <span
@@ -3597,6 +3692,7 @@ export function FinanceCategoriesView({
                                 category={child}
                                 depth={1}
                                 selected={selectedId === child.id}
+                                highlighted={highlightedId === child.id}
                                 spentCents={
                                   spentCentsByCategoryId[child.id] ?? 0
                                 }
@@ -3629,6 +3725,7 @@ export function FinanceCategoriesView({
                           category={node.category}
                           depth={0}
                           selected={selectedId === node.category.id}
+                          highlighted={highlightedId === node.category.id}
                           spentCents={parentSpent}
                           showAmounts
                           onSelect={() => selectCategory(node.category.id)}

@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 
-import { colors } from "../lib/theme";
-
 export const DETAIL_PROPERTIES_PANEL_WIDTH = 300;
 
 type Props = {
@@ -43,7 +41,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     minHeight: 0,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
   },
   main: {
     flex: 1,
@@ -53,7 +51,7 @@ const styles = StyleSheet.create({
   panel: {
     width: DETAIL_PROPERTIES_PANEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
   },
   panelScroll: {
     flex: 1,

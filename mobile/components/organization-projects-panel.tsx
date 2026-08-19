@@ -84,7 +84,7 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
     [apiUrl],
   );
 
-  const { rows, loading, error, useRest, restLoading, reload } =
+  const { rows, loading, error, useRest, pullRefreshing, reload } =
     useSyncedOrRest<ProjectRow, ProjectRow>({
       sql: PROJECTS_SQL,
       params: [organizationId],
@@ -177,7 +177,7 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
       keyExtractor={(item) => item.id}
       stickySectionHeadersEnabled={false}
       keyboardShouldPersistTaps="handled"
-      refreshing={useRest ? restLoading : false}
+      refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}

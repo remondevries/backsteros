@@ -42,6 +42,7 @@ import {
   type TaskItemRowTask,
 } from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import { isHabitLinkedTask } from "./journal-due-tasks-section.js";
 
 export type ContactTasksListViewProps = {
   contactId: string;
@@ -86,7 +87,8 @@ export function ContactTasksListView({
     () =>
       tasks.filter(
         (task) =>
-          task.assigneeId === contactId || task.contactId === contactId,
+          !isHabitLinkedTask(task) &&
+          (task.assigneeId === contactId || task.contactId === contactId),
       ),
     [contactId, tasks],
   );

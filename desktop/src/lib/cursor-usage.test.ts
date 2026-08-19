@@ -51,4 +51,15 @@ describe("cursor-usage formatting", () => {
     assert.match(title, /\$339\.76 of \$400 left/);
     assert.match(title, /You've used 10%/);
   });
+
+  it("includes Grok Bot weekly usage in the tooltip", () => {
+    const title = cursorUsageTitle(
+      usage({
+        grokBotPercentUsed: 5.22,
+        grokBotResetMs: Date.parse("2026-08-25T04:17:33.882Z"),
+      }),
+    );
+    assert.match(title, /Grok Bot 5%/);
+    assert.match(title, /Grok Bot resets/);
+  });
 });

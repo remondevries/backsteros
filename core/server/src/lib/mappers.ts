@@ -86,7 +86,10 @@ export function toTask(row: DbTask): Task {
     inbox: row.inbox,
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
+    habitId: row.habitId ?? null,
     completedAt: toIso(row.completedAt),
+    agentCreatedAt: toIso(row.agentCreatedAt),
+    agentInboxApprovedAt: toIso(row.agentInboxApprovedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: toIso(row.deletedAt),
@@ -97,19 +100,23 @@ export function toTaskComment(
   row: DbTaskComment | TaskCommentListRow,
 ): TaskComment {
   const listRow = row as TaskCommentListRow;
-  const isAgent = row.authorUserId == null;
+  const authorContactId = row.authorContactId ?? null;
+  const isGenericAgent = row.authorUserId == null && authorContactId == null;
   return {
     id: row.id,
     taskId: row.taskId,
     parentCommentId: row.parentCommentId ?? null,
     authorUserId: row.authorUserId,
+    authorContactId,
     authorEmail: row.authorEmail,
-    authorName: isAgent
+    authorName: isGenericAgent
       ? "Agent"
       : activityActorName({
           actorUserId: row.authorUserId,
-          actorEmail: row.authorEmail ?? listRow.userEmail ?? null,
+          actorContactId: authorContactId,
+          actorEmail: row.authorEmail ?? listRow.userEmail ?? listRow.contactEmail ?? null,
           userDisplayName: listRow.userDisplayName ?? null,
+          contactName: listRow.contactName ?? null,
         }),
     body: row.body,
     resolvedAt: toIso(row.resolvedAt),
@@ -132,9 +139,11 @@ export function toTaskActivity(
     taskId: row.taskId,
     type: row.type as TaskActivity["type"],
     actorUserId: row.actorUserId,
+    actorContactId: row.actorContactId ?? null,
     actorEmail: row.actorEmail,
     actorName: activityActorName({
       actorUserId: row.actorUserId,
+      actorContactId: row.actorContactId,
       actorEmail: row.actorEmail ?? listRow.userEmail ?? null,
       actorName: row.actorName,
       userDisplayName: listRow.userDisplayName ?? null,
@@ -150,6 +159,7 @@ export function toApiKey(row: DbApiKey): ApiKey {
     name: row.name,
     prefix: row.prefix,
     scopes: row.scopes as ApiKey["scopes"],
+    contactId: row.contactId ?? null,
     createdAt: row.createdAt.toISOString(),
     revokedAt: toIso(row.revokedAt),
   };

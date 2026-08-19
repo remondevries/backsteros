@@ -25,6 +25,7 @@ import {
   FinanceBulkBar,
   relabelDropdownNoneOption,
   sharedNullableIdSelectionValue,
+  sharedSelectionValue,
   withBulkDropdownFillState,
 } from "./finance-bulk-bar.js";
 
@@ -36,6 +37,11 @@ import {
   buildOrganizationDropdownOptions,
   resolveDropdownNone,
 } from "./dropdown-options.js";
+import {
+  EntityActionsMenu,
+  type EntityActionsMenuItem,
+} from "./entity-actions/entity-actions-menu.js";
+import { useEntityHeaderActionsContext } from "./entity-actions/entity-header-actions-context.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { buildCategoryDropdownOptions } from "./finance-categories-view.js";
 import { groupTransactionsByMonthWeek } from "../group-transactions-by-month-week.js";
@@ -43,7 +49,11 @@ import {
   computeAmountRangeDomain,
   isFullAmountRange,
 } from "../filter-finance-transactions.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
+import {
+  isBlockingModalOpen,
+  isDirectRoleButtonActivationKey,
+  isEditableShortcutTarget,
+} from "../shortcut-guards.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
@@ -55,6 +65,7 @@ import {
 } from "../use-list-clear-selection-shortcut.js";
 import { useListSelectAllShortcut } from "../use-list-select-all-shortcut.js";
 import { useListToggleHighlightedSelectionShortcut } from "../use-list-toggle-highlighted-selection-shortcut.js";
+import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -128,7 +139,68 @@ export type FinanceTransactionsChromeState = {
   detailCollapsed: boolean;
   detailResized: boolean;
   onToggleDetail: () => void;
+  onDelete: () => void | Promise<void>;
 };
+
+/**
+ * Three-dot overflow for the selected transaction — delete with the shared
+ * confirmation modal (same pattern as account / category chrome).
+ */
+export function TransactionActionsMenu({
+  transaction,
+  onDelete,
+  disabled = false,
+}: {
+  transaction: FinancialTransaction;
+  onDelete: () => void | Promise<void>;
+  disabled?: boolean;
+}) {
+  const { openDeleteModal, isDeletePending } = useEntityHeaderActionsContext();
+  const label =
+    transaction.displayName?.trim() ||
+    transaction.payee.trim() ||
+    transaction.memo?.trim() ||
+    transaction.counterparty?.trim() ||
+    "Untitled transaction";
+
+  const items: EntityActionsMenuItem[] = [
+    {
+      id: "delete",
+      label: "Delete transaction",
+      danger: true,
+      disabled: isDeletePending,
+      onSelect: () => {
+        openDeleteModal({
+          entityLabel: label,
+          confirmLabel: "Delete transaction",
+          onDelete: async () => {
+            try {
+              await Promise.resolve(onDelete());
+              return { ok: true };
+            } catch (reason) {
+              return {
+                ok: false,
+                error:
+                  reason instanceof Error
+                    ? reason.message
+                    : "Could not delete transaction.",
+              };
+            }
+          },
+        });
+      },
+    },
+  ];
+
+  return (
+    <EntityActionsMenu
+      ariaLabel={`Actions for ${label}`}
+      triggerAriaLabel="Transaction actions"
+      disabled={disabled || isDeletePending}
+      items={items}
+    />
+  );
+}
 
 export type FinanceTransactionsViewProps = {
   /** Currently selected account; null when viewing all accounts or none exist. */
@@ -244,6 +316,8 @@ export type FinanceTransactionsViewProps = {
   }) => void | Promise<void>;
   /** Permanently delete the currently selected transactions. */
   onBulkDelete?: () => void | Promise<void>;
+  /** Permanently delete a single transaction (detail ⋯ menu). */
+  onDeleteTransaction?: (id: string) => void | Promise<void>;
   /**
    * Create an organization from a typed dropdown query (no match).
    * Caller should create the org and return its id so the transaction can be linked.
@@ -429,6 +503,7 @@ export function FinanceTransactionsView({
   onPatchTransaction,
   onBulkPatch,
   onBulkDelete,
+  onDeleteTransaction,
   onCreateOrganizationFromQuery,
   onLoadMore,
   hasMore = false,
@@ -886,11 +961,22 @@ export function FinanceTransactionsView({
       detailCollapsed,
       detailResized,
       onToggleDetail: () => setDetailCollapsed((current) => !current),
+      onDelete: async () => {
+        if (onDeleteTransaction) {
+          await Promise.resolve(onDeleteTransaction(selectedTx.id));
+          return;
+        }
+        if (onBulkDelete) {
+          await Promise.resolve(onBulkDelete());
+        }
+      },
     });
   }, [
     detailCollapsed,
     detailResized,
+    onBulkDelete,
     onChromeStateChange,
+    onDeleteTransaction,
     selectedTx,
   ]);
 
@@ -936,6 +1022,7 @@ export function FinanceTransactionsView({
     [selectedIds, transactions],
   );
   const [bulkDraft, setBulkDraft] = useState<{
+    bankAccountId?: string;
     organizationId?: string | null;
     projectId?: string | null;
     categoryId?: string | null;
@@ -970,6 +1057,14 @@ export function FinanceTransactionsView({
     return sharedNullableIdSelectionValue(
       selectedTransactions.map((tx) => tx.organizationId),
       DROPDOWN_NONE_VALUE,
+    );
+  }, [bulkDraft, selectedTransactions]);
+  const bulkAccountValue = useMemo(() => {
+    if ("bankAccountId" in bulkDraft && bulkDraft.bankAccountId) {
+      return bulkDraft.bankAccountId;
+    }
+    return sharedSelectionValue(
+      selectedTransactions.map((tx) => tx.bankAccountId),
     );
   }, [bulkDraft, selectedTransactions]);
   const bulkProjectValue = useMemo(() => {
@@ -1122,6 +1217,7 @@ export function FinanceTransactionsView({
       <SearchableDropdown
         ariaLabel="Bank account"
         className="property-dropdown"
+        taskPropertyDropdownId="account"
         triggerClassName="property-dropdown-trigger--compose finance-account-switcher__trigger"
         value={
           allAccountsSelected
@@ -1608,8 +1704,92 @@ export function FinanceTransactionsView({
                                         }
                                       />
                                       {tx.goalId ? <FinanceGoalBadgeIcon /> : null}
-                                      {tx.recurringId ? (
-                                        <FinanceRecurringBadgeIcon />
+                                      {/* Mount only when linked (visible badge) or this
+                                          row is keyboard-highlighted (R hotkey target).
+                                          Avoids a SearchableDropdown per row on long lists. */}
+                                      {tx.recurringId ||
+                                      highlightedId === tx.id ? (
+                                        <SearchableDropdown
+                                          ariaLabel="Recurring"
+                                          className={[
+                                            "property-dropdown",
+                                            "finance-tx-row__recurring-dropdown",
+                                            tx.recurringId
+                                              ? null
+                                              : "finance-tx-row__recurring-dropdown--hotkey-only",
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                          taskPropertyDropdownId="recurring"
+                                          value={tx.recurringId}
+                                          options={recurringOptions}
+                                          searchPlaceholder="Recurring"
+                                          panelWidth={240}
+                                          renderTrigger={({
+                                            open,
+                                            disabled,
+                                            triggerId,
+                                            onToggle,
+                                          }) =>
+                                            tx.recurringId ? (
+                                              <button
+                                                type="button"
+                                                id={triggerId}
+                                                className={[
+                                                  "finance-tx-row__recurring-trigger",
+                                                  "is-filled",
+                                                  open ? "is-open" : null,
+                                                ]
+                                                  .filter(Boolean)
+                                                  .join(" ")}
+                                                disabled={disabled}
+                                                aria-haspopup="listbox"
+                                                aria-expanded={open}
+                                                aria-label="Recurring"
+                                                title={
+                                                  recurringOptions.find(
+                                                    (option) =>
+                                                      option.value ===
+                                                      tx.recurringId,
+                                                  )?.label ?? "Recurring"
+                                                }
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  onToggle();
+                                                }}
+                                                onMouseDown={(event) =>
+                                                  event.stopPropagation()
+                                                }
+                                              >
+                                                <FinanceRecurringBadgeIcon />
+                                              </button>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                id={triggerId}
+                                                className="finance-tx-row__recurring-trigger is-hotkey-only"
+                                                disabled={disabled}
+                                                aria-haspopup="listbox"
+                                                aria-expanded={open}
+                                                aria-label="Recurring"
+                                                tabIndex={-1}
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  onToggle();
+                                                }}
+                                                onMouseDown={(event) =>
+                                                  event.stopPropagation()
+                                                }
+                                              />
+                                            )
+                                          }
+                                          onChange={(value) =>
+                                            onPatchTransaction(tx.id, {
+                                              recurringId:
+                                                resolveRecurring(value),
+                                            })
+                                          }
+                                        />
                                       ) : null}
                                       <span
                                         className="finance-tx-row__payee-hint"
@@ -1727,6 +1907,7 @@ export function FinanceTransactionsView({
               <SearchableDropdown
                 ariaLabel="Bulk set organization"
                 className="property-dropdown"
+                taskPropertyDropdownId="organization"
                 triggerClassName={withBulkDropdownFillState(
                   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                   bulkOrgValue,
@@ -1755,8 +1936,31 @@ export function FinanceTransactionsView({
                 }
               />
               <SearchableDropdown
+                ariaLabel="Bulk move to account"
+                className="property-dropdown"
+                taskPropertyDropdownId="account"
+                triggerClassName={withBulkDropdownFillState(
+                  FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
+                  bulkAccountValue,
+                )}
+                value={bulkAccountValue}
+                options={moveAccountOptions}
+                emptySelectionLabel="Account"
+                showIcon={bulkDropdownShowIcon(bulkAccountValue)}
+                searchPlaceholder="Move to account"
+                panelWidth={240}
+                onChange={(value) => {
+                  if (!value) return;
+                  setBulkDraft((current) => ({
+                    ...current,
+                    bankAccountId: value,
+                  }));
+                }}
+              />
+              <SearchableDropdown
                 ariaLabel="Bulk set project"
                 className="property-dropdown"
+                taskPropertyDropdownId="project"
                 triggerClassName={withBulkDropdownFillState(
                   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                   bulkProjectValue,
@@ -1781,6 +1985,7 @@ export function FinanceTransactionsView({
               <SearchableDropdown
                 ariaLabel="Bulk set goal"
                 className="property-dropdown"
+                taskPropertyDropdownId="goal"
                 triggerClassName={withBulkDropdownFillState(
                   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                   bulkGoalValue,
@@ -1805,6 +2010,7 @@ export function FinanceTransactionsView({
               <SearchableDropdown
                 ariaLabel="Bulk set recurring"
                 className="property-dropdown"
+                taskPropertyDropdownId="recurring"
                 triggerClassName={withBulkDropdownFillState(
                   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                   bulkRecurringValue,
@@ -1829,6 +2035,7 @@ export function FinanceTransactionsView({
               <SearchableDropdown
                 ariaLabel="Bulk set category"
                 className="property-dropdown"
+                taskPropertyDropdownId="category"
                 triggerClassName={withBulkDropdownFillState(
                   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
                   bulkCategoryValue,
@@ -2051,6 +2258,14 @@ export function FinanceTransactionDetailPanel({
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(FINANCE_TX_LEDGER_OPEN_KEY) === "1";
   });
+  const [renameFocusRequest, setRenameFocusRequest] = useState(0);
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      setRenameFocusRequest((count) => count + 1);
+    }, []),
+    { enabled: Boolean(transaction) },
+  );
 
   const notesInitial = transaction?.notes ?? "";
   const {
@@ -2064,6 +2279,7 @@ export function FinanceTransactionDetailPanel({
     toggleViewMode: toggleNotesViewMode,
   } = useMarkdownDetailEditor({
     initialValue: notesInitial,
+    shortcutsEnabled: Boolean(transaction),
     save: (next) => {
       if (!transaction) return { ok: true };
       const trimmed = next.trim();
@@ -2073,6 +2289,40 @@ export function FinanceTransactionDetailPanel({
       return { ok: true };
     },
   });
+
+  useEffect(() => {
+    if (!transaction) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.repeat) return;
+      const isL =
+        (event.key.length === 1 && event.key.toLowerCase() === "l") ||
+        event.code === "KeyL";
+      if (!isL) return;
+      if (isBlockingModalOpen()) return;
+      if (isEditableShortcutTarget(event.target)) return;
+      if (isEditableShortcutTarget(document.activeElement)) return;
+      if (document.querySelector("[data-searchable-dropdown-panel]")) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      setLedgerOpen((open) => {
+        const next = !open;
+        window.localStorage.setItem(
+          FINANCE_TX_LEDGER_OPEN_KEY,
+          next ? "1" : "0",
+        );
+        return next;
+      });
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [transaction]);
 
   if (!transaction) {
     return (
@@ -2111,6 +2361,7 @@ export function FinanceTransactionDetailPanel({
     <aside
       className="finance-categories-view__detail finance-transactions-view__detail"
       aria-label="Transaction details"
+      data-content-view-mode={notesMode}
     >
       <div className="finance-transactions-view__detail-scroll">
         <div className="finance-transactions-view__detail-hero">
@@ -2123,6 +2374,7 @@ export function FinanceTransactionDetailPanel({
               entityLabel="Transaction"
               resetKey={transaction.id}
               titleClassName="finance-transactions-view__detail-title"
+              renameFocusRequest={renameFocusRequest}
               onSave={(name) => {
                 const trimmed = name.trim();
                 const nextDisplayName =
@@ -2226,6 +2478,7 @@ export function FinanceTransactionDetailPanel({
               <SearchableDropdown
                 ariaLabel="Project"
                 className="property-dropdown"
+                taskPropertyDropdownId="project"
                 triggerClassName="property-dropdown-trigger--inline-chip"
                 value={transaction.projectId}
                 options={projectOptions}
@@ -2242,6 +2495,7 @@ export function FinanceTransactionDetailPanel({
               <SearchableDropdown
                 ariaLabel="Goal"
                 className="property-dropdown"
+                taskPropertyDropdownId="goal"
                 triggerClassName="property-dropdown-trigger--inline-chip"
                 value={transaction.goalId}
                 options={goalOptions}
@@ -2258,6 +2512,7 @@ export function FinanceTransactionDetailPanel({
               <SearchableDropdown
                 ariaLabel="Recurring"
                 className="property-dropdown"
+                taskPropertyDropdownId="recurring"
                 triggerClassName="property-dropdown-trigger--inline-chip"
                 value={transaction.recurringId}
                 options={recurringOptions}

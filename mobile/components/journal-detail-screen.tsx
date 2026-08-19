@@ -10,6 +10,7 @@ import {
 import { useCalendarTimeZone } from "../lib/calendar-timezone";
 import { isPadDevice } from "../lib/device";
 import { taskDetailHref } from "../lib/detail-href";
+import { recordHabitDay } from "../lib/habits/api";
 import { formatJournalEntryTitle } from "../lib/journal";
 import {
   getJournalDisplayBody,
@@ -24,16 +25,38 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { ContentPageTitle } from "./content-page-title";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
+import { collapseHabitItemsByHabitId } from "./tasks-today-habits-chips";
+import type { JournalHabitDayItem } from "./journal-habits-section";
+import {
+  countHabitDayOutcomes,
+  JournalHabitsList,
+} from "./journal-habits-section";
 import { JournalWhoopLeading, useWhoopDaySnapshot } from "./journal-whoop-leading";
-import { TasksNavIcon } from "./nav-icons";
+import { SegmentedPillToggle } from "./segmented-pill-toggle";
 import { TextInput } from "./app-text-input";
+
+type JournalDayListMode = "tasks" | "habits";
+
+const JOURNAL_DAY_LIST_OPTIONS = [
+  { value: "tasks" as const, label: "Tasks" },
+  { value: "habits" as const, label: "Habits" },
+] as const;
 
 type SyncedTaskRow = GroupedTaskRow & {
   number?: number | null;
   project_id?: string | null;
   contact_id?: string | null;
   project_key?: string | null;
+  habit_id?: string | null;
+};
+
+type SyncedHabitRow = {
+  id: string;
+  title: string | null;
+  icon: string | null;
+  sort_order: number | null;
 };
 
 type JournalDocRow = {
@@ -52,6 +75,9 @@ const JOURNAL_DOC_SQL = `SELECT id, journal_date, snippet FROM documents
    AND type = 'journal'
    AND journal_date = ?
  LIMIT 1`;
+
+const HABITS_META_SQL = `SELECT id, title, icon, sort_order FROM habits
+ WHERE deleted_at IS NULL`;
 
 export function JournalDetailScreen({ dateSlug }: Props) {
   const router = useRouter();
@@ -153,8 +179,9 @@ export function JournalDetailScreen({ dateSlug }: Props) {
      ORDER BY t.sort_order ASC, t.updated_at DESC`;
 
   const { data: syncedTasks } = useLocalQuery<SyncedTaskRow>(tasksSql);
+  const { data: syncedHabits } = useLocalQuery<SyncedHabitRow>(HABITS_META_SQL);
 
-  const rows = useMemo(
+  const dueTasks = useMemo(
     () =>
       filterTasksDueOnJournalDate(
         (syncedTasks ?? []).map((row) => withDisplayId(row)),
@@ -162,6 +189,82 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         calendarTimeZone,
       ),
     [calendarTimeZone, dateSlug, syncedTasks],
+  );
+
+  const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
+  const [habitCheckedOverride, setHabitCheckedOverride] = useState<
+    Partial<Record<string, boolean>>
+  >({});
+
+  useEffect(() => {
+    setHabitCheckedOverride({});
+    setListMode("tasks");
+  }, [dateSlug]);
+
+  const habitItems = useMemo((): JournalHabitDayItem[] => {
+    const habitById = new Map(
+      (syncedHabits ?? []).map((habit) => [habit.id, habit] as const),
+    );
+    const allHabitTasks = (syncedTasks ?? []).filter((row) =>
+      Boolean(row.habit_id && String(row.habit_id).trim()),
+    );
+    const mapped = dueTasks
+      .filter((row) => Boolean(row.habit_id && String(row.habit_id).trim()))
+      .map((row) => {
+        const habit = habitById.get(row.habit_id!);
+        const checked =
+          habitCheckedOverride[row.id] ?? row.status === "completed";
+        const { completedCount, missedCount } = countHabitDayOutcomes(
+          allHabitTasks,
+          row.habit_id!,
+        );
+        return {
+          habitId: row.habit_id!,
+          taskId: row.id,
+          title: habit?.title ?? row.title ?? "Habit",
+          icon: habit?.icon ?? null,
+          checked,
+          completedCount,
+          missedCount,
+          sortOrder: habit?.sort_order ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      })
+      .map(({ sortOrder: _sortOrder, ...item }) => item);
+    return collapseHabitItemsByHabitId(mapped);
+  }, [dueTasks, habitCheckedOverride, syncedHabits, syncedTasks]);
+
+  const rows = useMemo(
+    () =>
+      dueTasks.filter(
+        (row) => !(row.habit_id && String(row.habit_id).trim()),
+      ),
+    [dueTasks],
+  );
+
+  const onToggleHabit = useCallback(
+    (item: JournalHabitDayItem, checked: boolean) => {
+      setHabitCheckedOverride((current) => ({
+        ...current,
+        [item.taskId]: checked,
+      }));
+      void recordHabitDay(client, item.habitId, {
+        dueYmd: dateSlug,
+        status: checked ? "completed" : "canceled",
+      }).catch(() => {
+        setHabitCheckedOverride((current) => {
+          const next = { ...current };
+          delete next[item.taskId];
+          return next;
+        });
+      });
+    },
+    [client, dateSlug],
   );
 
   const onPressRow = useCallback(
@@ -229,17 +332,9 @@ export function JournalDetailScreen({ dateSlug }: Props) {
 
   const listHeader = useMemo(
     () => (
-      <View>
+      <View style={{ paddingTop: inPadJournalSplit ? 12 : 4 }}>
         <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
-        <View
-          style={{
-            paddingHorizontal: 16,
-            paddingTop: 8,
-            paddingBottom: 12,
-          }}
-        >
-          <Text style={ui.detailTitle}>{title}</Text>
-        </View>
+        <ContentPageTitle title={title} />
         <View
           style={{ paddingHorizontal: 16, paddingBottom: 20, minHeight: 24 }}
         >
@@ -279,21 +374,37 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             paddingBottom: 8,
             flexDirection: "row",
             alignItems: "center",
-            gap: 8,
           }}
         >
-          <TasksNavIcon color={colors.muted} size={16} />
-          <Text
-            style={{
-              color: colors.muted,
-              fontSize: 13,
-              fontWeight: "600",
-              letterSpacing: 0.2,
-            }}
-          >
-            Tasks
-          </Text>
+          <SegmentedPillToggle
+            value={listMode}
+            options={JOURNAL_DAY_LIST_OPTIONS}
+            onChange={setListMode}
+            accessibilityLabel="Journal day list"
+          />
         </View>
+
+        {listMode === "habits" ? (
+          habitItems.length > 0 ? (
+            <View style={{ paddingBottom: 8 }}>
+              <JournalHabitsList
+                items={habitItems}
+                onToggle={onToggleHabit}
+              />
+            </View>
+          ) : (
+            <Text
+              style={{
+                paddingHorizontal: 16,
+                paddingBottom: 12,
+                color: colors.muted,
+                fontSize: 13,
+              }}
+            >
+              No habits due on this date.
+            </Text>
+          )
+        ) : null}
       </View>
     ),
     [
@@ -302,6 +413,10 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       bodyReady,
       dateSlug,
       draftBody,
+      habitItems,
+      inPadJournalSplit,
+      listMode,
+      onToggleHabit,
       saveEditing,
       saveError,
       saving,
@@ -314,22 +429,31 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     <>
       <Stack.Screen
         options={{
-          ...tabDetailScreenOptions(),
-          ...(inPadJournalSplit ? { headerBackVisible: false } : null),
+          ...tabDetailScreenOptions({ embedded: isPad }),
+          ...(inPadJournalSplit
+            ? { headerShown: false, headerBackVisible: false }
+            : null),
         }}
       />
       <GroupedTaskList
-        rows={rows}
-        emptyText="No tasks due on this date."
+        rows={listMode === "tasks" ? rows : []}
+        groupByStatus={listMode === "tasks"}
+        emptyText={
+          listMode === "tasks" ? "No tasks due on this date." : ""
+        }
         contentConstrained={isPad}
         listHeader={listHeader}
-        onPressRow={onPressRow}
-        onAddToStatus={(status) => {
-          router.push({
-            pathname: "/create/task",
-            params: { status, dueYmd: dateSlug },
-          });
-        }}
+        onPressRow={listMode === "tasks" ? onPressRow : undefined}
+        onAddToStatus={
+          listMode === "tasks"
+            ? (status) => {
+                router.push({
+                  pathname: "/create/task",
+                  params: { status, dueYmd: dateSlug },
+                });
+              }
+            : undefined
+        }
       />
     </>
   );

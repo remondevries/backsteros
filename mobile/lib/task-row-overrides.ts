@@ -12,6 +12,8 @@ type TaskRowPatch = {
   display_id?: string | null;
   description?: string | null;
   agent_chat_id?: string | null;
+  agent_created_at?: string | null;
+  agent_inbox_approved_at?: string | null;
 };
 
 type Listener = () => void;
@@ -109,6 +111,10 @@ export function taskPatchToRowFields(
       patch.priority = typeof value === "number" ? value : Number(value) || 0;
     } else if (key === "description") {
       patch.description = (value as string | null) ?? null;
+    } else if (key === "agentInboxApproved" && value === true) {
+      patch.agent_inbox_approved_at = new Date().toISOString();
+    } else if (key === "agent_inbox_approved_at") {
+      patch.agent_inbox_approved_at = (value as string | null) ?? null;
     }
   }
   return patch;

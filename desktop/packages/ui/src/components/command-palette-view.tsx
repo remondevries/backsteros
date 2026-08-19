@@ -121,12 +121,15 @@ export function CommandPaletteView({
   destinations,
   shortcutHint = "⌘K",
 }: CommandPaletteViewProps) {
-  const { open, setOpen, mode, toggle, openSearch } = useCommandPalette();
+  const { open, setOpen, mode, toggle, openSearch, openGo, openFinanceGo } =
+    useCommandPalette();
   const isGoMode = mode === "go";
   const isFinanceGoMode = mode === "finance-go";
   const isLeaderNavMode = isGoMode || isFinanceGoMode;
   const inputRef = useRef<HTMLInputElement>(null);
   const lastToggleAtRef = useRef(0);
+  const modeRef = useRef(mode);
+  const goQueryRef = useRef("");
   const [filter, setFilter] = useState<CommandPaletteFilterState>(
     createDefaultCommandPaletteFilterState,
   );
@@ -139,6 +142,9 @@ export function CommandPaletteView({
   const [contextDismissed, setContextDismissed] = useState(false);
   const [routeContextOverride, setRouteContextOverride] =
     useState<CommandPaletteSearchContext | null>(null);
+
+  modeRef.current = mode;
+  goQueryRef.current = goQuery;
 
   const navDestinations = useMemo(() => {
     if (destinations) return destinations;
@@ -265,6 +271,46 @@ export function CommandPaletteView({
     return () => cancelAnimationFrame(frame);
   }, [open, isLeaderNavMode]);
 
+  // Capture-phase: peel Finance → Go even if focus left the input (list click / cmdk root).
+  useEffect(() => {
+    if (!open) return;
+
+    function handleLeaderBackspace(event: KeyboardEvent) {
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.repeat) return;
+      if (event.isComposing || event.keyCode === 229) return;
+
+      const modeNow = modeRef.current;
+      if (modeNow !== "finance-go" && modeNow !== "go") return;
+
+      const queryEmpty =
+        goQueryRef.current.length === 0 &&
+        (inputRef.current == null || inputRef.current.value.length === 0);
+      if (!queryEmpty) return;
+
+      if (modeNow === "finance-go") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openGo();
+        setGoQuery("");
+        goQueryRef.current = "";
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setOpen(false);
+    }
+
+    window.addEventListener("keydown", handleLeaderBackspace, true);
+    return () =>
+      window.removeEventListener("keydown", handleLeaderBackspace, true);
+  }, [open, openGo, setOpen]);
+
   useEffect(() => {
     if (!open || isLeaderNavMode) return;
     const query = filter.searchTerm.trim();
@@ -353,13 +399,37 @@ export function CommandPaletteView({
     : isFinanceGoMode
       ? `Type a letter… ${FINANCE_GO_LETTER_HINT}`
       : (FILTER_PLACEHOLDERS[filter.mode] ??
-        "Search everything… (p t d l k c o + Tab or space)");
+        "Search everything… (p t d l k c o f + Tab or space)");
 
   const showContextBreadcrumb = !isLeaderNavMode && contextBreadcrumb.length > 0;
 
   function closeAndNavigate(href: string) {
     setOpen(false);
     navigate(href);
+  }
+
+  /** `f ` (or lone `f` + Tab) scopes into Finance go destinations. */
+  function enterFinanceGo(remainder = "") {
+    openFinanceGo();
+    setGoQuery(remainder);
+  }
+
+  /** Peel Finance chip → global Go destinations (same list as pressing G). */
+  function peelFinanceGoToGlobalGo() {
+    openGo();
+    setGoQuery("");
+    goQueryRef.current = "";
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }
+
+  function tryEnterFinanceGoFromTypedValue(value: string): boolean {
+    if (!value.startsWith("f ")) {
+      return false;
+    }
+    enterFinanceGo(value.slice(2));
+    return true;
   }
 
   function peelContextLayer(): boolean {
@@ -399,6 +469,9 @@ export function CommandPaletteView({
   }
 
   function setSearchTerm(value: string) {
+    if (filter.mode === "all" && tryEnterFinanceGoFromTypedValue(value)) {
+      return;
+    }
     if (filter.mode === "all") {
       const next = applyAllModeInputChange(value, filter);
       if (next) setFilter(next);
@@ -411,6 +484,10 @@ export function CommandPaletteView({
   function handleTabKey(): boolean {
     if (filter.mode !== "all") {
       return false;
+    }
+    if (filter.searchTerm.trim().toLowerCase() === "f") {
+      enterFinanceGo();
+      return true;
     }
     const activated = activateFilterModeFromTab(filter.searchTerm);
     if (!activated) {
@@ -429,7 +506,7 @@ export function CommandPaletteView({
       contentClassName="command-dialog"
       shouldFilter={isLeaderNavMode || !showWorkspaceResults}
     >
-      <div className="command-chrome">
+      <div className="command-chrome" key={mode}>
         {showContextBreadcrumb ? (
           <nav
             className="command-context-breadcrumb"
@@ -464,12 +541,17 @@ export function CommandPaletteView({
               Go
             </span>
           ) : isFinanceGoMode ? (
-            <span
+            <button
+              type="button"
               className="command-filter-chip"
-              aria-label="Finance filter active"
+              aria-label="Clear Finance filter"
+              title="Backspace to show all destinations"
+              onClick={() => {
+                peelFinanceGoToGlobalGo();
+              }}
             >
               Finance
-            </span>
+            </button>
           ) : (
             <SearchNavIcon />
           )}
@@ -480,7 +562,14 @@ export function CommandPaletteView({
             placeholder={inputPlaceholder}
             value={isLeaderNavMode ? goQuery : filter.searchTerm}
             onValueChange={(value: string) => {
-              if (isLeaderNavMode) {
+              if (isGoMode) {
+                if (tryEnterFinanceGoFromTypedValue(value)) {
+                  return;
+                }
+                setGoQuery(value);
+                return;
+              }
+              if (isFinanceGoMode) {
                 setGoQuery(value);
                 return;
               }
@@ -492,13 +581,37 @@ export function CommandPaletteView({
               const notComposing = !event.nativeEvent.isComposing;
 
               if (
-                isLeaderNavMode &&
+                isFinanceGoMode &&
+                event.key === "Backspace" &&
+                inputEmpty &&
+                notComposing
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                peelFinanceGoToGlobalGo();
+                return;
+              }
+
+              if (
+                isGoMode &&
                 event.key === "Backspace" &&
                 inputEmpty &&
                 notComposing
               ) {
                 event.preventDefault();
                 setOpen(false);
+                return;
+              }
+
+              if (
+                isGoMode &&
+                event.key === "Tab" &&
+                !event.shiftKey &&
+                notComposing &&
+                goQuery.trim().toLowerCase() === "f"
+              ) {
+                event.preventDefault();
+                enterFinanceGo();
                 return;
               }
 

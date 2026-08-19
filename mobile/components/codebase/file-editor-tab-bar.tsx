@@ -1,7 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "../../lib/theme";
-import { FileIcon } from "../file-icon";
+import { FileTypeIcon } from "../file-type-icon";
 
 function fileTabLabel(path: string): string {
   return path.split("/").pop() || path;
@@ -59,7 +59,7 @@ export function FileEditorTabBar({
               ]}
             >
               {active ? <View style={styles.activeBar} /> : null}
-              <FileIcon size={12} color={colors.muted} />
+              <FileTypeIcon pathValue={path} size={12} />
               <Text
                 style={[styles.label, active ? styles.labelActive : null]}
                 numberOfLines={1}

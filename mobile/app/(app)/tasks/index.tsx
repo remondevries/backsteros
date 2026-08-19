@@ -1,8 +1,9 @@
-import type { Contact, Project, Task } from "@backsteros/contracts";
+import type { Contact, Habit, Project, Task } from "@backsteros/contracts";
 import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -13,8 +14,16 @@ import {
   GroupedTaskList,
   type GroupedTaskRow,
 } from "../../../components/grouped-task-list";
+import type { HabitCheckChipItem } from "../../../components/tasks-today-habits-chips";
 import { TasksHeader } from "../../../components/tasks-header";
+import {
+  TasksTodayHabitsChips,
+  collapseHabitItemsByHabitId,
+} from "../../../components/tasks-today-habits-chips";
 import { getMobileEnvironment } from "../../../lib/env";
+import { listHabits, recordHabitDay } from "../../../lib/habits/api";
+import { getTaskDueDateYmd } from "../../../lib/habits/dates";
+import { getTodayJournalDateSlug } from "../../../lib/journal";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -38,7 +47,31 @@ import { useLocalQuery } from "../../../lib/use-local-query";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
 import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
 import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
+import { useRestReloadFlags } from "../../../lib/use-rest-reload-flags";
 import { useSectionTabShortcuts } from "../../../lib/use-section-tab-shortcuts";
+
+type SyncedHabitMeta = {
+  id: string;
+  title: string | null;
+  icon: string | null;
+  sort_order: number | null;
+};
+
+type SyncedHabitTask = {
+  id: string;
+  habit_id: string | null;
+  title: string | null;
+  status: string | null;
+  due_date: string | null;
+};
+
+const HABITS_META_SQL = `SELECT id, title, icon, sort_order FROM habits
+ WHERE deleted_at IS NULL`;
+
+const HABIT_TASKS_SQL = `SELECT id, habit_id, title, status, due_date FROM tasks
+ WHERE deleted_at IS NULL
+   AND habit_id IS NOT NULL
+   AND status IS NOT 'canceled'`;
 
 export default function TasksScreen() {
   const router = useRouter();
@@ -86,20 +119,49 @@ export default function TasksScreen() {
   >(
     `${TASK_LIST_SELECT}
      WHERE t.deleted_at IS NULL
+       AND t.habit_id IS NULL
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
+  const { data: syncedHabits } = useLocalQuery<SyncedHabitMeta>(HABITS_META_SQL);
+  const { data: syncedHabitTasks } =
+    useLocalQuery<SyncedHabitTask>(HABIT_TASKS_SQL);
+
+  const [habitCheckedOverride, setHabitCheckedOverride] = useState<
+    Partial<Record<string, boolean>>
+  >({});
+  /** Server habit list (runs day rollover) — fills Today chips before PowerSync catches up. */
+  const [rolledHabits, setRolledHabits] = useState<Habit[] | null>(null);
+
+  const refreshHabitRollover = useCallback(async () => {
+    try {
+      const habits = await listHabits(client);
+      setRolledHabits(habits);
+    } catch {
+      // Keep last successful rollover; chips still use PowerSync when available.
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void refreshHabitRollover();
+  }, [refreshHabitRollover]);
 
   const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
-  const [restLoading, setRestLoading] = useState(false);
+  const {
+    restLoading,
+    pullRefreshing,
+    beginReload,
+    endReload,
+    markHydrated,
+  } = useRestReloadFlags();
 
   const localRows = useMemo(
     () => (syncedTasks ?? []).map((row) => withDisplayId(row)),
     [syncedTasks],
   );
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = beginReload(opts);
     setRestError(null);
     try {
       const [tasksBody, projectsBody, contactsBody] = await Promise.all([
@@ -108,16 +170,18 @@ export default function TasksScreen() {
         client
           .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
           .catch(() => ({ contacts: [] as Contact[] })),
+        refreshHabitRollover(),
       ]);
       const projectsById = new Map(
         (projectsBody.projects ?? []).map((project) => [project.id, project]),
       );
       const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
       setRestRows(
-        (tasksBody.tasks ?? []).map((task) =>
-          mapApiTaskToRow(task, projectsById, contactsById),
-        ),
+        (tasksBody.tasks ?? [])
+          .filter((task) => !task.habitId)
+          .map((task) => mapApiTaskToRow(task, projectsById, contactsById)),
       );
+      markHydrated();
     } catch (reason) {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
@@ -127,9 +191,9 @@ export default function TasksScreen() {
           : detail,
       );
     } finally {
-      setRestLoading(false);
+      endReload(userPull);
     }
-  }, [apiUrl, client]);
+  }, [apiUrl, beginReload, client, endReload, markHydrated, refreshHabitRollover]);
 
   useRestListHydration(reloadRest);
 
@@ -142,6 +206,88 @@ export default function TasksScreen() {
   const rows = useMemo(
     () => filterTasksByDueFilter(allRows, dueFilter),
     [allRows, dueFilter],
+  );
+
+  const todayHabits = useMemo((): HabitCheckChipItem[] => {
+    const todayYmd = getTodayJournalDateSlug();
+    const habitById = new Map(
+      (syncedHabits ?? []).map((habit) => [habit.id, habit] as const),
+    );
+    const fromSync = (syncedHabitTasks ?? [])
+      .filter(
+        (task) =>
+          Boolean(task.habit_id) &&
+          task.status !== "canceled" &&
+          getTaskDueDateYmd(task.due_date) === todayYmd,
+      )
+      .map((task) => {
+        const habit = habitById.get(task.habit_id!);
+        const rolled = rolledHabits?.find((entry) => entry.id === task.habit_id);
+        return {
+          habitId: task.habit_id!,
+          taskId: task.id,
+          title: habit?.title ?? rolled?.title ?? task.title ?? "Habit",
+          icon: habit?.icon ?? rolled?.icon ?? null,
+          checked:
+            habitCheckedOverride[task.id] ?? task.status === "completed",
+          sortOrder: habit?.sort_order ?? rolled?.sortOrder ?? 0,
+        };
+      });
+
+    const seenHabitIds = new Set(fromSync.map((item) => item.habitId));
+    const fromRollover = (rolledHabits ?? [])
+      .filter(
+        (habit) =>
+          Boolean(habit.todayTaskId) &&
+          habit.todayTaskStatus !== "canceled" &&
+          !seenHabitIds.has(habit.id),
+      )
+      .map((habit) => ({
+        habitId: habit.id,
+        taskId: habit.todayTaskId!,
+        title: habit.title,
+        icon: habit.icon ?? null,
+        checked:
+          habitCheckedOverride[habit.todayTaskId!] ??
+          habit.todayTaskStatus === "completed",
+        sortOrder: habit.sortOrder ?? 0,
+      }));
+
+    return collapseHabitItemsByHabitId(
+      [...fromSync, ...fromRollover]
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      })
+      .map(({ sortOrder: _sortOrder, ...item }) => item),
+    );
+  }, [
+    habitCheckedOverride,
+    rolledHabits,
+    syncedHabitTasks,
+    syncedHabits,
+  ]);
+
+  const onToggleTodayHabit = useCallback(
+    (item: HabitCheckChipItem, checked: boolean) => {
+      setHabitCheckedOverride((current) => ({
+        ...current,
+        [item.taskId]: checked,
+      }));
+      void recordHabitDay(client, item.habitId, {
+        dueYmd: getTodayJournalDateSlug(),
+        status: checked ? "completed" : "canceled",
+      }).catch(() => {
+        setHabitCheckedOverride((current) => {
+          const next = { ...current };
+          delete next[item.taskId];
+          return next;
+        });
+      });
+    },
+    [client],
   );
 
   const waitingForSync =
@@ -185,9 +331,21 @@ export default function TasksScreen() {
   return (
     <GroupedTaskList
       rows={rows}
-      emptyText={getTasksDueFilterEmptyMessage(dueFilter)}
-      refreshing={restLoading}
-      onRefresh={() => void reloadRest()}
+      emptyText={
+        dueFilter === "today" && todayHabits.length > 0
+          ? ""
+          : getTasksDueFilterEmptyMessage(dueFilter)
+      }
+      refreshing={pullRefreshing}
+      onRefresh={() => void reloadRest({ userPull: true })}
+      listHeader={
+        dueFilter === "today" ? (
+          <TasksTodayHabitsChips
+            items={todayHabits}
+            onToggle={onToggleTodayHabit}
+          />
+        ) : null
+      }
       onPressRow={onPressRow}
       onAddToStatus={(status) => {
         router.push({

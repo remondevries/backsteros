@@ -17,20 +17,32 @@ import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "./list-keyboard-navigation-provider.js";
+import type { JournalHabitDayItem } from "./journal-habits-section.js";
+import { JournalHabitsList } from "./journal-habits-section.js";
+import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import { StatusGroupSection } from "./status-group-section.js";
-import { TasksNavIcon } from "./sidebar-nav-icons.js";
 import {
   TaskItemRow,
   type TaskItemRowTask,
 } from "./task-item-row.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
+export type JournalDayListMode = "tasks" | "habits";
+
+const JOURNAL_DAY_LIST_OPTIONS = [
+  { value: "tasks" as const, label: "Tasks" },
+  { value: "habits" as const, label: "Habits" },
+] as const;
+
 export type JournalDueTasksSectionProps = {
   dateSlug: string;
   tasks: TaskItemRowTask[];
+  /** Habit day instances due on this journal date (shown under the Habits tab). */
+  habits?: readonly JournalHabitDayItem[];
   isLoading?: boolean;
   calendarTimeZone?: string;
   onSelectTask?: (taskId: string) => void;
+  onToggleHabit?: (item: JournalHabitDayItem, checked: boolean) => void;
   /**
    * Fixed monospace width (in `ch`) for the task-id column.
    * Prefer the global workspace max; defaults from the unfiltered `tasks` prop.
@@ -38,12 +50,17 @@ export type JournalDueTasksSectionProps = {
   taskIdColumnCh?: number;
 };
 
+/** Habit day instances are synced as tasks but shown separately on journal days. */
+export function isHabitLinkedTask(task: {
+  habitId?: string | null;
+}): boolean {
+  return Boolean(task.habitId && String(task.habitId).trim());
+}
+
 /** Tasks whose due calendar date matches the journal entry `YYYY-MM-DD`. */
-export function filterTasksDueOnJournalDate<T extends { dueDate: TaskItemRowTask["dueDate"] }>(
-  tasks: T[],
-  dateSlug: string,
-  calendarTimeZone?: string,
-): T[] {
+export function filterTasksDueOnJournalDate<
+  T extends { dueDate: TaskItemRowTask["dueDate"] },
+>(tasks: T[], dateSlug: string, calendarTimeZone?: string): T[] {
   return tasks.filter(
     (task) => getTaskDueDateYmd(task.dueDate, calendarTimeZone) === dateSlug,
   );
@@ -52,18 +69,21 @@ export function filterTasksDueOnJournalDate<T extends { dueDate: TaskItemRowTask
 export function JournalDueTasksSection({
   dateSlug,
   tasks: allTasks,
+  habits = [],
   isLoading = false,
   calendarTimeZone,
   onSelectTask,
+  onToggleHabit,
   taskIdColumnCh: taskIdColumnChProp,
 }: JournalDueTasksSectionProps) {
+  const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
   const tasks = useMemo(
     () =>
       filterTasksDueOnJournalDate(
         allTasks,
         dateSlug,
         calendarTimeZone,
-      ),
+      ).filter((task) => !isHabitLinkedTask(task)),
     [allTasks, calendarTimeZone, dateSlug],
   );
   const taskIdColumnCh = useMemo(
@@ -88,17 +108,19 @@ export function JournalDueTasksSection({
   );
   const itemIds = useMemo(
     () =>
-      showStatusGrouping
-        ? flattenGroupedListItemIds(
-            groupedTasks.map((group) => ({
-              key: group.status,
-              items: group.tasks,
-            })),
-            collapsedGroups,
-            (task) => task.id,
-          )
-        : tasks.map((task) => task.id),
-    [collapsedGroups, groupedTasks, showStatusGrouping, tasks],
+      listMode !== "tasks"
+        ? []
+        : showStatusGrouping
+          ? flattenGroupedListItemIds(
+              groupedTasks.map((group) => ({
+                key: group.status,
+                items: group.tasks,
+              })),
+              collapsedGroups,
+              (task) => task.id,
+            )
+          : tasks.map((task) => task.id),
+    [collapsedGroups, groupedTasks, listMode, showStatusGrouping, tasks],
   );
 
   function toggleGroup(status: TaskStatus) {
@@ -119,32 +141,53 @@ export function JournalDueTasksSection({
     selectedId: null,
     onNavigate: (taskId) => onSelectTask?.(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
-    enabled: itemIds.length > 0,
+    enabled: listMode === "tasks" && itemIds.length > 0,
   });
 
-  const {
-    hasBulkSelection,
-    isSelected,
-    toggleSelected,
-  } = useListMultiSelect(itemIds);
+  const { hasBulkSelection, isSelected, toggleSelected } =
+    useListMultiSelect(itemIds);
 
   return (
     <section
       className="journal-due-tasks-section"
       style={{ maxWidth: DOCUMENT_CONTENT_MAX_WIDTH }}
     >
-      <p className="journal-due-tasks-section__heading">
-        <span className="journal-due-tasks-section__heading-icon" aria-hidden="true">
-          <TasksNavIcon />
-        </span>
-        <span>Tasks</span>
-      </p>
+      <div className="journal-due-tasks-section__heading">
+        <SegmentedPillToggle
+          value={listMode}
+          options={JOURNAL_DAY_LIST_OPTIONS}
+          onChange={setListMode}
+          ariaLabel="Journal day list"
+        />
+      </div>
 
-      {isLoading ? (
-        <ul
-          className="journal-due-tasks-section__list"
-          aria-busy="true"
-        >
+      {listMode === "habits" ? (
+        isLoading ? (
+          <ul className="journal-due-tasks-section__list" aria-busy="true">
+            {Array.from({ length: 3 }, (_, index) => (
+              <li key={index} className="journal-detail-skeleton-task">
+                <div
+                  className="journal-detail-skeleton-block journal-detail-skeleton-task-status"
+                  aria-hidden="true"
+                />
+                <div
+                  className="journal-detail-skeleton-block journal-detail-skeleton-task-title"
+                  aria-hidden="true"
+                />
+              </li>
+            ))}
+          </ul>
+        ) : habits.length === 0 ? (
+          <p className="journal-due-tasks-section__empty">
+            No habits due on this date.
+          </p>
+        ) : (
+          <div className="journal-due-tasks-section__habits">
+            <JournalHabitsList items={habits} onToggle={onToggleHabit} />
+          </div>
+        )
+      ) : isLoading ? (
+        <ul className="journal-due-tasks-section__list" aria-busy="true">
           {Array.from({ length: 3 }, (_, index) => (
             <li key={index} className="journal-detail-skeleton-task">
               <div

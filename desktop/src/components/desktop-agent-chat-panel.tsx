@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Check } from "lucide-react";
+import { ProjectsSidePanelIcon } from "@backsteros/ui";
 
 import {
   applyAcpSessionUpdateToTurn,
@@ -322,6 +323,16 @@ export type DesktopAgentChatPanelProps = {
   agentError?: string | null;
   /** Persist task fields (used by /clear to bind a fresh agentChatId). */
   patchTaskValues?: (values: Record<string, unknown>) => Promise<void>;
+  /** Chat-only rail — no Browser/Files/Terminal tabs or Implement ticket button. */
+  chatOnly?: boolean;
+  /** Fires with final assistant text when a turn completes successfully. */
+  onAssistantTurnComplete?: (text: string) => void;
+  /** Override draft-hero headline when chatOnly (default: reply prompt). */
+  draftHeroHeadline?: string | null;
+  /** Composer bar only — no transcript, tabs, or draft hero (e.g. email compose). */
+  composerOnly?: boolean;
+  /** Override composer placeholder when {@link composerOnly}. */
+  composerPlaceholder?: string | null;
 };
 
 /**
@@ -356,6 +367,11 @@ export function DesktopAgentChatPanel({
   onStopAgent,
   agentError = null,
   patchTaskValues,
+  chatOnly = false,
+  onAssistantTurnComplete,
+  draftHeroHeadline = null,
+  composerOnly = false,
+  composerPlaceholder = null,
 }: DesktopAgentChatPanelProps) {
   const { client } = useDesktopApi();
   const agentStatus = useDesktopAgentStatus();
@@ -376,18 +392,23 @@ export function DesktopAgentChatPanel({
   /** Remount LegendList after expand so row width matches the restored pane. */
   const [transcriptLayoutKey, setTranscriptLayoutKey] = useState(0);
   const wasCollapsedRef = useRef(collapsed);
+  const layoutReadyRef = useRef(layoutReady);
   const [sendError, setSendError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<AgentChatViewMode>(() =>
     readAgentChatViewMode(viewScope),
   );
   const [surfaceTabState, setSurfaceTabState] = useState(() =>
-    readAgentSurfaceTabs(taskId),
+    chatOnly ? ensureChatTab([]) : readAgentSurfaceTabs(taskId),
   );
   const { tabs: surfaceTabs, activeId: activeSurfaceTabId } = surfaceTabState;
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [messages, setMessages] = useState<AgentChatMessage[]>(() =>
     loadAgentChatTranscript(agentChatId),
   );
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  /** Dedupes email concept-reply hook when settle races late assistant text. */
+  const assistantTurnNotifiedRef = useRef<string | null>(null);
   /** T3: keep outgoing user rows visible until the persisted transcript acks them. */
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<
     AgentChatMessage[]
@@ -829,6 +850,13 @@ export function DesktopAgentChatPanel({
     }
     wasCollapsedRef.current = collapsed;
   }, [collapsed]);
+
+  useLayoutEffect(() => {
+    if (chatOnly && !layoutReadyRef.current && layoutReady) {
+      setTranscriptLayoutKey((key) => key + 1);
+    }
+    layoutReadyRef.current = layoutReady;
+  }, [chatOnly, layoutReady]);
 
   // Tab focuses the active surface’s primary control; Escape unfocuses so
   // task shortcuts (e.g. S) work. Chat never auto-focuses — only Tab / click.
@@ -1349,14 +1377,56 @@ export function DesktopAgentChatPanel({
     });
   }, []);
 
+  const resolveAssistantTurnText = useCallback(
+    (explicit: string, turn: AgentChatTurnUiState): string => {
+      const fromTurn = explicit.trim() || turn.assistantDraft.trim();
+      if (fromTurn) return fromTurn;
+      const rows = messagesRef.current;
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        if (row?.role === "assistant" && row.text.trim()) {
+          return row.text.trim();
+        }
+      }
+      return "";
+    },
+    [],
+  );
+
+  const notifyAssistantTurnComplete = useCallback(
+    (text: string, turnOutcome: "completed" | "interrupted" | "failed") => {
+      if (!onAssistantTurnComplete || turnOutcome !== "completed") return;
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const messageId =
+        liveTurnMessageIdRef.current ??
+        [...messagesRef.current]
+          .reverse()
+          .find((row) => row.role === "assistant")?.id ??
+        null;
+      const key = `${messageId ?? "turn"}:${trimmed.slice(0, 240)}`;
+      if (assistantTurnNotifiedRef.current === key) return;
+      assistantTurnNotifiedRef.current = key;
+      onAssistantTurnComplete(trimmed);
+    },
+    [onAssistantTurnComplete],
+  );
+
   const finalizeAssistantTurn = useCallback(
     (text: string, options?: { interrupted?: boolean; failed?: boolean }) => {
-      if (
+      const turnAlreadyIdle =
         !turnActiveRef.current &&
         !localTurnWorkingRef.current &&
         turnUiRef.current.phase === "idle" &&
-        !cancellingRef.current
-      ) {
+        !cancellingRef.current;
+      if (turnAlreadyIdle) {
+        // Late settle after afterAgentResponse upgraded the transcript row.
+        window.setTimeout(() => {
+          notifyAssistantTurnComplete(
+            resolveAssistantTurnText(text, turnUiRef.current),
+            "completed",
+          );
+        }, 0);
         return;
       }
       const pendingOutcome = pendingTurnOutcomeRef.current;
@@ -1376,7 +1446,7 @@ export function DesktopAgentChatPanel({
       }
 
       const turn = turnUiRef.current;
-      const trimmed = text.trim() || turn.assistantDraft.trim();
+      const trimmed = resolveAssistantTurnText(text, turn);
       let sealed = sealTurnUiState(turn);
       if (sealed.segments.length === 0 && sealed.activities.length > 0) {
         const sealedActivities = finalizeTurnActivities(sealed.activities);
@@ -1470,8 +1540,21 @@ export function DesktopAgentChatPanel({
         liveTurnMessageIdRef.current = null;
         setLiveTurnMessageId(null);
       }, 350);
+
+      if (
+        onAssistantTurnComplete &&
+        turnOutcome === "completed" &&
+        trimmed.length > 0
+      ) {
+        notifyAssistantTurnComplete(trimmed, turnOutcome);
+      }
     },
-    [setSendInFlightBoth, taskId],
+    [
+      notifyAssistantTurnComplete,
+      resolveAssistantTurnText,
+      setSendInFlightBoth,
+      taskId,
+    ],
   );
 
   const upgradeLastAssistantWithText = useCallback((text: string) => {
@@ -1507,6 +1590,11 @@ export function DesktopAgentChatPanel({
       // stop — must not revive Working… (see WORKING_HOOK_EVENTS comment).
       if (!turnActiveRef.current && !localTurnWorkingRef.current) {
         upgradeLastAssistantWithText(trimmed);
+        if (chatOnly && onAssistantTurnComplete) {
+          window.setTimeout(() => {
+            notifyAssistantTurnComplete(trimmed, "completed");
+          }, 0);
+        }
         return;
       }
       // Mid-turn: stream text into the live timeline. Do not bump turnPending —
@@ -1516,7 +1604,7 @@ export function DesktopAgentChatPanel({
       setTurnUi(next);
       schedulePersistLiveTurnTimeline();
     },
-    [schedulePersistLiveTurnTimeline, taskId, upgradeLastAssistantWithText],
+    [chatOnly, notifyAssistantTurnComplete, schedulePersistLiveTurnTimeline, taskId, upgradeLastAssistantWithText],
   );
 
   const reopenLiveTurnIfAgentStillWorking = useCallback(() => {
@@ -1694,7 +1782,7 @@ export function DesktopAgentChatPanel({
     projectLabel,
     chatId: agentChatId,
     cwd,
-    enabled: Boolean(taskId) && layoutReady,
+    enabled: Boolean(taskId) && (layoutReady || chatOnly),
     agentAttachRequest,
     onAgentAttachRequestHandled,
     agentEndRequest,
@@ -1706,6 +1794,7 @@ export function DesktopAgentChatPanel({
     onAcpTurnSettled: handleAcpTurnSettled,
     onAcpTurnBegin: (forTaskId, messageId, meta) => {
       if (forTaskId !== taskId) return;
+      assistantTurnNotifiedRef.current = null;
       const id = messageId.trim();
       if (!id) return;
       liveTurnMessageIdRef.current = id;
@@ -2762,12 +2851,14 @@ export function DesktopAgentChatPanel({
     [],
   );
 
-  const surfacesEmpty = surfaceTabs.length === 0;
+  const surfacesEmpty = !chatOnly && surfaceTabs.length === 0;
   const activeSurfaceTab = surfacesEmpty
     ? undefined
     : (surfaceTabs.find((tab) => tab.id === activeSurfaceTabId) ??
       surfaceTabs[0]);
-  const activeSurfaceKind = activeSurfaceTab?.kind ?? null;
+  const activeSurfaceKind = chatOnly
+    ? "chat"
+    : (activeSurfaceTab?.kind ?? null);
   const cwdAvailable = Boolean(cwd?.trim());
   const chatPickerAvailable = sessionReady || Boolean(onStartAgent);
   const planMarkdownForSurface =
@@ -2854,7 +2945,7 @@ export function DesktopAgentChatPanel({
   const isDraftHeroState =
     displayMessages.length === 0 && !working && !uiRequest;
   const showTicketStart =
-    isDraftHeroState && !sessionReady && Boolean(onStartAgent);
+    !chatOnly && isDraftHeroState && !sessionReady && Boolean(onStartAgent);
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -2894,10 +2985,23 @@ export function DesktopAgentChatPanel({
   return (
     <div
       ref={rootRef}
-      className={`desktop-agent-chat${collapsed ? " is-collapsed" : ""}`}
+      className={`desktop-agent-chat${collapsed ? " is-collapsed" : ""}${
+        composerOnly ? " desktop-agent-chat--composer-only" : ""
+      }`}
       data-agent-chat
     >
-      {collapsed && onExpand ? (
+      {!composerOnly && collapsed && onExpand ? (
+        chatOnly ? (
+          <button
+            type="button"
+            className="desktop-terminal-strip"
+            title="Show agent panel (])"
+            aria-label="Show agent panel"
+            onClick={onExpand}
+          >
+            <ProjectsSidePanelIcon size={16} collapsed rail="end" />
+          </button>
+        ) : (
         <DesktopAgentCollapsedStrip
           tabs={surfaceTabs}
           activeId={activeSurfaceTabId}
@@ -2909,9 +3013,10 @@ export function DesktopAgentChatPanel({
           onOpenKind={handlePickerAddSurface}
           onExpand={onExpand}
         />
+        )
       ) : null}
 
-      {agentError ? (
+      {agentError && !composerOnly ? (
         <p className="desktop-agent-chat__error" role="alert">
           {agentError}
         </p>
@@ -2935,6 +3040,7 @@ export function DesktopAgentChatPanel({
         }
       >
         <div className="desktop-agent-chat__body-main">
+          {!chatOnly ? (
           <DesktopAgentSurfaceTabBar
             tabs={surfaceTabs}
             activeId={activeSurfaceTabId}
@@ -2948,9 +3054,22 @@ export function DesktopAgentChatPanel({
             onAddSurface={handleAddSurface}
             onHide={onHide}
           />
+          ) : !composerOnly && onHide ? (
+            <div className="desktop-agent-chat__chat-only-header">
+              <button
+                type="button"
+                className="desktop-agent-chat__hide"
+                onClick={onHide}
+                title="Hide agent panel (])"
+                aria-label="Hide agent panel"
+              >
+                Hide
+              </button>
+            </div>
+          ) : null}
 
           <div className="desktop-agent-chat__body-main-content">
-            {surfacesEmpty ? (
+            {!chatOnly && surfacesEmpty ? (
               <AgentSurfaceEmptyPicker
                 onAddSurface={handlePickerAddSurface}
                 cwdAvailable={cwdAvailable}
@@ -2967,6 +3086,7 @@ export function DesktopAgentChatPanel({
               aria-label="Chat"
               aria-hidden={activeSurfaceKind !== "chat"}
             >
+            <div className="desktop-agent-chat__transcript-host">
             <DesktopAgentChatTranscript
               key={transcriptLayoutKey}
               messages={displayMessages}
@@ -2986,6 +3106,7 @@ export function DesktopAgentChatPanel({
               onRevertToMessage={handleRevertToMessage}
             />
             </div>
+            </div>
 
             {/* T3 ChatView: composer overlays the timeline so the scrollbar
                 fills the full column; height is measured for end inset.
@@ -2993,18 +3114,20 @@ export function DesktopAgentChatPanel({
             <div
               ref={footerRef}
               className={`desktop-agent-chat__footer${
-                isDraftHeroState ? " is-draft-hero" : ""
+                !composerOnly && isDraftHeroState ? " is-draft-hero" : ""
+              }${
+                composerOnly ? " desktop-agent-chat__footer--embedded" : ""
               }${
                 activeSurfaceKind !== "chat" ? " is-surface-hidden" : ""
               }`}
-              data-chat-composer-overlay="true"
+              data-chat-composer-overlay={composerOnly ? undefined : "true"}
               aria-hidden={activeSurfaceKind !== "chat"}
             >
               <div
                 ref={attachDraftHeroTransitionGroupRef}
                 className="desktop-agent-chat__footer-inner"
               >
-            {isDraftHeroState ? (
+            {!composerOnly && isDraftHeroState ? (
               <div className="desktop-agent-chat__draft-hero-slot">
                 {taskDisplayId?.trim() ? (
                   <p className="desktop-agent-chat__draft-hero-eyebrow">
@@ -3012,11 +3135,17 @@ export function DesktopAgentChatPanel({
                   </p>
                 ) : null}
                 <h1 className="desktop-agent-chat__draft-hero-headline">
-                  What should we build in{" "}
-                  <span className="desktop-agent-chat__draft-hero-project">
-                    {projectLabel.trim() || "this project"}
-                  </span>
-                  ?
+                  {chatOnly ? (
+                    draftHeroHeadline?.trim() || "What should we say in this reply?"
+                  ) : (
+                    <>
+                      What should we build in{" "}
+                      <span className="desktop-agent-chat__draft-hero-project">
+                        {projectLabel.trim() || "this project"}
+                      </span>
+                      ?
+                    </>
+                  )}
                 </h1>
               </div>
             ) : null}
@@ -3106,7 +3235,8 @@ export function DesktopAgentChatPanel({
                 startingAgent || (!sessionReady && !onStartAgent && !working)
               }
               placeholder={
-                uiRequest
+                composerPlaceholder?.trim() ||
+                (uiRequest
                   ? uiRequest.kind === "ask_question"
                     ? "Type your own answer, or leave this blank to use the selected option"
                     : (uiRequest.detail ??
@@ -3121,7 +3251,7 @@ export function DesktopAgentChatPanel({
                         ? "Message the agent to start…"
                         : working
                           ? "Add a follow-up to send next…"
-                          : "Message the agent… (@ files, / commands, paste images)"
+                          : "Message the agent… (@ files, / commands, paste images)")
               }
               pendingBanner={
                 uiRequest ? (
@@ -3394,7 +3524,7 @@ export function DesktopAgentChatPanel({
                 ) : null
               }
             />
-            {showTicketStart ? (
+            {!composerOnly && showTicketStart ? (
               <div className="desktop-agent-chat__draft-hero-actions">
                 <button
                   type="button"
@@ -3424,7 +3554,7 @@ export function DesktopAgentChatPanel({
             </div>
 
             {surfaceTabs.map((tab) => {
-              if (tab.kind === "chat") return null;
+              if (tab.kind === "chat" || chatOnly) return null;
               const active = tab.id === activeSurfaceTabId;
               return (
                 <div

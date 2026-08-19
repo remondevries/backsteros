@@ -57,6 +57,12 @@ export type TaskItemRowTask = {
   updatedAt?: number;
   /** Cursor Agent chat id bound to this task (core), if any. */
   agentChatId?: string | null;
+  /** Habit definition this daily instance belongs to, if any. */
+  habitId?: string | null;
+  /** Set when created via API key or agent actor. */
+  agentCreatedAt?: number | null;
+  /** User sign-off; clears Agents inbox subgroup. */
+  agentInboxApprovedAt?: number | null;
 };
 
 export type TaskItemRowProps = {

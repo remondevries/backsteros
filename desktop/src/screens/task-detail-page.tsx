@@ -602,6 +602,9 @@ export function TaskDetailPage({
             task.projectKey ? `/projects/${task.projectKey}` : null
           }
           onCreateAssigneeFromQuery={createAssigneeFromQuery}
+          onAgentInboxApprove={() => {
+            void workspace.patchTask(task.id, { agentInboxApproved: true });
+          }}
           belowDescription={({ mode }) => activityPanel(mode === "preview")}
         />
       </DesktopTaskLayout>

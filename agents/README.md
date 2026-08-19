@@ -13,30 +13,21 @@ Grok Bot       --HTTPS + scoped API key-->  VPS agents  --Tailscale-->  core
 
 ## Allowed traffic
 
-Proxied `/api/v1` routes (everything else returns `403`):
-
-| Area | Routes |
-| --- | --- |
-| Tasks | list, read, write, comments, activities, batch, reorder, move, triage — **not** task images |
-| Markdown | documents CRUD + `/content` |
-| Letters | read-only: list, inbox, `GET /letters/{id}` (metadata + `extractedText`), relations — **not** writes, PDF, or attachments |
-| Context | `GET /projects`, `GET /projects/{id}`, relations |
-| Discovery | `GET /search`, `GET /global-search` |
+All `/api/v1/*` routes are forwarded. Core enforces API key scopes.
 
 Blocked at the door (never forwarded):
 
 - PowerSync / sync / ops
 - PTY sidecar (`/agent-pty`)
-- PDFs and letter attachment downloads
-- Finance, settings, GitHub, vault filesystem, avatars, API key admin, org/contact CRUD, etc.
+- API key admin (`/api-keys`)
 
-Core still enforces API key scopes on allowed routes.
+Attach a **contact** to each agent’s API key in Settings so comments and activity show that person.
 
 ## Prerequisites
 
 1. **Core** running on the local computer (`hub` → Start all, or `pnpm dev` in `core/server`).
 2. **Tailscale** on the VPS and on the machine running core, same tailnet.
-3. A **scoped API key** from core (`tasks:read`, `tasks:write`, `documents:*`, `letters:read`, `search:query`, `projects:read` as needed — one key per agent later).
+3. One **API key per agent** from core Settings, with a contact attached so activity is attributed to that person.
 
 Note the core MagicDNS name or `100.x` address, e.g. `http://macbook.tail1234.ts.net:8788`.
 

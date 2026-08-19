@@ -9,6 +9,8 @@ import {
 import {
   AreasNavIcon,
   ComposeNavIcon,
+  FinanceNavIcon,
+  HabitsNavIcon,
   InboxNavIcon,
   JournalNavIcon,
   KnowledgeBaseNavIcon,
@@ -18,6 +20,7 @@ import {
 import { ProjectIcon } from "../../components/project-icon";
 import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
 import { isPadDevice } from "../../lib/device";
+import { HabitConfettiHost } from "../../lib/habits/habit-complete-confetti";
 import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
 import { useGoNavigationShortcuts } from "../../lib/use-go-navigation-shortcuts";
 import { colors } from "../../lib/theme";
@@ -33,6 +36,7 @@ const IPAD_TRAY_ROUTES = new Set([
   "areas",
   "development",
   "letters",
+  "finance",
   "knowledge",
 ]);
 
@@ -49,6 +53,7 @@ function SignedInTabs() {
 
   return (
     <View style={ui.screen}>
+      <HabitConfettiHost />
       <Tabs
         tabBar={(props) => (
           <FloatingTabBar {...(props as unknown as FloatingTabBarProps)} />
@@ -112,6 +117,17 @@ function SignedInTabs() {
           }}
         />
         <Tabs.Screen
+          name="habits"
+          options={{
+            ...overflowTabOptions,
+            title: "Habit Tracker",
+            tabBarAccessibilityLabel: "Habit Tracker",
+            tabBarIcon: ({ color, size }) => (
+              <HabitsNavIcon color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="projects"
           options={{
             ...overflowTabOptions,
@@ -141,6 +157,17 @@ function SignedInTabs() {
             tabBarAccessibilityLabel: "Letters",
             tabBarIcon: ({ color, size }) => (
               <LettersNavIcon color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="finance"
+          options={{
+            ...tabOverflowOptions("finance"),
+            title: "Finance",
+            tabBarAccessibilityLabel: "Finance",
+            tabBarIcon: ({ color, size }) => (
+              <FinanceNavIcon color={color} size={size} />
             ),
           }}
         />

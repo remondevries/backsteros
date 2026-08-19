@@ -12,6 +12,7 @@ import {
   isGoLeaderSequencePending,
   registerGoLeaderKeyPress,
 } from "./go-leader-sequence";
+import { clearFinanceLeaderSequence } from "./finance-leader-sequence";
 import {
   findGoItemByLetter,
   keyEventToLetter,
@@ -45,6 +46,7 @@ export function useGoNavigationShortcuts(enabled = true) {
       if (!letter) return;
 
       if (letter === "g" && !event.shiftKey) {
+        clearFinanceLeaderSequence();
         if (isGoLeaderSequencePending()) {
           // Second G within the window — keep pending / re-arm.
           registerGoLeaderKeyPress();

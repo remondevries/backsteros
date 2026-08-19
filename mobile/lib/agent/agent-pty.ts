@@ -1,6 +1,9 @@
 import type { AgentPtyConnection } from "@backsteros/contracts";
 import * as SecureStore from "expo-secure-store";
 
+import type { AgentChatMessage } from "./agent-chat-message";
+import { parseTranscriptMessages } from "./agent-chat-message";
+
 type RequestJsonClient = {
   requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
 };
@@ -302,41 +305,7 @@ export async function findPtySessionForTask(
   return getStoredPtySessionId(taskId);
 }
 
-export type AgentChatTranscriptMessage = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  createdAt: number;
-};
-
-function parseTranscriptMessages(
-  raw: unknown,
-): AgentChatTranscriptMessage[] {
-  if (!Array.isArray(raw)) return [];
-  const out: AgentChatTranscriptMessage[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const role = (entry as { role?: unknown }).role;
-    const text = (entry as { text?: unknown }).text;
-    const id = (entry as { id?: unknown }).id;
-    const createdAt = (entry as { createdAt?: unknown }).createdAt;
-    if (role !== "user" && role !== "assistant") continue;
-    if (typeof text !== "string" || !text.trim()) continue;
-    out.push({
-      id:
-        typeof id === "string" && id.trim()
-          ? id.trim()
-          : `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      role,
-      text: text.trim(),
-      createdAt:
-        typeof createdAt === "number" && Number.isFinite(createdAt)
-          ? createdAt
-          : Date.now(),
-    });
-  }
-  return out;
-}
+export type AgentChatTranscriptMessage = AgentChatMessage;
 
 /** Shared Chat-tab history on the laptop sidecar (desktop + iPad). */
 export async function fetchAgentChatTranscript(
@@ -676,3 +645,182 @@ export async function killPtySession(
 export function newPtySessionId(): string {
   return `mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/** Switch Cursor ACP session mode (agent / ask / plan). */
+export async function setPtyAgentMode(
+  connection: AgentPtyConnection,
+  options: {
+    taskId: string;
+    mode: string;
+    chatId?: string | null;
+    cwd?: string | null;
+  },
+): Promise<
+  | { ok: true; modeId: string; unchanged: boolean }
+  | { ok: false; error: string }
+> {
+  const taskId = options.taskId.trim();
+  const mode = options.mode.trim();
+  if (!taskId || !mode) {
+    return { ok: false, error: "taskId and mode are required." };
+  }
+  try {
+    const response = await fetch(`${connection.httpOrigin}/agent/acp/mode`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(connection.token),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        taskId,
+        mode,
+        chatId: options.chatId?.trim() || null,
+        cwd: options.cwd?.trim() || null,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      modeId?: string;
+      unchanged?: boolean;
+      error?: string;
+    } | null;
+    if (!response.ok || !body?.modeId) {
+      return {
+        ok: false,
+        error: body?.error || `Could not set agent mode (${response.status}).`,
+      };
+    }
+    return {
+      ok: true,
+      modeId: body.modeId,
+      unchanged: body.unchanged === true,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach PTY server over Tailscale.",
+    };
+  }
+}
+
+/** Access permission policy for the ACP session. */
+export async function setPtyAcpAccessMode(
+  connection: AgentPtyConnection,
+  options: {
+    taskId: string;
+    mode: "supervised" | "auto_accept_edits" | "full_access";
+    cwd?: string | null;
+  },
+): Promise<
+  | {
+      ok: true;
+      accessMode: "supervised" | "auto_accept_edits" | "full_access";
+    }
+  | { ok: false; error: string }
+> {
+  const taskId = options.taskId.trim();
+  if (!taskId) return { ok: false, error: "taskId is required." };
+  try {
+    const response = await fetch(
+      `${connection.httpOrigin}/agent/acp/access-mode`,
+      {
+        method: "POST",
+        headers: {
+          ...ptyAuthHeaders(connection.token),
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taskId,
+          mode: options.mode,
+          cwd: options.cwd?.trim() || null,
+        }),
+      },
+    );
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      accessMode?: "supervised" | "auto_accept_edits" | "full_access";
+    } | null;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: body?.error || `Access mode failed (${response.status}).`,
+      };
+    }
+    return {
+      ok: true,
+      accessMode:
+        body?.accessMode === "full_access"
+          ? "full_access"
+          : body?.accessMode === "auto_accept_edits"
+            ? "auto_accept_edits"
+            : "supervised",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach PTY server over Tailscale.",
+    };
+  }
+}
+
+/** Answer a pending ACP permission / ask_question request from Chat UI. */
+export async function respondPtyAcpUiRequest(
+  connection: AgentPtyConnection,
+  options: {
+    requestId: string;
+    optionId?: string | null;
+    preference?: "once" | "always" | "reject" | null;
+    skipped?: boolean;
+    answers?:
+      | Record<string, string | string[]>
+      | { questionId: string; selectedOptionIds: string[] }[]
+      | null;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const requestId = options.requestId.trim();
+  if (!requestId) return { ok: false, error: "requestId is required." };
+  try {
+    const response = await fetch(`${connection.httpOrigin}/agent/acp/respond`, {
+      method: "POST",
+      headers: {
+        ...ptyAuthHeaders(connection.token),
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        requestId,
+        optionId: options.optionId?.trim() || null,
+        preference: options.preference ?? null,
+        skipped: options.skipped === true,
+        answers: options.answers ?? null,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      ok?: boolean;
+    } | null;
+    if (!response.ok || body?.ok === false) {
+      return {
+        ok: false,
+        error: body?.error || `ACP respond failed (${response.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not reach PTY server over Tailscale.",
+    };
+  }
+}
+

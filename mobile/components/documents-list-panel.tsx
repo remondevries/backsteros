@@ -1,6 +1,6 @@
 import type { Document } from "@backsteros/contracts";
-import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -10,18 +10,21 @@ import {
   View,
 } from "react-native";
 
+import { isPadDevice } from "../lib/device";
 import { documentDetailHref } from "../lib/detail-href";
 import { getMobileEnvironment } from "../lib/env";
 import { matchesListSearch, normalizeListSearchQuery } from "../lib/list-search";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { usePullToRevealSearch } from "../lib/use-pull-to-reveal-search";
 import { useSyncedOrRest } from "../lib/use-synced-or-rest";
 import { DocumentIcon } from "./document-icon";
 import { FolderIcon } from "./folder-icon";
+import { ContentPageTitle } from "./content-page-title";
 import { ListSearchField } from "./list-search-field";
 
 export type DocumentRow = {
@@ -43,9 +46,37 @@ type Props = {
   includeFolders?: boolean;
   /** When true, show floating list search above the tab bar. */
   showListSearch?: boolean;
+  /** Master-detail selection highlight (iPad). */
+  selectedId?: string | null;
+  /**
+   * When true (iPad split), open the first document if none is selected.
+   * Requires `sectionRoute` (e.g. `"knowledge"`).
+   */
+  autoSelectFirst?: boolean;
+  /**
+   * Nested section route for in-tab detail (`/(app)/knowledge/:id`).
+   * When unset, opens root `/document/:id`.
+   */
+  sectionRoute?: "knowledge";
+  /** Phone: in-content scrolling title (not sticky stack header). */
+  pageTitle?: string;
+  /** Pad page title for status bar when the native header is hidden. */
+  pageTitleSafeArea?: boolean;
 };
 
 type VisibleRow = DocumentRow & { depth: number };
+
+/** `/knowledge/<id>` → id / null. */
+export function knowledgeSelectedIdFromPathname(
+  pathname: string,
+): string | null {
+  const normalized = normalizePathname(pathname);
+  const match = normalized.match(/^\/knowledge\/([^/]+)$/);
+  if (!match) return null;
+  const segment = match[1];
+  if (!segment || segment === "new") return null;
+  return segment;
+}
 
 function sortDocuments(rows: DocumentRow[]): DocumentRow[] {
   return [...rows].sort((left, right) => {
@@ -118,7 +149,7 @@ function buildVisibleRows(
 
   const visible: VisibleRow[] = [];
 
-  function walk(parentId: string | null, depth: number) {
+  const walk = (parentId: string | null, depth: number) => {
     const children = byParent.get(parentId) ?? [];
     for (const child of children) {
       visible.push({ ...child, depth });
@@ -126,8 +157,7 @@ function buildVisibleRows(
         walk(child.id, depth + 1);
       }
     }
-  }
-
+  };
   walk(null, 0);
   return visible;
 }
@@ -155,34 +185,41 @@ function filterDocumentsForSearch(
     while (current) {
       if (keep.has(current.id)) break;
       keep.add(current.id);
-      current = current.parent_id
-        ? byId.get(current.parent_id)
-        : undefined;
+      current = current.parent_id ? byId.get(current.parent_id) : undefined;
     }
   }
   return rows.filter((row) => keep.has(row.id));
 }
 
-/** Flat / tree documents list — desktop project / knowledge document list parity. */
+/**
+ * Document / knowledge tree list — shared by project panels and Knowledge Base.
+ */
 export function DocumentsListPanel({
   documentType,
   projectId,
   emptyMessage,
   includeFolders = false,
   showListSearch = false,
+  selectedId = null,
+  autoSelectFirst = false,
+  sectionRoute,
+  pageTitle,
+  pageTitleSafeArea = false,
 }: Props) {
   const router = useRouter();
-  const client = useMobileApiClient();
+  const pathname = usePathname();
   const { apiUrl } = getMobileEnvironment();
-  const search = usePullToRevealSearch();
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
-    () => new Set(),
+  const client = useMobileApiClient();
+  const isPad = isPadDevice();
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState(
+    () => new Set<string>(),
   );
 
-  const { sql: docsSql, params: docsParams } = useMemo(
-    () => documentsQuery(documentType, projectId, includeFolders),
-    [documentType, includeFolders, projectId],
-  );
+  const pathSelectedId =
+    selectedId ??
+    (sectionRoute === "knowledge"
+      ? knowledgeSelectedIdFromPathname(pathname)
+      : null);
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
@@ -197,12 +234,16 @@ export function DocumentsListPanel({
     [apiUrl],
   );
 
+  const { sql: docsSql, params: docsParams } = useMemo(
+    () => documentsQuery(documentType, projectId, includeFolders),
+    [documentType, includeFolders, projectId],
+  );
+
   const {
     rows: sourceRows,
     loading,
     error,
-    useRest,
-    restLoading,
+    pullRefreshing,
     reload,
   } = useSyncedOrRest<DocumentRow, DocumentRow>({
     sql: docsSql,
@@ -233,6 +274,7 @@ export function DocumentsListPanel({
       }
     },
   });
+  const search = usePullToRevealSearch({ suppress: pullRefreshing });
 
   const filteredSourceRows = useMemo(
     () =>
@@ -255,6 +297,49 @@ export function DocumentsListPanel({
     [collapsedFolderIds, filteredSourceRows, includeFolders, searching],
   );
 
+  const openDocument = useCallback(
+    (id: string) => {
+      if (sectionRoute) {
+        const href = `/(app)/${sectionRoute}/${id}` as const;
+        if (isPad) {
+          router.replace(href);
+          return;
+        }
+        router.push(href);
+        return;
+      }
+      router.push(documentDetailHref(id));
+    },
+    [isPad, router, sectionRoute],
+  );
+
+  useEffect(() => {
+    if (!autoSelectFirst || !isPad || !sectionRoute) return;
+    if (loading || error) return;
+    if (pathSelectedId) return;
+    const normalized = normalizePathname(pathname);
+    if (!normalized.startsWith(`/${sectionRoute}`)) return;
+    if (
+      normalized !== `/${sectionRoute}` &&
+      !normalized.match(new RegExp(`^/${sectionRoute}/[^/]+$`))
+    ) {
+      return;
+    }
+    const firstDoc = filteredSourceRows.find((row) => row.kind !== "folder");
+    if (!firstDoc) return;
+    router.replace(`/(app)/${sectionRoute}/${firstDoc.id}`);
+  }, [
+    autoSelectFirst,
+    error,
+    filteredSourceRows,
+    isPad,
+    loading,
+    pathSelectedId,
+    pathname,
+    router,
+    sectionRoute,
+  ]);
+
   const listRef = useRef<FlatList<VisibleRow>>(null);
   const itemIds = useMemo(() => rows.map((row) => row.id), [rows]);
 
@@ -272,9 +357,9 @@ export function DocumentsListPanel({
         });
         return;
       }
-      router.push(documentDetailHref(item.id));
+      openDocument(item.id);
     },
-    [router, rows, searching],
+    [openDocument, rows, searching],
   );
 
   const { highlightedId } = useListJkNavigation({
@@ -332,9 +417,8 @@ export function DocumentsListPanel({
         onScrollToIndexFailed={() => {}}
         refreshControl={
           <RefreshControl
-            refreshing={useRest ? restLoading : false}
+            refreshing={pullRefreshing}
             onRefresh={() => {
-              if (showListSearch) search.open();
               void reload();
             }}
             tintColor={colors.muted}
@@ -342,6 +426,14 @@ export function DocumentsListPanel({
           />
         }
         contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
+        ListHeaderComponent={
+          pageTitle ? (
+            <ContentPageTitle
+              title={pageTitle}
+              includeTopSafeArea={pageTitleSafeArea}
+            />
+          ) : null
+        }
         ListEmptyComponent={
           <Text style={ui.empty}>
             {searching ? "No matching documents." : emptyMessage}
@@ -351,14 +443,17 @@ export function DocumentsListPanel({
           const title = item.title?.trim() || item.path || "Untitled";
           const isFolder = item.kind === "folder";
           const highlighted = highlightedId === item.id;
+          const selected = !isFolder && pathSelectedId === item.id;
           return (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={title}
+              accessibilityState={{ selected }}
               onPress={() => activateRow(item.id)}
               style={({ pressed }) => [
                 ui.row,
                 { paddingLeft: 16 + item.depth * 16 },
+                selected ? ui.listRowSelected : null,
                 highlighted ? ui.keyboardNavHighlight : null,
                 pressed ? { backgroundColor: colors.rowPressed } : null,
               ]}

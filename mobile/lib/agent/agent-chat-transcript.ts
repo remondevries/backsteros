@@ -2,19 +2,42 @@ import * as SecureStore from "expo-secure-store";
 import type { AgentPtyConnection } from "@backsteros/contracts";
 
 import {
+  createAgentChatMessage,
+  normalizeAgentChatMessage,
+  parseTranscriptMessages,
+  type AgentChatMessage,
+  type AgentChatRole,
+  type AgentChatTurnOutcome,
+  type AgentChatTurnStatus,
+} from "./agent-chat-message";
+import {
+  mergeTranscriptMessages,
+  repairInvertedUserAssistantPairs,
+  transcriptNeedsRemoteUpdate,
+} from "./agent-chat-transcript-merge";
+import {
   appendAgentChatTranscriptMessage,
   fetchAgentChatTranscript,
   putAgentChatTranscript,
 } from "./agent-pty";
 
-export type AgentChatRole = "user" | "assistant";
-
-export type AgentChatMessage = {
-  id: string;
-  role: AgentChatRole;
-  text: string;
-  createdAt: number;
+export type {
+  AgentChatMessage,
+  AgentChatRole,
+  AgentChatTurnOutcome,
+  AgentChatTurnStatus,
 };
+export type {
+  AgentChatActivityItem,
+  AgentChatPlanStep,
+  AgentChatTurnSegment,
+} from "./agent-chat-activity";
+export {
+  createAgentChatMessage,
+  normalizeAgentChatMessage,
+  parseTranscriptMessages,
+};
+export { mergeTranscriptMessages, repairInvertedUserAssistantPairs };
 
 export type AgentChatViewMode = "chat" | "terminal";
 
@@ -27,47 +50,11 @@ function transcriptKey(chatId: string): string {
   return `${TRANSCRIPT_PREFIX}${chatId.trim().toLowerCase()}`;
 }
 
-function newMessageId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-export function createAgentChatMessage(
-  role: AgentChatRole,
-  text: string,
-): AgentChatMessage {
-  return {
-    id: newMessageId(),
-    role,
-    text: text.trim(),
-    createdAt: Date.now(),
-  };
-}
-
 function parseTranscript(raw: string | null): AgentChatMessage[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry): entry is AgentChatMessage =>
-          Boolean(entry) &&
-          typeof entry === "object" &&
-          typeof (entry as AgentChatMessage).id === "string" &&
-          ((entry as AgentChatMessage).role === "user" ||
-            (entry as AgentChatMessage).role === "assistant") &&
-          typeof (entry as AgentChatMessage).text === "string" &&
-          typeof (entry as AgentChatMessage).createdAt === "number",
-      )
-      .map((entry) => ({
-        id: entry.id,
-        role: entry.role,
-        text: entry.text,
-        createdAt: entry.createdAt,
-      }));
+    return repairInvertedUserAssistantPairs(parseTranscriptMessages(parsed));
   } catch {
     return [];
   }
@@ -103,7 +90,7 @@ export async function saveAgentChatTranscript(
 
 /**
  * Load shared transcript from the laptop PTY sidecar.
- * Migrates / merges device-local history when the sidecar is missing turns.
+ * Merges so text-only remotes cannot wipe richer activity timelines.
  */
 export async function syncAgentChatTranscript(
   connection: AgentPtyConnection,
@@ -116,10 +103,7 @@ export async function syncAgentChatTranscript(
   if (!remote.ok) return local;
 
   const merged = mergeTranscriptMessages(remote.messages, local);
-  if (
-    merged.length > remote.messages.length ||
-    (remote.messages.length === 0 && local.length > 0)
-  ) {
+  if (transcriptNeedsRemoteUpdate(remote.messages, merged)) {
     const put = await putAgentChatTranscript(connection, id, merged);
     if (put.ok) {
       await saveAgentChatTranscript(id, put.messages);
@@ -127,24 +111,8 @@ export async function syncAgentChatTranscript(
     }
   }
 
-  const next = remote.messages.length > 0 ? remote.messages : merged;
-  await saveAgentChatTranscript(id, next);
-  return next;
-}
-
-function mergeTranscriptMessages(
-  a: readonly AgentChatMessage[],
-  b: readonly AgentChatMessage[],
-): AgentChatMessage[] {
-  const byKey = new Map<string, AgentChatMessage>();
-  for (const message of [...a, ...b]) {
-    const key = `${message.role}:${message.text}`;
-    const existing = byKey.get(key);
-    if (!existing || message.createdAt < existing.createdAt) {
-      byKey.set(key, message);
-    }
-  }
-  return [...byKey.values()].sort((x, y) => x.createdAt - y.createdAt);
+  await saveAgentChatTranscript(id, merged);
+  return merged;
 }
 
 /** Append one message to the shared sidecar store (best-effort). */

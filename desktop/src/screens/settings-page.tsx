@@ -5,6 +5,7 @@ import type {
   CreateApiKeyResponse,
   GithubConnectionStatus,
 } from "@backsteros/contracts";
+import { API_KEY_SCOPES } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
 
@@ -52,6 +53,7 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
 import { SettingsCursorTab } from "../components/settings-cursor-tab";
 import { SettingsMoneybirdTab } from "../components/settings-moneybird-tab";
+import { SettingsEmailTab } from "../components/settings-email-tab";
 
 function ClerkAccountEmailCard() {
   const { user } = useUser();
@@ -160,6 +162,9 @@ function SettingsAccountTab({
 function SettingsApiTab() {
   const { client } = useDesktopApi();
   const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
+  const workspace = useDesktopWorkspaceData();
+  const contacts = workspace.contacts;
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
   const [loading, setLoading] = useState(Boolean(clerkKey));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -182,6 +187,7 @@ function SettingsApiTab() {
           name: key.name,
           prefix: key.prefix,
           scopes: key.scopes,
+          contactId: key.contactId ?? null,
           createdAt: key.createdAt,
         })),
       );
@@ -214,17 +220,22 @@ function SettingsApiTab() {
   return (
     <ApiKeysSettingsSectionView
       apiKeys={apiKeys}
+      contacts={withAvatarSrc(contacts, contactAvatarSrc)}
       loading={loading}
       errorMessage={errorMessage}
       onRetry={() => void loadKeys()}
-      onCreate={async (name) => {
+      onCreate={async (name, contactId) => {
         try {
           const result = await client.requestJson<CreateApiKeyResponse>(
             "/api/v1/api-keys",
             {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ name, scopes: ["read", "write"] }),
+              body: JSON.stringify({
+                name,
+                scopes: [...API_KEY_SCOPES],
+                contactId,
+              }),
             },
           );
           setApiKeys((current) => [
@@ -233,6 +244,7 @@ function SettingsApiTab() {
               name: result.apiKey.name,
               prefix: result.apiKey.prefix,
               scopes: result.apiKey.scopes,
+              contactId: result.apiKey.contactId ?? null,
               createdAt: result.apiKey.createdAt,
             },
             ...current,
@@ -263,6 +275,36 @@ function SettingsApiTab() {
                     name: updated.name,
                     prefix: updated.prefix,
                     scopes: updated.scopes,
+                    contactId: updated.contactId ?? null,
+                    createdAt: updated.createdAt,
+                  }
+                : entry,
+            ),
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+      onSetContact={async (id, contactId) => {
+        try {
+          const updated = await client.requestJson<ApiKey>(
+            `/api/v1/api-keys/${encodeURIComponent(id)}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ contactId }),
+            },
+          );
+          setApiKeys((current) =>
+            current.map((entry) =>
+              entry.id === updated.id
+                ? {
+                    id: updated.id,
+                    name: updated.name,
+                    prefix: updated.prefix,
+                    scopes: updated.scopes,
+                    contactId: updated.contactId ?? null,
                     createdAt: updated.createdAt,
                   }
                 : entry,
@@ -799,6 +841,11 @@ export function SettingsPage() {
         <SettingsWhoopTab title={meta.label} description={meta.description} />
       ) : activeTab === "moneybird" ? (
         <SettingsMoneybirdTab
+          title={meta.label}
+          description={meta.description}
+        />
+      ) : activeTab === "email" ? (
+        <SettingsEmailTab
           title={meta.label}
           description={meta.description}
         />

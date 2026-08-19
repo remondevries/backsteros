@@ -17,6 +17,10 @@ type Props = {
   addActionLabel?: string;
   /** Optional trailing control when `onAdd` is not enough. */
   trailing?: ReactNode;
+  /**
+   * Extra top gap when headers are not sticky. Keep false for sticky headers.
+   */
+  spaced?: boolean;
 };
 
 /**
@@ -30,6 +34,7 @@ export function ProjectTypeGroupHeader({
   onAdd,
   addActionLabel = "item",
   trailing,
+  spaced = false,
 }: Props) {
   const mainContent = (
     <>
@@ -67,7 +72,7 @@ export function ProjectTypeGroupHeader({
   );
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, spaced ? styles.rowSpaced : null]}>
       {onToggle ? (
         <Pressable
           accessibilityRole="button"
@@ -94,9 +99,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 4,
     paddingHorizontal: 8,
-    backgroundColor: colors.background,
+    // Transparent so left lists (black) and iPad content cards (surface) show through.
+    backgroundColor: "transparent",
+  },
+  rowSpaced: {
+    marginTop: 10,
   },
   main: {
     flex: 1,

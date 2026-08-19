@@ -86,7 +86,7 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
     [column],
   );
 
-  const { rows, loading, error, useRest, restLoading, reload } =
+  const { rows, loading, error, pullRefreshing, reload } =
     useSyncedOrRest<LetterRow, LetterRow>({
       sql: lettersSql,
       params: [scope.id],
@@ -180,7 +180,7 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
       keyExtractor={(item) => item.id}
       stickySectionHeadersEnabled={false}
       keyboardShouldPersistTaps="handled"
-      refreshing={useRest ? restLoading : false}
+      refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}

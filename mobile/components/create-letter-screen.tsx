@@ -8,7 +8,6 @@ import {
   View,
 } from "react-native";
 
-import { letterDetailHref } from "../lib/detail-href";
 import {
   pickLetterPdf,
   uploadLetterPdfFromUri,
@@ -23,6 +22,7 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import {
   FLOATING_PDF_DOCK_CLEARANCE,
   FloatingComposeActionPill,
+  LETTER_PDF_UPLOAD_ICON_COLOR,
 } from "./floating-compose-action-pill";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { LetterFileChip } from "./letter-file-chip";
@@ -118,12 +118,12 @@ export function CreateLetterScreen() {
         if (!upload.ok) {
           setError(upload.error);
           setSaving(false);
-          router.replace(letterDetailHref(created.id));
+          router.replace(`/(app)/letters/${created.id}`);
           return;
         }
       }
 
-      router.replace(letterDetailHref(created.id));
+      router.replace(`/(app)/letters/${created.id}`);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not create letter.",
@@ -224,6 +224,7 @@ export function CreateLetterScreen() {
 
         {!picking ? (
           <FloatingComposeActionPill
+            compact
             onPress={() => {
               void onPickPdf();
             }}
@@ -242,9 +243,12 @@ export function CreateLetterScreen() {
             }
           >
             {saving ? (
-              <ActivityIndicator color={colors.foreground} size="small" />
+              <ActivityIndicator
+                color={LETTER_PDF_UPLOAD_ICON_COLOR}
+                size="small"
+              />
             ) : (
-              <PlusIcon size={22} color={colors.foreground} />
+              <PlusIcon size={14} color={LETTER_PDF_UPLOAD_ICON_COLOR} />
             )}
           </FloatingComposeActionPill>
         ) : null}

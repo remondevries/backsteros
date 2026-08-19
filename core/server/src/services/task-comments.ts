@@ -6,14 +6,17 @@ import type {
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { taskComments, tasks, users } from "../db/schema.js";
+import { contacts, taskComments, tasks, users } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import type { TaskWriteActor } from "../lib/write-actor.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
 export type TaskCommentListRow = typeof taskComments.$inferSelect & {
   userDisplayName: string | null;
   userEmail: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
 };
 
 export function authorDisplayName(email: string | null | undefined): string {
@@ -23,40 +26,91 @@ export function authorDisplayName(email: string | null | undefined): string {
   return local;
 }
 
-/** Activity/comment attribution: known user → name; otherwise treat as agent. */
+/** Activity/comment attribution: known user/contact → name; otherwise treat as agent. */
 export function activityActorName(input: {
   actorUserId?: string | null;
+  actorContactId?: string | null;
   actorEmail?: string | null;
   actorName?: string | null;
   userDisplayName?: string | null;
+  contactName?: string | null;
 }): string {
   const named =
     input.actorName?.trim() ||
+    input.contactName?.trim() ||
     input.userDisplayName?.trim() ||
     null;
   if (named) return named;
   if (input.actorEmail?.trim()) return authorDisplayName(input.actorEmail);
-  if (input.actorUserId) return "User";
+  if (input.actorUserId || input.actorContactId) return "User";
   return "Agent";
 }
 
-async function resolveAuthorProfile(
-  userId: string | null,
+export async function resolveWriteActorProfile(
+  workspaceId: string,
+  actor: TaskWriteActor | null | undefined,
   executor: DbExecutor,
-): Promise<{ email: string | null; displayName: string | null }> {
-  if (!userId) return { email: null, displayName: null };
+): Promise<{
+  userId: string | null;
+  contactId: string | null;
+  email: string | null;
+  name: string | null;
+}> {
+  if (!actor || actor.kind === "agent") {
+    return {
+      userId: null,
+      contactId: null,
+      email: null,
+      name: actor?.kind === "agent" ? "Agent" : null,
+    };
+  }
+
+  if (actor.kind === "contact" || actor.contactId) {
+    const contactId = actor.contactId ?? null;
+    if (!contactId) {
+      return { userId: null, contactId: null, email: null, name: "Agent" };
+    }
+    const [contact] = await executor
+      .select({
+        name: contacts.name,
+        email: contacts.email,
+      })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.id, contactId),
+          eq(contacts.workspaceId, workspaceId),
+          isNull(contacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!contact) {
+      return { userId: null, contactId: null, email: null, name: "Agent" };
+    }
+    return {
+      userId: null,
+      contactId,
+      email: contact.email?.trim() || null,
+      name: contact.name.trim() || "Agent",
+    };
+  }
+
+  if (!actor.userId) {
+    return { userId: null, contactId: null, email: null, name: null };
+  }
+
   const [user] = await executor
     .select({
       email: users.email,
       displayName: users.displayName,
     })
     .from(users)
-    .where(eq(users.id, userId))
+    .where(eq(users.id, actor.userId))
     .limit(1);
-  return {
-    email: user?.email ?? null,
-    displayName: user?.displayName?.trim() || null,
-  };
+  const email = user?.email ?? null;
+  const name =
+    user?.displayName?.trim() || (email ? authorDisplayName(email) : null);
+  return { userId: actor.userId, contactId: null, email, name };
 }
 
 export async function listTaskComments(
@@ -84,6 +138,7 @@ export async function listTaskComments(
       taskId: taskComments.taskId,
       parentCommentId: taskComments.parentCommentId,
       authorUserId: taskComments.authorUserId,
+      authorContactId: taskComments.authorContactId,
       authorEmail: taskComments.authorEmail,
       body: taskComments.body,
       resolvedAt: taskComments.resolvedAt,
@@ -92,9 +147,12 @@ export async function listTaskComments(
       deletedAt: taskComments.deletedAt,
       userDisplayName: users.displayName,
       userEmail: users.email,
+      contactName: contacts.name,
+      contactEmail: contacts.email,
     })
     .from(taskComments)
     .leftJoin(users, eq(taskComments.authorUserId, users.id))
+    .leftJoin(contacts, eq(taskComments.authorContactId, contacts.id))
     .where(
       and(
         eq(taskComments.taskId, taskId),
@@ -109,7 +167,7 @@ export async function createTaskComment(
   workspaceId: string,
   taskId: string,
   input: CreateTaskCommentInput,
-  author: { userId: string | null; kind?: "user" | "agent" },
+  author: TaskWriteActor,
   executor: DbExecutor = db,
 ) {
   const [task] = await executor
@@ -146,11 +204,7 @@ export async function createTaskComment(
     if (!parent || parent.parentCommentId != null) return null;
   }
 
-  const isAgent = author.kind === "agent";
-  const authorUserId = isAgent ? null : author.userId;
-  const profile = isAgent
-    ? { email: null, displayName: null }
-    : await resolveAuthorProfile(authorUserId, executor);
+  const profile = await resolveWriteActorProfile(workspaceId, author, executor);
 
   const [row] = await executor
     .insert(taskComments)
@@ -159,7 +213,8 @@ export async function createTaskComment(
       workspaceId,
       taskId,
       parentCommentId,
-      authorUserId,
+      authorUserId: profile.userId,
+      authorContactId: profile.contactId,
       authorEmail: profile.email,
       body: input.body.trim(),
     })
@@ -169,8 +224,10 @@ export async function createTaskComment(
 
   return {
     ...row,
-    userDisplayName: isAgent ? "Agent" : profile.displayName,
-    userEmail: profile.email,
+    userDisplayName: profile.userId ? profile.name : null,
+    userEmail: profile.userId ? profile.email : null,
+    contactName: profile.contactId ? profile.name : null,
+    contactEmail: profile.contactId ? profile.email : null,
   } satisfies TaskCommentListRow;
 }
 
@@ -224,11 +281,25 @@ export async function updateTaskComment(
 
   if (!row) return null;
 
-  const profile = await resolveAuthorProfile(row.authorUserId, executor);
+  const profile = await resolveWriteActorProfile(
+    workspaceId,
+    {
+      userId: row.authorUserId,
+      contactId: row.authorContactId,
+      kind: row.authorContactId
+        ? "contact"
+        : row.authorUserId
+          ? "user"
+          : "agent",
+    },
+    executor,
+  );
   return {
     ...row,
-    userDisplayName: profile.displayName,
-    userEmail: profile.email ?? row.authorEmail,
+    userDisplayName: profile.userId ? profile.name : null,
+    userEmail: profile.userId ? profile.email : row.authorEmail,
+    contactName: profile.contactId ? profile.name : null,
+    contactEmail: profile.contactId ? profile.email : null,
   } satisfies TaskCommentListRow;
 }
 

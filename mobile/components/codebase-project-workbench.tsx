@@ -1,20 +1,25 @@
 import type { GithubCommit, GithubPullRequest } from "@backsteros/contracts";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import { useCallback, useState } from "react";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   CODEBASE_PAD_SPLIT_MIN_WIDTH,
   CODEBASE_WORKBENCH_TABS,
-  DEFAULT_CODEBASE_WORKBENCH_TAB,
   type CodebaseWorkbenchTabId,
 } from "../lib/codebase-workbench-tabs";
 import { isPadDevice } from "../lib/device";
+import {
+  PAD_CONTENT_INSET,
+  usePadSidePanelCollapsed,
+} from "../lib/pad-side-panel-collapse";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { PillNav } from "./pill-nav";
 import { ProjectOverviewPanel } from "./project-overview-panel";
 import { ProjectTasksPanel } from "./project-tasks-panel";
+import { ProjectsSidePanelIcon } from "./projects-side-panel-icon";
 import { CodebaseProjectProperties } from "./codebase/codebase-project-properties";
 import {
   GithubCommitDetail,
@@ -30,40 +35,53 @@ import { ProjectFsFileEditor } from "./codebase/project-fs-file-editor";
 import { ProjectFsTree } from "./codebase/project-fs-tree";
 
 const LIST_PANE_WIDTH = 340;
+/** Matches task detail collapsed rail (`TASK_DETAIL_COLLAPSED_RAIL_WIDTH`). */
+const LIST_COLLAPSED_RAIL_WIDTH = 46;
 
 type Props = {
   projectId: string;
   /** Bumped after returning from GitHub OAuth. */
   githubRefreshToken?: number;
   onTitleChange?: (title: string) => void;
-  /** Notify parent when the active section changes (for header Edit on Overview). */
-  onPhoneSectionChange?: (section: CodebaseWorkbenchTabId) => void;
-  descriptionOverride?: string | null;
+  /** Controlled workbench tab (parent owns header chrome). */
+  tab: CodebaseWorkbenchTabId;
+  onTabChange: (tab: CodebaseWorkbenchTabId) => void;
+  /**
+   * When false, the parent renders the tab strip (stack header).
+   * Phone may still render an inline strip when true.
+   */
+  showInlineTabs?: boolean;
   onDescriptionLoaded?: (description: string) => void;
 };
 
 /**
  * Codebase workbench tabs: Overview | Tasks | Files | Commits | PRs.
  * Overview uses the same ProjectOverviewPanel as default projects.
- * iPad: Tasks/Files/Commits/PRs use list|detail columns; Overview is full-width.
+ * iPad: Tasks/Files/Commits/PRs use list|detail columns; project name lives
+ * in the stack header next to Back. Section pills stay centered.
+ * Left pane can collapse like task detail (⇧[ parity).
  * iPhone: single-column lists (detail pushed on the stack).
  */
 export function CodebaseProjectWorkbench({
   projectId,
   githubRefreshToken = 0,
   onTitleChange,
-  onPhoneSectionChange,
-  descriptionOverride = null,
+  tab,
+  onTabChange,
+  showInlineTabs = true,
   onDescriptionLoaded,
 }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
+  const isPad = isPadDevice();
   const usePadSplit =
-    isPadDevice() && windowWidth >= CODEBASE_PAD_SPLIT_MIN_WIDTH;
+    isPad && windowWidth >= CODEBASE_PAD_SPLIT_MIN_WIDTH;
+  // Content sits under the stack header — only canvas inset, not status-bar.
+  const listCardBottomInset = Math.max(insets.bottom, PAD_CONTENT_INSET);
+  const { collapsed: listCollapsed, setCollapsed: setListCollapsed } =
+    usePadSidePanelCollapsed("codebase-project-workbench");
 
-  const [tab, setTab] = useState<CodebaseWorkbenchTabId>(
-    DEFAULT_CODEBASE_WORKBENCH_TAB,
-  );
   const [selectedCommit, setSelectedCommit] = useState<GithubCommit | null>(
     null,
   );
@@ -73,16 +91,15 @@ export function CodebaseProjectWorkbench({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fileRefreshToken, setFileRefreshToken] = useState(0);
 
-  useEffect(() => {
-    onPhoneSectionChange?.(tab);
-  }, [onPhoneSectionChange, tab]);
-
-  const handleTabChange = useCallback((next: CodebaseWorkbenchTabId) => {
-    setTab(next);
-    if (next !== "commits") setSelectedCommit(null);
-    if (next !== "pulls") setSelectedPull(null);
-    if (next !== "files") setSelectedFilePath(null);
-  }, []);
+  const handleTabChange = useCallback(
+    (next: CodebaseWorkbenchTabId) => {
+      onTabChange(next);
+      if (next !== "commits") setSelectedCommit(null);
+      if (next !== "pulls") setSelectedPull(null);
+      if (next !== "files") setSelectedFilePath(null);
+    },
+    [onTabChange],
+  );
 
   const handleSelectCommit = useCallback(
     (commit: GithubCommit) => {
@@ -129,9 +146,9 @@ export function CodebaseProjectWorkbench({
     body = (
       <ProjectOverviewPanel
         projectId={projectId}
-        layout={usePadSplit ? "wide" : "stacked"}
-        descriptionOverride={descriptionOverride}
+        layout={usePadSplit || isPad ? "wide" : "stacked"}
         onDescriptionLoaded={onDescriptionLoaded}
+        onNameChange={onTitleChange}
       />
     );
   } else if (!usePadSplit) {
@@ -228,30 +245,112 @@ export function CodebaseProjectWorkbench({
         <GithubPullRequestDetailEmpty />
       );
 
-    body = (
-      <View style={styles.splitRow}>
-        <View style={styles.listPane}>
-          <View style={styles.listBody}>{listBody}</View>
-        </View>
-        <View style={styles.detailPane}>{detailBody}</View>
+    const detailPane = (
+      <View
+        style={[
+          styles.detailPane,
+          {
+            paddingTop: PAD_CONTENT_INSET,
+            paddingRight: PAD_CONTENT_INSET,
+            paddingBottom: listCardBottomInset,
+          },
+        ]}
+      >
+        {detailBody}
       </View>
     );
+
+    if (listCollapsed) {
+      body = (
+        <View style={styles.splitRow}>
+          <View
+            style={[
+              styles.listCollapsedRail,
+              { paddingTop: PAD_CONTENT_INSET },
+            ]}
+            accessibilityLabel="Project side panel collapsed"
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Show project side panel"
+              accessibilityState={{ expanded: false }}
+              hitSlop={8}
+              onPress={() => setListCollapsed(false)}
+              style={({ pressed }) => [
+                styles.listToggle,
+                pressed ? { opacity: 0.55 } : null,
+              ]}
+            >
+              <ProjectsSidePanelIcon
+                size={18}
+                collapsed
+                color={colors.foreground}
+              />
+            </Pressable>
+          </View>
+          {detailPane}
+        </View>
+      );
+    } else {
+      body = (
+        <View style={styles.splitRow}>
+          {/*
+            Same floating surface card as task detail (`CodebaseTaskLayout`
+            detailCard) — rounded border on the black canvas.
+          */}
+          <View
+            style={[
+              styles.listSlot,
+              {
+                paddingTop: PAD_CONTENT_INSET,
+                paddingLeft: PAD_CONTENT_INSET,
+                paddingBottom: listCardBottomInset,
+              },
+            ]}
+            accessibilityLabel="Project details"
+          >
+            <View style={styles.listCard}>
+              <View style={styles.listChrome}>
+                <View style={styles.listChromeSpacer} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Hide project side panel"
+                  accessibilityState={{ expanded: true }}
+                  hitSlop={8}
+                  onPress={() => setListCollapsed(true)}
+                  style={({ pressed }) => [
+                    styles.listToggle,
+                    pressed ? { opacity: 0.55 } : null,
+                  ]}
+                >
+                  <ProjectsSidePanelIcon size={18} color={colors.foreground} />
+                </Pressable>
+              </View>
+              <View style={styles.listBody}>{listBody}</View>
+            </View>
+          </View>
+          {detailPane}
+        </View>
+      );
+    }
   }
 
   return (
     <View style={styles.root}>
-      <View style={styles.tabs}>
-        <PillNav
-          accessibilityLabel="Codebase project sections"
-          value={tab}
-          onChange={handleTabChange}
-          density="content"
-          items={CODEBASE_WORKBENCH_TABS.map((entry) => ({
-            value: entry.id,
-            label: entry.label,
-          }))}
-        />
-      </View>
+      {showInlineTabs && !isPad ? (
+        <View style={styles.tabs}>
+          <PillNav
+            accessibilityLabel="Codebase project sections"
+            value={tab}
+            onChange={handleTabChange}
+            density="content"
+            items={CODEBASE_WORKBENCH_TABS.map((entry) => ({
+              value: entry.id,
+              label: entry.label,
+            }))}
+          />
+        </View>
+      ) : null}
       <View
         style={[
           styles.body,
@@ -288,11 +387,44 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     minHeight: 0,
   },
-  listPane: {
-    width: LIST_PANE_WIDTH,
+  listSlot: {
+    width: LIST_PANE_WIDTH + PAD_CONTENT_INSET,
     flexShrink: 0,
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.border,
+    minHeight: 0,
+  },
+  listCard: {
+    flex: 1,
+    minHeight: 0,
+    width: LIST_PANE_WIDTH,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  listChrome: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  listChromeSpacer: {
+    flex: 1,
+  },
+  listToggle: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    marginRight: -6,
+  },
+  listCollapsedRail: {
+    width: LIST_COLLAPSED_RAIL_WIDTH,
+    flexShrink: 0,
+    alignItems: "center",
     minHeight: 0,
   },
   listBody: {

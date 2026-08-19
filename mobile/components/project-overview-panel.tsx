@@ -50,7 +50,6 @@ import { DetailContentContainer } from "./detail-content-container";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
-import { JournalMarkdownBody } from "./journal-markdown-body";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
@@ -103,14 +102,9 @@ type AreaRow = {
 
 type Props = {
   projectId: string;
-  editing?: boolean;
-  draftName?: string;
-  draftDescription?: string;
-  onDraftNameChange?: (value: string) => void;
-  onDraftDescriptionChange?: (value: string) => void;
-  saveError?: string | null;
+  /** Keep the shell header title in sync when the name is saved. */
+  onNameChange?: (name: string) => void;
   onDescriptionLoaded?: (description: string) => void;
-  descriptionOverride?: string | null;
   /**
    * `stacked` — phone chips + sheet (default).
    * `wide` — iPad: desktop-style meta rows + constrained content measure.
@@ -195,22 +189,19 @@ function dueIsoForOffset(daysFromToday: number): string {
   return endOfLocalDayIso(date);
 }
 
-/** Project overview — properties + description; edit mode keeps the same chrome. */
+/** Project overview — always-editable name / summary / description (desktop parity). */
 export function ProjectOverviewPanel({
   projectId,
-  editing = false,
-  draftName = "",
-  draftDescription = "",
-  onDraftNameChange,
-  onDraftDescriptionChange,
-  saveError = null,
+  onNameChange,
   onDescriptionLoaded,
-  descriptionOverride = null,
   layout = "stacked",
 }: Props) {
   const powerSync = useMobilePowerSync();
   const onDescriptionLoadedRef = useRef(onDescriptionLoaded);
   onDescriptionLoadedRef.current = onDescriptionLoaded;
+  const onNameChangeRef = useRef(onNameChange);
+  onNameChangeRef.current = onNameChange;
+  const hydratedIdRef = useRef<string | null>(null);
 
   const client = useMobileApiClient();
 
@@ -235,12 +226,18 @@ export function ProjectOverviewPanel({
   const [areaId, setAreaId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [summary, setSummary] = useState("");
+  const [description, setDescription] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const local = syncedRows?.[0] ?? null;
 
   useEffect(() => {
     setPicker(null);
     setPropertyError(null);
+    setSaveError(null);
+    hydratedIdRef.current = null;
   }, [projectId]);
 
   const project = local;
@@ -267,6 +264,17 @@ export function ProjectOverviewPanel({
     setArea(asProjectArea(project.area));
     setAreaId(project.area_id);
   }, [project]);
+
+  useEffect(() => {
+    if (!project) return;
+    if (hydratedIdRef.current === projectId) return;
+    hydratedIdRef.current = projectId;
+    const nextName = project.name?.trim() || "";
+    setName(nextName);
+    setSummary(project.summary ?? "");
+    setDescription(project.description ?? "");
+    onNameChangeRef.current?.(nextName || "Untitled");
+  }, [project, projectId]);
 
   async function patchProperty(values: Record<string, unknown>): Promise<boolean> {
     if (!project) return false;
@@ -306,12 +314,37 @@ export function ProjectOverviewPanel({
       }
       return true;
     } catch (reason) {
-      setPropertyError(
+      const message =
         reason instanceof Error
           ? reason.message
-          : "Could not update property.",
-      );
+          : "Could not update property.";
+      setPropertyError(message);
+      setSaveError(message);
       return false;
+    }
+  }
+
+  async function persistText(values: {
+    name?: string;
+    summary?: string;
+    description?: string;
+  }) {
+    setSaveError(null);
+    const patch: Record<string, unknown> = {};
+    if (values.name !== undefined) patch.name = values.name.trim();
+    if (values.summary !== undefined) {
+      patch.summary = values.summary.trim() || null;
+    }
+    if (values.description !== undefined) {
+      patch.description = values.description;
+    }
+    const ok = await patchProperty(patch);
+    if (!ok) return;
+    if (values.name !== undefined) {
+      onNameChangeRef.current?.(values.name.trim() || "Untitled");
+    }
+    if (values.description !== undefined) {
+      onDescriptionLoadedRef.current?.(values.description);
     }
   }
 
@@ -465,12 +498,6 @@ export function ProjectOverviewPanel({
 
   const startLabel = formatTaskDueMetaLabel(startDate);
   const dueLabel = formatTaskDueMetaLabel(dueDate);
-  const summary = project.summary?.trim() ?? "";
-  const description =
-    (descriptionOverride !== null
-      ? descriptionOverride
-      : (project.description ?? "")
-    ).trim();
   const percentLabel = formatProjectTaskProgressPercent(progress);
   const selectedOrganization = organizations.find(
     (entry) => entry.id === organizationId,
@@ -823,26 +850,30 @@ export function ProjectOverviewPanel({
     <>
       <View style={styles.overviewHeader}>
         <ProjectOverviewIcon icon={project.icon} type={projectType} />
-        {editing ? (
-          <TextInput
-            value={draftName}
-            onChangeText={onDraftNameChange}
-            placeholder="Project name"
-            placeholderTextColor={colors.muted}
-            autoFocus
-            returnKeyType="next"
-            style={styles.titleInput}
-          />
-        ) : (
-          <Text style={styles.title} accessibilityRole="header">
-            {project.name?.trim() || "Untitled"}
-          </Text>
-        )}
-        {editing ? null : summary ? (
-          <Text style={styles.summary}>{summary}</Text>
-        ) : useWide ? (
-          <Text style={styles.summaryEmpty}>Add a short summary…</Text>
-        ) : null}
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          onBlur={() => {
+            const trimmed = name.trim();
+            if (!trimmed) {
+              setName(project.name?.trim() || "");
+              return;
+            }
+            void persistText({ name: trimmed });
+          }}
+          placeholder="Project name"
+          placeholderTextColor={colors.muted}
+          returnKeyType="next"
+          style={styles.titleInput}
+        />
+        <TextInput
+          value={summary}
+          onChangeText={setSummary}
+          onBlur={() => void persistText({ summary })}
+          placeholder="Add a short summary…"
+          placeholderTextColor={colors.muted}
+          style={styles.summaryInput}
+        />
       </View>
 
       {useWide ? (
@@ -871,22 +902,17 @@ export function ProjectOverviewPanel({
 
       <Text style={ui.sectionHeader}>Description</Text>
       <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24 }}>
-        {editing ? (
-          <TextInput
-            value={draftDescription}
-            onChangeText={onDraftDescriptionChange}
-            placeholder="Add a description…"
-            placeholderTextColor={colors.muted}
-            multiline
-            scrollEnabled={false}
-            textAlignVertical="top"
-            style={styles.descriptionInput}
-          />
-        ) : description ? (
-          <JournalMarkdownBody body={description} />
-        ) : (
-          <Text style={ui.rowMeta}>No description yet.</Text>
-        )}
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          onBlur={() => void persistText({ description })}
+          placeholder="Add a description…"
+          placeholderTextColor={colors.muted}
+          multiline
+          scrollEnabled={false}
+          textAlignVertical="top"
+          style={styles.descriptionInput}
+        />
       </View>
 
       {saveError ? (
@@ -900,7 +926,7 @@ export function ProjectOverviewPanel({
   return (
     <KeyboardAwareScrollView
       style={ui.screen}
-      keepEndVisibleWhileTyping={editing}
+      keepEndVisibleWhileTyping
     >
       <DetailContentContainer constrained={useWide}>
         {overviewBody}
@@ -937,6 +963,12 @@ const styles = StyleSheet.create({
     color: "rgba(237, 237, 237, 0.65)",
     fontSize: 15,
     lineHeight: 21,
+  },
+  summaryInput: {
+    color: "rgba(237, 237, 237, 0.65)",
+    fontSize: 15,
+    lineHeight: 21,
+    paddingVertical: 0,
   },
   summaryEmpty: {
     color: "rgba(237, 237, 237, 0.35)",

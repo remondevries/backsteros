@@ -8,11 +8,16 @@ import { Image, StyleSheet, View } from "react-native";
 export function EntityListAvatar({
   src,
   size = 18,
+  shape = "circle",
 }: {
   src?: string | null;
   size?: number;
+  /** Defaults to circle; bank-account logos use rounded-square. */
+  shape?: "circle" | "rounded-square";
 }) {
   const [failed, setFailed] = useState(false);
+  const radius =
+    shape === "rounded-square" ? Math.max(3, Math.round(size * 0.22)) : size / 2;
 
   useEffect(() => {
     setFailed(false);
@@ -21,10 +26,15 @@ export function EntityListAvatar({
   if (!src || failed) return null;
 
   return (
-    <View style={[styles.wrap, { width: size, height: size }]}>
+    <View
+      style={[
+        styles.wrap,
+        { width: size, height: size, borderRadius: radius },
+      ]}
+    >
       <Image
         source={{ uri: src }}
-        style={{ width: size, height: size, borderRadius: size / 2 }}
+        style={{ width: size, height: size, borderRadius: radius }}
         onError={() => setFailed(true)}
         accessibilityIgnoresInvertColors
       />
@@ -35,7 +45,6 @@ export function EntityListAvatar({
 const styles = StyleSheet.create({
   wrap: {
     marginTop: 2,
-    borderRadius: 999,
     overflow: "hidden",
     flexShrink: 0,
   },

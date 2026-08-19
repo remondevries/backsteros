@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @backsteros/server dev",
+    "dev:all": "pnpm --parallel --filter @backsteros/contracts --filter @backsteros/server run dev",
     "build": "pnpm --filter @backsteros/contracts --filter @backsteros/api-client --filter @backsteros/powersync-schema --filter @backsteros/ui --filter @backsteros/server run build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm --filter @backsteros/contracts build && pnpm --filter @backsteros/api-client build && pnpm --filter @backsteros/powersync-schema build && pnpm --filter @backsteros/ui build && pnpm -r --if-present typecheck",

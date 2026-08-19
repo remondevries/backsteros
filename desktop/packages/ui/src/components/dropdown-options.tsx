@@ -7,7 +7,9 @@ import { DefaultProjectIcon } from "./default-project-icon.js";
 import { EntityAvatarIcon } from "./entity-avatar-icon.js";
 import { OrganizationIcon } from "./organization-icon.js";
 import { ProjectOcticon } from "./project-octicon.js";
+import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
+import type { EmailMailbox } from "../email.js";
 
 /** Sentinel for unassigned / none rows (assignee, contact, organization, area). */
 export const DROPDOWN_NONE_VALUE = "__none__";
@@ -185,4 +187,42 @@ export function resolveDropdownNone(
 
 export function resolveDropdownProjectKey(value: string): string | null {
   return value === DROPDOWN_NO_PROJECT_VALUE ? null : value;
+}
+
+/** From-inbox options for email compose — contact avatar when linked. */
+export function buildEmailMailboxDropdownOptions(
+  mailboxes: readonly EmailMailbox[],
+  options?: { iconSize?: number },
+): SearchableDropdownOption<string>[] {
+  const iconSize = options?.iconSize ?? 14;
+  return mailboxes.map((mailbox) => {
+    const label =
+      mailbox.contactName?.trim() ||
+      mailbox.displayName?.trim() ||
+      mailbox.email ||
+      mailbox.inboxId;
+    const icon = mailbox.avatarSrc ? (
+      <EntityAvatarIcon
+        src={mailbox.avatarSrc}
+        size={iconSize}
+        kind="contact"
+      />
+    ) : (
+      <EmailNavIcon />
+    );
+    return {
+      value: mailbox.inboxId,
+      label,
+      icon,
+      avatarSrc: mailbox.avatarSrc ?? null,
+      searchTerms: [
+        mailbox.email,
+        mailbox.displayName ?? "",
+        mailbox.contactName ?? "",
+        mailbox.inboxId,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    };
+  });
 }

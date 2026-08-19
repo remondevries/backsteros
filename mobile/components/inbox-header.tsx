@@ -4,6 +4,7 @@ import {
   TabStackHeader,
   TabStackHeaderPlusButton,
 } from "../lib/tab-stack-options";
+import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
 
 /** Native stack `headerRight` — plain so iOS liquid glass wraps once. */
 export function InboxHeaderPlus({
@@ -23,11 +24,23 @@ export function InboxHeaderPlus({
 }
 
 /** iPad list-pane header (outside the detail stack). */
-export function InboxHeader() {
+export function InboxHeader({
+  onToggleCollapse,
+}: {
+  onToggleCollapse?: () => void;
+} = {}) {
   return (
     <TabStackHeader
       title="Inbox"
       leadingActions={<InboxHeaderPlus chrome="glass" />}
+      trailingActions={
+        onToggleCollapse ? (
+          <PadSidePanelCollapseButton
+            onCollapse={onToggleCollapse}
+            accessibilityLabel="Hide Inbox list"
+          />
+        ) : null
+      }
     />
   );
 }

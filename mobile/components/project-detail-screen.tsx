@@ -1,16 +1,20 @@
-import type { Project } from "@backsteros/contracts";
 import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
 import {
-  DEFAULT_CODEBASE_PHONE_SECTION,
-  type CodebasePhoneSectionId,
+  CODEBASE_WORKBENCH_TABS,
+  DEFAULT_CODEBASE_WORKBENCH_TAB,
+  type CodebaseWorkbenchTabId,
 } from "../lib/codebase-workbench-tabs";
 import { isPadDevice } from "../lib/device";
-import { useMobilePowerSync } from "../lib/powersync-context";
 import {
   DEFAULT_PROJECT_SECTION,
   getProjectSectionLabel,
@@ -20,19 +24,18 @@ import {
 import { migrateLegacyProjectType } from "../lib/project-type";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import {
+  TabStackHeaderBackButton,
   TabStackHeaderPlusButton,
-  TabStackHeaderTextButton,
   tabDetailScreenOptions,
 } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { useLocalQuery } from "../lib/use-local-query";
-import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
 import { DetailContentContainer } from "./detail-content-container";
-import { useFadingHeaderTitleOpacity } from "./fading-header-title";
-import { PillNav } from "./pill-nav";
+import { ContentPageTitle } from "./content-page-title";
+import { PillNav, type PillNavItem } from "./pill-nav";
 import { ProjectDocumentsPanel } from "./project-documents-panel";
 import { ProjectLettersPanel } from "./project-letters-panel";
 import { ProjectOverviewPanel } from "./project-overview-panel";
@@ -57,34 +60,136 @@ const TYPE_SQL = `SELECT type FROM projects
  WHERE deleted_at IS NULL AND id = ?
  LIMIT 1`;
 
-/** Project detail shell — section pills; Tasks uses the shared grouped list. */
+/**
+ * Section pills for the native header. Sized to content only so the strip
+ * cannot steal taps from the Back control.
+ */
+function centeredHeaderSectionTabs<T extends string>({
+  accessibilityLabel,
+  value,
+  onChange,
+  items,
+}: {
+  accessibilityLabel: string;
+  value: T;
+  onChange: (next: T) => void;
+  items: readonly PillNavItem<T>[];
+}): ReactNode {
+  return (
+    <View style={styles.headerTitleClusterCenter} pointerEvents="box-none">
+      <View pointerEvents="auto">
+        <PillNav
+          accessibilityLabel={accessibilityLabel}
+          value={value}
+          onChange={onChange}
+          align="center"
+          density="header"
+          items={items}
+        />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * iPad codebase header — Back is its own control; project name sits beside it
+ * but is NOT inside `headerLeft` (iOS liquid glass wraps that slot into one
+ * button, which reads as “back to {project}”). Tabs stay absolutely centered.
+ */
+function CodebasePadHeader({
+  title,
+  tab,
+  onTabChange,
+  onBack,
+}: {
+  title: string;
+  tab: CodebaseWorkbenchTabId;
+  onTabChange: (next: CodebaseWorkbenchTabId) => void;
+  onBack: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        styles.padHeader,
+        {
+          paddingTop: Math.max(insets.top, 8),
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <View style={styles.padHeaderBar}>
+        <View style={styles.padHeaderLeft} pointerEvents="box-none">
+          <TabStackHeaderBackButton onPress={onBack} />
+          <Text
+            accessibilityRole="header"
+            pointerEvents="none"
+            style={styles.padHeaderTitle}
+            numberOfLines={1}
+          >
+            {title.trim() || "Untitled"}
+          </Text>
+        </View>
+        <View style={styles.padHeaderCenter} pointerEvents="box-none">
+          <PillNav
+            accessibilityLabel="Codebase project sections"
+            value={tab}
+            onChange={onTabChange}
+            align="center"
+            density="header"
+            items={CODEBASE_WORKBENCH_TABS.map((entry) => ({
+              value: entry.id,
+              label: entry.label,
+            }))}
+          />
+        </View>
+        {/* Balance the left cluster so centered tabs stay optically centered. */}
+        <View style={styles.padHeaderRightSpacer} pointerEvents="none" />
+      </View>
+    </View>
+  );
+}
+
+const CENTERED_HEADER_TITLE_OPTIONS = {
+  headerTitleAlign: "center" as const,
+  // Keep the default title slot — do not stretch edge-to-edge or Back becomes
+  // untappable under the title container.
+  headerTitleContainerStyle: {
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  title: "",
+  headerBackVisible: false,
+};
+
+/** Project detail shell — section pills; overview is always-edit. */
 export function ProjectDetailScreen({ projectId, title }: Props) {
   const router = useRouter();
-  const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
-  const client = useMobileApiClient();
   useEnsureProjectVault(projectId);
 
-  const { data: typeRows } = useLocalQuery<ProjectTypeRow>(TYPE_SQL, [
-    projectId,
-  ]);
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    // Deep link / empty history — return to the projects list.
+    router.replace("/projects");
+  }, [router]);
+
+  const { data: typeRows, isLoading: typeLoading } =
+    useLocalQuery<ProjectTypeRow>(TYPE_SQL, [projectId]);
   const projectType = migrateLegacyProjectType(typeRows?.[0]?.type);
-  const isCodebase = projectType === "codebase";
+  const typeReady = !typeLoading || typeRows.length > 0;
+  const isCodebase = typeReady && projectType === "codebase";
 
   const [section, setSection] = useState<ProjectSectionId>(
     DEFAULT_PROJECT_SECTION,
   );
-  const [phoneCodebaseSection, setPhoneCodebaseSection] =
-    useState<CodebasePhoneSectionId>(DEFAULT_CODEBASE_PHONE_SECTION);
-  const [displayTitle, setDisplayTitle] = useState(title);
-  const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftDescription, setDraftDescription] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [overviewDescription, setOverviewDescription] = useState<string | null>(
-    null,
+  const [codebaseTab, setCodebaseTab] = useState<CodebaseWorkbenchTabId>(
+    DEFAULT_CODEBASE_WORKBENCH_TAB,
   );
+  const [displayTitle, setDisplayTitle] = useState(title);
   const [githubRefreshToken, setGithubRefreshToken] = useState(0);
 
   useEffect(() => {
@@ -92,12 +197,8 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   }, [title]);
 
   useEffect(() => {
-    setEditing(false);
-    setSaveError(null);
-  }, [section, projectId]);
-
-  useEffect(() => {
-    setPhoneCodebaseSection(DEFAULT_CODEBASE_PHONE_SECTION);
+    setCodebaseTab(DEFAULT_CODEBASE_WORKBENCH_TAB);
+    setSection(DEFAULT_PROJECT_SECTION);
   }, [projectId]);
 
   // Refresh GitHub lists when returning to the screen (e.g. after Settings OAuth).
@@ -106,82 +207,29 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
     setGithubRefreshToken((token) => token + 1);
   }, [isCodebase, projectId]);
 
-  const showHeaderProjectName =
-    !editing && !isCodebase && section !== "overview";
-  const headerProjectNameOpacity =
-    useFadingHeaderTitleOpacity(showHeaderProjectName);
-  const headerProjectNameStyle = useAnimatedStyle(() => ({
-    opacity: headerProjectNameOpacity.value,
-    maxHeight: 14 * headerProjectNameOpacity.value,
-    marginBottom: 3 * headerProjectNameOpacity.value,
-  }));
+  const showPageTitle = !isCodebase && section !== "overview";
 
-  const onSectionTabIndex = useCallback((index: number) => {
+  const onDefaultSectionTabIndex = useCallback((index: number) => {
     const next = PROJECT_SECTIONS[index];
     if (next) setSection(next.id);
   }, []);
 
+  const onCodebaseSectionTabIndex = useCallback((index: number) => {
+    const next = CODEBASE_WORKBENCH_TABS[index];
+    if (next) setCodebaseTab(next.id);
+  }, []);
+
   useSectionTabShortcuts({
-    enabled: !editing && !isCodebase,
+    enabled: typeReady && !isCodebase,
     sectionCount: PROJECT_SECTIONS.length,
-    onSelectIndex: onSectionTabIndex,
+    onSelectIndex: onDefaultSectionTabIndex,
   });
 
-  const startEditing = useCallback(() => {
-    setDraftName(displayTitle);
-    setDraftDescription(overviewDescription ?? "");
-    setSaveError(null);
-    setEditing(true);
-  }, [displayTitle, overviewDescription]);
-
-  async function saveEditing() {
-    const trimmedName = draftName.trim();
-    if (!trimmedName || saving) return;
-    setSaving(true);
-    setSaveError(null);
-    const nextDescription = draftDescription;
-    const patchBody = {
-      name: trimmedName,
-      description: nextDescription,
-    };
-    try {
-      if (powerSync.ready) {
-        await powerSync.patchProject(projectId, patchBody);
-        try {
-          await client.requestJson<Project>(
-            `/api/v1/projects/${encodeURIComponent(projectId)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(patchBody),
-            },
-          );
-        } catch {
-          // Local write remains source of truth if REST fails.
-        }
-      } else {
-        await client.requestJson<Project>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(patchBody),
-          },
-        );
-      }
-      setDisplayTitle(trimmedName);
-      setOverviewDescription(nextDescription);
-      setEditing(false);
-      setDraftName("");
-      setDraftDescription("");
-    } catch (reason) {
-      setSaveError(
-        reason instanceof Error ? reason.message : "Could not save project.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
+  useSectionTabShortcuts({
+    enabled: typeReady && isCodebase,
+    sectionCount: CODEBASE_WORKBENCH_TABS.length,
+    onSelectIndex: onCodebaseSectionTabIndex,
+  });
 
   function onPressCreate() {
     if (section === "tasks" || isCodebase) {
@@ -206,68 +254,94 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
     }
   }
 
-  if (isCodebase && !editing) {
-    const phoneOverviewActive = phoneCodebaseSection === "overview";
+  const backHeaderLeft = () => (
+    <TabStackHeaderBackButton onPress={handleBack} />
+  );
+
+  // Wait for project type so we don't flash default-header tabs then drop them
+  // under Back when the row resolves as codebase.
+  if (!typeReady) {
     return (
       <>
         <Stack.Screen
           options={{
             ...tabDetailScreenOptions(),
-            headerTitleAlign: "center",
-            headerTitle: () => (
-              <View style={styles.headerTitleCluster}>
-                <Text
-                  numberOfLines={1}
-                  style={styles.headerProjectName}
-                  accessibilityRole="header"
-                >
-                  {displayTitle}
-                </Text>
-              </View>
-            ),
-            headerRight: () =>
-              phoneOverviewActive ? (
-                <TabStackHeaderTextButton
-                  label="Edit"
-                  onPress={startEditing}
-                />
-              ) : (
-                <TabStackHeaderPlusButton
-                  chrome="plain"
-                  onPress={onPressCreate}
-                  accessibilityLabel="Create task"
-                />
-              ),
+            ...CENTERED_HEADER_TITLE_OPTIONS,
+            headerLeft: backHeaderLeft,
+            headerTitle: () => null,
           }}
         />
+        <View style={[ui.screen, styles.loading]}>
+          <ActivityIndicator color={colors.muted} />
+        </View>
+      </>
+    );
+  }
+
+  if (isCodebase) {
+    const overviewActive = codebaseTab === "overview";
+    const createTrailing =
+      overviewActive || isPad ? null : (
+        <TabStackHeaderPlusButton
+          onPress={onPressCreate}
+          accessibilityLabel="Create task"
+        />
+      );
+    return (
+      <>
+        <Stack.Screen
+          options={
+            isPad
+              ? {
+                  ...tabDetailScreenOptions(),
+                  header: () => (
+                    <CodebasePadHeader
+                      title={displayTitle}
+                      tab={codebaseTab}
+                      onTabChange={setCodebaseTab}
+                      onBack={handleBack}
+                    />
+                  ),
+                  contentStyle: { backgroundColor: colors.background },
+                }
+              : {
+                  ...tabDetailScreenOptions(),
+                  ...CENTERED_HEADER_TITLE_OPTIONS,
+                  headerLeft: backHeaderLeft,
+                  headerStyle: { backgroundColor: colors.background },
+                  contentStyle: { backgroundColor: colors.background },
+                  headerTitle: () =>
+                    centeredHeaderSectionTabs({
+                      accessibilityLabel: "Codebase project sections",
+                      value: codebaseTab,
+                      onChange: setCodebaseTab,
+                      items: CODEBASE_WORKBENCH_TABS.map((entry) => ({
+                        value: entry.id,
+                        label: entry.label,
+                      })),
+                    }),
+                }
+          }
+        />
         <View style={ui.screen}>
+          {!overviewActive && !isPad ? (
+            <ContentPageTitle title={displayTitle} trailing={createTrailing} />
+          ) : null}
           <CodebaseProjectWorkbench
             projectId={projectId}
             githubRefreshToken={githubRefreshToken}
             onTitleChange={setDisplayTitle}
-            onPhoneSectionChange={setPhoneCodebaseSection}
-            descriptionOverride={overviewDescription}
-            onDescriptionLoaded={setOverviewDescription}
+            tab={codebaseTab}
+            onTabChange={setCodebaseTab}
+            showInlineTabs={false}
           />
         </View>
       </>
     );
   }
 
-  const headerRight = editing ? (
-    <TabStackHeaderTextButton
-      label="Save"
-      onPress={() => {
-        void saveEditing();
-      }}
-      loading={saving}
-      disabled={saving || !draftName.trim()}
-    />
-  ) : section === "overview" ? (
-    <TabStackHeaderTextButton label="Edit" onPress={startEditing} />
-  ) : CREATE_SECTIONS.has(section) ? (
+  const createTrailing = CREATE_SECTIONS.has(section) ? (
     <TabStackHeaderPlusButton
-      chrome="plain"
       onPress={onPressCreate}
       accessibilityLabel={
         section === "tasks"
@@ -279,92 +353,73 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
     />
   ) : null;
 
-  const sectionBody = editing ? (
-    <ProjectOverviewPanel
-      projectId={projectId}
-      editing
-      layout={isPad ? "wide" : "stacked"}
-      draftName={draftName}
-      draftDescription={draftDescription}
-      onDraftNameChange={setDraftName}
-      onDraftDescriptionChange={setDraftDescription}
-      saveError={saveError}
-    />
-  ) : section === "tasks" ? (
-    <ProjectTasksPanel projectId={projectId} />
-  ) : section === "documents" ? (
-    <ProjectDocumentsPanel projectId={projectId} />
-  ) : section === "letters" ? (
-    <ProjectLettersPanel projectId={projectId} />
-  ) : section === "overview" ? (
-    <ProjectOverviewPanel
-      projectId={projectId}
-      layout={isPad ? "wide" : "stacked"}
-      descriptionOverride={overviewDescription}
-      onDescriptionLoaded={setOverviewDescription}
-    />
-  ) : (
-    <View
-      style={{
-        flex: 1,
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-      }}
-    >
-      {isPad ? (
-        <DetailContentContainer>
-          <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 20 }}>
-            {getProjectSectionLabel(section)} will sync here next.
-          </Text>
-        </DetailContentContainer>
-      ) : (
-        <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 20 }}>
-          {getProjectSectionLabel(section)} will sync here next.
-        </Text>
-      )}
-    </View>
-  );
+  const sectionBody =
+    section === "tasks" ? (
+      <>
+        <ContentPageTitle title={displayTitle} trailing={createTrailing} />
+        <ProjectTasksPanel projectId={projectId} />
+      </>
+    ) : section === "documents" ? (
+      <>
+        <ContentPageTitle title={displayTitle} trailing={createTrailing} />
+        <ProjectDocumentsPanel projectId={projectId} />
+      </>
+    ) : section === "letters" ? (
+      <>
+        <ContentPageTitle title={displayTitle} trailing={createTrailing} />
+        <ProjectLettersPanel projectId={projectId} />
+      </>
+    ) : section === "overview" ? (
+      <ProjectOverviewPanel
+        projectId={projectId}
+        layout={isPad ? "wide" : "stacked"}
+        onNameChange={setDisplayTitle}
+      />
+    ) : (
+      <>
+        {showPageTitle ? <ContentPageTitle title={displayTitle} /> : null}
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+          }}
+        >
+          {isPad ? (
+            <DetailContentContainer>
+              <Text
+                style={{ color: colors.muted, fontSize: 14, lineHeight: 20 }}
+              >
+                {getProjectSectionLabel(section)} will sync here next.
+              </Text>
+            </DetailContentContainer>
+          ) : (
+            <Text style={{ color: colors.muted, fontSize: 14, lineHeight: 20 }}>
+              {getProjectSectionLabel(section)} will sync here next.
+            </Text>
+          )}
+        </View>
+      </>
+    );
 
   return (
     <>
       <Stack.Screen
         options={{
           ...tabDetailScreenOptions(),
-          headerTitleAlign: "center",
-          headerTitle: editing
-            ? () => null
-            : () => (
-                <View style={styles.headerTitleCluster}>
-                  <Animated.View
-                    style={[styles.headerProjectNameWrap, headerProjectNameStyle]}
-                    accessibilityElementsHidden={!showHeaderProjectName}
-                    importantForAccessibility={
-                      showHeaderProjectName ? "yes" : "no-hide-descendants"
-                    }
-                  >
-                    <Text
-                      numberOfLines={1}
-                      style={styles.headerProjectName}
-                      accessibilityRole="header"
-                    >
-                      {displayTitle}
-                    </Text>
-                  </Animated.View>
-                  <PillNav
-                    accessibilityLabel="Project sections"
-                    value={section}
-                    onChange={setSection}
-                    align="center"
-                    density="header"
-                    items={PROJECT_SECTIONS.map((entry) => ({
-                      value: entry.id,
-                      label: entry.label,
-                    }))}
-                  />
-                </View>
-              ),
-          headerRight: headerRight ? () => headerRight : undefined,
+          ...CENTERED_HEADER_TITLE_OPTIONS,
+          headerLeft: backHeaderLeft,
+          headerTitle: () =>
+            centeredHeaderSectionTabs({
+              accessibilityLabel: "Project sections",
+              value: section,
+              onChange: setSection,
+              items: PROJECT_SECTIONS.map((entry) => ({
+                value: entry.id,
+                label: entry.label,
+              })),
+            }),
         }}
       />
       <View style={ui.screen}>
@@ -375,22 +430,49 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
 }
 
 const styles = StyleSheet.create({
-  headerTitleCluster: {
+  loading: {
     alignItems: "center",
     justifyContent: "center",
-    maxWidth: 360,
   },
-  headerProjectNameWrap: {
-    overflow: "hidden",
+  headerTitleClusterCenter: {
     alignItems: "center",
-    maxWidth: 320,
+    justifyContent: "center",
   },
-  headerProjectName: {
-    fontSize: 12,
+  padHeader: {
+    borderBottomWidth: 0,
+  },
+  padHeaderBar: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  padHeaderLeft: {
+    zIndex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "42%",
+    gap: 10,
+  },
+  padHeaderTitle: {
+    flexShrink: 1,
+    minWidth: 0,
+    color: colors.foreground,
+    fontSize: 17,
     fontWeight: "600",
-    lineHeight: 14,
-    color: colors.muted,
-    textAlign: "center",
-    maxWidth: 320,
+    letterSpacing: -0.02 * 17,
+  },
+  padHeaderCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  padHeaderRightSpacer: {
+    marginLeft: "auto",
+    width: 36,
+    flexShrink: 0,
   },
 });

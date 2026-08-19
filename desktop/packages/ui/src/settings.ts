@@ -5,6 +5,7 @@ export type SettingsTabId =
   | "cursor"
   | "github"
   | "moneybird"
+  | "email"
   | "whoop"
   | "storage";
 
@@ -66,6 +67,13 @@ export const SETTINGS_NAV_TABS: {
     description: "Sales invoices and bookkeeping for Finance",
     group: "integration",
     href: "/settings/moneybird",
+  },
+  {
+    id: "email",
+    label: "E-mail",
+    description: "AgentMail inboxes for incoming messages in Inbox",
+    group: "integration",
+    href: "/settings/email",
   },
   {
     id: "whoop",

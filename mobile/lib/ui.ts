@@ -5,11 +5,13 @@ import { colors, spacing } from "./theme";
 export const ui = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    // Transparent so phone stacks (black) and iPad content cards (surface)
+    // show through — never paint a second opaque canvas.
+    backgroundColor: "transparent",
   },
   centered: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -22,7 +24,7 @@ export const ui = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
   },
   chromeText: {
     color: colors.muted,
@@ -60,14 +62,14 @@ export const ui = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     letterSpacing: 0.2,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
   },
   row: {
     paddingHorizontal: spacing.screenX,
     paddingVertical: spacing.rowY,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
@@ -99,22 +101,22 @@ export const ui = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     color: colors.foreground,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "500",
-    lineHeight: 21,
+    lineHeight: 16,
   },
   rowId: {
     flexShrink: 0,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 11,
     fontVariant: ["tabular-nums"],
     fontFamily: "Menlo",
   },
   rowMeta: {
     color: colors.muted,
     marginTop: 3,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 14,
   },
   pillRow: {
     flexDirection: "row",

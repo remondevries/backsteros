@@ -46,3 +46,8 @@ export function formatJournalEntryTitle(dateSlug: string): string {
     day: "numeric",
   });
 }
+
+/** List / side-panel label — always the canonical `YYYY-MM-DD` slug (desktop parity). */
+export function formatJournalSidePanelLabel(dateSlug: string): string {
+  return dateSlug;
+}

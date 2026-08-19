@@ -7,13 +7,25 @@ type AvatarEntity = {
   avatarStorageKey?: string | null;
 };
 
-type AvatarKind = "contact" | "organization";
+type AvatarKind = "contact" | "organization" | "bank_account";
 
 async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   if (typeof blob.arrayBuffer === "function") {
     return new Uint8Array(await blob.arrayBuffer());
   }
   return new Uint8Array(await new Response(blob).arrayBuffer());
+}
+
+function looksLikeSvg(bytes: Uint8Array): boolean {
+  const head = new TextDecoder("utf-8", { fatal: false })
+    .decode(bytes.slice(0, 512))
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
+  if (head.startsWith("<svg")) return true;
+  if (head.startsWith("<?xml") && head.includes("<svg")) return true;
+  if (head.startsWith("<!doctype svg")) return true;
+  return false;
 }
 
 async function cacheAvatar(
@@ -23,7 +35,9 @@ async function cacheAvatar(
 ): Promise<string> {
   const blob = await client.downloadAvatar(kind, entityId);
   const bytes = await blobToBytes(blob);
-  const file = new File(Paths.cache, `avatar-${kind}-${entityId}`);
+  // RN Image cannot render SVG — use a `.svg` suffix so callers can switch to SvgUri.
+  const ext = looksLikeSvg(bytes) ? ".svg" : "";
+  const file = new File(Paths.cache, `avatar-${kind}-${entityId}${ext}`);
   file.create({ overwrite: true });
   file.write(bytes);
   return file.uri;
@@ -44,7 +58,7 @@ export function useEntityAvatarSrcMap(
     () =>
       entities
         .filter((entry) => entry.avatarStorageKey)
-        .map((entry) => `${entry.id}:${entry.avatarStorageKey}`)
+        .map((entry) => `${entry.id}\0${entry.avatarStorageKey}`)
         .sort()
         .join("|"),
     [entities],
@@ -57,10 +71,7 @@ export function useEntityAvatarSrcMap(
     }
 
     let cancelled = false;
-    const targets = fingerprint.split("|").map((entry) => {
-      const [id] = entry.split(":");
-      return id;
-    });
+    const targets = fingerprint.split("|").map((entry) => entry.split("\0")[0]);
 
     void (async () => {
       const next: Record<string, string> = {};

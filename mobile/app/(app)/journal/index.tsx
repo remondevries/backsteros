@@ -5,7 +5,6 @@ import { Text, View } from "react-native";
 import { JournalHeader } from "../../../components/journal-header";
 import { JournalListPane } from "../../../components/journal-list-pane";
 import { isPadDevice } from "../../../lib/device";
-import { colors } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 
 /**
@@ -43,7 +42,7 @@ const styles = {
     flex: 1,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
     paddingHorizontal: 24,
   },
 };

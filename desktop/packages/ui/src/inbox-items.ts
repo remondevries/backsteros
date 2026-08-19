@@ -13,10 +13,11 @@ import {
 } from "./task-status.js";
 
 /**
- * Inbox section order: overdue (special due-date group) → triage → hold → review.
- * `overdue` is not a real task status — past-due open work only.
+ * Inbox section order: agents (agent-created sign-off) → overdue → triage → …
+ * `agents` and `overdue` are not real task statuses.
  */
 export const INBOX_ATTENTION_STATUS_ORDER = [
+  "agents",
   "overdue",
   "triage",
   "on_hold",
@@ -53,6 +54,8 @@ export type InboxTaskListItem = {
   description?: string | null;
   /** Present when known — triage capture uses `inbox === true`. */
   inbox?: boolean | null;
+  agentCreatedAt?: number | null;
+  agentInboxApprovedAt?: number | null;
 };
 
 export type InboxLetterListItem = {
@@ -114,7 +117,16 @@ export function buildInboxTaskListItem(input: {
   projectIcon?: string | null;
   assigneeId?: string | null;
   inbox?: boolean | null;
+  agentCreatedAt?: number | Date | string | null;
+  agentInboxApprovedAt?: number | Date | string | null;
 }): InboxTaskListItem {
+  const toEpoch = (value: number | Date | string | null | undefined) => {
+    if (value == null || value === "") return null;
+    if (typeof value === "number") return value;
+    if (value instanceof Date) return value.getTime();
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
   return {
     kind: "task",
     id: input.id,
@@ -132,6 +144,8 @@ export function buildInboxTaskListItem(input: {
     updatedAt: input.updatedAt ?? Date.now(),
     description: input.description ?? null,
     inbox: input.inbox ?? null,
+    agentCreatedAt: toEpoch(input.agentCreatedAt),
+    agentInboxApprovedAt: toEpoch(input.agentInboxApprovedAt),
   };
 }
 
@@ -181,6 +195,45 @@ export function getFirstInboxItemHref(
   return first ? getInboxItemHref(first, items) : undefined;
 }
 
+/**
+ * After dismissing an inbox row (e.g. agent Approve), pick the neighbor to open:
+ * prefer the item above, else the next item, else none (empty inbox).
+ */
+export function pickIdAfterRemoving(
+  orderedIds: readonly string[],
+  removedId: string,
+): string | null {
+  const index = orderedIds.indexOf(removedId);
+  if (index === -1) {
+    return orderedIds.find((id) => id !== removedId) ?? null;
+  }
+  if (index > 0) {
+    return orderedIds[index - 1] ?? null;
+  }
+  if (index + 1 < orderedIds.length) {
+    return orderedIds[index + 1] ?? null;
+  }
+  return null;
+}
+
+/**
+ * Href for the inbox selection after removing `removedId` from the current list.
+ * `undefined` means the inbox is empty — navigate to the inbox root.
+ */
+export function getInboxHrefAfterRemovingItem(
+  items: readonly InboxListItem[],
+  removedId: string,
+): string | undefined {
+  const nextId = pickIdAfterRemoving(
+    items.map((item) => item.id),
+    removedId,
+  );
+  if (!nextId) return undefined;
+  const remaining = items.filter((item) => item.id !== removedId);
+  const nextItem = remaining.find((item) => item.id === nextId);
+  return nextItem ? getInboxItemHref(nextItem, remaining) : undefined;
+}
+
 export function findInboxItemBySlugOrId(
   items: readonly InboxListItem[],
   slugOrId: string,
@@ -219,6 +272,19 @@ function isInactiveTaskStatus(status: string | undefined): boolean {
   );
 }
 
+/** Agent-created task awaiting user sign-off in the Agents inbox subgroup. */
+export function isAgentInboxPending(input: {
+  agentCreatedAt?: number | Date | string | null;
+  agentInboxApprovedAt?: number | Date | string | null;
+}): boolean {
+  const created =
+    input.agentCreatedAt != null && input.agentCreatedAt !== "";
+  if (!created) return false;
+  return (
+    input.agentInboxApprovedAt == null || input.agentInboxApprovedAt === ""
+  );
+}
+
 /** Past-due and still open (not completed / canceled / duplicated). */
 export function isInboxOverdueTask(
   input: {
@@ -236,15 +302,19 @@ export function isInboxOverdueTask(
  * - classic triage capture (`inbox === true`)
  * - On Hold / In Review from any project (hidden when due date is in the future)
  * - overdue open tasks (fake group)
+ * - agent-created tasks pending sign-off (Agents group)
  */
 export function taskBelongsInInbox(
   input: {
     inbox?: boolean | null;
     status?: string | null;
     dueDate?: number | Date | string | null;
+    agentCreatedAt?: number | Date | string | null;
+    agentInboxApprovedAt?: number | Date | string | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  if (isAgentInboxPending(input)) return true;
   if (input.inbox === true) return true;
   const status = migrateLegacyTaskStatus(input.status ?? "backlog");
   if (
@@ -267,9 +337,13 @@ export function taskBelongsInInbox(
  * On Hold, and In Review). Remaining inbox tasks group by real status.
  */
 export function getInboxAttentionGroupKey(
-  item: Pick<InboxTaskListItem, "status" | "dueDate" | "inbox">,
+  item: Pick<
+    InboxTaskListItem,
+    "status" | "dueDate" | "inbox" | "agentCreatedAt" | "agentInboxApprovedAt"
+  >,
   referenceDate: Date = new Date(),
 ): InboxAttentionStatus | "other" {
+  if (isAgentInboxPending(item)) return "agents";
   if (isInboxOverdueTask(item, referenceDate)) return "overdue";
   const status = migrateLegacyTaskStatus(item.status);
   if (item.inbox === true || status === "triage") return "triage";
@@ -285,7 +359,7 @@ function attentionStatusRank(groupKey: string): number {
   return index === -1 ? INBOX_ATTENTION_STATUS_ORDER.length : index;
 }
 
-/** Sort: Overdue → Triage → On Hold → In Review, then by updatedAt desc. */
+/** Sort: Agents → Overdue → Triage → On Hold → In Review, then by updatedAt desc. */
 export function sortInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
   referenceDate: Date = new Date(),
@@ -310,6 +384,7 @@ export type InboxAttentionStatusGroup = {
 };
 
 export function getInboxAttentionGroupLabel(status: string): string {
+  if (status === "agents") return "Agents";
   if (status === "overdue") return "Overdue";
   if (isTaskStatus(status)) return getTaskStatusLabel(status);
   return status;

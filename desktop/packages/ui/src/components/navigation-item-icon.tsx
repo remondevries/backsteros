@@ -5,7 +5,9 @@ import {
   AreasNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
+  EmailNavIcon,
   FinanceNavIcon,
+  HabitsNavIcon,
   InboxNavIcon,
   JournalNavIcon,
   KnowledgeBaseNavIcon,
@@ -21,7 +23,9 @@ export const NAVIGATION_ITEM_ICONS: Record<
   ComponentType<{ className?: string }>
 > = {
   inbox: InboxNavIcon,
+  email: EmailNavIcon,
   journal: JournalNavIcon,
+  habits: HabitsNavIcon,
   knowledge: KnowledgeBaseNavIcon,
   tasks: TasksNavIcon,
   areas: AreasNavIcon,

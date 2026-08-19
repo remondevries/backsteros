@@ -74,7 +74,11 @@ export function CreateDocumentScreen() {
               },
         ),
       });
-      router.replace(documentDetailHref(created.id));
+      router.replace(
+        isKnowledge
+          ? `/(app)/knowledge/${created.id}`
+          : documentDetailHref(created.id),
+      );
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not create document.",

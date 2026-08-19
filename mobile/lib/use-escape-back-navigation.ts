@@ -42,11 +42,13 @@ export function isSectionHomePath(pathname: string): boolean {
     normalized === "/projects" ||
     normalized === "/areas" ||
     normalized === "/letters" ||
+    normalized === "/finance" ||
     normalized === "/knowledge" ||
     normalized === "/contacts" ||
     normalized === "/organizations" ||
     normalized === "/compose" ||
-    normalized === "/development"
+    normalized === "/development" ||
+    normalized === "/habits"
   );
 }
 

@@ -381,8 +381,12 @@ export function normalizeEmail(email: string | null | undefined): string | null 
 }
 
 export function isAgentComment(
-  comment: Pick<TaskComment, "authorUserId" | "authorName" | "body">,
+  comment: Pick<
+    TaskComment,
+    "authorUserId" | "authorContactId" | "authorName" | "body"
+  >,
 ): boolean {
+  if (comment.authorContactId) return false;
   if (comment.authorUserId == null) return true;
   if (comment.authorName.trim() === "Agent") return true;
   return isAgentHoldCommentBody(comment.body);

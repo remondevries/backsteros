@@ -274,6 +274,97 @@
       "when": 1786880000000,
       "tag": "0038_credit_card_cashflow_polarity",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786960000000,
+      "tag": "0039_habits",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787040000000,
+      "tag": "0040_habit_cadence",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787120000000,
+      "tag": "0041_habit_project",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0042_habit_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1787280000000,
+      "tag": "0043_api_key_contact",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787360000000,
+      "tag": "0044_habit_day_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787440000000,
+      "tag": "0045_agent_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1787520000000,
+      "tag": "0046_agentmail_integration",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0047_agentmail_inbox_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787680000000,
+      "tag": "0048_email_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787760000000,
+      "tag": "0049_email_reply_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1787840000000,
+      "tag": "0050_agentmail_inbox_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787920000000,
+      "tag": "0051_email_sign_off_languages",
+      "breakpoints": true
     }
   ]
 }

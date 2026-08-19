@@ -14,6 +14,7 @@ import type {
   Letter as ApiLetter,
   Organization as ApiOrganization,
   Project as ApiProject,
+  Habit as ApiHabit,
   Task as ApiTask,
   TaskLink,
 } from "@backsteros/contracts";
@@ -34,9 +35,12 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
+import { createRequestAbortSignal } from "./request-timeout";
 import { resolveCreateAssigneeId } from "./default-assignee";
 import {
   fillMissingAgentChatIdFromApi,
+  fillMissingHabitIdFromApi,
+  dropStaleLocalHabitTasks,
   fillMissingCodebaseFieldsFromApi,
   fillMissingLinksFromApi,
   fillMissingMoneybirdContactIdFromApi,
@@ -139,6 +143,9 @@ function mapTask(
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
+    habitId: task.habitId ?? null,
+    agentCreatedAt: asEpoch(task.agentCreatedAt),
+    agentInboxApprovedAt: asEpoch(task.agentInboxApprovedAt),
   };
 }
 
@@ -261,6 +268,7 @@ export type DesktopWorkspaceData = {
   knowledgeDocuments: KnowledgeListItem[];
   projectDocuments: KnowledgeListItem[];
   journalItems: JournalListItem[];
+  habits: ApiHabit[];
   inboxItems: InboxListItem[];
   contacts: ContactListItem[];
   organizations: OrganizationListItem[];
@@ -311,6 +319,26 @@ export type DesktopWorkspaceData = {
     parent: "personal" | "business" | "clients";
   }) => Promise<{ id: string }>;
   softDeleteArea: (id: string) => Promise<void>;
+  reloadHabits: () => Promise<ApiHabit[]>;
+  createHabit: (input: {
+    title: string;
+    icon?: string | null;
+  }) => Promise<ApiHabit>;
+  updateHabit: (
+    id: string,
+    input: {
+      title?: string;
+      cadence?: ApiHabit["cadence"];
+      icon?: string | null;
+      description?: string | null;
+      projectId?: string;
+      nextDueYmd?: string;
+    },
+  ) => Promise<ApiHabit>;
+  recordHabitDay: (
+    habitId: string,
+    input: { dueYmd: string; status: "completed" | "canceled" },
+  ) => Promise<ApiTask>;
   createInboxTask: (input: {
     title: string;
     description?: string;
@@ -466,6 +494,11 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       ? "SELECT * FROM documents WHERE deleted_at IS NULL ORDER BY sort_order, path, updated_at DESC"
       : null,
   );
+  const localHabits = usePowerSyncQuery<Record<string, unknown>>(
+    authenticated
+      ? "SELECT * FROM habits WHERE deleted_at IS NULL ORDER BY sort_order, created_at"
+      : null,
+  );
 
   const [apiTasks, setApiTasks] = useState<ApiTask[] | null>(null);
   const [apiInboxTasks, setApiInboxTasks] = useState<ApiTask[] | null>(null);
@@ -477,6 +510,30 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   >(null);
   const [apiAreas, setApiAreas] = useState<ApiArea[] | null>(null);
   const [apiDocuments, setApiDocuments] = useState<ApiDocument[] | null>(null);
+  const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
+  const [restHydrateSettled, setRestHydrateSettled] = useState(!authenticated);
+  const [queriesGracePeriodExpired, setQueriesGracePeriodExpired] =
+    useState(false);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setRestHydrateSettled(true);
+      return;
+    }
+    setRestHydrateSettled(false);
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !powerSync.ready) {
+      setQueriesGracePeriodExpired(false);
+      return;
+    }
+    const timeoutId = window.setTimeout(
+      () => setQueriesGracePeriodExpired(true),
+      12_000,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [authenticated, powerSync.ready]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -488,6 +545,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       setApiOrganizations(null);
       setApiAreas(null);
       setApiDocuments(null);
+      setApiHabits(null);
     }
   }, [authenticated]);
 
@@ -501,6 +559,18 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   useEffect(() => {
     if (!authenticated) return;
     let cancelled = false;
+    const signal = createRequestAbortSignal();
+    const markHydrated = () => {
+      setApiDocuments((current) => current ?? []);
+      setApiTasks((current) => current ?? []);
+      setApiInboxTasks((current) => current ?? []);
+      setApiProjects((current) => current ?? []);
+      setApiAreas((current) => current ?? []);
+      setApiOrganizations((current) => current ?? []);
+      setApiContacts((current) => current ?? []);
+      setApiLetters((current) => current ?? []);
+      setApiHabits((current) => current ?? []);
+    };
     void (async () => {
       try {
         const [
@@ -515,16 +585,26 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         ] = await Promise.all([
           client.requestJson<{ documents: ApiDocument[] }>(
             "/api/v1/documents",
+            { signal },
           ),
-          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks"),
-          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox"),
-          client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects"),
-          client.requestJson<{ areas: ApiArea[] }>("/api/v1/areas"),
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks", { signal }),
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox", {
+            signal,
+          }),
+          client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects", {
+            signal,
+          }),
+          client.requestJson<{ areas: ApiArea[] }>("/api/v1/areas", { signal }),
           client.requestJson<{ organizations: ApiOrganization[] }>(
             "/api/v1/organizations",
+            { signal },
           ),
-          client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts"),
-          client.requestJson<{ letters: ApiLetter[] }>("/api/v1/letters"),
+          client.requestJson<{ contacts: ApiContact[] }>("/api/v1/contacts", {
+            signal,
+          }),
+          client.requestJson<{ letters: ApiLetter[] }>("/api/v1/letters", {
+            signal,
+          }),
         ]);
         if (cancelled) return;
         setApiDocuments(documentsBody.documents);
@@ -538,16 +618,30 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
           preservePendingApiRows(current, lettersBody.letters),
         );
       } catch {
-        // Soft-fail: keep whatever we already have. Mark hydrate attempted so
-        // `ready` can leave the skeleton when PowerSync is still connecting.
-        setApiProjects((current) => current ?? []);
-        setApiTasks((current) => current ?? []);
-        setApiInboxTasks((current) => current ?? []);
-        setApiAreas((current) => current ?? []);
-        setApiOrganizations((current) => current ?? []);
-        setApiContacts((current) => current ?? []);
-        setApiDocuments((current) => current ?? []);
-        setApiLetters((current) => current ?? []);
+        if (cancelled) return;
+        markHydrated();
+      }
+
+      try {
+        const habitsBody = await client.requestJson<{ habits: ApiHabit[] }>(
+          "/api/v1/habits",
+          { signal },
+        );
+        if (cancelled) return;
+        setApiHabits(habitsBody.habits);
+        const tasksAfterHabits = await client.requestJson<{
+          tasks: ApiTask[];
+        }>("/api/v1/tasks", { signal });
+        if (cancelled) return;
+        setApiTasks(tasksAfterHabits.tasks);
+      } catch {
+        if (cancelled) return;
+        setApiHabits((current) => current ?? []);
+      } finally {
+        if (!cancelled) {
+          markHydrated();
+          setRestHydrateSettled(true);
+        }
       }
     })();
     return () => {
@@ -596,20 +690,32 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     ),
     apiProjects,
   );
-  const rawTasks = fillMissingAgentChatIdFromApi(
-    fillMissingLinksFromApi(
-      mergeLocalAndApiByUpdatedAt(
-        localTasks.data?.map((row) => snakeRow(row) as ApiTask),
+  const rawTasks = dropStaleLocalHabitTasks(
+    fillMissingHabitIdFromApi(
+      fillMissingAgentChatIdFromApi(
+        fillMissingLinksFromApi(
+          mergeLocalAndApiByUpdatedAt(
+            localTasks.data?.map((row) => snakeRow(row) as ApiTask),
+            apiTasks,
+          ),
+          apiTasks,
+        ),
         apiTasks,
       ),
       apiTasks,
     ),
     apiTasks,
   );
-  const rawInboxTasks = fillMissingAgentChatIdFromApi(
-    fillMissingLinksFromApi(
-      mergeLocalAndApiByUpdatedAt(
-        localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask),
+  const rawInboxTasks = dropStaleLocalHabitTasks(
+    fillMissingHabitIdFromApi(
+      fillMissingAgentChatIdFromApi(
+        fillMissingLinksFromApi(
+          mergeLocalAndApiByUpdatedAt(
+            localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask),
+            apiInboxTasks,
+          ),
+          apiInboxTasks,
+        ),
         apiInboxTasks,
       ),
       apiInboxTasks,
@@ -674,6 +780,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
           inbox: task.inbox,
           status: task.status,
           dueDate: task.dueDate,
+          agentCreatedAt: task.agentCreatedAt,
+          agentInboxApprovedAt: task.agentInboxApprovedAt,
         })
       ) {
         continue;
@@ -699,12 +807,14 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         projectIcon: project?.icon ?? null,
         assigneeId: task.assigneeId ?? null,
         inbox: task.inbox ?? null,
+        agentCreatedAt: task.agentCreatedAt,
+        agentInboxApprovedAt: task.agentInboxApprovedAt,
       });
     });
   })();
 
   // Inbox is tasks-only (parity with Next). Letters live under /letters.
-  // Order matches the attention-grouped side panel (overdue → triage → …).
+  // Order matches the attention-grouped side panel (agents → overdue → triage → …).
   const inboxItems = sortInboxItemsByAttentionStatus(inboxTaskItems);
 
   const toSnakeFields = useCallback((values: Record<string, unknown>) => {
@@ -1299,6 +1409,218 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       setApiAreas((rows) => rows?.filter((area) => area.id !== id) ?? null);
     },
     [authenticated, client, patchViaPowerSyncOrApi, rawProjects],
+  );
+
+  const reloadHabits = useCallback(async () => {
+    if (!authenticated) return [];
+    const body = await client.requestJson<{ habits: ApiHabit[] }>(
+      "/api/v1/habits",
+    );
+    const tasksBody = await client.requestJson<{ tasks: ApiTask[] }>(
+      "/api/v1/tasks",
+    );
+    setApiHabits(body.habits);
+    setApiTasks(tasksBody.tasks);
+    return body.habits;
+  }, [authenticated, client]);
+
+  const createHabit = useCallback(
+    async (input: { title: string; icon?: string | null }) => {
+      const title = input.title.trim();
+      if (!title) throw new Error("Habit title is required.");
+      if (!authenticated) throw new Error("Sign in to create habits.");
+      const habit = await client.requestJson<ApiHabit>("/api/v1/habits", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          ...(input.icon !== undefined ? { icon: input.icon } : {}),
+        }),
+      });
+      setApiHabits((rows) => {
+        if (!rows) return [habit];
+        if (rows.some((entry) => entry.id === habit.id)) {
+          return rows.map((entry) => (entry.id === habit.id ? habit : entry));
+        }
+        return [habit, ...rows];
+      });
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "habits",
+            toSnakeFields({
+              title: habit.title,
+              icon: habit.icon,
+              projectId: habit.projectId,
+              cadence: habit.cadence,
+              cadenceAnchorYmd: habit.cadenceAnchorYmd,
+              sortOrder: habit.sortOrder,
+            }),
+            habit.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
+      if (habit.todayTaskId) {
+        try {
+          const task = await client.requestJson<ApiTask>(
+            `/api/v1/tasks/${encodeURIComponent(habit.todayTaskId)}`,
+          );
+          setApiTasks((rows) => {
+            if (!rows) return [task];
+            if (rows.some((entry) => entry.id === task.id)) return rows;
+            return [task, ...rows];
+          });
+          if (powerSync.ready && powerSync.createMetadata) {
+            try {
+              await powerSync.createMetadata(
+                "tasks",
+                toSnakeFields({
+                  title: task.title,
+                  projectId: task.projectId,
+                  contactId: task.contactId,
+                  assigneeId: task.assigneeId,
+                  number: task.number,
+                  description: task.description,
+                  status: task.status,
+                  priority: task.priority,
+                  sortOrder: task.sortOrder,
+                  dueDate: task.dueDate,
+                  inbox: task.inbox,
+                  habitId: task.habitId,
+                  completedAt: task.completedAt,
+                }),
+                task.id,
+              );
+            } catch {
+              // Download sync will eventually bring the row in.
+            }
+          }
+        } catch {
+          // Habit row is enough; the task list will catch up on refresh.
+        }
+      }
+      return habit;
+    },
+    [authenticated, client, powerSync, toSnakeFields],
+  );
+
+  const updateHabit = useCallback(
+    async (
+      id: string,
+      input: {
+        title?: string;
+        cadence?: ApiHabit["cadence"];
+        icon?: string | null;
+        description?: string | null;
+        projectId?: string;
+        nextDueYmd?: string;
+      },
+    ) => {
+      if (!authenticated) throw new Error("Sign in to update habits.");
+      const habit = await client.requestJson<ApiHabit>(
+        `/api/v1/habits/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      setApiHabits((rows) => {
+        if (!rows) return [habit];
+        return rows.map((entry) => (entry.id === habit.id ? habit : entry));
+      });
+      if (powerSync.ready && powerSync.patchMetadata) {
+        try {
+          await powerSync.patchMetadata(
+            "habits",
+            habit.id,
+            toSnakeFields({
+              title: habit.title,
+              description: habit.description,
+              cadence: habit.cadence,
+              cadenceAnchorYmd: habit.cadenceAnchorYmd,
+              icon: habit.icon,
+              projectId: habit.projectId,
+            }),
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
+      await reloadHabits();
+      if (input.nextDueYmd !== undefined) {
+        await softRefreshApiTasks();
+      }
+      return habit;
+    },
+    [
+      authenticated,
+      client,
+      powerSync,
+      reloadHabits,
+      softRefreshApiTasks,
+      toSnakeFields,
+    ],
+  );
+
+  const recordHabitDay = useCallback(
+    async (
+      habitId: string,
+      input: { dueYmd: string; status: "completed" | "canceled" },
+    ) => {
+      if (!authenticated) throw new Error("Sign in to record habit days.");
+      const task = await client.requestJson<ApiTask>(
+        `/api/v1/habits/${encodeURIComponent(habitId)}/days`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      setApiTasks((rows) => {
+        if (!rows) return [task];
+        if (rows.some((entry) => entry.id === task.id)) {
+          return rows.map((entry) => (entry.id === task.id ? task : entry));
+        }
+        return [task, ...rows];
+      });
+      if (powerSync.ready) {
+        const fields = toSnakeFields({
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          sortOrder: task.sortOrder,
+          projectId: task.projectId,
+          assigneeId: task.assigneeId,
+          dueDate: task.dueDate,
+          habitId: task.habitId,
+          inbox: task.inbox,
+          number: task.number,
+          completedAt: task.completedAt,
+        });
+        try {
+          if (powerSync.patchMetadata) {
+            await powerSync.patchMetadata("tasks", task.id, {
+              status: task.status,
+              completed_at: task.completedAt,
+              habit_id: task.habitId,
+              due_date: task.dueDate,
+            });
+          }
+        } catch {
+          try {
+            await powerSync.createMetadata?.("tasks", fields, task.id);
+          } catch {
+            // Download sync will eventually bring the row in.
+          }
+        }
+      }
+      await reloadHabits();
+      return task;
+    },
+    [authenticated, client, powerSync, reloadHabits, toSnakeFields],
   );
 
   const createInboxTask = useCallback(
@@ -2065,6 +2387,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   const queriesHydrating =
     authenticated &&
     powerSync.ready &&
+    !queriesGracePeriodExpired &&
     (localTasks.loading ||
       localInboxTasks.loading ||
       localProjects.loading ||
@@ -2092,6 +2415,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     ready:
       !authenticated ||
       apiHydrated ||
+      restHydrateSettled ||
       (powerSync.ready && !queriesHydrating) ||
       powerSync.status === "error",
     tasks: mappedTasks,
@@ -2105,6 +2429,38 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     knowledgeDocuments,
     projectDocuments,
     journalItems,
+    habits: mergeLocalAndApiByUpdatedAt(
+      localHabits.data?.map((row) => {
+        const local = snakeRow(row) as ApiHabit;
+        const createdYmd =
+          typeof local.createdAt === "string" && local.createdAt.length >= 10
+            ? local.createdAt.slice(0, 10)
+            : undefined;
+        return {
+          ...local,
+          description:
+            typeof local.description === "string" ? local.description : null,
+          projectId:
+            typeof local.projectId === "string" && local.projectId.trim()
+              ? local.projectId
+              : "",
+          cadence:
+            local.cadence === "every_2_days" ||
+            local.cadence === "weekly" ||
+            local.cadence === "monthly"
+              ? local.cadence
+              : "daily",
+          cadenceAnchorYmd:
+            typeof local.cadenceAnchorYmd === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(local.cadenceAnchorYmd)
+              ? local.cadenceAnchorYmd
+              : (createdYmd ?? local.cadenceAnchorYmd),
+          todayTaskId: local.todayTaskId ?? null,
+          todayTaskStatus: local.todayTaskStatus ?? null,
+        };
+      }),
+      apiHabits,
+    ),
     inboxItems,
     contacts: rawContacts.map((contact) =>
       mapContact(contact, organizationsById),
@@ -2187,6 +2543,10 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     createProject,
     createArea,
     softDeleteArea,
+    reloadHabits,
+    createHabit,
+    updateHabit,
+    recordHabitDay,
     createInboxTask,
     createProjectTask,
     duplicateTask,

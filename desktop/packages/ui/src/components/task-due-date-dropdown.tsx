@@ -45,6 +45,8 @@ export type TaskDueDateDropdownProps = {
   disabled?: boolean;
   onDueDateChange?: (dueDate: Date | null) => void;
   noDueDateLabel?: string;
+  /** When false, omit “No due date” and ignore NL clear (habit next-due). */
+  allowClear?: boolean;
   /** Override search field placeholder (default due-date phrasing). */
   searchPlaceholder?: string;
   /** Override shortcut hint in search field. */
@@ -77,6 +79,7 @@ export function TaskDueDateDropdown({
   disabled = false,
   onDueDateChange,
   noDueDateLabel = "No due date",
+  allowClear = true,
   searchPlaceholder = "tomorrow, yesterday, 2 weeks ago…",
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId,
@@ -104,8 +107,9 @@ export function TaskDueDateDropdown({
         ymdValue || null,
         new Date(),
         noDueDateLabel,
+        { allowClear },
       ),
-    [noDueDateLabel, ymdValue],
+    [allowClear, noDueDateLabel, ymdValue],
   );
   const selectedValue = taskDueDateDropdownValue(ymdValue || null);
   const displayLabel = ymdValue
@@ -154,6 +158,7 @@ export function TaskDueDateDropdown({
     (query: string) => {
       const result = parseNaturalLanguageDueDate(query);
       if (result.kind === "clear") {
+        if (!allowClear) return false;
         applyYmd(null);
         return true;
       }
@@ -163,7 +168,7 @@ export function TaskDueDateDropdown({
       }
       return false;
     },
-    [applyYmd],
+    [allowClear, applyYmd],
   );
 
   const handleQueryPreview = useCallback(

@@ -3,27 +3,38 @@ import type { ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Matches floating tab bar compose pill. */
+/** Matches floating tab bar compose pill (legacy big action). */
 export const FLOATING_COMPOSE_PILL_SIZE = 56;
+/** Desktop-parity PDF dock row height (file chips + compact +). */
+export const FLOATING_PDF_DOCK_ROW_HEIGHT = 36;
 const SIDE_INSET = 16;
 const GAP_ABOVE_COMPOSE = 10;
-const ROW_GAP = 10;
+const ROW_GAP = 8;
 
 /** Extra list padding so content clears the PDF dock above the compose (+). */
 export const FLOATING_PDF_DOCK_CLEARANCE =
-  FLOATING_COMPOSE_PILL_SIZE + GAP_ABOVE_COMPOSE;
+  FLOATING_PDF_DOCK_ROW_HEIGHT + GAP_ABOVE_COMPOSE;
+
+/** Muted compact plus — matches desktop `.letter-pdf-tab--upload-icon`. */
+export const LETTER_PDF_UPLOAD_ICON_COLOR = "rgba(237, 237, 237, 0.55)";
 
 type Props = {
   onPress: () => void;
   accessibilityLabel: string;
   children: ReactNode;
   disabled?: boolean;
-  /** File chips / labels shown to the left of the action pill. */
+  /** File chips / labels shown to the left of the action. */
   left?: ReactNode;
+  /**
+   * Desktop letter dock parity: small + sits next to the PDF tabs instead of
+   * a large trailing pill on the far right.
+   */
+  compact?: boolean;
 };
 
 /**
- * Floating row above the main-nav create (+) — optional left content + action pill.
+ * Floating row above the main-nav create (+) — optional left content + action.
+ * `compact` matches desktop letter PDF tabs (chips + small upload icon).
  */
 export function FloatingComposeActionPill({
   onPress,
@@ -31,12 +42,63 @@ export function FloatingComposeActionPill({
   children,
   disabled = false,
   left,
+  compact = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const bottom =
     Math.max(insets.bottom, 10) +
     FLOATING_COMPOSE_PILL_SIZE +
     GAP_ABOVE_COMPOSE;
+
+  if (compact) {
+    return (
+      <View
+        pointerEvents="box-none"
+        style={[styles.host, { bottom, left: SIDE_INSET, right: SIDE_INSET }]}
+      >
+        <View style={styles.compactRow} pointerEvents="box-none">
+          {left ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.compactScroll}
+              contentContainerStyle={styles.compactContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {left}
+              <Pressable
+                onPress={onPress}
+                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.compactHit,
+                  pressed || disabled ? { opacity: 0.55 } : null,
+                ]}
+              >
+                {children}
+              </Pressable>
+            </ScrollView>
+          ) : (
+            <Pressable
+              onPress={onPress}
+              disabled={disabled}
+              accessibilityRole="button"
+              accessibilityLabel={accessibilityLabel}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.compactHit,
+                pressed || disabled ? { opacity: 0.55 } : null,
+              ]}
+            >
+              {children}
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -89,6 +151,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: ROW_GAP,
     width: "100%",
+  },
+  compactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+  },
+  compactScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxWidth: "100%",
+  },
+  compactContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: ROW_GAP,
+  },
+  compactHit: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   leftScroll: {
     flex: 1,

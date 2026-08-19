@@ -6,6 +6,10 @@ import type {
   GroupedListPointerAppendBind,
   GroupedListPointerItemBind,
 } from "../use-grouped-list-pointer-reorder.js";
+import {
+  keyboardNavItemProps,
+  keyboardNavListItemClass,
+} from "../keyboard-nav-item.js";
 import { useStickyStuck } from "../use-sticky-stuck.js";
 import { getTaskStatusHeaderGradientStyle } from "../task-status-header-gradient.js";
 import type { TaskStatus } from "../task-status.js";
@@ -75,6 +79,10 @@ export type StatusGroupSectionProps = {
   dragging?: boolean;
   /** Insert-before indicator while another item targets this section. */
   showDragInsertBefore?: boolean;
+  /** Keyboard j/k target id (finance category parents, etc.). */
+  keyboardNavItemId?: string | null;
+  /** True while this section is the keyboard-highlighted row. */
+  keyboardHighlighted?: boolean;
 };
 
 function PlusIcon() {
@@ -114,6 +122,8 @@ export function StatusGroupSection({
   pointerReorderItem = null,
   dragging = false,
   showDragInsertBefore = false,
+  keyboardNavItemId = null,
+  keyboardHighlighted = false,
 }: StatusGroupSectionProps) {
   const { stuck, sentinelRef } = useStickyStuck();
   const selectMode = selection != null;
@@ -161,6 +171,7 @@ export function StatusGroupSection({
         .join(" ")}
       data-group={groupKey}
       data-tauri-drag-region="false"
+      {...(keyboardNavItemId ? keyboardNavItemProps(keyboardNavItemId) : {})}
     >
       <div
         ref={sentinelRef}
@@ -172,6 +183,9 @@ export function StatusGroupSection({
           "status-group-header-row",
           stuck ? "is-stuck" : null,
           pointerItemEnabled ? "status-group-header-row--draggable" : null,
+          keyboardNavItemId
+            ? keyboardNavListItemClass(keyboardHighlighted)
+            : null,
         ]
           .filter(Boolean)
           .join(" ")}

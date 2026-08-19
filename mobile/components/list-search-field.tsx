@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenX,
     paddingTop: 4,
     paddingBottom: 10,
-    backgroundColor: colors.background,
+    backgroundColor: "transparent",
   },
   input: {
     height: SEARCH_FIELD_HEIGHT,

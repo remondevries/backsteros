@@ -23,9 +23,15 @@ type UseSyncedOrRestResult<TRow> = {
   error: string | null;
   /** True when the UI is primarily showing REST (sync offline or cold empty). */
   useRest: boolean;
-  /** True while a REST fetch is in flight (for pull-to-refresh). */
+  /**
+   * True only while a user pull-to-refresh is in flight.
+   * Bind RefreshControl to this — never to background hydration.
+   */
+  pullRefreshing: boolean;
+  /** @deprecated Prefer `pullRefreshing` for RefreshControl. */
   restLoading: boolean;
-  reload: () => Promise<void>;
+  /** Pass `{ userPull: false }` for background hydrates after writes. */
+  reload: (opts?: { userPull?: boolean }) => Promise<void>;
 };
 
 /**
@@ -49,6 +55,9 @@ export function useSyncedOrRest<
   const [restRows, setRestRows] = useState<TRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const restRowsRef = useRef(restRows);
+  restRowsRef.current = restRows;
 
   const mapLocalRef = useRef(mapLocal);
   mapLocalRef.current = mapLocal;
@@ -60,8 +69,14 @@ export function useSyncedOrRest<
     [syncedRows],
   );
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = opts?.userPull === true;
+    if (userPull) {
+      setPullRefreshing(true);
+    } else if (restRowsRef.current == null) {
+      // Cold start only — never spin RefreshControl for background hydrates.
+      setRestLoading(true);
+    }
     setRestError(null);
     try {
       setRestRows(await fetchRestRef.current());
@@ -69,6 +84,7 @@ export function useSyncedOrRest<
       setRestError(reason instanceof Error ? reason.message : String(reason));
       // Keep prior REST snapshot on transient failures.
     } finally {
+      if (userPull) setPullRefreshing(false);
       setRestLoading(false);
     }
   }, []);
@@ -97,8 +113,9 @@ export function useSyncedOrRest<
   const error =
     rows.length === 0 && restError && !powerSync.connected ? restError : null;
 
-  const reload = useCallback(async () => {
-    await reloadRest();
+  const reload = useCallback(async (opts?: { userPull?: boolean }) => {
+    // Default true so RefreshControl keepers keep their spinner.
+    await reloadRest({ userPull: opts?.userPull !== false });
   }, [reloadRest]);
 
   return {
@@ -106,7 +123,8 @@ export function useSyncedOrRest<
     loading,
     error,
     useRest,
-    restLoading,
+    pullRefreshing,
+    restLoading: pullRefreshing,
     reload,
   };
 }

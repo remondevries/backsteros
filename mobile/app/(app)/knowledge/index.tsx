@@ -1,65 +1,41 @@
-import { useNavigation } from "@react-navigation/native";
-import { useRouter } from "expo-router";
-import { useLayoutEffect } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 
 import { DocumentsListPanel } from "../../../components/documents-list-panel";
-import { DocumentIcon } from "../../../components/document-icon";
-import { FolderIcon } from "../../../components/folder-icon";
-import { HeaderPlusMenuButton } from "../../../components/header-plus-menu-button";
-import { SectionListHeader } from "../../../components/section-list-header";
-import { colors } from "../../../lib/theme";
+import { isPadDevice } from "../../../lib/device";
 import { ui } from "../../../lib/ui";
 
+/**
+ * Phone: full-screen knowledge tree.
+ * iPad: detail pane placeholder — list lives in the layout.
+ */
 export default function KnowledgeScreen() {
-  const navigation = useNavigation();
-  const router = useRouter();
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      header: () => (
-        <SectionListHeader
-          title="Knowledge Base"
-          plusControl={
-            <HeaderPlusMenuButton
-              accessibilityLabel="Create in Knowledge Base"
-              items={[
-                {
-                  key: "folder",
-                  label: "Folder",
-                  icon: <FolderIcon size={16} color={colors.foreground} />,
-                  onPress: () =>
-                    router.push({
-                      pathname: "/create/folder",
-                      params: { type: "knowledge" },
-                    }),
-                },
-                {
-                  key: "document",
-                  label: "Document",
-                  icon: <DocumentIcon size={16} color={colors.foreground} />,
-                  onPress: () =>
-                    router.push({
-                      pathname: "/create/document",
-                      params: { type: "knowledge" },
-                    }),
-                },
-              ]}
-            />
-          }
-        />
-      ),
-    });
-  }, [navigation, router]);
+  if (isPadDevice()) {
+    return (
+      <View style={styles.empty}>
+        <Text style={ui.empty}>Select a document from the list.</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={ui.screen}>
-      <DocumentsListPanel
-        documentType="knowledge"
-        includeFolders
-        showListSearch
-        emptyMessage="No knowledge documents yet."
-      />
-    </View>
+    <DocumentsListPanel
+      documentType="knowledge"
+      includeFolders
+      showListSearch
+      emptyMessage="No knowledge documents yet."
+      sectionRoute="knowledge"
+      pageTitle="Knowledge Base"
+      pageTitleSafeArea
+    />
   );
 }
+
+const styles = {
+  empty: {
+    flex: 1,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    backgroundColor: "transparent",
+    paddingHorizontal: 24,
+  },
+};

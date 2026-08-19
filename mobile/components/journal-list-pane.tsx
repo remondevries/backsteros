@@ -14,6 +14,7 @@ import { isPadDevice } from "../lib/device";
 import { getMobileEnvironment } from "../lib/env";
 import {
   formatJournalEntryTitle,
+  formatJournalSidePanelLabel,
   getTodayJournalDateSlug,
 } from "../lib/journal";
 import { useMobilePowerSync } from "../lib/powersync-context";
@@ -26,6 +27,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
 import { useRestListHydration } from "../lib/use-rest-list-hydration";
+import { useRestReloadFlags } from "../lib/use-rest-reload-flags";
 
 export type JournalListRow = {
   id: string;
@@ -58,23 +60,18 @@ type Props = {
   autoSelectFirst?: boolean;
   /** Override row press (defaults to journal detail navigation). */
   onPressRow?: (row: JournalListRow) => void;
-  /**
-   * `sidePanel` — desktop-style date slug + Today badge (iPad list).
-   * `default` — long formatted title (phone full-screen list).
-   */
-  rowLayout?: "default" | "sidePanel";
   /** Optional create-today error banner above the list. */
   createTodayError?: string | null;
 };
 
 /**
  * Journal entry list — shared by phone full-screen and iPad left pane.
+ * Labels match desktop: `YYYY-MM-DD` + optional Today badge.
  */
 export function JournalListPane({
   selectedDateSlug = null,
   autoSelectFirst = false,
   onPressRow: onPressRowProp,
-  rowLayout = "default",
   createTodayError = null,
 }: Props) {
   const router = useRouter();
@@ -92,14 +89,19 @@ export function JournalListPane({
 
   const [restRows, setRestRows] = useState<JournalListRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
-  const [restLoading, setRestLoading] = useState(false);
-  const [userRefreshing, setUserRefreshing] = useState(false);
+  const {
+    restLoading,
+    pullRefreshing,
+    beginReload,
+    endReload,
+    markHydrated,
+  } = useRestReloadFlags();
 
   const todaySlug = getTodayJournalDateSlug();
   const localRows = syncedRows ?? [];
 
-  const reloadRest = useCallback(async () => {
-    setRestLoading(true);
+  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = beginReload(opts);
     setRestError(null);
     try {
       const body = await client.requestJson<{ documents: Document[] }>(
@@ -114,6 +116,7 @@ export function JournalListPane({
           }))
           .sort((a, b) => b.journal_date.localeCompare(a.journal_date)),
       );
+      markHydrated();
     } catch (reason) {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
@@ -123,9 +126,9 @@ export function JournalListPane({
           : detail,
       );
     } finally {
-      setRestLoading(false);
+      endReload(userPull);
     }
-  }, [apiUrl, client]);
+  }, [apiUrl, beginReload, client, endReload, markHydrated]);
 
   useRestListHydration(reloadRest);
 
@@ -210,12 +213,7 @@ export function JournalListPane({
   });
 
   const onRefresh = useCallback(async () => {
-    setUserRefreshing(true);
-    try {
-      await reloadRest();
-    } finally {
-      setUserRefreshing(false);
-    }
+    await reloadRest({ userPull: true });
   }, [reloadRest]);
 
   if (loading) {
@@ -240,7 +238,7 @@ export function JournalListPane({
       style={ui.screen}
       data={rows}
       keyExtractor={(item) => item.id}
-      refreshing={userRefreshing}
+      refreshing={pullRefreshing}
       onRefresh={() => {
         void onRefresh();
       }}
@@ -262,10 +260,7 @@ export function JournalListPane({
         const selected = pathSelected === item.journal_date;
         const highlighted = highlightedId === item.id;
         const isToday = item.journal_date === todaySlug;
-        const sidePanel = rowLayout === "sidePanel";
-        const title = sidePanel
-          ? item.journal_date
-          : formatJournalEntryTitle(item.journal_date);
+        const label = formatJournalSidePanelLabel(item.journal_date);
 
         return (
           <Pressable
@@ -277,25 +272,15 @@ export function JournalListPane({
             }
             onPress={() => onPressRow(item)}
             style={({ pressed }) => [
-              sidePanel ? styles.sideRow : ui.row,
+              styles.row,
               selected ? styles.rowSelected : null,
               highlighted ? ui.keyboardNavHighlight : null,
-              pressed
-                ? sidePanel
-                  ? styles.sideRowPressed
-                  : { backgroundColor: colors.rowPressed }
-                : null,
+              pressed ? styles.rowPressed : null,
             ]}
           >
-            <Text
-              style={sidePanel ? styles.sideLabel : ui.rowTitle}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {title}
-              {sidePanel && isToday ? (
-                <Text style={styles.todayBadge}> Today</Text>
-              ) : null}
+            <Text style={styles.label} numberOfLines={1} ellipsizeMode="tail">
+              {label}
+              {isToday ? <Text style={styles.todayBadge}> Today</Text> : null}
             </Text>
           </Pressable>
         );
@@ -305,19 +290,19 @@ export function JournalListPane({
 }
 
 const styles = StyleSheet.create({
-  sideRow: {
+  row: {
     marginHorizontal: 8,
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderRadius: 6,
   },
-  sideRowPressed: {
+  rowPressed: {
     backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
   rowSelected: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
   },
-  sideLabel: {
+  label: {
     color: colors.foreground,
     fontSize: 13,
     fontWeight: "500",
