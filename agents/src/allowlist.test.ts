@@ -24,6 +24,10 @@ test("blocks sync, PTY, ops, and API key admin", () => {
   assert.equal(isRouteAllowed("POST", "/api/v1/api-keys"), false);
 });
 
+test("allows AgentMail webhook path", () => {
+  assert.equal(isRouteAllowed("POST", "/api/v1/webhooks/agentmail"), true);
+});
+
 test("does not proxy non-v1 paths", () => {
   assert.equal(isRouteAllowed("GET", "/health"), false);
   assert.equal(isRouteAllowed("GET", "/openapi.json"), false);

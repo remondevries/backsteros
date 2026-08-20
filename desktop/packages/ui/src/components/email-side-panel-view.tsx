@@ -5,27 +5,38 @@ import { Link } from "react-router-dom";
 
 import {
   emailListItemIsSelected,
+  formatEmailPersonWithAddress,
+  getEmailComposeHref,
   getEmailListItemHref,
-  groupEmailItemsByMailbox,
+  groupEmailItemsByStatus,
+  parseReplyToAddress,
+  resolveEmailListItemStatus,
   type EmailListItem,
   type EmailMailbox,
 } from "../email.js";
 import { sidePanelItemClass } from "../side-panel-styles.js";
+import { AssigneeListMark } from "./assignee-list-mark.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,
   ContentSidePanelList,
 } from "./content-side-panel-list.js";
-import { ProjectTypeGroupSection } from "./project-type-group-section.js";
-import { EmailNavIcon } from "./sidebar-nav-icons.js";
+import { ProjectOcticon } from "./project-octicon.js";
 import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
-import { getEmailComposeHref } from "../email.js";
+import { StatusGroupSection } from "./status-group-section.js";
+import {
+  TaskListDueDateLabel,
+  TaskListPriorityLabel,
+} from "./task-list-property-label.js";
+import { TaskStatusIcon } from "./task-status-icon.js";
+import { Tooltip } from "./tooltip.js";
 
 export type EmailSidePanelLinkComponent = ComponentType<{
   to: string;
   className?: string;
   "aria-current"?: "page";
-  children: ReactNode;
+  "aria-label"?: string;
+  children?: ReactNode;
 }>;
 
 export type EmailSidePanelViewProps = {
@@ -40,6 +51,14 @@ export type EmailSidePanelViewProps = {
   onCompose?: () => void;
 };
 
+function emailFromDisplayName(from: string): string {
+  const trimmed = from.trim();
+  if (!trimmed) return "Unknown sender";
+  const angle = trimmed.match(/^(.*?)\s*<([^>]+)>\s*$/);
+  if (angle?.[1]?.trim()) return angle[1].trim();
+  return parseReplyToAddress(trimmed) || trimmed;
+}
+
 function EmailMessageRow({
   item,
   selected,
@@ -49,37 +68,120 @@ function EmailMessageRow({
   selected: boolean;
   LinkComponent: EmailSidePanelLinkComponent;
 }) {
+  const status = resolveEmailListItemStatus(item);
+  const priority = item.priority ?? 0;
+  const dueDate =
+    item.dueDate == null
+      ? null
+      : item.dueDate instanceof Date
+        ? item.dueDate
+        : new Date(item.dueDate);
+  const hasDue = dueDate != null && !Number.isNaN(dueDate.getTime());
+  const projectLabel =
+    item.projectName?.trim() || item.projectKey?.trim() || null;
+  const organizationLabel = item.organizationName?.trim() || null;
+  const contactName = item.contactName?.trim() || null;
+  const fromLabel = emailFromDisplayName(item.from);
+  const fromEmail = parseReplyToAddress(item.from.trim());
+  const personLabel = contactName
+    ? formatEmailPersonWithAddress(contactName, item.from)
+    : fromLabel;
+  const hasLinkedContact = Boolean(item.contactId && contactName);
+
+  let personChip: ReactNode = null;
+  if (hasLinkedContact) {
+    personChip = item.contactAvatarSrc ? (
+      <span className="inbox-list-item-assignee-avatar">
+        <AssigneeListMark
+          label={personLabel}
+          avatarSrc={item.contactAvatarSrc}
+          size={18}
+        />
+      </span>
+    ) : (
+      <span className="inbox-list-item-truncate email-side-panel-contact-name">
+        {contactName}
+        {fromEmail.includes("@") ? (
+          <span className="email-side-panel-contact-email"> {fromEmail}</span>
+        ) : null}
+      </span>
+    );
+  } else {
+    personChip = (
+      <span className="inbox-list-item-truncate email-side-panel-from-fallback">
+        {fromLabel}
+      </span>
+    );
+  }
+
   return (
-    <li>
-      <LinkComponent
-        to={getEmailListItemHref(item)}
-        className={sidePanelItemClass({ active: selected, stacked: true })}
-        aria-current={selected ? "page" : undefined}
+    <li className="inbox-list-item">
+      <div
+        className={`${sidePanelItemClass({
+          active: selected,
+          stacked: true,
+        })} inbox-list-item-card`}
       >
-        <span className="app-side-panel-item-row-primary">
-          <span className="app-side-panel-item-icon" aria-hidden="true">
-            <EmailNavIcon />
-          </span>
-          <span className="app-side-panel-item-label">
-            {item.conceptDraftId ? (
-              <>
-                <span className="email-side-panel-concept-label">Concept</span>
-                {" · "}
-              </>
+        <LinkComponent
+          to={getEmailListItemHref(item)}
+          aria-current={selected ? "page" : undefined}
+          aria-label={item.subject.trim() || "(no subject)"}
+          className="inbox-list-item-hit-area"
+        />
+        <div
+          className={`app-side-panel-item-row-primary inbox-list-item-card-layer${
+            organizationLabel ? " email-side-panel-primary--with-org" : ""
+          }`}
+        >
+          <TaskStatusIcon status={status} size={14} />
+          <span
+            className={`inbox-list-item-title-wrap${
+              organizationLabel ? " email-side-panel-title-stack" : ""
+            }`}
+          >
+            {organizationLabel ? (
+              <span className="email-side-panel-org-label">
+                {organizationLabel}
+              </span>
             ) : null}
-            {item.subject.trim() || "(no subject)"}
+            <span className="inbox-list-item-title">
+              {item.conceptDraftId ? (
+                <>
+                  <span className="email-side-panel-concept-label">Concept</span>
+                  {" · "}
+                </>
+              ) : null}
+              {item.subject.trim() || "(no subject)"}
+            </span>
           </span>
-        </span>
-        <span className="app-side-panel-item-row-meta">
-          {item.from.trim() || "Unknown sender"}
-        </span>
-      </LinkComponent>
+        </div>
+        <div className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox inbox-list-item-card-layer">
+          <TaskListPriorityLabel priority={priority} />
+          {hasDue ? (
+            <TaskListDueDateLabel dueDate={dueDate!} status={status} />
+          ) : null}
+          {projectLabel ? (
+            <span className="inbox-list-item-meta-label">
+              <ProjectOcticon icon={null} size={12} />
+              <span className="inbox-list-item-truncate">{projectLabel}</span>
+            </span>
+          ) : null}
+          <Tooltip label={personLabel}>
+            <span
+              className="inbox-list-item-assignee inbox-list-item-field"
+              aria-label={personLabel}
+            >
+              {personChip}
+            </span>
+          </Tooltip>
+        </div>
+      </div>
     </li>
   );
 }
 
 /**
- * Left rail for Email — one group per connected inbox, same chrome as Inbox.
+ * Left rail for Email — status groups with task-style rows.
  */
 export function EmailSidePanelView({
   pathname,
@@ -93,16 +195,16 @@ export function EmailSidePanelView({
   onCompose,
 }: EmailSidePanelViewProps) {
   const groups = useMemo(
-    () => groupEmailItemsByMailbox(mailboxes, items),
-    [items, mailboxes],
+    () => groupEmailItemsByStatus(items, { includeEmpty: true }),
+    [items],
   );
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
-  function toggleGroup(inboxId: string) {
+  function toggleGroup(status: string) {
     setCollapsed((current) => {
       const next = new Set(current);
-      if (next.has(inboxId)) next.delete(inboxId);
-      else next.add(inboxId);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
       return next;
     });
   }
@@ -124,31 +226,32 @@ export function EmailSidePanelView({
         No inboxes selected. Choose them in Settings → E-mail.
       </ContentSidePanelEmpty>
     );
+  } else if (messagesLoading && items.length === 0) {
+    body = (
+      <ContentSidePanelEmpty>Loading messages…</ContentSidePanelEmpty>
+    );
+  } else if (items.length === 0) {
+    body = <ContentSidePanelEmpty>No messages yet</ContentSidePanelEmpty>;
   } else {
     body = (
-      <ContentSidePanelList aria-label="Email inboxes">
+      <ContentSidePanelList aria-label="Email by status">
         {groups.map((group) => (
-          <ProjectTypeGroupSection
-            key={group.inboxId}
+          <StatusGroupSection
+            key={group.status}
+            groupKey={group.status}
             title={group.label}
-            collapsed={collapsed.has(group.inboxId)}
-            onToggle={() => toggleGroup(group.inboxId)}
+            collapsed={collapsed.has(group.status)}
+            onToggle={() => toggleGroup(group.status)}
           >
-            {group.items.length === 0 ? (
-              <li className="email-side-panel-empty-row">
-                {messagesLoading ? "Loading messages…" : "No messages yet"}
-              </li>
-            ) : (
-              group.items.map((item) => (
-                <EmailMessageRow
-                  key={`${item.inboxId}:${item.id}`}
-                  item={item}
-                  selected={emailListItemIsSelected(item, pathname)}
-                  LinkComponent={LinkComponent}
-                />
-              ))
-            )}
-          </ProjectTypeGroupSection>
+            {group.items.map((item) => (
+              <EmailMessageRow
+                key={`${item.inboxId}:${item.id}`}
+                item={item}
+                selected={emailListItemIsSelected(item, pathname)}
+                LinkComponent={LinkComponent}
+              />
+            ))}
+          </StatusGroupSection>
         ))}
       </ContentSidePanelList>
     );

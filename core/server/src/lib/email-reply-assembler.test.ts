@@ -6,6 +6,7 @@ import {
   extractReplyBodyFromAssembled,
   parseReplyToAddress,
   parseSenderFirstName,
+  plainTextEmailToHtml,
   renderEmailReplyShell,
   replySubject,
   resolveEditableDraftBody,
@@ -36,6 +37,23 @@ describe("email-reply-assembler", () => {
     assert.match(assembled.text, /^Hi Ada,/);
     assert.match(assembled.text, /We'll review the invoice this week\./);
     assert.match(assembled.text, /Best,\nRemon$/);
+  });
+
+  it("html alternative preserves the sign-off footer for recipients", () => {
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <ada@example.com>",
+      subject: "Invoice",
+      body: "Please send the contract.",
+      templates: {
+        signOffTemplateEn: "Best,\n{name}",
+        signOffName: "Ralph",
+      },
+    });
+    assert.match(assembled.signOff, /Ralph/);
+    assert.match(assembled.text, /Best,\nRalph$/);
+    const html = plainTextEmailToHtml(assembled.text);
+    assert.match(html, /Best,<br>\nRalph/);
+    assert.doesNotMatch(html, /&lt;script/);
   });
 
   it("uses custom templates from settings", () => {

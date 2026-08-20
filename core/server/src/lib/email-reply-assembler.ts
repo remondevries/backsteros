@@ -502,3 +502,12 @@ export function assembleComposeEmail(input: {
     signOff,
   };
 }
+
+/** Escape plain text for a multipart HTML alternative that preserves line breaks. */
+export function plainTextEmailToHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>\n");
+}

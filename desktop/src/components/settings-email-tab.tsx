@@ -275,7 +275,9 @@ export function SettingsEmailTab({
         }
         hint={
           connected
-            ? "Inbox messages will appear in Inbox once that step is wired up."
+            ? settings?.webhookConfigured
+              ? "Inbound webhook connected — new mail refreshes open shells."
+              : "Inbox messages appear when shells fetch them. Set AGENTS_PUBLIC_URL on core for live inbound webhooks."
             : null
         }
         testing={testing}
@@ -426,6 +428,11 @@ export function SettingsEmailTab({
         {settings?.apiKeyConfigured ? (
           <p className="settings-hint">
             Key on file: {settings.apiKeyPreview}
+            {" · "}
+            Inbound webhook:{" "}
+            {settings.webhookConfigured
+              ? "connected"
+              : "not configured (set AGENTS_PUBLIC_URL on core)"}
           </p>
         ) : (
           <p className="settings-hint">

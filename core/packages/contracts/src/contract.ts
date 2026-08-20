@@ -1380,6 +1380,41 @@ export const apiContract = c.router(
       },
       summary: "Get one AgentMail message including body text",
     },
+    deleteAgentMailMessage: {
+      method: "DELETE",
+      path: "/api/v1/email/inboxes/:inboxId/messages/:messageId",
+      pathParams: z.object({
+        inboxId: z.string().min(1),
+        messageId: z.string().min(1),
+      }),
+      responses: {
+        200: s.emailDeleteMessageResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Delete an AgentMail message/thread and local BacksterOS email metadata",
+    },
+    reportAgentMailMessageSpam: {
+      method: "POST",
+      path: "/api/v1/email/inboxes/:inboxId/messages/:messageId/report-spam",
+      pathParams: z.object({
+        inboxId: z.string().min(1),
+        messageId: z.string().min(1),
+      }),
+      body: z.object({}).optional(),
+      responses: {
+        200: s.emailReportSpamResponseSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+      },
+      summary:
+        "Report AgentMail message as spam (label + block sender) and remove it",
+    },
     getAgentMailDraft: {
       method: "GET",
       path: "/api/v1/email/inboxes/:inboxId/drafts/:draftId",

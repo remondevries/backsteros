@@ -1401,6 +1401,7 @@ export const agentMailSettingsSchema = z.object({
   replyGreetingTemplate: z.string(),
   replySignOffTemplateEn: z.string(),
   replySignOffTemplateNl: z.string(),
+  webhookConfigured: z.boolean(),
 });
 export const updateAgentMailSettingsSchema = z.object({
   /** Set to a new key, or empty string to clear. Omit to leave unchanged. */
@@ -1456,6 +1457,19 @@ export const agentMailMessageSchema = z.object({
   from: z.string(),
   preview: z.string().nullable(),
   timestamp: z.string(),
+  /** Workspace thread property; defaults to backlog when unset. */
+  status: taskStatusSchema.optional(),
+  priority: z.number().int().min(0).max(4).optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  organizationName: z.string().nullable().optional(),
+  contactId: z.string().nullable().optional(),
+  contactName: z.string().nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
+  assigneeName: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  projectName: z.string().nullable().optional(),
+  projectKey: z.string().nullable().optional(),
 });
 export const agentMailMessagesResponseSchema = z.object({
   messages: z.array(agentMailMessageSchema),
@@ -1470,7 +1484,12 @@ export const emailThreadMetadataSchema = z.object({
   contactName: z.string().nullable().optional(),
   assigneeId: z.string().nullable(),
   assigneeName: z.string().nullable().optional(),
+  projectId: z.string().nullable(),
+  projectName: z.string().nullable().optional(),
+  projectKey: z.string().nullable().optional(),
   status: taskStatusSchema,
+  priority: z.number().int().min(0).max(4),
+  dueDate: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -1478,7 +1497,29 @@ export const updateEmailThreadMetadataSchema = z.object({
   organizationId: z.string().nullable().optional(),
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
   status: taskStatusSchema.optional(),
+  priority: z.number().int().min(0).max(4).optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+});
+export const emailThreadCommentAuthorSchema = z.enum(["user", "agent"]);
+export const emailThreadCommentSchema = z.object({
+  id: z.string(),
+  emailThreadId: z.string(),
+  body: z.string(),
+  author: emailThreadCommentAuthorSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export const createEmailThreadCommentSchema = z.object({
+  body: z.string().min(1).max(100_000),
+  author: emailThreadCommentAuthorSchema.optional(),
+});
+export const updateEmailThreadCommentSchema = z.object({
+  body: z.string().min(1).max(100_000),
+});
+export const emailThreadCommentsResponseSchema = z.object({
+  comments: z.array(emailThreadCommentSchema),
 });
 export const agentMailMessageDetailSchema = agentMailMessageSchema
   .omit({ kind: true, draftId: true, inReplyToMessageId: true })
@@ -1490,9 +1531,31 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
     html: z.string().nullable(),
     extractedText: z.string().nullable(),
     extractedHtml: z.string().nullable(),
+    to: z.array(z.string()).optional(),
+    labels: z.array(z.string()).optional(),
     inboxEmail: z.string().nullable().optional(),
     conceptDraft: agentMailConceptDraftSchema.nullable().optional(),
     threadMetadata: emailThreadMetadataSchema.optional(),
+    threadComments: z.array(emailThreadCommentSchema).optional(),
+    /** All messages in the AgentMail thread (oldest → newest when present). */
+    threadMessages: z
+      .array(
+        z.object({
+          messageId: z.string(),
+          threadId: z.string().optional(),
+          subject: z.string(),
+          from: z.string(),
+          to: z.array(z.string()),
+          timestamp: z.string(),
+          text: z.string().nullable(),
+          html: z.string().nullable(),
+          extractedText: z.string().nullable(),
+          extractedHtml: z.string().nullable(),
+          labels: z.array(z.string()).optional(),
+          inReplyTo: z.string().nullable().optional(),
+        }),
+      )
+      .optional(),
   });
 export const agentMailDraftDetailSchema = z.object({
   inboxId: z.string(),
@@ -1539,6 +1602,13 @@ export const emailSendDraftResponseSchema = z.object({
 export const emailDeleteDraftResponseSchema = z.object({
   inboxId: z.string(),
   draftId: z.string(),
+});
+export const emailDeleteMessageResponseSchema = z.object({
+  ok: z.literal(true),
+});
+export const emailReportSpamResponseSchema = z.object({
+  ok: z.literal(true),
+  blockedSender: z.string().nullable(),
 });
 export const updateAgentMailDraftSchema = z.object({
   /** Editable body without greeting/sign-off. */
@@ -2143,12 +2213,25 @@ export type EmailSendDraftResponse = z.infer<
 export type EmailDeleteDraftResponse = z.infer<
   typeof emailDeleteDraftResponseSchema
 >;
+export type EmailDeleteMessageResponse = z.infer<
+  typeof emailDeleteMessageResponseSchema
+>;
+export type EmailReportSpamResponse = z.infer<
+  typeof emailReportSpamResponseSchema
+>;
 export type UpdateAgentMailDraftInput = z.infer<
   typeof updateAgentMailDraftSchema
 >;
 export type EmailThreadMetadata = z.infer<typeof emailThreadMetadataSchema>;
 export type UpdateEmailThreadMetadataInput = z.infer<
   typeof updateEmailThreadMetadataSchema
+>;
+export type EmailThreadComment = z.infer<typeof emailThreadCommentSchema>;
+export type CreateEmailThreadCommentInput = z.infer<
+  typeof createEmailThreadCommentSchema
+>;
+export type UpdateEmailThreadCommentInput = z.infer<
+  typeof updateEmailThreadCommentSchema
 >;
 export type MoneybirdSalesInvoiceSummary = z.infer<
   typeof moneybirdSalesInvoiceSchema

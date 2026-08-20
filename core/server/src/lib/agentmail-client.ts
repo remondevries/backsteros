@@ -103,6 +103,16 @@ export type AgentMailMessageDetail = AgentMailMessageSummary & {
   html: string | null;
   extractedText: string | null;
   extractedHtml: string | null;
+  to: string[];
+  labels: string[];
+  inReplyTo: string | null;
+};
+
+export type AgentMailThread = {
+  inboxId: string;
+  threadId: string;
+  subject: string;
+  messages: AgentMailMessageDetail[];
 };
 
 export type AgentMailDraftSummary = {
@@ -172,6 +182,11 @@ export function mapAgentMailMessageDetail(
     html: asOptionalString(raw.html),
     extractedText: asOptionalString(raw.extracted_text),
     extractedHtml: asOptionalString(raw.extracted_html),
+    to: mapAddressList(raw.to),
+    labels: Array.isArray(raw.labels)
+      ? raw.labels.filter((label): label is string => typeof label === "string")
+      : [],
+    inReplyTo: asOptionalString(raw.in_reply_to),
   };
 }
 
@@ -352,6 +367,38 @@ export class AgentMailClient {
     return mapAgentMailMessageDetail(raw);
   }
 
+  async getThread(
+    inboxId: string,
+    threadId: string,
+  ): Promise<AgentMailThread> {
+    const raw = await this.requestJson<Record<string, unknown>>(
+      `/inboxes/${encodeURIComponent(inboxId)}/threads/${encodeURIComponent(threadId)}`,
+    );
+    const rows = Array.isArray(raw.messages) ? raw.messages : [];
+    const messages = rows.flatMap((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+      try {
+        return [
+          mapAgentMailMessageDetail({
+            ...(row as Record<string, unknown>),
+            inbox_id:
+              (row as Record<string, unknown>).inbox_id ?? inboxId,
+            thread_id:
+              (row as Record<string, unknown>).thread_id ?? threadId,
+          }),
+        ];
+      } catch {
+        return [];
+      }
+    });
+    return {
+      inboxId: asRequiredString(raw.inbox_id ?? inboxId, "inbox_id"),
+      threadId: asRequiredString(raw.thread_id ?? threadId, "thread_id"),
+      subject: asOptionalString(raw.subject) ?? messages[0]?.subject ?? "",
+      messages,
+    };
+  }
+
   async listDrafts(
     inboxId: string,
     options?: { limit?: number; pageToken?: string },
@@ -435,4 +482,174 @@ export class AgentMailClient {
       { method: "DELETE" },
     );
   }
+
+  async deleteMessage(inboxId: string, messageId: string): Promise<void> {
+    await this.requestVoid(
+      `/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async deleteThread(inboxId: string, threadId: string): Promise<void> {
+    await this.requestVoid(
+      `/inboxes/${encodeURIComponent(inboxId)}/threads/${encodeURIComponent(threadId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async updateMessageLabels(
+    inboxId: string,
+    messageId: string,
+    input: { addLabels?: string[]; removeLabels?: string[] },
+  ): Promise<void> {
+    await this.requestJson(
+      `/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...(input.addLabels?.length ? { add_labels: input.addLabels } : {}),
+          ...(input.removeLabels?.length
+            ? { remove_labels: input.removeLabels }
+            : {}),
+        }),
+      },
+    );
+  }
+
+  async updateThreadLabels(
+    inboxId: string,
+    threadId: string,
+    input: { addLabels?: string[]; removeLabels?: string[] },
+  ): Promise<void> {
+    await this.requestJson(
+      `/inboxes/${encodeURIComponent(inboxId)}/threads/${encodeURIComponent(threadId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...(input.addLabels?.length ? { add_labels: input.addLabels } : {}),
+          ...(input.removeLabels?.length
+            ? { remove_labels: input.removeLabels }
+            : {}),
+        }),
+      },
+    );
+  }
+
+  async createListEntry(
+    inboxId: string,
+    direction: "send" | "receive" | "reply",
+    type: "allow" | "block",
+    input: { entry: string; reason?: string },
+  ): Promise<void> {
+    await this.requestJson(
+      `/inboxes/${encodeURIComponent(inboxId)}/lists/${encodeURIComponent(direction)}/${encodeURIComponent(type)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          entry: input.entry,
+          ...(input.reason ? { reason: input.reason } : {}),
+        }),
+      },
+    );
+  }
+
+  async createWebhook(input: {
+    url: string;
+    eventTypes: string[];
+    inboxIds?: string[];
+    clientId?: string;
+  }): Promise<AgentMailWebhook> {
+    const raw = await this.requestJson<Record<string, unknown>>("/webhooks", {
+      method: "POST",
+      body: JSON.stringify({
+        url: input.url,
+        event_types: input.eventTypes,
+        ...(input.inboxIds ? { inbox_ids: input.inboxIds } : {}),
+        ...(input.clientId ? { client_id: input.clientId } : {}),
+      }),
+    });
+    return mapAgentMailWebhook(raw);
+  }
+
+  async listWebhooks(): Promise<AgentMailWebhook[]> {
+    const raw = await this.requestJson<Record<string, unknown>>("/webhooks");
+    const rows = Array.isArray(raw.webhooks) ? raw.webhooks : [];
+    return rows.flatMap((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+      try {
+        return [mapAgentMailWebhook(row as Record<string, unknown>)];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  async getWebhook(webhookId: string): Promise<AgentMailWebhook> {
+    const raw = await this.requestJson<Record<string, unknown>>(
+      `/webhooks/${encodeURIComponent(webhookId)}`,
+    );
+    return mapAgentMailWebhook(raw);
+  }
+
+  async updateWebhook(
+    webhookId: string,
+    input: {
+      addInboxIds?: string[];
+      removeInboxIds?: string[];
+      eventTypes?: string[];
+    },
+  ): Promise<AgentMailWebhook> {
+    const raw = await this.requestJson<Record<string, unknown>>(
+      `/webhooks/${encodeURIComponent(webhookId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...(input.addInboxIds ? { add_inbox_ids: input.addInboxIds } : {}),
+          ...(input.removeInboxIds
+            ? { remove_inbox_ids: input.removeInboxIds }
+            : {}),
+          ...(input.eventTypes ? { event_types: input.eventTypes } : {}),
+        }),
+      },
+    );
+    return mapAgentMailWebhook(raw);
+  }
+
+  async deleteWebhook(webhookId: string): Promise<void> {
+    await this.requestVoid(`/webhooks/${encodeURIComponent(webhookId)}`, {
+      method: "DELETE",
+    });
+  }
+}
+
+export type AgentMailWebhook = {
+  webhookId: string;
+  url: string;
+  secret: string;
+  enabled: boolean;
+  eventTypes: string[];
+  inboxIds: string[];
+};
+
+export function mapAgentMailWebhook(
+  raw: Record<string, unknown>,
+): AgentMailWebhook {
+  const eventTypes = Array.isArray(raw.event_types)
+    ? raw.event_types.filter((value): value is string => typeof value === "string")
+    : Array.isArray(raw.eventTypes)
+      ? raw.eventTypes.filter((value): value is string => typeof value === "string")
+      : [];
+  const inboxIds = Array.isArray(raw.inbox_ids)
+    ? raw.inbox_ids.filter((value): value is string => typeof value === "string")
+    : Array.isArray(raw.inboxIds)
+      ? raw.inboxIds.filter((value): value is string => typeof value === "string")
+      : [];
+  return {
+    webhookId: asRequiredString(raw.webhook_id ?? raw.webhookId, "webhook_id"),
+    url: asRequiredString(raw.url, "url"),
+    secret: asRequiredString(raw.secret, "secret"),
+    enabled: Boolean(raw.enabled),
+    eventTypes,
+    inboxIds,
+  };
 }

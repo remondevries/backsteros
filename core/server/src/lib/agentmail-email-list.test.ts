@@ -7,6 +7,7 @@ import {
   conceptReplyClientId,
   embedConceptDraftsInMessages,
   isLikelyConceptDraft,
+  loadConceptDraftForThreadAcrossInboxes,
   resolveConceptDraftParentLink,
   resolveConceptDraftParentMessageId,
   resolveDraftAcrossInboxes,
@@ -165,5 +166,63 @@ describe("agentmail-email-list", () => {
     );
     assert.equal(draft.inboxId, "inbox_b");
     assert.equal(draft.draftId, "draft_1");
+  });
+
+  it("loads a concept draft linked to another message in the same thread", async () => {
+    const parentId = "msg_root";
+    const openedId = "msg_reply";
+    const clientId = conceptReplyClientId(parentId);
+    const client = new AgentMailClient({
+      apiKey: "am_test_key",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/inboxes/inbox_1/drafts") || url.includes("/drafts?")) {
+          return new Response(
+            JSON.stringify({
+              drafts: [
+                {
+                  inbox_id: "inbox_1",
+                  draft_id: "draft_thread",
+                  subject: "Re: Hello",
+                  preview: "Please send the contract",
+                  text: null,
+                  // List omits client_id / in_reply_to (AgentMail sparse summary).
+                  updated_at: "2026-08-19T12:00:00Z",
+                  created_at: "2026-08-19T12:00:00Z",
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/drafts/draft_thread")) {
+          return new Response(
+            JSON.stringify({
+              inbox_id: "inbox_1",
+              draft_id: "draft_thread",
+              client_id: clientId,
+              in_reply_to: parentId,
+              subject: "Re: Hello",
+              text: "Please send the contract",
+              to: ["ada@example.com"],
+              updated_at: "2026-08-19T12:00:00Z",
+              created_at: "2026-08-19T12:00:00Z",
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const draft = await loadConceptDraftForThreadAcrossInboxes(
+      client,
+      ["inbox_1"],
+      [openedId, parentId],
+    );
+    assert.ok(draft);
+    assert.equal(draft?.draftId, "draft_thread");
+    assert.equal(draft?.inReplyTo, parentId);
+    assert.equal(draft?.clientId, clientId);
   });
 });

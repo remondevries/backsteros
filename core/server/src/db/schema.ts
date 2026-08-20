@@ -110,6 +110,9 @@ export const workspaceIntegrationSecrets = pgTable(
     agentmailReplySignOffTemplateEn: text("agentmail_reply_sign_off_template_en"),
     agentmailReplySignOffTemplateNl: text("agentmail_reply_sign_off_template_nl"),
     agentmailReplySignOffName: text("agentmail_reply_sign_off_name"),
+    agentmailWebhookId: text("agentmail_webhook_id"),
+    agentmailWebhookSecret: text("agentmail_webhook_secret"),
+    agentmailWebhookUrl: text("agentmail_webhook_url"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -1041,7 +1044,12 @@ export const emailThreads = pgTable(
     assigneeId: text("assignee_id").references(() => contacts.id, {
       onDelete: "set null",
     }),
-    status: text("status").notNull().default("triage"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").notNull().default("backlog"),
+    priority: integer("priority").notNull().default(0),
+    dueDate: timestamp("due_date", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1055,6 +1063,37 @@ export const emailThreads = pgTable(
     index("email_threads_organization_id_idx").on(table.organizationId),
     index("email_threads_contact_id_idx").on(table.contactId),
     index("email_threads_assignee_id_idx").on(table.assigneeId),
+    index("email_threads_project_id_idx").on(table.projectId),
+    index("email_threads_workspace_due_date_idx").on(table.workspaceId, table.dueDate),
+  ],
+);
+
+export const emailThreadComments = pgTable(
+  "email_thread_comments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    emailThreadId: text("email_thread_id")
+      .notNull()
+      .references(() => emailThreads.id, { onDelete: "cascade" }),
+    body: text("body").notNull().default(""),
+    author: text("author").notNull().default("user"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("email_thread_comments_email_thread_id_idx").on(table.emailThreadId),
+    index("email_thread_comments_workspace_id_idx").on(table.workspaceId),
+    index("email_thread_comments_created_at_idx").on(table.createdAt),
+    index("email_thread_comments_deleted_at_idx").on(table.deletedAt),
   ],
 );
 
@@ -1081,3 +1120,4 @@ export type DbFinancialRecurring = typeof financialRecurrings.$inferSelect;
 export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;
 export type DbFinancialTransaction = typeof financialTransactions.$inferSelect;
 export type DbEmailThread = typeof emailThreads.$inferSelect;
+export type DbEmailThreadComment = typeof emailThreadComments.$inferSelect;

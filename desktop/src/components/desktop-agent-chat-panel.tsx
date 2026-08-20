@@ -333,6 +333,11 @@ export type DesktopAgentChatPanelProps = {
   composerOnly?: boolean;
   /** Override composer placeholder when {@link composerOnly}. */
   composerPlaceholder?: string | null;
+  /**
+   * Wrap the user composer text before ACP submit (UI still shows the short
+   * text). Used by email chat to re-inject headers/body on every turn.
+   */
+  buildAgentPrompt?: (userText: string) => string;
 };
 
 /**
@@ -372,6 +377,7 @@ export function DesktopAgentChatPanel({
   draftHeroHeadline = null,
   composerOnly = false,
   composerPlaceholder = null,
+  buildAgentPrompt,
 }: DesktopAgentChatPanelProps) {
   const { client } = useDesktopApi();
   const agentStatus = useDesktopAgentStatus();
@@ -2156,9 +2162,12 @@ export function DesktopAgentChatPanel({
           }
           markLiveAgentWorkingForTask(taskId);
           // New sessions: send global preference. Sidecar keeps session pin after.
+          const acpPrompt = buildAgentPrompt
+            ? buildAgentPrompt(text || " ")
+            : text || " ";
           const result = await submitPtyAgentPrompt({
             taskId,
-            prompt: text || " ",
+            prompt: acpPrompt,
             chatId: agentChatId,
             cwd,
             mode: promptMode,
@@ -2189,6 +2198,7 @@ export function DesktopAgentChatPanel({
       agentMode,
       appendMessage,
       autoMarkInProgress,
+      buildAgentPrompt,
       client,
       cwd,
       removeLastOptimisticUser,

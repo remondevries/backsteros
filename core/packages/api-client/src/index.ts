@@ -265,6 +265,31 @@ async function rawRequest(
   return parsed;
 }
 
+async function rawStreamRequest(
+  options: ApiClientOptions,
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  if (!fetchImpl) throw new Error("A fetch implementation is required");
+  const headers = await authorizationHeaders(options);
+  throwIfAborted(init.signal);
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  if (!headers.has("accept")) {
+    headers.set("accept", "text/event-stream");
+  }
+  const response = await fetchImpl(`${trimBaseUrl(options.baseUrl)}${path}`, {
+    ...init,
+    headers,
+    credentials: init.credentials ?? options.credentials,
+  });
+  if (!response.ok) {
+    const parsed = await parseResponse(response);
+    throw new ApiClientError(response.status, parsed, response.headers);
+  }
+  return response;
+}
+
 async function rawBinaryRequest(
   options: ApiClientOptions,
   path: string,
@@ -436,6 +461,8 @@ export type BacksterosApiClient = {
   }>;
   requestJson<T>(path: string, init?: RequestInit): Promise<T>;
   requestBinary(path: string, init?: RequestInit): Promise<Blob>;
+  /** Long-lived fetch (SSE). Does not apply the default request timeout. */
+  requestStream(path: string, init?: RequestInit): Promise<Response>;
   getPowerSyncCredentials(): Promise<PowerSyncCredentials>;
   writePowerSync(input: PowerSyncWriteInput): Promise<{ ok: true }>;
   uploadLetterPdf(
@@ -497,11 +524,14 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
     rawRequest(normalized, path, init) as Promise<T>;
   const requestBinary = (path: string, init?: RequestInit) =>
     rawBinaryRequest(normalized, path, init);
+  const requestStream = (path: string, init?: RequestInit) =>
+    rawStreamRequest(normalized, path, init);
 
   return {
     contract,
     requestJson,
     requestBinary,
+    requestStream,
     getPowerSyncCredentials: () =>
       requestJson<PowerSyncCredentials>("/api/v1/powersync/token"),
     writePowerSync: (input) =>

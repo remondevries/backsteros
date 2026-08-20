@@ -1984,6 +1984,18 @@ html:has(.desktop-overlay-root--palette) .command-list {
   text-align: center;
 }
 
+/* Fills the absolute chat pane so LegendList gets a bounded height and
+   can scroll. Without this, the host sizes to content and overflow never
+   engages (composer-only hides the host via display:none). */
+.desktop-agent-chat__transcript-host {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+}
+
 .desktop-agent-chat__transcript-shell {
   position: relative;
   display: flex;

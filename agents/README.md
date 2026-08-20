@@ -5,15 +5,27 @@ Small HTTPS-facing proxy deployed on a VPS so **Grok Bot agents** (Sander and ot
 ```text
 iOS / desktop  --localhost or Tailscale-->  core (:8788)
 Grok Bot       --HTTPS + scoped API key-->  VPS agents  --Tailscale-->  core
+AgentMail      --HTTPS webhook---------->  VPS agents  --Tailscale-->  core
 ```
 
 - Same Postgres and write pipeline as core — requests are forwarded, not reimplemented.
-- Auth is unchanged: `Authorization: Bearer sk_live_…` keys issued by core.
-- iOS and desktop **do not** use this service.
+- Auth is unchanged for agent traffic: `Authorization: Bearer sk_live_…` keys issued by core.
+- AgentMail webhooks use Svix signatures (no Bearer key); core verifies `whsec_…` and notifies open shells.
+- iOS and desktop **do not** use this service for day-to-day API calls (they talk to core directly).
+
+## AgentMail inbound webhooks
+
+Register (or let core auto-register when `AGENTS_PUBLIC_URL` is set) a webhook that POSTs to:
+
+```text
+https://<agents-host>/api/v1/webhooks/agentmail
+```
+
+Core then emits `email.updated` over `GET /api/v1/email/events` so desktop/iOS refetch `GET /api/v1/email/messages`. This door only forwards the webhook — it does **not** fan out to devices.
 
 ## Allowed traffic
 
-All `/api/v1/*` routes are forwarded. Core enforces API key scopes.
+All `/api/v1/*` routes are forwarded. Core enforces API key scopes (except the AgentMail webhook route, which is Svix-authenticated).
 
 Blocked at the door (never forwarded):
 

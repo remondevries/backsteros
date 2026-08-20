@@ -153,8 +153,15 @@ export function EmailComposeBodyStage({
     }
   }, [agentWorking]);
 
+  // While idle, always render the live children so Edit/Preview toggles and
+  // typing update the DOM. Frozen/shown snapshots are only for the agent
+  // working animation cycle.
   const displayChildren =
-    phase === "idle" || phase === "reveal" ? shownChildren : frozenChildren;
+    phase === "idle"
+      ? children
+      : phase === "reveal"
+        ? shownChildren
+        : frozenChildren;
 
   const style: CSSProperties =
     stageHeight != null && phase !== "idle"

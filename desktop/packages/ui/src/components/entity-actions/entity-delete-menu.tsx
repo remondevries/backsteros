@@ -11,6 +11,7 @@ export function EntityDeleteMenu() {
   const {
     deleteConfig,
     duplicateConfig,
+    extraMenuItems,
     isDeletePending,
     isDuplicatePending,
     openDeleteModal,
@@ -18,7 +19,10 @@ export function EntityDeleteMenu() {
   } = useEntityHeaderActionsContext();
   const mounted = useMounted();
 
-  if (!mounted || (!deleteConfig && !duplicateConfig)) {
+  if (
+    !mounted ||
+    (!deleteConfig && !duplicateConfig && extraMenuItems.length === 0)
+  ) {
     return null;
   }
 
@@ -31,6 +35,33 @@ export function EntityDeleteMenu() {
       label: "Duplicate",
       disabled: busy || Boolean(duplicateConfig.disabled),
       onSelect: () => runDuplicate(),
+    });
+  }
+
+  for (const item of extraMenuItems) {
+    items.push({
+      id: item.id,
+      label: item.label,
+      danger: item.danger,
+      disabled: busy || Boolean(item.disabled),
+      onSelect: () => {
+        if (item.confirm) {
+          openDeleteModal({
+            entityLabel: item.confirm.entityLabel,
+            confirmLabel: item.confirm.confirmLabel,
+            actionVerb: item.confirm.actionVerb,
+            onDelete: async () => {
+              const result = await item.onSelect();
+              if (result && typeof result === "object" && "ok" in result) {
+                return result;
+              }
+              return { ok: true };
+            },
+          });
+          return;
+        }
+        void item.onSelect();
+      },
     });
   }
 

@@ -1,30 +1,43 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   AgentMailDraftDetail,
   AgentMailMessageDetail,
   EmailSendDraftResponse,
+  EmailThreadComment,
   EmailThreadMetadata,
 } from "@backsteros/contracts";
 import {
   EmailDraftActions,
   EmailComposeChrome,
   RegisterPageTitle,
+  RegisterEntityDeleteAction,
+  RegisterEntityMenuItems,
   EmailThreadMessageCard,
-  EmailMessageReplyBar,
+  EmailThreadCommentBubble,
+  EmailThreadCommentComposer,
   getEmailItemHref,
-  DetailWithPropertiesLayout,
   EmailPropertiesDisplay,
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
+  ResizableSidePanel,
   buildAssigneeDropdownOptions,
   buildContactDropdownOptions,
   buildOrganizationDropdownOptions,
+  buildProjectDropdownOptions,
   migrateLegacyTaskStatus,
   isEmailComposePath,
   parseReplyToAddress,
   replySubject as formatReplySubject,
   type TaskStatus,
   type EmailDraftBodyMode,
+  type EntityExtraMenuItem,
   useEmailDraftBodyModeShortcuts,
 } from "@backsteros/ui";
 import { parseEmailDraftPath } from "@backsteros/ui";
@@ -37,6 +50,7 @@ import {
   extractAgentReplyBody,
   resolveEditableEmailDraftBody,
 } from "../lib/agent/email-agent-prompt";
+import { useEmailThreadCommentAgent } from "../lib/agent/use-email-thread-comment-agent";
 import { useDesktopApi } from "../lib/api-context";
 import { createRequestAbortSignal } from "../lib/request-timeout";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
@@ -45,7 +59,10 @@ import {
   withAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
-import { useAgentMailMailboxes } from "../lib/use-agentmail-mailboxes";
+import {
+  dispatchEmailListPatch,
+  useAgentMailMailboxes,
+} from "../lib/use-agentmail-mailboxes";
 import {
   readEmailComposeSession,
   resetEmailComposeSession,
@@ -78,7 +95,7 @@ export function EmailPage() {
   const navigate = useNavigate();
   const agentMail = useAgentMailMailboxes(isCompose || Boolean(messageId));
   const workspace = useDesktopWorkspaceData();
-  const { organizations, contacts } = workspace;
+  const { organizations, contacts, projects } = workspace;
   const [message, setMessage] = useState<AgentMailMessageDetail | null>(null);
   const [draft, setDraft] = useState<AgentMailDraftDetail | null>(null);
   const [loading, setLoading] = useState(Boolean(inboxId && (messageId || draftId)));
@@ -89,9 +106,14 @@ export function EmailPage() {
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statusOverride, setStatusOverride] = useState<TaskStatus | null>(null);
+  const [priorityOverride, setPriorityOverride] = useState<number | null>(null);
+  const [dueDateOverride, setDueDateOverride] = useState<Date | null | undefined>(
+    undefined,
+  );
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [contactId, setContactId] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [projectKey, setProjectKey] = useState<string | null>(null);
   const [conceptBodyDraft, setConceptBodyDraft] = useState("");
   const [conceptBodyMode, setConceptBodyMode] =
     useState<EmailDraftBodyMode>("preview");
@@ -116,6 +138,32 @@ export function EmailPage() {
   const [replyInboxId, setReplyInboxId] = useState("");
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectText, setReplySubjectText] = useState("");
+  const [threadComments, setThreadComments] = useState<EmailThreadComment[]>(
+    [],
+  );
+  const [commentSending, setCommentSending] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(
+    null,
+  );
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
+    null,
+  );
+  const [propertiesRailWidth, setPropertiesRailWidth] = useState(300);
+  const propertiesRailRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = propertiesRailRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const sync = () => {
+      const width = Math.round(el.getBoundingClientRect().width);
+      if (width > 0) setPropertiesRailWidth(width);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [messageId]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
@@ -147,13 +195,32 @@ export function EmailPage() {
     [contactAvatarSrc, contacts],
   );
 
+  const projectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projects.map((project) => ({
+          key: project.key,
+          name: project.name,
+          icon: project.icon,
+          type: project.type,
+        })),
+      ),
+    [projects],
+  );
+
   useEffect(() => {
     const metadata = message?.threadMetadata;
     setStatusOverride(null);
+    setPriorityOverride(null);
+    setDueDateOverride(undefined);
     setOrganizationId(metadata?.organizationId ?? null);
     setContactId(metadata?.contactId ?? null);
     setAssigneeId(metadata?.assigneeId ?? null);
-  }, [message?.messageId, message?.threadMetadata]);
+    const linkedProject = metadata?.projectId
+      ? projects.find((entry) => entry.id === metadata.projectId)
+      : null;
+    setProjectKey(linkedProject?.key ?? metadata?.projectKey ?? null);
+  }, [message?.messageId, message?.threadMetadata, projects]);
 
   useEffect(() => {
     const editableBody =
@@ -178,6 +245,15 @@ export function EmailPage() {
     setReplyTo("");
     setReplySubjectText("");
   }, [messageId]);
+
+  useEffect(() => {
+    setThreadComments(message?.threadComments ?? []);
+  }, [message?.messageId, message?.threadComments]);
+
+  const messageWithComments = useMemo(() => {
+    if (!message) return null;
+    return { ...message, threadComments };
+  }, [message, threadComments]);
 
   useEffect(() => {
     if (!message || isCompose) return;
@@ -345,7 +421,10 @@ export function EmailPage() {
       organizationId?: string | null;
       contactId?: string | null;
       assigneeId?: string | null;
+      projectId?: string | null;
       status?: TaskStatus;
+      priority?: number;
+      dueDate?: string | null;
     }) => {
       if (!inboxId || !message) return;
       const threadKey = resolveEmailThreadKey(message);
@@ -362,6 +441,26 @@ export function EmailPage() {
       );
     },
     [client, inboxId, message],
+  );
+
+  const handleContactChange = useCallback(
+    (next: string | null) => {
+      setContactId(next);
+      const contact = next
+        ? contacts.find((entry) => entry.id === next) ?? null
+        : null;
+      if (inboxId && message) {
+        dispatchEmailListPatch({
+          inboxId,
+          messageId: message.messageId,
+          threadId: message.threadId ?? null,
+          contactId: next,
+          contactName: contact?.name ?? null,
+        });
+      }
+      void patchThreadMetadata({ contactId: next });
+    },
+    [contacts, inboxId, message, patchThreadMetadata],
   );
 
   const saveConceptDraftBody = useCallback(
@@ -477,7 +576,11 @@ export function EmailPage() {
       setConceptSaving(true);
       setConceptError(null);
       try {
-        await client.requestJson(
+        const saved = await client.requestJson<{
+          draftId: string;
+          inboxId: string;
+          inReplyToMessageId?: string | null;
+        }>(
           `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/concept-reply`,
           {
             method: "POST",
@@ -485,10 +588,44 @@ export function EmailPage() {
             body: JSON.stringify({ body: agentBody }),
           },
         );
-        const reloaded = await client.requestJson<AgentMailMessageDetail>(
-          `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
-        );
-        setMessage(reloaded);
+        try {
+          const reloaded = await client.requestJson<AgentMailMessageDetail>(
+            `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
+          );
+          setMessage(reloaded);
+          if (!reloaded.conceptDraft && saved.draftId) {
+            // Reload missed the draft link — fetch it directly so navigation
+            // away/back still has a draft id in local state until list catches up.
+            try {
+              const draftDetail = await client.requestJson<AgentMailDraftDetail>(
+                `/api/v1/email/inboxes/${encodeURIComponent(saved.inboxId || inboxId)}/drafts/${encodeURIComponent(saved.draftId)}`,
+              );
+              setMessage({
+                ...reloaded,
+                conceptDraftId: draftDetail.draftId,
+                conceptDraft: {
+                  draftId: draftDetail.draftId,
+                  inboxId: draftDetail.inboxId || saved.inboxId || inboxId,
+                  subject: draftDetail.subject,
+                  from: draftDetail.from ?? null,
+                  to: draftDetail.to ?? [],
+                  text: draftDetail.text,
+                  body: resolveEditableEmailDraftBody(draftDetail),
+                  greeting: draftDetail.greeting ?? null,
+                  signOff: draftDetail.signOff ?? null,
+                  preview: draftDetail.preview,
+                  updatedAt: draftDetail.updatedAt,
+                },
+              });
+            } catch (draftError) {
+              console.warn("[email] concept draft fetch failed:", draftError);
+            }
+          }
+        } catch (reloadError) {
+          // Draft was saved — don't surface a reload-only failure as the
+          // primary error (e.g. transient AgentMail draft lookup races).
+          console.warn("[email] concept-reply reload failed:", reloadError);
+        }
         requestMailboxReload();
       } catch (caught) {
         const messageText =
@@ -690,14 +827,306 @@ export function EmailPage() {
     [client, composeInboxId, composeSession.sessionId, draftId, inboxId, isCompose, navigate, reloadMessageDetail],
   );
 
-  const handleStartReply = useCallback(() => {
-    if (!message) return;
-    setReplyInboxId(inboxId?.trim() || agentMail.mailboxes[0]?.inboxId || "");
-    setReplyTo(parseReplyToAddress(message.from));
-    setReplySubjectText(formatReplySubject(message.subject));
-    setConceptBodyMode("edit");
-    setReplyComposeOpen(true);
-  }, [agentMail.mailboxes, inboxId, message]);
+  const leaveMessageAfterRemoval = useCallback(() => {
+    setMessage(null);
+    setDraft(null);
+    setThreadComments([]);
+    requestMailboxReload();
+    navigate("/email", { replace: true });
+  }, [navigate]);
+
+  const handleDeleteMessage = useCallback(async () => {
+    if (!inboxId || !messageId) {
+      return { ok: false as const, error: "Message is required." };
+    }
+    try {
+      await client.requestJson(
+        `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
+        { method: "DELETE" },
+      );
+      leaveMessageAfterRemoval();
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error ? error.message : "Failed to delete email.",
+      };
+    }
+  }, [client, inboxId, leaveMessageAfterRemoval, messageId]);
+
+  const handleReportSpam = useCallback(async () => {
+    if (!inboxId || !messageId) {
+      return { ok: false as const, error: "Message is required." };
+    }
+    try {
+      await client.requestJson(
+        `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/report-spam`,
+        { method: "POST" },
+      );
+      leaveMessageAfterRemoval();
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to report email as spam.",
+      };
+    }
+  }, [client, inboxId, leaveMessageAfterRemoval, messageId]);
+
+  const emailExtraMenuItems = useMemo((): EntityExtraMenuItem[] => {
+    if (!message || !inboxId || !messageId) return [];
+    const subjectLabel =
+      message.subject.trim() || "this email";
+    return [
+      {
+        id: "report-spam",
+        label: "Report spam",
+        danger: true,
+        confirm: {
+          entityLabel: subjectLabel,
+          confirmLabel: "Report spam",
+          actionVerb: "Report spam for",
+        },
+        onSelect: handleReportSpam,
+      },
+    ];
+  }, [handleReportSpam, inboxId, message, messageId]);
+
+  const commentsApiBase = useCallback(() => {
+    if (!inboxId || !message) return null;
+    const threadKey = resolveEmailThreadKey(message);
+    return `/api/v1/email/inboxes/${encodeURIComponent(inboxId)}/threads/${encodeURIComponent(threadKey)}/comments`;
+  }, [inboxId, message]);
+
+  const postThreadComment = useCallback(
+    async (body: string, author: "user" | "agent") => {
+      const base = commentsApiBase();
+      if (!base) return null;
+      const created = await client.requestJson<EmailThreadComment>(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body, author }),
+      });
+      setThreadComments((current) => [...current, created]);
+      return created;
+    },
+    [client, commentsApiBase],
+  );
+
+  const deleteThreadComment = useCallback(
+    async (commentId: string) => {
+      const base = commentsApiBase();
+      if (!base || !commentId.trim()) return;
+      setDeletingCommentId(commentId);
+      setConceptError(null);
+      try {
+        await client.requestJson(`${base}/${encodeURIComponent(commentId)}`, {
+          method: "DELETE",
+        });
+        setThreadComments((current) =>
+          current.filter((comment) => comment.id !== commentId),
+        );
+        setSelectedCommentId((current) =>
+          current === commentId ? null : current,
+        );
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not delete comment.",
+        );
+      } finally {
+        setDeletingCommentId(null);
+      }
+    },
+    [client, commentsApiBase],
+  );
+
+  const updateThreadComment = useCallback(
+    async (commentId: string, body: string) => {
+      const base = commentsApiBase();
+      if (!base || !commentId.trim()) return;
+      setSavingCommentId(commentId);
+      setConceptError(null);
+      try {
+        const updated = await client.requestJson<EmailThreadComment>(
+          `${base}/${encodeURIComponent(commentId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ body }),
+          },
+        );
+        setThreadComments((current) =>
+          current.map((comment) =>
+            comment.id === commentId ? updated : comment,
+          ),
+        );
+        setSelectedCommentId(null);
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not update comment.",
+        );
+      } finally {
+        setSavingCommentId(null);
+      }
+    },
+    [client, commentsApiBase],
+  );
+
+  useEffect(() => {
+    if (!selectedCommentId) return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-email-comment-bubble]")) return;
+      setSelectedCommentId(null);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelectedCommentId(null);
+    }
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [selectedCommentId]);
+
+  useEffect(() => {
+    setSelectedCommentId(null);
+  }, [messageId]);
+
+  const handleCommentAgentResult = useCallback(
+    async (result: {
+      commentBody: string;
+      replyDraftBody: string | null;
+    }) => {
+      // Draft-only turns: show the reply email, never an acknowledgment comment.
+      if (result.replyDraftBody?.trim()) {
+        setConceptError(null);
+        setReplyComposeOpen(true);
+        await saveConceptReply(result.replyDraftBody);
+        return;
+      }
+      if (result.commentBody.trim()) {
+        try {
+          await postThreadComment(result.commentBody, "agent");
+        } catch (caught) {
+          setConceptError(
+            caught instanceof Error
+              ? caught.message
+              : "Could not save agent comment.",
+          );
+        }
+      }
+    },
+    [postThreadComment, saveConceptReply],
+  );
+
+  const {
+    sendComment: sendCommentToAgent,
+    working: commentAgentWorking,
+    error: commentAgentError,
+  } = useEmailThreadCommentAgent({
+    taskId,
+    message: messageWithComments,
+    onResult: handleCommentAgentResult,
+  });
+
+  useEffect(() => {
+    if (!commentAgentError) return;
+    setConceptError(commentAgentError);
+  }, [commentAgentError]);
+
+  const handleSubmitThreadComment = useCallback(
+    async (body: string) => {
+      if (!message) return;
+      setCommentSending(true);
+      setConceptError(null);
+      try {
+        const created = await postThreadComment(body, "user");
+        const nextComments = created
+          ? [...threadComments, created]
+          : threadComments;
+        const assignee = assigneeId
+          ? contacts.find((entry) => entry.id === assigneeId) ?? null
+          : null;
+        const organization = organizationId
+          ? organizations.find((entry) => entry.id === organizationId) ?? null
+          : null;
+        const contact = contactId
+          ? contacts.find((entry) => entry.id === contactId) ?? null
+          : null;
+        const project = projectKey
+          ? projects.find((entry) => entry.key === projectKey) ?? null
+          : null;
+        const existingDraft = message.conceptDraft;
+        await sendCommentToAgent(body, {
+          message: {
+            ...message,
+            threadComments: nextComments,
+            threadMetadata: message.threadMetadata
+              ? {
+                  ...message.threadMetadata,
+                  contactId,
+                  contactName:
+                    contact?.name ?? message.threadMetadata.contactName ?? null,
+                  organizationId,
+                  organizationName:
+                    organization?.name ??
+                    message.threadMetadata.organizationName ??
+                    null,
+                  assigneeId,
+                  assigneeName:
+                    assignee?.name ??
+                    message.threadMetadata.assigneeName ??
+                    null,
+                  projectId: project?.id ?? message.threadMetadata.projectId,
+                  projectName:
+                    project?.name ?? message.threadMetadata.projectName ?? null,
+                  projectKey:
+                    project?.key ?? message.threadMetadata.projectKey ?? null,
+                }
+              : message.threadMetadata,
+            conceptDraft: existingDraft
+              ? {
+                  ...existingDraft,
+                  body:
+                    conceptBodyDraft.trim() || existingDraft.body,
+                }
+              : existingDraft,
+          },
+        });
+      } catch (caught) {
+        setConceptError(
+          caught instanceof Error ? caught.message : "Could not post comment.",
+        );
+      } finally {
+        setCommentSending(false);
+      }
+    },
+    [
+      assigneeId,
+      conceptBodyDraft,
+      contactId,
+      contacts,
+      message,
+      organizationId,
+      organizations,
+      postThreadComment,
+      projectKey,
+      projects,
+      sendCommentToAgent,
+      threadComments,
+    ],
+  );
 
   const title =
     isCompose
@@ -900,7 +1329,33 @@ export function EmailPage() {
       </div>
     );
   } else if (message) {
-    const body = emailMessageBody(message);
+    const threadMessages =
+      message.threadMessages && message.threadMessages.length > 0
+        ? message.threadMessages
+        : [
+            {
+              messageId: message.messageId,
+              threadId: message.threadId,
+              subject: message.subject,
+              from: message.from,
+              to: message.to ?? (message.inboxEmail ? [message.inboxEmail] : []),
+              timestamp: message.timestamp,
+              text: message.text,
+              html: message.html,
+              extractedText: message.extractedText,
+              extractedHtml: message.extractedHtml,
+              labels: message.labels,
+              inReplyTo: message.inReplyToMessageId ?? null,
+            },
+          ];
+    const ourMailboxEmails = new Set(
+      [
+        message.inboxEmail,
+        ...agentMail.mailboxes.map((mailbox) => mailbox.email),
+      ]
+        .map((email) => email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    );
     const status = (
       <>
         {conceptSaving ? (
@@ -932,15 +1387,71 @@ export function EmailPage() {
       replyTo || parseReplyToAddress(message.from);
     const resolvedReplySubject =
       replySubjectText || formatReplySubject(message.subject);
-    const originalMessage = (
-      <EmailThreadMessageCard
-        subject={message.subject.trim() || "(no subject)"}
-        from={message.from}
-        to={message.inboxEmail ? [message.inboxEmail] : []}
-        timestamp={message.timestamp}
-        body={body || ""}
-      />
-    );
+    const linkedContactForFrom = contactId
+      ? contacts.find((entry) => entry.id === contactId) ?? null
+      : null;
+    const linkedAssigneeForComments = assigneeId
+      ? contacts.find((entry) => entry.id === assigneeId) ?? null
+      : null;
+    const assigneeCommentName =
+      linkedAssigneeForComments?.name?.trim() ||
+      message.threadMetadata?.assigneeName?.trim() ||
+      null;
+    const assigneeCommentAvatarSrc = assigneeId
+      ? contactAvatarSrc[assigneeId] ?? null
+      : null;
+    const threadContactPicker = {
+      contactId,
+      contactName:
+        linkedContactForFrom?.name?.trim() ||
+        message.threadMetadata?.contactName?.trim() ||
+        null,
+      contactEmail: linkedContactForFrom?.email?.trim() || null,
+      contactAvatarSrc: contactId
+        ? contactAvatarSrc[contactId] ?? null
+        : null,
+      options: contactOptions,
+      onContactChange: handleContactChange,
+      onCreateContactFromQuery: (query: string) => {
+        void workspace
+          .createContact({
+            name: query,
+            organizationId: organizationId ?? undefined,
+          })
+          .then((created) => {
+            handleContactChange(created.id);
+          });
+      },
+    };
+    const mailboxChipForEmail = (email: string | null | undefined) => {
+      const normalized = email?.trim().toLowerCase() || null;
+      if (!normalized) return null;
+      const mailbox =
+        composeMailboxes.find(
+          (entry) => entry.email.trim().toLowerCase() === normalized,
+        ) ?? null;
+      if (!mailbox) return null;
+      return {
+        name:
+          mailbox.contactName?.trim() ||
+          mailbox.displayName?.trim() ||
+          mailbox.email,
+        avatarSrc: mailbox.avatarSrc ?? null,
+      };
+    };
+    const mailboxChipForInbox = (mailboxInboxId: string | null | undefined) => {
+      const mailbox =
+        composeMailboxes.find((entry) => entry.inboxId === mailboxInboxId) ??
+        null;
+      if (!mailbox) return null;
+      return {
+        name:
+          mailbox.contactName?.trim() ||
+          mailbox.displayName?.trim() ||
+          mailbox.email,
+        avatarSrc: mailbox.avatarSrc ?? null,
+      };
+    };
     const replyDraftActions = (
       <EmailDraftActions
         modeOnly={!conceptDraftId}
@@ -968,53 +1479,165 @@ export function EmailPage() {
         savingBody={conceptBodySaving}
       />
     );
-    const threadBody =
-      replyActive && taskId ? (
-        <DesktopEmailComposeLayout
-          taskId={taskId}
-          message={message}
-          promptDisabled={conceptSaving || conceptBodySaving}
-          promptPlaceholder="Describe the reply you want…"
-          onAssistantTurnComplete={(text) => saveConceptReply(text)}
-        >
-          {(slot) => (
-            <div className="inbox-detail-body inbox-detail-body--email">
-              <div className="email-thread">
-                {status}
-                <EmailComposeChrome
-                  variant="reply"
-                  mailboxes={composeMailboxes}
-                  inboxId={resolvedReplyInboxId}
-                  onInboxIdChange={setReplyInboxId}
-                  to={resolvedReplyTo}
-                  onToChange={setReplyTo}
-                  subject={resolvedReplySubject}
-                  onSubjectChange={setReplySubjectText}
-                  body={conceptBodyDraft}
-                  bodyMode={conceptBodyMode}
-                  onBodyChange={setConceptBodyDraft}
-                  replyGreeting={message.conceptDraft?.greeting}
-                  replySignOff={message.conceptDraft?.signOff}
-                  replySignOffAvatarSrc={mailboxSignOffAvatarSrc(resolvedReplyInboxId)}
-                  fieldsDisabled={conceptSaving || conceptBodySaving}
-                  agentWorking={slot.agentWorking}
-                  composer={slot.agentPrompt}
-                  actions={replyDraftActions}
-                />
-                {originalMessage}
-              </div>
-            </div>
-          )}
-        </DesktopEmailComposeLayout>
-      ) : (
-        <div className="inbox-detail-body inbox-detail-body--email">
-          <div className="email-thread">
-            {status}
-            <EmailMessageReplyBar onReply={handleStartReply} />
-            {originalMessage}
-          </div>
-        </div>
-      );
+    const replyChrome = replyActive ? (
+      <EmailComposeChrome
+        variant="reply"
+        mailboxes={composeMailboxes}
+        inboxId={resolvedReplyInboxId}
+        onInboxIdChange={setReplyInboxId}
+        to={resolvedReplyTo}
+        onToChange={setReplyTo}
+        subject={resolvedReplySubject}
+        onSubjectChange={setReplySubjectText}
+        body={conceptBodyDraft}
+        bodyMode={conceptBodyMode}
+        onBodyChange={setConceptBodyDraft}
+        replyGreeting={message.conceptDraft?.greeting}
+        replySignOff={message.conceptDraft?.signOff}
+        replySignOffAvatarSrc={mailboxSignOffAvatarSrc(resolvedReplyInboxId)}
+        toContact={{
+          ...threadContactPicker,
+          onContactChange: (next) => {
+            handleContactChange(next);
+            if (!next) return;
+            const selected =
+              contacts.find((entry) => entry.id === next) ?? null;
+            const email = selected?.email?.trim();
+            if (email) setReplyTo(email);
+          },
+        }}
+        fieldsDisabled={conceptSaving || conceptBodySaving}
+        actions={replyDraftActions}
+      />
+    ) : null;
+    const replyTimestampMs = (() => {
+      const raw = message.conceptDraft?.updatedAt;
+      if (raw) {
+        const parsed = Date.parse(raw);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      // Open compose without a saved draft yet — keep it at the top.
+      return replyActive ? Date.now() : 0;
+    })();
+    const timelineItems = [
+      ...threadMessages.map((entry) => {
+        const parsed = Date.parse(entry.timestamp);
+        const fromEmail = parseReplyToAddress(entry.from).toLowerCase();
+        const linkedContactEmail =
+          linkedContactForFrom?.email?.trim().toLowerCase() || null;
+        const isFromOurMailbox = Boolean(
+          fromEmail && ourMailboxEmails.has(fromEmail),
+        );
+        const rawToList = entry.to.map((address) => address.trim()).filter(Boolean);
+        // Prefer real To recipients; if AgentMail omits them on outbound, use the
+        // linked contact email — never fall back to our own inbox on outbound To.
+        const toList =
+          rawToList.length > 0
+            ? rawToList
+            : isFromOurMailbox && linkedContactEmail
+              ? [linkedContactEmail]
+              : !isFromOurMailbox && message.inboxEmail
+                ? [message.inboxEmail]
+                : [];
+        const toEmails = toList.map((address) =>
+          parseReplyToAddress(address).toLowerCase(),
+        );
+        // Always put the thread-contact picker on the other-party side:
+        // From for inbound, To for our outbound (and when the contact email is there).
+        const contactField: "from" | "to" = (() => {
+          if (linkedContactEmail && fromEmail === linkedContactEmail) {
+            return "from";
+          }
+          if (linkedContactEmail && toEmails.includes(linkedContactEmail)) {
+            return "to";
+          }
+          if (isFromOurMailbox) {
+            return "to";
+          }
+          return "from";
+        })();
+        const ourToEmail =
+          toEmails.find((email) => ourMailboxEmails.has(email)) ?? null;
+        const fromMailboxChip =
+          contactField === "to"
+            ? mailboxChipForEmail(fromEmail) ??
+              mailboxChipForInbox(inboxId || message.inboxId)
+            : null;
+        const toMailboxChip =
+          contactField === "from"
+            ? mailboxChipForEmail(ourToEmail) ??
+              mailboxChipForInbox(inboxId || message.inboxId)
+            : null;
+        return {
+          key: `email:${entry.messageId}`,
+          at: Number.isFinite(parsed) ? parsed : 0,
+          node: (
+            <EmailThreadMessageCard
+              subject={entry.subject.trim() || "(no subject)"}
+              from={entry.from}
+              to={toList}
+              timestamp={entry.timestamp}
+              body={emailMessageBody(entry)}
+              fromContact={
+                contactField === "from" ? threadContactPicker : null
+              }
+              toContact={contactField === "to" ? threadContactPicker : null}
+              fromMailbox={fromMailboxChip}
+              toMailbox={toMailboxChip}
+            />
+          ),
+        };
+      }),
+      ...threadComments.map((comment) => {
+        const parsed = Date.parse(comment.createdAt);
+        return {
+          key: `comment:${comment.id}`,
+          at: Number.isFinite(parsed) ? parsed : 0,
+          node: (
+            <EmailThreadCommentBubble
+              body={comment.body}
+              author={comment.author}
+              timestamp={comment.createdAt}
+              authorName={
+                comment.author === "agent" ? assigneeCommentName : null
+              }
+              authorAvatarSrc={
+                comment.author === "agent" ? assigneeCommentAvatarSrc : null
+              }
+              selected={selectedCommentId === comment.id}
+              onSelect={() => {
+                setSelectedCommentId((current) =>
+                  current === comment.id ? null : comment.id,
+                );
+              }}
+              onDelete={() => {
+                void deleteThreadComment(comment.id);
+              }}
+              onSaveEdit={(nextBody) => updateThreadComment(comment.id, nextBody)}
+              deleting={deletingCommentId === comment.id}
+              saving={savingCommentId === comment.id}
+            />
+          ),
+        };
+      }),
+      ...(replyChrome
+        ? [
+            {
+              key: `reply:${conceptDraftId ?? "draft"}`,
+              at: replyTimestampMs,
+              node: replyChrome,
+            },
+          ]
+        : []),
+    ].sort((a, b) => b.at - a.at);
+    const threadTimeline = (
+      <div className="email-thread">
+        {status}
+        {timelineItems.map((item) => (
+          <Fragment key={item.key}>{item.node}</Fragment>
+        ))}
+      </div>
+    );
     const metadata = message.threadMetadata;
     const linkedOrganization = organizationId
       ? organizations.find((entry) => entry.id === organizationId) ?? null
@@ -1025,92 +1648,227 @@ export function EmailPage() {
     const linkedAssignee = assigneeId
       ? contacts.find((entry) => entry.id === assigneeId) ?? null
       : null;
+    const linkedProject = projectKey
+      ? projects.find((entry) => entry.key === projectKey) ?? null
+      : null;
     content = (
       <div
         className="email-detail-split"
         data-content-detail
         data-detail-split=""
       >
-        <DetailWithPropertiesLayout
-          storageKey={EMAIL_PROPERTIES_PANEL_WIDTH_KEY}
-          main={threadBody}
-          properties={
-            <EmailPropertiesDisplay
-              thread={{
-                organizationId,
-                organizationName:
-                  linkedOrganization?.name ??
-                  metadata?.organizationName ??
-                  null,
-                contactId,
-                contactName:
-                  linkedContact?.name ?? metadata?.contactName ?? null,
-                assigneeId,
-                assigneeName:
-                  linkedAssignee?.name ?? metadata?.assigneeName ?? null,
-                status:
-                  statusOverride ??
-                  migrateLegacyTaskStatus(metadata?.status ?? "triage"),
-              }}
-              organizationOptions={organizationOptions}
-              contactOptions={contactOptions}
-              assigneeOptions={assigneeOptions}
-              organizationNavigateHref={
-                organizationId ? `/organizations/${organizationId}` : null
-              }
-              contactNavigateHref={
-                contactId ? `/contacts/${contactId}` : null
-              }
-              assigneeNavigateHref={
-                assigneeId ? `/contacts/${assigneeId}` : null
-              }
-              onStatusChange={(next) => {
-                setStatusOverride(next);
-                void patchThreadMetadata({ status: next });
-              }}
-              onOrganizationChange={(next) => {
-                setOrganizationId(next);
-                void patchThreadMetadata({ organizationId: next });
-              }}
-              onContactChange={(next) => {
-                setContactId(next);
-                void patchThreadMetadata({ contactId: next });
-              }}
-              onAssigneeChange={(next) => {
-                setAssigneeId(next);
-                void patchThreadMetadata({ assigneeId: next });
-              }}
-              onCreateOrganizationFromQuery={(query) => {
-                void workspace.createOrganization({ name: query }).then((created) => {
-                  setOrganizationId(created.id);
-                  void patchThreadMetadata({ organizationId: created.id });
-                });
-              }}
-              onCreateContactFromQuery={(query) => {
-                void workspace
-                  .createContact({
-                    name: query,
-                    organizationId: organizationId ?? undefined,
-                  })
-                  .then((created) => {
-                    setContactId(created.id);
-                    void patchThreadMetadata({ contactId: created.id });
-                  });
-              }}
-              onCreateAssigneeFromQuery={(query) => {
-                void workspace
-                  .createContact({
-                    name: query,
-                    organizationId: organizationId ?? undefined,
-                  })
-                  .then((created) => {
-                    setAssigneeId(created.id);
-                    void patchThreadMetadata({ assigneeId: created.id });
-                  });
-              }}
+        <div className="email-detail-scroll-shell">
+          <div className="email-detail-scrollport email-detail-scrollport--fade">
+            <div className="email-detail-scroll-row">
+              <div className="email-detail-main">{threadTimeline}</div>
+              <ResizableSidePanel
+                storageKey={EMAIL_PROPERTIES_PANEL_WIDTH_KEY}
+                className="detail-properties-panel email-detail-properties-rail"
+                edge="start"
+                panelRef={propertiesRailRef}
+              >
+                <div className="detail-properties-panel__inner">
+                  <EmailPropertiesDisplay
+                    thread={{
+                      organizationId,
+                      organizationName:
+                        linkedOrganization?.name ??
+                        metadata?.organizationName ??
+                        null,
+                      contactId,
+                      contactName:
+                        linkedContact?.name ?? metadata?.contactName ?? null,
+                      contactAvatarSrc: contactId
+                        ? contactAvatarSrc[contactId] ?? null
+                        : null,
+                      assigneeId,
+                      assigneeName:
+                        linkedAssignee?.name ?? metadata?.assigneeName ?? null,
+                      projectKey: linkedProject?.key ?? projectKey,
+                      projectName:
+                        linkedProject?.name ?? metadata?.projectName ?? null,
+                      status:
+                        statusOverride ??
+                        migrateLegacyTaskStatus(metadata?.status ?? "triage"),
+                      priority: priorityOverride ?? metadata?.priority ?? 0,
+                      dueDate:
+                        dueDateOverride !== undefined
+                          ? dueDateOverride
+                          : metadata?.dueDate
+                            ? new Date(metadata.dueDate)
+                            : null,
+                    }}
+                    organizationOptions={organizationOptions}
+                    contactOptions={contactOptions}
+                    assigneeOptions={assigneeOptions}
+                    projectOptions={projectOptions}
+                    organizationNavigateHref={
+                      organizationId ? `/organizations/${organizationId}` : null
+                    }
+                    contactNavigateHref={
+                      contactId ? `/contacts/${contactId}` : null
+                    }
+                    assigneeNavigateHref={
+                      assigneeId ? `/contacts/${assigneeId}` : null
+                    }
+                    projectNavigateHref={
+                      projectKey ? `/projects/${projectKey}` : null
+                    }
+                    onStatusChange={(next) => {
+                      setStatusOverride(next);
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          status: next,
+                        });
+                      }
+                      void patchThreadMetadata({ status: next });
+                    }}
+                    onPriorityChange={(next) => {
+                      setPriorityOverride(next);
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          priority: next,
+                        });
+                      }
+                      void patchThreadMetadata({ priority: next });
+                    }}
+                    onDueDateChange={(next) => {
+                      setDueDateOverride(next);
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          dueDate: next ? next.toISOString() : null,
+                        });
+                      }
+                      void patchThreadMetadata({
+                        dueDate: next ? next.toISOString() : null,
+                      });
+                    }}
+                    onOrganizationChange={(next) => {
+                      setOrganizationId(next);
+                      const organization = next
+                        ? organizations.find((entry) => entry.id === next) ??
+                          null
+                        : null;
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          organizationId: next,
+                          organizationName: organization?.name ?? null,
+                        });
+                      }
+                      void patchThreadMetadata({ organizationId: next });
+                    }}
+                    onContactChange={handleContactChange}
+                    onAssigneeChange={(next) => {
+                      setAssigneeId(next);
+                      const assignee = next
+                        ? contacts.find((entry) => entry.id === next) ?? null
+                        : null;
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          assigneeId: next,
+                          assigneeName: assignee?.name ?? null,
+                        });
+                      }
+                      void patchThreadMetadata({ assigneeId: next });
+                    }}
+                    onProjectChange={(nextKey) => {
+                      setProjectKey(nextKey);
+                      const project = nextKey
+                        ? projects.find((entry) => entry.key === nextKey) ??
+                          null
+                        : null;
+                      if (inboxId && message) {
+                        dispatchEmailListPatch({
+                          inboxId,
+                          messageId: message.messageId,
+                          threadId: message.threadId ?? null,
+                          projectId: project?.id ?? null,
+                          projectName: project?.name ?? null,
+                          projectKey: project?.key ?? null,
+                        });
+                      }
+                      void patchThreadMetadata({
+                        projectId: project?.id ?? null,
+                      });
+                    }}
+                    onCreateOrganizationFromQuery={(query) => {
+                      void workspace
+                        .createOrganization({ name: query })
+                        .then((created) => {
+                          setOrganizationId(created.id);
+                          if (inboxId && message) {
+                            dispatchEmailListPatch({
+                              inboxId,
+                              messageId: message.messageId,
+                              threadId: message.threadId ?? null,
+                              organizationId: created.id,
+                              organizationName: query.trim() || null,
+                            });
+                          }
+                          void patchThreadMetadata({
+                            organizationId: created.id,
+                          });
+                        });
+                    }}
+                    onCreateContactFromQuery={(query) => {
+                      void workspace
+                        .createContact({
+                          name: query,
+                          organizationId: organizationId ?? undefined,
+                        })
+                        .then((created) => {
+                          handleContactChange(created.id);
+                        });
+                    }}
+                    onCreateAssigneeFromQuery={(query) => {
+                      void workspace
+                        .createContact({
+                          name: query,
+                          organizationId: organizationId ?? undefined,
+                        })
+                        .then((created) => {
+                          setAssigneeId(created.id);
+                          void patchThreadMetadata({ assigneeId: created.id });
+                        });
+                    }}
+                  />
+                </div>
+              </ResizableSidePanel>
+            </div>
+          </div>
+          <div className="email-thread-composer-dock">
+            <div className="email-thread-composer-dock__main">
+              <div className="email-thread-composer-dock__inner">
+                <EmailThreadCommentComposer
+                  onSubmit={handleSubmitThreadComment}
+                  disabled={conceptSaving || conceptBodySaving}
+                  sending={commentSending || commentAgentWorking}
+                  placeholder="Message the agent about this email…"
+                />
+              </div>
+            </div>
+            <div
+              className="email-thread-composer-dock__rail-spacer"
+              style={{ width: propertiesRailWidth, flex: `0 0 ${propertiesRailWidth}px` }}
+              aria-hidden="true"
             />
-          }
-        />
+          </div>
+        </div>
       </div>
     );
   } else {
@@ -1124,6 +1882,16 @@ export function EmailPage() {
   const detail = (
     <>
       <RegisterPageTitle title={title} />
+      {message && inboxId && messageId ? (
+        <>
+          <RegisterEntityDeleteAction
+            entityLabel={message.subject.trim() || "this email"}
+            confirmLabel="Delete"
+            onDelete={handleDeleteMessage}
+          />
+          <RegisterEntityMenuItems items={emailExtraMenuItems} />
+        </>
+      ) : null}
       <div className="inbox-detail-layout">{content}</div>
     </>
   );

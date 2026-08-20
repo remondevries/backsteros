@@ -273,11 +273,13 @@ export function DesktopEmailAgentPrompt({
         return buildEmailComposeAgentAcpPrompt(userPrompt, composeContext);
       }
       if (message) {
-        return buildEmailAgentAcpPrompt(userPrompt, message);
+        return buildEmailAgentAcpPrompt(userPrompt, message, {
+          depth: agentChatId?.trim() ? "lean" : "full",
+        });
       }
       return userPrompt.trim();
     },
-    [composeContext, message],
+    [agentChatId, composeContext, message],
   );
 
   const beginTurn = useCallback(() => {

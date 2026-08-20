@@ -28,10 +28,10 @@ import {
   conceptReplyClientId,
   embedConceptDraftsInMessages,
   enrichDraftsForGlobalConceptLinking,
-  findConceptReplyDraft,
   deleteConceptReplyDraftsForMessage,
-  isLikelyConceptDraft,
-  loadConceptDraftForMessageAcrossInboxes,
+  findConceptDraftByClientIdAcrossInboxes,
+  isDraftNotFoundError,
+  loadConceptDraftForThreadAcrossInboxes,
   resolveConceptDraftParentMessageId,
   resolveDraftAcrossInboxes,
 } from "../lib/agentmail-email-list.js";
@@ -43,6 +43,7 @@ import {
   replySubject,
   resolveEditableDraftBody,
   resolveEmailReplyTemplates,
+  plainTextEmailToHtml,
   type AssembledComposeEmail,
   type AssembledReplyEmail,
   type EmailReplyTemplateSettings,
@@ -192,6 +193,11 @@ async function upsertAgentMailSecrets(
       signOffTemplateNl?: string;
     };
     inboxContacts?: Record<string, string>;
+    webhook?: {
+      webhookId: string | null;
+      webhookSecret: string | null;
+      webhookUrl: string | null;
+    };
   },
 ): Promise<void> {
   const inboxId = inboxIds[0] ?? null;
@@ -218,6 +224,15 @@ async function upsertAgentMailSecrets(
       ? {}
       : { agentmailInboxContacts: options.inboxContacts };
 
+  const webhookPatch =
+    options?.webhook === undefined
+      ? {}
+      : {
+          agentmailWebhookId: options.webhook.webhookId,
+          agentmailWebhookSecret: options.webhook.webhookSecret,
+          agentmailWebhookUrl: options.webhook.webhookUrl,
+        };
+
   if (existing) {
     await db
       .update(workspaceIntegrationSecrets)
@@ -227,6 +242,7 @@ async function upsertAgentMailSecrets(
         agentmailInboxIds: inboxIds,
         ...templatePatch,
         ...contactsPatch,
+        ...webhookPatch,
         updatedAt: new Date(),
       })
       .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId));
@@ -240,6 +256,7 @@ async function upsertAgentMailSecrets(
     agentmailInboxIds: inboxIds,
     agentmailInboxContacts: options?.inboxContacts ?? {},
     ...templatePatch,
+    ...webhookPatch,
   });
 }
 
@@ -253,6 +270,9 @@ async function getSecretRow(workspaceId: string): Promise<{
   agentmailReplySignOffTemplateEn: string | null;
   agentmailReplySignOffTemplateNl: string | null;
   agentmailReplySignOffName: string | null;
+  agentmailWebhookId: string | null;
+  agentmailWebhookSecret: string | null;
+  agentmailWebhookUrl: string | null;
 } | null> {
   const [row] = await db
     .select({
@@ -270,6 +290,9 @@ async function getSecretRow(workspaceId: string): Promise<{
         workspaceIntegrationSecrets.agentmailReplySignOffTemplateNl,
       agentmailReplySignOffName:
         workspaceIntegrationSecrets.agentmailReplySignOffName,
+      agentmailWebhookId: workspaceIntegrationSecrets.agentmailWebhookId,
+      agentmailWebhookSecret: workspaceIntegrationSecrets.agentmailWebhookSecret,
+      agentmailWebhookUrl: workspaceIntegrationSecrets.agentmailWebhookUrl,
     })
     .from(workspaceIntegrationSecrets)
     .where(eq(workspaceIntegrationSecrets.workspaceId, workspaceId))
@@ -544,6 +567,7 @@ export async function getAgentMailSettings(
     replyGreetingTemplate: replyTemplates.greetingTemplate,
     replySignOffTemplateEn: replyTemplates.signOffTemplateEn,
     replySignOffTemplateNl: replyTemplates.signOffTemplateNl,
+    webhookConfigured: Boolean(secretRow?.agentmailWebhookId?.trim()),
   };
 }
 
@@ -633,7 +657,145 @@ export async function updateAgentMailSettings(
     );
   }
 
+  await ensureAgentMailWebhook(workspaceId, nextApiKey, nextInboxIds, {
+    previousApiKey: current.apiKey,
+  });
+
   return getAgentMailSettings(workspaceId);
+}
+
+export function agentsPublicWebhookUrl(): string | null {
+  const base = process.env.AGENTS_PUBLIC_URL?.trim().replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/api/v1/webhooks/agentmail`;
+}
+
+const WEBHOOK_CLIENT_ID = "backsteros-core";
+
+async function clearStoredWebhook(
+  workspaceId: string,
+  apiKey: string | null,
+  inboxIds: string[],
+): Promise<void> {
+  await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
+    webhook: {
+      webhookId: null,
+      webhookSecret: null,
+      webhookUrl: null,
+    },
+  });
+}
+
+async function ensureAgentMailWebhook(
+  workspaceId: string,
+  apiKey: string | null,
+  inboxIds: string[],
+  options?: { previousApiKey?: string | null },
+): Promise<void> {
+  const targetUrl = agentsPublicWebhookUrl();
+  const secretRow = await getSecretRow(workspaceId);
+  const existingId = secretRow?.agentmailWebhookId?.trim() || null;
+  const existingUrl = secretRow?.agentmailWebhookUrl?.trim() || null;
+  const existingSecret = secretRow?.agentmailWebhookSecret?.trim() || null;
+  const deleteKey =
+    options?.previousApiKey?.trim() ||
+    secretRow?.agentmailApiKey?.trim() ||
+    apiKey ||
+    null;
+
+  if (!apiKey) {
+    if (existingId && deleteKey) {
+      try {
+        await new AgentMailClient({ apiKey: deleteKey }).deleteWebhook(
+          existingId,
+        );
+      } catch {
+        // Best-effort remote cleanup.
+      }
+    }
+    if (existingId || existingSecret || existingUrl) {
+      await clearStoredWebhook(workspaceId, null, inboxIds);
+    }
+    return;
+  }
+
+  if (inboxIds.length === 0 || !targetUrl) {
+    return;
+  }
+
+  const client = new AgentMailClient({ apiKey });
+
+  try {
+    if (existingId && existingUrl === targetUrl && existingSecret) {
+      try {
+        const current = await client.getWebhook(existingId);
+        const currentInboxIds = current.inboxIds;
+        const toAdd = inboxIds.filter((id) => !currentInboxIds.includes(id));
+        const toRemove = currentInboxIds.filter((id) => !inboxIds.includes(id));
+        if (toAdd.length > 0 || toRemove.length > 0) {
+          await client.updateWebhook(existingId, {
+            addInboxIds: toAdd.length > 0 ? toAdd : undefined,
+            removeInboxIds: toRemove.length > 0 ? toRemove : undefined,
+            eventTypes: ["message.received"],
+          });
+        }
+        return;
+      } catch {
+        // Recreate below.
+      }
+    }
+
+    if (existingId) {
+      try {
+        await client.deleteWebhook(existingId);
+      } catch {
+        // Ignore missing remote webhook.
+      }
+    }
+
+    const created = await client.createWebhook({
+      url: targetUrl,
+      eventTypes: ["message.received"],
+      inboxIds,
+      clientId: WEBHOOK_CLIENT_ID,
+    });
+    await upsertAgentMailSecrets(workspaceId, apiKey, inboxIds, {
+      webhook: {
+        webhookId: created.webhookId,
+        webhookSecret: created.secret,
+        webhookUrl: created.url,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to ensure AgentMail webhook:", error);
+  }
+}
+
+export async function listAgentMailWebhookSecrets(): Promise<
+  Array<{
+    workspaceId: string;
+    secret: string;
+    inboxIds: string[];
+  }>
+> {
+  const rows = await db
+    .select({
+      workspaceId: workspaceIntegrationSecrets.workspaceId,
+      secret: workspaceIntegrationSecrets.agentmailWebhookSecret,
+      inboxIds: workspaceIntegrationSecrets.agentmailInboxIds,
+    })
+    .from(workspaceIntegrationSecrets);
+  return rows.flatMap((row) => {
+    const secret = row.secret?.trim();
+    if (!secret) return [];
+    return [
+      {
+        workspaceId: row.workspaceId,
+        secret,
+        inboxIds: Array.isArray(row.inboxIds) ? row.inboxIds : [],
+      },
+    ];
+  });
 }
 
 export async function listAgentMailInboxes(
@@ -693,14 +855,6 @@ function toApiDraft(draft: {
   };
 }
 
-function findConceptReplyDraftInSummaries(
-  drafts: AgentMailDraftSummary[],
-  messageId: string,
-  clientId: string,
-): AgentMailDraftSummary | undefined {
-  return findConceptReplyDraft(drafts, messageId, clientId);
-}
-
 async function listConceptDrafts(
   client: AgentMailClient,
   inboxId: string,
@@ -720,43 +874,111 @@ async function saveConceptReplyDraft(
   inboxId: string,
   messageId: string,
   assembled: AssembledReplyEmail,
+  inboxIds: readonly string[],
 ): Promise<AgentMailDraftDetail> {
   const clientId = conceptReplyClientId(messageId);
-  let drafts = await listConceptDrafts(client, inboxId);
-  let existing = findConceptReplyDraftInSummaries(drafts, messageId, clientId);
+  const to = assembled.to.filter((address) => address.includes("@"));
+  if (to.length === 0) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "Could not resolve a reply recipient from the inbound From address",
+    );
+  }
 
-  if (existing) {
-    return client.updateDraft(inboxId, existing.draftId, { text: assembled.text });
+  // Always include to/subject — AgentMail reply-only creates (in_reply_to alone)
+  // have been returning opaque "Draft not found" for some Message-IDs.
+  const createPayload = {
+    to,
+    subject: assembled.subject,
+    text: assembled.text,
+    html: plainTextEmailToHtml(assembled.text),
+    client_id: clientId,
+    in_reply_to: messageId,
+  };
+
+  const tryUpdate = async (
+    targetInboxId: string,
+    draftId: string,
+  ): Promise<AgentMailDraftDetail | null> => {
+    try {
+      // Confirm the draft still exists before PATCH — list rows can be stale.
+      await client.getDraft(targetInboxId, draftId);
+      return await client.updateDraft(targetInboxId, draftId, {
+        text: assembled.text,
+        html: plainTextEmailToHtml(assembled.text),
+        to,
+        subject: assembled.subject,
+      });
+    } catch (error) {
+      if (isDraftNotFoundError(error)) return null;
+      throw error;
+    }
+  };
+
+  // Fast path: list summaries that already expose our client_id (no probe storm).
+  for (const candidateInboxId of [
+    inboxId,
+    ...inboxIds.filter((id) => id !== inboxId),
+  ]) {
+    let drafts: Awaited<ReturnType<typeof listConceptDrafts>>;
+    try {
+      drafts = await listConceptDrafts(client, candidateInboxId);
+    } catch {
+      continue;
+    }
+    const existing = drafts.find((draft) => draft.clientId === clientId);
+    if (!existing) continue;
+    const updated = await tryUpdate(candidateInboxId, existing.draftId);
+    if (updated) {
+      return { ...updated, inboxId: candidateInboxId };
+    }
   }
 
   try {
-    return await client.createDraft(inboxId, {
-      in_reply_to: messageId,
-      text: assembled.text,
-      client_id: clientId,
-    });
+    return await client.createDraft(inboxId, createPayload);
   } catch (error) {
-    if (!(error instanceof AgentMailApiError) || error.status !== 400) {
+    if (!(error instanceof AgentMailApiError)) {
       throw error;
     }
 
-    drafts = await listConceptDrafts(client, inboxId);
-    existing = findConceptReplyDraft(drafts, messageId, clientId);
-    if (existing) {
-      return client.updateDraft(inboxId, existing.draftId, { text: assembled.text });
+    const recovered = await findConceptDraftByClientIdAcrossInboxes(
+      client,
+      inboxIds,
+      messageId,
+    );
+    if (recovered) {
+      const updated = await tryUpdate(recovered.inboxId, recovered.draftId);
+      if (updated) return { ...updated, inboxId: recovered.inboxId };
     }
 
-    const to = assembled.to.filter((address) => address.includes("@"));
-    if (to.length === 0) {
-      throw error;
+    // Retry without client_id (conflict) still threaded.
+    try {
+        return await client.createDraft(inboxId, {
+          to,
+          subject: assembled.subject,
+          text: assembled.text,
+          html: plainTextEmailToHtml(assembled.text),
+          in_reply_to: messageId,
+        });
+      } catch (threadedRetryError) {
+        // Last resort: standalone draft (still shown as the concept reply).
+        if (
+          threadedRetryError instanceof AgentMailApiError &&
+          (threadedRetryError.status === 400 ||
+            threadedRetryError.status === 404 ||
+            isDraftNotFoundError(threadedRetryError))
+        ) {
+          return client.createDraft(inboxId, {
+            to,
+            subject: assembled.subject,
+            text: assembled.text,
+            html: plainTextEmailToHtml(assembled.text),
+            client_id: `${clientId}-loose`,
+          });
+        }
+      throw threadedRetryError;
     }
-
-    return client.createDraft(inboxId, {
-      to,
-      subject: assembled.subject,
-      text: assembled.text,
-      client_id: clientId,
-    });
   }
 }
 
@@ -775,6 +997,7 @@ async function saveComposeDraft(
       to: assembled.to,
       subject: assembled.subject,
       text: assembled.text,
+      html: plainTextEmailToHtml(assembled.text),
     });
   }
 
@@ -782,6 +1005,7 @@ async function saveComposeDraft(
     to: assembled.to,
     subject: assembled.subject,
     text: assembled.text,
+    html: plainTextEmailToHtml(assembled.text),
     client_id: clientId,
   });
 }
@@ -846,10 +1070,40 @@ export async function listAgentMailMessages(
   }
   const apiDrafts = attachDraftThreadIds(apiMessages, linkedDrafts);
 
-  return embedConceptDraftsInMessages(apiMessages, apiDrafts).sort((a, b) => {
-    const aTime = Date.parse(a.timestamp) || 0;
-    const bTime = Date.parse(b.timestamp) || 0;
-    return bTime - aTime;
+  const listed = embedConceptDraftsInMessages(apiMessages, apiDrafts).sort(
+    (a, b) => {
+      const aTime = Date.parse(a.timestamp) || 0;
+      const bTime = Date.parse(b.timestamp) || 0;
+      return bTime - aTime;
+    },
+  );
+
+  const metaMap = await emailThreadsService.listEmailThreadListMetaMap(
+    workspaceId,
+  );
+  return listed.map((message) => {
+    const threadKey = emailThreadsService.resolveEmailThreadKey({
+      threadId: message.threadId,
+      messageId: message.messageId,
+    });
+    const stored = metaMap.get(
+      emailThreadsService.emailThreadStatusLookupKey(message.inboxId, threadKey),
+    );
+    return {
+      ...message,
+      status: stored?.status ?? "backlog",
+      priority: stored?.priority ?? 0,
+      dueDate: stored?.dueDate ?? null,
+      organizationId: stored?.organizationId ?? null,
+      organizationName: stored?.organizationName ?? null,
+      contactId: stored?.contactId ?? null,
+      contactName: stored?.contactName ?? null,
+      assigneeId: stored?.assigneeId ?? null,
+      assigneeName: stored?.assigneeName ?? null,
+      projectId: stored?.projectId ?? null,
+      projectName: stored?.projectName ?? null,
+      projectKey: stored?.projectKey ?? null,
+    };
   });
 }
 
@@ -867,21 +1121,60 @@ export async function getAgentMailMessage(
   }
   const client = new AgentMailClient({ apiKey });
   const message = await client.getMessage(inboxId, messageId);
-  const conceptDraft = await loadConceptDraftForMessageAcrossInboxes(
+  const threadId = message.threadId?.trim() || "";
+  let threadMessages = [message];
+  if (threadId) {
+    try {
+      const thread = await client.getThread(inboxId, threadId);
+      if (thread.messages.length > 0) {
+        threadMessages = thread.messages;
+      }
+    } catch (error) {
+      // Fall back to the single message if thread fetch fails.
+      if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+        console.warn("[agentmail] getThread failed:", error);
+      }
+    }
+  }
+  // Prefer the opened message for concept-reply context (latest inbound when
+  // the list collapses to the concept parent).
+  const conceptParent =
+    threadMessages.find((entry) => entry.messageId === messageId) ?? message;
+  const threadMessageIds = [
+    ...new Set(
+      [
+        messageId,
+        conceptParent.messageId,
+        ...threadMessages.map((entry) => entry.messageId),
+      ]
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const conceptDraft = await loadConceptDraftForThreadAcrossInboxes(
     client,
     inboxIds,
-    messageId,
+    threadMessageIds,
   );
   const templates = await getEmailReplyTemplatesForInbox(
     workspaceId,
     conceptDraft?.inboxId ?? inboxId,
   );
-  const [inboxEmail, conceptDraftFromEmail, threadMetadata] = await Promise.all([
+  const [inboxEmail, conceptDraftFromEmail, threadMetadata, threadComments] =
+    await Promise.all([
     resolveInboxEmail(client, inboxId),
     conceptDraft
       ? resolveInboxEmail(client, conceptDraft.inboxId)
       : Promise.resolve(null),
     emailThreadsService.getOrCreateEmailThreadMetadata(
+      workspaceId,
+      inboxId,
+      emailThreadsService.resolveEmailThreadKey({
+        threadId: message.threadId,
+        messageId,
+      }),
+    ),
+    emailThreadsService.listEmailThreadComments(
       workspaceId,
       inboxId,
       emailThreadsService.resolveEmailThreadKey({
@@ -896,19 +1189,36 @@ export async function getAgentMailMessage(
     html: message.html,
     extractedText: message.extractedText,
     extractedHtml: message.extractedHtml,
+    to: message.to,
+    labels: message.labels,
     inboxEmail,
     threadMetadata,
+    threadComments,
+    threadMessages: threadMessages.map((entry) => ({
+      messageId: entry.messageId,
+      threadId: entry.threadId || undefined,
+      subject: entry.subject,
+      from: entry.from,
+      to: entry.to,
+      timestamp: entry.timestamp,
+      text: entry.text,
+      html: entry.html,
+      extractedText: entry.extractedText,
+      extractedHtml: entry.extractedHtml,
+      labels: entry.labels,
+      inReplyTo: entry.inReplyTo,
+    })),
     conceptDraftId: conceptDraft?.draftId ?? null,
     conceptPreview: conceptDraft?.preview ?? conceptDraft?.text?.slice(0, 160) ?? null,
     conceptDraft: conceptDraft
       ? mapConceptDraftForApi({
           draft: conceptDraft,
-          replyFrom: message.from,
+          replyFrom: conceptParent.from,
           templates,
           subject:
-            conceptDraft.subject?.trim() || replySubject(message.subject),
+            conceptDraft.subject?.trim() || replySubject(conceptParent.subject),
           fromEmail: conceptDraftFromEmail,
-          contextText: message.text ?? message.extractedText ?? null,
+          contextText: conceptParent.text ?? conceptParent.extractedText ?? null,
         })
       : null,
   };
@@ -974,6 +1284,7 @@ export async function upsertEmailConceptReply(
     inboxId,
     messageId,
     assembled,
+    inboxIds,
   );
 
   return {
@@ -1039,12 +1350,17 @@ export async function sendAgentMailDraft(
   }
 
   const client = new AgentMailClient({ apiKey });
-  const draft = await resolveDraftAcrossInboxes(
+  let draft = await resolveDraftAcrossInboxes(
     client,
     inboxIds,
     draftId,
     inboxId,
   );
+
+  // UI shows greeting/sign-off from templates even when draft.text is body-only.
+  // Re-assemble immediately before send so recipients get the full footer.
+  draft = await ensureDraftHasAssembledShell(client, workspaceId, inboxId, draft);
+
   const sent = await client.sendDraft(draft.inboxId, draft.draftId);
 
   return {
@@ -1054,6 +1370,87 @@ export async function sendAgentMailDraft(
     subject: sent.subject,
     inReplyToMessageId: draft.inReplyTo,
   };
+}
+
+/**
+ * Guarantee AgentMail stores greeting + body + sign-off (not just the editable
+ * middle the UI edits). Returns the draft after any needed update.
+ */
+async function ensureDraftHasAssembledShell(
+  client: AgentMailClient,
+  workspaceId: string,
+  fallbackInboxId: string,
+  draft: AgentMailDraftDetail,
+): Promise<AgentMailDraftDetail> {
+  const templates = await getEmailReplyTemplatesForInbox(
+    workspaceId,
+    draft.inboxId || fallbackInboxId,
+  );
+  const replyContext = await resolveReplyContextForDraft(
+    client,
+    draft,
+    fallbackInboxId,
+  );
+  const replyFrom = replyContext.replyFrom;
+  let subject = draft.subject?.trim() || "Reply concept";
+  let contextText = replyContext.contextText;
+  if (!draft.subject?.trim() && draft.inReplyTo?.trim() && replyFrom) {
+    try {
+      const parent = await client.getMessage(
+        draft.inboxId || fallbackInboxId,
+        draft.inReplyTo,
+      );
+      subject = replySubject(parent.subject);
+      contextText = parent.text ?? parent.extractedText ?? contextText;
+    } catch {
+      // Keep fallback subject.
+    }
+  }
+
+  const editableBody = resolveEditableDraftBody(
+    draft.text ?? "",
+    replyFrom || draft.to[0] || "there",
+    templates,
+  );
+  const isCompose = !draft.inReplyTo?.trim();
+  const languageHint = detectEmailLanguage(editableBody, contextText);
+  const assembled = isCompose
+    ? assembleComposeEmail({
+        to: replyFrom || draft.to[0] || "",
+        subject,
+        body: editableBody,
+        templates,
+        languageHint,
+      })
+    : assembleReplyEmail({
+        from: replyFrom || "there",
+        subject,
+        body: editableBody,
+        templates,
+        languageHint,
+        contextText,
+      });
+
+  const storedText = (draft.text ?? "").replace(/\r\n/g, "\n").trim();
+  const desiredText = assembled.text.replace(/\r\n/g, "\n").trim();
+  const storedHtml = (draft.html ?? "").trim();
+  const desiredHtml = plainTextEmailToHtml(assembled.text);
+  const needsTextUpdate = storedText !== desiredText;
+  const needsHtmlUpdate =
+    !storedHtml ||
+    !storedHtml.includes(assembled.signOff.trim()) ||
+    storedHtml !== desiredHtml;
+
+  if (!needsTextUpdate && !needsHtmlUpdate) {
+    return draft;
+  }
+
+  return client.updateDraft(draft.inboxId, draft.draftId, {
+    text: assembled.text,
+    html: desiredHtml,
+    ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
+    ...(subject ? { subject } : {}),
+  });
 }
 
 export async function deleteAgentMailDraft(
@@ -1154,6 +1551,7 @@ export async function updateAgentMailDraft(
       });
   const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
     text: assembled.text,
+    html: plainTextEmailToHtml(assembled.text),
   });
   const inboxEmail = await resolveInboxEmail(client, updated.inboxId);
   return mapDraftDetailForApi({
@@ -1233,6 +1631,141 @@ export async function testAgentMailConnection(
       inboxCount: null,
     };
   }
+}
+
+function parseSenderEmail(from: string): string | null {
+  const trimmed = from.trim();
+  if (!trimmed) return null;
+  const angle = trimmed.match(/<([^>]+)>/);
+  const candidate = (angle?.[1] ?? trimmed).trim().toLowerCase();
+  return candidate.includes("@") ? candidate : null;
+}
+
+async function removeAgentMailMessageAndLocal(
+  client: AgentMailClient,
+  workspaceId: string,
+  inboxIds: readonly string[],
+  inboxId: string,
+  message: { messageId: string; threadId?: string | null },
+): Promise<void> {
+  const messageId = message.messageId;
+  const threadId = message.threadId?.trim() || "";
+
+  // Prefer whole-thread delete so collapsed inbox rows disappear cleanly.
+  if (threadId) {
+    try {
+      await client.deleteThread(inboxId, threadId);
+    } catch (error) {
+      if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+        throw error;
+      }
+      await client.deleteMessage(inboxId, messageId);
+    }
+  } else {
+    await client.deleteMessage(inboxId, messageId);
+  }
+
+  const threadKey = emailThreadsService.resolveEmailThreadKey({
+    threadId: threadId || null,
+    messageId,
+  });
+  await emailThreadsService.deleteEmailThreadLocal(
+    workspaceId,
+    inboxId,
+    threadKey,
+  );
+  await deleteConceptReplyDraftsForMessage(client, inboxIds, messageId);
+}
+
+/**
+ * Delete the AgentMail thread (or single message) and local BacksterOS metadata.
+ */
+export async function deleteAgentMailMessage(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{ ok: true }> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const message = await client.getMessage(inboxId, messageId);
+  await removeAgentMailMessageAndLocal(
+    client,
+    workspaceId,
+    inboxIds,
+    inboxId,
+    message,
+  );
+  return { ok: true };
+}
+
+/**
+ * Report spam on AgentMail: label + block sender, then delete the thread.
+ */
+export async function reportAgentMailMessageSpam(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{ ok: true; blockedSender: string | null }> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const message = await client.getMessage(inboxId, messageId);
+  const threadId = message.threadId?.trim() || "";
+  const sender = parseSenderEmail(message.from);
+
+  try {
+    await client.updateMessageLabels(inboxId, messageId, {
+      addLabels: ["spam"],
+    });
+  } catch {
+    /* spam may be a system label — continue with block + delete */
+  }
+
+  if (threadId) {
+    try {
+      await client.updateThreadLabels(inboxId, threadId, {
+        addLabels: ["spam"],
+      });
+    } catch {
+      /* ignore — label is best-effort */
+    }
+  }
+
+  if (sender) {
+    try {
+      await client.createListEntry(inboxId, "receive", "block", {
+        entry: sender,
+        reason: "Reported as spam from BacksterOS",
+      });
+    } catch (error) {
+      // Duplicate block entries are fine.
+      if (!(error instanceof AgentMailApiError) || error.status !== 409) {
+        throw error;
+      }
+    }
+  }
+
+  await removeAgentMailMessageAndLocal(
+    client,
+    workspaceId,
+    inboxIds,
+    inboxId,
+    message,
+  );
+  return { ok: true, blockedSender: sender };
 }
 
 export { inboxLabel, formatAgentMailSettingsError };

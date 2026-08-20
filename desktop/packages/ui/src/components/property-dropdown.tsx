@@ -14,6 +14,32 @@ export type PropertyDropdownTriggerVariant =
   | "composePill"
   | "inlineChip";
 
+/** Same chrome as the inline-chip dropdown trigger, but not interactive. */
+export type PropertyInlineChipProps = {
+  icon: ReactNode;
+  label: string;
+  ariaLabel?: string;
+};
+
+export function PropertyInlineChip({
+  icon,
+  label,
+  ariaLabel,
+}: PropertyInlineChipProps) {
+  return (
+    <span
+      className="property-dropdown-trigger property-dropdown-trigger--inline-chip property-dropdown-trigger--static"
+      title={label}
+      aria-label={ariaLabel ?? label}
+    >
+      <span className="property-dropdown-trigger__icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="property-dropdown-trigger__label">{label}</span>
+    </span>
+  );
+}
+
 export type PropertyDropdownProps<T extends string> = {
   value: T | null;
   options: SearchableDropdownOption<T>[];
@@ -35,6 +61,11 @@ export type PropertyDropdownProps<T extends string> = {
   mutedFallback?: boolean;
   /** Fade the trigger when a value is selected (e.g. default / placeholder selection). */
   mutedSelected?: boolean;
+  /**
+   * Override label shown on the closed trigger when a value is selected.
+   * Menu option labels are unchanged (e.g. contact name in the list, Name (email) on the chip).
+   */
+  selectedDisplayLabel?: string | null;
   shortcutAnchor?: boolean;
   onTabFromSearch?: () => void;
   onShiftTabFromSearch?: () => void;
@@ -63,6 +94,7 @@ export function PropertyDropdown<T extends string>({
   panelAlign = "end",
   mutedFallback = false,
   mutedSelected = false,
+  selectedDisplayLabel = null,
   shortcutAnchor = false,
   onTabFromSearch,
   onShiftTabFromSearch,
@@ -122,7 +154,11 @@ export function PropertyDropdown<T extends string>({
       renderTrigger={({ selected, open, disabled: isDisabled, triggerId, onToggle }) => {
         const mutedTrigger =
           (!selected && mutedFallback) || (Boolean(selected) && mutedSelected);
-        const label = selected?.label ?? fallbackLabel;
+        const displayOverride = selectedDisplayLabel?.trim() || null;
+        const label =
+          selected && displayOverride
+            ? displayOverride
+            : (selected?.label ?? fallbackLabel);
         const icon = selected?.icon ?? fallbackIcon;
         return (
           <button

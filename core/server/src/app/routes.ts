@@ -1,5 +1,6 @@
 import type { Context, Hono, Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { streamSSE } from "hono/streaming";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
@@ -41,6 +42,8 @@ import {
   updateMoneybirdSettingsSchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
+  createEmailThreadCommentSchema,
+  updateEmailThreadCommentSchema,
   updateAgentMailDraftSchema,
   emailConceptReplyInputSchema,
   emailComposeDraftInputSchema,
@@ -91,6 +94,11 @@ import * as agentmailSettingsService from "../services/agentmail-settings.js";
 import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
+import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
+import {
+  handleAgentMailWebhookDelivery,
+  svixHeadersFromRequest,
+} from "../lib/agentmail-webhook.js";
 import {
   AgentPtyUnavailableError,
   getAgentPtyConnection,
@@ -198,7 +206,8 @@ function notFound(resource: string) {
 async function withAuth(c: Context, next: Next) {
   if (
     c.req.path.startsWith("/api/v1/sync") ||
-    c.req.path.startsWith("/api/v1/powersync")
+    c.req.path.startsWith("/api/v1/powersync") ||
+    c.req.path === "/api/v1/webhooks/agentmail"
   ) {
     await next();
     return;
@@ -2607,6 +2616,61 @@ export function registerApiRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+
+  app.get("/api/v1/email/events", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    const workspaceId = auth.workspaceId;
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      const unsubscribe = subscribeEmailUpdated(workspaceId, (event) => {
+        if (closed) return;
+        void stream.writeSSE({
+          event: "email.updated",
+          data: JSON.stringify({
+            inboxId: event.inboxId,
+            messageId: event.messageId,
+          }),
+        });
+      });
+      stream.onAbort(() => {
+        closed = true;
+        unsubscribe();
+      });
+      await stream.writeSSE({
+        event: "ready",
+        data: JSON.stringify({ ok: true }),
+      });
+      while (!closed) {
+        await stream.sleep(25_000);
+        if (closed) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "{}" });
+        } catch {
+          closed = true;
+          break;
+        }
+      }
+      unsubscribe();
+    });
+  });
+
+  app.post("/api/v1/webhooks/agentmail", async (c) => {
+    const rawBody = await c.req.text();
+    const headers = svixHeadersFromRequest((name) => c.req.header(name));
+    const secrets = await agentmailSettingsService.listAgentMailWebhookSecrets();
+    const result = handleAgentMailWebhookDelivery({
+      rawBody,
+      headers,
+      secrets,
+      deliveryId: headers["svix-id"] ?? null,
+    });
+    if (!result.ok) {
+      return c.body(null, 400);
+    }
+    return c.body(null, 204);
+  });
+
   app.get(
     "/api/v1/email/inboxes/:inboxId/messages/:messageId",
     async (c) => {
@@ -2630,6 +2694,74 @@ export function registerApiRoutes(app: Hono) {
           error instanceof Error
             ? error.message
             : "Could not load AgentMail message";
+        const status =
+          error instanceof AgentMailApiError && error.status === 404
+            ? 404
+            : 400;
+        return c.json(
+          { error: message, code: status === 404 ? "not_found" : "bad_request" },
+          status,
+        );
+      }
+    },
+  );
+  app.delete(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.deleteAgentMailMessage(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not delete AgentMail message";
+        const status =
+          error instanceof AgentMailApiError && error.status === 404
+            ? 404
+            : 400;
+        return c.json(
+          { error: message, code: status === 404 ? "not_found" : "bad_request" },
+          status,
+        );
+      }
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/report-spam",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.reportAgentMailMessageSpam(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not report AgentMail message as spam";
         const status =
           error instanceof AgentMailApiError && error.status === 404
             ? 404
@@ -2693,6 +2825,18 @@ export function registerApiRoutes(app: Hono) {
           ),
         );
       } catch (error) {
+        console.error("[email] concept-reply failed:", {
+          inboxId,
+          messageId,
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  status: (error as { status?: number }).status,
+                }
+              : error,
+        });
         if (error instanceof AgentMailApiError) {
           return c.json(
             {
@@ -2865,6 +3009,75 @@ export function registerApiRoutes(app: Hono) {
           message.endsWith("_NOT_FOUND") ? "not_found" : "bad_request";
         return c.json({ error: message, code }, code === "not_found" ? 404 : 400);
       }
+    },
+  );
+  app.get(
+    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read") && !can(auth, "settings:write")) {
+        return c.json(forbidden(), 403);
+      }
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const threadKey = decodeURIComponent(c.req.param("threadKey"));
+      const comments = await emailThreadsService.listEmailThreadComments(
+        auth.workspaceId,
+        inboxId,
+        threadKey,
+      );
+      return c.json({ comments });
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments",
+    zValidator("json", createEmailThreadCommentSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const threadKey = decodeURIComponent(c.req.param("threadKey"));
+      const input = c.req.valid("json");
+      const comment = await emailThreadsService.createEmailThreadComment(
+        auth.workspaceId,
+        inboxId,
+        threadKey,
+        { body: input.body, author: input.author },
+      );
+      return c.json(comment, 201);
+    },
+  );
+  app.patch(
+    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments/:commentId",
+    zValidator("json", updateEmailThreadCommentSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const commentId = decodeURIComponent(c.req.param("commentId"));
+      const comment = await emailThreadsService.updateEmailThreadComment(
+        auth.workspaceId,
+        commentId,
+        c.req.valid("json").body,
+      );
+      if (!comment) {
+        return c.json({ error: "Comment not found", code: "not_found" }, 404);
+      }
+      return c.json(comment);
+    },
+  );
+  app.delete(
+    "/api/v1/email/inboxes/:inboxId/threads/:threadKey/comments/:commentId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const commentId = decodeURIComponent(c.req.param("commentId"));
+      const deleted = await emailThreadsService.deleteEmailThreadComment(
+        auth.workspaceId,
+        commentId,
+      );
+      if (!deleted) {
+        return c.json({ error: "Comment not found", code: "not_found" }, 404);
+      }
+      return c.json({ ok: true });
     },
   );
   app.get(

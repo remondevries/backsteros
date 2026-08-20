@@ -1903,11 +1903,17 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         />
       );
     } else if (isEmailPath(panelPathname)) {
+      const emailItems = agentMail.messages.map((item) => ({
+        ...item,
+        contactAvatarSrc: item.contactId
+          ? (contactAvatarSrc[item.contactId] ?? null)
+          : null,
+      }));
       sidePanelBody = (
         <EmailSidePanelView
           pathname={panelPathname}
           mailboxes={agentMail.mailboxes}
-          items={agentMail.messages}
+          items={emailItems}
           loading={agentMail.loading}
           messagesLoading={agentMail.messagesLoading}
           apiKeyConfigured={agentMail.apiKeyConfigured}

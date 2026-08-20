@@ -3,10 +3,42 @@ import type {
   AgentMailMessage,
   AgentMailSettings,
 } from "@backsteros/contracts";
-import type { EmailListItem, EmailMailbox } from "@backsteros/ui";
+import {
+  collapseEmailListItemsByThread,
+  type EmailListItem,
+  type EmailMailbox,
+  type TaskStatus,
+} from "@backsteros/ui";
 
 import { useDesktopApi } from "./api-context";
 import { createRequestAbortSignal } from "./request-timeout";
+import { startEmailInboxEventsLoop } from "./email-inbox-events";
+
+export const EMAIL_LIST_PATCH_EVENT = "backsteros-email-list-patch";
+
+export type EmailListPatchDetail = {
+  inboxId: string;
+  messageId: string;
+  threadId?: string | null;
+  status?: TaskStatus | string;
+  priority?: number;
+  dueDate?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
+  assigneeId?: string | null;
+  assigneeName?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  projectKey?: string | null;
+};
+
+export function dispatchEmailListPatch(detail: EmailListPatchDetail): void {
+  window.dispatchEvent(
+    new CustomEvent(EMAIL_LIST_PATCH_EVENT, { detail }),
+  );
+}
 
 function toListItem(entry: AgentMailMessage): EmailListItem | null {
   if (entry.kind === "draft") return null;
@@ -21,7 +53,64 @@ function toListItem(entry: AgentMailMessage): EmailListItem | null {
     threadId: entry.threadId ?? null,
     conceptDraftId: entry.conceptDraftId ?? null,
     inReplyToMessageId: entry.inReplyToMessageId ?? null,
+    status: entry.status ?? "triage",
+    priority: entry.priority ?? 0,
+    dueDate: entry.dueDate ?? null,
+    organizationId: entry.organizationId ?? null,
+    organizationName: entry.organizationName ?? null,
+    contactId: entry.contactId ?? null,
+    contactName: entry.contactName ?? null,
+    assigneeId: entry.assigneeId ?? null,
+    assigneeName: entry.assigneeName ?? null,
+    projectId: entry.projectId ?? null,
+    projectName: entry.projectName ?? null,
+    projectKey: entry.projectKey ?? null,
   };
+}
+
+function applyListPatch(
+  items: EmailListItem[],
+  patch: EmailListPatchDetail,
+): EmailListItem[] {
+  const threadId = patch.threadId?.trim() || null;
+  return items.map((item) => {
+    if (item.inboxId !== patch.inboxId) return item;
+    const sameMessage = item.id === patch.messageId;
+    const sameThread =
+      Boolean(threadId) &&
+      Boolean(item.threadId) &&
+      item.threadId === threadId;
+    if (!sameMessage && !sameThread) return item;
+    return {
+      ...item,
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+      ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+      ...(patch.organizationId !== undefined
+        ? { organizationId: patch.organizationId }
+        : {}),
+      ...(patch.organizationName !== undefined
+        ? { organizationName: patch.organizationName }
+        : {}),
+      ...(patch.contactId !== undefined ? { contactId: patch.contactId } : {}),
+      ...(patch.contactName !== undefined
+        ? { contactName: patch.contactName }
+        : {}),
+      ...(patch.assigneeId !== undefined
+        ? { assigneeId: patch.assigneeId }
+        : {}),
+      ...(patch.assigneeName !== undefined
+        ? { assigneeName: patch.assigneeName }
+        : {}),
+      ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
+      ...(patch.projectName !== undefined
+        ? { projectName: patch.projectName }
+        : {}),
+      ...(patch.projectKey !== undefined
+        ? { projectKey: patch.projectKey }
+        : {}),
+    };
+  });
 }
 
 export function useAgentMailMailboxes(active: boolean) {
@@ -32,6 +121,7 @@ export function useAgentMailMailboxes(active: boolean) {
   const [loading, setLoading] = useState(active);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const reloadAbortRef = useRef<AbortController | null>(null);
+  const hydratedRef = useRef(false);
 
   const reload = useCallback(async () => {
     reloadAbortRef.current?.abort();
@@ -39,8 +129,12 @@ export function useAgentMailMailboxes(active: boolean) {
     reloadAbortRef.current = controller;
     const signal = createRequestAbortSignal(undefined, controller.signal);
 
-    setLoading(true);
-    setMessagesLoading(true);
+    // Keep existing list visible while refreshing (letters-style; no loader flash).
+    const silent = hydratedRef.current;
+    if (!silent) {
+      setLoading(true);
+      setMessagesLoading(true);
+    }
     try {
       const body = await client.requestJson<AgentMailSettings>(
         "/api/v1/settings/agentmail",
@@ -57,10 +151,11 @@ export function useAgentMailMailboxes(active: boolean) {
           contactName: inbox.contactName ?? null,
         })),
       );
-      setLoading(false);
+      if (!silent) setLoading(false);
       if (!body.apiKeyConfigured || (body.inboxes ?? []).length === 0) {
         setMessages([]);
         setMessagesLoading(false);
+        hydratedRef.current = true;
         return;
       }
       try {
@@ -70,21 +165,26 @@ export function useAgentMailMailboxes(active: boolean) {
         );
         if (signal.aborted) return;
         setMessages(
-          (listed.messages ?? [])
-            .map(toListItem)
-            .filter((item): item is EmailListItem => item != null),
+          collapseEmailListItemsByThread(
+            (listed.messages ?? [])
+              .map(toListItem)
+              .filter((item): item is EmailListItem => item != null),
+          ),
         );
       } catch {
         if (signal.aborted) return;
-        setMessages([]);
+        if (!silent) setMessages([]);
       }
     } catch {
       if (signal.aborted) return;
       setApiKeyConfigured(false);
-      setMailboxes([]);
-      setMessages([]);
+      if (!silent) {
+        setMailboxes([]);
+        setMessages([]);
+      }
     } finally {
       if (reloadAbortRef.current === controller) {
+        hydratedRef.current = true;
         setLoading(false);
         setMessagesLoading(false);
       }
@@ -104,14 +204,34 @@ export function useAgentMailMailboxes(active: boolean) {
     function handleReload() {
       void reload();
     }
+    function handlePatch(event: Event) {
+      const detail = (event as CustomEvent<EmailListPatchDetail>).detail;
+      if (!detail?.inboxId || !detail.messageId) return;
+      setMessages((current) => applyListPatch(current, detail));
+    }
     window.addEventListener("backsteros-email-mailboxes-reload", handleReload);
+    window.addEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
     return () => {
       window.removeEventListener(
         "backsteros-email-mailboxes-reload",
         handleReload,
       );
+      window.removeEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
     };
   }, [active, reload]);
+
+  useEffect(() => {
+    if (!active || !apiKeyConfigured) return;
+    const controller = new AbortController();
+    startEmailInboxEventsLoop({
+      client,
+      signal: controller.signal,
+      onUpdated: () => {
+        void reload();
+      },
+    });
+    return () => controller.abort();
+  }, [active, apiKeyConfigured, client, reload]);
 
   return {
     mailboxes,

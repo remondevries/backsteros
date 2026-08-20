@@ -57,7 +57,8 @@ export function EntityDeleteConfirmModal() {
           id="entity-delete-modal-title"
           className="entity-delete-modal-title"
         >
-          Delete {activeDeleteConfig.entityLabel}?
+          {activeDeleteConfig.actionVerb ?? "Delete"}{" "}
+          {activeDeleteConfig.entityLabel}?
         </h2>
         <p className="entity-delete-modal-body">
           This action cannot be undone. Press{" "}
@@ -85,7 +86,7 @@ export function EntityDeleteConfirmModal() {
             className="entity-delete-modal-confirm"
           >
             {isDeletePending
-              ? "Deleting…"
+              ? "Working…"
               : (activeDeleteConfig.confirmLabel ?? "Delete")}
           </button>
         </div>

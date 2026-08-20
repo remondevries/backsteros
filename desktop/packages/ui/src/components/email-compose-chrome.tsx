@@ -1,21 +1,27 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { emailMailboxFromDisplay, emailMailboxLabel, type EmailMailbox } from "../email.js";
-import type { EmailDraftBodyMode } from "./email-draft-actions.js";
+import { PencilIcon, XIcon } from "@primer/octicons-react";
+
 import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-} from "./content-markdown-view-layout.js";
-import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
+  emailMailboxFromDisplay,
+  emailMailboxLabel,
+  type EmailMailbox,
+} from "../email.js";
+import type { EmailDraftBodyMode } from "./email-draft-actions.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
+import {
+  EmailAddressContactField,
+  type EmailThreadFromContactPicker,
+} from "./email-address-contact-field.js";
 import { EntityAvatarIcon } from "./entity-avatar-icon.js";
-import { PropertyDropdown } from "./property-dropdown.js";
+import { PropertyDropdown, PropertyInlineChip } from "./property-dropdown.js";
 import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { EmailComposeBodyStage } from "./email-compose-body-stage.js";
 import { EmailDraftSignOffShell } from "./email-draft-sign-off-shell.js";
 import { buildEmailMailboxDropdownOptions } from "./dropdown-options.js";
+import { ContactPersonIcon } from "./contact-person-icon.js";
 
 export type EmailComposeChromeProps = {
   mailboxes: EmailMailbox[];
@@ -32,6 +38,11 @@ export type EmailComposeChromeProps = {
   replySignOff?: string | null;
   /** Linked inbox contact avatar beside the sign-off. */
   replySignOffAvatarSrc?: string | null;
+  /**
+   * When set (typically reply), To becomes the thread contact dropdown chip
+   * instead of a plain email input.
+   */
+  toContact?: EmailThreadFromContactPicker | null;
   emptyBodyLabel?: string;
   actions?: ReactNode;
   fieldsDisabled?: boolean;
@@ -49,6 +60,7 @@ function EmailDraftBodyShell({ children }: { children: string }) {
 
 /**
  * New-email chrome — From inbox picker, To, Subject, and optional draft body.
+ * Edit mode uses a plain textarea so reply text is always editable.
  */
 export function EmailComposeChrome({
   mailboxes,
@@ -64,6 +76,7 @@ export function EmailComposeChrome({
   replyGreeting = null,
   replySignOff = null,
   replySignOffAvatarSrc = null,
+  toContact = null,
   emptyBodyLabel = "Message the agent to draft the message body.",
   actions = null,
   fieldsDisabled = false,
@@ -76,17 +89,53 @@ export function EmailComposeChrome({
   const greeting = replyGreeting?.trim() || null;
   const signOff = replySignOff?.trim() || null;
   const fromLocked = variant === "reply";
+  const editing = isEditable && bodyMode === "edit";
   const hasLetterBody =
     Boolean(trimmedBody) ||
     Boolean(greeting) ||
     Boolean(signOff) ||
-    agentWorking;
+    agentWorking ||
+    editing;
   const selectedMailbox =
     mailboxes.find((mailbox) => mailbox.inboxId === inboxId) ?? null;
   const inboxOptions = useMemo(
     () => buildEmailMailboxDropdownOptions(mailboxes),
     [mailboxes],
   );
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const toInputRef = useRef<HTMLInputElement | null>(null);
+  const [toAddressEditing, setToAddressEditing] = useState(false);
+
+  useEffect(() => {
+    // New reply/compose session — prefer the contact chip again.
+    setToAddressEditing(false);
+  }, [inboxId, variant]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const frame = requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editing]);
+
+  useEffect(() => {
+    if (!toAddressEditing) return;
+    const frame = requestAnimationFrame(() => {
+      const el = toInputRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [toAddressEditing]);
+
+  const showToContactChip = Boolean(toContact) && !toAddressEditing;
 
   const bodyPreview = trimmedBody ? (
     <DocumentMarkdownPreview body={body} onChange={onBodyChange} />
@@ -103,11 +152,28 @@ export function EmailComposeChrome({
             {mailboxes.length === 0 ? (
               "—"
             ) : fromLocked ? (
-              <span className="email-compose-from-locked">
-                {selectedMailbox
-                  ? emailMailboxFromDisplay(selectedMailbox)
-                  : "—"}
-              </span>
+              selectedMailbox ? (
+                <PropertyInlineChip
+                  icon={
+                    selectedMailbox.avatarSrc ? (
+                      <EntityAvatarIcon
+                        src={selectedMailbox.avatarSrc}
+                        size={14}
+                        kind="contact"
+                      />
+                    ) : (
+                      <ContactPersonIcon size={14} />
+                    )
+                  }
+                  label={
+                    selectedMailbox.contactName?.trim() ||
+                    emailMailboxFromDisplay(selectedMailbox)
+                  }
+                  ariaLabel="From"
+                />
+              ) : (
+                "—"
+              )
             ) : (
               <PropertyDropdown
                 value={inboxId || null}
@@ -142,17 +208,52 @@ export function EmailComposeChrome({
         </div>
         <div className="email-thread-message__header-row">
           <dt>To</dt>
-          <dd>
-            <input
-              type="email"
-              className="email-compose-field"
-              value={to}
+          {showToContactChip && toContact ? (
+            <EmailAddressContactField
+              address={to}
+              addressLabel={to.trim() || "—"}
+              contact={toContact}
+              ariaLabel="To contact"
               disabled={fieldsDisabled}
-              placeholder="recipient@example.com"
-              aria-label="To"
-              onChange={(event) => onToChange(event.target.value)}
+              endAction={
+                <button
+                  type="button"
+                  className="email-compose-to-edit"
+                  aria-label="Edit recipient email"
+                  title="Edit email"
+                  disabled={fieldsDisabled}
+                  onClick={() => setToAddressEditing(true)}
+                >
+                  <PencilIcon size={14} />
+                </button>
+              }
             />
-          </dd>
+          ) : (
+            <dd className={toContact ? "email-compose-to-field" : undefined}>
+              <input
+                ref={toInputRef}
+                type="email"
+                className="email-compose-field"
+                value={to}
+                disabled={fieldsDisabled}
+                placeholder="recipient@example.com"
+                aria-label="To"
+                onChange={(event) => onToChange(event.target.value)}
+              />
+              {toContact ? (
+                <button
+                  type="button"
+                  className="email-compose-to-edit"
+                  aria-label="Use linked contact"
+                  title="Use contact"
+                  disabled={fieldsDisabled}
+                  onClick={() => setToAddressEditing(false)}
+                >
+                  <XIcon size={14} />
+                </button>
+              ) : null}
+            </dd>
+          )}
         </div>
         <div className="email-thread-message__header-row">
           <dt>Subject</dt>
@@ -181,23 +282,22 @@ export function EmailComposeChrome({
                 <EmailDraftBodyShell>{greeting}</EmailDraftBodyShell>
               ) : null}
               <div className="email-draft-body-compose__core">
-                <ContentMarkdownViewLayout
-                  mode={bodyMode}
-                  editorActivated={bodyMode === "edit"}
-                  editor={
-                    <DocumentMarkdownEditor
-                      value={body}
-                      onChange={onBodyChange!}
-                      scrollWithContent
-                      ariaLabel="Draft body"
-                    />
-                  }
-                  preview={
-                    <ContentMarkdownPreviewColumn includeTopInset={false}>
-                      {bodyPreview}
-                    </ContentMarkdownPreviewColumn>
-                  }
-                />
+                {editing ? (
+                  <textarea
+                    ref={textareaRef}
+                    className="email-draft-body-edit"
+                    value={body}
+                    onChange={(event) => onBodyChange?.(event.target.value)}
+                    disabled={fieldsDisabled}
+                    aria-label="Draft body"
+                    rows={Math.min(
+                      16,
+                      Math.max(4, body.split("\n").length + 2),
+                    )}
+                  />
+                ) : (
+                  bodyPreview
+                )}
               </div>
               {signOff ? (
                 <EmailDraftSignOffShell avatarSrc={replySignOffAvatarSrc}>

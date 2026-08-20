@@ -88,9 +88,16 @@ export function findConceptReplyDraft(
   clientId?: string,
 ): AgentMailDraftSummary | undefined {
   const resolvedClientId = clientId ?? conceptReplyClientId(messageId);
+  // Prefer our stable client_id — in_reply_to can match orphan/stale drafts.
   return (
-    drafts.find((draft) => draft.inReplyTo === messageId) ??
-    drafts.find((draft) => draft.clientId === resolvedClientId)
+    drafts.find((draft) => draft.clientId === resolvedClientId) ??
+    drafts.find(
+      (draft) =>
+        draft.inReplyTo === messageId &&
+        (draft.clientId == null ||
+          draft.clientId.startsWith("bsh-concept-") ||
+          isLikelyConceptDraft(draft)),
+    )
   );
 }
 
@@ -204,8 +211,25 @@ export async function findConceptDraftByClientIdAcrossInboxes(
       }
     }
 
-    for (const draft of drafts) {
-      if (draft.clientId === clientId || draft.inReplyTo?.trim()) continue;
+    // List may omit client_id — check details for recent drafts.
+    const probeCandidates = drafts
+      .filter((draft) => {
+        if (draft.clientId === clientId) return false;
+        if (draft.clientId?.startsWith("bsh-compose-")) return false;
+        return (
+          !draft.clientId?.trim() ||
+          draft.clientId.startsWith("bsh-concept-") ||
+          isLikelyConceptDraft(draft)
+        );
+      })
+      .sort((left, right) => {
+        const leftAt = Date.parse(left.updatedAt) || 0;
+        const rightAt = Date.parse(right.updatedAt) || 0;
+        return rightAt - leftAt;
+      })
+      .slice(0, 25);
+
+    for (const draft of probeCandidates) {
       try {
         const detail = await client.getDraft(inboxId, draft.draftId);
         if (detail.clientId !== clientId) continue;
@@ -288,17 +312,87 @@ export async function loadConceptDraftForMessageAcrossInboxes(
   inboxIds: readonly string[],
   messageId: string,
 ): Promise<AgentMailDraftDetail | null> {
-  const byClientId = await findConceptDraftByClientIdAcrossInboxes(
-    client,
-    inboxIds,
-    messageId,
-  );
-  if (byClientId) return byClientId;
+  return loadConceptDraftForThreadAcrossInboxes(client, inboxIds, [messageId]);
+}
+
+/**
+ * Find a concept-reply draft linked to any message in the thread.
+ * List collapse may open the oldest message while the draft was saved against
+ * another id in the same thread; AgentMail list rows also often omit link fields.
+ */
+export async function loadConceptDraftForThreadAcrossInboxes(
+  client: AgentMailClient,
+  inboxIds: readonly string[],
+  threadMessageIds: readonly string[],
+): Promise<AgentMailDraftDetail | null> {
+  const messageIds = [
+    ...new Set(
+      threadMessageIds.map((id) => id.trim()).filter((id) => id.length > 0),
+    ),
+  ];
+  if (messageIds.length === 0) return null;
+
+  const messageIdSet = new Set(messageIds);
+  const clientIdSet = new Set(messageIds.map((id) => conceptReplyClientId(id)));
+
+  const matchesThread = (draft: {
+    clientId?: string | null;
+    inReplyTo?: string | null;
+  }) => {
+    const clientId = draft.clientId?.trim();
+    if (clientId && clientIdSet.has(clientId)) return true;
+    const replyTo = draft.inReplyTo?.trim();
+    return Boolean(replyTo && messageIdSet.has(replyTo));
+  };
 
   for (const inboxId of inboxIds) {
-    const draft = await loadConceptDraftForMessage(client, inboxId, messageId);
-    if (draft) return draft;
+    let drafts: AgentMailDraftSummary[];
+    try {
+      drafts = await client.listDrafts(inboxId, { limit: 100 });
+    } catch {
+      continue;
+    }
+
+    for (const draft of drafts) {
+      if (!matchesThread(draft)) continue;
+      try {
+        const detail = await client.getDraft(inboxId, draft.draftId);
+        return { ...detail, inboxId };
+      } catch (error) {
+        if (isDraftNotFoundError(error)) continue;
+        throw error;
+      }
+    }
+
+    // List summaries frequently omit client_id / in_reply_to — probe likely
+    // concept drafts (and recent sparse rows) for a thread match.
+    const probeCandidates = drafts
+      .filter((draft) => {
+        if (draft.clientId?.startsWith("bsh-compose-")) return false;
+        if (matchesThread(draft)) return false;
+        if (draft.clientId?.startsWith("bsh-concept-")) return true;
+        if (isLikelyConceptDraft(draft)) return true;
+        return !draft.clientId?.trim() && !draft.inReplyTo?.trim();
+      })
+      .sort((left, right) => {
+        const leftAt = Date.parse(left.updatedAt) || 0;
+        const rightAt = Date.parse(right.updatedAt) || 0;
+        return rightAt - leftAt;
+      })
+      .slice(0, 25);
+
+    for (const draft of probeCandidates) {
+      try {
+        const detail = await client.getDraft(inboxId, draft.draftId);
+        if (!matchesThread(detail)) continue;
+        return { ...detail, inboxId };
+      } catch (error) {
+        if (isDraftNotFoundError(error)) continue;
+        throw error;
+      }
+    }
   }
+
   return null;
 }
 

@@ -279,19 +279,28 @@ export {
   getEmailListItemHref,
   getSelectedEmailIdFromPathname,
   groupEmailItemsByMailbox,
+  groupEmailItemsByStatus,
   filterEmailListItems,
+  collapseEmailListItemsByThread,
+  getEmailStatusLabel,
   isEmailComposePath,
   parseEmailDraftPath,
   parseEmailMessagePath,
   parseReplyToAddress,
   replySubject,
+  formatEmailPersonWithAddress,
+  resolveEmailListItemStatus,
+  resolveEmailVisibleStatus,
   EMAIL_COMPOSE_PATH,
+  EMAIL_STATUS_ORDER,
   type EmailDraftPath,
   type EmailListItem,
   type EmailListItemKind,
   type EmailMailbox,
   type EmailMailboxGroup,
   type EmailMessagePath,
+  type EmailStatusGroup,
+  type EmailVisibleStatus,
 } from "./email.js";
 
 export { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
@@ -333,10 +342,22 @@ export {
   EmailComposeBodyStage,
   type EmailComposeBodyStageProps,
 } from "./components/email-compose-body-stage.js";
+
 export {
-  EmailMessageReplyBar,
-  type EmailMessageReplyBarProps,
-} from "./components/email-message-reply-bar.js";
+  EmailThreadCommentBubble,
+  type EmailThreadCommentBubbleProps,
+} from "./components/email-thread-comment-bubble.js";
+
+export {
+  EmailThreadCommentComposer,
+  type EmailThreadCommentComposerProps,
+} from "./components/email-thread-comment-composer.js";
+
+export {
+  EmailAddressContactField,
+  type EmailAddressContactFieldProps,
+  type EmailThreadFromContactPicker,
+} from "./components/email-address-contact-field.js";
 
 export {
   EmailThreadMessageCard,
@@ -1963,6 +1984,8 @@ export { RegisterEntityDeleteAction } from "./components/entity-actions/register
 
 export { RegisterEntityDuplicateAction } from "./components/entity-actions/register-entity-duplicate-action.js";
 
+export { RegisterEntityMenuItems } from "./components/entity-actions/register-entity-menu-items.js";
+
 export {
   EntityHeaderActionsProvider,
   useEntityHeaderActionsContext,
@@ -1970,6 +1993,7 @@ export {
   type EntityDeleteResult,
   type EntityDuplicateConfig,
   type EntityDuplicateOptions,
+  type EntityExtraMenuItem,
 } from "./components/entity-actions/entity-header-actions-context.js";
 
 export {
@@ -2303,6 +2327,8 @@ export {
   PropertyDropdown,
   type PropertyDropdownProps,
   type PropertyDropdownTriggerVariant,
+  PropertyInlineChip,
+  type PropertyInlineChipProps,
 } from "./components/property-dropdown.js";
 
 export {

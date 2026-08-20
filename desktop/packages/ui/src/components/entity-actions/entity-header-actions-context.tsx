@@ -21,6 +21,11 @@ export type EntityDeleteConfig = {
   entityLabel: string;
   /** Shown on the confirm button when the delete modal is open. */
   confirmLabel?: string;
+  /**
+   * Modal title verb, e.g. "Delete" or "Report spam". Defaults to "Delete".
+   * Full title becomes `{actionVerb} {entityLabel}?`.
+   */
+  actionVerb?: string;
   onDelete: () => Promise<EntityDeleteResult>;
 };
 
@@ -41,6 +46,23 @@ export type EntityDuplicateConfig = {
   confirm?: "project";
   /** Used in the project duplicate modal title, e.g. `project "Acme"`. */
   entityLabel?: string;
+};
+
+export type EntityExtraMenuItem = {
+  id: string;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  /**
+   * When set, selecting the item opens the shared confirm modal, then runs
+   * `onSelect` as the confirmed action.
+   */
+  confirm?: {
+    entityLabel: string;
+    confirmLabel?: string;
+    actionVerb?: string;
+  };
+  onSelect: () => Promise<EntityDeleteResult> | void;
 };
 
 type EntityHeaderActionsContextValue = {
@@ -67,6 +89,12 @@ type EntityHeaderActionsContextValue = {
   confirmDuplicate: (options?: EntityDuplicateOptions) => void;
   isDuplicatePending: boolean;
   duplicateError: string | null;
+  extraMenuItems: EntityExtraMenuItem[];
+  registerExtraMenuItems: (
+    ownerId: string,
+    items: EntityExtraMenuItem[],
+  ) => void;
+  clearExtraMenuItems: (ownerId: string) => void;
 };
 
 const EntityHeaderActionsContext =
@@ -104,6 +132,12 @@ export function EntityHeaderActionsProvider({
   const duplicateRegistrationsRef = useRef(
     new Map<string, EntityDuplicateConfig>(),
   );
+  const [extraMenuItems, setExtraMenuItems] = useState<EntityExtraMenuItem[]>(
+    [],
+  );
+  const extraMenuRegistrationsRef = useRef(
+    new Map<string, EntityExtraMenuItem[]>(),
+  );
 
   const syncActiveDeleteConfig = useCallback(() => {
     const registrations = [...deleteRegistrationsRef.current.values()];
@@ -113,6 +147,12 @@ export function EntityHeaderActionsProvider({
   const syncActiveDuplicateConfig = useCallback(() => {
     const registrations = [...duplicateRegistrationsRef.current.values()];
     setDuplicateConfigState(registrations.at(-1) ?? null);
+  }, []);
+
+  const syncExtraMenuItems = useCallback(() => {
+    setExtraMenuItems(
+      [...extraMenuRegistrationsRef.current.values()].flat(),
+    );
   }, []);
 
   const registerDeleteConfig = useCallback(
@@ -165,6 +205,25 @@ export function EntityHeaderActionsProvider({
       setDuplicateError(null);
     },
     [syncActiveDuplicateConfig],
+  );
+
+  const registerExtraMenuItems = useCallback(
+    (ownerId: string, items: EntityExtraMenuItem[]) => {
+      extraMenuRegistrationsRef.current.delete(ownerId);
+      extraMenuRegistrationsRef.current.set(ownerId, items);
+      syncExtraMenuItems();
+    },
+    [syncExtraMenuItems],
+  );
+
+  const clearExtraMenuItems = useCallback(
+    (ownerId: string) => {
+      if (!extraMenuRegistrationsRef.current.delete(ownerId)) {
+        return;
+      }
+      syncExtraMenuItems();
+    },
+    [syncExtraMenuItems],
   );
 
   const openDeleteModal = useCallback(
@@ -299,12 +358,16 @@ export function EntityHeaderActionsProvider({
       confirmDuplicate,
       isDuplicatePending,
       duplicateError,
+      extraMenuItems,
+      registerExtraMenuItems,
+      clearExtraMenuItems,
     }),
     [
       activeDeleteConfig,
       activeDuplicateConfig,
       clearDeleteConfig,
       clearDuplicateConfig,
+      clearExtraMenuItems,
       closeDeleteModal,
       closeDuplicateModal,
       confirmDelete,
@@ -315,11 +378,13 @@ export function EntityHeaderActionsProvider({
       duplicateConfig,
       duplicateError,
       duplicateModalOpen,
+      extraMenuItems,
       isDeletePending,
       isDuplicatePending,
       openDeleteModal,
       registerDeleteConfig,
       registerDuplicateConfig,
+      registerExtraMenuItems,
       runDuplicate,
     ],
   );

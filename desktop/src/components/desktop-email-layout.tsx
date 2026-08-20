@@ -11,6 +11,7 @@ import { shouldHandleGlobalShortcut } from "@backsteros/ui";
 import { DesktopAgentChatPanel } from "./desktop-agent-chat-panel";
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
+import { buildEmailAgentAcpPrompt } from "../lib/agent/email-agent-prompt";
 import { useDesktopEmailAgentSession } from "../lib/agent/use-desktop-email-agent-session";
 import type { AgentMailMessageDetail } from "@backsteros/contracts";
 import {
@@ -221,6 +222,14 @@ export function DesktopEmailLayout({
     [beginCollapseAnimation, startAgentSession],
   );
 
+  const buildAgentPrompt = useCallback(
+    (userText: string) => {
+      if (!message) return userText.trim();
+      return buildEmailAgentAcpPrompt(userText, message, { depth: "lean" });
+    },
+    [message],
+  );
+
   return (
     <div
       ref={setLayoutRef}
@@ -278,6 +287,7 @@ export function DesktopEmailLayout({
             onStopAgent={endAgentSession}
             agentError={agentError}
             onAssistantTurnComplete={handleAssistantTurnComplete}
+            buildAgentPrompt={buildAgentPrompt}
           />
         </div>
       </aside>

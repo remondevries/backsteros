@@ -26,6 +26,8 @@ export type UseDesktopEmailAgentSessionOptions = {
   taskId: string;
   message: AgentMailMessageDetail | null;
   composeContext?: EmailComposeContext | null;
+  /** When true, do not focus the global agent chat tab (timeline comments). */
+  quiet?: boolean;
 };
 
 /**
@@ -35,6 +37,7 @@ export function useDesktopEmailAgentSession({
   taskId,
   message,
   composeContext = null,
+  quiet = false,
 }: UseDesktopEmailAgentSessionOptions) {
   const [agentChatId, setAgentChatId] = useState<string | null>(() =>
     readEmailAgentChatId(taskId),
@@ -57,22 +60,27 @@ export function useDesktopEmailAgentSession({
   const hasSession = Boolean(agentChatId?.trim());
 
   const startAgentSession = useCallback(
-    async (options?: { prompt?: string; mode?: string | null }) => {
+    async (options?: {
+      prompt?: string;
+      mode?: string | null;
+      message?: AgentMailMessageDetail | null;
+    }) => {
       const isCompose = Boolean(composeContext);
-      if (!isCompose && !message) {
+      const contextMessage = options?.message ?? message;
+      if (!isCompose && !contextMessage) {
         setAgentError("Select a message before starting the agent.");
-        return;
+        return null;
       }
       if (isCompose && !composeContext?.fromEmail.trim()) {
         setAgentError("Choose a From inbox before starting the agent.");
-        return;
+        return null;
       }
-      if (creatingAgentRef.current) return;
+      if (creatingAgentRef.current) return null;
       creatingAgentRef.current = true;
       setCreatingAgent(true);
       setAgentError(null);
       markLiveAgentWorkingForTask(taskId);
-      focusAgentTab();
+      if (!quiet) focusAgentTab();
 
       const userPrompt = options?.prompt?.trim();
       if (!userPrompt) {
@@ -80,12 +88,14 @@ export function useDesktopEmailAgentSession({
         setCreatingAgent(false);
         clearLiveAgentWorkingForTask(taskId);
         setAgentError("Type a message to start the agent.");
-        return;
+        return null;
       }
 
       const acpPrompt = isCompose
         ? buildEmailComposeAgentAcpPrompt(userPrompt, composeContext!)
-        : buildEmailAgentAcpPrompt(userPrompt, message!);
+        : buildEmailAgentAcpPrompt(userPrompt, contextMessage!, {
+            depth: "full",
+          });
       const bootstrap = createAgentChatMessage("user", userPrompt);
       setPendingBootstrapPrompt({
         taskId,
@@ -116,9 +126,10 @@ export function useDesktopEmailAgentSession({
           prompt: userPrompt,
           sessionIsNew: true,
           forceReattach: true,
-          focusUi: true,
+          focusUi: !quiet,
         });
         setPendingBootstrapPrompt(null);
+        return result.chatId;
       } catch (err) {
         setPendingBootstrapPrompt(null);
         clearLiveAgentWorkingForTask(taskId);
@@ -127,6 +138,7 @@ export function useDesktopEmailAgentSession({
             ? err.message
             : "Could not create agent session.",
         );
+        return null;
       } finally {
         creatingAgentRef.current = false;
         setCreatingAgent(false);
@@ -136,6 +148,7 @@ export function useDesktopEmailAgentSession({
       composeContext,
       focusAgentTab,
       message,
+      quiet,
       requestAttach,
       setPendingBootstrapPrompt,
       taskId,
