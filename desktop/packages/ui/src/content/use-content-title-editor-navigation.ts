@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import type { MarkdownDetailEditorMode } from "../components/content-markdown-view-layout.js";
+import type { MarkdownDetailEditorMode } from "../components/content/content-markdown-view-layout.js";
 import { useTitleRenameShortcut } from "../shortcuts/title-rename-shortcut.js";
 
 type UseContentTitleEditorNavigationOptions = {

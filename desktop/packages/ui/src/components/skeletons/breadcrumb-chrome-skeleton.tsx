@@ -1,4 +1,4 @@
-import { ContentChromeHeader } from "../content-chrome-header.js";
+import { ContentChromeHeader } from "../content/content-chrome-header.js";
 
 /**
  * Same chrome slot as ContentBreadcrumb — keeps the header height reserved

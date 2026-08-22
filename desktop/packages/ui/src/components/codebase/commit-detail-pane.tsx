@@ -1,7 +1,7 @@
 import type { GithubCommit, GithubPullRequest } from "@backsteros/contracts";
 
-import { DocumentMarkdownPreview } from "../document-markdown-preview.js";
-import { ProjectOcticon } from "../project-octicon.js";
+import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 import { GithubCodeMenu } from "./github-code-menu.js";
 import type { CodebaseRequestJson } from "./project-fs-types.js";
 import { CommitFilesPane } from "./pull-request-files-pane.js";

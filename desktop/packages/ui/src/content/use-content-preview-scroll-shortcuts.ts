@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { useCommandPalette } from "../components/command-palette-context.js";
+import { useCommandPalette } from "../components/command-palette/command-palette-context.js";
 import { scrollContentPreviewByArrowKey } from "./content-preview-scroll.js";
 
 export function useContentPreviewScrollShortcuts({

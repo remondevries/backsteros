@@ -26,24 +26,24 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import type { ProjectArea } from "../../projects/project-areas.js";
 import type { ProjectStatus } from "../../projects/project-status.js";
-import { buildOrganizationDropdownOptions } from "../dropdown-options.js";
-import { ComposeFolderIcon } from "../compose-folder-icon.js";
-import { DocumentIcon } from "../document-icon.js";
+import { buildOrganizationDropdownOptions } from "../dropdowns/dropdown-options.js";
+import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
+import { DocumentIcon } from "../documents/document-icon.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
-} from "../list-keyboard-navigation-provider.js";
-import { SegmentedPillToggle } from "../list-board-view-shell.js";
-import { OverviewNameEditor } from "../overview-name-editor.js";
-import { ProjectOcticon } from "../project-octicon.js";
-import { ProjectOverviewIcon } from "../project-overview-icon.js";
-import { ProjectPanelDetailView } from "../project-panel-detail-view.js";
-import type { ProjectDetailNestedArea } from "../project-detail-view.js";
+} from "../list-nav/list-keyboard-navigation-provider.js";
+import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { OverviewNameEditor } from "../content/overview-name-editor.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
+import { ProjectOverviewIcon } from "../projects/project-overview-icon.js";
+import { ProjectPanelDetailView } from "../projects/project-panel-detail-view.js";
+import type { ProjectDetailNestedArea } from "../projects/project-detail-view.js";
 import { ProjectPanelOverviewSkeleton } from "../skeletons/project-panel-overview-skeleton.js";
-import { PropertyDropdown } from "../property-dropdown.js";
-import type { SearchableDropdownOption } from "../searchable-dropdown.js";
-import { TasksNavIcon } from "../sidebar-nav-icons.js";
+import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { TasksNavIcon } from "../shell/sidebar-nav-icons.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseGithubListTab } from "./codebase-github-list-tab.js";
 import type { CodebaseRequestJson } from "./codebase-request-json.js";

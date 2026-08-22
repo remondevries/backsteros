@@ -18,14 +18,14 @@ import {
   keyboardNavListItemClass,
 } from "../../list-nav/keyboard-nav-item.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
-import { useCommandPalette } from "../command-palette-context.js";
+import { useCommandPalette } from "../command-palette/command-palette-context.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
-} from "../list-keyboard-navigation-provider.js";
-import { ComposeFolderIcon } from "../compose-folder-icon.js";
-import { FileTypeIcon } from "../file-type-icon.js";
+} from "../list-nav/list-keyboard-navigation-provider.js";
+import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
+import { FileTypeIcon } from "../documents/file-type-icon.js";
 import { FileDeleteConfirmModal } from "./file-delete-confirm-modal.js";
 import { FsTreeInlineCreate } from "./fs-tree-inline-create.js";
 import {

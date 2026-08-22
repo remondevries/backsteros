@@ -7,7 +7,7 @@ import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
   DROPDOWN_NO_RECURRING_VALUE,
-} from "../../dist/components/dropdown-options.js";
+} from "../../dist/components/dropdowns/dropdown-options.js";
 import {
   buildAmountHistogramBins,
   computeAmountRangeDomain,

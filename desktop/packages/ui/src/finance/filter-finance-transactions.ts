@@ -4,7 +4,7 @@ import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
   DROPDOWN_NO_RECURRING_VALUE,
-} from "../components/dropdown-options.js";
+} from "../components/dropdowns/dropdown-options.js";
 
 export type FinanceTransactionListFilters = {
   search: string;

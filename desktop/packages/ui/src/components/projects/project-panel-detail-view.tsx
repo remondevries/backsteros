@@ -1,0 +1,669 @@
+"use client";
+
+import { ChevronDownIcon, ChevronLeftIcon, ProjectIcon } from "@primer/octicons-react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+
+import {
+  PROJECT_AREAS,
+  PROJECT_AREA_LABELS,
+  type ProjectArea,
+} from "../../projects/project-areas.js";
+import {
+  PROJECT_SECTIONS,
+  type ProjectSectionId,
+} from "../../projects/project-sections.js";
+import {
+  getProjectStatusLabel,
+  migrateLegacyProjectStatus,
+  PROJECT_STATUS_ORDER,
+  type ProjectStatus,
+} from "../../projects/project-status.js";
+import {
+  getProjectTypeLabel,
+  migrateLegacyProjectType,
+  PROJECT_TYPE_ORDER,
+  type ProjectType,
+} from "../../projects/project-type.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
+import { TerminalConsoleIcon } from "../icons/terminal-console-icon.js";
+import { adoptRemoteField } from "../../shared/adopt-remote-field.js";
+import { useTitleRenameShortcut } from "../../shortcuts/title-rename-shortcut.js";
+import {
+  ContentMarkdownPreviewColumn,
+  ContentMarkdownViewLayout,
+  useMarkdownDetailEditor,
+} from "../content/content-markdown-view-layout.js";
+import { ProjectOverviewIcon } from "./project-overview-icon.js";
+import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
+import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
+import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
+import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { OverviewNameEditor } from "../content/overview-name-editor.js";
+import { ProjectKeyEditor } from "./project-key-editor.js";
+import { ProjectProgressRing } from "./project-progress-ring.js";
+import { formatProjectTaskProgressPercent } from "../../projects/project-progress-ring.js";
+import { ProjectStatusIcon } from "./project-status-icon.js";
+import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
+import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navigate-row.js";
+import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
+import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
+import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+
+import {
+  type ProjectDetailNestedArea,
+  type ProjectDetailViewProject,
+} from "./project-detail-view.js";
+
+export type { ProjectDetailNestedArea, ProjectDetailViewProject };
+
+export type ProjectPanelDetailViewProps = {
+  project: ProjectDetailViewProject;
+  nestedAreas?: ProjectDetailNestedArea[];
+  onSaveName?: (
+    name: string,
+  ) =>
+    | Promise<{ ok: true } | { ok: false; error: string }>
+    | { ok: true }
+    | { ok: false; error: string };
+  onSaveKey?: (
+    key: string,
+  ) =>
+    | Promise<{ ok: true; key?: string } | { ok: false; error: string }>
+    | { ok: true; key?: string }
+    | { ok: false; error: string };
+  onSaveSummary?: (summary: string) => void | Promise<void>;
+  onSaveDescription?: (description: string) => void | Promise<void>;
+  onStatusChange?: (status: ProjectStatus) => void;
+  onPriorityChange?: (priority: number) => void;
+  onTypeChange?: (type: ProjectType) => void;
+  onAreaChange?: (area: ProjectArea | null) => void;
+  onAreaIdChange?: (areaId: string | null) => void;
+  onOrganizationChange?: (organizationId: string | null) => void;
+  onStartDateChange?: (startDate: Date | null) => void;
+  onDueDateChange?: (dueDate: Date | null) => void;
+  onIconChange?: (icon: string | null) => void | Promise<void>;
+  organizationOptions?: SearchableDropdownOption<string>[];
+  /** “Open organization” chevron next to the org property (Next parity). */
+  organizationNavigateHref?: string | null;
+  onCreateOrganizationFromQuery?: (query: string) => void;
+  /** Controlled section (URL sync). When omitted, uses internal state. */
+  section?: ProjectSectionId;
+  onSectionChange?: (section: ProjectSectionId) => void;
+  initialSection?: ProjectSectionId;
+  /** Host-provided pane for non-overview sections (tasks, letters, …). */
+  renderSection?: (sectionId: ProjectSectionId) => ReactNode;
+  /** Extra controls under Properties (e.g. working directory). */
+  propertiesExtra?: ReactNode;
+  /**
+   * When set, replaces description + properties as the sole overview body
+   * (e.g. Files / Commits / PRs tab content).
+   */
+  repositoriesSection?: ReactNode;
+  /** When false, skip the in-view icon/name header (host chrome shows it). Default false. */
+  showHeader?: boolean;
+};
+
+function toDate(value: number | Date | null | undefined): Date | null {
+  if (value == null) return null;
+  return value instanceof Date ? value : new Date(value);
+}
+
+/**
+ * Narrow-panel project overview (description + properties, or a custom body).
+ * Separate from the desktop/web `ProjectDetailView`.
+ */
+export function ProjectPanelDetailView({
+  project,
+  nestedAreas = [],
+  onSaveName,
+  onSaveKey,
+  onSaveSummary,
+  onSaveDescription,
+  onStatusChange,
+  onPriorityChange,
+  onTypeChange,
+  onAreaChange,
+  onAreaIdChange,
+  onOrganizationChange,
+  onStartDateChange,
+  onDueDateChange,
+  onIconChange,
+  organizationOptions = [],
+  organizationNavigateHref = null,
+  onCreateOrganizationFromQuery,
+  section: controlledSection,
+  onSectionChange,
+  initialSection = "overview",
+  renderSection,
+  propertiesExtra,
+  repositoriesSection,
+  showHeader = false,
+}: ProjectPanelDetailViewProps) {
+  const renderHeader = showHeader;
+  const [uncontrolledSection, setUncontrolledSection] =
+    useState<ProjectSectionId>(initialSection);
+  const section = controlledSection ?? uncontrolledSection;
+  const setSection = (next: ProjectSectionId) => {
+    onSectionChange?.(next);
+    if (controlledSection === undefined) {
+      setUncontrolledSection(next);
+    }
+  };
+
+  const [name, setName] = useState(project.name);
+  const [nameSource, setNameSource] = useState(project.name);
+  const remoteSummary = project.summary ?? "";
+  const [summary, setSummary] = useState(remoteSummary);
+  const [summarySource, setSummarySource] = useState(remoteSummary);
+  const [renameFocusRequest, setRenameFocusRequest] = useState(0);
+  const [prevId, setPrevId] = useState(project.id);
+  if (project.id !== prevId) {
+    setPrevId(project.id);
+    setName(project.name);
+    setNameSource(project.name);
+    setSummary(remoteSummary);
+    setSummarySource(remoteSummary);
+  } else {
+    adoptRemoteField(project.name, name, nameSource, setName, setNameSource);
+    adoptRemoteField(
+      remoteSummary,
+      summary,
+      summarySource,
+      setSummary,
+      setSummarySource,
+    );
+  }
+
+  useTitleRenameShortcut(
+    useCallback(() => {
+      setRenameFocusRequest((count) => count + 1);
+    }, []),
+    { enabled: section === "overview" },
+  );
+
+  const status = migrateLegacyProjectStatus(project.status);
+  const projectType = migrateLegacyProjectType(project.type);
+  const progress = project.taskProgress ?? { total: 0, completed: 0 };
+  const start = toDate(project.startDate);
+  const due = toDate(project.dueDate);
+
+  const {
+    value,
+    mode,
+    editorActivated,
+    editorFocusRequest,
+    error,
+    handleChange,
+    handleBlurSave,
+    setViewMode,
+    toggleViewMode,
+  } = useMarkdownDetailEditor({
+    initialValue: project.description ?? "",
+    // Description shortcuts must not steal ⌘E from documents/tasks/letters.
+    shortcutsEnabled: section === "overview",
+    save: (next) => {
+      if (!onSaveDescription) {
+        return { ok: true };
+      }
+      return Promise.resolve(onSaveDescription(next)).then(() => ({
+        ok: true as const,
+      }));
+    },
+  });
+
+  const statusOptions = useMemo(
+    () =>
+      PROJECT_STATUS_ORDER.map((value) => ({
+        value,
+        label: getProjectStatusLabel(value),
+        searchTerms: value.replaceAll("_", " "),
+        icon: <ProjectStatusIcon status={value} size={14} />,
+      })),
+    [],
+  );
+
+  const priorityOptions = useMemo(
+    () =>
+      TASK_PRIORITY_ORDER.map((value) => ({
+        value: String(value),
+        label: getTaskPriorityLabel(value),
+        icon: <TaskPriorityIcon priority={value} size={14} />,
+      })),
+    [],
+  );
+
+  const typeOptions = useMemo(
+    () =>
+      PROJECT_TYPE_ORDER.map((value) => ({
+        value,
+        label: getProjectTypeLabel(value),
+        searchTerms: `${value} ${getProjectTypeLabel(value)}`,
+        icon:
+          value === "codebase" ? (
+            <TerminalConsoleIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          ),
+      })),
+    [],
+  );
+
+  const areaOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No area",
+        searchTerms: "none unassigned",
+      },
+      ...PROJECT_AREAS.map((area) => ({
+        value: area,
+        label: PROJECT_AREA_LABELS[area],
+        searchTerms: area,
+      })),
+    ],
+    [],
+  );
+
+  const subAreasForParent = useMemo(() => {
+    if (!project.area) return [];
+    return nestedAreas
+      .filter((area) => area.parent === project.area)
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [nestedAreas, project.area]);
+
+  const subAreaOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No sub-area",
+        searchTerms: "none unassigned",
+      },
+      ...subAreasForParent.map((area) => ({
+        value: area.id,
+        label: area.name,
+        searchTerms: area.name,
+      })),
+    ],
+    [subAreasForParent],
+  );
+
+  const selectedSubArea = useMemo(
+    () =>
+      project.areaId
+        ? subAreasForParent.find((area) => area.id === project.areaId) ?? null
+        : null,
+    [project.areaId, subAreasForParent],
+  );
+
+  const orgOptions = useMemo(
+    () => [
+      {
+        value: "__none__",
+        label: "No organization",
+        searchTerms: "none unassigned",
+        icon: <OrganizationIcon size={14} />,
+      },
+      ...organizationOptions,
+    ],
+    [organizationOptions],
+  );
+
+  const organizationLabel =
+    organizationOptions.find(
+      (entry) => entry.value === (project.organizationId ?? ""),
+    )?.label ?? "No organization";
+
+  // Panel layout hosts its own chrome (no product section pills).
+  const propertyTriggerVariant = "inlineChip" as const;
+  const propertyPanelAlign = "start" as const;
+  const [propertiesExpanded, setPropertiesExpanded] = useState(false);
+
+  const statusControl = (
+    <PropertyDropdown
+      value={status}
+      options={statusOptions}
+      onChange={onStatusChange}
+      searchPlaceholder="Change status…"
+      searchShortcutLabel="S"
+      ariaLabel="Status"
+      taskPropertyDropdownId="status"
+      fallbackIcon={<ProjectStatusIcon status={status} size={14} />}
+      fallbackLabel={getProjectStatusLabel(status)}
+      triggerVariant={propertyTriggerVariant}
+      panelAlign={propertyPanelAlign}
+    />
+  );
+
+  const organizationControl =
+    organizationOptions.length > 0 || onOrganizationChange ? (
+      <PropertyDropdownNavigateRow
+        navigateHref={
+          project.organizationId ? organizationNavigateHref : null
+        }
+        navigateLabel={
+          project.organizationId
+            ? `Open organization ${organizationLabel}`
+            : undefined
+        }
+      >
+        <PropertyDropdown
+          value={project.organizationId ?? "__none__"}
+          options={orgOptions}
+          onChange={(next) =>
+            onOrganizationChange?.(next === "__none__" ? null : next)
+          }
+          searchPlaceholder="Change organization…"
+          searchShortcutLabel="O"
+          ariaLabel="Organization"
+          taskPropertyDropdownId="organization"
+          fallbackIcon={<OrganizationIcon size={14} />}
+          fallbackLabel={organizationLabel}
+          mutedFallback={!project.organizationId}
+          triggerVariant={propertyTriggerVariant}
+          panelAlign={propertyPanelAlign}
+          createFromQueryLabel={
+            onCreateOrganizationFromQuery
+              ? (query) =>
+                  getCreateEntityFromQueryLabel("organization", query)
+              : undefined
+          }
+          onCreateFromQuery={onCreateOrganizationFromQuery}
+        />
+      </PropertyDropdownNavigateRow>
+    ) : null;
+
+  const progressControl = (
+    <span className="project-detail__progress">
+      <span>{formatProjectTaskProgressPercent(progress)}</span>
+      <ProjectProgressRing progress={progress} size={16} />
+    </span>
+  );
+
+  const morePropertyControls = (
+    <>
+      {onSaveKey ? (
+        <ProjectKeyEditor value={project.key} onSave={onSaveKey} />
+      ) : (
+        <span className="project-detail__key">
+          <span className="project-detail__key-label">ID</span>
+          <span className="project-detail__key-value">{project.key}</span>
+        </span>
+      )}
+      <PropertyDropdown
+        value={String(project.priority)}
+        options={priorityOptions}
+        onChange={(next) => onPriorityChange?.(Number(next))}
+        searchPlaceholder="Change priority…"
+        searchShortcutLabel="P"
+        ariaLabel="Priority"
+        taskPropertyDropdownId="priority"
+        fallbackIcon={
+          <TaskPriorityIcon priority={project.priority} size={14} />
+        }
+        fallbackLabel={getTaskPriorityLabel(project.priority)}
+        triggerVariant={propertyTriggerVariant}
+        panelAlign={propertyPanelAlign}
+      />
+      <PropertyDropdown
+        value={projectType}
+        options={typeOptions}
+        onChange={(next) => onTypeChange?.(next as ProjectType)}
+        searchPlaceholder="Change type…"
+        searchShortcutLabel="Y"
+        ariaLabel="Type"
+        fallbackIcon={
+          projectType === "codebase" ? (
+            <TerminalConsoleIcon size={14} />
+          ) : (
+            <ProjectIcon size={14} />
+          )
+        }
+        fallbackLabel={getProjectTypeLabel(projectType)}
+        triggerVariant={propertyTriggerVariant}
+        panelAlign={propertyPanelAlign}
+      />
+      <span className="project-detail__meta-dates">
+        <TaskDueDateDropdown
+          dueDate={start}
+          variant="property"
+          noDueDateLabel="No start date"
+          searchPlaceholder="tomorrow, yesterday…"
+          searchShortcutLabel="⇧S"
+          taskPropertyDropdownId="startDate"
+          showIcon
+          triggerVariant={propertyTriggerVariant}
+          onDueDateChange={onStartDateChange}
+        />
+        <span className="project-overview-row__dates-sep">›</span>
+        <TaskDueDateDropdown
+          dueDate={due}
+          status={status}
+          variant="property"
+          showIcon
+          triggerVariant={propertyTriggerVariant}
+          onDueDateChange={onDueDateChange}
+        />
+      </span>
+      {propertiesExtra}
+    </>
+  );
+
+  const areaPropertyControls = (
+    <span className="project-detail__area-fields">
+      <PropertyDropdown
+        value={project.area ?? "__none__"}
+        options={areaOptions}
+        onChange={(next) => {
+          onAreaChange?.(next === "__none__" ? null : (next as ProjectArea));
+          onAreaIdChange?.(null);
+        }}
+        searchPlaceholder="Change area…"
+        searchShortcutLabel="A"
+        ariaLabel="Area"
+        taskPropertyDropdownId="area"
+        fallbackIcon={null}
+        fallbackLabel={
+          project.area ? PROJECT_AREA_LABELS[project.area] : "No area"
+        }
+        mutedFallback={!project.area}
+        triggerVariant={propertyTriggerVariant}
+        panelAlign={propertyPanelAlign}
+      />
+      {subAreasForParent.length > 0 ? (
+        <>
+          <span className="project-detail__area-sep" aria-hidden="true">
+            /
+          </span>
+          <PropertyDropdown
+            value={project.areaId ?? "__none__"}
+            options={subAreaOptions}
+            onChange={(next) =>
+              onAreaIdChange?.(next === "__none__" ? null : next)
+            }
+            searchPlaceholder="Change sub-area…"
+            ariaLabel="Sub-area"
+            taskPropertyDropdownId="areaId"
+            fallbackIcon={null}
+            fallbackLabel={selectedSubArea?.name ?? "No sub-area"}
+            mutedFallback={!selectedSubArea}
+            triggerVariant={propertyTriggerVariant}
+            panelAlign={propertyPanelAlign}
+          />
+        </>
+      ) : null}
+    </span>
+  );
+
+  return (
+    <div
+      className="project-detail project-detail--panel"
+      data-content-detail
+    >
+
+      {section !== "overview" ? (
+        <div className="project-detail__section" data-section={section}>
+          {renderSection?.(section) ?? (
+            <div className="project-detail__placeholder">
+              <p className="overview-empty">
+                {PROJECT_SECTIONS.find((entry) => entry.id === section)?.label}{" "}
+                will sync here next.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="project-detail__overview">
+          <div className="project-detail__overview-top">
+            {renderHeader ? (
+              <header className="project-detail__header">
+                <span className="project-detail__icon">
+                  <ProjectOverviewIcon
+                    icon={project.icon}
+                    type={project.type}
+                    name={project.name}
+                    onIconChange={onIconChange}
+                  />
+                </span>
+                <OverviewNameEditor
+                  value={name}
+                  entityLabel="Project"
+                  resetKey={project.id}
+                  renameFocusRequest={renameFocusRequest}
+                  onSave={async (next) => {
+                    if (!onSaveName) {
+                      setName(next);
+                      setNameSource(next);
+                      return { ok: true };
+                    }
+                    const result = await onSaveName(next);
+                    if (result.ok) {
+                      setName(next);
+                      setNameSource(next);
+                    }
+                    return result;
+                  }}
+                />
+                <input
+                  type="text"
+                  className="project-detail__summary"
+                  value={summary}
+                  placeholder="Add a short summary…"
+                  aria-label="Project summary"
+                  onChange={(event) => setSummary(event.target.value)}
+                  onBlur={() => {
+                    void onSaveSummary?.(summary.trim());
+                  }}
+                />
+              </header>
+            ) : null}
+
+            <div className="project-panel-tab-body" aria-label="Project details">
+              {repositoriesSection ? (
+                <div className="project-panel-tab-body__custom">
+                  {repositoriesSection}
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="project-detail__description-body project-panel-tab-body__description"
+                    data-content-view-mode={mode}
+                  >
+                    <ContentMarkdownViewLayout
+                      mode={mode}
+                      editorActivated={editorActivated}
+                      onToggleMode={toggleViewMode}
+                      editor={
+                        <DocumentMarkdownEditor
+                          value={value}
+                          onChange={handleChange}
+                          onBlur={handleBlurSave}
+                          focusRequest={editorFocusRequest}
+                          ariaLabel="Project description"
+                        />
+                      }
+                      preview={
+                        <ContentMarkdownPreviewColumn includeTopInset={false}>
+                          {value.trim() ? (
+                            <DocumentMarkdownPreview
+                              body={value}
+                              onChange={handleChange}
+                            />
+                          ) : (
+                            <p className="project-detail__description-empty">
+                              Add a project description…
+                            </p>
+                          )}
+                        </ContentMarkdownPreviewColumn>
+                      }
+                      toggle={
+                        <FloatingPillToggleDock>
+                          <SegmentedPillToggle
+                            value={mode}
+                            options={[
+                              { value: "edit", label: "Edit" },
+                              { value: "preview", label: "Preview" },
+                            ]}
+                            onChange={setViewMode}
+                            ariaLabel="Project description view mode"
+                          />
+                        </FloatingPillToggleDock>
+                      }
+                    />
+                  </div>
+                  {error ? (
+                    <p className="project-detail__description-error" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
+                  <div className="project-panel-tab-body__properties task-properties-inline">
+                    <div className="task-properties-inline__primary">
+                      <div className="task-properties-inline__fields">
+                        {statusControl}
+                        {organizationControl}
+                        {progressControl}
+                      </div>
+                      <button
+                        type="button"
+                        className="project-detail__properties-more"
+                        aria-expanded={propertiesExpanded}
+                        aria-label={
+                          propertiesExpanded
+                            ? "Hide more properties"
+                            : "Show more properties"
+                        }
+                        onClick={() =>
+                          setPropertiesExpanded((current) => !current)
+                        }
+                      >
+                        {propertiesExpanded ? (
+                          <ChevronDownIcon size={14} />
+                        ) : (
+                          <ChevronLeftIcon size={14} />
+                        )}
+                      </button>
+                    </div>
+                    {propertiesExpanded ? (
+                      <div className="task-properties-inline__fields task-properties-inline__more">
+                        {morePropertyControls}
+                      </div>
+                    ) : null}
+                    <div className="project-detail__meta-row project-panel-tab-body__areas">
+                      <span className="project-detail__meta-label">Areas</span>
+                      <div className="project-detail__meta-fields">
+                        {areaPropertyControls}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

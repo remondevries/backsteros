@@ -21,7 +21,7 @@ import {
   migrateLegacyTaskStatus,
   type TaskStatus,
 } from "../tasks/task-status.js";
-import type { TaskItemRowTask } from "../components/task-item-row.js";
+import type { TaskItemRowTask } from "../components/tasks/task-item-row.js";
 
 /**
  * Inbox section order: agents (agent-created sign-off) → overdue → triage → …

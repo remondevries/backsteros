@@ -1,4 +1,4 @@
-import type { SearchableDropdownOption } from "../components/searchable-dropdown.js";
+import type { SearchableDropdownOption } from "../components/dropdowns/searchable-dropdown.js";
 import { searchableDropdownShortcut } from "../dropdowns/searchable-dropdown-shortcuts.js";
 import { formatLocalYmd, formatTaskDueMetaLabel } from "./task-due-date.js";
 

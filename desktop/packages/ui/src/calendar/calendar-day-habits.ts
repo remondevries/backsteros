@@ -1,5 +1,5 @@
 import { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
-import type { CalendarHabitIconItem } from "../components/calendar-habits-icon-row.js";
+import type { CalendarHabitIconItem } from "../components/calendar/calendar-habits-icon-row.js";
 
 export type CalendarHabitDefinition = {
   id: string;

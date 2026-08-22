@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import type { MoneybirdSalesInvoiceSummary } from "@backsteros/contracts";
 
-import { DROPDOWN_NONE_VALUE } from "../../dist/components/dropdown-options.js";
+import { DROPDOWN_NONE_VALUE } from "../../dist/components/dropdowns/dropdown-options.js";
 import {
   buildMoneybirdInvoicesFilter,
   filterFinanceInvoices,

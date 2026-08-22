@@ -14,8 +14,8 @@ import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
-} from "../list-keyboard-navigation-provider.js";
-import { ProjectOcticon } from "../project-octicon.js";
+} from "../list-nav/list-keyboard-navigation-provider.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { CodebaseRequestJson } from "./project-fs-types.js";
 

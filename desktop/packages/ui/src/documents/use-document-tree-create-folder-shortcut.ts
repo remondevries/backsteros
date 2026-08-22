@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { useCommandPalette } from "../components/command-palette-context.js";
+import { useCommandPalette } from "../components/command-palette/command-palette-context.js";
 import { requestDocumentTreeCreateFolder } from "./document-tree-create-folder-shortcut.js";
 import { shouldHandleDocumentTreeCreateFolderShortcut } from "./should-handle-document-tree-create-folder-shortcut.js";
 import { useLatestRef } from "../shared/use-latest-ref.js";

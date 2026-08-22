@@ -7,8 +7,8 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../../tasks/task-status.js";
-import { StatusGroupSection } from "../status-group-section.js";
-import { TaskStatusIcon } from "../task-status-icon.js";
+import { StatusGroupSection } from "../list-nav/status-group-section.js";
+import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { SkeletonBlock } from "./skeleton-block.js";
 
 export type TasksListSkeletonProps = {

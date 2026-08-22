@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { ComposeFolderIcon } from "../compose-folder-icon.js";
-import { FileTypeIcon } from "../file-type-icon.js";
+import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
+import { FileTypeIcon } from "../documents/file-type-icon.js";
 
 export function FsTreeInlineCreate({
   kind,

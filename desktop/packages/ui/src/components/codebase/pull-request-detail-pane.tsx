@@ -11,15 +11,15 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
-import { useCommandPalette } from "../command-palette-context.js";
-import { DocumentMarkdownPreview } from "../document-markdown-preview.js";
+import { useCommandPalette } from "../command-palette/command-palette-context.js";
+import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
-} from "../list-keyboard-navigation-provider.js";
-import { PillNav } from "../pill-nav.js";
-import { ProjectOcticon } from "../project-octicon.js";
+} from "../list-nav/list-keyboard-navigation-provider.js";
+import { PillNav } from "../shared/pill-nav.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import { GithubCodeMenu } from "./github-code-menu.js";
 import { GithubCommitIcon } from "./github-commit-icon.js";

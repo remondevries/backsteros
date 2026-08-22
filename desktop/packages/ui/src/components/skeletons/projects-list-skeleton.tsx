@@ -8,9 +8,9 @@ import {
   type ProjectStatus,
 } from "../../projects/project-status.js";
 import { mapProjectStatusToTaskStatusIcon } from "../../projects/project-status-icon-model.js";
-import { ProjectStatusIcon } from "../project-status-icon.js";
-import { ProjectsListHeader } from "../project-overview-row.js";
-import { StatusGroupSection } from "../status-group-section.js";
+import { ProjectStatusIcon } from "../projects/project-status-icon.js";
+import { ProjectsListHeader } from "../projects/project-overview-row.js";
+import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import { SkeletonBlock } from "./skeleton-block.js";
 
 export type ProjectsListSkeletonProps = {

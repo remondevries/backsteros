@@ -6,7 +6,7 @@ import {
   isAppEmailTaskLinkUrl,
   normalizeTaskLinkUrl,
   taskLinkDisplayLabel,
-} from "../components/task-link-attachments.tsx";
+} from "../components/tasks/task-link-attachments.tsx";
 
 test("normalizeTaskLinkUrl accepts in-app email and knowledge paths", () => {
   assert.equal(

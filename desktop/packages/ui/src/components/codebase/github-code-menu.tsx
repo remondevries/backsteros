@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ProjectOcticon } from "../project-octicon.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 
 export function GithubCodeMenu({
   command,

@@ -87,28 +87,28 @@ export {
 export {
   TaskStatusIcon,
   type TaskStatusIconProps,
-} from "./components/task-status-icon.js";
+} from "./components/tasks/task-status-icon.js";
 
 export {
   TaskStatusWorkingPulse,
   type TaskStatusWorkingPulseProps,
-} from "./components/task-status-working-pulse.js";
+} from "./components/tasks/task-status-working-pulse.js";
 
 export {
   ShimmerText,
   type ShimmerTextProps,
-} from "./components/shimmer-text.js";
+} from "./components/shared/shimmer-text.js";
 
 export {
   TaskStatusBadge,
   type TaskStatusBadgeProps,
-} from "./components/task-status-badge.js";
+} from "./components/tasks/task-status-badge.js";
 
 export {
   TaskListItem,
   type TaskListItemProps,
   type TaskListItemTask,
-} from "./components/task-list-item.js";
+} from "./components/tasks/task-list-item.js";
 
 export {
   routeFamilies,
@@ -128,7 +128,7 @@ export {
   getNavigationItemIcon,
   NavigationItemIcon,
   NAVIGATION_ITEM_ICONS,
-} from "./components/navigation-item-icon.js";
+} from "./components/navigation/navigation-item-icon.js";
 
 export {
   InboxNavIcon,
@@ -151,33 +151,33 @@ export {
   SidebarLogoutIcon,
   SyncStatusIdleIcon,
   SearchNavIcon,
-} from "./components/sidebar-nav-icons.js";
+} from "./components/shell/sidebar-nav-icons.js";
 
-export { DevelopmentAdeLogoIcon } from "./components/development-ade-logo-icon.js";
-export { ProfileLogoIcon } from "./components/profile-logo-icon.js";
+export { DevelopmentAdeLogoIcon } from "./components/icons/development-ade-logo-icon.js";
+export { ProfileLogoIcon } from "./components/icons/profile-logo-icon.js";
 
 export {
   ProductSidebar,
   type ProductSidebarProps,
   type ProductSidebarLinkComponent,
-} from "./components/product-sidebar.js";
+} from "./components/shell/product-sidebar.js";
 
-export { SidePanelPlusIcon } from "./components/side-panel-plus-icon.js";
+export { SidePanelPlusIcon } from "./components/shell/side-panel-plus-icon.js";
 
 export {
   ProductContentTabs,
   type ProductContentTabsProps,
-} from "./components/product-content-tabs.js";
+} from "./components/shell/product-content-tabs.js";
 
 export {
   ProductContentShell,
   type ProductContentShellProps,
-} from "./components/product-content-shell.js";
+} from "./components/shell/product-content-shell.js";
 
 export {
   ProductAppShell,
   type ProductAppShellProps,
-} from "./components/product-app-shell.js";
+} from "./components/shell/product-app-shell.js";
 
 export {
   createProductTab,
@@ -233,17 +233,17 @@ export { sidePanelItemClass } from "./content/side-panel-styles.js";
 export {
   ResizableContextPanel,
   type ResizableContextPanelProps,
-} from "./components/resizable-context-panel.js";
+} from "./components/shell/resizable-context-panel.js";
 
 export {
   ContentSidePanelHeader,
   type ContentSidePanelHeaderProps,
-} from "./components/content-side-panel-header.js";
+} from "./components/content/content-side-panel-header.js";
 
 export {
   ContentSidePanelList,
   ContentSidePanelEmpty,
-} from "./components/content-side-panel-list.js";
+} from "./components/content/content-side-panel-list.js";
 
 export {
   buildInboxEmailListItem,
@@ -341,60 +341,60 @@ export { resolveDuplicatedTaskHref } from "./tasks/duplicated-task-href.js";
 export {
   InboxItemTypeIcon,
   type InboxItemTypeIconProps,
-} from "./components/inbox-item-type-icon.js";
+} from "./components/inbox/inbox-item-type-icon.js";
 
 export {
   InboxListItemRow,
   type InboxListItemRowProps,
   type InboxListItemLinkComponent,
-} from "./components/inbox-list-item-row.js";
+} from "./components/inbox/inbox-list-item-row.js";
 
 export {
   InboxSidePanelView,
   type InboxSidePanelViewProps,
-} from "./components/inbox-side-panel-view.js";
+} from "./components/inbox/inbox-side-panel-view.js";
 export {
   EmailSidePanelView,
   type EmailSidePanelViewProps,
-} from "./components/email-side-panel-view.js";
+} from "./components/email/email-side-panel-view.js";
 export {
   EmailDraftActions,
   type EmailDraftActionsProps,
   type EmailDraftBodyMode,
   useEmailDraftBodyModeShortcuts,
-} from "./components/email-draft-actions.js";
+} from "./components/email/email-draft-actions.js";
 export {
   EmailDraftSignOffShell,
   type EmailDraftSignOffShellProps,
-} from "./components/email-draft-sign-off-shell.js";
+} from "./components/email/email-draft-sign-off-shell.js";
 export {
   EmailComposeChrome,
   type EmailComposeChromeProps,
-} from "./components/email-compose-chrome.js";
+} from "./components/email/email-compose-chrome.js";
 export {
   EmailComposeBodyStage,
   type EmailComposeBodyStageProps,
-} from "./components/email-compose-body-stage.js";
+} from "./components/email/email-compose-body-stage.js";
 
 export {
   EmailThreadCommentBubble,
   type EmailThreadCommentBubbleProps,
-} from "./components/email-thread-comment-bubble.js";
+} from "./components/email/email-thread-comment-bubble.js";
 export {
   TaskMentionBlockChip,
   type TaskMentionBlockChipProps,
   type TaskMentionBlockChipTask,
-} from "./components/task-mention-block-chip.js";
+} from "./components/tasks/task-mention-block-chip.js";
 export {
   EmailMentionBlockChip,
   type EmailMentionBlockChipProps,
   type EmailMentionBlockChipEmail,
-} from "./components/email-mention-block-chip.js";
+} from "./components/email/email-mention-block-chip.js";
 
 export {
   EmailThreadMinimap,
   type EmailThreadMinimapProps,
-} from "./components/email-thread-minimap.js";
+} from "./components/email/email-thread-minimap.js";
 
 export {
   compactEmailMinimapPreview,
@@ -410,22 +410,22 @@ export {
 export {
   EmailThreadCommentComposer,
   type EmailThreadCommentComposerProps,
-} from "./components/email-thread-comment-composer.js";
+} from "./components/email/email-thread-comment-composer.js";
 
 export {
   EmailAddressContactField,
   type EmailAddressContactFieldProps,
   type EmailThreadFromContactPicker,
-} from "./components/email-address-contact-field.js";
+} from "./components/email/email-address-contact-field.js";
 
 export {
   EmailThreadMessageCard,
   type EmailThreadMessageCardProps,
-} from "./components/email-thread-message-card.js";
+} from "./components/email/email-thread-message-card.js";
 export {
   EmailMessageHtmlBody,
   type EmailMessageHtmlBodyProps,
-} from "./components/email-message-html-body.js";
+} from "./components/email/email-message-html-body.js";
 export {
   resolveEmailInlineAttachments,
   type EmailMessageInlineAttachment,
@@ -441,30 +441,30 @@ export {
   EmailThreadView,
   type EmailDraftActionsConfig,
   type EmailThreadViewProps,
-} from "./components/email-thread-view.js";
+} from "./components/email/email-thread-view.js";
 export {
   EmailPropertiesDisplay,
   type EmailPropertiesDisplayProps,
   type EmailPropertiesDisplayThread,
-} from "./components/email-properties-display.js";
+} from "./components/email/email-properties-display.js";
 export {
   AddInboxTaskInline,
   type AddInboxTaskInlineProps,
-} from "./components/add-inbox-task-inline.js";
+} from "./components/inbox/add-inbox-task-inline.js";
 export {
   AddProjectInline,
   type AddProjectInlineProps,
-} from "./components/add-project-inline.js";
+} from "./components/projects/add-project-inline.js";
 export {
   ComposeQuickCapture,
   type ComposeQuickCaptureProps,
-} from "./components/compose-quick-capture.js";
+} from "./components/compose/compose-quick-capture.js";
 export { useComposeShortcut } from "./compose/use-compose-shortcut.js";
 
 export {
   InboxDetailLayout,
   type InboxDetailLayoutProps,
-} from "./components/inbox-detail-layout.js";
+} from "./components/inbox/inbox-detail-layout.js";
 
 export {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
@@ -504,25 +504,25 @@ export {
 export {
   CalendarView,
   type CalendarViewProps,
-} from "./components/calendar-view.js";
+} from "./components/calendar/calendar-view.js";
 
 export {
   CalendarTaskEventPopover,
   type CalendarTaskEventPopoverProps,
   type CalendarTaskPopoverTask,
-} from "./components/calendar-task-event-popover.js";
+} from "./components/calendar/calendar-task-event-popover.js";
 
 export {
   CalendarMeetingEventPopover,
   type CalendarMeetingEventPopoverProps,
   type CalendarMeetingPopoverMeeting,
-} from "./components/calendar-meeting-event-popover.js";
+} from "./components/calendar/calendar-meeting-event-popover.js";
 
 export {
   CalendarHabitsIconRow,
   type CalendarHabitsIconRowProps,
   type CalendarHabitIconItem,
-} from "./components/calendar-habits-icon-row.js";
+} from "./components/calendar/calendar-habits-icon-row.js";
 
 export {
   buildCalendarDayHabitsByDate,
@@ -533,17 +533,17 @@ export {
 export {
   CalendarTasksSidePanelView,
   type CalendarTasksSidePanelViewProps,
-} from "./components/calendar-tasks-side-panel-view.js";
+} from "./components/calendar/calendar-tasks-side-panel-view.js";
 
 export {
   CalendarDayTimeline,
   type CalendarDayTimelineProps,
-} from "./components/calendar-day-timeline.js";
+} from "./components/calendar/calendar-day-timeline.js";
 
 export {
   JournalDayLayout,
   type JournalDayLayoutProps,
-} from "./components/journal-day-layout.js";
+} from "./components/journal/journal-day-layout.js";
 
 export {
   formatLocalYmd,
@@ -583,32 +583,32 @@ export {
 export {
   DueDateCalendar,
   type DueDateCalendarProps,
-} from "./components/due-date-calendar.js";
+} from "./components/tasks/due-date-calendar.js";
 
 export {
   DueDateCalendarPopover,
   type DueDateCalendarPopoverProps,
-} from "./components/due-date-calendar-popover.js";
+} from "./components/tasks/due-date-calendar-popover.js";
 
 export {
   TaskDueDateDropdown,
   type TaskDueDateDropdownProps,
-} from "./components/task-due-date-dropdown.js";
+} from "./components/tasks/task-due-date-dropdown.js";
 
 export {
   TaskPriorityIcon,
   type TaskPriorityIconProps,
-} from "./components/task-priority-icon.js";
+} from "./components/tasks/task-priority-icon.js";
 
 export {
   TaskDueDateIcon,
   type TaskDueDateIconProps,
-} from "./components/task-due-date-icon.js";
+} from "./components/tasks/task-due-date-icon.js";
 
 export {
   TaskListPriorityLabel,
   TaskListDueDateLabel,
-} from "./components/task-list-property-label.js";
+} from "./components/tasks/task-list-property-label.js";
 
 export {
   formatJournalDateSlug,
@@ -683,61 +683,61 @@ export {
   type JournalSidePanelViewProps,
   type JournalSidePanelLinkComponent,
   type JournalListItem,
-} from "./components/journal-side-panel-view.js";
+} from "./components/journal/journal-side-panel-view.js";
 
 export {
   HabitSidePanelView,
   type HabitListItem,
   type HabitSidePanelLinkComponent,
   type HabitSidePanelViewProps,
-} from "./components/habit-side-panel-view.js";
+} from "./components/habits/habit-side-panel-view.js";
 
 export {
   HabitTrackerView,
   type HabitDayRecordStatus,
   type HabitTrackerProjectOption,
   type HabitTrackerViewProps,
-} from "./components/habit-tracker-view.js";
+} from "./components/habits/habit-tracker-view.js";
 
 export {
   JournalDetailLayout,
   type JournalDetailLayoutProps,
-} from "./components/journal-detail-layout.js";
+} from "./components/journal/journal-detail-layout.js";
 
-export { LetterIcon } from "./components/letter-icon.js";
+export { LetterIcon } from "./components/letters/letter-icon.js";
 
-export { DocumentIcon } from "./components/document-icon.js";
-export { ContactPersonIcon } from "./components/contact-person-icon.js";
-export { OrganizationIcon } from "./components/organization-icon.js";
-export { DefaultProjectIcon } from "./components/default-project-icon.js";
-export { TerminalConsoleIcon } from "./components/terminal-console-icon.js";
-export { BrowserWindowIcon } from "./components/browser-window-icon.js";
+export { DocumentIcon } from "./components/documents/document-icon.js";
+export { ContactPersonIcon } from "./components/contacts/contact-person-icon.js";
+export { OrganizationIcon } from "./components/organizations/organization-icon.js";
+export { DefaultProjectIcon } from "./components/projects/default-project-icon.js";
+export { TerminalConsoleIcon } from "./components/icons/terminal-console-icon.js";
+export { BrowserWindowIcon } from "./components/icons/browser-window-icon.js";
 export { ProjectsSidePanelIcon } from "./components/codebase/projects-side-panel-icon.js";
 export {
   ProjectOcticon,
   getDisplayProjectIcon,
   getEntityIconColor as getProjectOcticonDisplayColor,
   type ProjectOcticonProps,
-} from "./components/project-octicon.js";
+} from "./components/projects/project-octicon.js";
 export {
   EntityAvatarIcon,
   type EntityAvatarIconProps,
-} from "./components/entity-avatar-icon.js";
+} from "./components/entity/entity-avatar-icon.js";
 export {
   EntityListAvatar,
   type EntityListAvatarProps,
-} from "./components/entity-list-avatar.js";
+} from "./components/entity/entity-list-avatar.js";
 export {
   AssigneeListMark,
   assigneeListInitial,
   type AssigneeListMarkProps,
-} from "./components/assignee-list-mark.js";
+} from "./components/tasks/assignee-list-mark.js";
 export {
   Tooltip,
   type TooltipProps,
   type TooltipSide,
-} from "./components/tooltip.js";
-export { ProjectAreaBadge } from "./components/project-area-badge.js";
+} from "./components/shared/tooltip.js";
+export { ProjectAreaBadge } from "./components/projects/project-area-badge.js";
 export {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
@@ -753,7 +753,7 @@ export {
   type AssigneeDropdownContact,
   type OrganizationDropdownItem,
   type ProjectDropdownItem,
-} from "./components/dropdown-options.js";
+} from "./components/dropdowns/dropdown-options.js";
 
 export { groupItemsByAlphaLetter } from "./shared/alpha-group.js";
 
@@ -791,28 +791,28 @@ export {
 export {
   CalendarMeetingDetailOverlay,
   type CalendarMeetingDetailOverlayProps,
-} from "./components/calendar-meeting-detail-overlay.js";
+} from "./components/calendar/calendar-meeting-detail-overlay.js";
 
 export {
   MeetingDetailView,
   type MeetingDetailViewProps,
-} from "./components/meeting-detail-view.js";
+} from "./components/meetings/meeting-detail-view.js";
 
 export {
   MeetingPropertiesDisplay,
   type MeetingPropertiesDisplayProps,
-} from "./components/meeting-properties-display.js";
+} from "./components/meetings/meeting-properties-display.js";
 
 export {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
   type MeetingPropertiesMeeting,
-} from "./components/meeting-properties-inline-chips.js";
+} from "./components/meetings/meeting-properties-inline-chips.js";
 
 export {
   MeetingScheduleDropdown,
   type MeetingScheduleDropdownProps,
-} from "./components/meeting-schedule-dropdown.js";
+} from "./components/meetings/meeting-schedule-dropdown.js";
 
 export {
   EMAIL_DISPLAY_KEY,
@@ -868,7 +868,7 @@ export { suggestOrganizationForPayee } from "./finance/suggest-organization-for-
 export {
   FinanceCsvDropzone,
   type FinanceCsvDropzoneProps,
-} from "./components/finance-csv-dropzone.js";
+} from "./components/finance/finance-csv-dropzone.js";
 
 export {
   FinanceTransactionsView,
@@ -879,23 +879,23 @@ export {
   type FinanceTransactionPatch,
   type FinanceTransactionsChromeState,
   type FinanceTransactionsViewProps,
-} from "./components/finance-transactions-view.js";
+} from "./components/finance/finance-transactions-view.js";
 
 export {
   FinanceBankAccountModal,
   type FinanceBankAccountModalProps,
   type FinanceBankAccountModalValues,
-} from "./components/finance-bank-account-modal.js";
+} from "./components/finance/finance-bank-account-modal.js";
 
 export {
   FinanceImportModal,
   type FinanceImportModalProps,
-} from "./components/finance-import-modal.js";
+} from "./components/finance/finance-import-modal.js";
 
 export {
   FinanceCategoriesSettingsModal,
   type FinanceCategoriesSettingsModalProps,
-} from "./components/finance-categories-settings-modal.js";
+} from "./components/finance/finance-categories-settings-modal.js";
 
 export {
   FinanceSidePanelNavView,
@@ -905,7 +905,7 @@ export {
   resolveFinanceSidePanelHref,
   type FinanceSidePanelLinkComponent,
   type FinanceSidePanelNavViewProps,
-} from "./components/finance-side-panel-nav-view.js";
+} from "./components/finance/finance-side-panel-nav-view.js";
 
 export {
   FINANCE_NAV_IDS,
@@ -940,7 +940,7 @@ export {
   type FinanceAccountMetrics,
   type FinanceAccountUpdateInput,
   type FinanceAccountsViewProps,
-} from "./components/finance-accounts-view.js";
+} from "./components/finance/finance-accounts-view.js";
 
 export {
   CategoryActionsMenu,
@@ -956,19 +956,19 @@ export {
   type FinanceCategoryTransactionPatch,
   type FinanceCategoryUpdateInput,
   type FinanceCategoryYearMetric,
-} from "./components/finance-categories-view.js";
+} from "./components/finance/finance-categories-view.js";
 
 export {
   FINANCE_CHROME_DROPDOWN_TRIGGER_CLASSNAME,
   FINANCE_FILTER_ALL_VALUE,
   FinanceTransactionsFilterBar,
   type FinanceTransactionsFilterBarProps,
-} from "./components/finance-transactions-filter-bar.js";
+} from "./components/finance/finance-transactions-filter-bar.js";
 
 export {
   FinanceAmountRangeFilter,
   type FinanceAmountRangeFilterProps,
-} from "./components/finance-amount-range-filter.js";
+} from "./components/finance/finance-amount-range-filter.js";
 
 export {
   buildAmountHistogramBins,
@@ -984,13 +984,13 @@ export {
 export {
   CategorySpendChart,
   type CategorySpendChartProps,
-} from "./components/category-spend-chart.js";
+} from "./components/finance/category-spend-chart.js";
 
 export {
   FinanceOverviewPie,
   type FinanceOverviewPieProps,
   type FinanceOverviewPieSlice,
-} from "./components/finance-overview-pie.js";
+} from "./components/finance/finance-overview-pie.js";
 
 export {
   GoalActionsMenu,
@@ -1003,29 +1003,29 @@ export {
   type FinanceGoalsViewProps,
   type FinanceGoalCreateInput,
   type FinanceGoalUpdateInput,
-} from "./components/finance-goals-view.js";
+} from "./components/finance/finance-goals-view.js";
 
 export {
   FinanceCashflowView,
   type FinanceCashflowViewProps,
-} from "./components/finance-cashflow-view.js";
+} from "./components/finance/finance-cashflow-view.js";
 
 export {
   FinanceSpendSidePanel,
   type FinanceSpendSidePanelProps,
-} from "./components/finance-spend-side-panel.js";
+} from "./components/finance/finance-spend-side-panel.js";
 
 export {
   NetIncomeYearChart,
   type NetIncomeYearChartProps,
-} from "./components/net-income-year-chart.js";
+} from "./components/finance/net-income-year-chart.js";
 
 export {
   CashflowIncomeYearChart,
   CashflowSpendYearChart,
   type CashflowIncomeYearChartProps,
   type CashflowSpendYearChartProps,
-} from "./components/cashflow-spend-income-charts.js";
+} from "./components/finance/cashflow-spend-income-charts.js";
 
 export {
   RecurringActionsMenu,
@@ -1037,19 +1037,19 @@ export {
   type FinanceRecurringUpdateInput,
   type FinanceRecurringMetrics,
   type RecurringDateGroup,
-} from "./components/finance-recurrings-view.js";
+} from "./components/finance/finance-recurrings-view.js";
 
 export { advanceMonthlyNextDate, upcomingMonthlyPaymentDate } from "./finance/recurring-next-date.js";
 
 export {
   RecurringYearChart,
   type RecurringYearChartProps,
-} from "./components/recurring-year-chart.js";
+} from "./components/finance/recurring-year-chart.js";
 
 export {
   GoalProgressChart,
   type GoalProgressChartProps,
-} from "./components/goal-progress-chart.js";
+} from "./components/finance/goal-progress-chart.js";
 
 export {
   buildGoalChartSeries,
@@ -1070,22 +1070,22 @@ export {
 export {
   FinanceSectionPlaceholder,
   type FinanceSectionPlaceholderProps,
-} from "./components/finance-section-placeholder.js";
+} from "./components/finance/finance-section-placeholder.js";
 
 export {
   FinanceInvoicesView,
   type FinanceInvoicesViewProps,
-} from "./components/finance-invoices-view.js";
+} from "./components/finance/finance-invoices-view.js";
 export {
   FinanceInvoiceDetailDocument,
   type FinanceInvoiceDetailDocumentProps,
-} from "./components/finance-invoice-detail-document.js";
+} from "./components/finance/finance-invoice-detail-document.js";
 
 export {
   FINANCE_INVOICE_STATUS_OPTIONS,
   FinanceInvoicesFilterBar,
   type FinanceInvoicesFilterBarProps,
-} from "./components/finance-invoices-filter-bar.js";
+} from "./components/finance/finance-invoices-filter-bar.js";
 
 export {
   buildMoneybirdContactInvoicesFilter,
@@ -1107,7 +1107,7 @@ export {
   shiftMonthKey,
   type FinanceMonthNavigatorProps,
   type FinanceYearNavigatorProps,
-} from "./components/finance-month-navigator.js";
+} from "./components/finance/finance-month-navigator.js";
 
 export {
   accountChartHasYearActivity,
@@ -1126,28 +1126,28 @@ export {
   type FinanceChartLoadingProps,
   type FinanceChartEmptyProps,
   type FinanceChartFadeInProps,
-} from "./components/finance-chart-status.js";
+} from "./components/finance/finance-chart-status.js";
 
 export {
   FinanceChartTooltip,
   type FinanceChartTooltipProps,
-} from "./components/finance-chart-tooltip.js";
+} from "./components/finance/finance-chart-tooltip.js";
 
 export {
   FinanceDashboardView,
   type FinanceDashboardTopCategory,
   type FinanceDashboardViewProps,
-} from "./components/finance-dashboard-view.js";
+} from "./components/finance/finance-dashboard-view.js";
 
 export {
   FinanceDetailSectionTitle,
   type FinanceDetailSectionTitleProps,
-} from "./components/finance-detail-section-title.js";
+} from "./components/finance/finance-detail-section-title.js";
 
 export {
   AssetsDebtChart,
   type AssetsDebtChartProps,
-} from "./components/assets-debt-chart.js";
+} from "./components/finance/assets-debt-chart.js";
 
 export {
   DEFAULT_SETTINGS_TAB,
@@ -1169,50 +1169,50 @@ export {
   type StatusGroupSectionProps,
   type StatusGroupSectionListDrag,
   type StatusGroupSectionSelection,
-} from "./components/status-group-section.js";
+} from "./components/list-nav/status-group-section.js";
 
 export {
   OrganizationsSidePanelView,
   type OrganizationsSidePanelViewProps,
-} from "./components/organizations-side-panel-view.js";
+} from "./components/organizations/organizations-side-panel-view.js";
 
 export {
   ContactsSidePanelView,
   type ContactsSidePanelViewProps,
-} from "./components/contacts-side-panel-view.js";
+} from "./components/contacts/contacts-side-panel-view.js";
 
 export {
   LettersSidePanelView,
   type LettersSidePanelViewProps,
-} from "./components/letters-side-panel-view.js";
+} from "./components/letters/letters-side-panel-view.js";
 
 export {
   KnowledgeSidePanelView,
   type KnowledgeSidePanelViewProps,
   type KnowledgeSidePanelLinkComponent,
   type KnowledgeSidePanelMutationResult,
-} from "./components/knowledge-side-panel-view.js";
+} from "./components/documents/knowledge-side-panel-view.js";
 
 export {
   EntityDetailLayout,
   type EntityDetailLayoutProps,
-} from "./components/entity-detail-layout.js";
+} from "./components/entity/entity-detail-layout.js";
 
 export {
   SettingsSidePanelNavView,
   type SettingsSidePanelLinkComponent,
   type SettingsSidePanelNavViewProps,
-} from "./components/settings-side-panel-nav-view.js";
+} from "./components/settings/settings-side-panel-nav-view.js";
 
 export {
   SettingsDetailLayout,
   type SettingsDetailLayoutProps,
-} from "./components/settings-detail-layout.js";
+} from "./components/settings/settings-detail-layout.js";
 
 export {
   SettingsContentHeader,
   type SettingsContentHeaderProps,
-} from "./components/settings-content-header.js";
+} from "./components/settings/settings-content-header.js";
 
 export {
   AccountSettingsSectionView,
@@ -1226,14 +1226,14 @@ export {
   type GithubSettingsOrganization,
   type GithubSettingsSectionViewProps,
   type IntegrationConnectionSettingsViewProps,
-} from "./components/settings-sections.js";
+} from "./components/settings/settings-sections.js";
 
 export {
   ApiKeysSettingsSectionView,
   type ApiKeysSettingsSectionViewProps,
   type SettingsApiKeyItem,
   type SettingsApiKeyContactOption,
-} from "./components/api-keys-settings-section-view.js";
+} from "./components/settings/api-keys-settings-section-view.js";
 
 export {
   APP_TIMEZONE_OPTIONS,
@@ -1245,7 +1245,7 @@ export {
 export {
   ProjectsListView,
   type ProjectsListViewProps,
-} from "./components/projects-list-view.js";
+} from "./components/projects/projects-list-view.js";
 
 export {
   PROJECT_STATUSES,
@@ -1287,12 +1287,12 @@ export {
 export {
   ProjectStatusIcon,
   type ProjectStatusIconProps,
-} from "./components/project-status-icon.js";
+} from "./components/projects/project-status-icon.js";
 
 export {
   ProjectProgressRing,
   type ProjectProgressRingProps,
-} from "./components/project-progress-ring.js";
+} from "./components/projects/project-progress-ring.js";
 
 export {
   groupTasksByStatus,
@@ -1316,12 +1316,12 @@ export { getTaskListItemChecked } from "./documents/markdown-task-list-checked.j
 export {
   MarkdownTaskCheckbox,
   type MarkdownTaskCheckboxProps,
-} from "./components/markdown-task-checkbox.js";
+} from "./components/documents/markdown-task-checkbox.js";
 
 export {
   PolishedCheckbox,
   type PolishedCheckboxProps,
-} from "./components/polished-checkbox.js";
+} from "./components/shared/polished-checkbox.js";
 
 export {
   MarkdownTaskListInteractProvider,
@@ -1371,7 +1371,7 @@ export {
   type ProjectTypeGroupSectionProps,
   type ProjectTypeGroupSectionListDrag,
   type ProjectTypeGroupSectionSelection,
-} from "./components/project-type-group-section.js";
+} from "./components/projects/project-type-group-section.js";
 
 export {
   PROJECT_AREA_LIST_DRAG_TYPE,
@@ -1603,7 +1603,7 @@ export {
   type ProjectAreaFilter,
 } from "./projects/project-areas.js";
 
-export { PillNav, type PillNavProps, type PillNavItem } from "./components/pill-nav.js";
+export { PillNav, type PillNavProps, type PillNavItem } from "./components/shared/pill-nav.js";
 
 export {
   ListBoardViewShell,
@@ -1611,32 +1611,32 @@ export {
   type ListBoardView,
   type ListBoardViewShellProps,
   type SegmentedPillToggleOption,
-} from "./components/list-board-view-shell.js";
+} from "./components/list-nav/list-board-view-shell.js";
 
 export {
   TaskItemRow,
   type TaskItemRowProps,
   type TaskItemRowTask,
-} from "./components/task-item-row.js";
+} from "./components/tasks/task-item-row.js";
 
 export {
   TaskBulkEditBar,
   type TaskBulkEditBarProps,
   type TaskBulkPatch,
-} from "./components/task-bulk-edit-bar.js";
+} from "./components/tasks/task-bulk-edit-bar.js";
 
 /** @deprecated Prefer `TaskItemRow` / `TaskItemRowTask`. */
 export {
   TaskOverviewRow,
   type TaskOverviewRowProps,
   type TaskOverviewRowTask,
-} from "./components/task-overview-row.js";
+} from "./components/tasks/task-overview-row.js";
 
 /** @deprecated Prefer `TaskItemRow`. */
 export {
   TaskWorkbenchRow,
   type TaskWorkbenchRowProps,
-} from "./components/task-workbench-row.js";
+} from "./components/tasks/task-workbench-row.js";
 
 export {
   HabitCheckChips,
@@ -1645,62 +1645,62 @@ export {
   type HabitCheckChipItem,
   type HabitCheckChipsProps,
   type TasksTodayHabitsChipsProps,
-} from "./components/tasks-today-habits-chips.js";
+} from "./components/tasks/tasks-today-habits-chips.js";
 
 export {
   TasksOverviewView,
   type TasksOverviewViewProps,
-} from "./components/tasks-overview-view.js";
+} from "./components/tasks/tasks-overview-view.js";
 
 export {
   ProjectTasksView,
   type ProjectTasksViewProps,
-} from "./components/project-tasks-view.js";
+} from "./components/projects/project-tasks-view.js";
 
 export {
   ProjectTasksWorkbenchView,
   type ProjectTasksWorkbenchViewProps,
-} from "./components/project-tasks-workbench-view.js";
+} from "./components/projects/project-tasks-workbench-view.js";
 
 export {
   ProjectOverviewRow,
   ProjectsListHeader,
   type ProjectOverviewRowProps,
   type ProjectOverviewRowProject,
-} from "./components/project-overview-row.js";
+} from "./components/projects/project-overview-row.js";
 
 export {
   ProjectBoardCard,
   type ProjectBoardCardProps,
   type ProjectBoardCardProject,
-} from "./components/project-board-card.js";
+} from "./components/projects/project-board-card.js";
 
 export {
   ProjectsOverviewView,
   type ProjectsOverviewViewProps,
-} from "./components/projects-overview-view.js";
+} from "./components/projects/projects-overview-view.js";
 
 export {
   AreasOverviewView,
   type AreasOverviewViewProps,
-} from "./components/areas-overview-view.js";
+} from "./components/projects/areas-overview-view.js";
 
 export {
   ProjectDetailView,
   type ProjectDetailViewProps,
   type ProjectDetailViewProject,
   type ProjectDetailNestedArea,
-} from "./components/project-detail-view.js";
+} from "./components/projects/project-detail-view.js";
 
 export {
   ProjectPanelDetailView,
   type ProjectPanelDetailViewProps,
-} from "./components/project-panel-detail-view.js";
+} from "./components/projects/project-panel-detail-view.js";
 
 export {
   ProjectKeyEditor,
   type ProjectKeyEditorProps,
-} from "./components/project-key-editor.js";
+} from "./components/projects/project-key-editor.js";
 
 export {
   allocateUniqueProjectKey,
@@ -1715,38 +1715,38 @@ export {
 export {
   ProjectLettersSectionView,
   type ProjectLettersSectionViewProps,
-} from "./components/project-letters-section-view.js";
+} from "./components/projects/project-letters-section-view.js";
 
 export {
   ProjectLettersView,
   type ProjectLettersViewProps,
-} from "./components/project-letters-view.js";
+} from "./components/projects/project-letters-view.js";
 
 export {
   ProjectDocumentsSectionView,
   type ProjectDocumentsSectionViewProps,
-} from "./components/project-documents-section-view.js";
+} from "./components/projects/project-documents-section-view.js";
 
 export {
   ProjectDocumentsView,
   type ProjectDocumentsViewProps,
-} from "./components/project-documents-view.js";
+} from "./components/projects/project-documents-view.js";
 
 export {
   ProjectDocumentsSidePanelView,
   type ProjectDocumentsSidePanelViewProps,
   type ProjectDocumentsSidePanelMutationResult,
   type ProjectDocumentsSidePanelLinkComponent,
-} from "./components/project-documents-side-panel-view.js";
+} from "./components/projects/project-documents-side-panel-view.js";
 
 export {
   DocumentTreeNodeView,
   type DocumentTreeLinkComponent,
-} from "./components/document-tree.js";
+} from "./components/documents/document-tree.js";
 
-export { AddFolderInline } from "./components/add-folder-inline.js";
+export { AddFolderInline } from "./components/documents/add-folder-inline.js";
 
-export { FolderPlusIcon } from "./components/folder-plus-icon.js";
+export { FolderPlusIcon } from "./components/icons/folder-plus-icon.js";
 
 export {
   buildDocumentTree,
@@ -1807,7 +1807,7 @@ export {
   DocumentsEmptyCreateView,
   type DocumentsEmptyCreateResult,
   type DocumentsEmptyCreateViewProps,
-} from "./components/documents-empty-create-view.js";
+} from "./components/documents/documents-empty-create-view.js";
 
 export {
   PROJECT_SECTIONS,
@@ -1854,13 +1854,13 @@ export {
   RESIZABLE_SIDE_PANEL_LG_MEDIA_QUERY,
   readStoredPanelWidth,
   type ResizableSidePanelProps,
-} from "./components/resizable-side-panel.js";
+} from "./components/shell/resizable-side-panel.js";
 
 export {
   FloatingPillToggleDock,
   FLOATING_PILL_TOGGLE_DOCK_CLASS,
   type FloatingPillToggleDockProps,
-} from "./components/floating-pill-toggle-dock.js";
+} from "./components/shared/floating-pill-toggle-dock.js";
 
 export {
   TASK_PROPERTIES_PANEL_WIDTH_KEY,
@@ -1876,46 +1876,46 @@ export {
   EntityPropertiesSection,
   TaskDetailPropertiesSection,
   type EntityPropertiesSectionProps,
-} from "./components/entity-properties-section.js";
+} from "./components/entity/entity-properties-section.js";
 
 export {
   PropertyFieldGroup,
   type PropertyFieldGroupProps,
-} from "./components/property-field-group.js";
+} from "./components/content/property-field-group.js";
 
 export {
   TaskPropertiesDisplay,
   type TaskPropertiesDisplayProps,
   type TaskPropertiesDisplayTask,
-} from "./components/task-properties-display.js";
+} from "./components/tasks/task-properties-display.js";
 
 export {
   TaskPropertiesInlineChips,
   type TaskPropertiesInlineChipsProps,
-} from "./components/task-properties-inline-chips.js";
+} from "./components/tasks/task-properties-inline-chips.js";
 
 export {
   LetterPropertiesDisplay,
   type LetterPropertiesDisplayProps,
   type LetterPropertiesDisplayLetter,
-} from "./components/letter-properties-display.js";
+} from "./components/letters/letter-properties-display.js";
 
 export {
   DetailWithPropertiesLayout,
   type DetailWithPropertiesLayoutProps,
-} from "./components/detail-with-properties-layout.js";
+} from "./components/content/detail-with-properties-layout.js";
 
 export {
   DocumentMarkdownEditor,
   type DocumentMarkdownEditorProps,
-} from "./components/document-markdown-editor.js";
+} from "./components/documents/document-markdown-editor.js";
 
 export {
   DocumentMentionMenu,
   type DocumentMentionMenuProps,
-} from "./components/document-mention-menu.js";
+} from "./components/documents/document-mention-menu.js";
 
-export { MentionLeadingIcon } from "./components/mention-leading-icon.js";
+export { MentionLeadingIcon } from "./components/mentions/mention-leading-icon.js";
 
 export {
   MentionCatalogProvider,
@@ -1994,7 +1994,7 @@ export {
   type ContentMarkdownViewLayoutProps,
   type ContentMarkdownViewMode,
   type MarkdownDetailEditorMode,
-} from "./components/content-markdown-view-layout.js";
+} from "./components/content/content-markdown-view-layout.js";
 
 export {
   DOCUMENT_CONTENT_MAX_WIDTH,
@@ -2066,13 +2066,13 @@ export {
   CommandPaletteProvider,
   useCommandPalette,
   type CommandPaletteMode,
-} from "./components/command-palette-context.js";
+} from "./components/command-palette/command-palette-context.js";
 
 export {
   CommandPaletteView,
   TOGGLE_COMMAND_PALETTE_EVENT,
   type CommandPaletteViewProps,
-} from "./components/command-palette-view.js";
+} from "./components/command-palette/command-palette-view.js";
 
 export { isCommandPaletteToggleKey } from "./command-palette/command-palette-toggle-key.js";
 
@@ -2091,7 +2091,7 @@ export {
   type TextRange,
 } from "./shared/text-diff-ranges.js";
 
-export { SpellcheckSegmentText } from "./components/spellcheck-segment-text.js";
+export { SpellcheckSegmentText } from "./components/shared/spellcheck-segment-text.js";
 
 export {
   TaskDetailView,
@@ -2100,7 +2100,7 @@ export {
   type TaskDetailViewProps,
   type TaskDetailViewTask,
   type TaskSpellcheckHighlight,
-} from "./components/task-detail-view.js";
+} from "./components/tasks/task-detail-view.js";
 
 export {
   TaskLinkAttachments,
@@ -2115,7 +2115,7 @@ export {
   type TaskLinkAttachmentKind,
   type TaskLinkAttachmentsProps,
   type TaskLinkPickerOption,
-} from "./components/task-link-attachments.js";
+} from "./components/tasks/task-link-attachments.js";
 
 export {
   ADD_TASK_LINK_SHORTCUT_HINT,
@@ -2126,25 +2126,25 @@ export {
 export {
   TaskStackedDetailView,
   type TaskStackedDetailViewProps,
-} from "./components/task-stacked-detail-view.js";
+} from "./components/tasks/task-stacked-detail-view.js";
 
 export {
   TaskActivityPanel,
   type TaskActivityPanelProps,
   type TaskActivityRequestJson,
   type TaskActivityCurrentUser,
-} from "./components/task-activity-panel.js";
+} from "./components/tasks/task-activity-panel.js";
 
 export {
   TaskCommentEditor,
   type TaskCommentEditorHandle,
   type TaskCommentEditorProps,
   type TaskCommentEditorVariant,
-} from "./components/task-comment-editor.js";
+} from "./components/tasks/task-comment-editor.js";
 
 export {
   AgentActivityIcon,
-} from "./components/agent-activity-icon.js";
+} from "./components/tasks/agent-activity-icon.js";
 
 export {
   AGENT_HOLD_COMMENT_PREFIXES,
@@ -2167,13 +2167,13 @@ export {
   type ContentBreadcrumbProps,
   type ContentBreadcrumbItem,
   type ContentBreadcrumbLinkProps,
-} from "./components/content-chrome-header.js";
+} from "./components/content/content-chrome-header.js";
 
 export {
   ChromeHeaderProvider,
   useChromeHeader,
   useRegisterChromeHeader,
-} from "./components/chrome-header-context.js";
+} from "./components/shell/chrome-header-context.js";
 
 export {
   EntityHeaderActionsShell,
@@ -2206,14 +2206,14 @@ export {
   LetterDetailView,
   type LetterDetailViewProps,
   type LetterDetailViewLetter,
-} from "./components/letter-detail-view.js";
+} from "./components/letters/letter-detail-view.js";
 
 export {
   LetterComposeView,
   type LetterComposeViewProps,
   type LetterComposeContact,
   type LetterComposeSubmitPayload,
-} from "./components/letter-compose-view.js";
+} from "./components/letters/letter-compose-view.js";
 
 export {
   ContentDetailTitleHeader,
@@ -2222,33 +2222,33 @@ export {
   ContentDetailTitleSlot,
   CONTENT_DETAIL_TITLE_CLASS,
   buildContentIconTitleHeaders,
-} from "./components/content-detail-title-header.js";
+} from "./components/content/content-detail-title-header.js";
 
 export {
   DocumentDetailIcon,
   type DocumentDetailIconProps,
-} from "./components/document-detail-icon.js";
+} from "./components/documents/document-detail-icon.js";
 
 export {
   LetterDetailIcon,
   type LetterDetailIconProps,
-} from "./components/letter-detail-icon.js";
+} from "./components/letters/letter-detail-icon.js";
 
 export {
   DocumentOcticon,
   type DocumentOcticonProps,
-} from "./components/document-octicon.js";
+} from "./components/documents/document-octicon.js";
 
 export {
   OverviewNameEditor,
   type OverviewNameEditorProps,
-} from "./components/overview-name-editor.js";
+} from "./components/content/overview-name-editor.js";
 
 export {
   DocumentMarkdownPreview,
   type DocumentMarkdownPreviewProps,
   type ResolveMarkdownImageSrc,
-} from "./components/document-markdown-preview.js";
+} from "./components/documents/document-markdown-preview.js";
 
 export {
   collectImageFiles,
@@ -2260,18 +2260,18 @@ export {
 export {
   DocumentMentionHoverCard,
   type DocumentMentionHoverCardProps,
-} from "./components/document-mention-hover-card.js";
+} from "./components/documents/document-mention-hover-card.js";
 
 export {
   MentionChipHoverShell,
   type MentionChipHoverShellProps,
-} from "./components/mention-chip-hover-shell.js";
+} from "./components/mentions/mention-chip-hover-shell.js";
 
 export {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "./components/hover-card.js";
+} from "./components/shared/hover-card.js";
 
 export {
   resolveMentionCatalogTask,
@@ -2313,49 +2313,49 @@ export {
   type ContactOverviewViewContact,
   type ContactOverviewDetails,
   type ContactSocialAccount,
-} from "./components/contact-overview-view.js";
+} from "./components/contacts/contact-overview-view.js";
 
 export {
   ContactSocialAccountsEditor,
   type ContactSocialAccountsEditorProps,
-} from "./components/contact-social-accounts-editor.js";
+} from "./components/contacts/contact-social-accounts-editor.js";
 
 export {
   ContactDetailView,
   type ContactDetailViewProps,
-} from "./components/contact-detail-view.js";
+} from "./components/contacts/contact-detail-view.js";
 
 export {
   ContactTasksListView,
   type ContactTasksListViewProps,
-} from "./components/contact-tasks-list-view.js";
+} from "./components/contacts/contact-tasks-list-view.js";
 
 export {
   OrganizationOverviewView,
   type OrganizationOverviewViewProps,
   type OrganizationOverviewViewOrganization,
   type OrganizationOverviewDetails,
-} from "./components/organization-overview-view.js";
+} from "./components/organizations/organization-overview-view.js";
 
 export {
   OrganizationDetailView,
   type OrganizationDetailViewProps,
-} from "./components/organization-detail-view.js";
+} from "./components/organizations/organization-detail-view.js";
 
 export {
   OrganizationTransactionsSection,
   type OrganizationTransactionsSectionProps,
-} from "./components/organization-transactions-section.js";
+} from "./components/organizations/organization-transactions-section.js";
 
 export {
   OrganizationContactsListView,
   type OrganizationContactsListViewProps,
-} from "./components/organization-contacts-list-view.js";
+} from "./components/organizations/organization-contacts-list-view.js";
 
 export {
   ScopedLettersListView,
   type ScopedLettersListViewProps,
-} from "./components/scoped-letters-list-view.js";
+} from "./components/letters/scoped-letters-list-view.js";
 
 export {
   CONTACT_SECTIONS,
@@ -2404,7 +2404,7 @@ export {
 export {
   MarkdownDocumentDetailView,
   type MarkdownDocumentDetailViewProps,
-} from "./components/markdown-document-detail-view.js";
+} from "./components/documents/markdown-document-detail-view.js";
 
 export {
   JournalDueTasksSection,
@@ -2412,14 +2412,14 @@ export {
   isHabitLinkedTask,
   type JournalDayListMode,
   type JournalDueTasksSectionProps,
-} from "./components/journal-due-tasks-section.js";
+} from "./components/journal/journal-due-tasks-section.js";
 
 export {
   JournalHabitsList,
   countHabitDayOutcomes,
   type JournalHabitDayItem,
   type JournalHabitsListProps,
-} from "./components/journal-habits-section.js";
+} from "./components/journal/journal-habits-section.js";
 
 export {
   NAVIGATION_TRAIL_KINDS,
@@ -2453,11 +2453,11 @@ export {
   type HistoryEntryDisplay,
 } from "./navigation/resolve-history-entry-display.js";
 
-export { HistoryEntryIcon } from "./components/history-entry-icon.js";
+export { HistoryEntryIcon } from "./components/navigation/history-entry-icon.js";
 export {
   DotScrollLoader,
   type DotScrollLoaderProps,
-} from "./components/dot-scroll-loader.js";
+} from "./components/shared/dot-scroll-loader.js";
 
 export {
   isEntityRouteId,
@@ -2477,7 +2477,7 @@ export {
   searchableDropdownShortcutIndex,
   type SearchableDropdownOption,
   type SearchableDropdownProps,
-} from "./components/searchable-dropdown.js";
+} from "./components/dropdowns/searchable-dropdown.js";
 
 export type { SearchableDropdownMenuApi } from "./dropdowns/searchable-dropdown-menu-api.js";
 
@@ -2536,12 +2536,12 @@ export {
   type PropertyDropdownTriggerVariant,
   PropertyInlineChip,
   type PropertyInlineChipProps,
-} from "./components/property-dropdown.js";
+} from "./components/dropdowns/property-dropdown.js";
 
 export {
   PropertyDropdownNavigateRow,
   type PropertyDropdownNavigateRowProps,
-} from "./components/property-dropdown-navigate-row.js";
+} from "./components/dropdowns/property-dropdown-navigate-row.js";
 
 export {
   KanbanBoard,
@@ -2549,7 +2549,7 @@ export {
   type KanbanBoardMoveRequest,
   type KanbanColumn,
   type KanbanDropIndicator,
-} from "./components/kanban-board.js";
+} from "./components/list-nav/kanban-board.js";
 
 export {
   computeKanbanDropIndicator,
@@ -2561,13 +2561,13 @@ export {
   TaskBoardCard,
   type TaskBoardCardProps,
   type TaskBoardCardTask,
-} from "./components/task-board-card.js";
+} from "./components/tasks/task-board-card.js";
 
 export {
   ResizableBottomPanel,
   readStoredPanelHeight,
   type ResizableBottomPanelProps,
-} from "./components/resizable-bottom-panel.js";
+} from "./components/shell/resizable-bottom-panel.js";
 
 export {
   useLetterPdfTabReorder,
@@ -2591,19 +2591,19 @@ export {
   LETTER_PDF_PANEL_HEIGHT_KEY,
   LETTER_PDF_VISIBLE_KEY,
   type LetterPdfDockProps,
-} from "./components/letter-pdf-dock.js";
+} from "./components/letters/letter-pdf-dock.js";
 
 export {
   LetterPdfDropzone,
   type LetterPdfDropzoneProps,
-} from "./components/letter-pdf-dropzone.js";
+} from "./components/letters/letter-pdf-dropzone.js";
 
 export {
   LetterPdfTab,
   type LetterPdfTabAttachment,
   type LetterPdfRenameResult,
   type LetterPdfDeleteResult,
-} from "./components/letter-pdf-tab.js";
+} from "./components/letters/letter-pdf-tab.js";
 
 export {
   stripPdfExtension,
@@ -2637,7 +2637,7 @@ export {
   type LetterPdfZoomDirection,
 } from "./letters/letter-pdf-zoom-shortcut.js";
 
-export type { ProductSidebarRecentPage } from "./components/product-sidebar.js";
+export type { ProductSidebarRecentPage } from "./components/shell/product-sidebar.js";
 
 export {
   OPEN_COMPOSE_MODAL_EVENT,
@@ -2691,17 +2691,17 @@ export {
   type ComposeFolderCascadeSegment,
 } from "./compose/compose-document-folders.js";
 
-export { ComposeFolderIcon, type ComposeFolderIconProps } from "./components/compose-folder-icon.js";
+export { ComposeFolderIcon, type ComposeFolderIconProps } from "./components/compose/compose-folder-icon.js";
 
 export {
   ComposeDueDateDropdown,
   type ComposeDueDateDropdownProps,
-} from "./components/compose-due-date-dropdown.js";
+} from "./components/compose/compose-due-date-dropdown.js";
 
 export {
   ComposeAssigneeDropdown,
   type ComposeAssigneeDropdownProps,
-} from "./components/compose-assignee-dropdown.js";
+} from "./components/compose/compose-assignee-dropdown.js";
 
 export {
   ComposeModal,
@@ -2709,23 +2709,23 @@ export {
   type ComposeModalProject,
   type ComposeModalCreateTaskInput,
   type ComposeModalCreateDocumentInput,
-} from "./components/compose-modal.js";
+} from "./components/compose/compose-modal.js";
 
 export {
   AvatarUpload,
   type AvatarUploadProps,
   type AvatarActionResult,
-} from "./components/avatar-upload.js";
+} from "./components/entity/avatar-upload.js";
 
 export {
   ProjectIconPicker,
   type ProjectIconPickerProps,
-} from "./components/project-icon-picker.js";
+} from "./components/projects/project-icon-picker.js";
 
 export {
   ProjectOverviewIcon,
   type ProjectOverviewIconProps,
-} from "./components/project-overview-icon.js";
+} from "./components/projects/project-overview-icon.js";
 
 export {
   PROJECT_ICON_KEYS,
@@ -2762,12 +2762,12 @@ export {
   EntityIconPicker,
   type EntityIconPickerProps,
   type EntityIconPickerDefaultOption,
-} from "./components/entity-icon-picker.js";
+} from "./components/entity/entity-icon-picker.js";
 
 export {
   CustomColorPickerPanel,
   type CustomColorPickerPanelProps,
-} from "./components/custom-color-picker-panel.js";
+} from "./components/entity/custom-color-picker-panel.js";
 
 export {
   registerGoLeaderKeyPress,
@@ -3003,7 +3003,7 @@ export {
   useListKeyboardNavigationZone,
   isKeyboardNavHighlighted,
   type ListKeyboardNavigationRegistration,
-} from "./components/list-keyboard-navigation-provider.js";
+} from "./components/list-nav/list-keyboard-navigation-provider.js";
 
 export { SkeletonBlock } from "./components/skeletons/skeleton-block.js";
 export {
@@ -3095,7 +3095,7 @@ export {
 export {
   FileTypeIcon,
   type FileTypeIconProps,
-} from "./components/file-type-icon.js";
+} from "./components/documents/file-type-icon.js";
 
 export {
   ensurePierreIconSprite,

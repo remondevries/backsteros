@@ -6,7 +6,7 @@ import {
   type RefObject,
 } from "react";
 
-import { useListKeyboardNavigation } from "../components/list-keyboard-navigation-provider.js";
+import { useListKeyboardNavigation } from "../components/list-nav/list-keyboard-navigation-provider.js";
 import {
   activateContentPreviewLink,
   syncContentPreviewLinkHighlights,

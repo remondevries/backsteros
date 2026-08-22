@@ -8,8 +8,8 @@ import {
 } from "react";
 
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
-import { SegmentedPillToggle } from "../list-board-view-shell.js";
-import { useListKeyboardNavigationZone } from "../list-keyboard-navigation-provider.js";
+import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { useListKeyboardNavigationZone } from "../list-nav/list-keyboard-navigation-provider.js";
 import { FileCodeViewer } from "./file-code-viewer.js";
 import { FileDeleteConfirmModal } from "./file-delete-confirm-modal.js";
 import { FileEditorTabBar } from "./file-editor-tab-bar.js";

@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import {
   nextGoalListingForSavings,
   shouldPromoteGoalToReadyToSpend,
-} from "../../dist/components/finance-goals-view.js";
+} from "../../dist/components/finance/finance-goals-view.js";
 
 describe("shouldPromoteGoalToReadyToSpend", () => {
   it("promotes active goals that reached their target", () => {

@@ -385,22 +385,22 @@ import {
 } from "@primer/octicons-react";
 
 import type { ProjectIconKey } from "./project-icon-keys.js";
-import { AirplaneIcon } from "../components/airplane-icon.js";
-import { AppleIcon } from "../components/apple-icon.js";
-import { BelastingdienstIcon } from "../components/belastingdienst-icon.js";
-import { CarIcon } from "../components/car-icon.js";
-import { CartIcon } from "../components/cart-icon.js";
-import { GiftIcon } from "../components/gift-icon.js";
-import { GymIcon } from "../components/gym-icon.js";
-import { LaptopIcon } from "../components/laptop-icon.js";
-import { MercedesBenzIcon } from "../components/mercedes-benz-icon.js";
-import { NetflixIcon } from "../components/netflix-icon.js";
-import { PetIcon } from "../components/pet-icon.js";
-import { PhoneIcon } from "../components/phone-icon.js";
-import { ShopIcon } from "../components/shop-icon.js";
-import { SpotifyIcon } from "../components/spotify-icon.js";
-import { TerminalConsoleIcon } from "../components/terminal-console-icon.js";
-import { WaterIcon } from "../components/water-icon.js";
+import { AirplaneIcon } from "../components/icons/airplane-icon.js";
+import { AppleIcon } from "../components/icons/apple-icon.js";
+import { BelastingdienstIcon } from "../components/icons/belastingdienst-icon.js";
+import { CarIcon } from "../components/icons/car-icon.js";
+import { CartIcon } from "../components/icons/cart-icon.js";
+import { GiftIcon } from "../components/icons/gift-icon.js";
+import { GymIcon } from "../components/icons/gym-icon.js";
+import { LaptopIcon } from "../components/icons/laptop-icon.js";
+import { MercedesBenzIcon } from "../components/icons/mercedes-benz-icon.js";
+import { NetflixIcon } from "../components/icons/netflix-icon.js";
+import { PetIcon } from "../components/icons/pet-icon.js";
+import { PhoneIcon } from "../components/icons/phone-icon.js";
+import { ShopIcon } from "../components/icons/shop-icon.js";
+import { SpotifyIcon } from "../components/icons/spotify-icon.js";
+import { TerminalConsoleIcon } from "../components/icons/terminal-console-icon.js";
+import { WaterIcon } from "../components/icons/water-icon.js";
 
 export type ProjectOcticonProps = SVGProps<SVGSVGElement> & {
   size?: number | string;

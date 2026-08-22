@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ComposeFolderIcon } from "../compose-folder-icon.js";
+import { ComposeFolderIcon } from "../compose/compose-folder-icon.js";
 import { apiErrorMessage } from "./api-error-message.js";
 import type { ProjectFsClient } from "./project-fs-types.js";
 
