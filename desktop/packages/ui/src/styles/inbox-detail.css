@@ -1,0 +1,256 @@
+/* Inbox side panel is often ~244px — hide party so the subject keeps the row. */
+@container inbox-list-card (max-width: 280px) {
+  .inbox-list-item-email-party {
+    display: none;
+  }
+}
+
+.inbox-list-item-title {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.inbox-list-item-title-trailing {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.inbox-list-item-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-item-type-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.inbox-item-type-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.inbox-detail-layout {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+/* Locked detail pages: fill the scrollport instead of growing past it. */
+.page-scroll:has([data-content-detail]) > .inbox-detail-layout,
+.bos-product-shell [data-content-detail].inbox-detail-layout {
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+}
+
+.inbox-detail-header-meta {
+  flex-shrink: 0;
+  padding: 0.65rem 1rem 0;
+}
+
+.inbox-moved-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 0.5px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.inbox-moved-banner__link {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.inbox-moved-banner__link:hover {
+  color: var(--foreground);
+  opacity: 0.9;
+}
+
+.inbox-detail-breadcrumb {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: var(--content-chrome-header-height);
+  padding: 0 1rem;
+  border-bottom: 0.5px solid rgb(255 255 255 / 0.1);
+  color: var(--muted);
+  font-size: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.inbox-detail-breadcrumb strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.inbox-detail-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.inbox-detail-empty p {
+  max-width: 20rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.inbox-detail-empty-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.email-side-panel-empty-row {
+  padding: 2px 8px 10px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sidebar-icon-color);
+}
+
+.email-side-panel-concept-label {
+  color: rgb(196 160 70);
+  font-weight: 600;
+}
+
+.email-side-panel-title-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.email-side-panel-primary--with-stack {
+  align-items: flex-start;
+}
+
+.email-side-panel-status-slot {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.email-side-panel-status-spacer[data-lines="1"] {
+  height: 15px;
+}
+
+.email-side-panel-status-spacer[data-lines="2"] {
+  height: 30px;
+}
+
+.email-side-panel-project-label {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+}
+
+.email-side-panel-project-label .inbox-list-item-truncate {
+  min-width: 0;
+}
+
+.email-side-panel-org-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.email-side-panel-contact-name,
+.email-side-panel-from-fallback {
+  max-width: 9rem;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sidebar-icon-color);
+}
+
+.email-side-panel-contact-email {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.email-side-panel-received-at {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.email-side-panel-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 6px 4px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid rgb(107 138 253 / 35%);
+  border-radius: 0 6px 6px 0;
+  background: rgb(107 138 253 / 6%);
+}
+
+.email-side-panel-thread-nested {
+  margin-inline: 0;
+}
+
+.email-concept-badge {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent-color, #6b8afd);
+}
+
+.email-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--email-thread-max-width, 56rem);
+  margin-inline: auto;
+  /* Extra top inset so the floating edit/delete chip above a selected
+     comment isn't clipped by the scrollport / top fade. */
+  padding: 2.75rem 1rem 0.75rem;
+  /* Clear the absolute composer dock so the last items can scroll above it. */
+  padding-bottom: calc(var(--email-composer-dock-clearance, 8.75rem) + 1.5rem);
+}

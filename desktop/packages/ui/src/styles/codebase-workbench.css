@@ -1,0 +1,2924 @@
+/* —— Codebase workbench detail panes (ported from legacy development) —— */
+.console-github-pane-status,
+.console-github-pane-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--console-muted);
+}
+
+.console-github-pane-error {
+  color: #f87171;
+}
+
+.console-github-pane-retry {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.console-github-pane-retry:hover {
+  opacity: 0.85;
+}
+
+.console-github-commit-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-github-commit {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.console-github-commit:hover {
+  background: rgb(255 255 255 / 0.04);
+}
+
+.console-github-commit:focus-visible {
+  outline: none;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-github-commit.is-selected {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.console-github-commit.keyboard-nav-item-highlight,
+.console-github-commit.keyboard-nav-item-highlight:hover,
+.console-github-commit.keyboard-nav-item-highlight:focus,
+.console-github-commit.keyboard-nav-item-highlight:focus-visible,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02)) !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47) !important;
+}
+
+/* Global: only the orange/inset keyboard ring — never stack UA focus rings. */
+.keyboard-nav-item-highlight:focus,
+.keyboard-nav-item-highlight:focus-visible,
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible {
+  outline: none !important;
+}
+
+.console-github-commit-sha {
+  flex-shrink: 0;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-decoration: none;
+}
+
+.console-github-commit-sha:hover {
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  text-decoration: underline;
+}
+
+.console-github-commit-trailing {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 28px;
+  padding-top: 1px;
+}
+
+.console-github-commit-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.console-github-commit-age {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.console-github-pull {
+  text-decoration: none;
+}
+
+.console-github-pull-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.console-github-pull.is-open .console-github-pull-icon {
+  color: #6fd56e;
+}
+
+.console-github-pull.is-merged .console-github-pull-icon {
+  color: #545caf;
+}
+
+.console-github-pull.is-closed .console-github-pull-icon {
+  color: #f85149;
+}
+
+.console-github-commit-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.console-github-commit-message {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.console-github-commit-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.console-github-pane-more {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.console-pane--file-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.console-file-detail-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Orca-inspired editor file tab strip */
+.console-file-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  min-height: 32px;
+  max-height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+}
+
+.console-file-tab-width {
+  display: flex;
+  min-width: 88px;
+  max-width: 280px;
+  flex: 1 1 180px;
+}
+
+@media (min-width: 1280px) {
+  .console-file-tab-width {
+    flex: 1 1 220px;
+  }
+}
+
+.console-file-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  background: var(--background);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.console-file-tab.has-border-right {
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-file-tab:hover {
+  color: var(--foreground);
+}
+
+.console-file-tab.is-active {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  color: var(--foreground);
+}
+
+.console-file-tab-active-bar {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 2px;
+  background: color-mix(in srgb, var(--foreground) 60%, var(--background));
+}
+
+.console-file-tab-icon {
+  flex: none;
+  opacity: 0.85;
+}
+
+.console-file-tab-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-file-tab-trailing {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.console-file-tab-dirty {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-tab-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.console-file-tab-close.is-active-tab {
+  display: inline-flex;
+}
+
+.console-file-tab-close.is-dirty {
+  display: none;
+}
+
+.console-file-tab:hover .console-file-tab-close,
+.console-file-tab:focus-within .console-file-tab-close {
+  display: inline-flex;
+}
+
+.console-file-tab:hover .console-file-tab-dirty,
+.console-file-tab:focus-within .console-file-tab-dirty {
+  display: none;
+}
+
+.console-file-tab-close:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.console-unsaved-close-actions {
+  flex-wrap: wrap;
+}
+
+.console-unsaved-close-discard {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.console-unsaved-close-discard:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  color: var(--foreground);
+}
+
+.console-unsaved-close-save {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 22%,
+    transparent
+  );
+  color: var(--keyboard-nav-highlight-color, #ee7a47);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.console-unsaved-close-save:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 32%,
+    transparent
+  );
+}
+
+.console-unsaved-close-discard:disabled,
+.console-unsaved-close-save:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.console-file-detail-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 12px 4px;
+}
+
+.console-file-detail-toolbar .segmented-pill-toggle {
+  width: auto;
+}
+
+.console-file-detail-body > .console-github-pane-status,
+.console-file-detail-body > .console-github-pane-error {
+  margin: 12px 16px;
+}
+
+.console-file-code-viewer {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.console-file-code-viewer > div {
+  height: auto !important;
+  min-height: 100%;
+}
+
+.console-file-code-viewer .cm-editor {
+  height: auto !important;
+  max-height: none !important;
+  background: transparent;
+}
+
+.console-file-code-viewer .cm-scroller {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  font-family:
+    "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono",
+    Menlo, monospace;
+}
+
+.console-file-code-viewer .cm-editor,
+.console-file-code-viewer .cm-editor.cm-focused,
+.console-file-code-viewer .cm-content,
+.console-file-code-viewer .cm-content:focus,
+.console-file-code-viewer .cm-content:focus-visible {
+  outline: none !important;
+}
+
+.console-file-code-viewer .cm-fat-cursor {
+  background: var(--keyboard-nav-highlight-color, #ee7a47) !important;
+  color: #0a0a0a !important;
+}
+
+.console-file-code-viewer .cm-editor:not(.cm-focused) .cm-fat-cursor {
+  background: transparent !important;
+  outline: solid 1px var(--keyboard-nav-highlight-color, #ee7a47);
+  color: transparent !important;
+}
+
+.console-file-code-viewer .cm-cursor,
+.console-file-code-viewer .cm-dropCursor {
+  border-left-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-code-viewer .cm-content {
+  caret-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-file-image-preview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  background:
+    linear-gradient(45deg, rgb(255 255 255 / 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(255 255 255 / 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(255 255 255 / 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(255 255 255 / 0.04) 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+}
+
+.console-file-image-preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: transparent;
+}
+
+.console-commit-detail-back {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+  cursor: pointer;
+}
+
+.console-commit-detail-back:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.console-commit-detail-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  overflow: auto;
+}
+
+.console-commit-detail-body:has(.console-pull-files) {
+  gap: 0;
+  overflow: hidden;
+}
+
+.console-github-detail-stack {
+  display: flex;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Title / meta / tabs — content centered; PR rail can go full-width for the rule. */
+.console-github-detail-hero-rail {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  flex-shrink: 0;
+  padding: 16px 20px 0;
+}
+
+.console-github-detail-hero-rail--pull {
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-github-detail-hero-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 16px 20px 0;
+}
+
+/* Tab body scrolls full-width (scrollbar on the pane edge); inner content is centered. */
+.console-github-detail-content {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  overflow: auto;
+}
+
+.console-github-detail-content.is-full {
+  gap: 0;
+  overflow: hidden;
+}
+
+.console-github-detail-content-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 0 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.console-commit-detail-body:has(.console-pull-files) .console-github-detail-stack,
+.console-pull-detail-body:has(.console-pull-files) .console-github-detail-stack {
+  gap: 0;
+}
+
+/* Diff panel owns the separator under the commit hero.
+   PR detail: tabs row owns the separator — no extra rule above files. */
+.console-commit-detail-body:has(.console-pull-files) .console-commit-detail-hero {
+  border-bottom: 0;
+  padding-bottom: 16px;
+}
+
+.console-pull-detail-body:has(.console-pull-files) .console-pull-detail-hero {
+  padding-bottom: 0;
+}
+
+.console-commit-detail-hero {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-commit-detail-title-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-commit-detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.console-commit-detail-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.console-commit-detail-sha {
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  text-decoration: none;
+}
+
+.console-commit-detail-sha:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.console-commit-detail-message {
+  margin: 0;
+  min-width: 0;
+}
+
+.console-commit-detail-message .content-markdown-preview-body {
+  outline: none;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.console-commit-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.console-commit-detail-author-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.console-commit-detail-author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.console-commit-detail-meta-text {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.console-commit-detail-author {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.console-commit-detail-meta-muted {
+  color: var(--console-muted);
+}
+
+.console-commit-detail-files-placeholder {
+  display: flex;
+  flex: 1;
+  min-height: 220px;
+  align-items: stretch;
+}
+
+.console-commit-detail-files-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 2.5%, transparent);
+  color: var(--console-muted);
+  font-size: 13px;
+}
+
+.console-commit-detail-files-empty p {
+  margin: 0;
+}
+
+.console-pull-detail-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.console-pull-detail-body:has(.console-pull-files) {
+  gap: 0;
+  overflow: hidden;
+}
+
+.console-pull-detail-hero {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+.console-pull-detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.console-pull-detail-title {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.console-pull-detail-title-number {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  text-decoration: none;
+}
+
+.console-pull-detail-title-number:hover {
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  text-decoration: underline;
+}
+
+.console-pull-code-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.console-pull-code-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.console-pull-code-trigger:hover {
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+}
+
+.console-pull-code-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--console-panel-2) 92%, #000);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+
+.console-pull-code-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.console-pull-code-panel-icon {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
+.console-pull-code-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.console-pull-code-command-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-pull-code-command {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-pull-code-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  cursor: pointer;
+}
+
+.console-pull-code-copy:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.console-pull-code-panel-foot {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--console-muted);
+}
+
+.console-pull-code-panel-foot a {
+  color: color-mix(in srgb, var(--foreground) 55%, #58a6ff);
+  text-decoration: none;
+}
+
+.console-pull-code-panel-foot a:hover {
+  text-decoration: underline;
+}
+
+.console-pull-code-github-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, #58a6ff);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.console-pull-code-github-link:hover {
+  color: #58a6ff;
+  text-decoration: underline;
+}
+
+.console-pull-detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.console-pull-detail-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fff;
+  background: #6fd56e;
+}
+
+.console-pull-detail-badge.is-merged {
+  background: #545caf;
+}
+
+.console-pull-detail-badge.is-closed {
+  background: #cf222e;
+}
+
+.console-pull-detail-badge.is-open.is-draft {
+  background: color-mix(in srgb, #6fd56e 55%, #6e7681);
+}
+
+.console-pull-detail-meta-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.console-pull-detail-meta-author {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.console-pull-detail-meta-muted {
+  color: var(--console-muted);
+}
+
+.console-pull-detail-meta-ago {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  color: var(--console-muted);
+  white-space: nowrap;
+}
+
+.console-pull-detail-branch {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 7px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, #58a6ff 16%, transparent);
+  color: color-mix(in srgb, var(--foreground) 82%, #58a6ff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-pull-detail-tabs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  padding-bottom: 12px;
+}
+
+.console-pull-detail-tabs-row .app-pill-nav {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+}
+
+/* Stronger PR tab highlight only while the detail is engaged (Enter/Space).
+   When browsing the list, fall back to default pill-nav styles (border stays). */
+.console-pull-detail-tabs-row.is-hotkeys-active .app-pill-nav-item.is-active {
+  border-color: rgb(255 255 255 / 0.22);
+  background: rgb(255 255 255 / 0.08);
+  color: var(--foreground);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.console-pull-detail-tabs-row.is-hotkeys-active .app-pill-nav-item:focus,
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item:focus-visible {
+  outline: none !important;
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.1);
+  box-shadow: none;
+}
+
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item.is-active:focus,
+.console-pull-detail-tabs-row.is-hotkeys-active
+  .app-pill-nav-item.is-active:focus-visible {
+  border-color: rgb(255 255 255 / 0.32);
+  background: rgb(255 255 255 / 0.11);
+}
+
+.console-pull-detail-diffstat {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.console-pull-detail-diffstat-add {
+  color: #3fb950;
+}
+
+.console-pull-detail-diffstat-del {
+  color: #f85149;
+}
+
+.console-pull-detail-description {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.console-pull-detail-description-body {
+  margin: 0;
+  min-width: 0;
+}
+
+.console-pull-detail-description-body .content-markdown-preview-body {
+  outline: none;
+}
+
+.console-pull-detail-description-empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--console-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.console-pull-detail-commits {
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.console-pull-detail-commits .console-github-commit-list {
+  gap: 8px;
+}
+
+.console-pull-detail-commits .console-github-commit {
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+}
+
+.console-pull-detail-commits .console-github-commit:hover {
+  background: color-mix(in srgb, var(--foreground) 4.5%, transparent);
+}
+
+.console-pull-detail-commits .console-github-commit.is-selected {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.console-pull-files {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 1.5%, transparent);
+}
+
+/* Commit / PR content: flush diff panel — no rounded card chrome. */
+.console-pane--commit-detail .console-pull-files,
+.console-pane--pull-detail .console-pull-files {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Commit detail: top rule under the hero (no tabs). */
+.console-pane--commit-detail .console-pull-files {
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+.console-pane--commit-detail .console-pull-files-diff-body,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-tailwindcss-wrapper,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-view-wrapper,
+.console-pane--commit-detail .console-pull-files-diff-body .diff-view,
+.console-pane--pull-detail .console-pull-files-diff-body,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-tailwindcss-wrapper,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-view-wrapper,
+.console-pane--pull-detail .console-pull-files-diff-body .diff-view {
+  border-radius: 0 !important;
+}
+
+.console-pull-files-rail {
+  display: flex;
+  width: 280px;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow: auto;
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.console-pull-files-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+
+.console-pull-files-item {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.console-pull-files-item:hover {
+  background: rgb(255 255 255 / 0.04);
+}
+
+/* Never show the UA/system blue focus ring — orange inset like commits/tree. */
+.console-pull-files-item:focus,
+.console-pull-files-item:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-pull-files-item.is-selected {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.console-pull-files-item.keyboard-nav-item-highlight,
+.console-pull-files-item.keyboard-nav-item-highlight:hover,
+.console-pull-files-item.keyboard-nav-item-highlight:focus,
+.console-pull-files-item.keyboard-nav-item-highlight:focus-visible,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.console-pull-files-item.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02)) !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47) !important;
+}
+
+.console-pull-files-item-status {
+  flex-shrink: 0;
+  width: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--console-muted);
+}
+
+.console-pull-files-item.is-added .console-pull-files-item-status {
+  color: #3fb950;
+}
+
+.console-pull-files-item.is-removed .console-pull-files-item-status {
+  color: #f85149;
+}
+
+.console-pull-files-item.is-renamed .console-pull-files-item-status,
+.console-pull-files-item.is-copied .console-pull-files-item-status {
+  color: #d2a8ff;
+}
+
+.console-pull-files-item.is-modified .console-pull-files-item-status,
+.console-pull-files-item.is-changed .console-pull-files-item-status {
+  color: #e3b341;
+}
+
+.console-pull-files-item-path {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.console-pull-files-item-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-pull-files-item-dir {
+  overflow: hidden;
+  color: var(--console-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-pull-files-item-stat {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-pull-files-item-stat .is-add,
+.console-pull-files-diff-stat .is-add {
+  color: #3fb950;
+}
+
+.console-pull-files-item-stat .is-del,
+.console-pull-files-diff-stat .is-del {
+  color: #f85149;
+}
+
+.console-pull-files-diff {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.console-pull-files-diff-header {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.console-pull-files-diff-title {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.console-pull-files-diff-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-pull-files-diff-stat {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-pull-files-diff-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: #0d1117;
+}
+
+.console-pull-files-diff-body .diff-tailwindcss-wrapper,
+.console-pull-files-diff-body .diff-view-wrapper {
+  width: 100%;
+}
+
+.console-pull-files-diff-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--console-muted);
+  font-size: 13px;
+}
+
+.console-pull-files-diff-empty p {
+  margin: 0;
+}
+
+.console-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--console-panel);
+  height: 100%;
+}
+
+.console-pane-body {
+  position: relative;
+  z-index: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--console-panel);
+  color: var(--console-text);
+}
+
+.console-project-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 6px 12px;
+  list-style: none;
+}
+
+.console-btn {
+  border: 1px solid var(--console-border);
+  background: var(--console-panel-2);
+  color: var(--console-text);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.console-btn:hover {
+  border-color: var(--console-accent);
+}
+
+.console-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+
+
+/* —— Codebase project workbench (ported from development console) —— */
+
+.console-content-list.is-minimized .console-pane--overview,
+.console-content-list.is-minimized .console-pane-body,
+.console-content-list.is-minimized .console-project-overview,
+.console-content-list.is-minimized .project-panel-repositories {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.console-content-list.is-minimized
+  .project-panel-repositories
+  > .project-github-list-toggle {
+  margin: 0;
+  width: 100%;
+}
+
+.console-content-list.is-minimized .project-panel-repositories.is-minimized > .console-github-commit-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-github-list-toggle--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.project-github-list-toggle__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.project-github-list-toggle__btn:hover {
+  background: rgb(255 255 255 / 0.04);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn.is-active {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.project-github-list-toggle__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.project-github-list-toggle__icon .project-github-list-toggle__tasks-icon,
+.project-github-list-toggle__icon .project-github-list-toggle__folder-icon,
+.project-github-list-toggle__icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.project-github-list-toggle__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-content-list.is-minimized .console-github-commit-list {
+  gap: 1px;
+}
+
+.console-content-list.is-minimized .console-github-commit {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 2px;
+}
+
+.console-content-list.is-minimized .console-github-commit-body {
+  display: none;
+}
+
+.console-content-list.is-minimized .console-github-commit-trailing {
+  min-width: 0;
+  padding-top: 0;
+  gap: 3px;
+}
+
+.console-content-list.is-minimized .console-github-commit-age,
+.console-content-list.is-minimized .console-github-pull-number {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  text-align: center;
+}
+
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-commit-age,
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-pull-number {
+  color: var(--foreground);
+}
+
+.console-content-list.is-minimized .console-github-pane-more,
+.console-content-list.is-minimized .console-github-pane-status,
+.console-content-list.is-minimized .console-github-pane-error {
+  display: none;
+}
+
+.console-pane--overview .console-project-overview {
+  padding: 0;
+}
+
+.console-project-overview .project-panel-tab-body {
+  min-height: 0;
+  height: 100%;
+  padding: 0 0 8px;
+}
+
+.console-project-overview .project-panel-tab-body__custom {
+  min-height: 0;
+  height: 100%;
+}
+
+.project-panel-repositories > .project-github-list-toggle {
+  /* Keep the segmented tabs edge-to-edge. */
+  margin: 0 -10px;
+  width: calc(100% + 20px);
+  max-width: none;
+}
+
+.project-panel-list-body > .console-fs-tree-pane,
+.project-panel-list-body > .console-github-commit-list,
+.project-panel-repositories > .console-github-commit-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-panel-list-body > .console-github-pane-toolbar,
+.project-panel-list-body > .console-github-pane-more,
+.project-panel-list-body > .console-github-pane-status,
+.project-panel-list-body > .console-github-pane-error {
+  flex-shrink: 0;
+}
+
+.console-github-pane-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-github-pane-toolbar.project-details-github-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)) {
+  grid-template-columns: minmax(0, max-content);
+}
+
+.project-github-repo-chip,
+.project-github-branch-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-github-repo-chip .searchable-dropdown-root.property-dropdown,
+.project-github-repo-chip .searchable-dropdown-root.property-dropdown--inline-chip {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+  flex-direction: column;
+}
+
+.project-github-repo-chip .property-dropdown-trigger,
+.project-github-repo-chip .property-dropdown-fallback {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.project-github-repo-chip .property-dropdown-trigger__label {
+  direction: rtl;
+  text-align: left;
+}
+
+.project-github-branch-chip .searchable-dropdown-root.property-dropdown,
+.project-github-branch-chip .searchable-dropdown-root.property-dropdown--inline-chip {
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.project-github-list-toggle {
+  display: flex;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.project-github-list-toggle .segmented-pill-toggle {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 9%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.project-github-list-toggle .segmented-pill-toggle__indicator {
+  border-radius: 6px;
+}
+
+.project-github-list-toggle .segmented-pill-toggle-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.console-content-main-overview > .console-project-overview {
+  flex: 1;
+  min-height: 0;
+}
+
+.console-project-overview {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.console-project-overview .project-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.console-project-overview .project-detail__nav {
+  display: none;
+}
+
+.console-project-overview-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.terminal-stage.terminal-directory-gate {
+  position: relative;
+  inset: auto;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+  background: #111111;
+  z-index: 0;
+}
+
+.terminal-directory-gate.terminal-directory-gate--compact {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 160px;
+  padding: 20px 16px;
+  text-align: center;
+  background: transparent;
+}
+
+.terminal-directory-gate__copy {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--console-muted);
+}
+
+.terminal-directory-gate__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.terminal-directory-gate__button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.terminal-directory-gate__error {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--console-danger);
+}
+
+/* --- Codebase project overview (ported from legacy development console) --- */
+
+.console-content-list.is-minimized .console-project-overview,
+.console-content-list.is-minimized .project-panel-repositories {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.console-content-list.is-minimized .console-pane--overview,
+.console-content-list.is-minimized .console-pane-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+
+.console-content-list.is-minimized .project-panel-repositories {
+  gap: 6px;
+  padding: 4px 2px 8px;
+}
+
+.console-content-list.is-minimized
+  .project-panel-repositories
+  > .project-github-list-toggle {
+  margin: 0;
+  width: 100%;
+}
+
+.console-content-list.is-minimized .project-panel-repositories.is-minimized {
+  height: 100%;
+  overflow: hidden;
+}
+
+.console-content-list.is-minimized .project-panel-repositories.is-minimized > .console-github-commit-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-github-list-toggle--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.project-github-list-toggle__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.project-github-list-toggle__btn:hover {
+  background: rgb(255 255 255 / 0.04);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn.is-active {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground);
+}
+
+.project-github-list-toggle__btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.project-github-list-toggle__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.project-github-list-toggle__icon .project-github-list-toggle__tasks-icon,
+.project-github-list-toggle__icon .project-github-list-toggle__folder-icon,
+.project-github-list-toggle__icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.project-github-list-toggle__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-content-list.is-minimized .console-github-commit-list {
+  gap: 1px;
+}
+
+.console-content-list.is-minimized .console-github-commit {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 2px;
+}
+
+.console-content-list.is-minimized .console-github-commit-body {
+  display: none;
+}
+
+.console-content-list.is-minimized .console-github-commit-trailing {
+  min-width: 0;
+  padding-top: 0;
+  gap: 3px;
+}
+
+.console-content-list.is-minimized .console-github-commit-age,
+.console-content-list.is-minimized .console-github-pull-number {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  text-align: center;
+}
+
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-commit-age,
+.console-content-list.is-minimized .console-github-commit.is-selected .console-github-pull-number {
+  color: var(--foreground);
+}
+
+.console-content-list.is-minimized .console-github-pane-more,
+.console-content-list.is-minimized .console-github-pane-status,
+.console-content-list.is-minimized .console-github-pane-error {
+  display: none;
+}
+
+.console-pane--overview .console-project-pane-title {
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--console-muted);
+}
+
+.console-pane--overview .console-project-pane-title .overview-name-editor,
+.console-project-breadcrumb .overview-name-editor {
+  min-width: 0;
+  flex: 1;
+}
+
+.console-pane--overview .console-project-pane-name,
+.console-project-breadcrumb .console-project-pane-name {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--console-muted);
+}
+
+.console-pane--overview .console-project-pane-name .overview-name-editor__button,
+.console-pane--overview .console-project-pane-name .overview-name-editor__input,
+.console-project-breadcrumb .console-project-pane-name .overview-name-editor__button,
+.console-project-breadcrumb .console-project-pane-name .overview-name-editor__input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.console-pane--overview .console-project-overview {
+  padding: 0;
+}
+
+/* Tab body stays full-bleed within the padded repositories stack. */
+.console-project-overview .project-panel-tab-body {
+  min-height: 0;
+  height: 100%;
+  padding: 0 0 8px;
+}
+
+.console-project-overview .project-panel-tab-body__custom {
+  min-height: 0;
+  height: 100%;
+}
+
+.project-panel-repositories {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Inset Files / Commits / PRs / Tasks below the full-bleed tabs. */
+  padding: 0 10px 8px;
+}
+
+.project-panel-repositories > .project-github-list-toggle {
+  /* Keep the segmented tabs edge-to-edge. */
+  margin: 0 -10px;
+  width: calc(100% + 20px);
+  max-width: none;
+}
+
+.project-panel-list-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.project-panel-repositories > .project-detail,
+.project-panel-repositories > .project-panel-list-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Files / Commits / PRs — scroll the list; keep toolbar pinned (load-more for
+   commits lives inside the list so it only appears at the bottom). */
+.project-panel-list-body > .console-fs-tree-pane,
+.project-panel-list-body > .console-github-commit-list,
+.project-panel-repositories > .console-github-commit-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-panel-list-body > .console-github-pane-toolbar,
+.project-panel-list-body > .console-github-pane-more,
+.project-panel-list-body > .console-github-pane-status,
+.project-panel-list-body > .console-github-pane-error {
+  flex-shrink: 0;
+}
+
+.console-github-commit-list > .console-github-pane-more {
+  padding: 8px 0 4px;
+}
+
+.console-github-pane-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-github-pane-toolbar.project-details-github-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
+}
+
+/* When only the repo chip is present, let it size to content. */
+.console-github-pane-toolbar.project-details-github-toolbar:not(:has(.project-github-branch-chip)) {
+  grid-template-columns: minmax(0, max-content);
+}
+
+.project-github-repo-chip,
+.project-github-branch-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-github-repo-chip .searchable-dropdown-root.property-dropdown,
+.project-github-repo-chip .searchable-dropdown-root.property-dropdown--inline-chip {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
+  flex-direction: column;
+}
+
+.project-github-repo-chip .property-dropdown-trigger,
+.project-github-repo-chip .property-dropdown-fallback {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Ellipsis on the left so owner/…/repo keeps the repo name visible. */
+.project-github-repo-chip .property-dropdown-trigger__label {
+  direction: rtl;
+  text-align: left;
+}
+
+.project-github-branch-chip .searchable-dropdown-root.property-dropdown,
+.project-github-branch-chip .searchable-dropdown-root.property-dropdown--inline-chip {
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.project-settings-error {
+  margin: 8px 0 0;
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.console-fs-tree-pane {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  overflow: auto;
+}
+
+.console-fs-tree-pane--docs {
+  overflow: hidden;
+}
+
+.console-docs-tree {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.console-docs-tree__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 2px 4px;
+}
+
+.console-docs-tree__main {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.console-docs-tree__main .app-content-side-panel-body {
+  padding-inline: 0;
+}
+
+.console-docs-tree__main .app-content-side-panel-empty {
+  padding: 12px 8px;
+  font-size: 13px;
+}
+
+.console-fs-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-fs-tree-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-fs-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+button.console-fs-tree-row {
+  cursor: pointer;
+}
+
+/* Never show the UA/system blue focus ring on tree rows — orange highlight only. */
+button.console-fs-tree-row:focus,
+button.console-fs-tree-row:focus-visible,
+button.console-fs-tree-row.keyboard-nav-list-item:focus,
+button.console-fs-tree-row.keyboard-nav-list-item:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
+button.console-fs-tree-row:hover {
+  background: var(--faint);
+}
+
+button.console-fs-tree-row.is-selected {
+  background: var(--faint);
+  color: var(--foreground);
+}
+
+button.console-fs-tree-row.is-selected:hover {
+  background: var(--faint);
+}
+
+button.console-fs-tree-row.keyboard-nav-item-highlight,
+button.console-fs-tree-row.keyboard-nav-item-highlight:hover,
+button.console-fs-tree-row.keyboard-nav-item-highlight:focus,
+button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 0 0 1px
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  outline: none !important;
+}
+
+.console-fs-tree-chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.console-fs-tree-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+.console-fs-tree-chevron-spacer {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.console-fs-tree-icon,
+.console-fs-tree-row > svg:not([data-pierre-icon]) {
+  flex: none;
+  color: var(--sidebar-icon-color, var(--muted));
+}
+
+.console-fs-tree-file-type-icon,
+.console-fs-tree-row svg[data-pierre-icon] {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.console-fs-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console-fs-tree-status {
+  margin: 0;
+  padding: 4px 8px;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.console-fs-tree-status.is-error {
+  color: var(--danger, #c45c5c);
+}
+
+.console-fs-tree-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  box-shadow: inset 0 0 0 1px
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-fs-tree-create-input {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  outline: none;
+}
+
+.console-fs-tree-create-input::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.project-github-list-toggle {
+  display: flex;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.project-github-list-toggle .segmented-pill-toggle {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-bottom: 0.5px solid color-mix(in srgb, var(--foreground) 9%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.project-github-list-toggle .segmented-pill-toggle__indicator {
+  border-radius: 6px;
+}
+
+.project-github-list-toggle .segmented-pill-toggle-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.console-github-pane-status,
+.console-github-pane-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--console-muted);
+}
+
+.console-github-pane-error {
+  color: #f87171;
+}
+
+.console-github-commit-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-github-commit {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.console-github-commit:hover {
+  background: rgb(255 255 255 / 0.04);
+}
+
+.console-github-commit:focus-visible {
+  outline: none;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.console-github-commit.is-selected {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.console-github-commit.keyboard-nav-item-highlight,
+.console-github-commit.keyboard-nav-item-highlight:hover,
+.console-github-commit.keyboard-nav-item-highlight:focus,
+.console-github-commit.keyboard-nav-item-highlight:focus-visible,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.console-github-commit.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02)) !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47) !important;
+}
+
+/* Global: only the orange/inset keyboard ring — never stack UA focus rings. */
+.keyboard-nav-item-highlight:focus,
+.keyboard-nav-item-highlight:focus-visible,
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible {
+  outline: none !important;
+}
+
+.console-github-commit-sha {
+  flex-shrink: 0;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-decoration: none;
+}
+
+.console-github-commit-sha:hover {
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  text-decoration: underline;
+}
+
+.console-github-commit-trailing {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 28px;
+  padding-top: 1px;
+}
+
+.console-github-commit-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.console-github-commit-age {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.console-github-pull {
+  text-decoration: none;
+}
+
+.console-github-pull-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.console-github-pull.is-open .console-github-pull-icon {
+  color: #6fd56e;
+}
+
+.console-github-pull.is-merged .console-github-pull-icon {
+  color: #545caf;
+}
+
+.console-github-pull.is-closed .console-github-pull-icon {
+  color: #f85149;
+}
+
+.console-github-commit-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.console-github-commit-message {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.console-github-commit-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.console-github-pane-more {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.console-content-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(18px);
+  transition:
+    opacity 350ms ease,
+    transform 350ms ease;
+}
+
+.console-content-main.is-shown {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.console-content-main-tasks,
+.console-content-main-terminal,
+.console-content-main-overview,
+.console-content-main-commit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 350ms ease,
+    transform 350ms ease;
+}
+
+.console-content-main-tasks {
+  transform: translateY(10px);
+  z-index: 1;
+}
+
+.console-content-main-terminal {
+  transform: translateX(14px);
+  z-index: 1;
+}
+
+.console-content-main-overview {
+  transform: translateY(10px);
+  z-index: 1;
+}
+
+.console-content-main-commit {
+  transform: translateY(10px);
+  z-index: 1;
+}
+
+.console-content-main-tasks.is-shown,
+.console-content-main-terminal.is-shown,
+.console-content-main-overview.is-shown,
+.console-content-main-commit.is-shown {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.console-content-main-terminal > .console-pane--terminal,
+.console-content-main > .console-pane--terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.console-content-main-overview > .console-project-overview {
+  flex: 1;
+  min-height: 0;
+}
+
+.console-content-main-commit > .console-pane--commit-detail,
+.console-content-main-commit > .console-pane--file-detail {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.console-project-overview {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.console-project-overview .project-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.console-project-overview .project-detail__nav {
+  display: none;
+}
+
+.console-project-overview-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.console-pane-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--console-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--console-muted);
+  flex-shrink: 0;
+}
+
+.console-pane-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.console-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.console-pane-body {
+  position: relative;
+  z-index: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--console-panel);
+  color: var(--console-text);
+}
+
+.console-btn {
+  border: 1px solid var(--console-border);
+  background: var(--console-panel-2);
+  color: var(--console-text);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.console-btn:hover {
+  border-color: var(--console-accent);
+}
+
+.console-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+
+.console-btn--primary {
+  border-color: var(--console-accent);
+  background: color-mix(in srgb, var(--console-accent) 22%, var(--console-panel-2));
+  color: var(--console-text);
+}
+
+.console-btn--primary:hover:not(:disabled) {
+  border-color: var(--console-accent);
+  background: color-mix(in srgb, var(--console-accent) 32%, var(--console-panel-2));
+}
+
+
+.console-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--console-muted);
+  cursor: pointer;
+}
+
+.console-icon-btn:hover {
+  border-color: var(--console-border);
+  background: var(--console-panel-2);
+  color: var(--console-text);
+}
+
+.console-icon-btn[aria-pressed="true"] {
+  border-color: var(--console-border);
+  background: var(--console-panel-2);
+  color: var(--console-accent);
+}
+
+.console-run-application-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--console-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.terminal-stage.terminal-directory-gate {
+  position: relative;
+  inset: auto;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 24px;
+  text-align: center;
+  background: #111111;
+  z-index: 0;
+}
+
+.terminal-directory-gate.terminal-directory-gate--compact {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 160px;
+  padding: 20px 16px;
+  text-align: center;
+  background: transparent;
+}
+
+.terminal-directory-gate__copy {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--console-muted);
+}
+
+.terminal-directory-gate__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.terminal-directory-gate__button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.terminal-directory-gate__error {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--console-danger);
+}
+
+.console-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.console-content-swap {
+  animation: console-content-fade-in 280ms ease both;
+}
+
+@keyframes console-content-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* —— Codebase project workbench host —— */
+/* Must beat `.bos-product-shell [data-content-detail] { flex-direction: column }`
+ * Grid + 1fr keeps the detail column filling leftover space while the left
+ * width is driven by --desktop-codebase-side-panel-width (rAF / drag). */
+.bos-product-shell .codebase-project-workbench[data-content-detail],
+.page-scroll .codebase-project-workbench[data-content-detail],
+.codebase-project-workbench[data-content-detail],
+.codebase-project-workbench {
+  --desktop-codebase-side-panel-width: 380px;
+  display: grid !important;
+  grid-template-columns: var(--desktop-codebase-side-panel-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex-direction: unset;
+  gap: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+}
+
+.codebase-project-workbench__list,
+.codebase-project-workbench__detail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.codebase-project-workbench__list {
+  position: relative;
+  border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.codebase-project-workbench__detail {
+  min-width: 0;
+}
+
+.codebase-project-workbench__list > .console-pane,
+.codebase-project-workbench__detail > .console-pane {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.codebase-project-workbench__docs,
+.codebase-project-workbench__tasks {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.codebase-project-workbench__detail > .console-github-pane-status {
+  padding: 16px;
+}
+
+.codebase-project-workbench .console-pane--overview {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.codebase-project-workbench .console-pane--overview > .console-pane-body,
+.codebase-project-workbench .console-pane--overview .console-project-overview,
+.codebase-project-workbench .console-pane--overview .project-panel-repositories {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.codebase-project-workbench .console-pane--overview .project-panel-repositories > .project-detail {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

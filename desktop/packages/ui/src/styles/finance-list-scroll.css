@@ -1,0 +1,195 @@
+/* Transactions list must scroll inside the section; sticky filter dock needs
+   this ancestor as the overflow container (same pattern as finance detail).
+   When the detail split is open, scrolling moves to the list pane instead. */
+.organization-detail__section[data-section="transactions"]
+  .organization-detail__finance-section {
+  overflow: hidden;
+}
+
+.organization-transactions-section {
+  display: flex;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.organization-transactions-section .organization-transactions-section__scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Match invoice sticky cover so month headers hide rows in the top padding. */
+.organization-transactions-section
+  .finance-transactions__scroll
+  .status-group-header-row {
+  background-color: var(--sticky-list-header-bg, #161616);
+  background-clip: padding-box;
+}
+
+.organization-transactions-section
+  .finance-transactions__scroll
+  .status-group-header-row.is-stuck::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 2rem;
+  background-color: var(--sticky-list-header-bg, #161616);
+  pointer-events: none;
+}
+
+.organization-transactions-section
+  .finance-categories-view__tx-section.has-floating-filter {
+  padding-bottom: 4.5rem;
+}
+
+.organization-detail__section[data-section="transactions"]
+  .finance-categories-view__tx-section.has-floating-filter {
+  padding-bottom: 4.5rem;
+}
+
+.organization-detail__placeholder {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.organization-detail__overview {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.organization-detail__avatar {
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.05);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
+.organization-entity-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.organization-entity-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 4rem;
+  list-style: none;
+}
+
+.organization-entity-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.organization-entity-row:hover {
+  background: rgb(255 255 255 / 0.04);
+}
+
+.organization-entity-row__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.organization-entity-row__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.organization-entity-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.organization-entity-row__subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.organization-entity-list__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 8px;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.875rem;
+}
+
+.organization-entity-list__empty-hint {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.organization-entity-list__empty-hint strong {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-weight: 500;
+}
+
+.organization-detail__create-contact {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.organization-detail__create-contact:hover {
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}

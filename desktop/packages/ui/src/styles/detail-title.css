@@ -1,0 +1,286 @@
+/* Detail title shell (800px) */
+.content-detail-title-header {
+  box-sizing: border-box;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.content-detail-title-header--padded {
+  margin: 0 auto 1.5rem;
+  padding: 2rem 1rem 0;
+}
+
+/* Narrow stacked layout: parent scroll already supplies inset. */
+.task-detail-stacked .content-detail-title-header--padded {
+  margin-bottom: 0.25rem;
+  padding: 0;
+}
+
+/* Stacked/panel hosts: drop shared horizontal inset inside narrow chrome. */
+.task-detail-stacked .content-markdown-editor-column,
+.project-detail--panel .content-markdown-editor-column {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.task-detail-stacked .content-markdown-preview-column,
+.project-detail--panel .content-markdown-preview-column {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.content-detail-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.content-detail-title-slot {
+  margin-bottom: 1.5rem;
+}
+
+.content-detail-icon-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.content-detail-icon-title__title {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Next DocumentDetailIcon: 32×32 chip with 0.5px border — not on the title. */
+.document-detail-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.document-detail-icon__button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.document-detail-icon__button:hover {
+  background: rgb(255 255 255 / 0.08);
+  opacity: 0.9;
+}
+
+.document-detail-icon__button:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.2);
+  outline-offset: 2px;
+}
+
+.document-detail-icon__button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.document-detail-icon__glyph {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.document-detail-icon__error {
+  margin: 0;
+  color: #f87171;
+  font-size: 0.75rem;
+}
+
+.inbox-detail-body--document {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+/*
+ * Document / note detail: scroll on a full-width port so the scrollbar sits on
+ * the far right of the pane. Text stays max-width 800px centered; CodeMirror
+ * uses scrollWithContent (no inner mid-column scrollbar). Edit/Preview dock
+ * stays outside the scrollport (sibling).
+ */
+.markdown-document-embedded {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.markdown-document-embedded--document-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.markdown-document-scrollport,
+.markdown-document-embedded__scroll {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  container-type: size;
+}
+
+.markdown-document-scrollport .content-markdown-view-layout,
+.markdown-document-scrollport .content-markdown-view-layout__preview,
+.markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  overflow: visible;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.markdown-document-scrollport .content-markdown-editor-column {
+  flex: 1 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* Edit: fill the scrollport (under optional leading) for empty/short docs. */
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden),
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  min-height: 100cqh;
+}
+
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.inbox-detail-layout[data-content-view-mode="edit"]
+  > .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.markdown-document-embedded--document-scroll[data-content-view-mode="edit"]
+  .markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
+}
+
+.markdown-document-leading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  width: 100%;
+  flex-shrink: 0;
+  /* Match Next journal Whoop shell: pt-8 px-4 (title lives in preview/edit header). */
+  padding: 2rem 1rem 0;
+}
+
+.inbox-detail-body--document .inbox-detail-meta {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+/* Meta inside the title header — don't add a second title→body gap. */
+.content-detail-icon-title__title .inbox-detail-meta {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+.content-detail-icon-title__title .content-detail-display-id {
+  margin-bottom: 0;
+}
+
+.content-markdown-preview-column .content-detail-title-slot .content-detail-title {
+  margin-bottom: 0;
+}
+
+.content-markdown-preview-column .content-detail-title-slot .inbox-detail-meta {
+  margin-bottom: 0;
+}
+
+.page-scroll:has([data-calendar-view]),
+.page-scroll:has([data-calendar-view]) > * {
+  background: transparent;
+}
+
+/* Lock scroll parents so floating list/board + calendar views fill the frame */
+.page-scroll:has([data-content-detail]),
+.page-scroll:has([data-list-board-view]),
+.page-scroll:has([data-calendar-view]),
+.bos-product-shell [data-content-detail],
+.bos-product-shell [data-list-board-view],
+.bos-product-shell [data-calendar-view] {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Row split lives on .detail-with-properties (main | properties rail) */
+.bos-product-shell [data-content-detail][data-detail-split] > .detail-with-properties {
+  flex-direction: row;
+}
+
+.bos-product-shell [data-content-detail][data-detail-split].journal-day-layout,
+.page-scroll .journal-day-layout[data-content-detail][data-detail-split] {
+  flex-direction: row !important;
+}
+
+@media (max-width: 1023px) {
+  .bos-product-shell [data-content-detail][data-detail-split] > .detail-with-properties {
+    flex-direction: column;
+  }
+
+  .bos-product-shell [data-content-detail][data-detail-split].journal-day-layout,
+  .page-scroll .journal-day-layout[data-content-detail][data-detail-split] {
+    flex-direction: column !important;
+  }
+}
+
+[data-list-board-view] {
+  width: 100%;
+  height: 100%;
+}

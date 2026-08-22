@@ -1,0 +1,274 @@
+/* Content shell — matches backsteros-app workspace / tabs / frame */
+.workspace {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.content-tabs-bar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  width: 100%;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 8px;
+  transition: padding 180ms ease;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
+  padding-right: 0;
+}
+
+.content-tabs-scroll {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.content-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.content-tabs-list {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-tab {
+  position: relative;
+  flex: 0 0 220px;
+  width: 220px;
+  min-width: 140px;
+  max-width: 220px;
+  height: 30px;
+  margin: 2px 0;
+  padding: 0 34px 0 14px;
+  border: 0.5px solid var(--tab-border);
+  border-radius: 11px;
+  background: var(--tab-bg);
+  color: var(--tab-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.content-tab:hover {
+  color: var(--tab-text-active);
+  border-color: var(--tab-border-active);
+}
+
+.content-tab-active {
+  background: var(--tab-bg-active);
+  border-color: var(--tab-border-active);
+  color: var(--tab-text-active);
+}
+
+.content-tab:focus-visible {
+  outline: 0.5px solid var(--tab-border-active);
+  outline-offset: -0.5px;
+}
+
+.content-tab-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-tab-content {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-tab-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  opacity: 0.72;
+}
+
+.content-tab-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.content-tab-active .content-tab-icon {
+  opacity: 0.92;
+}
+
+.content-tab-close-fade {
+  position: absolute;
+  top: 1px;
+  right: 22px;
+  bottom: 1px;
+  width: 24px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to right, transparent, var(--tab-close-fade));
+  transition: opacity 120ms ease;
+}
+
+.content-tab:hover .content-tab-close-fade,
+.content-tab:has(.content-tab-close:focus-visible) .content-tab-close-fade {
+  opacity: 1;
+}
+
+.content-tab-active .content-tab-close-fade {
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--tab-close-fade-active)
+  );
+}
+
+.content-tab-close {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tab-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.content-tab:hover .content-tab-close,
+.content-tab-close:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.content-tab-close:hover,
+.content-tab-close:focus-visible {
+  color: var(--tab-text-active);
+  background: var(--tab-close-hover-bg);
+  outline: none;
+}
+
+.content-tab-add {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 2px 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tab-text);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.content-tab-add:hover {
+  color: var(--tab-text-active);
+  background: var(--tab-close-hover-bg);
+}
+
+.content-frame {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  margin: 8px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.05);
+  transition:
+    margin 180ms ease,
+    border-radius 180ms ease,
+    border-width 180ms ease;
+}
+
+/* Nav hidden or window fullscreen: pure black app chrome (nav, tabs strip,
+   status bar). Override --background so every chrome surface that uses the
+   token follows; content-frame keeps its own elevated surface. */
+.bos-product-shell.is-sidebar-collapsed,
+.bos-product-shell.is-window-fullscreen {
+  --background: #000;
+  background: #000;
+}
+
+.bos-product-shell.is-sidebar-collapsed .workspace,
+.bos-product-shell.is-window-fullscreen .workspace {
+  background: #000;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-frame {
+  margin: 0;
+  border-radius: 0;
+  border-left-width: 0;
+  border-right-width: 0;
+  border-bottom-width: 0;
+}
+
+/* Window fullscreen + nav hidden: keep an even 8px gutter on all sides. */
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-frame {
+  margin: 8px;
+  border-radius: 8px;
+  border-left-width: 0.5px;
+  border-right-width: 0.5px;
+  border-bottom-width: 0.5px;
+}
+
+.content-frame-main-only .context-panel {
+  display: none;
+}
+
+.content-chrome-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--content-chrome-header-height);
+  min-height: var(--content-chrome-header-height);
+  max-height: var(--content-chrome-header-height);
+  border-bottom: 0.5px solid rgb(255 255 255 / 0.1);
+  background: transparent;
+}

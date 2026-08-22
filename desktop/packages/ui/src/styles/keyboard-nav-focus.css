@@ -1,0 +1,176 @@
+/* Match Next: inset orange ring, never a second browser/UA focus border.
+   Journal rows put keyboard-nav-item-highlight on the Link itself. */
+.app-side-panel-item.keyboard-nav-item-highlight,
+.app-side-panel-item.keyboard-nav-item-highlight:hover,
+.app-side-panel-item.keyboard-nav-item-highlight:focus,
+.app-side-panel-item.keyboard-nav-item-highlight:focus-visible,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight:hover,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight:focus,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  border-color: transparent !important;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+/* Nested focusables inside a highlighted row (inbox stacked rows). */
+.app-side-panel-item.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.app-side-panel-item.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Mouse/keyboard focus on side-panel links without j/k highlight — no UA ring. */
+.app-side-panel-item:focus,
+.app-side-panel-item:focus-visible {
+  outline: none;
+}
+
+/* Markdown preview links: j/k highlight while content zone is active. */
+[data-content-preview-links] a.keyboard-nav-item-highlight {
+  outline: 1px solid var(--keyboard-nav-highlight-color, #ee7a47);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Main-content list rows (projects / tasks overview): inset orange ring. */
+.keyboard-nav-list-item.keyboard-nav-item-highlight,
+.keyboard-nav-list-item.keyboard-nav-item-highlight:hover,
+.keyboard-nav-list-item.keyboard-nav-item-highlight:focus,
+.keyboard-nav-list-item.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background-color: var(--keyboard-nav-highlight-bg);
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width)
+    var(--keyboard-nav-highlight-color);
+}
+
+/* When highlight wraps a focused control, suppress nested UA focus rings. */
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible,
+.keyboard-nav-list-item.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus,
+.keyboard-nav-list-item.keyboard-nav-item-highlight
+  :is(a, button, input, textarea, [role="button"]):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* While j/k nav is active, mute :hover on other rows so a stationary cursor
+   does not show a second highlight beside the orange ring. */
+body[data-keyboard-nav-hover="suppressed"]
+  .keyboard-nav-list-item:hover:not(.keyboard-nav-item-highlight),
+body[data-keyboard-nav-hover="suppressed"]
+  .app-side-panel-item:hover:not(.keyboard-nav-item-highlight):not(
+    .app-side-panel-item-active
+  ) {
+  background-color: transparent;
+}
+
+.inbox-list-item-meta-label {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font: inherit;
+  font-size: 11px;
+  line-height: 14px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.inbox-list-item {
+  width: 100%;
+}
+
+.app-content-side-panel.is-minimized .app-content-side-panel-main {
+  padding-inline: 4px;
+}
+
+.app-content-side-panel.is-minimized .app-content-side-panel-list {
+  gap: 1px;
+  padding-block: 6px;
+}
+
+.side-panel-plain-group-header--minimized {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px 4px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.side-panel-plain-group-header--minimized:first-child {
+  padding-top: 4px;
+}
+
+.inbox-list-item--minimized > a,
+.inbox-list-item--minimized > .app-side-panel-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  padding: 5px 2px;
+  text-align: center;
+}
+
+.inbox-list-item-minimized-id {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: inherit;
+  text-align: center;
+}
+
+.inbox-list-item-title-wrap {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+}
+
+.inbox-list-item-email-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.inbox-list-item-email-party {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}

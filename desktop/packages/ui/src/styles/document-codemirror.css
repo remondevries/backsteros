@@ -1,0 +1,145 @@
+/* Custom empty-doc block caret (vim has no letter to size against). */
+.document-codemirror {
+  position: relative;
+}
+
+.document-codemirror[data-empty-doc="true"] .cm-vimCursorLayer .cm-fat-cursor {
+  visibility: hidden;
+}
+
+/* Avoid a second native caret under the custom empty-doc caret. */
+.document-codemirror[data-empty-doc="true"] .cm-content {
+  caret-color: transparent !important;
+}
+
+.document-codemirror-empty-caret {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  pointer-events: none;
+  animation: document-codemirror-empty-caret-blink 1.35s ease-in-out infinite;
+}
+
+.document-codemirror-empty-caret--insert {
+  /* Thin bar matches CodeMirror insert caret, not the vim cell. */
+  border-radius: 0;
+}
+
+@keyframes document-codemirror-empty-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.document-codemirror .cm-scroller {
+  min-height: 0;
+  height: 100%;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif) !important;
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.document-codemirror .cm-content,
+.document-codemirror .cm-line {
+  font-family: inherit !important;
+}
+
+.document-codemirror .cm-gutters {
+  display: none;
+}
+
+.document-codemirror .cm-panels,
+.document-codemirror .cm-panels-bottom {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.content-markdown-view-layout
+  .document-codemirror:not(.document-codemirror--document-scroll)
+  .cm-editor
+  .cm-content,
+.content-markdown-view-layout
+  .document-codemirror:not(.document-codemirror--document-scroll)
+  .cm-editor
+  .cm-line {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Preview-parity list gutter (disc sits in this inset). */
+.content-markdown-view-layout
+  .document-codemirror:not(.document-codemirror--document-scroll)
+  .cm-editor
+  .cm-line.cm-md-ul-item {
+  padding-left: 1.35em !important;
+}
+
+/* Content-sized editor (task detail): match preview height, no fill. */
+.document-codemirror--document-scroll {
+  height: auto;
+  flex: none;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.document-codemirror--document-scroll .cm-editor {
+  height: auto;
+  flex: none;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.document-codemirror--document-scroll .cm-editor .cm-scroller {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  height: auto !important;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.document-codemirror--document-scroll.document-codemirror--document-scroll-min,
+.document-codemirror--document-scroll.document-codemirror--document-scroll-min
+  .cm-editor,
+.document-codemirror--document-scroll.document-codemirror--document-scroll-min
+  .cm-editor
+  .cm-scroller {
+  min-height: 50vh;
+}
+
+.document-codemirror--document-scroll .cm-editor .cm-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.document-codemirror--document-scroll .cm-editor .cm-line {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.document-codemirror--document-scroll .cm-editor .cm-line.cm-md-ul-item {
+  padding-left: 1.35em !important;
+}

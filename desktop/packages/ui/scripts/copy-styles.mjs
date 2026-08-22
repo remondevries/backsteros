@@ -121,12 +121,24 @@ function writeServerEntry() {
   );
 }
 
-// styles
-const stylesSource = join(srcRoot, "styles.css");
+// styles: the manifest (styles.css) plus the domain files it @imports.
 const stylesTarget = join(distRoot, "styles.css");
 mkdirSync(dirname(stylesTarget), { recursive: true });
-writeFileSync(stylesTarget, readFileSync(stylesSource));
-console.log("[@backsteros/ui] Copied styles.css to dist/");
+writeFileSync(stylesTarget, readFileSync(join(srcRoot, "styles.css")));
+const stylesDirSource = join(srcRoot, "styles");
+const stylesDirTarget = join(distRoot, "styles");
+mkdirSync(stylesDirTarget, { recursive: true });
+let styleCount = 0;
+for (const file of walk(stylesDirSource)) {
+  if (extname(file) !== ".css") continue;
+  const target = join(stylesDirTarget, relative(stylesDirSource, file));
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, readFileSync(file));
+  styleCount += 1;
+}
+console.log(
+  `[@backsteros/ui] Copied styles.css + ${styleCount} styles/ files to dist/`,
+);
 
 preserveUseClientDirectives();
 writeServerEntry();

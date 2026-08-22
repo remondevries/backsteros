@@ -1,0 +1,1216 @@
+/* Letter / task / meeting detail: notes | properties — web data-detail-split parity */
+.letter-detail-split,
+.meeting-detail-split,
+.task-detail-view,
+.task-detail-split {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.letter-detail-split .detail-with-properties,
+.meeting-detail-split .detail-with-properties,
+.task-detail-split .detail-with-properties,
+.email-detail-split .detail-with-properties {
+  min-height: 0;
+  flex: 1;
+}
+
+/* Narrow hosts (agent console): title → properties/project → content */
+.task-detail-stacked {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-detail-stacked__scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.task-detail-stacked__properties {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
+}
+
+.task-detail-stacked__properties .task-detail-properties-scroll {
+  overflow: visible;
+}
+
+/* Match activity feed density on the stacked task page. */
+.task-detail-stacked__properties .property-dropdown-trigger--inline-chip,
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip {
+  gap: 4px;
+  padding: 3px 7px;
+}
+
+.task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon,
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon {
+  width: 12px;
+  height: 12px;
+}
+
+.task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon svg,
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.task-detail-stacked__properties .property-dropdown-trigger--inline-chip .property-dropdown-trigger__label,
+.task-detail-stacked__properties .property-dropdown-fallback.property-dropdown-trigger--inline-chip .property-dropdown-trigger__label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.task-detail-stacked__properties .task-properties-inline__fields {
+  gap: 5px;
+}
+
+.task-detail-stacked__content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* With attachments / activity under the description, size to content instead of
+   filling the pane (which pinned the slot to the bottom). */
+.task-detail-stacked__content:has(.task-detail-attachments),
+.task-detail-stacked__content:has(.task-detail-below-description) {
+  flex: 0 0 auto;
+}
+
+.task-detail-stacked__content .content-markdown-view-layout,
+.task-detail-stacked__content .content-markdown-preview-column {
+  min-height: 120px;
+}
+
+/* Room for the Edit/Preview dock inside the description area.
+   Share the same 800px column as activity so the dock lines up with
+   the Agent active control. */
+.task-detail-stacked__content .content-markdown-view-layout {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
+  padding-bottom: 52px;
+}
+
+.task-detail-stacked .content-view-mode-toggle {
+  right: 0;
+}
+
+/* Equal space above/below the activity separator (matches padding-top). */
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-view-layout,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-view-layout {
+  padding-bottom: 40px;
+}
+
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-view-mode-toggle,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-view-mode-toggle {
+  bottom: 12px;
+}
+
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-view-layout,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-view-layout__edit,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-view-layout__preview,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-view-layout,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-view-layout__edit,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-view-layout__preview {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-preview-column,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-preview-column {
+  padding-bottom: 0;
+}
+
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-editor-column,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-editor-column {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.task-detail-attachments {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 800px;
+  margin: 16px auto 0;
+  /* Match title / description column inset (1rem). */
+  padding: 0 1rem;
+}
+
+.task-detail-stacked .task-detail-attachments {
+  margin-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.task-link-attachments__list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-link-attachments__row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 36px;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 5.5%, transparent);
+  overflow: hidden;
+}
+
+.task-link-attachments__link {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-link-attachments__link:hover .task-link-attachments__label {
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.task-link-attachments__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  opacity: 0.9;
+}
+
+.task-link-attachments__favicon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  opacity: 0.75;
+}
+
+.task-link-attachments__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 13px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.task-link-attachments__remove {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  margin: 0 8px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  cursor: pointer;
+}
+
+.task-link-attachments__remove:hover {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.task-link-attachments__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.task-link-attachments__add {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 32%, transparent);
+  cursor: pointer;
+}
+
+.task-link-attachments__add:hover {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.task-link-attachments-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.task-link-attachments-modal__kind {
+  margin: 0 0 0.75rem;
+}
+
+.task-link-attachments-modal__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 16rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.task-link-attachments-modal__result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-link-attachments-modal__result:hover {
+  background: rgb(255 255 255 / 0.06);
+  border-color: #343434;
+}
+
+.task-link-attachments-modal__result-label {
+  font-size: 0.875rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.task-link-attachments-modal__result-detail {
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.task-link-attachments-modal__empty {
+  margin: 0.75rem 0 0;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.8125rem;
+}
+
+.task-link-attachments__link--button {
+  appearance: none;
+  font: inherit;
+}
+
+.task-link-attachments-modal__label {
+  display: block;
+}
+
+.task-link-attachments-modal__input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.35;
+  outline: none;
+}
+
+.task-link-attachments-modal__input:focus {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.task-link-attachments-modal .entity-delete-modal-confirm {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+}
+
+.task-link-attachments-modal .entity-delete-modal-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.task-detail-below-description {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 800px;
+  margin: 16px auto 0;
+  /* Match title / description / attachments inset (1rem). */
+  padding: 0 1rem;
+  border-top: none;
+}
+
+.task-detail-below-description::before {
+  content: "";
+  display: block;
+  margin: 0 0 16px;
+  border-top: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+}
+
+.task-detail-stacked .task-detail-below-description {
+  margin-top: 16px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Split layout: same content-height behavior when attachments / activity follow.
+   Use block flow so the editor cannot flex-fill the viewport between title and
+   paperclip (preview is content-sized; edit must match). */
+.inbox-detail-body--document:has(.task-detail-attachments),
+.inbox-detail-body--document:has(.task-detail-below-description) {
+  display: block;
+  overflow: auto;
+}
+
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .content-markdown-view-layout,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .content-markdown-view-layout__edit,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .content-markdown-view-layout__preview,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .content-markdown-view-layout,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .content-markdown-view-layout__edit,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .content-markdown-view-layout__preview {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .content-markdown-preview-column,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .content-markdown-preview-column {
+  padding-bottom: 0;
+}
+
+/* Keep the edit column content-sized like preview (don't flex-fill). */
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .content-markdown-editor-column,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .content-markdown-editor-column,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .content-markdown-editor-column,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .content-markdown-editor-column {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.inbox-detail-body--document:has(.task-detail-attachments) .document-codemirror,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-editor,
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-scroller,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-editor,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-scroller,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .document-codemirror,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-editor,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-scroller,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .document-codemirror,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-editor,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-scroller {
+  height: auto !important;
+  flex: none !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+/* Edit mode reserves dock space on .cm-content; drop it when attachments /
+   activity follow so edit/preview heights stay aligned. */
+.inbox-detail-body--document:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-content,
+.inbox-detail-body--document:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-content,
+.task-detail-stacked__content:has(.task-detail-attachments)
+  .document-codemirror
+  .cm-content,
+.task-detail-stacked__content:has(.task-detail-below-description)
+  .document-codemirror
+  .cm-content {
+  padding-bottom: 0 !important;
+}
+
+/* Left column: notes stack above PDF (PDF does NOT span under properties) */
+.document-pdf-main {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-pdf-main__notes {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-pdf-main__notes.markdown-document-scrollport {
+  overflow-x: hidden;
+  overflow-y: auto;
+  container-type: size;
+}
+
+.document-pdf-main__notes .inbox-detail-body--document {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-pdf-main__notes.markdown-document-scrollport .inbox-detail-body--document {
+  overflow: visible;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 100%;
+}
+
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .content-markdown-view-layout__edit:not(
+    .content-markdown-view-layout__edit--preparing
+  ):not(.content-markdown-view-layout__edit--hidden) {
+  min-height: 100cqh;
+}
+
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll,
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor,
+.letter-detail-split[data-content-view-mode="edit"]
+  .document-pdf-main__notes.markdown-document-scrollport
+  .document-codemirror--document-scroll
+  .cm-editor
+  .cm-scroller {
+  min-height: 100%;
+}
+
+.letter-compose-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* When PDF maximized: notes hide; PDF fills left column; properties stay */
+.letter-pdf-section--maximized.resizable-bottom-panel,
+.document-pdf-main:not(:has(.document-pdf-main__notes)) > .resizable-bottom-panel {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+.letter-pdf-section--maximized .resizable-bottom-panel-handle {
+  display: none;
+}
+
+.resizable-bottom-panel {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.resizable-bottom-panel-handle {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.resizable-bottom-panel-handle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 36px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.resizable-bottom-panel:hover .resizable-bottom-panel-handle::after,
+.resizable-bottom-panel[data-resizing="true"] .resizable-bottom-panel-handle::after {
+  opacity: 1;
+}
+
+.resizable-bottom-panel-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.letter-pdf-section {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.letter-pdf-section--collapsed .letter-pdf-tabs--row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* Empty PDF dock: stretch children so the dropzone is full width. */
+.letter-pdf-section--empty {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.letter-pdf-section--empty > .resizable-bottom-panel-body {
+  width: 100%;
+  min-width: 0;
+}
+
+.letter-pdf-section--empty .letter-pdf-dropzone {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.letter-pdf-section-empty {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 1rem 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 13px;
+  text-align: center;
+}
+
+.letter-pdf-section-empty p {
+  margin: 0;
+  max-width: 18rem;
+  line-height: 1.45;
+}
+
+.letter-pdf-section-empty--preview {
+  min-height: 140px;
+}
+
+.letter-pdf-dropzone {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0.75rem;
+}
+
+.letter-pdf-dropzone__surface {
+  position: relative;
+  display: flex;
+  min-height: 88px;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 1rem 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.letter-pdf-dropzone__surface:hover {
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.letter-pdf-dropzone__surface--dragging {
+  border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.letter-pdf-dropzone__surface--disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.letter-pdf-dropzone__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.letter-pdf-dropzone__title {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.letter-pdf-dropzone__meta,
+.letter-pdf-dropzone__hint {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.letter-pdf-dropzone__remove {
+  align-self: flex-start;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.letter-pdf-dropzone__remove:hover {
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.letter-pdf-dropzone__remove:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.letter-pdf-dropzone__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.finance-csv-dropzone__busy,
+.finance-csv-dropzone__complete {
+  align-items: center;
+}
+
+.finance-csv-dropzone__spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-top-color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  border-radius: 999px;
+  animation: finance-csv-dropzone-spin 0.75s linear infinite;
+}
+
+.finance-csv-dropzone__check {
+  display: inline-flex;
+  color: #22c55e;
+}
+
+.finance-csv-dropzone__surface--busy {
+  border-style: solid;
+  cursor: wait;
+}
+
+.finance-csv-dropzone__surface--complete {
+  border-style: solid;
+  border-color: color-mix(in srgb, #22c55e 42%, transparent);
+  background: color-mix(in srgb, #22c55e 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+@keyframes finance-csv-dropzone-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.letter-pdf-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.letter-pdf-tabs--row {
+  position: relative;
+  flex-shrink: 0;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.letter-pdf-tabs-toggle-hitbox {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.letter-pdf-tabs-start {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.letter-pdf-tabs-start > .letter-pdf-tab {
+  pointer-events: auto;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  max-width: min(240px, 100%);
+  min-height: 30px;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--upload-icon {
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--upload-icon:hover {
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.letter-pdf-tab--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.letter-pdf-tab--draggable:active {
+  cursor: grabbing;
+}
+
+.letter-pdf-tabs-start--reordering {
+  cursor: grabbing;
+}
+
+.letter-pdf-tab--dragging {
+  opacity: 0.55;
+  transform: scale(1.03);
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--foreground) 18%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 55%, transparent);
+  z-index: 2;
+}
+
+.letter-pdf-tab--insert-before,
+.letter-pdf-tab--insert-after {
+  position: relative;
+}
+
+.letter-pdf-tab--insert-before::before,
+.letter-pdf-tab--insert-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--keyboard-nav-highlight-color, #ee7a47);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--keyboard-nav-highlight-color, #ee7a47) 35%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.letter-pdf-tab--insert-before::before {
+  left: -5px;
+}
+
+.letter-pdf-tab--insert-after::after {
+  right: -5px;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--upload-icon.letter-pdf-tab--insert-before::before {
+  left: -2px;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--collapse {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  pointer-events: none;
+}
+
+.letter-pdf-tabs-end {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--maximize {
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.letter-pdf-tabs--row .letter-pdf-tab--maximize:hover,
+.letter-pdf-tabs--row .letter-pdf-tab--collapse:hover {
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.letter-pdf-tab {
+  display: inline-flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--background) 88%, white 12%);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.letter-pdf-tab-main {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.letter-pdf-tab-main:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.letter-pdf-tab-main[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.letter-pdf-tab-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.letter-pdf-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.letter-pdf-tab-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.letter-pdf-tab-rename,
+.letter-pdf-tab-delete {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.letter-pdf-tab:hover .letter-pdf-tab-rename,
+.letter-pdf-tab:hover .letter-pdf-tab-delete,
+.letter-pdf-tab-rename:focus-visible,
+.letter-pdf-tab-delete:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.letter-pdf-tab-rename:hover,
+.letter-pdf-tab-rename:focus-visible,
+.letter-pdf-tab-delete:hover,
+.letter-pdf-tab-delete:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.letter-pdf-tab-rename:disabled,
+.letter-pdf-tab-delete:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.letter-pdf-tab-rename-input {
+  min-width: 0;
+  flex: 1;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  outline: none;
+}
+
+.letter-pdf-tab--editing {
+  cursor: default;
+}
+
+.letter-pdf-tab:hover {
+  border-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.letter-pdf-tab:focus-visible {
+  outline: 0.5px solid color-mix(in srgb, var(--foreground) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.letter-pdf-tab--active {
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  background: color-mix(in srgb, black 28%, var(--background));
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  box-shadow: inset 0 2px 4px color-mix(in srgb, black 55%, transparent);
+}
+
+.letter-pdf-tab--active:hover {
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  background: color-mix(in srgb, black 24%, var(--background));
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.letter-pdf-tab--legacy {
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.letter-pdf-tab--upload {
+  width: auto;
+  justify-content: center;
+  border-style: dashed;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.letter-pdf-tab--upload:hover {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}

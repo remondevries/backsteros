@@ -1,0 +1,611 @@
+/* Shared tokens for searchable dropdowns */
+:root,
+.bos-product-shell {
+  --searchable-dropdown-panel-bg: #141414;
+  --searchable-dropdown-panel-border: rgb(255 255 255 / 0.1);
+  --searchable-dropdown-panel-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+  --searchable-dropdown-option-hover: rgb(255 255 255 / 0.06);
+  --searchable-dropdown-option-active: rgb(255 255 255 / 0.1);
+}
+
+/* Next parity: `inline-flex max-w-full min-w-0` so parent caps (e.g. 8rem
+   project chip, properties rail) can ellipsis long labels. */
+.searchable-dropdown-root {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.property-dropdown {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.property-dropdown--compose {
+  flex-shrink: 0;
+}
+
+.property-dropdown--inline-chip {
+  flex-shrink: 0;
+  width: auto;
+  max-width: 100%;
+}
+
+.property-dropdown--shortcut-anchor {
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.property-dropdown-navigate-row {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.property-dropdown-navigate-row__field {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.property-dropdown-navigate-row__link {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-decoration: none;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.property-dropdown-navigate-row__link:hover {
+  background: rgb(255 255 255 / 0.04);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.property-dropdown-navigate-row__link:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.25);
+  outline-offset: 2px;
+}
+
+.property-dropdown-fallback,
+.property-dropdown-trigger {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Needed so long labels ellipsis inside the flex trigger (WKWebView parity). */
+  overflow: hidden;
+}
+
+.property-dropdown-trigger:hover:not(:disabled),
+.property-dropdown-trigger.is-open {
+  background: rgb(255 255 255 / 0.04);
+}
+
+.property-dropdown-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.property-dropdown-trigger--compose {
+  border: 0.5px solid rgb(255 255 255 / 0.09);
+  background: rgb(255 255 255 / 0.04);
+  padding-left: 8px;
+  padding-right: 10px;
+}
+
+/* Clear (X) sits beside the trigger as one pill — not the search-bar XCircleFill. */
+.searchable-dropdown-trigger-cluster {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.searchable-dropdown-trigger-cluster.has-clear .property-dropdown-trigger {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-right: 2px;
+}
+
+.searchable-dropdown-trigger-cluster.has-clear
+  .property-dropdown-trigger--compose {
+  border-right-color: transparent;
+}
+
+.property-dropdown-trigger__clear {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  margin: 0;
+  padding: 0 5px 0 0;
+  border: 0.5px solid rgb(255 255 255 / 0.09);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: rgb(255 255 255 / 0.04);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.property-dropdown-trigger__clear:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--foreground);
+}
+
+.property-dropdown-trigger__clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.property-dropdown-trigger--compose.property-dropdown-trigger--icon-only,
+.property-dropdown-fallback--icon-only {
+  gap: 0;
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+.property-dropdown-trigger--inline-chip {
+  gap: 5px;
+  min-height: 0;
+  padding: 5px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.property-dropdown-trigger--inline-chip.property-dropdown-trigger--static {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  cursor: default;
+  pointer-events: none;
+}
+
+.property-dropdown-trigger--inline-chip:hover:not(:disabled):not(.property-dropdown-trigger--static),
+.property-dropdown-trigger--inline-chip.is-open {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.property-dropdown-trigger--inline-chip .property-dropdown-trigger__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.property-dropdown-trigger--inline-chip .property-dropdown-trigger__label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.task-properties-inline {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-properties-inline__primary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-properties-inline__primary .task-properties-inline__fields {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-properties-inline__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-properties-inline__more {
+  width: 100%;
+}
+
+.task-properties-inline .task-due-date-dropdown {
+  width: auto;
+  max-width: 100%;
+}
+
+.property-dropdown-trigger__icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  line-height: 0;
+}
+
+.property-dropdown-trigger__icon .entity-list-avatar,
+.property-dropdown-trigger__icon .finance-account-dropdown-avatar-fallback {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+}
+
+.property-dropdown-trigger.is-muted .property-dropdown-trigger__icon {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.property-dropdown-fallback.is-muted .property-dropdown-trigger__icon {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.property-dropdown-trigger__label {
+  /* Next parity: `min-w-0 truncate` on the trigger label. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.375;
+}
+
+.property-dropdown-fallback.is-muted .property-dropdown-trigger__label,
+.property-dropdown-trigger.is-muted .property-dropdown-trigger__label {
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.searchable-dropdown-panel {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid var(--searchable-dropdown-panel-border);
+  border-radius: 12px;
+  background: var(--searchable-dropdown-panel-bg);
+  box-shadow: var(--searchable-dropdown-panel-shadow);
+  color: var(--foreground);
+}
+
+.searchable-dropdown-panel__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--searchable-dropdown-panel-border);
+}
+
+.searchable-dropdown-panel__input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.375;
+  outline: none;
+}
+
+.searchable-dropdown-panel__input::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.searchable-dropdown-panel__shortcut {
+  display: inline-flex;
+  height: 20px;
+  min-width: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.searchable-dropdown-panel__list {
+  margin: 0;
+  max-height: 20rem;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+  outline: none;
+}
+
+.searchable-dropdown-panel__empty {
+  padding: 10px 12px;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 12px;
+  line-height: 1.375;
+  text-align: left;
+}
+
+.searchable-dropdown-panel__preview {
+  margin: 0 10px 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.04);
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 12px;
+  line-height: 1.375;
+}
+
+.searchable-dropdown-panel__option {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.searchable-dropdown-panel__option:hover {
+  background: var(--searchable-dropdown-option-hover);
+}
+
+.searchable-dropdown-panel__option.keyboard-nav-item-highlight,
+.searchable-dropdown-panel__option.keyboard-nav-item-highlight:hover {
+  outline: 1px solid var(--keyboard-nav-highlight-color, #ee7a47);
+  outline-offset: -1px;
+  background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+}
+
+.searchable-dropdown-panel__option-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.searchable-dropdown-panel__option-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.searchable-dropdown-panel__option-icon .entity-list-avatar,
+.searchable-dropdown-panel__option-icon
+  .finance-account-dropdown-avatar-fallback {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+}
+
+.searchable-dropdown-panel__option-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.375;
+}
+
+.searchable-dropdown-panel__option-label--muted {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+}
+
+.searchable-dropdown-panel__option-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.searchable-dropdown-panel__option-row--icon-action {
+  align-items: center;
+  gap: 0;
+  padding-left: 6px;
+}
+
+.searchable-dropdown-panel__option-row .searchable-dropdown-panel__option {
+  flex: 1;
+  min-width: 0;
+}
+
+.searchable-dropdown-panel__option-row--icon-action
+  .searchable-dropdown-panel__option {
+  padding-left: 6px;
+}
+
+.searchable-dropdown-panel__option--with-action {
+  padding-right: 4px;
+}
+
+.searchable-dropdown-panel__option-trailing {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.searchable-dropdown-panel__option-action {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  margin: 2px 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.searchable-dropdown-panel__option-action:hover {
+  background: var(--searchable-dropdown-option-hover);
+  color: var(--foreground);
+}
+
+.searchable-dropdown-panel__option-icon-action {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  aspect-ratio: 1 / 1;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.searchable-dropdown-panel__option-icon-action-media {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.searchable-dropdown-panel__option-icon-action-media
+  .app-side-panel-item-icon {
+  margin: 0;
+}
+
+.searchable-dropdown-panel__option-icon-action-overlay {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.searchable-dropdown-panel__option-icon-action:hover
+  .searchable-dropdown-panel__option-icon-action-overlay,
+.searchable-dropdown-panel__option-icon-action:focus-visible
+  .searchable-dropdown-panel__option-icon-action-overlay {
+  opacity: 1;
+}
+
+.finance-account-dropdown-avatar-fallback {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.searchable-dropdown-panel__check {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.searchable-dropdown-panel__checkbox {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--background) 92%, var(--foreground));
+  color: var(--background);
+}
+
+.searchable-dropdown-panel__checkbox.is-checked {
+  border-color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  background: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.searchable-dropdown-panel__checkbox svg {
+  width: 10px;
+  height: 10px;
+}
+
+.searchable-dropdown-panel__option--multi
+  .searchable-dropdown-panel__option-main {
+  gap: 8px;
+}
+
+.searchable-dropdown-panel__option-shortcut {
+  min-width: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}

@@ -1,0 +1,1096 @@
+/* Markdown editor + preview layout */
+.content-markdown-view-layout {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-markdown-view-layout__edit,
+.content-markdown-view-layout__preview {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Keep CodeMirror mounted but invisible until theme paint (Next parity). */
+.content-markdown-view-layout__edit--preparing {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  visibility: hidden;
+}
+
+.content-markdown-view-layout__edit--hidden {
+  display: none;
+}
+
+.content-markdown-view-layout__preview {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.content-markdown-editor-column {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  flex: 1;
+  flex-direction: column;
+}
+
+.content-markdown-preview-column {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3.5rem;
+  box-sizing: border-box;
+}
+
+.content-markdown-preview-column--no-top {
+  padding-top: 0;
+}
+
+.content-markdown-preview-body {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.content-markdown-preview-body--rendered {
+  white-space: normal;
+}
+
+/* Soft line breaks inside plain paragraphs (Next `whitespace-pre-wrap` parity). */
+.content-markdown-preview-prewrap {
+  white-space: pre-wrap;
+}
+
+.content-markdown-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  border-radius: 0.375rem;
+}
+
+.content-markdown-preview-image-button {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.75rem 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  appearance: none;
+}
+
+.content-markdown-preview-image-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 55%, transparent);
+  outline-offset: 3px;
+  border-radius: 0.375rem;
+}
+
+.content-markdown-preview-image--lightbox-open {
+  visibility: hidden;
+}
+
+.markdown-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: block;
+}
+
+.markdown-image-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: none;
+  padding: 0;
+  background: color-mix(in srgb, #000 0%, transparent);
+  cursor: zoom-out;
+  transition: background 280ms cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.markdown-image-lightbox--open .markdown-image-lightbox__backdrop {
+  background: color-mix(in srgb, #000 72%, transparent);
+}
+
+.markdown-image-lightbox__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.markdown-image-lightbox__image {
+  position: fixed;
+  z-index: 1;
+  margin: 0;
+  border-radius: 0.375rem;
+  object-fit: fill;
+  box-shadow: 0 24px 64px color-mix(in srgb, #000 55%, transparent);
+  transform-origin: center center;
+  transition: transform 320ms cubic-bezier(0.165, 0.84, 0.44, 1);
+  will-change: transform;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Empty rows from `\n\n` runs — keep edit/preview height in sync. */
+.content-markdown-preview-blank-line {
+  margin: 0;
+  padding: 0;
+}
+
+.content-markdown-preview-body--rendered > :first-child {
+  margin-top: 0;
+}
+
+.content-markdown-preview-body--rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.content-markdown-preview-body--rendered h1,
+.content-markdown-preview-body--rendered h2,
+.content-markdown-preview-body--rendered h3,
+.content-markdown-preview-body--rendered h4 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.content-markdown-preview-body--rendered h1 {
+  font-size: 1.35rem;
+}
+
+.content-markdown-preview-body--rendered h2 {
+  font-size: 1.15rem;
+}
+
+.content-markdown-preview-body--rendered h3 {
+  font-size: 1rem;
+}
+
+.content-markdown-preview-body--rendered p {
+  /* Vertical rhythm comes from explicit blank-line paragraphs so preview
+     matches empty rows in the editor. */
+  margin: 0;
+}
+
+.content-markdown-preview-body--rendered ul,
+.content-markdown-preview-body--rendered ol {
+  margin: 0.65em 0;
+  padding-left: 1.35em;
+}
+
+/* Tailwind preflight clears list markers — restore them in markdown preview. */
+.content-markdown-preview-body--rendered ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered li {
+  display: list-item;
+  margin: 0.25em 0;
+}
+
+.content-markdown-preview-body--rendered ul.contains-task-list,
+.content-markdown-preview-body--rendered .contains-task-list {
+  list-style: none;
+  padding-left: 0.15em;
+}
+
+.content-markdown-preview-body--rendered li.task-list-item,
+.content-markdown-preview-body--rendered .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45em;
+  list-style: none;
+  margin-left: 0;
+}
+
+.md-task-checkbox__content {
+  min-width: 0;
+  flex: 1;
+  /* Normal inline flow so `code` / emphasis stay on one wrapped line. */
+  display: inline;
+}
+
+/* Mute label text on checked items so completed tasks read as done. */
+.content-markdown-preview-body--rendered
+  .task-list-item[data-checked="true"]
+  .md-task-checkbox__content,
+.document-markdown .task-list-item[data-checked="true"] .md-task-checkbox__content {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
+.md-task-checkbox {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.35em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
+  font: inherit;
+}
+
+.md-task-checkbox--flush {
+  margin-top: 0;
+}
+
+.md-task-checkbox--interactive {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.md-task-checkbox--interactive:hover .md-task-checkbox__box {
+  border-color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.md-task-checkbox--interactive:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.md-task-checkbox__box {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--background) 70%, transparent);
+  color: var(--foreground);
+  box-sizing: border-box;
+}
+
+.md-task-checkbox[data-checked="true"] .md-task-checkbox__box,
+.md-task-checkbox[data-indeterminate="true"] .md-task-checkbox__box {
+  border-color: #868686;
+  background: #868686;
+  color: #111111;
+}
+
+.md-task-checkbox:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.md-task-checkbox__check {
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Hide native GFM checkbox inputs; we render MarkdownTaskCheckbox instead. */
+.content-markdown-preview-body--rendered .md-task-checkbox-native,
+.document-markdown .md-task-checkbox-native,
+.content-markdown-preview-body--rendered .task-list-item input[type="checkbox"],
+.document-markdown .task-list-item input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  appearance: none;
+}
+
+.content-markdown-preview-body--rendered code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.06);
+  font-size: 0.92em;
+}
+
+.content-markdown-preview-body--rendered pre {
+  margin: 0.85em 0;
+  padding: 0.85em 1em;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.04);
+}
+
+.content-markdown-preview-body--rendered pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.content-markdown-preview-link {
+  color: color-mix(in srgb, var(--foreground) 88%, #60a5fa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.content-markdown-preview-link:hover {
+  color: var(--foreground);
+}
+
+/* GFM tables — parity with mobile markdown preview (full-width bordered grid). */
+.content-markdown-preview-body--rendered table {
+  width: 100%;
+  max-width: 100%;
+  margin: 0.5em 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  table-layout: fixed;
+}
+
+.content-markdown-preview-body--rendered thead th,
+.content-markdown-preview-body--rendered th {
+  background: var(--faint);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.content-markdown-preview-body--rendered th,
+.content-markdown-preview-body--rendered td {
+  padding: 0.5rem 0.625rem;
+  vertical-align: middle;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.content-markdown-preview-body--rendered th:last-child,
+.content-markdown-preview-body--rendered td:last-child {
+  border-right: 0;
+}
+
+.content-markdown-preview-body--rendered tr:last-child th,
+.content-markdown-preview-body--rendered tr:last-child td {
+  border-bottom: 0;
+}
+
+.overview-name-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Borderless title field — match Next OverviewNameEditor (no boxed input chrome).
+   !important beats WKWebView UA button/input chrome that can reappear per-mount. */
+.overview-name-editor__input,
+.overview-name-editor__button {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-style: none !important;
+  border-radius: 2px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  outline: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+.overview-name-editor__input:disabled {
+  opacity: 0.6;
+}
+
+mark.spellcheck-fix-mark,
+.spellcheck-fix-mark {
+  background: color-mix(in srgb, #f97316 42%, transparent);
+  color: inherit;
+  border: 1px solid color-mix(in srgb, #ea580c 72%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 0.12em;
+  box-shadow: none;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+.spellcheck-fix-mark.is-interactive {
+  cursor: pointer;
+}
+
+.spellcheck-fix-mark.is-interactive:hover {
+  filter: brightness(1.08);
+}
+
+.spellcheck-fix-mark.is-reverted {
+  background: color-mix(in srgb, #9ca3af 34%, transparent);
+  border-color: color-mix(in srgb, #6b7280 55%, transparent);
+}
+
+.spellcheck-fix-mark.is-empty {
+  padding: 0 0.28em;
+  min-width: 0.55em;
+}
+
+.spellcheck-highlight-description {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+
+.overview-name-editor__input::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.overview-name-editor__button {
+  display: inline-flex;
+  text-align: left;
+  cursor: text;
+  transition: opacity 120ms ease;
+}
+
+.overview-name-editor__button:hover {
+  opacity: 0.9;
+}
+
+.overview-name-editor__button:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.2);
+  outline-offset: 2px;
+}
+
+.overview-name-editor__input:focus,
+.overview-name-editor__input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.overview-name-editor__error {
+  margin: 0;
+  color: #f87171;
+  font-size: 0.75rem;
+}
+
+.mention-chip-hover-shell {
+  display: inline;
+  vertical-align: baseline;
+}
+
+.mention-chip-hover-shell--inline {
+  display: inline;
+  vertical-align: baseline;
+}
+
+.mention-chip-hover-shell--block {
+  display: block;
+  width: 100%;
+}
+
+.mention-chip-hover-shell:focus-visible {
+  outline: 1px solid rgb(255 255 255 / 0.28);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.bos-hover-card-trigger {
+  display: inline;
+  vertical-align: baseline;
+}
+
+.bos-hover-card {
+  z-index: 100;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+  pointer-events: auto;
+}
+
+.mention-hover-card {
+  width: 20rem;
+  padding: 0;
+}
+
+.mention-hover-card__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.mention-hover-card__panel--structured {
+  gap: 0;
+  padding: 0;
+}
+
+.mention-hover-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.mention-hover-card__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--foreground);
+}
+
+.mention-hover-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.mention-hover-card__separator {
+  height: 1px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.mention-hover-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px;
+}
+
+.mention-hover-card__header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--foreground);
+}
+
+.mention-hover-card__section {
+  padding: 10px 12px;
+}
+
+.mention-hover-card__description {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mention-hover-card__description--clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.mention-hover-card__description--clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
+.mention-hover-card__description--mono {
+  font-family: var(--font-mono);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.mention-hover-card__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--foreground);
+}
+
+.mention-hover-card__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mention-hover-card__icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.mention-hover-card__icon--header {
+  width: 16px;
+  height: 16px;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.mention-hover-card__icon--muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.mention-hover-card__avatar {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 9999px;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.mention-hover-card__id {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.mention-hover-card__dot {
+  color: color-mix(in srgb, var(--foreground) 30%, transparent);
+}
+
+.mention-hover-card__truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-hover-card__muted-strong {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.mention-chip-lite {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 1px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: baseline;
+  white-space: nowrap;
+  cursor: default;
+  text-decoration: none;
+}
+
+.mention-chip-lite--block {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 8px;
+  border-radius: 6px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  background: transparent;
+  white-space: nowrap;
+  vertical-align: initial;
+}
+
+.mention-chip-lite--block:hover,
+a.mention-chip-lite--block:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+a.mention-chip-lite,
+.mention-chip-lite--link {
+  cursor: pointer;
+  color: inherit;
+}
+
+a.mention-chip-lite:hover,
+.mention-chip-lite--link:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+a.mention-chip-lite--block:hover,
+.mention-chip-lite--block.mention-chip-lite--link:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.mention-chip-lite--deleted {
+  opacity: 0.6;
+}
+
+.mention-chip-lite--deleted:hover,
+a.mention-chip-lite--deleted:hover {
+  background: transparent;
+}
+
+.mention-chip-lite__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.mention-chip-lite__icon .mention-menu__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.mention-chip-lite__meta-icon {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.mention-chip-lite__kind {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-weight: 600;
+}
+
+.mention-chip-lite__id {
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-chip-lite__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.mention-chip-lite__label--grow {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.mention-chip-lite__due {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  font-size: 0.75rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  white-space: nowrap;
+}
+
+.mention-chip-lite__project {
+  display: inline-flex;
+  max-width: 8rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-chip-lite__project > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-chip-lite__area {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-task-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.mention-task-stack .mention-task-block {
+  margin-block: 0;
+}
+
+.mention-task-block {
+  margin-block: 0.15rem;
+  width: 100%;
+}
+
+.content-markdown-preview-body--rendered .mention-structured-list,
+.mention-structured-list {
+  display: block;
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+  width: auto;
+  max-width: 100%;
+}
+
+.content-markdown-preview-body--rendered ul.mention-structured-list {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered ol.mention-structured-list {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered .mention-structured-list--inline > li,
+.mention-structured-list--inline > li {
+  display: list-item;
+  margin: 0.25rem 0;
+  line-height: 1.75;
+}
+
+.content-markdown-preview-body--rendered .mention-structured-list--inline > li > *,
+.mention-structured-list--inline > li > * {
+  vertical-align: baseline;
+}
+
+.mention-task-block--quote {
+  margin: 0 0 0.85rem;
+  border-left: 2px solid rgb(255 255 255 / 0.15);
+  padding-left: 0.85rem;
+}
+
+.content-markdown-preview-body--rendered .mention-task-stack {
+  margin-bottom: 0.85rem;
+}
+
+@media (prefers-color-scheme: light) {
+  .mention-chip-lite {
+    background: #ffffff;
+    box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1);
+  }
+
+  .mention-chip-lite:hover,
+  a.mention-chip-lite:hover {
+    background: #f9f9f9;
+  }
+
+  .mention-chip-lite--block {
+    border-color: rgb(0 0 0 / 0.1);
+    background: #ffffff;
+    box-shadow: none;
+  }
+
+  .mention-chip-lite--block:hover,
+  a.mention-chip-lite--block:hover {
+    background: #f9f9f9;
+  }
+}
+
+.mention-menu {
+  position: fixed;
+  z-index: 50;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+}
+
+.mention-menu__header {
+  border-bottom: 0.5px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.04);
+  padding: 8px 12px;
+}
+
+.mention-menu__query {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.mention-menu__at {
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-menu__query-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-menu__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.mention-menu__empty {
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.mention-menu__empty-query {
+  font-family: var(--font-mono);
+}
+
+.mention-menu__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.mention-menu__section-heading {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.mention-menu__option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 6px 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.1s ease;
+}
+
+.mention-menu__option:hover,
+.mention-menu__option--selected {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--foreground);
+}
+
+.mention-menu__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.mention-menu__icon--muted {
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.mention-menu__option-labels {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.mention-menu__option-primary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.mention-menu__option-secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.mention-menu__option-hint {
+  margin-left: 8px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.project-overview-row__dates {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.project-overview-row__status-control {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.project-detail {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.project-detail__nav {
+  flex-shrink: 0;
+}
