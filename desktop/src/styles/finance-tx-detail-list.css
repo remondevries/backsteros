@@ -1,0 +1,197 @@
+/*
+ * ── Detail-panel transaction list ────────────────────────────────────────────
+ * One horizontal system shared by the month group headers and the rows so the
+ * chevron, checkboxes, dates and amounts all sit on the same grid. Both the
+ * header and the rows are full width; only their inner content is inset.
+ *
+ *   --tx-inset     left/right content inset (chevron · checkbox · amount)
+ *   --tx-lead      width of the leading-mark column (chevron / checkbox)
+ *   --tx-lead-gap  gap between the leading mark and the content (title / date)
+ *
+ * The chevron (header) and the checkbox (rows) occupy the same
+ * `--tx-inset + --tx-lead` column, and the label/date both start at
+ * `--tx-inset + --tx-lead + --tx-lead-gap`, so everything lines up.
+ */
+/* Shared horizontal system used by every finance transaction list — the
+   detail-panel lists (categories / accounts) and the main Transactions view —
+   so the chevron, checkboxes, dates and amounts all sit on the same grid. */
+.finance-tx-clean {
+  --tx-inset: 8px;
+  --tx-lead: 14px;
+  --tx-lead-gap: 10px;
+  /* Keep Shift+click range-select from becoming a text-selection gesture. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Panel list container: grow to fill so the sticky bulk dock below is always
+   pushed to the bottom (and floats over the list once it scrolls). */
+.finance-categories-view__tx-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.finance-categories-view__tx-groups {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-categories-view__tx-empty {
+  padding: 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Rows fill the full width (no item indent); insets live on the content. */
+.finance-tx-clean .project-type-subgroup__items {
+  margin: 0;
+}
+
+/* Week / month header: a plain flex row (not the category list's 3-column grid,
+   which also adds its own padding), with the chevron at the inset and the rule
+   running to the right edge like the rows. */
+.finance-tx-clean .project-type-subgroup__header-row {
+  display: flex;
+  padding: 0;
+}
+
+.finance-tx-clean .project-type-subgroup__header {
+  gap: var(--tx-lead-gap);
+  padding: 4px 0 4px var(--tx-inset);
+}
+
+.finance-tx-clean .project-type-subgroup__toggle-slot {
+  width: var(--tx-lead);
+}
+
+/* Month header (StatusGroupSection) in the main Transactions view: keep the
+   chevron at the same inset and align the title with the row dates. */
+.finance-tx-clean .status-group-header-row {
+  padding: 6px var(--tx-inset);
+}
+
+.finance-tx-clean .status-group-header {
+  gap: var(--tx-lead-gap);
+}
+
+/*
+ * Same sticky cover as invoice column headers: extend a solid slab above the
+ * stuck bar so scrolling rows never show through the scrollport top padding.
+ */
+.finance-transactions-view .finance-transactions__scroll .status-group-header-row,
+.organization-transactions-section
+  .finance-transactions__scroll
+  .status-group-header-row {
+  background-color: var(--sticky-list-header-bg, #161616);
+  background-clip: padding-box;
+}
+
+.finance-transactions-view
+  .finance-transactions__scroll
+  .status-group-header-row.is-stuck::before,
+.organization-transactions-section
+  .finance-transactions__scroll
+  .status-group-header-row.is-stuck::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 2rem;
+  background-color: var(--sticky-list-header-bg, #161616);
+  pointer-events: none;
+}
+
+/* Rows: full-width hover surface, content inset by the shared values. */
+.finance-tx-clean .finance-tx-row__line {
+  position: relative;
+  padding: 6px var(--tx-inset);
+}
+
+/* Reserve the leading-mark column + gap so the date starts under the label. */
+.finance-tx-clean .finance-tx-row__data {
+  padding-left: calc(var(--tx-lead) + var(--tx-lead-gap));
+}
+
+.finance-tx-clean .finance-tx-row__date-cell {
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+}
+
+/* Checkbox shares the chevron's column; out of flow so toggling it never shifts
+   the row — only opacity changes. */
+.finance-tx-clean .finance-tx-row__check {
+  position: absolute;
+  left: var(--tx-inset);
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: var(--tx-lead);
+  min-width: var(--tx-lead);
+  margin: 0;
+  overflow: visible;
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .finance-tx-clean .finance-tx-row__check {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+  }
+
+  .finance-tx-clean .finance-tx-row:hover .finance-tx-row__check,
+  .finance-tx-clean .finance-tx-row:focus-within .finance-tx-row__check,
+  .finance-tx-clean.has-bulk-selection .finance-tx-row__check {
+    /* Lock width so the checkbox stays pinned to the inset in every state.
+       The global `.finance-tx-row:hover .finance-tx-row__check` rule grows the
+       box to 22px, which (with center alignment) nudges the check ~4px right. */
+    width: var(--tx-lead);
+    min-width: var(--tx-lead);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.finance-tx-clean .finance-tx-row--static .finance-tx-row__line {
+  cursor: default;
+}
+
+.finance-tx-clean .property-dropdown-trigger.is-static,
+.finance-tx-clean .finance-tx-row__bank-icon.is-static {
+  cursor: default;
+  pointer-events: none;
+}
+
+.finance-categories-view__create-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.page-scroll:has(.finance-categories-view) > .inbox-detail-layout,
+.page-scroll:has(.finance-categories-view) .inbox-detail-body,
+.page-scroll:has(.finance-accounts-view) > .inbox-detail-layout,
+.page-scroll:has(.finance-accounts-view) .inbox-detail-body,
+.page-scroll:has(.finance-transactions-view) > .inbox-detail-layout,
+.page-scroll:has(.finance-transactions-view) .inbox-detail-body,
+.page-scroll:has(.finance-invoices-view) > .inbox-detail-layout,
+.page-scroll:has(.finance-invoices-view) .inbox-detail-body {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Drop body padding so the right detail panel can flush to the content edges. */
+.page-scroll:has(.finance-categories-view) .inbox-detail-body,
+.page-scroll:has(.finance-accounts-view) .inbox-detail-body,
+.page-scroll:has(.finance-transactions-view) .inbox-detail-body,
+.page-scroll:has(.finance-invoices-view) .inbox-detail-body {
+  padding: 0;
+}

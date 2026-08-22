@@ -1,0 +1,81 @@
+/*
+ * Overlay titlebar (macOS): keep native traffic lights, no system title strip.
+ * Inset/height match the 44px content tabs row so lights sit on that baseline.
+ * When the menu sidebar is expanded, the history toolbar carries the inset.
+ * When collapsed, the tabs bar becomes the leftmost chrome and needs the same inset.
+ */
+.bos-product-shell {
+  /* Traffic lights at x:16 + ~54px cluster + gap → clear the titlebar controls. */
+  --bos-traffic-light-inset: 88px;
+}
+
+.bos-product-shell .app-side-panel-history-toolbar {
+  min-height: 44px;
+  margin-bottom: 0;
+  padding-left: var(--bos-traffic-light-inset);
+}
+
+.bos-product-shell .sidebar-inner {
+  padding-top: 0;
+}
+
+/* Settings uses app-side-panel (not sidebar-inner); match top inset. */
+.bos-product-shell .app-side-panel-settings {
+  padding-top: 0;
+}
+
+.bos-product-shell .content-tabs-bar {
+  cursor: default;
+  transition: padding-left 180ms ease;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
+  padding-left: var(--bos-traffic-light-inset);
+}
+
+/* Native fullscreen hides traffic lights — use the same 8px gutter as the
+   content card (top / left / right), not the traffic-light inset.
+   No bottom padding: content-frame’s top margin already gaps tabs ↔ card. */
+.bos-product-shell.is-window-fullscreen {
+  --bos-fullscreen-chrome-inset: 8px;
+}
+
+.bos-product-shell.is-window-fullscreen .app-side-panel-history-toolbar {
+  padding-left: var(--bos-fullscreen-chrome-inset);
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {
+  box-sizing: border-box;
+  height: calc(44px + var(--bos-fullscreen-chrome-inset));
+  padding: var(--bos-fullscreen-chrome-inset) var(--bos-fullscreen-chrome-inset)
+    0;
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
+  .content-tabs-bar
+  .content-tab {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/*
+ * Overlay titlebar + drag regions: keep the workspace content interactive.
+ * Without this, WKWebView can treat large areas as drag and swallow clicks.
+ */
+.bos-product-shell .workspace,
+.bos-product-shell .main-slot,
+.bos-product-shell .page-scroll,
+.bos-product-shell .context-panel,
+.bos-product-shell .desktop-sidebar,
+.bos-product-shell .bos-product-sidebar {
+  -webkit-app-region: no-drag;
+}
+
+/* Interactive controls inside drag regions must stay clickable */
+.bos-product-shell [data-tauri-drag-region] button,
+.bos-product-shell [data-tauri-drag-region] a,
+.bos-product-shell [data-tauri-drag-region] input,
+.bos-product-shell [data-tauri-drag-region] [role="tab"],
+.bos-product-shell [data-tauri-drag-region] [role="menuitem"] {
+  -webkit-app-region: no-drag;
+}

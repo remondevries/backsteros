@@ -1,0 +1,85 @@
+/* Spotlight-style overlays (⌘⌥K palette, ⌘⌥C compose) */
+html:has(.desktop-overlay-root),
+html:has(.desktop-overlay-root) body,
+html:has(.desktop-overlay-root) #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+
+html:has(.desktop-overlay-root) body {
+  display: block;
+}
+
+.desktop-overlay-root {
+  box-sizing: border-box;
+  width: 100%;
+  background: transparent;
+}
+
+.desktop-overlay-root--compose,
+.desktop-overlay-root--palette {
+  padding: 0;
+}
+
+html:has(.desktop-overlay-root--compose) .create-task-modal-root {
+  position: fixed;
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: auto;
+  padding: 24px;
+}
+
+html:has(.desktop-overlay-root--compose) .create-task-modal-overlay {
+  display: none;
+}
+
+html:has(.desktop-overlay-root--compose) .create-task-modal-dialog {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  margin: 0;
+  transform: none;
+}
+
+html:has(.desktop-overlay-root--compose) .create-task-modal-shell {
+  /* Let the shell grow with the description; native window follows via
+     ResizeObserver. Cap is enforced by OVERLAY_HEIGHT_COMPOSE_MAX in Rust. */
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+}
+
+html:has(.desktop-overlay-root--palette) .command-overlay {
+  display: none;
+}
+
+html:has(.desktop-overlay-root--palette) .command-dialog {
+  position: fixed;
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 24px;
+  transform: none;
+  overflow: visible;
+}
+
+html:has(.desktop-overlay-root--palette) .command-chrome {
+  width: 100%;
+  height: auto;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+}
+
+/* Override in-app `min(420px, 60vh)` — viewport units are relative to the
+   overlay window itself and would pin auto-resize to a clipped height.
+   Fixed cap matches Circle; ResizeObserver grows the native window as the
+   list fills up to this limit, then the list scrolls. */
+html:has(.desktop-overlay-root--palette) .command-list {
+  max-height: 360px;
+  overflow-y: auto;
+}

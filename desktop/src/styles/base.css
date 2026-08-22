@@ -1,0 +1,47 @@
+:root {
+  color-scheme: dark;
+  font-family: var(--font-sans, ui-sans-serif), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--background, #0a0a0a);
+  color: var(--foreground, #ededed);
+  /* Console chrome aliases → shared product tokens (status bar) */
+  --console-panel: var(--background);
+  --console-panel-2: var(--surface);
+  --console-border: var(--border);
+  --console-text: var(--foreground);
+  --console-muted: var(--muted);
+  --console-accent: var(--keyboard-nav-highlight-color);
+  /* t3 chat-composer-glass (dark) — surfaces lift from --background, not a separate palette */
+  --glass-blur: 16px;
+  --glass-opacity: 80%;
+  --glass-saturation: 1.08;
+  --chat-composer-glass-surface: color-mix(in srgb, var(--background) 96%, white);
+  --chat-composer-outline: color-mix(in srgb, white 5%, transparent);
+  --chat-composer-highlight: rgb(255 255 255 / 3%);
+  /* t3 dropdown-glass / model-picker-surface — elevated menus (denser than ambient glass) */
+  --dropdown-glass-surface: color-mix(in srgb, var(--background) 92%, white);
+  --dropdown-glass-border: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
