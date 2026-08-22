@@ -232,10 +232,29 @@ export function resolveHistoryEntryDisplay(
 
   const emailDetailMatch = pathname.match(/^\/email\/([^/]+)\/([^/]+)$/);
   if (emailDetailMatch) {
+    const queryIndex = href.indexOf("?");
+    const search = queryIndex === -1 ? "" : href.slice(queryIndex + 1);
+    const list = new URLSearchParams(search).get("list");
+    if (list === "inbox") {
+      return {
+        kind: "navigate",
+        navId: "inbox",
+        badgeLabel: "Inbox",
+        title,
+      };
+    }
+    if (list === "project") {
+      return {
+        kind: "navigate",
+        navId: "projects",
+        badgeLabel: "Project",
+        title,
+      };
+    }
     return {
       kind: "navigate",
-      navId: "email",
-      badgeLabel: "Email",
+      navId: list === "tasks" ? "tasks" : "email",
+      badgeLabel: list === "tasks" ? "Tasks" : "Email",
       title,
     };
   }

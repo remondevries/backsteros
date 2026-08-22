@@ -8,6 +8,7 @@ import {
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
+import { resolveInboxEmailIconColor } from "../lib/email-list";
 import { groupInboxRowsByAttentionStatus } from "../lib/inbox-attention";
 import { findSectionListLocation } from "../lib/list-keyboard-nav";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
@@ -24,6 +25,7 @@ import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailContentContainer } from "./detail-content-container";
+import { EmailNavIcon } from "./nav-icons";
 import { InboxListItemRow } from "./inbox-list-item-row";
 import { ProjectTypeGroupHeader } from "./project-type-group-header";
 import {
@@ -49,6 +51,11 @@ export type GroupedTaskRow = {
   assignee_id?: string | null;
   assignee_name?: string | null;
   assignee_avatar_storage_key?: string | null;
+  /** Inbox email rows (desktop parity): email icon + email navigation. */
+  item_type?: "task" | "email" | null;
+  email_from?: string | null;
+  email_inbox_id?: string | null;
+  email_message_id?: string | null;
 };
 
 type Section = {
@@ -109,7 +116,14 @@ const CompactTaskRow = memo(function CompactTaskRow({
   const body = (
     <>
       <View style={ui.rowIcon}>
-        <TaskStatusIcon status={item.status} size={STATUS_ICON_SIZE} />
+        {item.item_type === "email" ? (
+          <EmailNavIcon
+            size={STATUS_ICON_SIZE - 4}
+            color={resolveInboxEmailIconColor(item.status)}
+          />
+        ) : (
+          <TaskStatusIcon status={item.status} size={STATUS_ICON_SIZE} />
+        )}
       </View>
       <View style={ui.rowBody}>
         <View style={ui.rowTitleLine}>

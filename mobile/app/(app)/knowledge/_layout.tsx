@@ -9,7 +9,7 @@ import {
   PadSidePanelCollapsedRail,
   usePadSidePanelCollapsed,
 } from "../../../lib/pad-side-panel-collapse";
-import { tabDetailScreenOptions } from "../../../lib/tab-stack-options";
+import {tabDetailScreenOptions, iosStackGestureOptions} from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 const LIST_PANE_WIDTH = 320;
@@ -29,8 +29,7 @@ export default function KnowledgeLayout() {
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
-          gestureEnabled: true,
-          fullScreenGestureEnabled: true,
+          ...iosStackGestureOptions,
         }}
       >
         <Stack.Screen
@@ -72,8 +71,7 @@ export default function KnowledgeLayout() {
           screenOptions={{
             contentStyle: { backgroundColor: colors.surface },
             headerStyle: { backgroundColor: colors.surface },
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            ...iosStackGestureOptions,
           }}
         >
           <Stack.Screen

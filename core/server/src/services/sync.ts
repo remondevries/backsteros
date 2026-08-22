@@ -13,7 +13,9 @@ import {
   bankAccountInputSchema,
   contactInputSchema,
   createHabitSchema,
+  createMeetingSchema,
   updateHabitSchema,
+  updateMeetingSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
@@ -30,6 +32,7 @@ import {
   financialGoals,
   financialRecurrings,
   habits,
+  meetings,
   letters,
   mutationReceipts,
   organizations,
@@ -46,6 +49,7 @@ import * as circleService from "./circle-domain.js";
 import { sanitizeWorkspaceSettings } from "./cursor-settings.js";
 import * as financeService from "./finance/finance.js";
 import * as habitService from "./habits.js";
+import * as meetingService from "./meetings.js";
 import * as taskProjectService from "./tasks-projects.js";
 
 const PULL_PAGE_SIZE = 100;
@@ -103,6 +107,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     priority: row.priority,
     sort_order: row.sortOrder,
     due_date: row.dueDate?.toISOString() ?? null,
+    due_end_date: row.dueEndDate?.toISOString() ?? null,
     triaged_at: row.triagedAt?.toISOString() ?? null,
     inbox: row.inbox,
     links: JSON.stringify(row.links ?? []),
@@ -424,6 +429,19 @@ const habitKeys = {
   cadence_anchor_ymd: "cadenceAnchorYmd",
   sort_order: "sortOrder",
 };
+const meetingKeys = {
+  title: "title",
+  summary: "summary",
+  notes: "notes",
+  transcription: "transcription",
+  status: "status",
+  project_id: "projectId",
+  organization_id: "organizationId",
+  attendee_contact_ids: "attendeeContactIds",
+  start_at: "startAt",
+  end_at: "endAt",
+  sort_order: "sortOrder",
+};
 const financialRecurringKeys = {
   name: "name",
   icon: "icon",
@@ -518,6 +536,56 @@ function habitSnapshot(row: typeof habits.$inferSelect) {
   };
 }
 
+function normalizeMeetingPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...payload };
+  if (next.attendeeContactIds !== undefined) {
+    let raw = next.attendeeContactIds;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = [];
+      }
+    }
+    if (!Array.isArray(raw)) {
+      next.attendeeContactIds = [];
+    } else {
+      next.attendeeContactIds = raw.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      );
+    }
+  }
+  return next;
+}
+
+function meetingSnapshot(row: typeof meetings.$inferSelect) {
+  const attendeeIds = Array.isArray(row.attendeeContactIds)
+    ? row.attendeeContactIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      )
+    : [];
+  return {
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    summary: row.summary,
+    notes: row.notes,
+    transcription: row.transcription,
+    status: row.status,
+    project_id: row.projectId,
+    organization_id: row.organizationId,
+    attendee_contact_ids: JSON.stringify(attendeeIds),
+    start_at: row.startAt.toISOString(),
+    end_at: row.endAt.toISOString(),
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
 function mapProjectUpsert(
   payload: Record<string, unknown>,
 ): CreateProjectInput | UpdateProjectInput {
@@ -588,6 +656,7 @@ function mapTaskUpsert(
     priority: asNumber(payload.priority),
     sortOrder: asNumber(payload.sort_order ?? payload.sortOrder),
     dueDate: asNullableString(payload.due_date ?? payload.dueDate),
+    dueEndDate: asNullableString(payload.due_end_date ?? payload.dueEndDate),
     triagedAt: asNullableString(payload.triaged_at ?? payload.triagedAt),
     inbox: asBoolean(payload.inbox),
     links: parseTaskLinks(payload.links),
@@ -713,6 +782,7 @@ export async function applySyncChange(
           priority: input.priority,
           sortOrder: input.sortOrder,
           dueDate: input.dueDate,
+          dueEndDate: input.dueEndDate,
           triagedAt: input.triagedAt,
           inbox: input.inbox,
           links: input.links,
@@ -1093,6 +1163,52 @@ export async function applySyncChange(
       );
       return habitSnapshot(row);
     }
+
+    case "meeting": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await meetingService.deleteMeetingRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? meetingSnapshot(row) : null;
+      }
+      const existing = await meetingService.getMeetingRow(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = normalizeMeetingPayload(
+        camelizePayload(change.payload, meetingKeys),
+      );
+      if (existing) {
+        const parsed = updateMeetingSchema.safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_MEETING");
+        const updated = await meetingService.updateMeeting(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        if (!updated) return null;
+        const row = await meetingService.getMeetingRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? meetingSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = createMeetingSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_MEETING");
+      const row = await meetingService.createMeetingRow(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return meetingSnapshot(row);
+    }
   }
 }
 
@@ -1178,6 +1294,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "financial_recurring";
     case "habits":
       return "habit";
+    case "meetings":
+      return "meeting";
     default:
       return null;
   }

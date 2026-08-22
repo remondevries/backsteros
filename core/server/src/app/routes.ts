@@ -16,7 +16,9 @@ import {
   createApiKeySchema,
   createDocumentSchema,
   createHabitSchema,
+  createMeetingSchema,
   updateHabitSchema,
+  updateMeetingSchema,
   recordHabitDaySchema,
   createProjectSchema,
   createTaskSchema,
@@ -110,6 +112,7 @@ import {
   spellcheckText,
 } from "../services/cursor-spellcheck.js";
 import * as habitService from "../services/habits.js";
+import * as meetingService from "../services/meetings.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
@@ -1989,6 +1992,103 @@ export function registerApiRoutes(app: Hono) {
     },
   );
 
+  app.get("/api/v1/meetings", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    return c.json({
+      meetings: await meetingService.listMeetings(auth.workspaceId),
+    });
+  });
+
+  app.get("/api/v1/meetings/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const row = await meetingService.getMeetingById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!row) return c.json(notFound("Meeting"), 404);
+    return c.json(row);
+  });
+
+  app.post(
+    "/api/v1/meetings",
+    zValidator("json", createMeetingSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      try {
+        const row = await meetingService.createMeeting(
+          auth.workspaceId,
+          c.req.valid("json"),
+        );
+        return c.json(row, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_MEETING_DATES" ||
+            error.message === "MEETING_END_BEFORE_START")
+        ) {
+          return c.json(
+            {
+              error: {
+                code: "INVALID_MEETING_DATES",
+                message: "Meeting end must be after start.",
+              },
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.patch(
+    "/api/v1/meetings/:id",
+    zValidator("json", updateMeetingSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      try {
+        const row = await meetingService.updateMeeting(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return row ? c.json(row) : c.json(notFound("Meeting"), 404);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_MEETING_DATES" ||
+            error.message === "MEETING_END_BEFORE_START")
+        ) {
+          return c.json(
+            {
+              error: {
+                code: "INVALID_MEETING_DATES",
+                message: "Meeting end must be after start.",
+              },
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.delete("/api/v1/meetings/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const ok = await meetingService.deleteMeeting(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!ok) return c.json(notFound("Meeting"), 404);
+    return c.body(null, 204);
+  });
+
   app.get("/api/v1/whoop/status", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "documents:read")) return c.json(forbidden(), 403);
@@ -2642,7 +2742,7 @@ export function registerApiRoutes(app: Hono) {
         data: JSON.stringify({ ok: true }),
       });
       while (!closed) {
-        await stream.sleep(25_000);
+        await stream.sleep(15_000);
         if (closed) break;
         try {
           await stream.writeSSE({ event: "ping", data: "{}" });
@@ -2705,6 +2805,48 @@ export function registerApiRoutes(app: Hono) {
       }
     },
   );
+  app.get(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/attachments/:attachmentId",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      const attachmentId = decodeURIComponent(c.req.param("attachmentId"));
+      try {
+        const result = await agentmailSettingsService.getAgentMailMessageAttachment(
+          auth.workspaceId,
+          inboxId,
+          messageId,
+          attachmentId,
+        );
+        c.header("Content-Type", result.contentType);
+        if (result.filename) {
+          c.header(
+            "Content-Disposition",
+            `inline; filename="${result.filename.replaceAll('"', "")}"`,
+          );
+        }
+        return c.body(Uint8Array.from(result.bytes).buffer);
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load AgentMail attachment";
+        const status =
+          error instanceof AgentMailApiError && error.status === 404
+            ? 404
+            : 400;
+        return c.json(
+          { error: message, code: status === 404 ? "not_found" : "bad_request" },
+          status,
+        );
+      }
+    },
+  );
   app.delete(
     "/api/v1/email/inboxes/:inboxId/messages/:messageId",
     async (c) => {
@@ -2712,7 +2854,17 @@ export function registerApiRoutes(app: Hono) {
       if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
       const inboxId = decodeURIComponent(c.req.param("inboxId"));
       const messageId = decodeURIComponent(c.req.param("messageId"));
+      const scope = c.req.query("scope");
       try {
+        if (scope === "message") {
+          return c.json(
+            await agentmailSettingsService.deleteAgentMailThreadMessage(
+              auth.workspaceId,
+              inboxId,
+              messageId,
+            ),
+          );
+        }
         return c.json(
           await agentmailSettingsService.deleteAgentMailMessage(
             auth.workspaceId,
@@ -2727,7 +2879,7 @@ export function registerApiRoutes(app: Hono) {
         const message =
           error instanceof Error
             ? error.message
-            : "Could not delete AgentMail message";
+            : "Could not delete AgentMail conversation";
         const status =
           error instanceof AgentMailApiError && error.status === 404
             ? 404
@@ -2770,6 +2922,60 @@ export function registerApiRoutes(app: Hono) {
           { error: message, code: status === 404 ? "not_found" : "bad_request" },
           status,
         );
+      }
+    },
+  );
+  app.get(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/source",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.getAgentMailMessageSource(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not load AgentMail message source";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
+  app.post(
+    "/api/v1/email/inboxes/:inboxId/messages/:messageId/mark-unread",
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      const inboxId = decodeURIComponent(c.req.param("inboxId"));
+      const messageId = decodeURIComponent(c.req.param("messageId"));
+      try {
+        return c.json(
+          await agentmailSettingsService.markAgentMailMessageUnread(
+            auth.workspaceId,
+            inboxId,
+            messageId,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof AgentMailApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not mark AgentMail message unread";
+        return c.json({ error: message, code: "bad_request" }, 400);
       }
     },
   );
@@ -2981,6 +3187,21 @@ export function registerApiRoutes(app: Hono) {
       }
     },
   );
+  app.get("/api/v1/email/threads/by-display-id/:displayId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read") && !can(auth, "settings:write")) {
+      return c.json(forbidden(), 403);
+    }
+    const displayId = decodeURIComponent(c.req.param("displayId"));
+    const metadata = await emailThreadsService.getEmailThreadByDisplayId(
+      auth.workspaceId,
+      displayId,
+    );
+    if (!metadata) {
+      return c.json({ error: "Email thread not found", code: "not_found" }, 404);
+    }
+    return c.json(metadata);
+  });
   app.patch(
     "/api/v1/email/inboxes/:inboxId/threads/:threadKey/metadata",
     zValidator("json", updateEmailThreadMetadataSchema),

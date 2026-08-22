@@ -150,6 +150,13 @@ export type SearchableDropdownProps<T extends string> = {
     canClear: boolean;
     onClear?: () => void;
   }) => ReactNode;
+  /** Open the panel on mount (used by deferred list-row mounts). */
+  defaultOpen?: boolean;
+  /**
+   * Placement for the initial `defaultOpen` only (deferred wrappers carry the
+   * shortcut “center” mark across the mount, where the marked root is gone).
+   */
+  defaultOpenPlacement?: "anchored" | "center";
 };
 
 /**
@@ -185,6 +192,8 @@ export function SearchableDropdown<T extends string>({
   onClear,
   clearExemptValues,
   renderTrigger,
+  defaultOpen = false,
+  defaultOpenPlacement,
 }: SearchableDropdownProps<T>) {
   const fallbackId = useId();
   const triggerId = `searchable-dropdown-${fallbackId.replace(/:/g, "")}`;
@@ -192,7 +201,7 @@ export function SearchableDropdown<T extends string>({
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listboxRef = useRef<HTMLUListElement>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [listFocusActive, setListFocusActive] = useState(false);
@@ -201,7 +210,10 @@ export function SearchableDropdown<T extends string>({
   });
   const [activePanelPlacement, setActivePanelPlacement] = useState<
     "anchored" | "center"
-  >(panelPlacement);
+  >(defaultOpen ? (defaultOpenPlacement ?? panelPlacement) : panelPlacement);
+  const defaultOpenPlacementRef = useRef(
+    defaultOpen ? (defaultOpenPlacement ?? null) : null,
+  );
 
   const selectedValues = useMemo(() => {
     if (!multiple) {
@@ -308,8 +320,13 @@ export function SearchableDropdown<T extends string>({
       return;
     }
 
+    const initialPlacement = defaultOpenPlacementRef.current;
+    defaultOpenPlacementRef.current = null;
     setActivePanelPlacement(
-      consumeSearchableDropdownOpenPlacement(rootRef.current, panelPlacement),
+      consumeSearchableDropdownOpenPlacement(
+        rootRef.current,
+        initialPlacement ?? panelPlacement,
+      ),
     );
   }, [open, panelPlacement]);
 

@@ -143,7 +143,8 @@ export function resolveMentionLayout(
   if (
     segment.token.kind !== "task" &&
     segment.token.kind !== "project" &&
-    segment.token.kind !== "letter"
+    segment.token.kind !== "letter" &&
+    segment.token.kind !== "email"
   ) {
     return "inline";
   }

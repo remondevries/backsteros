@@ -44,6 +44,7 @@ import {
 import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
+import type { TaskLinkPickerOption } from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../markdown-image-paste.js";
 
 /** Below this width, properties render as inline chips; at/above as the card rail. */
@@ -92,6 +93,9 @@ export type TaskDetailViewProps = {
   onToggleSpellcheckDescriptionSegment?: (segmentId: string) => void;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onChangeLinks?: (links: TaskLink[]) => void;
+  documentLinkOptions?: readonly TaskLinkPickerOption[];
+  emailLinkOptions?: readonly TaskLinkPickerOption[];
+  onNavigateLink?: (href: string) => void;
   /** Upload clipboard/drop images for Linear-style markdown embeds. */
   onUploadImages?: UploadMarkdownImages;
   /** Resolve authenticated task image URLs in the preview. */
@@ -133,6 +137,9 @@ export function TaskDetailView({
   onToggleSpellcheckDescriptionSegment,
   onSaveDescription,
   onChangeLinks,
+  documentLinkOptions,
+  emailLinkOptions,
+  onNavigateLink,
   onUploadImages,
   resolveImageSrc,
   onSaveTitle,
@@ -396,6 +403,9 @@ export function TaskDetailView({
           <TaskLinkAttachments
             links={task.links}
             onChangeLinks={onChangeLinks}
+            documentOptions={documentLinkOptions}
+            emailOptions={emailLinkOptions}
+            onNavigate={onNavigateLink}
           />
           {belowDescriptionNode}
           {errorNode}
@@ -428,6 +438,9 @@ export function TaskDetailView({
             <TaskLinkAttachments
               links={task.links}
               onChangeLinks={onChangeLinks}
+              documentOptions={documentLinkOptions}
+              emailOptions={emailLinkOptions}
+              onNavigate={onNavigateLink}
             />
             {belowDescriptionNode}
             {errorNode}

@@ -151,7 +151,6 @@ export type GoNavigationItem = {
 
 export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
   { id: "inbox", letter: "i", hint: "G I", label: "Inbox", href: "/inbox" },
-  { id: "email", letter: "e", hint: "G E", label: "Email", href: "/email" },
   { id: "journal", letter: "j", hint: "G J", label: "Journal", href: "/journal" },
   {
     id: "habits",

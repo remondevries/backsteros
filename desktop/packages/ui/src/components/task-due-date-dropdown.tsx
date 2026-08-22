@@ -61,6 +61,10 @@ export type TaskDueDateDropdownProps = {
   showIcon?: boolean;
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
   triggerVariant?: import("./property-dropdown.js").PropertyDropdownTriggerVariant;
+  /** Open the panel on mount (used by deferred list-row mounts). */
+  defaultOpen?: boolean;
+  /** Placement for the initial `defaultOpen` (deferred shortcut opens). */
+  defaultOpenPlacement?: "anchored" | "center";
 };
 
 function stopFieldEvent(event: SyntheticEvent) {
@@ -85,6 +89,8 @@ export function TaskDueDateDropdown({
   taskPropertyDropdownId,
   showIcon = true,
   triggerVariant = "default",
+  defaultOpen = false,
+  defaultOpenPlacement,
 }: TaskDueDateDropdownProps) {
   const resolvedTaskPropertyDropdownId =
     taskPropertyDropdownId === undefined ? "dueDate" : taskPropertyDropdownId;
@@ -200,6 +206,8 @@ export function TaskDueDateDropdown({
           searchShortcutLabel={searchShortcutLabel}
           ariaLabel="Change due date"
           taskPropertyDropdownId={resolvedTaskPropertyDropdownId ?? undefined}
+          defaultOpen={defaultOpen}
+          defaultOpenPlacement={defaultOpenPlacement}
           fallbackIcon={
             showIcon ? (
               <TaskDueDateIcon active={hasDueDate} urgency={dueDateUrgency} />
@@ -230,6 +238,8 @@ export function TaskDueDateDropdown({
         className="task-due-date-dropdown__searchable"
         panelWidth={280}
         panelAlign={variant === "icon" ? "start" : "end"}
+        defaultOpen={defaultOpen}
+        defaultOpenPlacement={defaultOpenPlacement}
         onQuerySubmit={handleQuerySubmit}
         queryPreviewLabel={handleQueryPreview}
         renderTrigger={({ open, disabled: isDisabled, triggerId, onToggle }) =>

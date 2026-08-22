@@ -24,35 +24,50 @@ export function replySubject(originalSubject: string): string {
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
 
-export const DEFAULT_EMAIL_REPLY_GREETING = "Hi {firstName},";
+export const DEFAULT_EMAIL_REPLY_GREETING_EN = "Hi {firstName},";
+export const DEFAULT_EMAIL_REPLY_GREETING_NL = "Beste {firstName},";
+/** @deprecated Use {@link DEFAULT_EMAIL_REPLY_GREETING_EN}. */
+export const DEFAULT_EMAIL_REPLY_GREETING = DEFAULT_EMAIL_REPLY_GREETING_EN;
 export const DEFAULT_EMAIL_REPLY_SIGN_OFF_EN = "Best,\n{name}";
 export const DEFAULT_EMAIL_REPLY_SIGN_OFF_NL = "Met vriendelijke groet,\n{name}";
 /** @deprecated Use {@link DEFAULT_EMAIL_REPLY_SIGN_OFF_EN}. */
 export const DEFAULT_EMAIL_REPLY_SIGN_OFF = DEFAULT_EMAIL_REPLY_SIGN_OFF_EN;
 export const DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME = "Remon";
 
-export type EmailReplySignOffLanguage = "en" | "nl";
+export type EmailReplyLanguage = "en" | "nl";
+/** @deprecated Use {@link EmailReplyLanguage}. */
+export type EmailReplySignOffLanguage = EmailReplyLanguage;
 
 export type EmailReplyTemplateSettings = {
-  greetingTemplate: string;
+  greetingTemplateEn: string;
+  greetingTemplateNl: string;
   signOffTemplateEn: string;
   signOffTemplateNl: string;
   signOffName: string;
 };
 
 export type ResolvedEmailReplyTemplates = EmailReplyTemplateSettings & {
+  greetingTemplate: string;
   signOffTemplate: string;
 };
 
 export function resolveEmailReplyTemplates(
   settings?: Partial<
-    EmailReplyTemplateSettings & { signOffTemplate?: string }
+    EmailReplyTemplateSettings & {
+      greetingTemplate?: string;
+      signOffTemplate?: string;
+    }
   > | null,
 ): EmailReplyTemplateSettings {
+  const legacyGreeting = settings?.greetingTemplate?.trim();
   const legacySignOff = settings?.signOffTemplate?.trim();
   return {
-    greetingTemplate:
-      settings?.greetingTemplate?.trim() || DEFAULT_EMAIL_REPLY_GREETING,
+    greetingTemplateEn:
+      settings?.greetingTemplateEn?.trim() ||
+      legacyGreeting ||
+      DEFAULT_EMAIL_REPLY_GREETING_EN,
+    greetingTemplateNl:
+      settings?.greetingTemplateNl?.trim() || DEFAULT_EMAIL_REPLY_GREETING_NL,
     signOffTemplateEn:
       settings?.signOffTemplateEn?.trim() ||
       legacySignOff ||
@@ -64,12 +79,24 @@ export function resolveEmailReplyTemplates(
   };
 }
 
+export function greetingTemplateForLanguage(
+  templates: Pick<
+    EmailReplyTemplateSettings,
+    "greetingTemplateEn" | "greetingTemplateNl"
+  >,
+  language: EmailReplyLanguage,
+): string {
+  return language === "nl"
+    ? templates.greetingTemplateNl
+    : templates.greetingTemplateEn;
+}
+
 export function signOffTemplateForLanguage(
   templates: Pick<
     EmailReplyTemplateSettings,
     "signOffTemplateEn" | "signOffTemplateNl"
   >,
-  language: EmailReplySignOffLanguage,
+  language: EmailReplyLanguage,
 ): string {
   return language === "nl"
     ? templates.signOffTemplateNl
@@ -78,10 +105,11 @@ export function signOffTemplateForLanguage(
 
 export function resolveTemplatesForLanguage(
   templates: EmailReplyTemplateSettings,
-  language: EmailReplySignOffLanguage,
+  language: EmailReplyLanguage,
 ): ResolvedEmailReplyTemplates {
   return {
     ...templates,
+    greetingTemplate: greetingTemplateForLanguage(templates, language),
     signOffTemplate: signOffTemplateForLanguage(templates, language),
   };
 }
@@ -156,10 +184,10 @@ const ENGLISH_LANGUAGE_MARKERS = new Set([
   "cheers",
 ]);
 
-/** Pick English vs Dutch sign-off from email body text. */
+/** Pick English vs Dutch greeting/sign-off from email body text. */
 export function detectEmailLanguage(
   ...sources: (string | null | undefined)[]
-): EmailReplySignOffLanguage {
+): EmailReplyLanguage {
   const text = sources
     .map((source) => source?.trim())
     .filter(Boolean)
@@ -204,9 +232,10 @@ export function renderEmailReplyTemplate(
 
 export function renderEmailReplyShell(
   from: string,
-  templates: Pick<EmailReplyTemplateSettings, "greetingTemplate" | "signOffName"> & {
-    signOffTemplate: string;
-  },
+  templates: Pick<
+    ResolvedEmailReplyTemplates,
+    "greetingTemplate" | "signOffTemplate" | "signOffName"
+  >,
 ): { greeting: string; signOff: string; firstName: string } {
   const firstName = parseSenderFirstName(from);
   const vars = { firstName, name: templates.signOffName };
@@ -218,7 +247,7 @@ export function renderEmailReplyShell(
 }
 
 const GREETING_LINE =
-  /^(?:hi|hello|hey|dear|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
+  /^(?:hi|hello|hey|dear|aan|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
 
 const SIGN_OFF_LINE =
   /^(?:best|thanks|thank you|sincerely|regards|cheers|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards)(?:,|\s|$)/i;
@@ -271,7 +300,7 @@ function stripTrailingSignOff(body: string): string {
 
 function stripAssembledEmailShell(body: string): string {
   const match = body.match(
-    /^ *(?:hi|hello|hey|dear|beste|geachte)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
+    /^ *(?:hi|hello|hey|dear|aan|beste|geachte)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
   );
   return match?.[1]?.trim() ?? body;
 }
@@ -329,7 +358,7 @@ export function sanitizeAgentReplyBody(raw: string): string {
 
   body = stripAssembledEmailShell(body);
   body = stripLeadingGreetingLines(body);
-  body = body.replace(/(?:^|\n)(?:beste|geachte),?\s*(?=\n|$)/gi, "\n");
+  body = body.replace(/(?:^|\n)(?:aan|beste|geachte),?\s*(?=\n|$)/gi, "\n");
   body = body.replace(/([.!?])\s*(?=Bedankt voor|Wij zijn het niet eens)/g, "$1\n\n");
   body = body.replace(/([A-Za-z])(?=Bedankt voor)/g, "$1\n\n");
 
@@ -424,9 +453,10 @@ export function parseRecipientFirstName(to: string): string {
 
 export function renderEmailComposeShell(
   to: string,
-  templates: Pick<EmailReplyTemplateSettings, "greetingTemplate" | "signOffName"> & {
-    signOffTemplate: string;
-  },
+  templates: Pick<
+    ResolvedEmailReplyTemplates,
+    "greetingTemplate" | "signOffTemplate" | "signOffName"
+  >,
 ): { greeting: string; signOff: string; firstName: string } {
   const firstName = parseRecipientFirstName(to);
   const vars = { firstName, name: templates.signOffName };
@@ -446,9 +476,12 @@ export function assembleReplyEmail(input: {
   subject: string;
   body: string;
   templates?: Partial<
-    EmailReplyTemplateSettings & { signOffTemplate?: string }
+    EmailReplyTemplateSettings & {
+      greetingTemplate?: string;
+      signOffTemplate?: string;
+    }
   > | null;
-  languageHint?: EmailReplySignOffLanguage;
+  languageHint?: EmailReplyLanguage;
   /** Extra text for language detection (e.g. the incoming message). */
   contextText?: string | null;
 }): AssembledReplyEmail {
@@ -479,9 +512,12 @@ export function assembleComposeEmail(input: {
   subject: string;
   body: string;
   templates?: Partial<
-    EmailReplyTemplateSettings & { signOffTemplate?: string }
+    EmailReplyTemplateSettings & {
+      greetingTemplate?: string;
+      signOffTemplate?: string;
+    }
   > | null;
-  languageHint?: EmailReplySignOffLanguage;
+  languageHint?: EmailReplyLanguage;
 }): AssembledComposeEmail {
   const baseTemplates = resolveEmailReplyTemplates(input.templates);
   const language = input.languageHint ?? detectEmailLanguage(input.body);
@@ -505,9 +541,45 @@ export function assembleComposeEmail(input: {
 
 /** Escape plain text for a multipart HTML alternative that preserves line breaks. */
 export function plainTextEmailToHtml(text: string): string {
+  return escapeEmailHtml(text).replace(/\n/g, "<br>\n");
+}
+
+function escapeEmailHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>\n");
+    .replace(/>/g, "&gt;");
+}
+
+/** Content-ID for the inbox contact avatar shown beside the sign-off. */
+export const EMAIL_SIGN_OFF_AVATAR_CID = "backsteros-signoff-avatar";
+
+/**
+ * HTML alternative matching the compose UI: greeting + body, then a
+ * sign-off footer with optional circular avatar to the left of the text.
+ */
+export function assembleEmailHtml(
+  assembled: Pick<AssembledReplyEmail, "greeting" | "body" | "signOff">,
+  options?: { signOffAvatarCid?: string | null },
+): string {
+  const greetingHtml = escapeEmailHtml(assembled.greeting).replace(
+    /\n/g,
+    "<br>\n",
+  );
+  const bodyHtml = escapeEmailHtml(assembled.body).replace(/\n/g, "<br>\n");
+  const signOffHtml = escapeEmailHtml(assembled.signOff).replace(/\n/g, "<br>\n");
+  const cid = options?.signOffAvatarCid?.trim() || null;
+
+  const footer = cid
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:4px;border-collapse:collapse">
+  <tr>
+    <td style="vertical-align:middle;padding-right:16px">
+      <img src="cid:${cid}" width="96" height="96" alt="" style="display:block;border:1px solid #dddddd;border-radius:9999px;width:96px;height:96px;object-fit:cover" />
+    </td>
+    <td style="vertical-align:middle;font-size:14px;line-height:1.55;color:#444444">${signOffHtml}</td>
+  </tr>
+</table>`
+    : `<div style="margin-top:4px;font-size:14px;line-height:1.55;color:#444444">${signOffHtml}</div>`;
+
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#222222">${greetingHtml}<br>\n<br>\n${bodyHtml}<br>\n<br>\n${footer}</div>`;
 }

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Image, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
+
+import { AvatarImage } from "./avatar-image";
 
 /**
  * Optional list-row avatar — uploaded image only, never a fallback icon
@@ -32,11 +34,11 @@ export function EntityListAvatar({
         { width: size, height: size, borderRadius: radius },
       ]}
     >
-      <Image
-        source={{ uri: src }}
-        style={{ width: size, height: size, borderRadius: radius }}
-        onError={() => setFailed(true)}
-        accessibilityIgnoresInvertColors
+      <AvatarImage
+        src={src}
+        size={size}
+        borderRadius={radius}
+        onFail={() => setFailed(true)}
       />
     </View>
   );

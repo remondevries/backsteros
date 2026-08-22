@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Image } from "react-native";
 
 import { colors } from "../lib/theme";
+import { AvatarImage } from "./avatar-image";
 import { ContactPersonIcon } from "./contact-person-icon";
 
 type Props = {
@@ -26,16 +26,7 @@ export function ContactAvatarIcon({
 
   if (src && !failed) {
     return (
-      <Image
-        source={{ uri: src }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-        }}
-        accessibilityIgnoresInvertColors
-        onError={() => setFailed(true)}
-      />
+      <AvatarImage src={src} size={size} onFail={() => setFailed(true)} />
     );
   }
 

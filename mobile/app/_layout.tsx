@@ -14,7 +14,7 @@ import { PowerSyncProvider } from "../lib/powersync-context";
 import { initSentry, wrapRoot } from "../lib/sentry";
 import { NavigationShortcutGateProvider } from "../lib/navigation-shortcut-gate";
 import { TabBarVisibilityProvider } from "../lib/tab-bar-visibility";
-import { tabDetailScreenOptions } from "../lib/tab-stack-options";
+import { tabDetailScreenOptions, iosStackGestureOptions } from "../lib/tab-stack-options";
 import { colors, navigationTheme } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEscapeBackNavigation } from "../lib/use-escape-back-navigation";
@@ -34,8 +34,7 @@ const stackScreenOptions = {
   },
   headerShadowVisible: false,
   contentStyle: { backgroundColor: colors.background },
-  gestureEnabled: true,
-  fullScreenGestureEnabled: true,
+  ...iosStackGestureOptions,
 };
 
 const rootDetailOptions = tabDetailScreenOptions();
@@ -83,8 +82,7 @@ function RootLayout() {
                       options={{
                         title: "Settings",
                         headerBackButtonDisplayMode: "minimal",
-                        gestureEnabled: true,
-                        fullScreenGestureEnabled: true,
+                        ...iosStackGestureOptions,
                       }}
                     />
                     <Stack.Screen name="task/[id]" options={rootDetailOptions} />

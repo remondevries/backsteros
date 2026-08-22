@@ -86,6 +86,22 @@ export type MentionCatalogLetter = {
   projectName: string | null;
 };
 
+export type MentionCatalogEmail = {
+  id: string;
+  displayId: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: number | null;
+  inboxId: string;
+  threadId: string | null;
+  messageId: string;
+  projectId: string | null;
+  projectKey: string | null;
+  projectName: string | null;
+  contactName: string | null;
+};
+
 export type MentionCatalog = {
   tasks: MentionCatalogTask[];
   projects: MentionCatalogProject[];
@@ -93,6 +109,7 @@ export type MentionCatalog = {
   organizations: MentionCatalogOrganization[];
   documents: MentionCatalogDocument[];
   letters: MentionCatalogLetter[];
+  emails: MentionCatalogEmail[];
 };
 
 export type MentionMenuTriggerState = {
@@ -149,6 +166,14 @@ export type MentionItem =
     }
   | {
       kind: "letter";
+      id: string;
+      displayId: string;
+      title: string;
+      status: TaskStatus;
+      projectName: string | null;
+    }
+  | {
+      kind: "email";
       id: string;
       displayId: string;
       title: string;

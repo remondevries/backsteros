@@ -1,13 +1,19 @@
 "use client";
 
 import type { ComponentType, ReactNode, SyntheticEvent } from "react";
-import { useMemo } from "react";
+import { memo, useMemo, useSyncExternalStore } from "react";
 
 import {
   getInboxItemDisplayId,
+  resolveInboxEmailIconColor,
   type InboxListItem,
 } from "../inbox-items.js";
+import { iconSvgColorStyle } from "../icon-color.js";
 import { keyboardNavItemProps } from "../keyboard-nav-item.js";
+import {
+  getPreferredColorSchemeSnapshot,
+  subscribeToPreferredColorScheme,
+} from "../task-status-color.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
 import { sidePanelItemClass } from "../side-panel-styles.js";
 import {
@@ -18,9 +24,9 @@ import {
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
-import { SearchableDropdown } from "./searchable-dropdown.js";
+import { DeferredSearchableDropdown } from "./deferred-searchable-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
+import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
 import {
   TaskListDueDateLabel,
   TaskListPriorityLabel,
@@ -84,7 +90,7 @@ function ProjectMeta({
  * Inbox list row — stacked layout; task meta is interactive when handlers are provided.
  * Full card is clickable via an overlay hit-area; field controls keep their own events.
  */
-export function InboxListItemRow({
+export function InboxListItemRowComponent({
   item,
   href,
   isSelected,
@@ -161,6 +167,18 @@ export function InboxListItemRow({
     );
   }
 
+  const isEmail = item.kind === "email";
+  const colorScheme = useSyncExternalStore(
+    subscribeToPreferredColorScheme,
+    getPreferredColorSchemeSnapshot,
+    () => "dark" as const,
+  );
+  const emailIconStyle = useMemo(() => {
+    if (!isEmail) return undefined;
+    return iconSvgColorStyle(
+      resolveInboxEmailIconColor(item.status, { colorScheme }),
+    );
+  }, [colorScheme, isEmail, item.status]);
   const hasProjectMeta = Boolean(
     item.projectId || item.projectName || item.projectKey,
   );
@@ -191,9 +209,26 @@ export function InboxListItemRow({
           className="inbox-list-item-hit-area"
         />
         <div className="app-side-panel-item-row-primary inbox-list-item-card-layer">
-          <TaskStatusIcon status={item.status} size={14} />
+          {isEmail ? (
+            <span
+              className="inbox-list-item-email-mark"
+              title="Email"
+              aria-label="Email"
+            >
+              <InboxItemTypeIcon
+                kind="email"
+                size={14}
+                style={emailIconStyle}
+              />
+            </span>
+          ) : (
+            <TaskStatusIcon status={item.status} size={14} />
+          )}
           <span className="inbox-list-item-title-wrap">
             <span className="inbox-list-item-title">{item.title}</span>
+            {isEmail && item.partyLabel ? (
+              <span className="inbox-list-item-email-party">{item.partyLabel}</span>
+            ) : null}
             {titleTrailing ? (
               <span className="inbox-list-item-title-trailing">
                 {titleTrailing}
@@ -204,7 +239,7 @@ export function InboxListItemRow({
         <div className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox inbox-list-item-card-layer">
           {onPriorityChange ? (
             <span className="inbox-list-item-field">
-              <SearchableDropdown
+              <DeferredSearchableDropdown
                 value={String(item.priority)}
                 options={priorityOptions}
                 onChange={(next) => onPriorityChange(item.id, Number(next))}
@@ -242,7 +277,7 @@ export function InboxListItemRow({
           {hasDueMeta ? (
             onDueDateChange ? (
               <span className="inbox-list-item-field">
-                <TaskDueDateDropdown
+                <DeferredTaskDueDateDropdown
                   dueDate={item.dueDate}
                   status={item.status}
                   variant="list"
@@ -260,7 +295,7 @@ export function InboxListItemRow({
           {hasProjectMeta ? (
             projectOptions.length > 0 && onProjectChange ? (
               <span className="inbox-list-item-field">
-                <SearchableDropdown
+                <DeferredSearchableDropdown
                   value={item.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
                   options={projectOptions}
                   onChange={(next) =>
@@ -314,7 +349,7 @@ export function InboxListItemRow({
           {showAssignee ? (
             <span className="inbox-list-item-assignee inbox-list-item-field">
               {canEditAssignee ? (
-                <SearchableDropdown
+                <DeferredSearchableDropdown
                   value={item.assigneeId ?? DROPDOWN_NONE_VALUE}
                   options={assigneeOptions}
                   onChange={(next) =>
@@ -385,3 +420,5 @@ export function InboxListItemRow({
     </li>
   );
 }
+
+export const InboxListItemRow = memo(InboxListItemRowComponent);

@@ -21,6 +21,10 @@ import {
   AgentMailClient,
   type AgentMailDraftDetail,
   type AgentMailDraftSummary,
+  type AgentMailMessageAttachment,
+  type EmailSourceHeader,
+  hydrateAgentMailThreadMessages,
+  parseEmailSourceHeaders,
 } from "../lib/agentmail-client.js";
 import {
   attachDraftThreadIds,
@@ -37,17 +41,19 @@ import {
 } from "../lib/agentmail-email-list.js";
 import {
   assembleComposeEmail,
+  assembleEmailHtml,
   assembleReplyEmail,
   DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME,
   detectEmailLanguage,
+  EMAIL_SIGN_OFF_AVATAR_CID,
   replySubject,
   resolveEditableDraftBody,
   resolveEmailReplyTemplates,
-  plainTextEmailToHtml,
   type AssembledComposeEmail,
   type AssembledReplyEmail,
   type EmailReplyTemplateSettings,
 } from "../lib/email-reply-assembler.js";
+import { getAvatar } from "./circle-domain.js";
 import * as emailThreadsService from "./email-threads.js";
 import { previewCursorApiKey } from "./cursor-settings.js";
 
@@ -188,7 +194,8 @@ async function upsertAgentMailSecrets(
   inboxIds: string[],
   options?: {
     templates?: {
-      greetingTemplate?: string;
+      greetingTemplateEn?: string;
+      greetingTemplateNl?: string;
       signOffTemplateEn?: string;
       signOffTemplateNl?: string;
     };
@@ -212,7 +219,11 @@ async function upsertAgentMailSecrets(
       ? {}
       : {
           agentmailReplyGreetingTemplate:
-            options.templates.greetingTemplate?.trim() || null,
+            options.templates.greetingTemplateEn?.trim() || null,
+          agentmailReplyGreetingTemplateEn:
+            options.templates.greetingTemplateEn?.trim() || null,
+          agentmailReplyGreetingTemplateNl:
+            options.templates.greetingTemplateNl?.trim() || null,
           agentmailReplySignOffTemplateEn:
             options.templates.signOffTemplateEn?.trim() || null,
           agentmailReplySignOffTemplateNl:
@@ -266,6 +277,8 @@ async function getSecretRow(workspaceId: string): Promise<{
   agentmailInboxIds: string[] | null;
   agentmailInboxContacts: Record<string, string> | null;
   agentmailReplyGreetingTemplate: string | null;
+  agentmailReplyGreetingTemplateEn: string | null;
+  agentmailReplyGreetingTemplateNl: string | null;
   agentmailReplySignOffTemplate: string | null;
   agentmailReplySignOffTemplateEn: string | null;
   agentmailReplySignOffTemplateNl: string | null;
@@ -282,6 +295,10 @@ async function getSecretRow(workspaceId: string): Promise<{
       agentmailInboxContacts: workspaceIntegrationSecrets.agentmailInboxContacts,
       agentmailReplyGreetingTemplate:
         workspaceIntegrationSecrets.agentmailReplyGreetingTemplate,
+      agentmailReplyGreetingTemplateEn:
+        workspaceIntegrationSecrets.agentmailReplyGreetingTemplateEn,
+      agentmailReplyGreetingTemplateNl:
+        workspaceIntegrationSecrets.agentmailReplyGreetingTemplateNl,
       agentmailReplySignOffTemplate:
         workspaceIntegrationSecrets.agentmailReplySignOffTemplate,
       agentmailReplySignOffTemplateEn:
@@ -305,11 +322,19 @@ export async function getEmailReplyTemplates(
 ): Promise<
   Pick<
     EmailReplyTemplateSettings,
-    "greetingTemplate" | "signOffTemplateEn" | "signOffTemplateNl"
+    | "greetingTemplateEn"
+    | "greetingTemplateNl"
+    | "signOffTemplateEn"
+    | "signOffTemplateNl"
   >
 > {
   const row = await getSecretRow(workspaceId);
   const resolved = resolveEmailReplyTemplates({
+    greetingTemplateEn:
+      row?.agentmailReplyGreetingTemplateEn ??
+      row?.agentmailReplyGreetingTemplate ??
+      undefined,
+    greetingTemplateNl: row?.agentmailReplyGreetingTemplateNl ?? undefined,
     greetingTemplate: row?.agentmailReplyGreetingTemplate ?? undefined,
     signOffTemplateEn:
       row?.agentmailReplySignOffTemplateEn ??
@@ -318,7 +343,8 @@ export async function getEmailReplyTemplates(
     signOffTemplateNl: row?.agentmailReplySignOffTemplateNl ?? undefined,
   });
   return {
-    greetingTemplate: resolved.greetingTemplate,
+    greetingTemplateEn: resolved.greetingTemplateEn,
+    greetingTemplateNl: resolved.greetingTemplateNl,
     signOffTemplateEn: resolved.signOffTemplateEn,
     signOffTemplateNl: resolved.signOffTemplateNl,
   };
@@ -336,6 +362,72 @@ async function resolveInboxSignOffName(
     if (name) return name;
   }
   return DEFAULT_EMAIL_REPLY_SIGN_OFF_NAME;
+}
+
+type SignOffAvatarInlineAttachment = {
+  filename: string;
+  content_type: string;
+  content_disposition: "inline";
+  content_id: string;
+  content: string;
+};
+
+async function resolveSignOffAvatarAttachment(
+  workspaceId: string,
+  inboxId: string,
+): Promise<SignOffAvatarInlineAttachment | null> {
+  const secretRow = await getSecretRow(workspaceId);
+  const contactId = inboxContactsFromRow(secretRow)[inboxId.trim()];
+  if (!contactId) return null;
+  const avatar = await getAvatar(workspaceId, "contact", contactId);
+  if (!avatar?.bytes?.length) return null;
+  const contentType = avatar.row.contentType?.trim() || "image/png";
+  const extension = contentType.includes("jpeg")
+    ? "jpg"
+    : contentType.includes("webp")
+      ? "webp"
+      : contentType.includes("gif")
+        ? "gif"
+        : "png";
+  return {
+    filename: `signoff-avatar.${extension}`,
+    content_type: contentType,
+    content_disposition: "inline",
+    content_id: EMAIL_SIGN_OFF_AVATAR_CID,
+    content: Buffer.from(avatar.bytes).toString("base64"),
+  };
+}
+
+function buildAssembledDraftBodies(
+  assembled: AssembledReplyEmail | AssembledComposeEmail,
+  avatar: SignOffAvatarInlineAttachment | null,
+): { text: string; html: string } {
+  return {
+    text: assembled.text,
+    html: assembleEmailHtml(assembled, {
+      signOffAvatarCid: avatar?.content_id ?? null,
+    }),
+  };
+}
+
+function draftUpdateAttachmentFields(
+  draft: AgentMailDraftDetail | null,
+  avatar: SignOffAvatarInlineAttachment | null,
+): {
+  add_attachments?: SignOffAvatarInlineAttachment[];
+  remove_attachments?: string[];
+} {
+  const remove = (draft?.attachments ?? [])
+    .filter(
+      (attachment) =>
+        attachment.contentId === EMAIL_SIGN_OFF_AVATAR_CID ||
+        attachment.contentId === `<${EMAIL_SIGN_OFF_AVATAR_CID}>`,
+    )
+    .map((attachment) => attachment.attachmentId);
+  return {
+    ...(remove.length > 0 ? { remove_attachments: remove } : {}),
+    ...(avatar ? { add_attachments: [avatar] } : {}),
+  };
 }
 
 export async function getEmailReplyTemplatesForInbox(
@@ -564,7 +656,9 @@ export async function getAgentMailSettings(
     inboxes: inboxesWithContacts,
     organizationId,
     connected: Boolean(apiKey && inboxIds.length > 0),
-    replyGreetingTemplate: replyTemplates.greetingTemplate,
+    replyGreetingTemplate: replyTemplates.greetingTemplateEn,
+    replyGreetingTemplateEn: replyTemplates.greetingTemplateEn,
+    replyGreetingTemplateNl: replyTemplates.greetingTemplateNl,
     replySignOffTemplateEn: replyTemplates.signOffTemplateEn,
     replySignOffTemplateNl: replyTemplates.signOffTemplateNl,
     webhookConfigured: Boolean(secretRow?.agentmailWebhookId?.trim()),
@@ -635,6 +729,8 @@ export async function updateAgentMailSettings(
 
   if (
     patch.replyGreetingTemplate !== undefined ||
+    patch.replyGreetingTemplateEn !== undefined ||
+    patch.replyGreetingTemplateNl !== undefined ||
     patch.replySignOffTemplateEn !== undefined ||
     patch.replySignOffTemplateNl !== undefined
   ) {
@@ -645,8 +741,13 @@ export async function updateAgentMailSettings(
       nextInboxIds,
       {
         templates: {
-          greetingTemplate:
-            patch.replyGreetingTemplate ?? currentTemplates.greetingTemplate,
+          greetingTemplateEn:
+            patch.replyGreetingTemplateEn ??
+            patch.replyGreetingTemplate ??
+            currentTemplates.greetingTemplateEn,
+          greetingTemplateNl:
+            patch.replyGreetingTemplateNl ??
+            currentTemplates.greetingTemplateNl,
           signOffTemplateEn:
             patch.replySignOffTemplateEn ?? currentTemplates.signOffTemplateEn,
           signOffTemplateNl:
@@ -871,6 +972,7 @@ async function listConceptDrafts(
 
 async function saveConceptReplyDraft(
   client: AgentMailClient,
+  workspaceId: string,
   inboxId: string,
   messageId: string,
   assembled: AssembledReplyEmail,
@@ -886,15 +988,19 @@ async function saveConceptReplyDraft(
     );
   }
 
+  const avatar = await resolveSignOffAvatarAttachment(workspaceId, inboxId);
+  const bodies = buildAssembledDraftBodies(assembled, avatar);
+
   // Always include to/subject — AgentMail reply-only creates (in_reply_to alone)
   // have been returning opaque "Draft not found" for some Message-IDs.
   const createPayload = {
     to,
     subject: assembled.subject,
-    text: assembled.text,
-    html: plainTextEmailToHtml(assembled.text),
+    text: bodies.text,
+    html: bodies.html,
     client_id: clientId,
     in_reply_to: messageId,
+    ...(avatar ? { attachments: [avatar] } : {}),
   };
 
   const tryUpdate = async (
@@ -903,12 +1009,13 @@ async function saveConceptReplyDraft(
   ): Promise<AgentMailDraftDetail | null> => {
     try {
       // Confirm the draft still exists before PATCH — list rows can be stale.
-      await client.getDraft(targetInboxId, draftId);
+      const existing = await client.getDraft(targetInboxId, draftId);
       return await client.updateDraft(targetInboxId, draftId, {
-        text: assembled.text,
-        html: plainTextEmailToHtml(assembled.text),
+        text: bodies.text,
+        html: bodies.html,
         to,
         subject: assembled.subject,
+        ...draftUpdateAttachmentFields(existing, avatar),
       });
     } catch (error) {
       if (isDraftNotFoundError(error)) return null;
@@ -957,9 +1064,10 @@ async function saveConceptReplyDraft(
         return await client.createDraft(inboxId, {
           to,
           subject: assembled.subject,
-          text: assembled.text,
-          html: plainTextEmailToHtml(assembled.text),
+          text: bodies.text,
+          html: bodies.html,
           in_reply_to: messageId,
+          ...(avatar ? { attachments: [avatar] } : {}),
         });
       } catch (threadedRetryError) {
         // Last resort: standalone draft (still shown as the concept reply).
@@ -972,9 +1080,10 @@ async function saveConceptReplyDraft(
           return client.createDraft(inboxId, {
             to,
             subject: assembled.subject,
-            text: assembled.text,
-            html: plainTextEmailToHtml(assembled.text),
+            text: bodies.text,
+            html: bodies.html,
             client_id: `${clientId}-loose`,
+            ...(avatar ? { attachments: [avatar] } : {}),
           });
         }
       throw threadedRetryError;
@@ -984,6 +1093,7 @@ async function saveConceptReplyDraft(
 
 async function saveComposeDraft(
   client: AgentMailClient,
+  workspaceId: string,
   inboxId: string,
   sessionId: string,
   assembled: AssembledComposeEmail,
@@ -991,22 +1101,27 @@ async function saveComposeDraft(
   const clientId = composeClientId(sessionId);
   const drafts = await listConceptDrafts(client, inboxId);
   const existing = drafts.find((draft) => draft.clientId === clientId);
+  const avatar = await resolveSignOffAvatarAttachment(workspaceId, inboxId);
+  const bodies = buildAssembledDraftBodies(assembled, avatar);
 
   if (existing) {
+    const current = await client.getDraft(inboxId, existing.draftId);
     return client.updateDraft(inboxId, existing.draftId, {
       to: assembled.to,
       subject: assembled.subject,
-      text: assembled.text,
-      html: plainTextEmailToHtml(assembled.text),
+      text: bodies.text,
+      html: bodies.html,
+      ...draftUpdateAttachmentFields(current, avatar),
     });
   }
 
   return client.createDraft(inboxId, {
     to: assembled.to,
     subject: assembled.subject,
-    text: assembled.text,
-    html: plainTextEmailToHtml(assembled.text),
+    text: bodies.text,
+    html: bodies.html,
     client_id: clientId,
+    ...(avatar ? { attachments: [avatar] } : {}),
   });
 }
 
@@ -1078,6 +1193,19 @@ export async function listAgentMailMessages(
     },
   );
 
+  await emailThreadsService.ensureEmailThreadsRegistered(
+    workspaceId,
+    listed
+      .filter((message) => message.kind !== "draft")
+      .map((message) => ({
+        inboxId: message.inboxId,
+        threadKey: emailThreadsService.resolveEmailThreadKey({
+          threadId: message.threadId,
+          messageId: message.messageId,
+        }),
+      })),
+  );
+
   const metaMap = await emailThreadsService.listEmailThreadListMetaMap(
     workspaceId,
   );
@@ -1091,7 +1219,10 @@ export async function listAgentMailMessages(
     );
     return {
       ...message,
-      status: stored?.status ?? "backlog",
+      emailThreadId: stored?.id,
+      number: stored?.number,
+      displayId: stored?.displayId,
+      status: stored?.status ?? "triage",
       priority: stored?.priority ?? 0,
       dueDate: stored?.dueDate ?? null,
       organizationId: stored?.organizationId ?? null,
@@ -1127,7 +1258,12 @@ export async function getAgentMailMessage(
     try {
       const thread = await client.getThread(inboxId, threadId);
       if (thread.messages.length > 0) {
-        threadMessages = thread.messages;
+        threadMessages = await hydrateAgentMailThreadMessages(
+          client,
+          inboxId,
+          message,
+          thread.messages,
+        );
       }
     } catch (error) {
       // Fall back to the single message if thread fetch fails.
@@ -1191,6 +1327,7 @@ export async function getAgentMailMessage(
     extractedHtml: message.extractedHtml,
     to: message.to,
     labels: message.labels,
+    attachments: mapMessageAttachmentsForApi(message.attachments),
     inboxEmail,
     threadMetadata,
     threadComments,
@@ -1207,6 +1344,7 @@ export async function getAgentMailMessage(
       extractedHtml: entry.extractedHtml,
       labels: entry.labels,
       inReplyTo: entry.inReplyTo,
+      attachments: mapMessageAttachmentsForApi(entry.attachments),
     })),
     conceptDraftId: conceptDraft?.draftId ?? null,
     conceptPreview: conceptDraft?.preview ?? conceptDraft?.text?.slice(0, 160) ?? null,
@@ -1222,6 +1360,40 @@ export async function getAgentMailMessage(
         })
       : null,
   };
+}
+
+function mapMessageAttachmentsForApi(
+  attachments: AgentMailMessageAttachment[] | undefined,
+) {
+  return (attachments ?? []).map((attachment) => ({
+    attachmentId: attachment.attachmentId,
+    size: attachment.size,
+    filename: attachment.filename,
+    contentType: attachment.contentType,
+    contentDisposition: attachment.contentDisposition,
+    contentId: attachment.contentId,
+  }));
+}
+
+export async function getAgentMailMessageAttachment(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<{
+  bytes: Uint8Array;
+  contentType: string;
+  filename: string | null;
+}> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+  const client = new AgentMailClient({ apiKey });
+  return client.getMessageAttachment(inboxId, messageId, attachmentId);
 }
 
 export async function getAgentMailDraft(
@@ -1281,6 +1453,7 @@ export async function upsertEmailConceptReply(
   });
   const draft = await saveConceptReplyDraft(
     client,
+    workspaceId,
     inboxId,
     messageId,
     assembled,
@@ -1324,6 +1497,7 @@ export async function upsertEmailComposeDraft(
   });
   const draft = await saveComposeDraft(
     client,
+    workspaceId,
     inboxId,
     composeSessionId,
     assembled,
@@ -1363,11 +1537,27 @@ export async function sendAgentMailDraft(
 
   const sent = await client.sendDraft(draft.inboxId, draft.draftId);
 
+  const threadKey = emailThreadsService.resolveEmailThreadKey({
+    threadId: sent.threadId,
+    messageId: sent.messageId,
+  });
+  await emailThreadsService.getOrCreateEmailThreadMetadata(
+    workspaceId,
+    sent.inboxId,
+    threadKey,
+  );
+  await emailThreadsService.updateEmailThreadMetadata(
+    workspaceId,
+    sent.inboxId,
+    threadKey,
+    { status: "on_hold" },
+  );
+
   return {
     inboxId: sent.inboxId,
     messageId: sent.messageId,
     threadId: sent.threadId,
-    subject: sent.subject,
+    subject: draft.subject ?? "",
     inReplyToMessageId: draft.inReplyTo,
   };
 }
@@ -1433,23 +1623,38 @@ async function ensureDraftHasAssembledShell(
 
   const storedText = (draft.text ?? "").replace(/\r\n/g, "\n").trim();
   const desiredText = assembled.text.replace(/\r\n/g, "\n").trim();
+  const avatar = await resolveSignOffAvatarAttachment(
+    workspaceId,
+    draft.inboxId,
+  );
+  const bodies = buildAssembledDraftBodies(assembled, avatar);
   const storedHtml = (draft.html ?? "").trim();
-  const desiredHtml = plainTextEmailToHtml(assembled.text);
+  const desiredHtml = bodies.html;
+  const hasAvatarCid =
+    !avatar ||
+    storedHtml.includes(`cid:${EMAIL_SIGN_OFF_AVATAR_CID}`) ||
+    (draft.attachments ?? []).some(
+      (attachment) =>
+        attachment.contentId === EMAIL_SIGN_OFF_AVATAR_CID ||
+        attachment.contentId === `<${EMAIL_SIGN_OFF_AVATAR_CID}>`,
+    );
   const needsTextUpdate = storedText !== desiredText;
   const needsHtmlUpdate =
     !storedHtml ||
     !storedHtml.includes(assembled.signOff.trim()) ||
-    storedHtml !== desiredHtml;
+    storedHtml !== desiredHtml ||
+    !hasAvatarCid;
 
   if (!needsTextUpdate && !needsHtmlUpdate) {
     return draft;
   }
 
   return client.updateDraft(draft.inboxId, draft.draftId, {
-    text: assembled.text,
+    text: bodies.text,
     html: desiredHtml,
     ...(assembled.to.length > 0 ? { to: assembled.to } : {}),
     ...(subject ? { subject } : {}),
+    ...draftUpdateAttachmentFields(draft, avatar),
   });
 }
 
@@ -1549,9 +1754,15 @@ export async function updateAgentMailDraft(
         languageHint,
         contextText,
       });
+  const avatar = await resolveSignOffAvatarAttachment(
+    workspaceId,
+    draft.inboxId,
+  );
+  const bodies = buildAssembledDraftBodies(assembled, avatar);
   const updated = await client.updateDraft(draft.inboxId, draft.draftId, {
-    text: assembled.text,
-    html: plainTextEmailToHtml(assembled.text),
+    text: bodies.text,
+    html: bodies.html,
+    ...draftUpdateAttachmentFields(draft, avatar),
   });
   const inboxEmail = await resolveInboxEmail(client, updated.inboxId);
   return mapDraftDetailForApi({
@@ -1649,24 +1860,46 @@ async function removeAgentMailMessageAndLocal(
   message: { messageId: string; threadId?: string | null },
 ): Promise<void> {
   const messageId = message.messageId;
-  const threadId = message.threadId?.trim() || "";
+  let threadId = message.threadId?.trim() || "";
+  let threadMessageIds = [messageId];
 
-  // Prefer whole-thread delete so collapsed inbox rows disappear cleanly.
+  // Always resolve the full thread — BacksterOS never deletes a single reply.
   if (threadId) {
     try {
-      await client.deleteThread(inboxId, threadId);
+      const thread = await client.getThread(inboxId, threadId);
+      threadId = thread.threadId?.trim() || threadId;
+      const ids = thread.messages
+        .map((entry) => entry.messageId?.trim())
+        .filter((id): id is string => Boolean(id));
+      if (ids.length > 0) {
+        threadMessageIds = ids;
+      }
     } catch (error) {
       if (!(error instanceof AgentMailApiError) || error.status !== 404) {
         throw error;
       }
-      await client.deleteMessage(inboxId, messageId);
     }
-  } else {
-    await client.deleteMessage(inboxId, messageId);
+  }
+
+  if (!threadId) {
+    throw new AgentMailApiError(
+      400,
+      "",
+      "This email has no thread id, so it cannot be deleted safely. Refresh and try again.",
+    );
+  }
+
+  try {
+    await client.deleteThread(inboxId, threadId);
+  } catch (error) {
+    // Already gone on AgentMail — still clear local metadata + drafts.
+    if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+      throw error;
+    }
   }
 
   const threadKey = emailThreadsService.resolveEmailThreadKey({
-    threadId: threadId || null,
+    threadId,
     messageId,
   });
   await emailThreadsService.deleteEmailThreadLocal(
@@ -1674,11 +1907,14 @@ async function removeAgentMailMessageAndLocal(
     inboxId,
     threadKey,
   );
-  await deleteConceptReplyDraftsForMessage(client, inboxIds, messageId);
+  for (const threadMessageId of threadMessageIds) {
+    await deleteConceptReplyDraftsForMessage(client, inboxIds, threadMessageId);
+  }
 }
 
 /**
- * Delete the AgentMail thread (or single message) and local BacksterOS metadata.
+ * Delete the AgentMail conversation (full thread) and local BacksterOS metadata.
+ * Individual replies are never deleted on their own.
  */
 export async function deleteAgentMailMessage(
   workspaceId: string,
@@ -1706,7 +1942,80 @@ export async function deleteAgentMailMessage(
 }
 
 /**
- * Report spam on AgentMail: label + block sender, then delete the thread.
+ * Delete one message inside a thread. When the thread becomes empty, local
+ * BacksterOS metadata is cleared as well.
+ */
+export async function deleteAgentMailThreadMessage(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{
+  ok: true;
+  threadRemoved: boolean;
+  anchorMessageId: string | null;
+}> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const message = await client.getMessage(inboxId, messageId);
+  const threadId = message.threadId?.trim() || "";
+
+  try {
+    await client.deleteMessage(inboxId, messageId);
+  } catch (error) {
+    if (!(error instanceof AgentMailApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  await deleteConceptReplyDraftsForMessage(client, inboxIds, messageId);
+
+  if (!threadId) {
+    return { ok: true, threadRemoved: true, anchorMessageId: null };
+  }
+
+  let remainingMessageIds: string[] = [];
+  try {
+    const thread = await client.getThread(inboxId, threadId);
+    remainingMessageIds = thread.messages
+      .map((entry) => entry.messageId?.trim())
+      .filter((id): id is string => Boolean(id));
+  } catch (error) {
+    if (error instanceof AgentMailApiError && error.status === 404) {
+      remainingMessageIds = [];
+    } else {
+      throw error;
+    }
+  }
+
+  if (remainingMessageIds.length === 0) {
+    const threadKey = emailThreadsService.resolveEmailThreadKey({
+      threadId,
+      messageId,
+    });
+    await emailThreadsService.deleteEmailThreadLocal(
+      workspaceId,
+      inboxId,
+      threadKey,
+    );
+    return { ok: true, threadRemoved: true, anchorMessageId: null };
+  }
+
+  return {
+    ok: true,
+    threadRemoved: false,
+    anchorMessageId: remainingMessageIds[0] ?? null,
+  };
+}
+
+/**
+ * Report spam on AgentMail: label + block sender, then delete the full thread.
  */
 export async function reportAgentMailMessageSpam(
   workspaceId: string,
@@ -1766,6 +2075,59 @@ export async function reportAgentMailMessageSpam(
     message,
   );
   return { ok: true, blockedSender: sender };
+}
+
+/** Flip a message back to unread on AgentMail. */
+export async function markAgentMailMessageUnread(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<{ ok: true }> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  await client.updateMessageLabels(inboxId, messageId, {
+    addLabels: ["unread"],
+    removeLabels: ["read"],
+  });
+  return { ok: true };
+}
+
+export type AgentMailMessageSource = {
+  messageId: string;
+  sizeBytes: number;
+  headers: EmailSourceHeader[];
+  raw: string;
+};
+
+/** Raw MIME source with the parsed header block — for the Source view. */
+export async function getAgentMailMessageSource(
+  workspaceId: string,
+  inboxId: string,
+  messageId: string,
+): Promise<AgentMailMessageSource> {
+  const { apiKey, inboxIds } = await getAgentMailCredentials(workspaceId);
+  if (!apiKey) {
+    throw new AgentMailApiError(400, "", "AgentMail API key is not configured");
+  }
+  if (!inboxIds.includes(inboxId)) {
+    throw new AgentMailApiError(404, "", "Inbox is not selected for this workspace");
+  }
+
+  const client = new AgentMailClient({ apiKey });
+  const { raw, sizeBytes } = await client.getMessageRaw(inboxId, messageId);
+  return {
+    messageId,
+    sizeBytes,
+    headers: parseEmailSourceHeaders(raw),
+    raw,
+  };
 }
 
 export { inboxLabel, formatAgentMailSettingsError };

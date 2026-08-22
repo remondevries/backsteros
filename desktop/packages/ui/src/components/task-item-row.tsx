@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  memo,
   useMemo,
+  useSyncExternalStore,
   type DragEvent,
   type MouseEvent,
   type ReactNode,
@@ -9,7 +11,13 @@ import {
 } from "react";
 
 import type { GroupedListPointerItemBind } from "../use-grouped-list-pointer-reorder.js";
+import { resolveInboxEmailIconColor } from "../inbox-items.js";
+import { formatEmailDisplayId } from "../email-display-id.js";
+import { iconSvgColorStyle } from "../icon-color.js";
 import { getTaskDisplayId } from "../task-display-id.js";
+import {
+  taskDueEpochAttribute,
+} from "../calendar-task-drag.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
@@ -20,17 +28,22 @@ import {
   type TaskStatus,
 } from "../task-status.js";
 import {
+  getPreferredColorSchemeSnapshot,
+  subscribeToPreferredColorScheme,
+} from "../task-status-color.js";
+import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
   resolveDropdownProjectKey,
 } from "./dropdown-options.js";
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
+import { DeferredSearchableDropdown } from "./deferred-searchable-dropdown.js";
+import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
+import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 import { PolishedCheckbox } from "./polished-checkbox.js";
-import { SearchableDropdown } from "./searchable-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { ShimmerText } from "./shimmer-text.js";
-import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { Tooltip } from "./tooltip.js";
@@ -46,6 +59,8 @@ export type TaskItemRowTask = {
   status: string;
   priority: number;
   dueDate: number | Date | null;
+  /** End of a timed calendar block (epoch ms); null/absent = all-day due date. */
+  dueEndDate?: number | Date | null;
   projectId: string | null;
   projectKey?: string | null;
   projectName?: string | null;
@@ -63,6 +78,22 @@ export type TaskItemRowTask = {
   agentCreatedAt?: number | null;
   /** User sign-off; clears Agents inbox subgroup. */
   agentInboxApprovedAt?: number | null;
+  /**
+   * Email threads rendered as task rows (Tasks / project lists).
+   * Not a Postgres task — metadata lives on `email_threads`.
+   */
+  listKind?: "task" | "email";
+  emailInboxId?: string | null;
+  emailMessageId?: string | null;
+  emailThreadId?: string | null;
+  /** `Name (email@domain)` shown beside the subject on email rows. */
+  emailPartyLabel?: string | null;
+  /** Our mailbox label for the ID-column slot on email rows. */
+  emailMailboxLabel?: string | null;
+  /** Avatar for the mailbox shown in the ID-column slot. */
+  emailMailboxAvatarSrc?: string | null;
+  emailNumber?: number | null;
+  emailDisplayId?: string | null;
 };
 
 export type TaskItemRowProps = {
@@ -110,6 +141,8 @@ export type TaskItemRowProps = {
   assigneeOptions?: SearchableDropdownOption<string>[];
   /** Extra class on the outer `<li>` (e.g. move-enter animation). */
   className?: string;
+  /** Marks the row for FullCalendar external drag onto a day timeline. */
+  calendarTimelineDrag?: boolean;
   /** Enable HTML5 list drag-reorder when set (prefer pointerReorderBind on desktop). */
   draggable?: boolean;
   showDragInsertBefore?: boolean;
@@ -127,11 +160,26 @@ function stopFieldEvent(event: SyntheticEvent) {
   event.stopPropagation();
 }
 
+const TASK_ROW_STATUS_OPTIONS: SearchableDropdownOption<TaskStatus>[] =
+  TASK_STATUS_ORDER.map((value) => ({
+    value,
+    label: getTaskStatusLabel(value),
+    searchTerms: value.replaceAll("_", " "),
+    icon: <TaskStatusIcon status={value} size={18} />,
+  }));
+
+const TASK_ROW_PRIORITY_OPTIONS: SearchableDropdownOption<string>[] =
+  TASK_PRIORITY_ORDER.map((value) => ({
+    value: String(value),
+    label: getTaskPriorityLabel(value),
+    icon: <TaskPriorityIcon priority={value} size={18} />,
+  }));
+
 /**
  * Single shared task list item for web/desktop/console.
  * Order: checkbox → priority → id → status → title | due / project / assignee.
  */
-export function TaskItemRow({
+function TaskItemRowComponent({
   task,
   keyboardHighlighted = false,
   onSelect,
@@ -153,6 +201,7 @@ export function TaskItemRow({
   projectOptions = [],
   assigneeOptions = [],
   className,
+  calendarTimelineDrag = false,
   draggable = false,
   showDragInsertBefore = false,
   onDragStart,
@@ -173,27 +222,20 @@ export function TaskItemRow({
     task.projectKey,
   );
   const status = migrateLegacyTaskStatus(task.status);
-
-  const statusOptions = useMemo(
-    () =>
-      TASK_STATUS_ORDER.map((value) => ({
-        value,
-        label: getTaskStatusLabel(value),
-        searchTerms: value.replaceAll("_", " "),
-        icon: <TaskStatusIcon status={value} size={18} />,
-      })),
-    [],
+  const isEmail = task.listKind === "email";
+  const colorScheme = useSyncExternalStore(
+    subscribeToPreferredColorScheme,
+    getPreferredColorSchemeSnapshot,
+    () => "dark" as const,
   );
-
-  const priorityOptions = useMemo(
-    () =>
-      TASK_PRIORITY_ORDER.map((value) => ({
-        value: String(value),
-        label: getTaskPriorityLabel(value),
-        icon: <TaskPriorityIcon priority={value} size={18} />,
-      })),
-    [],
-  );
+  const emailIconStyle = useMemo(() => {
+    if (!isEmail) return undefined;
+    return iconSvgColorStyle(
+      resolveInboxEmailIconColor(task.status, { colorScheme }),
+    );
+  }, [colorScheme, isEmail, task.status]);
+  const statusOptions = TASK_ROW_STATUS_OPTIONS;
+  const priorityOptions = TASK_ROW_PRIORITY_OPTIONS;
 
   const projectChip =
     showProject ? (
@@ -203,7 +245,7 @@ export function TaskItemRow({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={task.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
             options={projectOptions}
             onChange={(next) =>
@@ -262,7 +304,7 @@ export function TaskItemRow({
         onClick={stopFieldEvent}
       >
         <span className="task-item-row__assignee-stack">
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={task.assigneeId ?? DROPDOWN_NONE_VALUE}
             options={assigneeOptions}
             onChange={(next) =>
@@ -331,10 +373,28 @@ export function TaskItemRow({
         "task-item-row-item",
         showDragInsertBefore ? "task-item-row-item--insert-before" : null,
         dragging ? "task-item-row-item--dragging" : null,
+        calendarTimelineDrag ? "task-item-row-item--calendar-timeline-draggable" : null,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
+      data-calendar-task-id={calendarTimelineDrag ? task.id : undefined}
+      data-calendar-task-title={
+        calendarTimelineDrag ? task.title || "Untitled task" : undefined
+      }
+      data-calendar-task-due-ms={
+        calendarTimelineDrag
+          ? taskDueEpochAttribute(task.dueDate)
+          : undefined
+      }
+      data-calendar-task-due-end-ms={
+        calendarTimelineDrag
+          ? taskDueEpochAttribute(task.dueEndDate)
+          : undefined
+      }
+      data-calendar-task-status={
+        calendarTimelineDrag ? task.status : undefined
+      }
       {...keyboardNavItemProps(task.id)}
       onDragOver={canHtml5Drag ? onDragOver : undefined}
       onDrop={canHtml5Drag ? onDrop : undefined}
@@ -383,7 +443,7 @@ export function TaskItemRow({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={String(task.priority)}
             options={priorityOptions}
             onChange={(next) => onPriorityChange?.(task.id, Number(next))}
@@ -417,7 +477,14 @@ export function TaskItemRow({
           />
         </span>
 
-        {displayId ? (
+        {isEmail ? (
+          <span className="task-item-row__id">
+            {task.emailDisplayId?.trim() ||
+              (task.emailNumber != null
+                ? formatEmailDisplayId(task.emailNumber)
+                : "")}
+          </span>
+        ) : displayId ? (
           <span className="task-item-row__id">{displayId}</span>
         ) : null}
 
@@ -426,7 +493,7 @@ export function TaskItemRow({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={status}
             options={statusOptions}
             onChange={(next) => onStatusChange?.(task.id, next)}
@@ -442,7 +509,7 @@ export function TaskItemRow({
                 type="button"
                 id={triggerId}
                 className="task-item-row__icon-trigger"
-                title={getTaskStatusLabel(status)}
+                title={isEmail ? "Email" : getTaskStatusLabel(status)}
                 tabIndex={-1}
                 disabled={disabled}
                 aria-haspopup="listbox"
@@ -454,11 +521,19 @@ export function TaskItemRow({
                   onToggle();
                 }}
               >
-                <TaskStatusIcon
-                  status={status}
-                  size={14}
-                  working={agentWorking}
-                />
+                {isEmail ? (
+                  <InboxItemTypeIcon
+                    kind="email"
+                    size={14}
+                    style={emailIconStyle}
+                  />
+                ) : (
+                  <TaskStatusIcon
+                    status={status}
+                    size={14}
+                    working={agentWorking}
+                  />
+                )}
               </button>
             )}
           />
@@ -478,6 +553,11 @@ export function TaskItemRow({
               task.title
             )}
           </span>
+          {isEmail && task.emailPartyLabel ? (
+            <span className="task-item-row__email-party">
+              {task.emailPartyLabel}
+            </span>
+          ) : null}
           {titleTrailing ? (
             <span className="task-item-row__title-trailing">
               {titleTrailing}
@@ -492,7 +572,7 @@ export function TaskItemRow({
               onMouseDown={stopFieldEvent}
               onClick={stopFieldEvent}
             >
-              <TaskDueDateDropdown
+              <DeferredTaskDueDateDropdown
                 dueDate={task.dueDate}
                 status={task.status}
                 variant="list"
@@ -507,3 +587,5 @@ export function TaskItemRow({
     </li>
   );
 }
+
+export const TaskItemRow = memo(TaskItemRowComponent);

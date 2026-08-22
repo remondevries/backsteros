@@ -1,20 +1,252 @@
 import type { AgentMailMessageDetail, EmailThreadComment } from "@backsteros/contracts";
+import { emailMessageBody } from "@backsteros/ui";
 
 const GREETING_LINE =
-  /^(?:hi|hello|hey|dear|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
+  /^(?:hi|hello|hey|dear|aan|beste|geachte|goedemorgen|goedemiddag|goedenavond)\b[^,\n]{0,80},?\s*$/i;
 
 const SIGN_OFF_BLOCK =
   /\n+(?:best|thanks|thank you|sincerely|regards|cheers|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards),?\s*\n[\s\S]*$/i;
 
-const REPLY_DRAFT_BLOCK =
-  /```REPLY_DRAFT\s*\n([\s\S]*?)```/i;
+const CREATE_TASK_BLOCK =
+  /```CREATE_TASK\s*\n([\s\S]*?)```/gi;
+
+const TASK_CARD_BLOCK =
+  /```TASK_CARD\s*\n([\s\S]*?)```/i;
+
+export type EmailAgentCreateTaskSpec = {
+  title: string;
+  description?: string | null;
+  dueDate?: string | null;
+  priority?: number | null;
+  projectKey?: string | null;
+  status?: string | null;
+  inbox?: boolean | null;
+};
+
+export type EmailAgentTaskCardPayload = {
+  taskId: string;
+  number: number | null;
+  title: string;
+  displayId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  projectIcon?: string | null;
+  dueDate?: string | null;
+  status?: string | null;
+  priority?: number | null;
+  href: string;
+};
+
+export type ParsedEmailAgentCommentResponse = {
+  /** Natural-language comment shown in the timeline (fences stripped). */
+  commentBody: string;
+  /** Optional reply body to materialize as a concept draft. */
+  replyDraftBody: string | null;
+  /** Tasks the agent asked BacksterOS to create. */
+  createTasks: EmailAgentCreateTaskSpec[];
+};
+
+function normalizeAgentDueDate(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return `${text}T12:00:00.000Z`;
+  }
+  const ms = Date.parse(text);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
+}
+
+function parseCreateTaskSpec(raw: string): EmailAgentCreateTaskSpec | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const title =
+      typeof parsed.title === "string" ? parsed.title.trim() : "";
+    if (!title) return null;
+    const priorityRaw = parsed.priority;
+    const priority =
+      typeof priorityRaw === "number" && Number.isFinite(priorityRaw)
+        ? Math.max(0, Math.min(4, Math.round(priorityRaw)))
+        : null;
+    return {
+      title,
+      description:
+        typeof parsed.description === "string"
+          ? parsed.description.trim() || null
+          : null,
+      dueDate: normalizeAgentDueDate(parsed.dueDate),
+      priority,
+      projectKey:
+        typeof parsed.projectKey === "string"
+          ? parsed.projectKey.trim() || null
+          : null,
+      status:
+        typeof parsed.status === "string"
+          ? parsed.status.trim() || null
+          : null,
+      inbox:
+        typeof parsed.inbox === "boolean" ? parsed.inbox : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseEmailAgentTaskCard(
+  body: string,
+): { card: EmailAgentTaskCardPayload; note: string } | null {
+  const match = body.match(TASK_CARD_BLOCK);
+  if (!match?.[1]) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim()) as Record<string, unknown>;
+    const taskId = typeof parsed.taskId === "string" ? parsed.taskId.trim() : "";
+    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+    const href = typeof parsed.href === "string" ? parsed.href.trim() : "";
+    if (!taskId || !title || !href) return null;
+    const number =
+      typeof parsed.number === "number" && Number.isFinite(parsed.number)
+        ? Math.round(parsed.number)
+        : null;
+    const priorityRaw = parsed.priority;
+    const priority =
+      typeof priorityRaw === "number" && Number.isFinite(priorityRaw)
+        ? Math.max(0, Math.min(4, Math.round(priorityRaw)))
+        : null;
+    const note = body.replace(TASK_CARD_BLOCK, "").replace(/\n{3,}/g, "\n\n").trim();
+    return {
+      card: {
+        taskId,
+        number,
+        title,
+        displayId:
+          typeof parsed.displayId === "string"
+            ? parsed.displayId.trim() || null
+            : null,
+        projectKey:
+          typeof parsed.projectKey === "string"
+            ? parsed.projectKey.trim() || null
+            : null,
+        projectName:
+          typeof parsed.projectName === "string"
+            ? parsed.projectName.trim() || null
+            : null,
+        projectIcon:
+          typeof parsed.projectIcon === "string"
+            ? parsed.projectIcon.trim() || null
+            : null,
+        dueDate:
+          typeof parsed.dueDate === "string" ? parsed.dueDate : null,
+        status:
+          typeof parsed.status === "string"
+            ? parsed.status.trim() || null
+            : null,
+        priority,
+        href,
+      },
+      note: note,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function formatEmailAgentTaskCardComment(
+  card: EmailAgentTaskCardPayload,
+  note?: string | null,
+): string {
+  const payload = {
+    taskId: card.taskId,
+    number: card.number,
+    title: card.title,
+    displayId: card.displayId ?? null,
+    projectKey: card.projectKey ?? null,
+    projectName: card.projectName ?? null,
+    projectIcon: card.projectIcon ?? null,
+    dueDate: card.dueDate ?? null,
+    status: card.status ?? null,
+    priority: card.priority ?? null,
+    href: card.href,
+  };
+  const fence = `\`\`\`TASK_CARD\n${JSON.stringify(payload)}\n\`\`\``;
+  const extra = note?.trim();
+  return extra ? `${fence}\n\n${extra}` : fence;
+}
+
+/** Split agent output into timeline comment + optional machine blocks. */
+export function parseEmailAgentCommentResponse(
+  text: string,
+): ParsedEmailAgentCommentResponse {
+  const raw = text.trim();
+  if (!raw) {
+    return { commentBody: "", replyDraftBody: null, createTasks: [] };
+  }
+
+  const createTasks: EmailAgentCreateTaskSpec[] = [];
+  let withoutCreate = raw;
+  for (const match of raw.matchAll(CREATE_TASK_BLOCK)) {
+    const spec = parseCreateTaskSpec(match[1] ?? "");
+    if (spec) createTasks.push(spec);
+  }
+  withoutCreate = withoutCreate.replace(CREATE_TASK_BLOCK, "").trim();
+
+  const replyMatch = withoutCreate.match(/```REPLY_DRAFT\s*\n([\s\S]*?)```/i);
+  const replyDraftBody = replyMatch?.[1]?.trim() || null;
+  if (replyDraftBody && createTasks.length === 0) {
+    return { commentBody: "", replyDraftBody, createTasks: [] };
+  }
+
+  let commentBody = withoutCreate
+    .replace(/```REPLY_DRAFT\s*\n[\s\S]*?```/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Draft-only turns stay silent on the timeline.
+  if (replyDraftBody && createTasks.length === 0) {
+    commentBody = "";
+  }
+
+  return { commentBody, replyDraftBody, createTasks };
+}
+
+/** Remove a known greeting/sign-off shell from a draft body (exact match). */
+export function stripEmailDraftShell(
+  body: string,
+  shell?: { greeting?: string | null; signOff?: string | null },
+): string {
+  let next = body.replace(/\r\n/g, "\n").trim();
+  if (!next) return "";
+
+  const greeting = shell?.greeting?.trim();
+  if (greeting) {
+    if (next === greeting) return "";
+    if (next.startsWith(`${greeting}\n`)) {
+      next = next.slice(greeting.length).replace(/^\s*\n+/, "");
+    }
+  }
+
+  const signOff = shell?.signOff?.trim();
+  if (signOff) {
+    if (next === signOff) return "";
+    if (next.endsWith(`\n${signOff}`)) {
+      next = next.slice(0, next.length - signOff.length).replace(/\n+\s*$/, "");
+    } else if (next.endsWith(signOff)) {
+      next = next.slice(0, next.length - signOff.length).replace(/\n+\s*$/, "");
+    }
+  }
+
+  return next.trim();
+}
 
 export function extractAgentReplyBody(text: string): string {
   let body = text.trim();
   if (!body) return "";
 
   const shellMatch = body.match(
-    /^ *(?:hi|hello|hey|dear|beste|geachte)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
+    /^ *(?:hi|hello|hey|dear|aan|beste|geachte)\s+[^,\n]{1,80},?\s*\n+([\s\S]*?)\n+(?:best|groeten|met vriendelijke groet|vriendelijke groet|hartelijke groet|mvg|kind regards|best regards|cheers|thanks|sincerely),?\s*\n[\s\S]*$/i,
   );
   if (shellMatch?.[1]) body = shellMatch[1].trim();
 
@@ -25,7 +257,7 @@ export function extractAgentReplyBody(text: string): string {
   body = lines.join("\n").trim();
 
   body = body.replace(SIGN_OFF_BLOCK, "");
-  body = body.replace(/^(?:beste|geachte),?\s*\n+/i, "");
+  body = body.replace(/^(?:aan|beste|geachte),?\s*\n+/i, "");
 
   const blocks = body
     .split(/\n\s*\n+/)
@@ -40,59 +272,25 @@ export function extractAgentReplyBody(text: string): string {
 
 /** Prefer API `body`; fall back to extracting from stored full `text`. */
 export function resolveEditableEmailDraftBody(
-  draft: { body?: string | null; text?: string | null } | null | undefined,
+  draft:
+    | {
+        body?: string | null;
+        text?: string | null;
+        greeting?: string | null;
+        signOff?: string | null;
+      }
+    | null
+    | undefined,
 ): string {
   if (!draft) return "";
+  const shell = { greeting: draft.greeting, signOff: draft.signOff };
   const fromBody = draft.body?.trim();
-  if (fromBody) return draft.body ?? fromBody;
+  if (fromBody) {
+    return extractAgentReplyBody(stripEmailDraftShell(draft.body ?? fromBody, shell));
+  }
   const rawText = draft.text?.trim();
   if (!rawText) return "";
-  return extractAgentReplyBody(rawText);
-}
-
-export function emailMessageBody(message: {
-  extractedText?: string | null;
-  text?: string | null;
-  extractedHtml?: string | null;
-  html?: string | null;
-}): string {
-  const extracted = message.extractedText?.trim();
-  if (extracted) return extracted;
-  const text = message.text?.trim();
-  if (text) return text;
-  const html = (message.extractedHtml ?? message.html ?? "").trim();
-  if (!html) return "";
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export type ParsedEmailAgentCommentResponse = {
-  /** Natural-language comment shown in the timeline (draft fence stripped). */
-  commentBody: string;
-  /** Optional reply body to materialize as a concept draft. */
-  replyDraftBody: string | null;
-};
-
-/** Split agent output into timeline comment + optional REPLY_DRAFT block.
- * When a reply draft is present, the acknowledgment text is discarded — the
- * draft alone is enough on the timeline. */
-export function parseEmailAgentCommentResponse(
-  text: string,
-): ParsedEmailAgentCommentResponse {
-  const raw = text.trim();
-  if (!raw) return { commentBody: "", replyDraftBody: null };
-
-  const match = raw.match(REPLY_DRAFT_BLOCK);
-  const replyDraftBody = match?.[1]?.trim() || null;
-  if (replyDraftBody) {
-    return { commentBody: "", replyDraftBody };
-  }
-
-  const commentBody = raw.replace(/\n{3,}/g, "\n\n").trim();
-  return { commentBody, replyDraftBody: null };
+  return extractAgentReplyBody(stripEmailDraftShell(rawText, shell));
 }
 
 /** Human-readable local time + ISO so the agent can answer "when?" questions. */
@@ -208,13 +406,101 @@ function resolveEmailThreadKeyForAgent(
   return message.threadId?.trim() || message.messageId;
 }
 
+function extractAddressEmail(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  const angle = trimmed.match(/<([^>]+)>/);
+  if (angle?.[1]) return angle[1].trim().toLowerCase();
+  return trimmed.toLowerCase();
+}
+
+type AgentThreadMessageRow = NonNullable<
+  AgentMailMessageDetail["threadMessages"]
+>[number];
+
+function resolveThreadMessageRows(
+  message: AgentMailMessageDetail,
+): AgentThreadMessageRow[] {
+  if (message.threadMessages && message.threadMessages.length > 0) {
+    return message.threadMessages;
+  }
+  return [
+    {
+      messageId: message.messageId,
+      threadId: message.threadId,
+      subject: message.subject,
+      from: message.from,
+      to: message.to ?? (message.inboxEmail ? [message.inboxEmail] : []),
+      timestamp: message.timestamp,
+      text: message.text ?? null,
+      html: message.html ?? null,
+      extractedText: message.extractedText ?? null,
+      extractedHtml: message.extractedHtml ?? null,
+      labels: message.labels,
+      inReplyTo: message.inReplyToMessageId ?? null,
+    },
+  ];
+}
+
+function isOutboundFromInbox(
+  entry: { from: string },
+  inboxEmail: string | null | undefined,
+): boolean {
+  const inbox = extractAddressEmail(inboxEmail);
+  if (!inbox) return false;
+  return extractAddressEmail(entry.from) === inbox;
+}
+
+/** Compact sent/received counts so lean follow-ups can answer “how many?”. */
+function formatThreadCensus(message: AgentMailMessageDetail): string[] {
+  const rows = resolveThreadMessageRows(message);
+  let sent = 0;
+  let received = 0;
+  for (const entry of rows) {
+    if (isOutboundFromInbox(entry, message.inboxEmail)) sent += 1;
+    else received += 1;
+  }
+  const draftOpen = Boolean(
+    message.conceptDraft?.draftId?.trim() || message.conceptDraftId?.trim(),
+  );
+  return [
+    "",
+    "--- Thread census ---",
+    `Messages in this thread: ${rows.length} total (${sent} sent from this inbox, ${received} received).`,
+    draftOpen
+      ? "Open reply draft: 1 (not sent — never count drafts as sent emails)."
+      : "Open reply draft: none.",
+    "When the user asks how many emails were sent/received, answer from this census.",
+    "--- End thread census ---",
+  ];
+}
+
+function formatThreadMessageIndex(message: AgentMailMessageDetail): string[] {
+  const rows = resolveThreadMessageRows(message);
+  return [
+    "",
+    "--- Thread message index (oldest → newest) ---",
+    ...rows.map((entry, index) => {
+      const direction = isOutboundFromInbox(entry, message.inboxEmail)
+        ? "sent"
+        : "received";
+      return `${index + 1}. [${direction}] ${entry.from} → ${
+        entry.to.filter(Boolean).join(", ") || "(none)"
+      } · ${formatEmailReceivedForAgent(entry.timestamp)} · ${
+        entry.subject?.trim() || "(no subject)"
+      }`;
+    }),
+    "--- End thread message index ---",
+  ];
+}
+
 function formatEmailIndexCard(message: AgentMailMessageDetail): string[] {
   return [
     "--- Email index ---",
-    `From: ${message.from || "Unknown sender"}`,
-    `To: ${message.inboxEmail?.trim() || "(inbox)"}`,
+    `Focused message from: ${message.from || "Unknown sender"}`,
+    `Inbox: ${message.inboxEmail?.trim() || "(inbox)"}`,
     `Subject: ${message.subject?.trim() || "(no subject)"}`,
-    `Received: ${formatEmailReceivedForAgent(message.timestamp)}`,
+    `Timestamp: ${formatEmailReceivedForAgent(message.timestamp)}`,
     `Inbox id: ${message.inboxId}`,
     `Message id: ${message.messageId}`,
     `Thread key: ${resolveEmailThreadKeyForAgent(message)}`,
@@ -274,7 +560,8 @@ const EMAIL_AGENT_SHARED_RULES = [
   "Rules:",
   "- Default: respond in natural language only. Your whole reply becomes a timeline comment.",
   "- Do not include subject, To/Cc lines, or markdown wrappers around the comment.",
-  "- Answer factual questions from the email index below and from earlier turns in this session when possible.",
+  "- Answer factual questions from the thread census / message index below and from earlier turns in this session when possible.",
+  "- Sent = outbound from this inbox. Received = inbound to this inbox. Open drafts are not sent.",
   "- Do not re-ask for information already in the index or session history.",
   "- When the user asks you to draft or create a reply email:",
   "  - Output ONLY one machine block with the reply body (no greeting/sign-off).",
@@ -287,6 +574,15 @@ const EMAIL_AGENT_SHARED_RULES = [
   "- Ground drafts in the inbound email and thread discussion.",
   "- Do not put the REPLY_DRAFT block unless the user asked for a draft/reply.",
   "- Greeting and sign-off are added by BacksterOS — omit them from REPLY_DRAFT.",
+  "- When the user asks you to create a task / to-do from this email:",
+  "  - Output one or more CREATE_TASK machine blocks (JSON). BacksterOS creates the tasks.",
+  "  - You may also write a short timeline comment outside the blocks.",
+  "  - Do NOT call APIs, tools, or MCP to create tasks — only CREATE_TASK blocks.",
+  "  - Prefer copying contact/project context from thread metadata when relevant.",
+  "  - dueDate: ISO datetime or YYYY-MM-DD. priority: 0–4 (0 = none).",
+  "```CREATE_TASK",
+  '{"title":"Follow up on invoice","dueDate":"2026-08-25","priority":2,"description":"optional","projectKey":null,"inbox":true}',
+  "```",
 ];
 
 export type EmailAgentContextDepth = "full" | "lean";
@@ -306,9 +602,11 @@ export function buildEmailAgentHiddenContext(
   if (depth === "lean") {
     return [
       ...EMAIL_AGENT_SHARED_RULES,
-      "- This is a follow-up. Do NOT expect a full email dump here — use session history, then fetch via the GET paths if needed.",
+      "- This is a follow-up. Do NOT expect a full email dump here — use the census/index below, session history, then fetch via the GET paths if needed.",
       "",
       ...formatEmailIndexCard(message),
+      ...formatThreadCensus(message),
+      ...formatThreadMessageIndex(message),
       ...formatThreadMetadata(message),
       ...formatCommentSummary(message.threadComments),
       ...formatDraftSummary(message),
@@ -316,28 +614,24 @@ export function buildEmailAgentHiddenContext(
     ].join("\n");
   }
 
-  const threadMessages =
-    message.threadMessages && message.threadMessages.length > 0
-      ? message.threadMessages
-      : null;
-  const bodySection = threadMessages
-    ? [
-        "--- Thread messages (oldest → newest) ---",
-        ...threadMessages.flatMap((entry, index) => [
-          "",
-          `### Message ${index + 1} (${entry.messageId})`,
-          `From: ${entry.from}`,
-          `To: ${entry.to.join(", ") || "(none)"}`,
-          `Received / sent: ${entry.timestamp}`,
-          emailMessageBody(entry) || "(no text body)",
-        ]),
-        "--- End thread messages ---",
-      ]
-    : [
-        "--- Email body ---",
-        emailMessageBody(message) || "(no text body)",
-        "--- End email body ---",
+  const threadMessages = resolveThreadMessageRows(message);
+  const bodySection = [
+    "--- Thread messages (oldest → newest) ---",
+    ...threadMessages.flatMap((entry, index) => {
+      const direction = isOutboundFromInbox(entry, message.inboxEmail)
+        ? "sent"
+        : "received";
+      return [
+        "",
+        `### Message ${index + 1} [${direction}] (${entry.messageId})`,
+        `From: ${entry.from}`,
+        `To: ${entry.to.join(", ") || "(none)"}`,
+        `Received / sent: ${entry.timestamp}`,
+        emailMessageBody(entry) || "(no text body)",
       ];
+    }),
+    "--- End thread messages ---",
+  ];
   const commentsSection = formatCommentHistory(
     message.threadComments,
     assigneeLabel,
@@ -348,6 +642,7 @@ export function buildEmailAgentHiddenContext(
     "- This bootstrap includes the full thread snapshot for this session. Later turns will be lean — remember what you read here.",
     "",
     ...formatEmailIndexCard(message),
+    ...formatThreadCensus(message),
     "",
     ...bodySection,
     ...formatThreadMetadata(message),
@@ -363,6 +658,47 @@ export function buildEmailAgentAcpPrompt(
   options?: { depth?: EmailAgentContextDepth },
 ): string {
   return `${buildEmailAgentHiddenContext(message, options)}\n\n--- User request ---\n${userPrompt.trim()}`;
+}
+
+/** User is editing the concept draft — revise body only, never timeline comments. */
+export type EmailAgentPromptIntent = "comment" | "revise-draft";
+
+export function buildEmailDraftReviseAgentHiddenContext(
+  message: AgentMailMessageDetail,
+  draftBody: string,
+): string {
+  return [
+    "You are revising a concept reply draft in BacksterOS.",
+    "",
+    "Rules:",
+    "- The user is in draft edit mode. Treat their message as a direct instruction to change the draft body.",
+    "- Output ONLY one machine block with the full revised body (no greeting/sign-off).",
+    "- Do NOT write any other text — no acknowledgment, summary, or timeline comment.",
+    "- Do NOT call APIs, tools, or MCP — only the REPLY_DRAFT block.",
+    "```REPLY_DRAFT",
+    "...full revised body only...",
+    "```",
+    "- Greeting and sign-off are added by BacksterOS — omit them from REPLY_DRAFT.",
+    "- Keep grounding in the inbound email when relevant.",
+    "",
+    ...formatEmailIndexCard(message),
+    "",
+    "--- Current draft body (editable middle only) ---",
+    draftBody.trim() || "(empty)",
+    "--- End current draft body ---",
+    "",
+    "--- Inbound email (for grounding) ---",
+    emailMessageBody(message) || "(no text body)",
+    "--- End inbound email ---",
+  ].join("\n");
+}
+
+export function buildEmailDraftReviseAgentAcpPrompt(
+  userPrompt: string,
+  message: AgentMailMessageDetail,
+  draftBody: string,
+): string {
+  return `${buildEmailDraftReviseAgentHiddenContext(message, draftBody)}\n\n--- User request ---\n${userPrompt.trim()}`;
 }
 
 export type EmailComposeContext = {

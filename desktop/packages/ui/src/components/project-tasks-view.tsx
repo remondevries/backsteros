@@ -149,66 +149,77 @@ export function ProjectTasksView({
     setLocalTasks(optimisticTasks);
   }, [optimisticTasks]);
 
-  const handleStatusChange = (taskId: string, status: TaskStatus) => {
-    patchTask(taskId, { status });
-    setLocalTasks((current) =>
-      current.map((task) => (task.id === taskId ? { ...task, status } : task)),
-    );
-    setCollapsed((current) => {
-      const next = new Set(current);
-      next.delete(status);
-      return next;
-    });
-    onStatusChange?.(taskId, status);
-  };
+  const handleStatusChange = useCallback(
+    (taskId: string, status: TaskStatus) => {
+      patchTask(taskId, { status });
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId ? { ...task, status } : task,
+        ),
+      );
+      setCollapsed((current) => {
+        const next = new Set(current);
+        next.delete(status);
+        return next;
+      });
+      onStatusChange?.(taskId, status);
+    },
+    [onStatusChange, patchTask],
+  );
 
-  const handlePriorityChange = (taskId: string, priority: number) => {
-    patchTask(taskId, { priority });
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId ? { ...task, priority } : task,
-      ),
-    );
-    onPriorityChange?.(taskId, priority);
-  };
+  const handlePriorityChange = useCallback(
+    (taskId: string, priority: number) => {
+      patchTask(taskId, { priority });
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId ? { ...task, priority } : task,
+        ),
+      );
+      onPriorityChange?.(taskId, priority);
+    },
+    [onPriorityChange, patchTask],
+  );
 
-  const handleDueDateChange = (taskId: string, dueDate: Date | null) => {
-    patchTask(taskId, { dueDate: dueDate ? dueDate.getTime() : null });
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? { ...task, dueDate: dueDate ? dueDate.getTime() : null }
-          : task,
-      ),
-    );
-    onDueDateChange?.(taskId, dueDate);
-  };
+  const handleDueDateChange = useCallback(
+    (taskId: string, dueDate: Date | null) => {
+      patchTask(taskId, { dueDate: dueDate ? dueDate.getTime() : null });
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? { ...task, dueDate: dueDate ? dueDate.getTime() : null }
+            : task,
+        ),
+      );
+      onDueDateChange?.(taskId, dueDate);
+    },
+    [onDueDateChange, patchTask],
+  );
 
-  const handleAssigneeChange = (
-    taskId: string,
-    assigneeId: string | null,
-  ) => {
-    const option = assigneeOptions.find(
-      (entry) => entry.value === (assigneeId ?? "__none__"),
-    );
-    const ownerInitials = option?.label
-      ?.split(/\s+/)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2);
-    patchTask(taskId, {
-      assigneeId,
-      ownerInitials,
-    });
-    setLocalTasks((current) =>
-      current.map((task) =>
-        task.id === taskId
-          ? { ...task, assigneeId, ownerInitials }
-          : task,
-      ),
-    );
-    onAssigneeChange?.(taskId, assigneeId);
-  };
+  const handleAssigneeChange = useCallback(
+    (taskId: string, assigneeId: string | null) => {
+      const option = assigneeOptions.find(
+        (entry) => entry.value === (assigneeId ?? "__none__"),
+      );
+      const ownerInitials = option?.label
+        ?.split(/\s+/)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2);
+      patchTask(taskId, {
+        assigneeId,
+        ownerInitials,
+      });
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? { ...task, assigneeId, ownerInitials }
+            : task,
+        ),
+      );
+      onAssigneeChange?.(taskId, assigneeId);
+    },
+    [assigneeOptions, onAssigneeChange, patchTask],
+  );
 
   const handleTaskReorder = useCallback(
     (request: TaskReorderRequest) => {

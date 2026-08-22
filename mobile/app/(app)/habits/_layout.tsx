@@ -1,4 +1,6 @@
 import { Stack } from "expo-router";
+
+import { iosStackGestureOptions } from "../../../lib/tab-stack-options";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 
@@ -63,8 +65,7 @@ function HabitsPhoneStack() {
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
-          gestureEnabled: true,
-          fullScreenGestureEnabled: true,
+          ...iosStackGestureOptions,
         }}
       >
         <Stack.Screen
@@ -84,8 +85,7 @@ function HabitsPhoneStack() {
             title: "",
             headerShown: false,
             contentStyle: { backgroundColor: colors.background },
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            ...iosStackGestureOptions,
           }}
         />
       </Stack>

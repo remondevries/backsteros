@@ -111,10 +111,28 @@ export function InboxDetailLayout({
     );
   }
 
-  return (
-    <div className="inbox-detail-layout">
-      <InboxDetailBreadcrumb label={item.title} />
-      <TaskDetailBody item={item} />
-    </div>
-  );
+  if (item.kind === "email") {
+    return (
+      <div className="inbox-detail-layout">
+        <InboxDetailBreadcrumb label={item.title} />
+        <div className="inbox-detail-body">
+          <h1 className="inbox-detail-title">{item.title}</h1>
+          <div className="inbox-detail-meta">
+            <span>{getInboxItemDisplayId(item)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.kind === "task") {
+    return (
+      <div className="inbox-detail-layout">
+        <InboxDetailBreadcrumb label={item.title} />
+        <TaskDetailBody item={item} />
+      </div>
+    );
+  }
+
+  return null;
 }

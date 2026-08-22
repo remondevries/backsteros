@@ -50,12 +50,13 @@ export function SettingsEmailTab({
   const [testing, setTesting] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
-  const [greetingDraft, setGreetingDraft] = useState("Hi {firstName},");
+  const [greetingDraftEn, setGreetingDraftEn] = useState("Hi {firstName},");
+  const [greetingDraftNl, setGreetingDraftNl] = useState("Beste {firstName},");
   const [signOffDraftEn, setSignOffDraftEn] = useState("Best,\n{name}");
   const [signOffDraftNl, setSignOffDraftNl] = useState(
     "Met vriendelijke groet,\n{name}",
   );
-  const [signOffLanguage, setSignOffLanguage] = useState<"en" | "nl">("en");
+  const [templateLanguage, setTemplateLanguage] = useState<"en" | "nl">("en");
 
   const loadInboxes = useCallback(
     async (configured: boolean) => {
@@ -104,6 +105,8 @@ export function SettingsEmailTab({
       inboxId?: string | null;
       inboxIds?: string[];
       replyGreetingTemplate?: string;
+      replyGreetingTemplateEn?: string;
+      replyGreetingTemplateNl?: string;
       replySignOffTemplateEn?: string;
       replySignOffTemplateNl?: string;
       inboxContacts?: Record<string, string | null>;
@@ -140,6 +143,8 @@ export function SettingsEmailTab({
     inboxId?: string | null;
     inboxIds?: string[];
     replyGreetingTemplate?: string;
+    replyGreetingTemplateEn?: string;
+    replyGreetingTemplateNl?: string;
     replySignOffTemplateEn?: string;
     replySignOffTemplateNl?: string;
     inboxContacts?: Record<string, string | null>;
@@ -154,24 +159,32 @@ export function SettingsEmailTab({
 
   useEffect(() => {
     if (!settings) return;
-    setGreetingDraft(settings.replyGreetingTemplate);
+    setGreetingDraftEn(
+      settings.replyGreetingTemplateEn ?? settings.replyGreetingTemplate,
+    );
+    setGreetingDraftNl(settings.replyGreetingTemplateNl);
     setSignOffDraftEn(settings.replySignOffTemplateEn);
     setSignOffDraftNl(settings.replySignOffTemplateNl);
   }, [
     settings?.replyGreetingTemplate,
+    settings?.replyGreetingTemplateEn,
+    settings?.replyGreetingTemplateNl,
     settings?.replySignOffTemplateEn,
     settings?.replySignOffTemplateNl,
   ]);
 
   const replyTemplatesDirty =
     settings != null &&
-    (greetingDraft !== settings.replyGreetingTemplate ||
+    (greetingDraftEn !==
+      (settings.replyGreetingTemplateEn ?? settings.replyGreetingTemplate) ||
+      greetingDraftNl !== settings.replyGreetingTemplateNl ||
       signOffDraftEn !== settings.replySignOffTemplateEn ||
       signOffDraftNl !== settings.replySignOffTemplateNl);
 
   const onSaveReplyTemplates = async () => {
     await patchSettings({
-      replyGreetingTemplate: greetingDraft,
+      replyGreetingTemplateEn: greetingDraftEn,
+      replyGreetingTemplateNl: greetingDraftNl,
       replySignOffTemplateEn: signOffDraftEn,
       replySignOffTemplateNl: signOffDraftNl,
     });
@@ -331,38 +344,51 @@ export function SettingsEmailTab({
           concept. Only the body is editable in the email editor. Use{" "}
           <code>{"{firstName}"}</code> for the recipient&apos;s first name and{" "}
           <code>{"{name}"}</code> for the linked contact on the sending inbox.
-          English and Dutch sign-offs are chosen automatically from the email
+          English and Dutch templates are chosen automatically from the email
           text.
         </p>
-        <label className="settings-field">
-          Greeting
-          <input
-            type="text"
-            value={greetingDraft}
-            disabled={saving || settings === null}
-            onChange={(event) => setGreetingDraft(event.target.value)}
-          />
-        </label>
-        <label className="settings-field">
+        <div className="settings-field">
           <span className="settings-field__label-row">
-            Sign-off
+            Language
             <SegmentedPillToggle
-              value={signOffLanguage}
+              value={templateLanguage}
               options={[
                 { value: "en", label: "English" },
                 { value: "nl", label: "Dutch" },
               ]}
-              onChange={setSignOffLanguage}
+              onChange={setTemplateLanguage}
               disabled={saving || settings === null}
-              ariaLabel="Sign-off language"
+              ariaLabel="Reply template language"
             />
           </span>
-          <textarea
-            rows={3}
-            value={signOffLanguage === "en" ? signOffDraftEn : signOffDraftNl}
+        </div>
+        <label className="settings-field">
+          Greeting
+          <input
+            type="text"
+            value={
+              templateLanguage === "en" ? greetingDraftEn : greetingDraftNl
+            }
             disabled={saving || settings === null}
             onChange={(event) => {
-              if (signOffLanguage === "en") {
+              if (templateLanguage === "en") {
+                setGreetingDraftEn(event.target.value);
+              } else {
+                setGreetingDraftNl(event.target.value);
+              }
+            }}
+          />
+        </label>
+        <label className="settings-field">
+          Sign-off
+          <textarea
+            rows={3}
+            value={
+              templateLanguage === "en" ? signOffDraftEn : signOffDraftNl
+            }
+            disabled={saving || settings === null}
+            onChange={(event) => {
+              if (templateLanguage === "en") {
                 setSignOffDraftEn(event.target.value);
               } else {
                 setSignOffDraftNl(event.target.value);

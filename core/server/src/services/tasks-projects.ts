@@ -604,6 +604,7 @@ async function createTaskWithExecutor(
       priority: input.priority ?? 0,
       sortOrder: input.sortOrder ?? 0,
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      dueEndDate: input.dueEndDate ? new Date(input.dueEndDate) : null,
       triagedAt: input.triagedAt ? new Date(input.triagedAt) : null,
       inbox: input.inbox ?? (!input.projectId && !input.contactId),
       links: input.links ?? [],
@@ -744,6 +745,12 @@ export async function updateTask(
           ? undefined
           : input.dueDate
             ? new Date(input.dueDate)
+            : null,
+      dueEndDate:
+        input.dueEndDate === undefined
+          ? undefined
+          : input.dueEndDate
+            ? new Date(input.dueEndDate)
             : null,
       triagedAt:
         input.triagedAt === undefined

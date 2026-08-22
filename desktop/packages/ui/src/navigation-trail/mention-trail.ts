@@ -129,6 +129,8 @@ function mentionTrailRef(
         routeParam: `l-${letterNumber}`,
       };
     }
+    case "email":
+      return null;
   }
 }
 

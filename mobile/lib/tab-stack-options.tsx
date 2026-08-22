@@ -318,6 +318,18 @@ export function tabRootScreenOptions(
   };
 }
 
+/** Shared native-stack gesture policy (iOS). */
+export const iosStackGestureOptions = {
+  gestureEnabled: true,
+  /**
+   * Edge-only interactive pop — not full-screen. Full-screen back swipe
+   * conflicts with ScrollView / FlatList: slight horizontal drift while
+   * scrolling vertically triggers the pop animation instead of scroll
+   * (react-native-screens #1510, #3302). Standard iOS apps use edge swipe.
+   */
+  fullScreenGestureEnabled: false,
+} as const;
+
 /** Native header chrome for pushed detail screens (back only, no sticky title). */
 export function tabDetailScreenOptions(options?: {
   /**
@@ -340,9 +352,7 @@ export function tabDetailScreenOptions(options?: {
     headerBackTitleVisible: false,
     headerBackButtonDisplayMode: "minimal" as const,
     contentStyle: { backgroundColor: bg },
-    // iOS: edge + full-screen swipe-right pops like the back button.
-    gestureEnabled: true,
-    fullScreenGestureEnabled: true,
+    ...iosStackGestureOptions,
   };
 }
 

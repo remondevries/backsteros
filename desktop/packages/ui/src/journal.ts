@@ -1,5 +1,8 @@
 const JOURNAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+export const JOURNAL_DAY_CALENDAR_PANEL_WIDTH_KEY =
+  "journal-day-calendar-panel-width";
+
 /** Path segments under /journal that are pages, not date slugs. */
 export const JOURNAL_RESERVED_SLUGS = new Set(["habits"]);
 

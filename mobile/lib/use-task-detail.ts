@@ -7,7 +7,7 @@ import { getTaskDisplayId } from "./task-display-id";
 import { TASK_DETAIL_SELECT } from "./task-list-query";
 import { useLocalQuery } from "./use-local-query";
 import { useMobileApiClient } from "./use-mobile-api-client";
-import { useRestFallbackGate } from "./use-rest-fallback-gate";
+import { shouldFetchTaskDetailViaRest } from "./should-fetch-task-detail-via-rest";
 
 export type TaskDetailModel = {
   id: string;
@@ -123,6 +123,7 @@ function mapApiTask(
 
 const DETAIL_SQL = `${TASK_DETAIL_SELECT}
  WHERE t.id = ?
+   AND t.deleted_at IS NULL
  LIMIT 1`;
 
 const EMPTY_DETAIL_SQL = "SELECT 1 AS id WHERE 0";
@@ -138,7 +139,15 @@ export function useTaskDetail(taskId: string | undefined) {
     );
 
   const syncedTask = syncedRows?.[0] ? mapSyncedRow(syncedRows[0]) : null;
-  const useRest = useRestFallbackGate(syncedTask ? 1 : 0);
+
+  const useRest = shouldFetchTaskDetailViaRest({
+    taskId,
+    hasSyncedTask: Boolean(syncedTask),
+    syncLoading,
+    powerSyncStatus: powerSync.status,
+    powerSyncReady: powerSync.ready,
+    restFallbackAllowed: powerSync.restFallbackAllowed,
+  });
 
   const [restTask, setRestTask] = useState<TaskDetailModel | null>(null);
   const [restError, setRestError] = useState<string | null>(null);

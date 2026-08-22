@@ -13,6 +13,7 @@ import { OrganizationIcon } from "./organization-icon.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import {
   AreasNavIcon,
+  CalendarNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
   EmailNavIcon,
@@ -65,6 +66,7 @@ const NAVIGATION_ICONS: Record<
   habits: HabitsNavIcon,
   knowledge: KnowledgeBaseNavIcon,
   tasks: TasksNavIcon,
+  calendar: CalendarNavIcon,
   areas: AreasNavIcon,
   projects: DefaultProjectIcon,
   development: DevelopmentNavIcon,

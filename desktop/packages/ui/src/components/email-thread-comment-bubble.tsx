@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -12,6 +11,10 @@ import {
 import { PencilIcon, TrashIcon } from "@primer/octicons-react";
 
 import { EntityAvatarIcon } from "./entity-avatar-icon.js";
+import {
+  TaskCommentEditor,
+  type TaskCommentEditorHandle,
+} from "./task-comment-editor.js";
 
 export type EmailThreadCommentBubbleProps = {
   body: string;
@@ -21,6 +24,8 @@ export type EmailThreadCommentBubbleProps = {
   authorName?: string | null;
   /** Avatar for agent comments (thread assignee). */
   authorAvatarSrc?: string | null;
+  /** Chat-style enter animation for newly appended comments. */
+  entering?: boolean;
   selected?: boolean;
   onSelect?: () => void;
   onDelete?: () => void;
@@ -50,6 +55,7 @@ export function EmailThreadCommentBubble({
   timestamp = null,
   authorName = null,
   authorAvatarSrc = null,
+  entering = false,
   selected = false,
   onSelect,
   onDelete,
@@ -63,10 +69,9 @@ export function EmailThreadCommentBubble({
   const displayName = isAgent
     ? authorName?.trim() || "Assignee"
     : "You";
-  const editId = useId();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(trimmed);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<TaskCommentEditorHandle | null>(null);
 
   useEffect(() => {
     if (!selected) setEditing(false);
@@ -78,10 +83,7 @@ export function EmailThreadCommentBubble({
       return;
     }
     const frame = requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
+      editorRef.current?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [editing, trimmed]);
@@ -121,18 +123,13 @@ export function EmailThreadCommentBubble({
   }, [draft, onSaveEdit, trimmed]);
 
   const handleEditKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key === "Escape") {
         event.preventDefault();
         handleCancelEdit();
-        return;
-      }
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        void handleSaveEdit();
       }
     },
-    [handleCancelEdit, handleSaveEdit],
+    [handleCancelEdit],
   );
 
   const showActions = selected && !editing && (onDelete != null || onSaveEdit != null);
@@ -144,7 +141,9 @@ export function EmailThreadCommentBubble({
         isAgent
           ? " email-thread-comment-row--agent"
           : " email-thread-comment-row--user"
-      }${selected ? " is-selected" : ""}${editing ? " is-editing" : ""}`}
+      }${entering ? " email-thread-comment-row--enter" : ""}${
+        selected ? " is-selected" : ""
+      }${editing ? " is-editing" : ""}`}
       data-email-comment-bubble
     >
       <div className="email-thread-comment__author-row">
@@ -215,20 +214,23 @@ export function EmailThreadCommentBubble({
           }}
         >
           {editing ? (
-            <div className="email-thread-comment__edit">
-              <label className="sr-only" htmlFor={editId}>
-                Edit comment
-              </label>
-              <textarea
-                ref={textareaRef}
-                id={editId}
+            <div
+              className="email-thread-comment__edit"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <TaskCommentEditor
+                editorRef={editorRef}
                 className="email-thread-comment__edit-input"
+                variant="edit"
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={setDraft}
                 onKeyDown={handleEditKeyDown}
-                onClick={(event) => event.stopPropagation()}
+                onSubmitShortcut={() => {
+                  void handleSaveEdit();
+                }}
                 disabled={saving}
-                rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+                autoFocus
+                ariaLabel="Edit comment"
               />
               <div className="email-thread-comment__edit-actions">
                 <button

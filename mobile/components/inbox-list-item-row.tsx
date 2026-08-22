@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { resolveInboxEmailIconColor } from "../lib/email-list";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
@@ -8,6 +9,7 @@ import { getTaskPriorityLabel } from "../lib/task-priority";
 import { TASK_STATUS_COLORS } from "../lib/task-status";
 import { colors } from "../lib/theme";
 import { ListAssigneeAvatar } from "./list-assignee-avatar";
+import { EmailNavIcon } from "./nav-icons";
 import { ProjectOcticon } from "./project-octicon";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
@@ -26,6 +28,10 @@ export type InboxListItemRowTask = {
   assignee_id?: string | null;
   assignee_name?: string | null;
   assigneeAvatarSrc?: string | null;
+  /** Email thread rows (desktop inbox parity) render an email type icon. */
+  item_type?: "task" | "email" | null;
+  /** Email rows: sender label shown in the meta line. */
+  email_from?: string | null;
 };
 
 type Props = {
@@ -59,17 +65,34 @@ export function InboxListItemRow({
   const assigneeName = task.assignee_name?.trim() || null;
   const hasAssignee = Boolean(task.assignee_id || assigneeName);
 
+  const isEmail = task.item_type === "email";
+  const emailFrom = isEmail ? task.email_from?.trim() || null : null;
+
   const body = (
     <>
       <View style={styles.primary}>
         <View style={styles.typeIcon} accessibilityElementsHidden>
-          <TaskStatusIcon status={task.status} size={14} />
+          {isEmail ? (
+            <EmailNavIcon
+              size={13}
+              color={resolveInboxEmailIconColor(task.status)}
+            />
+          ) : (
+            <TaskStatusIcon status={task.status} size={14} />
+          )}
         </View>
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
       </View>
       <View style={styles.meta}>
+        {emailFrom ? (
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel} numberOfLines={1}>
+              {emailFrom}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.metaItem}>
           <TaskPriorityIcon priority={priority} size={14} />
           <Text style={styles.metaLabel} numberOfLines={1}>

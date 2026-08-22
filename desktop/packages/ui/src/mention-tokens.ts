@@ -4,11 +4,13 @@ export type MentionKind =
   | "contact"
   | "organization"
   | "document"
-  | "letter";
+  | "letter"
+  | "email";
 
 export type ParsedMentionToken =
   | { kind: "task"; displayId: string; raw: string }
   | { kind: "letter"; displayId: string; raw: string }
+  | { kind: "email"; displayId: string; raw: string }
   | { kind: "project"; key: string; raw: string }
   | { kind: "contact"; key: string; raw: string }
   | { kind: "organization"; key: string; raw: string }
@@ -20,10 +22,10 @@ export type ParsedMentionToken =
     };
 
 export const MENTION_TOKEN_RE =
-  /\[@(task|project|contact|organization|document|letter):([^\]]+)\]/g;
+  /\[@(task|project|contact|organization|document|letter|email):([^\]]+)\]/g;
 
 const MENTION_TOKEN_SINGLE_RE =
-  /^\[@(task|project|contact|organization|document|letter):([^\]]+)\]$/;
+  /^\[@(task|project|contact|organization|document|letter|email):([^\]]+)\]$/;
 
 export function parseMentionToken(raw: string): ParsedMentionToken | null {
   const match = MENTION_TOKEN_SINGLE_RE.exec(raw.trim());
@@ -39,6 +41,9 @@ export function parseMentionToken(raw: string): ParsedMentionToken | null {
   }
   if (kind === "letter") {
     return { kind: "letter", displayId: value, raw };
+  }
+  if (kind === "email") {
+    return { kind: "email", displayId: value, raw };
   }
   if (kind === "project") {
     return { kind: "project", key: value, raw };
@@ -67,6 +72,7 @@ export function mentionTokenLabel(token: ParsedMentionToken): string {
   switch (token.kind) {
     case "task":
     case "letter":
+    case "email":
       return token.displayId;
     case "project":
     case "contact":

@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { resolveInboxEmailIconColor } from "../lib/email-list";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
@@ -7,6 +8,7 @@ import {
 import { isTaskPriorityNone } from "../lib/task-priority";
 import { colors } from "../lib/theme";
 import { ListAssigneeAvatar } from "./list-assignee-avatar";
+import { EmailNavIcon } from "./nav-icons";
 import { ProjectIcon } from "./project-icon";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
@@ -23,6 +25,8 @@ export type TaskItemListRowTask = {
   assignee_id?: string | null;
   assignee_name?: string | null;
   assigneeAvatarSrc?: string | null;
+  /** Email thread rows render an email type icon (desktop `TaskItemRow`). */
+  item_type?: "task" | "email" | null;
 };
 
 type Props = {
@@ -71,7 +75,14 @@ export function TaskItemListRow({
         </Text>
       ) : null}
       <View style={styles.status}>
-        <TaskStatusIcon status={task.status} size={16} />
+        {task.item_type === "email" ? (
+          <EmailNavIcon
+            size={14}
+            color={resolveInboxEmailIconColor(task.status)}
+          />
+        ) : (
+          <TaskStatusIcon status={task.status} size={16} />
+        )}
       </View>
       <Text style={styles.title} numberOfLines={1}>
         {title}

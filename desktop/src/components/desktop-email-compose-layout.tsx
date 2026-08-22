@@ -23,6 +23,7 @@ export type DesktopEmailComposeLayoutProps = {
   onAssistantTurnComplete?: (text: string) => void | Promise<void>;
   promptPlaceholder?: string;
   promptDisabled?: boolean;
+  promptContextLabel?: string | null;
 };
 
 /**
@@ -36,6 +37,7 @@ export function DesktopEmailComposeLayout({
   onAssistantTurnComplete,
   promptPlaceholder,
   promptDisabled = false,
+  promptContextLabel = null,
 }: DesktopEmailComposeLayoutProps) {
   const { requestAttach } = useDesktopAgentStatus();
   const [agentWorking, setAgentWorking] = useState(false);
@@ -68,11 +70,13 @@ export function DesktopEmailComposeLayout({
       onWorkingChange={setAgentWorking}
       disabled={promptDisabled}
       placeholder={promptPlaceholder}
+      contextLabel={promptContextLabel}
     />
   );
 
   useEffect(() => {
-    if (!layoutReady) return;
+    // Only attach the agent UI once a turn is actually running.
+    if (!layoutReady || !agentWorking) return;
     const chatId = readEmailAgentChatId(taskId)?.trim();
     if (!chatId) {
       reconcileKeyRef.current = null;

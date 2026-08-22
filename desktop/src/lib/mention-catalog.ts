@@ -3,6 +3,8 @@ import {
   INBOX_TASK_KEY,
   KNOWLEDGE_MENTION_PROJECT_KEY,
   PROJECT_AREAS,
+  collapseEmailListItemsByThread,
+  formatEmailDisplayId,
   formatLetterDisplayId,
   formatTaskDisplayId,
   isProjectStatus,
@@ -10,9 +12,11 @@ import {
   isTaskStatus,
   migrateLegacyProjectStatus,
   migrateLegacyTaskStatus,
+  type EmailListItem,
   type MentionCatalog,
   type MentionCatalogContact,
   type MentionCatalogDocument,
+  type MentionCatalogEmail,
   type MentionCatalogLetter,
   type MentionCatalogOrganization,
   type MentionCatalogProject,
@@ -33,9 +37,13 @@ function toPriority(value: number): TaskPriority {
   return isTaskPriority(value) ? value : 0;
 }
 
-function dueDateMs(value: number | Date | null | undefined): number | null {
+function dueDateMs(value: number | Date | string | null | undefined): number | null {
   if (value == null) return null;
   if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
   return value;
 }
 
@@ -124,6 +132,56 @@ function mapInboxTask(
     projectIcon: item.projectIcon,
     contactKey: item.contactKey,
   };
+}
+
+function mapEmailListItem(item: EmailListItem): MentionCatalogEmail | null {
+  if (item.kind === "draft") return null;
+  const number = item.number ?? null;
+  const displayId =
+    item.displayId?.trim() ||
+    (number != null ? formatEmailDisplayId(number) : null);
+  if (!displayId || number == null) {
+    return null;
+  }
+
+  const status = isTaskStatus(item.status ?? "triage")
+    ? (item.status as MentionCatalogEmail["status"])
+    : migrateLegacyTaskStatus(item.status ?? "triage");
+
+  return {
+    id: item.emailThreadId?.trim() || `${item.inboxId}:${item.threadId ?? item.id}`,
+    displayId,
+    title: item.subject?.trim() || displayId,
+    status,
+    priority: toPriority(item.priority ?? 0),
+    dueDate: dueDateMs(item.dueDate),
+    inboxId: item.inboxId,
+    threadId: item.threadId ?? null,
+    messageId: item.id,
+    projectId: item.projectId ?? null,
+    projectKey: item.projectKey ?? null,
+    projectName: item.projectName ?? null,
+    contactName: item.contactName ?? null,
+  };
+}
+
+/**
+ * Build @-mention email entries from AgentMail list rows (one per thread).
+ */
+export function buildMentionCatalogFromEmailMessages(
+  messages: readonly EmailListItem[],
+): MentionCatalogEmail[] {
+  const byThread = collapseEmailListItemsByThread(messages);
+  const emails: MentionCatalogEmail[] = [];
+
+  for (const item of byThread) {
+    const mapped = mapEmailListItem(item);
+    if (mapped) {
+      emails.push(mapped);
+    }
+  }
+
+  return emails;
 }
 
 /**
@@ -311,5 +369,6 @@ export function buildMentionCatalogFromWorkspace(
     organizations,
     documents,
     letters,
+    emails: [],
   };
 }

@@ -16,8 +16,11 @@ import {
 import {
   buildEmailAgentAcpPrompt,
   buildEmailComposeAgentAcpPrompt,
+  buildEmailDraftReviseAgentAcpPrompt,
   readEmailAgentChatId,
+  resolveEditableEmailDraftBody,
   writeEmailAgentChatId,
+  type EmailAgentPromptIntent,
   type EmailComposeContext,
 } from "./email-agent-prompt";
 import { startEmailAgentSession } from "./start-email-agent-session";
@@ -64,6 +67,8 @@ export function useDesktopEmailAgentSession({
       prompt?: string;
       mode?: string | null;
       message?: AgentMailMessageDetail | null;
+      intent?: EmailAgentPromptIntent;
+      draftBody?: string;
     }) => {
       const isCompose = Boolean(composeContext);
       const contextMessage = options?.message ?? message;
@@ -91,11 +96,19 @@ export function useDesktopEmailAgentSession({
         return null;
       }
 
+      const intent = options?.intent ?? "comment";
       const acpPrompt = isCompose
         ? buildEmailComposeAgentAcpPrompt(userPrompt, composeContext!)
-        : buildEmailAgentAcpPrompt(userPrompt, contextMessage!, {
-            depth: "full",
-          });
+        : intent === "revise-draft"
+          ? buildEmailDraftReviseAgentAcpPrompt(
+              userPrompt,
+              contextMessage!,
+              options?.draftBody ??
+                resolveEditableEmailDraftBody(contextMessage!.conceptDraft),
+            )
+          : buildEmailAgentAcpPrompt(userPrompt, contextMessage!, {
+              depth: "full",
+            });
       const bootstrap = createAgentChatMessage("user", userPrompt);
       setPendingBootstrapPrompt({
         taskId,

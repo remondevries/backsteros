@@ -1,7 +1,14 @@
 import {
+  getTaskStatusLabel,
   migrateLegacyTaskStatus,
+  TASK_STATUS_ORDER,
   type TaskStatus,
 } from "./task-status.js";
+import { formatEmailDisplayId } from "./email-display-id.js";
+import {
+  isSubstantiveEmailHtml,
+  plainTextEmailToHtml,
+} from "./email-message-html.js";
 
 export type EmailListItemKind = "message" | "draft";
 
@@ -40,6 +47,9 @@ export type EmailListItem = {
   projectId?: string | null;
   projectName?: string | null;
   projectKey?: string | null;
+  emailThreadId?: string | null;
+  number?: number | null;
+  displayId?: string | null;
 };
 
 export type EmailMessagePath = {
@@ -56,13 +66,77 @@ export function isEmailPath(pathname: string): boolean {
   return pathname === "/email" || pathname.startsWith("/email/");
 }
 
+/** Search flag so list surfaces keep the right chrome (panel + breadcrumb). */
+export const EMAIL_INBOX_LIST_PARAM = "list";
+export const EMAIL_INBOX_LIST_VALUE = "inbox";
+export const EMAIL_TASKS_LIST_VALUE = "tasks";
+export const EMAIL_PROJECT_LIST_VALUE = "project";
+
+export type EmailListContext = "inbox" | "tasks" | "project";
+
+function emailListSearchParams(search: string): URLSearchParams {
+  const normalized = search.startsWith("?") ? search.slice(1) : search;
+  return new URLSearchParams(normalized);
+}
+
+export function getEmailListContext(search: string): EmailListContext | null {
+  const value = emailListSearchParams(search).get(EMAIL_INBOX_LIST_PARAM);
+  if (value === EMAIL_INBOX_LIST_VALUE) return "inbox";
+  if (value === EMAIL_TASKS_LIST_VALUE) return "tasks";
+  if (value === EMAIL_PROJECT_LIST_VALUE) return "project";
+  return null;
+}
+
+export function isEmailInboxListContext(search: string): boolean {
+  return getEmailListContext(search) === "inbox";
+}
+
+export function isEmailTasksListContext(search: string): boolean {
+  return getEmailListContext(search) === "tasks";
+}
+
+export function isEmailProjectListContext(search: string): boolean {
+  return getEmailListContext(search) === "project";
+}
+
+/** Append a list-context flag for email routes opened from a list surface. */
+export function withEmailListContext(
+  href: string,
+  list: EmailListContext,
+): string {
+  const url = new URL(href, "http://local.invalid");
+  url.searchParams.set(EMAIL_INBOX_LIST_PARAM, list);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** Append `?list=inbox` for Inbox-sourced email routes. */
+export function withEmailInboxListContext(href: string): string {
+  return withEmailListContext(href, "inbox");
+}
+
+/** Keep the current list context when navigating between email routes. */
+export function preserveEmailInboxListContext(
+  href: string,
+  currentSearch: string,
+): string {
+  const context = getEmailListContext(currentSearch);
+  if (!context) return href;
+  return withEmailListContext(href, context);
+}
+
 export const EMAIL_COMPOSE_PATH = "/email/compose";
 
 export function isEmailComposePath(pathname: string): boolean {
   return pathname === EMAIL_COMPOSE_PATH;
 }
 
-export function getEmailComposeHref(): string {
+export function getEmailComposeHref(options?: {
+  /** When true, keep the Inbox side panel open on compose. */
+  inboxList?: boolean;
+}): string {
+  if (options?.inboxList) {
+    return withEmailInboxListContext(EMAIL_COMPOSE_PATH);
+  }
   return EMAIL_COMPOSE_PATH;
 }
 
@@ -99,12 +173,22 @@ export function getSelectedEmailIdFromPathname(
   );
 }
 
-export function getEmailItemHref(inboxId: string, messageId: string): string {
-  return `/email/${encodeURIComponent(inboxId)}/${encodeURIComponent(messageId)}`;
+export function getEmailItemHref(
+  inboxId: string,
+  messageId: string,
+  options?: { inboxList?: boolean },
+): string {
+  const href = `/email/${encodeURIComponent(inboxId)}/${encodeURIComponent(messageId)}`;
+  return options?.inboxList ? withEmailInboxListContext(href) : href;
 }
 
-export function getEmailDraftHref(inboxId: string, draftId: string): string {
-  return `/email/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`;
+export function getEmailDraftHref(
+  inboxId: string,
+  draftId: string,
+  options?: { inboxList?: boolean },
+): string {
+  const href = `/email/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`;
+  return options?.inboxList ? withEmailInboxListContext(href) : href;
 }
 
 export function getEmailListItemHref(item: EmailListItem): string {
@@ -125,6 +209,38 @@ export function parseReplyToAddress(from: string): string {
 export function replySubject(originalSubject: string): string {
   const subject = originalSubject.trim() || "(no subject)";
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+}
+
+/**
+ * Remove a fixed greeting/sign-off shell from draft body text so the UI does
+ * not show them twice (shell above the body + same lines inside the body).
+ */
+export function stripEmailDraftShell(
+  body: string,
+  shell?: { greeting?: string | null; signOff?: string | null },
+): string {
+  let next = body.replace(/\r\n/g, "\n").trim();
+  if (!next) return "";
+
+  const greeting = shell?.greeting?.trim();
+  if (greeting) {
+    if (next === greeting) return "";
+    if (next.startsWith(`${greeting}\n`)) {
+      next = next.slice(greeting.length).replace(/^\s*\n+/, "");
+    }
+  }
+
+  const signOff = shell?.signOff?.trim();
+  if (signOff) {
+    if (next === signOff) return "";
+    if (next.endsWith(`\n${signOff}`)) {
+      next = next.slice(0, next.length - signOff.length).replace(/\n+\s*$/, "");
+    } else if (next.endsWith(signOff)) {
+      next = next.slice(0, next.length - signOff.length).replace(/\n+\s*$/, "");
+    }
+  }
+
+  return next.trim();
 }
 
 export function emailMailboxLabel(mailbox: EmailMailbox): string {
@@ -160,6 +276,31 @@ export function formatEmailPersonWithAddress(
     return `${trimmedName} (${email})`;
   }
   return trimmedName || rawFrom || email || "—";
+}
+
+/**
+ * List-row party label: `Name (email@domain)` from a linked contact and/or
+ * `From` header (`Name <email>`). Returns null when nothing useful is present.
+ */
+export function formatEmailListPartyLabel(
+  contactName: string | null | undefined,
+  from: string | null | undefined,
+): string | null {
+  const rawFrom = typeof from === "string" ? from.trim() : "";
+  const linkedName = contactName?.trim() || null;
+  if (!linkedName && !rawFrom) return null;
+
+  const angle = rawFrom.match(/^(.*?)\s*<([^>]+)>\s*$/);
+  const fromName = angle?.[1]?.trim() || null;
+  const name = linkedName || fromName;
+  const email = rawFrom ? parseReplyToAddress(rawFrom) : "";
+  const hasEmail = Boolean(email && email.includes("@"));
+
+  if (name && hasEmail && name !== email) {
+    return `${name} (${email})`;
+  }
+  if (hasEmail) return email;
+  return name || rawFrom || null;
 }
 
 export function emailListItemIsSelected(
@@ -213,75 +354,34 @@ export function groupEmailItemsByMailbox<T extends EmailListItem>(
   return groups;
 }
 
-/** Visible email statuses (same backend values, email-friendly labels). */
-export const EMAIL_STATUS_ORDER = [
-  "triage",
-  "in_progress",
-  "on_hold",
-  "in_review",
-  "completed",
-] as const satisfies readonly TaskStatus[];
-
-export type EmailVisibleStatus = (typeof EMAIL_STATUS_ORDER)[number];
-
-const EMAIL_STATUS_LABELS: Record<EmailVisibleStatus, string> = {
-  triage: "Inbox",
-  in_progress: "In Progress",
-  on_hold: "On Hold",
-  in_review: "In Review",
-  completed: "Archive",
-};
+/**
+ * Emails use the exact same status set and labels as tasks.
+ * An email without a stored status defaults to Triage.
+ */
+export const EMAIL_STATUS_ORDER: readonly TaskStatus[] = TASK_STATUS_ORDER;
 
 export function getEmailStatusLabel(status: TaskStatus): string {
-  const visible = resolveEmailVisibleStatus(status);
-  return EMAIL_STATUS_LABELS[visible];
-}
-
-/**
- * Map any stored task status onto the email UI groups.
- * Hidden statuses (backlog, ready_to_start, canceled, duplicated) fold into a
- * visible bucket so mail never disappears from the side panel.
- */
-export function resolveEmailVisibleStatus(status: TaskStatus): EmailVisibleStatus {
-  switch (status) {
-    case "triage":
-    case "backlog":
-      return "triage";
-    case "ready_to_start":
-    case "in_progress":
-      return "in_progress";
-    case "on_hold":
-      return "on_hold";
-    case "in_review":
-      return "in_review";
-    case "completed":
-    case "canceled":
-    case "duplicated":
-      return "completed";
-    default:
-      return "triage";
-  }
+  return getTaskStatusLabel(status);
 }
 
 export type EmailStatusGroup<T extends EmailListItem = EmailListItem> = {
-  status: EmailVisibleStatus;
+  status: TaskStatus;
   label: string;
   items: T[];
 };
 
 export function resolveEmailListItemStatus(
   item: Pick<EmailListItem, "status">,
-): EmailVisibleStatus {
-  const raw = migrateLegacyTaskStatus(item.status?.trim() || "triage");
-  return resolveEmailVisibleStatus(raw);
+): TaskStatus {
+  return migrateLegacyTaskStatus(item.status?.trim() || "triage");
 }
 
-/** Group emails by visible email status groups (Inbox / In Progress / …). */
+/** Group emails by task status (Triage / Backlog / … / Duplicated). */
 export function groupEmailItemsByStatus<T extends EmailListItem>(
   items: readonly T[],
   options?: { includeEmpty?: boolean },
 ): EmailStatusGroup<T>[] {
-  const buckets = new Map<EmailVisibleStatus, T[]>();
+  const buckets = new Map<TaskStatus, T[]>();
   for (const status of EMAIL_STATUS_ORDER) {
     buckets.set(status, []);
   }
@@ -293,7 +393,7 @@ export function groupEmailItemsByStatus<T extends EmailListItem>(
 
   const groups = EMAIL_STATUS_ORDER.map((status) => ({
     status,
-    label: EMAIL_STATUS_LABELS[status],
+    label: getTaskStatusLabel(status),
     items: (buckets.get(status) ?? []).sort(
       (left, right) => right.receivedAt - left.receivedAt,
     ),
@@ -350,4 +450,44 @@ export function collapseEmailListItemsByThread(
   }
 
   return collapsed.sort((left, right) => right.receivedAt - left.receivedAt);
+}
+
+export type EmailThreadBodyViewMode = "plain" | "rendered" | "source";
+
+export function emailMessagePlainBody(message: {
+  extractedText?: string | null;
+  text?: string | null;
+  extractedHtml?: string | null;
+  html?: string | null;
+}): string {
+  const extracted = message.extractedText?.trim();
+  if (extracted) return extracted;
+  const text = message.text?.trim();
+  if (text) return text;
+  const html = (message.extractedHtml ?? message.html ?? "").trim();
+  if (!html) return "";
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Plain-text body for agents and list previews. */
+export const emailMessageBody = emailMessagePlainBody;
+
+export function emailMessageHtmlBody(message: {
+  extractedText?: string | null;
+  text?: string | null;
+  extractedHtml?: string | null;
+  html?: string | null;
+}): string | null {
+  const extractedHtml = message.extractedHtml?.trim();
+  const rawHtml = message.html?.trim();
+  if (isSubstantiveEmailHtml(extractedHtml)) return extractedHtml!;
+  if (isSubstantiveEmailHtml(rawHtml)) return rawHtml!;
+
+  const plain = message.extractedText?.trim() || message.text?.trim() || "";
+  if (!plain) return null;
+  return plainTextEmailToHtml(plain);
 }

@@ -7,21 +7,20 @@ import { PencilIcon, XIcon } from "@primer/octicons-react";
 import {
   emailMailboxFromDisplay,
   emailMailboxLabel,
+  stripEmailDraftShell,
   type EmailMailbox,
 } from "../email.js";
 import type { EmailDraftBodyMode } from "./email-draft-actions.js";
+import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
 import {
   EmailAddressContactField,
   type EmailThreadFromContactPicker,
 } from "./email-address-contact-field.js";
-import { EntityAvatarIcon } from "./entity-avatar-icon.js";
 import { PropertyDropdown, PropertyInlineChip } from "./property-dropdown.js";
-import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { EmailComposeBodyStage } from "./email-compose-body-stage.js";
 import { EmailDraftSignOffShell } from "./email-draft-sign-off-shell.js";
 import { buildEmailMailboxDropdownOptions } from "./dropdown-options.js";
-import { ContactPersonIcon } from "./contact-person-icon.js";
 
 export type EmailComposeChromeProps = {
   mailboxes: EmailMailbox[];
@@ -84,14 +83,16 @@ export function EmailComposeChrome({
   composer = null,
   variant = "compose",
 }: EmailComposeChromeProps) {
-  const trimmedBody = body.trim();
   const isEditable = Boolean(onBodyChange);
   const greeting = replyGreeting?.trim() || null;
   const signOff = replySignOff?.trim() || null;
+  const coreBody = stripEmailDraftShell(body, { greeting, signOff });
+  const trimmedCoreBody = coreBody.trim();
   const fromLocked = variant === "reply";
   const editing = isEditable && bodyMode === "edit";
+  const interactionLocked = fieldsDisabled || agentWorking;
   const hasLetterBody =
-    Boolean(trimmedBody) ||
+    Boolean(trimmedCoreBody) ||
     Boolean(greeting) ||
     Boolean(signOff) ||
     agentWorking ||
@@ -102,9 +103,9 @@ export function EmailComposeChrome({
     () => buildEmailMailboxDropdownOptions(mailboxes),
     [mailboxes],
   );
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toInputRef = useRef<HTMLInputElement | null>(null);
   const [toAddressEditing, setToAddressEditing] = useState(false);
+  const [editorFocusRequest, setEditorFocusRequest] = useState(0);
 
   useEffect(() => {
     // New reply/compose session — prefer the contact chip again.
@@ -113,14 +114,7 @@ export function EmailComposeChrome({
 
   useEffect(() => {
     if (!editing) return;
-    const frame = requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    });
-    return () => cancelAnimationFrame(frame);
+    setEditorFocusRequest((n) => n + 1);
   }, [editing]);
 
   useEffect(() => {
@@ -137,15 +131,16 @@ export function EmailComposeChrome({
 
   const showToContactChip = Boolean(toContact) && !toAddressEditing;
 
-  const bodyPreview = trimmedBody ? (
-    <DocumentMarkdownPreview body={body} onChange={onBodyChange} />
+  const bodyPreview = trimmedCoreBody ? (
+    <DocumentMarkdownPreview body={coreBody} onChange={onBodyChange} />
   ) : (
     <p className="overview-empty">{emptyBodyLabel}</p>
   );
 
   const letterContent = (
     <>
-      <dl className="email-thread-message__headers">
+      <div className="email-thread-message__identity">
+        <dl className="email-thread-message__headers">
         <div className="email-thread-message__header-row">
           <dt>From</dt>
           <dd className="email-compose-from-field">
@@ -154,21 +149,7 @@ export function EmailComposeChrome({
             ) : fromLocked ? (
               selectedMailbox ? (
                 <PropertyInlineChip
-                  icon={
-                    selectedMailbox.avatarSrc ? (
-                      <EntityAvatarIcon
-                        src={selectedMailbox.avatarSrc}
-                        size={14}
-                        kind="contact"
-                      />
-                    ) : (
-                      <ContactPersonIcon size={14} />
-                    )
-                  }
-                  label={
-                    selectedMailbox.contactName?.trim() ||
-                    emailMailboxFromDisplay(selectedMailbox)
-                  }
+                  label={emailMailboxFromDisplay(selectedMailbox)}
                   ariaLabel="From"
                 />
               ) : (
@@ -179,26 +160,16 @@ export function EmailComposeChrome({
                 value={inboxId || null}
                 options={inboxOptions}
                 onChange={onInboxIdChange}
-                disabled={fieldsDisabled}
+                disabled={interactionLocked}
                 searchPlaceholder="Choose inbox…"
                 ariaLabel="From inbox"
-                fallbackIcon={
-                  selectedMailbox?.avatarSrc ? (
-                    <EntityAvatarIcon
-                      src={selectedMailbox.avatarSrc}
-                      size={14}
-                      kind="contact"
-                    />
-                  ) : (
-                    <EmailNavIcon />
-                  )
-                }
                 fallbackLabel={
                   selectedMailbox
                     ? emailMailboxLabel(selectedMailbox)
                     : "Choose inbox"
                 }
                 mutedFallback={!selectedMailbox}
+                hideTriggerIcon
                 triggerVariant="inlineChip"
                 panelAlign="start"
                 panelWidth={320}
@@ -214,14 +185,14 @@ export function EmailComposeChrome({
               addressLabel={to.trim() || "—"}
               contact={toContact}
               ariaLabel="To contact"
-              disabled={fieldsDisabled}
+              disabled={interactionLocked}
               endAction={
                 <button
                   type="button"
                   className="email-compose-to-edit"
                   aria-label="Edit recipient email"
                   title="Edit email"
-                  disabled={fieldsDisabled}
+                  disabled={interactionLocked}
                   onClick={() => setToAddressEditing(true)}
                 >
                   <PencilIcon size={14} />
@@ -235,7 +206,7 @@ export function EmailComposeChrome({
                 type="email"
                 className="email-compose-field"
                 value={to}
-                disabled={fieldsDisabled}
+                disabled={interactionLocked}
                 placeholder="recipient@example.com"
                 aria-label="To"
                 onChange={(event) => onToChange(event.target.value)}
@@ -246,7 +217,7 @@ export function EmailComposeChrome({
                   className="email-compose-to-edit"
                   aria-label="Use linked contact"
                   title="Use contact"
-                  disabled={fieldsDisabled}
+                  disabled={interactionLocked}
                   onClick={() => setToAddressEditing(false)}
                 >
                   <XIcon size={14} />
@@ -262,7 +233,7 @@ export function EmailComposeChrome({
               type="text"
               className="email-compose-field"
               value={subject}
-              disabled={fieldsDisabled}
+              disabled={interactionLocked}
               placeholder="Subject"
               aria-label="Subject"
               onChange={(event) => onSubjectChange(event.target.value)}
@@ -270,6 +241,7 @@ export function EmailComposeChrome({
           </dd>
         </div>
       </dl>
+      </div>
       {hasLetterBody ? (
         <div
           className={`email-thread-message__body${
@@ -283,17 +255,13 @@ export function EmailComposeChrome({
               ) : null}
               <div className="email-draft-body-compose__core">
                 {editing ? (
-                  <textarea
-                    ref={textareaRef}
-                    className="email-draft-body-edit"
-                    value={body}
-                    onChange={(event) => onBodyChange?.(event.target.value)}
-                    disabled={fieldsDisabled}
-                    aria-label="Draft body"
-                    rows={Math.min(
-                      16,
-                      Math.max(4, body.split("\n").length + 2),
-                    )}
+                  <DocumentMarkdownEditor
+                    value={coreBody}
+                    onChange={(next) => onBodyChange?.(next)}
+                    disabled={interactionLocked}
+                    focusRequest={editorFocusRequest}
+                    ariaLabel="Draft body"
+                    scrollWithContent
                   />
                 ) : (
                   bodyPreview
@@ -305,7 +273,7 @@ export function EmailComposeChrome({
                 </EmailDraftSignOffShell>
               ) : null}
             </div>
-          ) : trimmedBody ? (
+          ) : trimmedCoreBody ? (
             bodyPreview
           ) : agentWorking ? null : (
             <p className="overview-empty">{emptyBodyLabel}</p>

@@ -1,7 +1,8 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useEffect, useState } from "react";
 
 import { colors } from "../lib/theme";
+import { AvatarImage } from "./avatar-image";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { OrganizationIcon } from "./organization-icon";
 import { PencilIcon } from "./pencil-icon";
@@ -58,10 +59,11 @@ export function EntityProfileAvatar({
       accessibilityIgnoresInvertColors
     >
       {showImage ? (
-        <Image
-          source={{ uri: src! }}
-          style={{ width: size, height: size, borderRadius: radius }}
-          onError={() => setFailed(true)}
+        <AvatarImage
+          src={src!}
+          size={size}
+          borderRadius={radius}
+          onFail={() => setFailed(true)}
         />
       ) : (
         <View style={styles.fallback}>

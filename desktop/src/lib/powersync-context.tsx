@@ -51,6 +51,7 @@ export const SYNCED_METADATA_TABLES = [
   "organizations",
   "contacts",
   "letters",
+  "meetings",
   "workspace_settings",
   "bank_accounts",
   "financial_categories",

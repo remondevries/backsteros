@@ -3,12 +3,50 @@ import { describe, it } from "node:test";
 
 import {
   AgentMailClient,
+  agentMailMessageNeedsFullHydration,
   formatAgentMailAddress,
   formatAgentMailApiError,
+  hydrateAgentMailThreadMessages,
   mapAgentMailAuthMe,
   mapAgentMailInbox,
+  mapAgentMailMessageDetail,
   mapAgentMailMessageSummary,
+  mergeAgentMailMessageDetail,
+  parseEmailSourceHeaders,
 } from "./agentmail-client.js";
+
+describe("parseEmailSourceHeaders", () => {
+  it("parses and unfolds the header block, stopping at the body", () => {
+    const raw = [
+      "X-Readdle-Message-ID: 0f1eabb8-58aa-47be-91ac@Spark",
+      "Authentication-Results: amazonses.com;",
+      "\tspf=pass client-ip=209.85.218.47;",
+      " dkim=pass header.i=@lemo-design.com;",
+      "Subject: Factuur 8959599",
+      "",
+      "Body-Looks-Like-Header: should not be parsed",
+      "Hello body",
+    ].join("\r\n");
+    const headers = parseEmailSourceHeaders(raw);
+    assert.deepEqual(headers, [
+      {
+        name: "X-Readdle-Message-ID",
+        value: "0f1eabb8-58aa-47be-91ac@Spark",
+      },
+      {
+        name: "Authentication-Results",
+        value:
+          "amazonses.com; spf=pass client-ip=209.85.218.47; dkim=pass header.i=@lemo-design.com;",
+      },
+      { name: "Subject", value: "Factuur 8959599" },
+    ]);
+  });
+
+  it("ignores malformed lines without a colon", () => {
+    const headers = parseEmailSourceHeaders("Garbage line\nX-One: 1\n\nbody");
+    assert.deepEqual(headers, [{ name: "X-One", value: "1" }]);
+  });
+});
 
 describe("agentmail-client mappers", () => {
   it("maps auth me response", () => {
@@ -50,6 +88,29 @@ describe("agentmail-client mappers", () => {
     assert.equal(mapped.messageId, "msg_1");
     assert.equal(mapped.from, "Ada <ada@example.com>");
     assert.equal(formatAgentMailAddress("ops@example.com"), "ops@example.com");
+  });
+
+  it("maps message attachments", () => {
+    const mapped = mapAgentMailMessageDetail({
+      inbox_id: "inbox_1",
+      thread_id: "thread_1",
+      message_id: "msg_1",
+      subject: "Invoice",
+      from: "ada@example.com",
+      timestamp: "2026-08-19T10:00:00Z",
+      html: '<img src="cid:avatar">',
+      attachments: [
+        {
+          attachment_id: "att_1",
+          size: 128,
+          content_type: "image/png",
+          content_id: "avatar",
+        },
+      ],
+    });
+    assert.equal(mapped.attachments.length, 1);
+    assert.equal(mapped.attachments[0]?.attachmentId, "att_1");
+    assert.equal(mapped.attachments[0]?.contentId, "avatar");
   });
 });
 
@@ -200,15 +261,11 @@ describe("AgentMailClient", () => {
           /\/inboxes\/inbox_1\/drafts\/draft_1\/send$/,
         );
         assert.equal(init?.method, "POST");
+        // AgentMail send returns only message_id + thread_id.
         return new Response(
           JSON.stringify({
-            inbox_id: "inbox_1",
             thread_id: "thread_1",
             message_id: "msg_sent_1",
-            subject: "Re: Hello",
-            from: "me@agentmail.to",
-            timestamp: "2026-08-19T10:00:00Z",
-            text: "Reply body",
           }),
           { status: 200 },
         );
@@ -217,7 +274,8 @@ describe("AgentMailClient", () => {
 
     const sent = await client.sendDraft("inbox_1", "draft_1");
     assert.equal(sent.messageId, "msg_sent_1");
-    assert.equal(sent.subject, "Re: Hello");
+    assert.equal(sent.threadId, "thread_1");
+    assert.equal(sent.inboxId, "inbox_1");
   });
 
   it("deletes a draft via DELETE", async () => {
@@ -234,5 +292,147 @@ describe("AgentMailClient", () => {
 
     await client.deleteDraft("inbox_1", "draft_1");
     assert.equal(deleteMethod, "DELETE");
+  });
+
+  it("downloads message attachments via presigned url", async () => {
+    const calls: string[] = [];
+    const client = new AgentMailClient({
+      apiKey: "am_test_key",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.includes("/attachments/att_1")) {
+          return new Response(
+            JSON.stringify({
+              attachment_id: "att_1",
+              download_url: "https://cdn.example/att_1",
+              content_type: "image/png",
+              filename: "avatar.png",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === "https://cdn.example/att_1") {
+          return new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+
+    const attachment = await client.getMessageAttachment(
+      "inbox_1",
+      "msg_1",
+      "att_1",
+    );
+    assert.equal(attachment.contentType, "image/png");
+    assert.equal(attachment.filename, "avatar.png");
+    assert.deepEqual([...attachment.bytes], [1, 2, 3]);
+    assert.match(calls[0] ?? "", /\/attachments\/att_1$/);
+    assert.equal(calls[1], "https://cdn.example/att_1");
+  });
+});
+
+describe("agentmail thread hydration", () => {
+  const summary = mapAgentMailMessageDetail({
+    inbox_id: "inbox_1",
+    thread_id: "thread_1",
+    message_id: "msg_1",
+    subject: "Invoice",
+    from: "ada@example.com",
+    timestamp: "2026-08-19T10:00:00Z",
+    extracted_text: "Please pay",
+  });
+
+  const full = mapAgentMailMessageDetail({
+    inbox_id: "inbox_1",
+    thread_id: "thread_1",
+    message_id: "msg_1",
+    subject: "Invoice",
+    from: "ada@example.com",
+    timestamp: "2026-08-19T10:00:00Z",
+    extracted_text: "Please pay",
+    html: "<p>Please pay</p>",
+    extracted_html: "<p>Please pay</p>",
+  });
+
+  it("mergeAgentMailMessageDetail keeps missing html from overlay", () => {
+    const merged = mergeAgentMailMessageDetail(summary, full);
+    assert.equal(merged.html, "<p>Please pay</p>");
+    assert.equal(merged.extractedText, "Please pay");
+  });
+
+  it("agentMailMessageNeedsFullHydration when html is missing", () => {
+    assert.equal(agentMailMessageNeedsFullHydration(summary), true);
+    assert.equal(agentMailMessageNeedsFullHydration(full), false);
+  });
+
+  it("agentMailMessageNeedsFullHydration when cid images lack attachments", () => {
+    const withCid = mapAgentMailMessageDetail({
+      inbox_id: "inbox_1",
+      thread_id: "thread_1",
+      message_id: "msg_2",
+      subject: "Invoice",
+      from: "ada@example.com",
+      timestamp: "2026-08-19T10:00:00Z",
+      extracted_text: "Please pay",
+      html: '<img src="cid:avatar">',
+      extracted_html: '<img src="cid:avatar">',
+    });
+    assert.equal(agentMailMessageNeedsFullHydration(withCid), true);
+
+    const withInline = mapAgentMailMessageDetail({
+      inbox_id: "inbox_1",
+      thread_id: "thread_1",
+      message_id: "msg_2",
+      subject: "Invoice",
+      from: "ada@example.com",
+      timestamp: "2026-08-19T10:00:00Z",
+      extracted_text: "Please pay",
+      html: '<img src="cid:avatar">',
+      extracted_html: '<img src="cid:avatar">',
+      attachments: [
+        {
+          attachment_id: "att_1",
+          size: 1,
+          content_id: "avatar",
+        },
+      ],
+    });
+    assert.equal(agentMailMessageNeedsFullHydration(withInline), false);
+  });
+
+  it("hydrateAgentMailThreadMessages fetches full rows when needed", async () => {
+    const client = new AgentMailClient({
+      apiKey: "am_test_key",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        assert.match(url, /\/messages\/msg_1$/);
+        return new Response(
+          JSON.stringify({
+            inbox_id: "inbox_1",
+            thread_id: "thread_1",
+            message_id: "msg_1",
+            subject: "Invoice",
+            from: "ada@example.com",
+            timestamp: "2026-08-19T10:00:00Z",
+            extracted_text: "Please pay",
+            html: "<p>Please pay</p>",
+            extracted_html: "<p>Please pay</p>",
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const hydrated = await hydrateAgentMailThreadMessages(
+      client,
+      "inbox_1",
+      full,
+      [summary],
+    );
+    assert.equal(hydrated[0]?.html, "<p>Please pay</p>");
   });
 });

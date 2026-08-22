@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { ApiProvider } from "./api-context";
+import { AgentMailProvider } from "./agentmail-context";
 import { DesktopAgentStatusProvider } from "./agent/agent-status-context";
 import { dismissBootSplash } from "./boot-splash";
 import { mergeClerkHandshakeQuery } from "./clerk-oauth-handoff";
@@ -269,7 +270,9 @@ function AuthenticatedProviders({
     <ApiProvider apiUrl={apiUrl} getToken={tokenProvider}>
       <PowerSyncProvider authenticated={enablePowerSync} apiUrl={apiUrl}>
         <DesktopWorkspaceDataProvider>
-          <DesktopAgentStatusProvider>{children}</DesktopAgentStatusProvider>
+          <AgentMailProvider>
+            <DesktopAgentStatusProvider>{children}</DesktopAgentStatusProvider>
+          </AgentMailProvider>
         </DesktopWorkspaceDataProvider>
       </PowerSyncProvider>
     </ApiProvider>

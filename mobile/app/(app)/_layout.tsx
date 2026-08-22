@@ -9,6 +9,7 @@ import {
 import {
   AreasNavIcon,
   ComposeNavIcon,
+  EmailNavIcon,
   FinanceNavIcon,
   HabitsNavIcon,
   InboxNavIcon,
@@ -19,6 +20,7 @@ import {
 } from "../../components/nav-icons";
 import { ProjectIcon } from "../../components/project-icon";
 import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
+import { AgentMailProvider } from "../../lib/agentmail-context";
 import { isPadDevice } from "../../lib/device";
 import { HabitConfettiHost } from "../../lib/habits/habit-complete-confetti";
 import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
@@ -35,6 +37,7 @@ const overflowTabOptions = {
 const IPAD_TRAY_ROUTES = new Set([
   "areas",
   "development",
+  "email",
   "letters",
   "finance",
   "knowledge",
@@ -150,6 +153,17 @@ function SignedInTabs() {
           }}
         />
         <Tabs.Screen
+          name="email"
+          options={{
+            ...tabOverflowOptions("email"),
+            title: "Email",
+            tabBarAccessibilityLabel: "Email",
+            tabBarIcon: ({ color, size }) => (
+              <EmailNavIcon color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="letters"
           options={{
             ...tabOverflowOptions("letters"),
@@ -214,5 +228,9 @@ export default function AppLayout() {
     return <Redirect href="/sign-in" />;
   }
 
-  return <SignedInTabs />;
+  return (
+    <AgentMailProvider>
+      <SignedInTabs />
+    </AgentMailProvider>
+  );
 }

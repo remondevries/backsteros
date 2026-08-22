@@ -54,6 +54,7 @@ export function getDeletedMentionDisplay(
       };
     }
     case "letter":
+    case "email":
       return {
         ariaLabel: parsed.displayId,
         identifier: parsed.displayId,

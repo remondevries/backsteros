@@ -644,6 +644,39 @@ html:has(.desktop-overlay-root--palette) .command-list {
   background: transparent;
 }
 
+.email-agent-prompt__context {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 12px 12px 0;
+}
+
+@media (min-width: 640px) {
+  .email-agent-prompt__context {
+    padding: 14px 16px 0;
+  }
+}
+
+.email-agent-prompt__context-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--accent-color, #6b8afd);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.email-agent-prompt--has-context .email-agent-prompt__input-row {
+  padding-top: 6px;
+}
+
 .email-agent-prompt__input-row {
   display: flex;
   align-items: stretch;
@@ -672,6 +705,16 @@ html:has(.desktop-overlay-root--palette) .command-list {
   font-size: 14px;
   line-height: 1.625;
   outline: none;
+}
+
+.email-agent-prompt__input.task-comment-editor {
+  display: block;
+  width: 100%;
+  resize: none;
+}
+
+.email-agent-prompt__input.task-comment-editor .cm-scroller {
+  max-height: 200px;
 }
 
 .email-agent-prompt__input::placeholder {
@@ -914,6 +957,59 @@ html:has(.desktop-overlay-root--palette) .command-list {
 .desktop-task-layout__terminal .desktop-agent-chat,
 .desktop-task-layout__terminal .terminal-directory-gate,
 .desktop-task-layout__terminal .terminal-stage {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Journal day: entry left | day timeline right */
+.bos-product-shell .journal-day-layout[data-content-detail],
+.page-scroll .journal-day-layout[data-content-detail],
+.journal-day-layout[data-content-detail],
+.journal-day-layout {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+}
+
+.journal-day-layout__calendar.resizable-side-panel {
+  flex-shrink: 0;
+  height: 100%;
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: var(--background);
+}
+
+.desktop-journal-day-layout__chrome {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 6px 8px 0;
+}
+
+.desktop-journal-day-layout__calendar-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.journal-day-layout__calendar.is-collapsed {
+  display: flex;
+  width: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px !important;
+  flex: 0 0 46px !important;
+  height: 100%;
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: transparent;
+}
+
+.journal-day-layout__calendar.is-collapsed .desktop-terminal-strip {
   flex: 1;
   min-height: 0;
 }

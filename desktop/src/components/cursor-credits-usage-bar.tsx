@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import {
   cursorUsageTitle,
+  formatDaysUntilReset,
   formatPlanPercent,
   formatUsdCents,
   planUsageTone,
@@ -101,6 +102,7 @@ export function CursorCreditsUsageBar() {
     usage.limitCents > 0
       ? `${formatUsdCents(usage.remainingCents)} left`
       : null;
+  const resetDaysLabel = formatDaysUntilReset(usage.billingCycleEndMs);
 
   return (
     <div
@@ -108,16 +110,19 @@ export function CursorCreditsUsageBar() {
       title={cursorUsageTitle(usage)}
       aria-label={cursorUsageTitle(usage)}
     >
-      {remainingLabel ? (
-        <div className="sidebar-cursor-credits-row">
+      <div className="sidebar-cursor-credits-row">
+        <span className="sidebar-cursor-credits-label-group">
           <span className="sidebar-cursor-credits-label">Cursor</span>
+          {resetDaysLabel ? (
+            <span className="sidebar-cursor-credits-reset">
+              ({resetDaysLabel})
+            </span>
+          ) : null}
+        </span>
+        {remainingLabel ? (
           <span className="sidebar-cursor-credits-value">{remainingLabel}</span>
-        </div>
-      ) : (
-        <div className="sidebar-cursor-credits-row">
-          <span className="sidebar-cursor-credits-label">Cursor</span>
-        </div>
-      )}
+        ) : null}
+      </div>
       <UsageBar label="Auto" percent={usage.autoPercentUsed} />
       <UsageBar label="API" percent={usage.apiPercentUsed} />
       {usage.grokBotPercentUsed != null ? (

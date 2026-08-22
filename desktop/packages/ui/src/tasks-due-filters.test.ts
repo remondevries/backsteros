@@ -56,3 +56,50 @@ test("filterTasksByDueFilter overdue keeps open past-due tasks only", () => {
     ["late-open"],
   );
 });
+
+test("filterTasksByDueFilter keeps email rows on every due pill", () => {
+  const wednesday = new Date(2026, 6, 22, 12, 0, 0); // Wed Jul 22, 2026
+  const tasks = [
+    { id: "email-open", dueDate: null, status: "triage", listKind: "email" },
+    {
+      id: "email-dated",
+      dueDate: "2026-07-22",
+      status: "triage",
+      listKind: "email",
+    },
+    {
+      id: "email-later",
+      dueDate: "2026-07-28",
+      status: "triage",
+      listKind: "email",
+    },
+    {
+      id: "email-done",
+      dueDate: "2026-07-20",
+      status: "completed",
+      listKind: "email",
+    },
+  ];
+
+  for (const filter of [
+    "today",
+    "tomorrow",
+    "this-week",
+    "next-week",
+  ] as const) {
+    assert.deepEqual(
+      filterTasksByDueFilter(tasks, filter, wednesday)
+        .map((task) => task.id)
+        .sort(),
+      ["email-dated", "email-later", "email-open"],
+      filter,
+    );
+  }
+
+  assert.deepEqual(
+    filterTasksByDueFilter(tasks, "overdue", wednesday)
+      .map((task) => task.id)
+      .sort(),
+    ["email-dated", "email-later", "email-open"],
+  );
+});

@@ -33,6 +33,14 @@ import {
   renderTaskAgentTitleTrailing,
 } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
+import { useAgentMail } from "../lib/agentmail-context";
+import { useDesktopApi } from "../lib/api-context";
+import {
+  getEmailTaskListHref,
+  isEmailTaskListItem,
+  mapEmailMessagesToTaskRows,
+  patchEmailTaskListItem,
+} from "../lib/email-list-tasks";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
@@ -41,6 +49,8 @@ export function TaskListPage() {
   const location = useLocation();
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
+  const agentMail = useAgentMail();
+  const { client } = useDesktopApi();
 
   useDesktopSectionBreadcrumb([{ label: "Tasks" }]);
 
@@ -80,6 +90,27 @@ export function TaskListPage() {
         withAvatarSrc(workspace.contacts, contactAvatarSrc),
       ),
     [contactAvatarSrc, workspace.contacts],
+  );
+
+  const emailMailboxes = useMemo(
+    () =>
+      agentMail.mailboxes.map((mailbox) => ({
+        ...mailbox,
+        avatarSrc: mailbox.contactId
+          ? contactAvatarSrc[mailbox.contactId] ?? null
+          : null,
+      })),
+    [agentMail.mailboxes, contactAvatarSrc],
+  );
+
+  const emailTaskRows = useMemo(
+    () => mapEmailMessagesToTaskRows(agentMail.messages, emailMailboxes),
+    [agentMail.messages, emailMailboxes],
+  );
+
+  const tasksWithEmails = useMemo(
+    () => [...workspace.tasks, ...emailTaskRows],
+    [emailTaskRows, workspace.tasks],
   );
 
   const taskIdColumnCh = useMemo(
@@ -122,10 +153,20 @@ export function TaskListPage() {
 
   const pendingCreatedTaskTitleRef = useRef<string | null>(null);
 
+  const findListTask = (id: string) =>
+    tasksWithEmails.find((entry) => entry.id === id) ?? null;
+
   const navigateToTask = (id: string, titleHint?: string | null) => {
-    const task = workspace.tasks.find((entry) => entry.id === id);
+    const task = findListTask(id);
+    const emailHref = task ? getEmailTaskListHref(task) : null;
+    if (emailHref) {
+      const title = task?.title || titleHint?.trim() || null;
+      if (title) primeTabTitle(emailHref, title);
+      navigate(emailHref);
+      return;
+    }
     const due = dueFilter ?? "today";
-    if (!task) {
+    if (!task || isEmailTaskListItem(task)) {
       const href = `/tasks/${due}/${id}`;
       const title = titleHint?.trim();
       if (title) primeTabTitle(href, title);
@@ -156,7 +197,7 @@ export function TaskListPage() {
 
   return (
     <TasksOverviewView
-      tasks={workspace.tasks}
+      tasks={tasksWithEmails}
       todayHabits={todayHabits}
       onToggleTodayHabit={(item, checked) => {
         void workspace.patchTask(item.taskId, {
@@ -182,12 +223,29 @@ export function TaskListPage() {
       }}
       onSelectTask={(id) => navigateToTask(id)}
       onStatusChange={(taskId, status) => {
+        const task = findListTask(taskId);
+        if (task && isEmailTaskListItem(task)) {
+          void patchEmailTaskListItem(client, task, { status });
+          return;
+        }
         void workspace.patchTask(taskId, { status });
       }}
       onPriorityChange={(taskId, priority) => {
+        const task = findListTask(taskId);
+        if (task && isEmailTaskListItem(task)) {
+          void patchEmailTaskListItem(client, task, { priority });
+          return;
+        }
         void workspace.patchTask(taskId, { priority });
       }}
       onDueDateChange={(taskId, dueDate) => {
+        const task = findListTask(taskId);
+        if (task && isEmailTaskListItem(task)) {
+          void patchEmailTaskListItem(client, task, {
+            dueDate: dueDate ? dueDate.toISOString() : null,
+          });
+          return;
+        }
         void workspace.patchTask(taskId, {
           dueDate: dueDate ? dueDate.toISOString() : null,
         });
@@ -196,20 +254,56 @@ export function TaskListPage() {
         const project = projectKey
           ? workspace.projects.find((entry) => entry.key === projectKey) ?? null
           : null;
+        const task = findListTask(taskId);
+        if (task && isEmailTaskListItem(task)) {
+          void patchEmailTaskListItem(
+            client,
+            task,
+            { projectId: project?.id ?? null },
+            {
+              projectName: project?.name ?? null,
+              projectKey: project?.key ?? null,
+            },
+          );
+          return;
+        }
         void workspace.patchTask(taskId, {
           projectId: project?.id ?? null,
         });
       }}
       onAssigneeChange={(taskId, assigneeId) => {
+        const task = findListTask(taskId);
+        if (task && isEmailTaskListItem(task)) {
+          const assignee = assigneeId
+            ? workspace.contacts.find((entry) => entry.id === assigneeId) ??
+              null
+            : null;
+          void patchEmailTaskListItem(
+            client,
+            task,
+            { assigneeId },
+            { assigneeName: assignee?.name ?? null },
+          );
+          return;
+        }
         void workspace.patchTask(taskId, { assigneeId });
       }}
       onBulkDelete={async (taskIds) => {
         for (const taskId of taskIds) {
+          const task = findListTask(taskId);
+          if (task && isEmailTaskListItem(task)) {
+            continue;
+          }
           await workspace.softDeleteTask(taskId);
         }
       }}
       onReorder={(request) => {
-        const patches = taskReorderPatches(workspace.tasks, request);
+        const patches = taskReorderPatches(tasksWithEmails, request).filter(
+          (patch) => {
+            const task = findListTask(patch.id);
+            return !task || !isEmailTaskListItem(task);
+          },
+        );
         for (const patch of patches) {
           void workspace.patchTask(patch.id, {
             status: patch.status,
@@ -218,16 +312,20 @@ export function TaskListPage() {
         }
       }}
       renderTaskTitleTrailing={(task) =>
-        renderTaskAgentTitleTrailing({
-          taskId: task.id,
-          agentChatId: task.agentChatId,
-          taskStatus: task.status,
-          agentStatus,
-          workingShownOnStatusIcon: true,
-        })
+        isEmailTaskListItem(task)
+          ? null
+          : renderTaskAgentTitleTrailing({
+              taskId: task.id,
+              agentChatId: task.agentChatId,
+              taskStatus: task.status,
+              agentStatus,
+              workingShownOnStatusIcon: true,
+            })
       }
       isTaskAgentWorking={(task) =>
-        isTaskAgentWorkingForUi(task, agentStatus)
+        isEmailTaskListItem(task)
+          ? false
+          : isTaskAgentWorkingForUi(task, agentStatus)
       }
       onCreateTask={async ({ status, title }) => {
         const dueYmd = getDefaultDueDateYmdForTasksDueFilter(

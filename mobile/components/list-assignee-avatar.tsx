@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { colors } from "../lib/theme";
+import { AvatarImage } from "./avatar-image";
 import { ContactPersonIcon } from "./contact-person-icon";
 
 const SIZE = 20;
@@ -39,10 +40,10 @@ export function ListAssigneeAvatar({ name, src }: Props) {
       accessibilityIgnoresInvertColors
     >
       {showImage ? (
-        <Image
-          source={{ uri: src! }}
-          style={styles.image}
-          onError={() => setFailed(true)}
+        <AvatarImage
+          src={src!}
+          size={SIZE}
+          onFail={() => setFailed(true)}
         />
       ) : initials ? (
         <Text style={styles.initials}>{initials}</Text>
@@ -62,11 +63,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
-  },
-  image: {
-    width: SIZE,
-    height: SIZE,
-    borderRadius: SIZE / 2,
   },
   initials: {
     color: "rgba(237, 237, 237, 0.75)",

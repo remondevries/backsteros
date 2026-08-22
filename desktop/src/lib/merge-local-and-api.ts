@@ -238,6 +238,136 @@ export function dropStaleLocalHabitTasks<
   });
 }
 
+function dueDateMissing(value: unknown): boolean {
+  return value == null || value === "";
+}
+
+/**
+ * When local omits `dueDate` / `dueEndDate` (stale PowerSync schema / failed
+ * local patch), copy scheduling fields from the API row so calendar drops
+ * survive navigation.
+ */
+export function fillMissingDueDatesFromApi<
+  T extends {
+    id: string;
+    dueDate?: string | null;
+    dueEndDate?: string | null;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    const apiHasDue = !dueDateMissing(api.dueDate);
+    const localHasDue = !dueDateMissing(row.dueDate);
+    if (!apiHasDue) return row;
+    if (!localHasDue) {
+      return {
+        ...row,
+        dueDate: api.dueDate,
+        dueEndDate: api.dueEndDate ?? row.dueEndDate ?? null,
+      };
+    }
+    if (
+      updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt) &&
+      (api.dueDate !== row.dueDate || api.dueEndDate !== row.dueEndDate)
+    ) {
+      return {
+        ...row,
+        dueDate: api.dueDate,
+        dueEndDate: api.dueEndDate ?? null,
+      };
+    }
+    return row;
+  });
+}
+
+function attendeeIdsMissing(value: unknown): boolean {
+  if (value == null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "[]") return true;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return !Array.isArray(parsed) || parsed.length === 0;
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}
+
+/**
+ * When local omits meeting property columns (stale PowerSync schema / failed
+ * local patch), copy project, organization, and attendees from the API row.
+ */
+export function fillMissingMeetingPropertiesFromApi<
+  T extends {
+    id: string;
+    projectId?: string | null;
+    organizationId?: string | null;
+    attendeeContactIds?: unknown;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    let next = row;
+
+    const localProject =
+      typeof row.projectId === "string" ? row.projectId.trim() : "";
+    const apiProject =
+      typeof api.projectId === "string" ? api.projectId.trim() : "";
+    if (!localProject && apiProject) {
+      next = { ...next, projectId: api.projectId };
+    } else if (
+      apiProject &&
+      apiProject !== localProject &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, projectId: api.projectId };
+    } else if (
+      !apiProject &&
+      localProject &&
+      updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, projectId: api.projectId };
+    }
+
+    const localOrg =
+      typeof row.organizationId === "string" ? row.organizationId.trim() : "";
+    const apiOrg =
+      typeof api.organizationId === "string" ? api.organizationId.trim() : "";
+    if (!localOrg && apiOrg) {
+      next = { ...next, organizationId: api.organizationId };
+    } else if (
+      apiOrg !== localOrg &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, organizationId: api.organizationId };
+    }
+
+    if (attendeeIdsMissing(row.attendeeContactIds)) {
+      if (!attendeeIdsMissing(api.attendeeContactIds)) {
+        next = { ...next, attendeeContactIds: api.attendeeContactIds };
+      }
+    } else if (
+      !attendeeIdsMissing(api.attendeeContactIds) &&
+      updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, attendeeContactIds: api.attendeeContactIds };
+    }
+
+    return next;
+  });
+}
+
 /** Copy `habitId` from API when local/PowerSync omitted the column. */
 export function fillMissingHabitIdFromApi<
   T extends { id: string; habitId?: string | null },

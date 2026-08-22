@@ -65,6 +65,7 @@ import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { KnowledgeBaseNavIcon } from "./sidebar-nav-icons.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
+import type { TaskLinkPickerOption } from "./task-link-attachments.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
@@ -158,6 +159,8 @@ export type ComposeModalProps = {
     input: ComposeModalCreateDocumentInput,
   ) => Promise<{ href: string }>;
   onNavigate: (href: string) => void;
+  documentLinkOptions?: readonly TaskLinkPickerOption[];
+  emailLinkOptions?: readonly TaskLinkPickerOption[];
   /** Optional link for empty projects CTA; if omitted render plain text. */
   projectsHref?: string;
   /**
@@ -182,6 +185,8 @@ export function ComposeModal({
   onCreateTask,
   onCreateDocument,
   onNavigate,
+  documentLinkOptions,
+  emailLinkOptions,
   projectsHref,
   allowedKinds = ["task", "document"],
   requireProject = false,
@@ -1263,6 +1268,9 @@ export function ComposeModal({
                 <TaskLinkAttachments
                   links={links}
                   onChangeLinks={pending || contextLoading ? undefined : setLinks}
+                  documentOptions={documentLinkOptions}
+                  emailOptions={emailLinkOptions}
+                  onNavigate={onNavigate}
                 />
               </div>
             ) : null}

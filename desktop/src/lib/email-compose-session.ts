@@ -1,9 +1,17 @@
 const COMPOSE_SESSION_KEY = "backsteros-desktop.email-compose-session";
 
+/** One-shot prefill applied when the compose page mounts (e.g. Forward). */
+export type EmailComposePrefill = {
+  to?: string;
+  subject?: string;
+  body?: string;
+};
+
 export type EmailComposeSession = {
   sessionId: string;
   draftId: string | null;
   inboxId: string | null;
+  prefill?: EmailComposePrefill | null;
 };
 
 function readRaw(): EmailComposeSession | null {
@@ -16,6 +24,7 @@ function readRaw(): EmailComposeSession | null {
       sessionId: parsed.sessionId.trim(),
       draftId: parsed.draftId?.trim() || null,
       inboxId: parsed.inboxId?.trim() || null,
+      prefill: parsed.prefill ?? null,
     };
   } catch {
     return null;

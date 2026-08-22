@@ -1,16 +1,27 @@
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "./task-display-id.js";
+import { formatEmailDisplayId } from "./email-display-id.js";
 import { formatLocalYmd } from "./task-due-date.js";
+import {
+  formatEmailListPartyLabel,
+  withEmailInboxListContext,
+  withEmailListContext,
+} from "./email.js";
 import {
   INACTIVE_TASK_STATUSES,
   getTaskDueDateYmd,
   taskDueDateMatchesFilter,
 } from "./tasks-due-filters.js";
 import {
+  resolveTaskStatusColor,
+  type TaskStatusColorScheme,
+} from "./task-status-color.js";
+import {
   getTaskStatusLabel,
   isTaskStatus,
   migrateLegacyTaskStatus,
   type TaskStatus,
 } from "./task-status.js";
+import type { TaskItemRowTask } from "./components/task-item-row.js";
 
 /**
  * Inbox section order: agents (agent-created sign-off) → overdue → triage → …
@@ -20,6 +31,7 @@ export const INBOX_ATTENTION_STATUS_ORDER = [
   "agents",
   "overdue",
   "triage",
+  "in_progress",
   "on_hold",
   "in_review",
 ] as const;
@@ -32,6 +44,7 @@ export type InboxAttentionStatus =
  * date is still in the future.
  */
 export const INBOX_ATTENTION_REAL_STATUSES = [
+  "in_progress",
   "on_hold",
   "in_review",
 ] as const satisfies readonly TaskStatus[];
@@ -71,7 +84,52 @@ export type InboxLetterListItem = {
   updatedAt: number;
 };
 
-export type InboxListItem = InboxTaskListItem | InboxLetterListItem;
+/** AgentMail thread shown in the Inbox list (not a `tasks` row). */
+export type InboxEmailListItem = {
+  kind: "email";
+  id: string;
+  inboxId: string;
+  messageId: string;
+  threadId: string | null;
+  title: string;
+  /** `Name (email@domain)` shown beside the subject. */
+  partyLabel: string | null;
+  status: string;
+  priority: number;
+  dueDate: number | null;
+  updatedAt: number;
+  assigneeId: string | null;
+  projectId: string | null;
+  projectKey: string | null;
+  projectName: string | null;
+  projectIcon: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
+  /** Workspace email thread row id. */
+  emailThreadId?: string | null;
+  number?: number | null;
+  displayId?: string | null;
+  /** Our mailbox label (ID-column / mono mark). */
+  mailboxLabel?: string | null;
+  mailboxAvatarSrc?: string | null;
+};
+
+export type InboxListItem =
+  | InboxTaskListItem
+  | InboxLetterListItem
+  | InboxEmailListItem;
+
+/** Stable inbox list id for an email thread row. */
+export function emailInboxItemId(
+  inboxId: string,
+  threadId: string | null | undefined,
+  messageId: string,
+): string {
+  const threadKey = threadId?.trim() || messageId.trim();
+  return `email:${inboxId}:${threadKey}`;
+}
 
 export function encodeTaskSlug(contextKey: string, taskNumber: number): string {
   return `${contextKey.toLowerCase()}-${taskNumber}`;
@@ -149,9 +207,153 @@ export function buildInboxTaskListItem(input: {
   };
 }
 
+export function buildInboxEmailListItem(input: {
+  inboxId: string;
+  messageId: string;
+  threadId?: string | null;
+  title: string;
+  from?: string | null;
+  status?: string | null;
+  priority?: number | null;
+  dueDate?: number | string | Date | null;
+  updatedAt?: number;
+  assigneeId?: string | null;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  projectIcon?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
+  mailboxLabel?: string | null;
+  mailboxAvatarSrc?: string | null;
+  emailThreadId?: string | null;
+  number?: number | null;
+  displayId?: string | null;
+}): InboxEmailListItem {
+  const dueDate =
+    input.dueDate == null
+      ? null
+      : typeof input.dueDate === "number"
+        ? input.dueDate
+        : input.dueDate instanceof Date
+          ? input.dueDate.getTime()
+          : Date.parse(String(input.dueDate)) || null;
+  const messageId = input.messageId.trim();
+  const inboxId = input.inboxId.trim();
+  const threadId = input.threadId?.trim() || null;
+  return {
+    kind: "email",
+    id: emailInboxItemId(inboxId, threadId, messageId),
+    inboxId,
+    messageId,
+    threadId,
+    title: input.title.trim() || "(no subject)",
+    partyLabel: formatEmailListPartyLabel(input.contactName, input.from),
+    status: migrateLegacyTaskStatus(input.status?.trim() || "triage"),
+    priority: input.priority ?? 0,
+    dueDate: dueDate != null && Number.isFinite(dueDate) ? dueDate : null,
+    updatedAt: input.updatedAt ?? Date.now(),
+    assigneeId: input.assigneeId ?? null,
+    projectId: input.projectId ?? null,
+    projectKey: input.projectKey ?? null,
+    projectName: input.projectName ?? null,
+    projectIcon: input.projectIcon ?? null,
+    organizationId: input.organizationId ?? null,
+    organizationName: input.organizationName ?? null,
+    contactId: input.contactId ?? null,
+    contactName: input.contactName ?? null,
+    mailboxLabel: input.mailboxLabel?.trim() || null,
+    mailboxAvatarSrc: input.mailboxAvatarSrc ?? null,
+    emailThreadId: input.emailThreadId ?? null,
+    number: input.number ?? null,
+    displayId: input.displayId?.trim() || (
+      input.number != null ? formatEmailDisplayId(input.number) : null
+    ),
+  };
+}
+
+/** Map an email thread into a Tasks / project list row (not a Postgres task). */
+export function buildTaskListEmailItem(input: {
+  inboxId: string;
+  messageId: string;
+  threadId?: string | null;
+  title: string;
+  from?: string | null;
+  status?: string | null;
+  priority?: number | null;
+  dueDate?: number | string | Date | null;
+  updatedAt?: number;
+  assigneeId?: string | null;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
+  mailboxLabel?: string | null;
+  mailboxAvatarSrc?: string | null;
+  emailThreadId?: string | null;
+  number?: number | null;
+  displayId?: string | null;
+}): TaskItemRowTask {
+  const email = buildInboxEmailListItem(input);
+  return {
+    id: email.id,
+    number: 0,
+    title: email.title,
+    status: email.status,
+    priority: email.priority,
+    dueDate: email.dueDate,
+    projectId: email.projectId,
+    projectKey: email.projectKey,
+    projectName: email.projectName,
+    assigneeId: email.assigneeId,
+    contactId: email.contactId,
+    updatedAt: email.updatedAt,
+    listKind: "email",
+    emailInboxId: email.inboxId,
+    emailMessageId: email.messageId,
+    emailThreadId: email.emailThreadId ?? email.threadId,
+    emailPartyLabel: email.partyLabel,
+    emailMailboxLabel: email.mailboxLabel,
+    emailMailboxAvatarSrc: email.mailboxAvatarSrc,
+    emailNumber: email.number,
+    emailDisplayId: email.displayId,
+  };
+}
+
+export function isEmailTaskListItem(
+  task: Pick<TaskItemRowTask, "listKind">,
+): boolean {
+  return task.listKind === "email";
+}
+
+export function getEmailTaskListHref(
+  task: Pick<
+    TaskItemRowTask,
+    "listKind" | "emailInboxId" | "emailMessageId"
+  >,
+  options?: { list?: "tasks" | "project" },
+): string | null {
+  if (
+    task.listKind !== "email" ||
+    !task.emailInboxId?.trim() ||
+    !task.emailMessageId?.trim()
+  ) {
+    return null;
+  }
+  const href = `/email/${encodeURIComponent(task.emailInboxId.trim())}/${encodeURIComponent(task.emailMessageId.trim())}`;
+  const list = options?.list ?? "tasks";
+  return withEmailListContext(href, list);
+}
+
 export function getInboxItemRouteSlug(item: InboxListItem): string {
   if (item.kind === "letter") {
     return `ltr-${item.number}`;
+  }
+  if (item.kind === "email") {
+    return item.id;
   }
 
   return getInboxTaskRouteSlugForTask({
@@ -171,11 +373,18 @@ export function getInboxItemHref(
   if (item.kind === "letter") {
     return `/letters/${item.id}`;
   }
+  if (item.kind === "email") {
+    return withEmailInboxListContext(
+      `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+    );
+  }
 
   const slug = getInboxItemRouteSlug(item);
-  const hasSlugCollision = items.some(
-    (other) => other.id !== item.id && getInboxItemRouteSlug(other) === slug,
-  );
+  const hasSlugCollision =
+    items.length > 0 &&
+    items.some(
+      (other) => other.id !== item.id && getInboxItemRouteSlug(other) === slug,
+    );
 
   if (hasSlugCollision) {
     return `/inbox/${item.id}`;
@@ -186,6 +395,51 @@ export function getInboxItemHref(
     projectKey: item.projectKey,
     contactKey: item.contactKey,
   });
+}
+
+/**
+ * Precompute hrefs for an inbox list in one pass (avoids O(n²) slug scans).
+ */
+export function buildInboxItemHrefById(
+  items: readonly InboxListItem[],
+): Map<string, string> {
+  const slugCounts = new Map<string, number>();
+  for (const item of items) {
+    if (item.kind !== "task") continue;
+    const slug = getInboxItemRouteSlug(item);
+    slugCounts.set(slug, (slugCounts.get(slug) ?? 0) + 1);
+  }
+
+  const hrefById = new Map<string, string>();
+  for (const item of items) {
+    if (item.kind === "letter") {
+      hrefById.set(item.id, `/letters/${item.id}`);
+      continue;
+    }
+    if (item.kind === "email") {
+      hrefById.set(
+        item.id,
+        withEmailInboxListContext(
+          `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
+        ),
+      );
+      continue;
+    }
+    const slug = getInboxItemRouteSlug(item);
+    if ((slugCounts.get(slug) ?? 0) > 1) {
+      hrefById.set(item.id, `/inbox/${item.id}`);
+    } else {
+      hrefById.set(
+        item.id,
+        getInboxTaskRouteHref({
+          number: item.number,
+          projectKey: item.projectKey,
+          contactKey: item.contactKey,
+        }),
+      );
+    }
+  }
+  return hrefById;
 }
 
 export function getFirstInboxItemHref(
@@ -252,6 +506,11 @@ export function findInboxItemBySlugOrId(
 export function getInboxItemDisplayId(item: InboxListItem): string {
   if (item.kind === "letter") {
     return `LTR-${item.number}`;
+  }
+  if (item.kind === "email") {
+    return item.displayId?.trim() || (
+      item.number != null ? formatEmailDisplayId(item.number) : "Email"
+    );
   }
   const key = item.projectKey || item.contactKey || INBOX_TASK_KEY;
   return formatTaskDisplayId(key, item.number);
@@ -330,26 +589,104 @@ export function taskBelongsInInbox(
 }
 
 /**
- * Section key for an inbox task.
- *
- * Overdue is a special non-status group: any task with a due date in the past
- * that is not completed / canceled / duplicated lands here (including triage,
- * On Hold, and In Review). Remaining inbox tasks group by real status.
+ * Untriaged email — empty status or explicitly Triage.
  */
-export function getInboxAttentionGroupKey(
-  item: Pick<
-    InboxTaskListItem,
-    "status" | "dueDate" | "inbox" | "agentCreatedAt" | "agentInboxApprovedAt"
-  >,
+export function isEmailIncomingStatus(
+  status: string | null | undefined,
+): boolean {
+  const trimmed = status?.trim();
+  if (!trimmed) return true;
+  return migrateLegacyTaskStatus(trimmed) === "triage";
+}
+
+/**
+ * Whether an email thread belongs in the Inbox list:
+ * - triage / empty → always
+ * - any other status → same rules as tasks (overdue, in progress, on hold, in review)
+ */
+export function emailBelongsInInbox(
+  input: {
+    status?: string | null;
+    dueDate?: number | Date | string | null;
+  },
   referenceDate: Date = new Date(),
+): boolean {
+  if (isEmailIncomingStatus(input.status)) return true;
+  return taskBelongsInInbox(
+    {
+      inbox: false,
+      status: input.status,
+      dueDate: input.dueDate,
+    },
+    referenceDate,
+  );
+}
+
+/** Inbox email icon color: triage orange when untriaged, else the status color. */
+export function resolveInboxEmailIconColor(
+  status: string | null | undefined,
+  options?: { colorScheme?: TaskStatusColorScheme },
+): string {
+  const statusKey = isEmailIncomingStatus(status)
+    ? "triage"
+    : migrateLegacyTaskStatus(status ?? "backlog");
+  return resolveTaskStatusColor(statusKey, undefined, options);
+}
+
+function getTaskInboxAttentionGroupKey(
+  item: Pick<InboxTaskListItem, "status" | "dueDate" | "inbox"> &
+    Partial<Pick<InboxTaskListItem, "agentCreatedAt" | "agentInboxApprovedAt">>,
+  referenceDate: Date,
 ): InboxAttentionStatus | "other" {
   if (isAgentInboxPending(item)) return "agents";
   if (isInboxOverdueTask(item, referenceDate)) return "overdue";
   const status = migrateLegacyTaskStatus(item.status);
-  if (item.inbox === true || status === "triage") return "triage";
+  if (item.inbox === true || status === "triage" || status === "backlog") {
+    return "triage";
+  }
+  if (status === "in_progress") return "in_progress";
   if (status === "on_hold") return "on_hold";
   if (status === "in_review") return "in_review";
   return "other";
+}
+
+function getEmailInboxAttentionGroupKey(
+  item: Pick<InboxEmailListItem, "status" | "dueDate">,
+  referenceDate: Date,
+): InboxAttentionStatus | "other" {
+  return getTaskInboxAttentionGroupKey(
+    {
+      ...item,
+      inbox: isEmailIncomingStatus(item.status) ? true : false,
+    },
+    referenceDate,
+  );
+}
+
+/**
+ * Section key for an inbox task or email.
+ *
+ * Overdue is a special non-status group: any item with a due date in the past
+ * that is not completed / canceled / duplicated lands here (including triage,
+ * On Hold, and In Review). Remaining inbox items group by real status.
+ */
+export function getInboxAttentionGroupKey(
+  item: Pick<
+    InboxTaskListItem | InboxEmailListItem,
+    "kind" | "status" | "dueDate"
+  > &
+    Partial<
+      Pick<
+        InboxTaskListItem,
+        "inbox" | "agentCreatedAt" | "agentInboxApprovedAt"
+      >
+    >,
+  referenceDate: Date = new Date(),
+): InboxAttentionStatus | "other" {
+  if (item.kind === "email") {
+    return getEmailInboxAttentionGroupKey(item, referenceDate);
+  }
+  return getTaskInboxAttentionGroupKey(item, referenceDate);
 }
 
 function attentionStatusRank(groupKey: string): number {
@@ -359,15 +696,23 @@ function attentionStatusRank(groupKey: string): number {
   return index === -1 ? INBOX_ATTENTION_STATUS_ORDER.length : index;
 }
 
-/** Sort: Agents → Overdue → Triage → On Hold → In Review, then by updatedAt desc. */
+function isAttentionGroupedKind(
+  item: InboxListItem,
+): item is InboxTaskListItem | InboxEmailListItem {
+  return item.kind === "task" || item.kind === "email";
+}
+
+/** Sort: Agents → Overdue → Triage → In Progress → On Hold → In Review, then by updatedAt desc. */
 export function sortInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
   referenceDate: Date = new Date(),
 ): InboxListItem[] {
   return [...items].sort((a, b) => {
-    if (a.kind !== "task" || b.kind !== "task") {
+    if (!isAttentionGroupedKind(a) || !isAttentionGroupedKind(b)) {
       if (a.kind === b.kind) return b.updatedAt - a.updatedAt;
-      return a.kind === "task" ? -1 : 1;
+      if (isAttentionGroupedKind(a)) return -1;
+      if (isAttentionGroupedKind(b)) return 1;
+      return a.kind === "letter" ? 1 : -1;
     }
     const rankDiff =
       attentionStatusRank(getInboxAttentionGroupKey(a, referenceDate)) -
@@ -390,10 +735,11 @@ export function getInboxAttentionGroupLabel(status: string): string {
   return status;
 }
 
-/** Group sorted/unsorted inbox tasks into non-empty attention sections. */
+/** Group sorted/unsorted inbox items into non-empty attention sections. */
 export function groupInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
   referenceDate: Date = new Date(),
+  options?: { alreadySorted?: boolean },
 ): InboxAttentionStatusGroup[] {
   const buckets = new Map<string, InboxListItem[]>();
   for (const status of INBOX_ATTENTION_STATUS_ORDER) {
@@ -401,8 +747,12 @@ export function groupInboxItemsByAttentionStatus(
   }
   const other: InboxListItem[] = [];
 
-  for (const item of sortInboxItemsByAttentionStatus(items, referenceDate)) {
-    if (item.kind !== "task") {
+  const ordered = options?.alreadySorted
+    ? items
+    : sortInboxItemsByAttentionStatus(items, referenceDate);
+
+  for (const item of ordered) {
+    if (!isAttentionGroupedKind(item)) {
       other.push(item);
       continue;
     }

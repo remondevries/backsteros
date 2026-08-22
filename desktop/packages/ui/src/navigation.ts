@@ -3,6 +3,7 @@ export const routeFamilies = [
   "development",
   "areas",
   "tasks",
+  "calendar",
   "inbox",
   "email",
   "contacts",
@@ -22,6 +23,7 @@ export type NavigationItemIconId =
   | "journal"
   | "habits"
   | "tasks"
+  | "calendar"
   | "areas"
   | "projects"
   | "development"
@@ -43,8 +45,13 @@ export type NavigationItem = {
 
 export const navigation: NavigationItem[] = [
   { href: "/inbox", label: "Inbox", icon: "inbox", section: "primary" },
-  { href: "/email", label: "Email", icon: "email", section: "primary" },
   { href: "/journal", label: "Journal", icon: "journal", section: "primary" },
+  {
+    href: "/calendar",
+    label: "Calendar",
+    icon: "calendar",
+    section: "primary",
+  },
   {
     href: "/journal/habits",
     label: "Habit Tracker",
@@ -116,6 +123,12 @@ export const routeCopy: Record<
     description: "Your open work, ordered by priority",
     singular: "task",
     accent: "#7c9cff",
+  },
+  calendar: {
+    title: "Calendar",
+    description: "Tasks scheduled across your week",
+    singular: "task",
+    accent: "#5b8def",
   },
   inbox: {
     title: "Inbox",

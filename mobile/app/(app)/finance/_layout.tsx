@@ -8,7 +8,7 @@ import {
   PadSidePanelCollapsedRail,
   usePadSidePanelCollapsed,
 } from "../../../lib/pad-side-panel-collapse";
-import { tabDetailScreenOptions } from "../../../lib/tab-stack-options";
+import {tabDetailScreenOptions, iosStackGestureOptions} from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 const NAV_PANE_WIDTH = 224;
@@ -30,8 +30,7 @@ function FinanceStack({ ipad }: { ipad: boolean }) {
       screenOptions={{
         contentStyle: { backgroundColor: contentBg },
         headerStyle: { backgroundColor: contentBg },
-        gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        ...iosStackGestureOptions,
         // Keep prior screens painted under transparentModal transaction overlays.
         ...(ipad ? { detachInactiveScreens: false } : null),
         ...(ipad

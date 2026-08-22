@@ -48,6 +48,7 @@ const tasks = new Table(
     priority: column.integer,
     sort_order: column.integer,
     due_date: column.text,
+    due_end_date: column.text,
     triaged_at: column.text,
     inbox: column.integer,
     links: column.text,
@@ -269,6 +270,22 @@ const habits = new Table({
   ...commonDates,
 });
 
+const meetings = new Table({
+  number: column.integer,
+  title: column.text,
+  summary: column.text,
+  notes: column.text,
+  transcription: column.text,
+  status: column.text,
+  project_id: column.text,
+  organization_id: column.text,
+  attendee_contact_ids: column.text,
+  start_at: column.text,
+  end_at: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -285,6 +302,7 @@ export const appSchema = new Schema({
   financial_goals,
   financial_recurrings,
   habits,
+  meetings,
 });
 
 export type UploadEntry = {

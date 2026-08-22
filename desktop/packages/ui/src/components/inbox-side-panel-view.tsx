@@ -10,7 +10,9 @@ import {
 } from "react";
 
 import { getSelectedInboxSlugFromPathname } from "../content-side-panel.js";
+import { parseEmailMessagePath } from "../email.js";
 import {
+  buildInboxItemHrefById,
   findInboxItemBySlugOrId,
   getInboxItemHref,
   groupInboxItemsByAttentionStatus,
@@ -49,6 +51,8 @@ export type InboxSidePanelViewProps = {
     | { id: string }
     | void;
   onCreatedTask?: (taskId: string) => void;
+  /** Compose a new email (navigates to email compose). */
+  onComposeEmail?: () => void;
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeOptions?: SearchableDropdownOption<string>[];
   onPriorityChange?: (taskId: string, priority: number) => void;
@@ -95,6 +99,7 @@ export function InboxSidePanelView({
   loading = false,
   onCreateTask,
   onCreatedTask,
+  onComposeEmail,
   projectOptions,
   assigneeOptions,
   onPriorityChange,
@@ -116,20 +121,38 @@ export function InboxSidePanelView({
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
+  const emailPath = parseEmailMessagePath(pathname);
 
   const selectedItemId = useMemo(() => {
+    if (emailPath) {
+      return (
+        items.find(
+          (item) =>
+            item.kind === "email" &&
+            item.inboxId === emailPath.inboxId &&
+            item.messageId === emailPath.messageId,
+        )?.id ?? null
+      );
+    }
     if (!selectedSlug) return null;
     return findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null;
-  }, [items, selectedSlug]);
+  }, [emailPath, items, selectedSlug]);
 
   const attentionGroups = useMemo(
     () =>
-      groupByAttentionStatus ? groupInboxItemsByAttentionStatus(items) : null,
+      groupByAttentionStatus
+        ? groupInboxItemsByAttentionStatus(items, new Date(), {
+            // Callers (shell merge + workspace) already attention-sort.
+            alreadySorted: true,
+          })
+        : null,
     [groupByAttentionStatus, items],
   );
 
+  const hrefById = useMemo(() => buildInboxItemHrefById(items), [items]);
+
   function renderRow(item: InboxListItem) {
-    const href = getInboxItemHref(item, items);
+    const href = hrefById.get(item.id) ?? getInboxItemHref(item, items);
     return (
       <InboxListItemRow
         key={`${item.kind}-${item.id}`}
@@ -158,18 +181,32 @@ export function InboxSidePanelView({
         <ContentSidePanelHeader
           title="Inbox"
           actions={
-            onCreateTask && !minimized ? (
-              <button
-                type="button"
-                className="app-side-panel-section-action"
-                aria-label="Add inbox task"
-                onClick={() => {
-                  setCreateError(null);
-                  setComposing(true);
-                }}
-              >
-                <SidePanelPlusIcon />
-              </button>
+            !minimized && (onCreateTask || onComposeEmail) ? (
+              <>
+                {onComposeEmail ? (
+                  <button
+                    type="button"
+                    className="app-side-panel-section-action"
+                    aria-label="Compose email"
+                    onClick={onComposeEmail}
+                  >
+                    <InboxItemTypeIcon kind="email" size={14} />
+                  </button>
+                ) : null}
+                {onCreateTask ? (
+                  <button
+                    type="button"
+                    className="app-side-panel-section-action"
+                    aria-label="Add inbox task"
+                    onClick={() => {
+                      setCreateError(null);
+                      setComposing(true);
+                    }}
+                  >
+                    <SidePanelPlusIcon />
+                  </button>
+                ) : null}
+              </>
             ) : undefined
           }
         />

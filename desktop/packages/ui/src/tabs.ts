@@ -109,6 +109,7 @@ export function resolveTabNavIconId(
     journal: "journal",
     knowledge: "knowledge",
     tasks: "tasks",
+    calendar: "calendar",
     areas: "areas",
     projects: "projects",
     development: "development",

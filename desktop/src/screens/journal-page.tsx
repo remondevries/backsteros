@@ -9,6 +9,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import type { Document as ApiDocument } from "@backsteros/contracts";
 import {
+  CalendarDayTimeline,
   DocumentDetailIcon,
   JournalDetailSkeleton,
   JournalDueTasksSection,
@@ -23,10 +24,13 @@ import {
   getTaskDueDateYmd,
   isHabitLinkedTask,
   mergeJournalContent,
+  tasksToCalendarEventsForDate,
   type JournalHabitDayItem,
+  type TaskCalendarPatch,
 } from "@backsteros/ui";
 
 import { JournalWhoopLeading } from "../components/journal-whoop-leading";
+import { DesktopJournalDayLayout } from "../components/desktop-journal-day-layout";
 import { useDesktopApi } from "../lib/api-context";
 import { useJournalSelection } from "../lib/journal-selection-context";
 import {
@@ -38,9 +42,9 @@ import { useDesktopResource } from "../lib/use-desktop-resource";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
-function JournalDayShell({ children }: { children: ReactNode }) {
+function JournalDayBody({ children }: { children: ReactNode }) {
   return (
-    <div className="inbox-detail-layout" data-content-detail>
+    <div className="inbox-detail-layout">
       <div className="inbox-detail-body inbox-detail-body--document">
         {children}
       </div>
@@ -210,7 +214,12 @@ function JournalScreen({
     body = <JournalDetailSkeleton framed={false} />;
   }
 
-  return <JournalDayShell>{body}</JournalDayShell>;
+  return (
+    <DesktopJournalDayLayout
+      main={<JournalDayBody>{body}</JournalDayBody>}
+      dayCalendar={<JournalDayCalendarColumn dateSlug={date} />}
+    />
+  );
 }
 
 /** Headless fetch while the skeleton is visible — never paints the editor. */
@@ -469,12 +478,77 @@ function JournalDueTasksFooter({
       habits={habits}
       isLoading={!workspace.ready || settings.loading}
       calendarTimeZone={calendarTimeZone}
+      dayTimelineDraggable
       onSelectTask={onSelectTask}
       onToggleHabit={(item, checked) => {
         void workspace.patchTask(item.taskId, {
           status: checked ? "completed" : "ready_to_start",
         });
       }}
+    />
+  );
+}
+
+function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const workspace = useDesktopWorkspaceData();
+  const settings = useDesktopResource<{
+    settings: Record<string, unknown>;
+  }>((api) => api.requestJson("/api/v1/settings"));
+  const calendarTimeZone = String(
+    settings.data?.settings.timezone ??
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+
+  const events = useMemo(
+    () =>
+      tasksToCalendarEventsForDate(
+        workspace.allTasks.filter((task) => !isHabitLinkedTask(task)),
+        dateSlug,
+        calendarTimeZone,
+      ),
+    [calendarTimeZone, dateSlug, workspace.allTasks],
+  );
+
+  const handleReschedule = (taskId: string, patch: TaskCalendarPatch) => {
+    void workspace.patchTask(taskId, patch);
+  };
+
+  const handleTaskOpen = useCallback(
+    (taskId: string) => {
+      const task = workspace.allTasks.find((entry) => entry.id === taskId);
+      if (!task) return;
+      const contact = task.contactId
+        ? workspace.contacts.find((entry) => entry.id === task.contactId)
+        : null;
+      navigate(
+        buildJournalTaskTrailHref(location.pathname, {
+          id: task.id,
+          number: task.number,
+          projectKey: task.projectKey,
+          contactKey: contact?.key ?? null,
+        }),
+      );
+    },
+    [location.pathname, navigate, workspace.allTasks, workspace.contacts],
+  );
+
+  if (!workspace.ready) {
+    return (
+      <div
+        className="calendar-day-timeline calendar-view"
+        data-journal-day-calendar
+      />
+    );
+  }
+
+  return (
+    <CalendarDayTimeline
+      dateSlug={dateSlug}
+      events={events}
+      onTaskReschedule={handleReschedule}
+      onTaskOpen={handleTaskOpen}
     />
   );
 }

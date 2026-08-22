@@ -6,6 +6,7 @@ import { getDeletedMentionDisplay } from "../mentions/deleted-mention-display.js
 import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogEmail,
   resolveMentionCatalogLetter,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogProject,
@@ -15,6 +16,7 @@ import type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogEmail,
   MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
@@ -33,6 +35,7 @@ import {
   ProjectOcticon,
 } from "./project-octicon.js";
 import { OrganizationIcon } from "./organization-icon.js";
+import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import {
@@ -74,7 +77,9 @@ function MentionHoverDeletedPanel({ parsed }: { parsed: ParsedMentionToken }) {
       ? "Task"
       : parsed.kind === "letter"
         ? "Letter"
-        : parsed.kind === "project"
+        : parsed.kind === "email"
+          ? "Email"
+          : parsed.kind === "project"
           ? "Project"
           : parsed.kind === "contact"
             ? "Contact"
@@ -186,6 +191,58 @@ function LetterMentionHoverDetails({ letter }: { letter: MentionCatalogLetter })
         <span>{statusLabel}</span>
       </MentionHoverStatusRow>
       <MentionHoverFooterRow>
+        <span>{dueLabel ? `Due ${dueLabel}` : "No due date"}</span>
+      </MentionHoverFooterRow>
+    </MentionHoverPanel>
+  );
+}
+
+function EmailMentionHoverDetails({ email }: { email: MentionCatalogEmail }) {
+  const dueLabel = formatTaskDueMetaLabel(email.dueDate);
+  const priorityLabel = getTaskPriorityLabel(email.priority);
+  const statusLabel = getTaskStatusLabel(email.status);
+
+  return (
+    <MentionHoverPanel>
+      <MentionHoverMetaRow>
+        <EmailNavIcon
+          size={14}
+          className="mention-hover-card__icon mention-hover-card__icon--muted"
+        />
+        <span className="mention-hover-card__id">{email.displayId}</span>
+        {email.projectName ? (
+          <>
+            <span className="mention-hover-card__dot" aria-hidden="true">
+              ·
+            </span>
+            <span className="mention-hover-card__truncate">
+              {email.projectName}
+            </span>
+          </>
+        ) : email.contactName ? (
+          <>
+            <span className="mention-hover-card__dot" aria-hidden="true">
+              ·
+            </span>
+            <span className="mention-hover-card__truncate">
+              {email.contactName}
+            </span>
+          </>
+        ) : null}
+      </MentionHoverMetaRow>
+      <MentionHoverTitle>{email.title}</MentionHoverTitle>
+      <MentionHoverStatusRow>
+        <TaskStatusIcon
+          status={email.status}
+          className="mention-hover-card__icon"
+        />
+        <span>{statusLabel}</span>
+      </MentionHoverStatusRow>
+      <MentionHoverFooterRow>
+        <MentionHoverInline>
+          <TaskPriorityIcon priority={email.priority} size={14} />
+          <span>{priorityLabel}</span>
+        </MentionHoverInline>
         <span>{dueLabel ? `Due ${dueLabel}` : "No due date"}</span>
       </MentionHoverFooterRow>
     </MentionHoverPanel>
@@ -348,6 +405,13 @@ export function DocumentMentionHoverCard({
         return <MentionHoverDeletedPanel parsed={parsed} />;
       }
       return <LetterMentionHoverDetails letter={letter} />;
+    }
+    case "email": {
+      const email = resolveMentionCatalogEmail(parsed, catalog);
+      if (!email) {
+        return <MentionHoverDeletedPanel parsed={parsed} />;
+      }
+      return <EmailMentionHoverDetails email={email} />;
     }
     case "project": {
       const project = resolveMentionCatalogProject(parsed, catalog);

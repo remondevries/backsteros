@@ -53,6 +53,7 @@ const PHONE_PRIMARY_ROUTES = ["inbox", "journal", "tasks"] as const;
  */
 const IPAD_PRIMARY_ROUTES = [
   "inbox",
+  "email",
   "journal",
   "tasks",
   "areas",
@@ -363,6 +364,8 @@ export function FloatingTabBar({
     const go = (name: string) => {
       router.navigate(`/${name}` as Href);
     };
+    // No phone Email entry — email lives in Inbox there (desktop parity);
+    // the iPad tray shows Email as a primary route.
     const overflow: MoreMenuItem[] = [];
     if (!PRIMARY_ROUTES.has("areas")) {
       overflow.push({

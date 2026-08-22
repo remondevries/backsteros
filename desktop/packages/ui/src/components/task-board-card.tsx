@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode, type SyntheticEvent } from "react";
+import { memo, useMemo, type ReactNode, type SyntheticEvent } from "react";
 
 import { getTaskDisplayId } from "../task-display-id.js";
 import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
@@ -12,9 +12,11 @@ import {
   type TaskStatus,
 } from "../task-status.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
-import { SearchableDropdown } from "./searchable-dropdown.js";
+import { AssigneeListMark } from "./assignee-list-mark.js";
+import { DeferredSearchableDropdown } from "./deferred-searchable-dropdown.js";
+import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
+import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 import { ShimmerText } from "./shimmer-text.js";
-import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
@@ -29,6 +31,10 @@ export type TaskBoardCardTask = {
   projectKey?: string | null;
   ownerInitials?: string | null;
   assigneeId?: string | null;
+  listKind?: "task" | "email";
+  emailPartyLabel?: string | null;
+  emailMailboxLabel?: string | null;
+  emailMailboxAvatarSrc?: string | null;
 };
 
 export type TaskBoardCardProps = {
@@ -58,7 +64,7 @@ function OwnerPlaceholder({ initials }: { initials?: string | null }) {
   );
 }
 
-export function TaskBoardCard({
+export function TaskBoardCardComponent({
   task,
   onOpen,
   onStatusChange,
@@ -78,6 +84,7 @@ export function TaskBoardCard({
     task.projectKey,
   );
   const status = migrateLegacyTaskStatus(task.status);
+  const isEmail = task.listKind === "email";
 
   const statusOptions = useMemo(
     () =>
@@ -114,7 +121,20 @@ export function TaskBoardCard({
     >
       <span className="task-kanban-card-top">
         <span className="task-kanban-card-id" title={displayId ?? undefined}>
-          {displayId ?? "Task"}
+          {isEmail ? (
+            <span className="task-item-row__mailbox">
+              <AssigneeListMark
+                label={task.emailMailboxLabel?.trim() || "Mailbox"}
+                avatarSrc={task.emailMailboxAvatarSrc}
+                size={14}
+              />
+              <span className="task-item-row__mailbox-name">
+                {task.emailMailboxLabel?.trim() || "Email"}
+              </span>
+            </span>
+          ) : (
+            displayId ?? "Task"
+          )}
         </span>
         {ownerSlot ??
           (assigneeOptions.length > 0 && onAssigneeChange ? (
@@ -122,7 +142,7 @@ export function TaskBoardCard({
               onMouseDown={stopFieldEvent}
               onClick={stopFieldEvent}
             >
-              <SearchableDropdown
+              <DeferredSearchableDropdown
                 value={task.assigneeId ?? "__none__"}
                 options={assigneeOptions}
                 onChange={(next) =>
@@ -174,7 +194,7 @@ export function TaskBoardCard({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={status}
             options={statusOptions}
             onChange={onStatusChange}
@@ -211,6 +231,15 @@ export function TaskBoardCard({
           />
         </span>
         <span className="task-kanban-card-title-wrap">
+          {isEmail ? (
+            <span
+              className="task-item-row__email-mark"
+              title="Email"
+              aria-label="Email"
+            >
+              <InboxItemTypeIcon kind="email" size={12} />
+            </span>
+          ) : null}
           <span className="task-kanban-card-title" title={task.title}>
             {agentWorking ? (
               <ShimmerText>{task.title}</ShimmerText>
@@ -218,6 +247,11 @@ export function TaskBoardCard({
               task.title
             )}
           </span>
+          {isEmail && task.emailPartyLabel ? (
+            <span className="task-item-row__email-party">
+              {task.emailPartyLabel}
+            </span>
+          ) : null}
           {titleTrailing ? (
             <span className="task-kanban-card-title-trailing">
               {titleTrailing}
@@ -231,7 +265,7 @@ export function TaskBoardCard({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <SearchableDropdown
+          <DeferredSearchableDropdown
             value={String(task.priority)}
             options={priorityOptions}
             onChange={(next) => onPriorityChange?.(Number(next))}
@@ -268,7 +302,7 @@ export function TaskBoardCard({
           onMouseDown={stopFieldEvent}
           onClick={stopFieldEvent}
         >
-          <TaskDueDateDropdown
+          <DeferredTaskDueDateDropdown
             dueDate={task.dueDate}
             status={task.status}
             variant="list"
@@ -279,3 +313,5 @@ export function TaskBoardCard({
     </div>
   );
 }
+
+export const TaskBoardCard = memo(TaskBoardCardComponent);

@@ -82,6 +82,7 @@ export function toTask(row: DbTask): Task {
     priority: row.priority,
     sortOrder: row.sortOrder,
     dueDate: toIso(row.dueDate),
+    dueEndDate: toIso(row.dueEndDate),
     triagedAt: toIso(row.triagedAt),
     inbox: row.inbox,
     links: row.links ?? [],

@@ -38,6 +38,7 @@ import {
 import {
   resolveMentionCatalogContact,
   resolveMentionCatalogDocument,
+  resolveMentionCatalogEmail,
   resolveMentionCatalogLetter,
   resolveMentionCatalogOrganization,
   resolveMentionCatalogProject,
@@ -59,9 +60,12 @@ import {
 } from "../task-due-date.js";
 import { useContentPreviewLinkNavigation } from "../use-content-preview-link-navigation.js";
 import { DocumentMentionHoverCard } from "./document-mention-hover-card.js";
+import { EmailMentionBlockChip } from "./email-mention-block-chip.js";
 import { LetterIcon } from "./letter-icon.js";
+import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { MentionChipHoverShell } from "./mention-chip-hover-shell.js";
 import { MentionLeadingIcon } from "./mention-leading-icon.js";
+import { TaskMentionBlockChip } from "./task-mention-block-chip.js";
 import {
   getDisplayProjectIcon,
   ProjectOcticon,
@@ -429,6 +433,13 @@ function resolvePreviewChipLabel(
       }
       return { label: letter.title || letter.displayId, deleted: false };
     }
+    case "email": {
+      const email = resolveMentionCatalogEmail(token, catalog);
+      if (!email) {
+        return { label: mentionTokenLabel(token), deleted: true };
+      }
+      return { label: email.title || email.displayId, deleted: false };
+    }
     case "project": {
       const project = resolveMentionCatalogProject(token, catalog);
       if (!project) {
@@ -483,6 +494,16 @@ function resolvePreviewChipIconProps(
         documentIcon: null,
         contact: null,
       };
+    case "email": {
+      const email = resolveMentionCatalogEmail(token, catalog);
+      return {
+        kind: "email" as const,
+        status: email?.status ?? null,
+        projectIcon: null,
+        documentIcon: null,
+        contact: null,
+      };
+    }
     case "project": {
       const project = resolveMentionCatalogProject(token, catalog);
       return {
@@ -657,6 +678,61 @@ function renderMentionChipBody(
     );
   }
 
+  if (token.kind === "email") {
+    const email = resolveMentionCatalogEmail(token, catalog);
+    if (!email) {
+      return (
+        <>
+          <span className="mention-chip-lite__icon" aria-hidden="true">
+            <EmailNavIcon size={14} />
+          </span>
+          <span className="mention-chip-lite__label">{label}</span>
+        </>
+      );
+    }
+
+    const dueDateLabel =
+      email.dueDate != null ? formatTaskDueMetaLabel(email.dueDate) : null;
+
+    return (
+      <>
+        <TaskPriorityIcon
+          priority={email.priority}
+          size={14}
+          className="mention-chip-lite__meta-icon"
+        />
+        <span className="mention-chip-lite__icon" aria-hidden="true">
+          <EmailNavIcon size={14} />
+        </span>
+        <span className="mention-chip-lite__id">{email.displayId}</span>
+        <span className="mention-chip-lite__label mention-chip-lite__label--grow">
+          {email.title || email.displayId}
+        </span>
+        {dueDateLabel ? (
+          <span className="mention-chip-lite__due">
+            <TaskDueDateIcon
+              active
+              urgency={getTaskDueDateUrgency(email.dueDate, new Date(), {
+                status: email.status,
+              })}
+              size={12}
+            />
+            <span>{dueDateLabel}</span>
+          </span>
+        ) : null}
+        {email.projectName ? (
+          <span className="mention-chip-lite__project">
+            <span>{email.projectName}</span>
+          </span>
+        ) : email.contactName ? (
+          <span className="mention-chip-lite__project">
+            <span>{email.contactName}</span>
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
   if (token.kind === "project") {
     const project = resolveMentionCatalogProject(token, catalog);
     if (!project) {
@@ -722,7 +798,8 @@ function MentionChipLite({
   const chipLayout =
     token.kind === "task" ||
     token.kind === "project" ||
-    token.kind === "letter"
+    token.kind === "letter" ||
+    token.kind === "email"
       ? layout
       : "inline";
   const trailSourceHref = useMentionNavigationPathname();
@@ -731,6 +808,63 @@ function MentionChipLite({
     : (trailSourceHref
         ? resolveMentionTrailHref(token, catalog, trailSourceHref)
         : null) ?? resolveMentionHref(token, catalog);
+
+  // Shared block task card (documents @ mentions + email agent creates).
+  if (
+    !deleted &&
+    chipLayout === "block" &&
+    token.kind === "task" &&
+    href
+  ) {
+    const task = resolveMentionCatalogTask(token, catalog);
+    if (task) {
+      const trigger = (
+        <TaskMentionBlockChip
+          task={task}
+          href={href}
+          titleAttr={token.raw}
+        />
+      );
+      return (
+        <MentionChipHoverShell
+          trigger={trigger}
+          layout="block"
+          asChild
+          hoverContent={
+            <DocumentMentionHoverCard parsed={token} catalog={catalog} />
+          }
+        />
+      );
+    }
+  }
+
+  if (
+    !deleted &&
+    chipLayout === "block" &&
+    token.kind === "email" &&
+    href
+  ) {
+    const email = resolveMentionCatalogEmail(token, catalog);
+    if (email) {
+      const trigger = (
+        <EmailMentionBlockChip
+          email={email}
+          href={href}
+          titleAttr={token.raw}
+        />
+      );
+      return (
+        <MentionChipHoverShell
+          trigger={trigger}
+          layout="block"
+          asChild
+          hoverContent={
+            <DocumentMentionHoverCard parsed={token} catalog={catalog} />
+          }
+        />
+      );
+    }
+  }
 
   const chipClassName = [
     "mention-chip-lite",

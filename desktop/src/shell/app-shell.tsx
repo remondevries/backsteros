@@ -21,17 +21,19 @@ import {
   CommandPaletteView,
   ComposeModal,
   ContactsSidePanelView,
+  CalendarTasksSidePanelView,
   EntityHeaderActionsShell,
   FinanceSidePanelNavView,
   HistoryEntryIcon,
   HabitSidePanelView,
   InboxSidePanelView,
-  EmailSidePanelView,
   JournalSidePanelView,
   KnowledgeSidePanelView,
   LettersSidePanelView,
   ListKeyboardNavigationProvider,
   MentionCatalogProvider,
+  EMPTY_MENTION_CATALOG,
+  mergeMentionCatalogs,
   OrganizationsSidePanelView,
   ProductAppShell,
   ProductSidebar,
@@ -89,6 +91,16 @@ import {
   isFinanceSectionPath,
   isFinanceAccountPath,
   isInboxPath,
+  isInboxPanelPath,
+  isCalendarListPath,
+  defaultNewMeetingTimes,
+  getCalendarMeetingOverlayHref,
+  unscheduledCalendarTasks,
+  buildInboxEmailListItem,
+  emailBelongsInInbox,
+  parseEmailMessagePath,
+  sortInboxItemsByAttentionStatus,
+  type InboxListItem,
   isJournalHabitsPath,
   isJournalSectionPath,
   isValidJournalDateSlug,
@@ -154,7 +166,14 @@ import type { BankAccount } from "@backsteros/contracts";
 import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
-import { useAgentMailMailboxes } from "../lib/use-agentmail-mailboxes";
+import { useAgentMail } from "../lib/agentmail-context";
+import { buildMailboxByIdMap } from "../lib/email-list-tasks";
+import { prefetchEmailMessageDetail } from "../lib/email-message-detail-cache";
+import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
+import {
+  buildDocumentLinkOptions,
+  buildEmailLinkOptions,
+} from "../lib/task-link-picker-options";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -181,7 +200,7 @@ import {
   useJournalSelection,
 } from "../lib/journal-selection-context";
 import { useDesktopResource } from "../lib/use-desktop-resource";
-import { buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
+import { buildMentionCatalogFromEmailMessages, buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
@@ -284,9 +303,17 @@ function DesktopInboxSidePanel({
     () => new Set(),
   );
   const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
-    : null;
+  const emailPath = parseEmailMessagePath(pathname);
+  const selectedId = emailPath
+    ? (items.find(
+        (entry) =>
+          entry.kind === "email" &&
+          entry.inboxId === emailPath.inboxId &&
+          entry.messageId === emailPath.messageId,
+      )?.id ?? null)
+    : selectedSlug
+      ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
+      : null;
   const itemIds = useMemo(() => {
     if (groupByAttentionStatus) {
       return getInboxAttentionKeyboardItemIds(items, collapsedGroups);
@@ -307,6 +334,15 @@ function DesktopInboxSidePanel({
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
   );
+
+  const { client } = useDesktopApi();
+  useEffect(() => {
+    const item = items.find((entry) => entry.id === highlightedId);
+    if (item?.kind === "email") {
+      prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
+    }
+  }, [client, highlightedId, items]);
+
   return (
     <InboxSidePanelView
       {...viewProps}
@@ -322,6 +358,33 @@ function DesktopInboxSidePanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
+    />
+  );
+}
+
+function DesktopCalendarTasksSidePanel({
+  meetings,
+  tasks,
+  loading,
+  onCreateMeeting,
+  onMeetingOpen,
+  onTaskOpen,
+}: {
+  meetings: ReturnType<typeof useDesktopWorkspaceData>["meetings"];
+  tasks: ReturnType<typeof unscheduledCalendarTasks>;
+  loading?: boolean;
+  onCreateMeeting: () => void;
+  onMeetingOpen: (meetingId: string) => void;
+  onTaskOpen: (taskId: string) => void;
+}) {
+  return (
+    <CalendarTasksSidePanelView
+      meetings={meetings}
+      tasks={tasks}
+      loading={loading}
+      onCreateMeeting={onCreateMeeting}
+      onMeetingOpen={onMeetingOpen}
+      onTaskOpen={onTaskOpen}
     />
   );
 }
@@ -1584,21 +1647,6 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     ],
   );
 
-  const mentionCatalog = useMemo(
-    () => buildMentionCatalogFromWorkspace(workspace),
-    [
-      workspace.allTasks,
-      workspace.contacts,
-      workspace.inboxItems,
-      workspace.knowledgeDocuments,
-      workspace.letters,
-      workspace.organizations,
-      workspace.projectDocuments,
-      workspace.projectSummaries,
-      workspace.projects,
-    ],
-  );
-
   // Keep the active tab's task id/status so product tabs show status icons
   // (and working pulse) instead of the generic tasks glyph. Inbox stays on
   // the section glyph, so clear any leftover task meta there.
@@ -1757,8 +1805,149 @@ function AppShellInner({ children }: { children?: ReactNode }) {
 
   const pathname = location.pathname;
   const navigationTrail = parseNavigationTrailPath(pathname);
-  const panelPathname = navigationTrail?.sourceHref ?? pathname;
-  const agentMail = useAgentMailMailboxes(isEmailPath(panelPathname));
+  const panelHref = navigationTrail?.sourceHref ?? pathname;
+  const panelUrl = new URL(panelHref, "http://local.invalid");
+  const panelPathname = panelUrl.pathname;
+  const panelSearch =
+    panelUrl.search ||
+    (panelPathname === pathname ? location.search : "");
+  const agentMail = useAgentMail();
+
+  const inboxItemsWithEmail = useMemo(() => {
+    const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const emailItems: InboxListItem[] = agentMail.messages
+      .filter((item) =>
+        emailBelongsInInbox({
+          status: item.status,
+          dueDate: item.dueDate,
+        }),
+      )
+      .map((item) => {
+        const mailbox = mailboxById.get(item.inboxId) ?? null;
+        return buildInboxEmailListItem({
+        inboxId: item.inboxId,
+        messageId: item.id,
+        threadId: item.threadId,
+        title: item.subject,
+        from: item.from,
+        status: item.status,
+        priority: item.priority,
+        dueDate: item.dueDate,
+        updatedAt: item.receivedAt,
+        assigneeId: item.assigneeId,
+        projectId: item.projectId,
+        projectKey: item.projectKey,
+        projectName: item.projectName,
+        organizationId: item.organizationId,
+        organizationName: item.organizationName,
+        contactId: item.contactId,
+        contactName: item.contactName,
+        emailThreadId: item.emailThreadId,
+        number: item.number,
+        displayId: item.displayId,
+        mailboxLabel: mailbox
+          ? mailbox.contactName?.trim() ||
+            mailbox.displayName?.trim() ||
+            mailbox.email ||
+            mailbox.inboxId
+          : null,
+        mailboxAvatarSrc: mailbox?.contactId
+          ? contactAvatarSrc[mailbox.contactId] ?? null
+          : null,
+        });
+      });
+    return sortInboxItemsByAttentionStatus([
+      ...workspace.inboxItems,
+      ...emailItems,
+    ]);
+  }, [
+    agentMail.mailboxes,
+    agentMail.messages,
+    contactAvatarSrc,
+    workspace.inboxItems,
+  ]);
+
+  const mentionCatalog = useMemo(() => {
+    const base = buildMentionCatalogFromWorkspace(workspace);
+    const emails = buildMentionCatalogFromEmailMessages(agentMail.messages);
+    if (emails.length === 0) {
+      return base;
+    }
+    return mergeMentionCatalogs(base, {
+      ...EMPTY_MENTION_CATALOG,
+      emails,
+    });
+  }, [
+    agentMail.messages,
+    workspace.allTasks,
+    workspace.contacts,
+    workspace.inboxItems,
+    workspace.knowledgeDocuments,
+    workspace.letters,
+    workspace.organizations,
+    workspace.projectDocuments,
+    workspace.projectSummaries,
+    workspace.projects,
+  ]);
+
+  const patchEmailThreadFromInbox = useCallback(
+    async (
+      itemId: string,
+      patch: {
+        status?: string;
+        priority?: number;
+        dueDate?: string | null;
+        projectId?: string | null;
+        assigneeId?: string | null;
+      },
+      listExtras?: {
+        projectName?: string | null;
+        projectKey?: string | null;
+        assigneeName?: string | null;
+      },
+    ) => {
+      const item = inboxItemsWithEmail.find(
+        (entry) => entry.id === itemId && entry.kind === "email",
+      );
+      if (!item || item.kind !== "email") return;
+      const threadKey = item.threadId?.trim() || item.messageId;
+      try {
+        await client.requestJson(
+          `/api/v1/email/inboxes/${encodeURIComponent(item.inboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          },
+        );
+        dispatchEmailListPatch({
+          inboxId: item.inboxId,
+          messageId: item.messageId,
+          threadId: item.threadId ?? null,
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+          ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+          ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+          ...(patch.projectId !== undefined
+            ? { projectId: patch.projectId }
+            : {}),
+          ...(patch.assigneeId !== undefined
+            ? { assigneeId: patch.assigneeId }
+            : {}),
+          ...(listExtras?.projectName !== undefined
+            ? { projectName: listExtras.projectName }
+            : {}),
+          ...(listExtras?.projectKey !== undefined
+            ? { projectKey: listExtras.projectKey }
+            : {}),
+          ...(listExtras?.assigneeName !== undefined
+            ? { assigneeName: listExtras.assigneeName }
+            : {}),
+        });
+      } catch (error) {
+        console.warn("[inbox] email metadata patch failed:", error);
+      }
+    },
+    [client, inboxItemsWithEmail],
+  );
 
   const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
   const projectRouteScope = getProjectRouteScopeFromPathname(panelPathname);
@@ -1774,7 +1963,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   // side panel so we don't stack two document trees.
   const showSidePanel =
     !settingsPage &&
-    shouldShowContentSidePanel(panelPathname) &&
+    shouldShowContentSidePanel(panelPathname, panelSearch) &&
     !(
       activeProject?.type === "codebase" &&
       isProjectDocumentsSectionPath(panelPathname)
@@ -1827,19 +2016,52 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     );
   }, [activeProject, workspace.letters]);
 
+  const inboxProjectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        workspace.projects.map((project) => ({
+          key: project.key,
+          name: project.name,
+          icon: project.icon,
+          type: project.type,
+        })),
+        { includeNone: true },
+      ),
+    [workspace.projects],
+  );
+
+  const inboxAssigneeOptions = useMemo(
+    () => buildAssigneeDropdownOptions(composeContacts),
+    [composeContacts],
+  );
+
+  const allTasksById = useMemo(() => {
+    const map = new Map<string, (typeof workspace.allTasks)[number]>();
+    for (const task of workspace.allTasks) {
+      map.set(task.id, task);
+    }
+    return map;
+  }, [workspace.allTasks]);
+
+  const calendarSidePanelTasks = useMemo(
+    () => unscheduledCalendarTasks(workspace.tasks),
+    [workspace.tasks],
+  );
+
   let sidePanelBody: ReactNode = null;
   if (showSidePanel) {
-    if (isInboxPath(panelPathname)) {
+    if (isInboxPanelPath(panelPathname, panelSearch)) {
       sidePanelBody = (
         <DesktopInboxSidePanel
           onNavigate={navigateTo}
           pathname={panelPathname}
-          items={workspace.inboxItems}
-          loading={!workspace.ready}
+          items={inboxItemsWithEmail}
+          loading={!workspace.ready && agentMail.loading}
           Link={RouterLink}
           onCreateTask={(title) => workspace.createInboxTask({ title })}
+          onComposeEmail={() => navigateTo(getEmailComposeHref({ inboxList: true }))}
           onCreatedTask={(taskId) => {
-            const item = workspace.inboxItems.find(
+            const item = inboxItemsWithEmail.find(
               (entry) => entry.id === taskId && entry.kind === "task",
             );
             const taskTitle =
@@ -1854,71 +2076,98 @@ function AppShellInner({ children }: { children?: ReactNode }) {
             if (taskTitle) primeTabTitle(href, taskTitle);
             navigate(href);
           }}
-          projectOptions={buildProjectDropdownOptions(
-            workspace.projects.map((project) => ({
-              key: project.key,
-              name: project.name,
-              icon: project.icon,
-              type: project.type,
-            })),
-            {
-              includeNone: true,
-            },
-          )}
-          assigneeOptions={buildAssigneeDropdownOptions(composeContacts)}
-          onPriorityChange={(taskId, priority) => {
-            void workspace.patchTask(taskId, { priority });
+          projectOptions={inboxProjectOptions}
+          assigneeOptions={inboxAssigneeOptions}
+          onPriorityChange={(itemId, priority) => {
+            const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "email") {
+              void patchEmailThreadFromInbox(itemId, { priority });
+              return;
+            }
+            void workspace.patchTask(itemId, { priority });
           }}
-          onDueDateChange={(taskId, dueDate) => {
-            void workspace.patchTask(taskId, {
+          onDueDateChange={(itemId, dueDate) => {
+            const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "email") {
+              void patchEmailThreadFromInbox(itemId, {
+                dueDate: dueDate ? dueDate.toISOString() : null,
+              });
+              return;
+            }
+            void workspace.patchTask(itemId, {
               dueDate: dueDate ? dueDate.toISOString() : null,
             });
           }}
-          onProjectChange={(taskId, projectKey) => {
+          onProjectChange={(itemId, projectKey) => {
+            const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
             const project = projectKey
               ? workspace.projects.find((entry) => entry.key === projectKey) ??
                 null
               : null;
-            void workspace.patchTask(taskId, {
+            if (item?.kind === "email") {
+              void patchEmailThreadFromInbox(
+                itemId,
+                { projectId: project?.id ?? null },
+                {
+                  projectName: project?.name ?? null,
+                  projectKey: project?.key ?? null,
+                },
+              );
+              return;
+            }
+            void workspace.patchTask(itemId, {
               projectId: project?.id ?? null,
               inbox: !project,
               ...(project ? {} : { status: "triage" }),
             });
           }}
-          onAssigneeChange={(taskId, assigneeId) => {
-            void workspace.patchTask(taskId, { assigneeId });
+          onAssigneeChange={(itemId, assigneeId) => {
+            const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "email") {
+              const assignee = assigneeId
+                ? workspace.contacts.find((entry) => entry.id === assigneeId) ??
+                  null
+                : null;
+              void patchEmailThreadFromInbox(
+                itemId,
+                { assigneeId },
+                { assigneeName: assignee?.name ?? null },
+              );
+              return;
+            }
+            void workspace.patchTask(itemId, { assigneeId });
           }}
           groupByAttentionStatus
           renderTitleTrailing={(item) => {
             if (item.kind !== "task") return null;
+            const task = allTasksById.get(item.id);
             return renderTaskAgentTitleTrailing({
               taskId: item.id,
-              agentChatId: workspace.allTasks.find((task) => task.id === item.id)
-                ?.agentChatId,
-              taskStatus: workspace.allTasks.find((task) => task.id === item.id)
-                ?.status,
+              agentChatId: task?.agentChatId,
+              taskStatus: task?.status,
               agentStatus,
             });
           }}
         />
       );
-    } else if (isEmailPath(panelPathname)) {
-      const emailItems = agentMail.messages.map((item) => ({
-        ...item,
-        contactAvatarSrc: item.contactId
-          ? (contactAvatarSrc[item.contactId] ?? null)
-          : null,
-      }));
+    } else if (isCalendarListPath(panelPathname)) {
       sidePanelBody = (
-        <EmailSidePanelView
-          pathname={panelPathname}
-          mailboxes={agentMail.mailboxes}
-          items={emailItems}
-          loading={agentMail.loading}
-          messagesLoading={agentMail.messagesLoading}
-          apiKeyConfigured={agentMail.apiKeyConfigured}
-          Link={RouterLink}
-          onCompose={() => navigateTo(getEmailComposeHref())}
+        <DesktopCalendarTasksSidePanel
+          meetings={workspace.meetings}
+          tasks={calendarSidePanelTasks}
+          loading={!workspace.ready}
+          onCreateMeeting={() => {
+            const { startAt, endAt } = defaultNewMeetingTimes();
+            void workspace
+              .createMeeting({ title: "New meeting", startAt, endAt })
+              .then((created) => {
+                navigateTo(getCalendarMeetingOverlayHref(created.id));
+              });
+          }}
+          onMeetingOpen={(meetingId) =>
+            navigateTo(getCalendarMeetingOverlayHref(meetingId))
+          }
+          onTaskOpen={(taskId) => navigateTo(`/calendar/tasks/${taskId}`)}
         />
       );
     } else if (isJournalHabitsPath(panelPathname)) {
@@ -2359,6 +2608,8 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         documentFoldersByTarget={documentFoldersByTarget}
         projectsHref="/projects"
         onNavigate={(href) => navigate(href)}
+        documentLinkOptions={buildDocumentLinkOptions(workspace.documents)}
+        emailLinkOptions={buildEmailLinkOptions(agentMail.messages)}
         onCreateTask={async (input) => {
           if (input.projectId) {
             const project = workspace.projects.find(

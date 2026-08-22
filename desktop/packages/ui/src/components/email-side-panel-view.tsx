@@ -59,6 +59,19 @@ function emailFromDisplayName(from: string): string {
   return parseReplyToAddress(trimmed) || trimmed;
 }
 
+function formatEmailListRelativeTime(receivedAt: number): string {
+  if (!Number.isFinite(receivedAt) || receivedAt <= 0) return "";
+  const deltaSec = Math.round((Date.now() - receivedAt) / 1000);
+  if (deltaSec < 45) return "just now";
+  if (deltaSec < 3600) return `${Math.max(1, Math.round(deltaSec / 60))}m`;
+  if (deltaSec < 86_400) return `${Math.round(deltaSec / 3600)}h`;
+  if (deltaSec < 86_400 * 7) return `${Math.round(deltaSec / 86_400)}d`;
+  return new Date(receivedAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function EmailMessageRow({
   item,
   selected,
@@ -70,6 +83,7 @@ function EmailMessageRow({
 }) {
   const status = resolveEmailListItemStatus(item);
   const priority = item.priority ?? 0;
+  const relativeTime = formatEmailListRelativeTime(item.receivedAt);
   const dueDate =
     item.dueDate == null
       ? null
@@ -87,6 +101,7 @@ function EmailMessageRow({
     ? formatEmailPersonWithAddress(contactName, item.from)
     : fromLabel;
   const hasLinkedContact = Boolean(item.contactId && contactName);
+  const hasTitleStack = Boolean(projectLabel || organizationLabel);
 
   let personChip: ReactNode = null;
   if (hasLinkedContact) {
@@ -130,15 +145,32 @@ function EmailMessageRow({
         />
         <div
           className={`app-side-panel-item-row-primary inbox-list-item-card-layer${
-            organizationLabel ? " email-side-panel-primary--with-org" : ""
+            hasTitleStack ? " email-side-panel-primary--with-stack" : ""
           }`}
         >
-          <TaskStatusIcon status={status} size={14} />
+          <span className="email-side-panel-status-slot">
+            {hasTitleStack ? (
+              <span
+                className="email-side-panel-status-spacer"
+                data-lines={String(
+                  (projectLabel ? 1 : 0) + (organizationLabel ? 1 : 0),
+                )}
+                aria-hidden="true"
+              />
+            ) : null}
+            <TaskStatusIcon status={status} size={14} />
+          </span>
           <span
             className={`inbox-list-item-title-wrap${
-              organizationLabel ? " email-side-panel-title-stack" : ""
+              hasTitleStack ? " email-side-panel-title-stack" : ""
             }`}
           >
+            {projectLabel ? (
+              <span className="email-side-panel-project-label">
+                <ProjectOcticon icon={null} size={11} />
+                <span className="inbox-list-item-truncate">{projectLabel}</span>
+              </span>
+            ) : null}
             {organizationLabel ? (
               <span className="email-side-panel-org-label">
                 {organizationLabel}
@@ -156,15 +188,14 @@ function EmailMessageRow({
           </span>
         </div>
         <div className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox inbox-list-item-card-layer">
+          {relativeTime ? (
+            <span className="email-side-panel-received-at" title={relativeTime}>
+              {relativeTime}
+            </span>
+          ) : null}
           <TaskListPriorityLabel priority={priority} />
           {hasDue ? (
             <TaskListDueDateLabel dueDate={dueDate!} status={status} />
-          ) : null}
-          {projectLabel ? (
-            <span className="inbox-list-item-meta-label">
-              <ProjectOcticon icon={null} size={12} />
-              <span className="inbox-list-item-truncate">{projectLabel}</span>
-            </span>
           ) : null}
           <Tooltip label={personLabel}>
             <span
@@ -194,10 +225,7 @@ export function EmailSidePanelView({
   composeHref = getEmailComposeHref(),
   onCompose,
 }: EmailSidePanelViewProps) {
-  const groups = useMemo(
-    () => groupEmailItemsByStatus(items, { includeEmpty: true }),
-    [items],
-  );
+  const groups = useMemo(() => groupEmailItemsByStatus(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
   function toggleGroup(status: string) {

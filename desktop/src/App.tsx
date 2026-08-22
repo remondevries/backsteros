@@ -38,6 +38,8 @@ import { ProjectsPage } from "./screens/projects-page";
 import { SettingsPage } from "./screens/settings-page";
 import { SsoCallbackPage } from "./screens/sso-callback-page";
 import { OauthPopupDonePage } from "./screens/oauth-popup-done-page";
+import { CalendarPage } from "./screens/calendar-page";
+import { MeetingDetailPage } from "./screens/meeting-detail-page";
 import { TaskDetailPage } from "./screens/task-detail-page";
 import { TaskListPage } from "./screens/task-list-page";
 
@@ -125,6 +127,21 @@ function OrgScopedContactsPage() {
       organizationName={organization.name}
     />
   );
+}
+
+function CalendarScopedTaskDetailPage() {
+  const { taskId } = useParams<{ taskId: string }>();
+  return (
+    <TaskDetailPage
+      taskRouteParam={taskId}
+      backHref="/calendar"
+      breadcrumbItems={[{ label: "Calendar", href: "/calendar" }]}
+    />
+  );
+}
+
+function CalendarScopedMeetingDetailPage() {
+  return <MeetingDetailPage />;
 }
 
 function ProjectScopedTaskDetailPage() {
@@ -371,7 +388,7 @@ export default function App() {
         <Route index element={<StartupRedirect />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="inbox/:itemId" element={<InboxPage />} />
-        <Route path="email" element={<EmailPage />} />
+        <Route path="email" element={<Navigate to="/inbox" replace />} />
         <Route path="email/compose" element={<EmailPage />} />
         <Route
           path="email/:inboxId/drafts/:draftId"
@@ -388,6 +405,15 @@ export default function App() {
           element={<TaskDetailPage />}
         />
         <Route path="tasks/:taskId" element={<TaskDetailPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
+        <Route
+          path="calendar/tasks/:taskId"
+          element={<CalendarScopedTaskDetailPage />}
+        />
+        <Route
+          path="calendar/meetings/:meetingId"
+          element={<CalendarScopedMeetingDetailPage />}
+        />
         <Route path="areas" element={<AreasPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="development" element={<DevelopmentPage />} />

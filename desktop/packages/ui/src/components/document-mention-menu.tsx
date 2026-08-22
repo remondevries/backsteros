@@ -93,6 +93,8 @@ function primaryLabel(item: MentionItem): string {
       return item.title;
     case "letter":
       return item.title;
+    case "email":
+      return item.title;
     case "project":
       return item.name;
     case "contact":
@@ -110,6 +112,8 @@ function secondaryLabel(item: MentionItem): string | null {
       return item.projectName;
     case "letter":
       return item.projectName;
+    case "email":
+      return item.projectName;
     case "project":
       return null;
     case "contact":
@@ -122,7 +126,7 @@ function secondaryLabel(item: MentionItem): string | null {
 }
 
 function trailingHint(item: MentionItem): string | null {
-  if (item.kind === "task" || item.kind === "letter") {
+  if (item.kind === "task" || item.kind === "letter" || item.kind === "email") {
     return item.displayId;
   }
   if (
@@ -407,7 +411,11 @@ export function DocumentMentionMenu({
                   >
                     <MentionLeadingIcon
                       kind={item.kind}
-                      status={item.kind === "task" ? item.status : null}
+                      status={
+                        item.kind === "task" || item.kind === "email"
+                          ? item.status
+                          : null
+                      }
                       projectIcon={
                         item.kind === "project" ? item.icon : null
                       }

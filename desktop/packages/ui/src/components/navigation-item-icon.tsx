@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import type { NavigationItemIconId } from "../navigation.js";
 import {
   AreasNavIcon,
+  CalendarNavIcon,
   ContactsNavIcon,
   DevelopmentNavIcon,
   EmailNavIcon,
@@ -28,6 +29,7 @@ export const NAVIGATION_ITEM_ICONS: Record<
   habits: HabitsNavIcon,
   knowledge: KnowledgeBaseNavIcon,
   tasks: TasksNavIcon,
+  calendar: CalendarNavIcon,
   areas: AreasNavIcon,
   projects: ProjectsNavIcon,
   development: DevelopmentNavIcon,

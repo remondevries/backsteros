@@ -46,6 +46,11 @@ export function filterCatalogForTokens(
       .filter((token) => token.kind === "letter")
       .map((token) => token.displayId.toLowerCase()),
   );
+  const emailIds = new Set(
+    tokens
+      .filter((token) => token.kind === "email")
+      .map((token) => token.displayId.toLowerCase()),
+  );
 
   return {
     tasks: catalog.tasks.filter((task) =>
@@ -67,6 +72,9 @@ export function filterCatalogForTokens(
     ),
     letters: catalog.letters.filter((letter) =>
       letterIds.has(letter.displayId.toLowerCase()),
+    ),
+    emails: catalog.emails.filter((email) =>
+      emailIds.has(email.displayId.toLowerCase()),
     ),
   };
 }

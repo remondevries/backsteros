@@ -623,10 +623,23 @@
   min-width: 0;
 }
 
+.sidebar-cursor-credits-label-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
 .sidebar-cursor-credits-label {
   font-weight: 550;
   letter-spacing: 0.01em;
   color: color-mix(in oklab, var(--foreground) 58%, transparent);
+}
+
+.sidebar-cursor-credits-reset {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--foreground) 48%, transparent);
 }
 
 .sidebar-cursor-credits-value {
@@ -1067,6 +1080,51 @@
 .entity-header-action-menu-item-danger:disabled {
   cursor: default;
   opacity: 0.45;
+}
+
+.entity-header-action-menu-item-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.entity-header-action-menu-item-icon svg {
+  display: block;
+}
+
+.email-message-info-modal {
+  max-width: 30rem;
+}
+
+.email-message-info {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+}
+
+.email-message-info__row {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.email-message-info__row dt {
+  margin: 0;
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.email-message-info__row dd {
+  margin: 0;
+  font-size: 0.85rem;
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  overflow-wrap: anywhere;
 }
 
 .finance-categories-menu {
@@ -2093,6 +2151,8 @@ body.is-resizing {
 
 .inbox-list-item-card {
   position: relative;
+  container-type: inline-size;
+  container-name: inbox-list-card;
 }
 
 .inbox-list-item-hit-area {
@@ -2352,6 +2412,33 @@ body[data-keyboard-nav-hover="suppressed"]
   gap: 6px;
 }
 
+.inbox-list-item-email-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.inbox-list-item-email-party {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Inbox side panel is often ~244px — hide party so the subject keeps the row. */
+@container inbox-list-card (max-width: 280px) {
+  .inbox-list-item-email-party {
+    display: none;
+  }
+}
+
 .inbox-list-item-title {
   min-width: 0;
   flex: 0 1 auto;
@@ -2487,7 +2574,7 @@ body[data-keyboard-nav-hover="suppressed"]
 }
 
 .email-side-panel-concept-label {
-  color: var(--accent-color, #6b8afd);
+  color: rgb(196 160 70);
   font-weight: 600;
 }
 
@@ -2497,12 +2584,39 @@ body[data-keyboard-nav-hover="suppressed"]
   gap: 1px;
 }
 
-.email-side-panel-primary--with-org {
+.email-side-panel-primary--with-stack {
   align-items: flex-start;
 }
 
-.email-side-panel-primary--with-org > :first-child {
-  margin-top: 2px;
+.email-side-panel-status-slot {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.email-side-panel-status-spacer[data-lines="1"] {
+  height: 15px;
+}
+
+.email-side-panel-status-spacer[data-lines="2"] {
+  height: 30px;
+}
+
+.email-side-panel-project-label {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+}
+
+.email-side-panel-project-label .inbox-list-item-truncate {
+  min-width: 0;
 }
 
 .email-side-panel-org-label {
@@ -2526,6 +2640,14 @@ body[data-keyboard-nav-hover="suppressed"]
 
 .email-side-panel-contact-email {
   color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.email-side-panel-received-at {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 
 .email-side-panel-thread {
@@ -2564,7 +2686,7 @@ body[data-keyboard-nav-hover="suppressed"]
      comment isn't clipped by the scrollport / top fade. */
   padding: 2.75rem 1rem 0.75rem;
   /* Clear the absolute composer dock so the last items can scroll above it. */
-  padding-bottom: calc(var(--email-composer-dock-clearance, 5.75rem) + 0.75rem);
+  padding-bottom: calc(var(--email-composer-dock-clearance, 8.75rem) + 1.5rem);
 }
 
 /*
@@ -2586,6 +2708,10 @@ body[data-keyboard-nav-hover="suppressed"]
 }
 
 .email-detail-split {
+  /* Clearance for the absolute composer dock + breathing room under the
+     last timeline card (draft / comments). Larger than the dock itself so
+     scroll-to-end leaves space above the prompt. */
+  --email-composer-dock-clearance: 8.75rem;
   display: flex;
   min-height: 0;
   width: 100%;
@@ -2669,7 +2795,22 @@ body[data-keyboard-nav-hover="suppressed"]
 
 .email-detail-properties-rail .task-detail-properties-scroll {
   overflow: visible;
-  padding-bottom: calc(var(--email-composer-dock-clearance, 5.75rem) + 0.75rem);
+  padding-bottom: calc(var(--email-composer-dock-clearance, 8.75rem) + 1.5rem);
+}
+
+/* Plain text / Rendered toggle pinned above the properties card. */
+.email-detail-view-toggle {
+  margin-bottom: 8px;
+}
+
+.email-detail-view-toggle .segmented-pill-toggle {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.email-detail-view-toggle .segmented-pill-toggle-btn {
+  flex: 1 1 0;
 }
 
 @media (max-width: 1023px) {
@@ -2692,7 +2833,7 @@ body[data-keyboard-nav-hover="suppressed"]
 /* Soft edge fades — content dissolves under the composer (chat transcript pattern). */
 .email-detail-scrollport--fade {
   --email-thread-top-fade: 1.25rem;
-  --email-thread-bottom-fade: var(--email-composer-dock-clearance, 5.75rem);
+  --email-thread-bottom-fade: var(--email-composer-dock-clearance, 8.75rem);
   -webkit-mask-image:
     linear-gradient(
       to bottom,
@@ -2777,7 +2918,7 @@ body[data-keyboard-nav-hover="suppressed"]
   min-width: 0;
   flex: 1 1 auto;
   justify-content: center;
-  padding: 4px 1rem 10px;
+  padding: 8px 1rem 22px;
   pointer-events: none;
 }
 
@@ -2813,8 +2954,41 @@ body[data-keyboard-nav-hover="suppressed"]
   border-radius: 16px;
 }
 
+.email-thread-comment-composer .email-agent-prompt__context {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 10px 12px 0;
+}
+
+@media (min-width: 640px) {
+  .email-thread-comment-composer .email-agent-prompt__context {
+    padding: 10px 14px 0;
+  }
+}
+
+.email-thread-comment-composer .email-agent-prompt__context-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--accent-color, #6b8afd);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
 .email-thread-comment-composer .email-agent-prompt__input-row {
   padding: 10px 12px 4px;
+}
+
+.email-thread-comment-composer .email-agent-prompt--has-context .email-agent-prompt__input-row {
+  padding-top: 6px;
 }
 
 @media (min-width: 640px) {
@@ -2828,6 +3002,10 @@ body[data-keyboard-nav-hover="suppressed"]
   max-height: 120px;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.email-thread-comment-composer .email-agent-prompt__input.task-comment-editor {
+  width: 100%;
 }
 
 .email-thread-comment-composer .email-agent-prompt__toolbar {
@@ -2859,9 +3037,59 @@ body[data-keyboard-nav-hover="suppressed"]
   background: #212121;
 }
 
+/* Sent mail — transparent fill; same grey border as received. */
+.email-thread-message.is-sent {
+  border-color: #343434;
+  background: transparent;
+}
+
+/* Draft / concept — transparent fill; grey dashes (CSS dashed is too dotted). */
 .email-thread-message.is-concept {
-  border-color: rgb(107 138 253 / 45%);
-  background: color-mix(in srgb, #212121 82%, rgb(107 138 253));
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+}
+
+.email-thread-message.is-concept::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      rgb(255 255 255 / 22%) 0 5px,
+      transparent 5px 10px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      rgb(255 255 255 / 22%) 0 5px,
+      transparent 5px 10px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgb(255 255 255 / 22%) 0 5px,
+      transparent 5px 10px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      rgb(255 255 255 / 22%) 0 5px,
+      transparent 5px 10px
+    );
+  background-size:
+    100% 1px,
+    1px 100%,
+    100% 1px,
+    1px 100%;
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  background-repeat: repeat no-repeat, no-repeat repeat, repeat no-repeat,
+    no-repeat repeat;
 }
 
 .email-thread-comment-row {
@@ -2879,6 +3107,93 @@ body[data-keyboard-nav-hover="suppressed"]
 
 .email-thread-comment-row--agent {
   align-items: flex-start;
+}
+
+/* Match desktop-agent-chat__turn--enter for new comment / working rows. */
+.email-thread-comment-row--enter,
+.email-thread-working-row--enter {
+  animation: email-thread-turn-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes email-thread-turn-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.email-thread-working-row {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  color: rgb(186 193 210 / 0.88);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.email-thread-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.email-thread-working-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgb(186 193 210 / 0.55);
+  animation: email-thread-status-pulse 2s infinite;
+}
+
+.email-thread-working-dot:nth-child(2) {
+  animation-delay: 200ms;
+}
+
+.email-thread-working-dot:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+.email-thread-agent-task {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.email-thread-agent-task .mention-task-block {
+  margin-block: 0;
+  width: 100%;
+}
+
+.email-thread-agent-task .mention-chip-lite--block {
+  width: 100%;
+  border-color: rgb(255 255 255 / 0.22);
+}
+
+@keyframes email-thread-status-pulse {
+  0%,
+  40% {
+    opacity: 1;
+    animation-timing-function: steps(6);
+  }
+  50%,
+  90% {
+    opacity: 0.5;
+    animation-timing-function: steps(6);
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .email-thread-comment__bubble-shell {
@@ -2986,6 +3301,7 @@ body[data-keyboard-nav-hover="suppressed"]
   box-sizing: border-box;
   width: 100%;
   min-height: 2.5rem;
+  max-height: 12rem;
   margin: 0;
   padding: 0.35rem 0.4rem;
   border: 0.5px solid color-mix(in srgb, white 14%, transparent);
@@ -2995,7 +3311,15 @@ body[data-keyboard-nav-hover="suppressed"]
   font: inherit;
   font-size: 0.875rem;
   line-height: 1.45;
-  resize: vertical;
+}
+
+.email-thread-comment__edit-input.task-comment-editor {
+  display: block;
+}
+
+.email-thread-comment__edit-input.task-comment-editor:focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, white 28%, transparent);
 }
 
 .email-thread-comment__edit-input:focus {
@@ -3044,6 +3368,186 @@ body[data-keyboard-nav-hover="suppressed"]
 .email-thread-comment__edit-save:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* Left-rail email ticks — jump to sent/received messages in long threads. */
+.email-thread-minimap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 15;
+  display: none;
+  width: 4.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.email-thread-minimap.is-persistent,
+.email-thread-minimap:hover,
+.email-thread-minimap:focus-within {
+  opacity: 1;
+}
+
+@media (pointer: fine) {
+  .email-thread-minimap {
+    display: block;
+  }
+}
+
+.email-thread-minimap__inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.email-thread-minimap__hit {
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.email-thread-minimap__hit.is-interactive {
+  pointer-events: auto;
+}
+
+.email-thread-minimap__hit:focus-visible {
+  outline: 2px solid rgb(96 165 250 / 0.7);
+  outline-offset: 2px;
+}
+
+.email-thread-minimap__rail {
+  position: absolute;
+  top: 0;
+  left: 0.75rem;
+  width: 1px;
+  height: 100%;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.email-thread-minimap__tick {
+  position: absolute;
+  left: 0;
+  width: 0.5rem;
+  height: 2px;
+  border-radius: 999px;
+  background: rgb(163 163 163 / 0.35);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition:
+    background-color 150ms ease,
+    width 150ms ease;
+}
+
+.email-thread-minimap__tick--received {
+  background: rgb(163 163 163 / 0.4);
+}
+
+.email-thread-minimap__tick--sent {
+  background: color-mix(in srgb, var(--accent-color, #6b8afd) 55%, transparent);
+}
+
+.email-thread-minimap__tick[data-in-view="true"] {
+  background: rgb(247 249 255 / 0.9);
+}
+
+.email-thread-minimap__tick--sent[data-in-view="true"] {
+  background: color-mix(in srgb, var(--accent-color, #6b8afd) 92%, white);
+}
+
+.email-thread-minimap__tick.is-mid {
+  width: 0.625rem;
+}
+
+.email-thread-minimap__tick.is-near {
+  width: 1rem;
+}
+
+.email-thread-minimap__tick.is-active {
+  width: 1.5rem;
+  background: rgb(163 163 163 / 0.75);
+}
+
+.email-thread-minimap__tick--sent.is-active {
+  background: color-mix(in srgb, var(--accent-color, #6b8afd) 75%, transparent);
+}
+
+.email-thread-minimap__tick.is-active[data-in-view="true"] {
+  background: rgb(247 249 255 / 0.95);
+}
+
+.email-thread-minimap__tick--sent.is-active[data-in-view="true"] {
+  background: color-mix(in srgb, var(--accent-color, #6b8afd) 95%, white);
+}
+
+.email-thread-minimap__preview {
+  position: absolute;
+  left: 2rem;
+  width: 16rem;
+  cursor: default;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.email-thread-minimap__preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--dropdown-glass-border, rgb(255 255 255 / 0.12));
+  border-radius: 0.75rem;
+  background: color-mix(
+    in srgb,
+    var(--dropdown-glass-surface, #1a1a1a) 18%,
+    color-mix(
+      in srgb,
+      var(--dropdown-glass-surface, #1a1a1a) var(--glass-opacity, 72%),
+      transparent
+    )
+  );
+  box-shadow: 0 16px 40px -18px rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px));
+  backdrop-filter: blur(var(--glass-blur, 18px));
+  color: rgb(247 249 255 / 0.96);
+  text-align: left;
+}
+
+.email-thread-minimap__preview-direction {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(163 163 163 / 0.9);
+}
+
+.email-thread-minimap__preview-subject {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-thread-minimap__preview-meta {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  color: rgb(163 163 163 / 0.95);
+  font-size: 0.75rem;
+  line-height: 1.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .email-thread-comment__author-row {
@@ -3138,8 +3642,15 @@ body[data-keyboard-nav-hover="suppressed"]
   gap: 6px;
 }
 
+/* Chip dropdown stays content-sized so the pencil sits beside it, not
+   pushed to the far edge of the header row. */
 .email-compose-to-field .property-dropdown,
-.email-compose-to-field .property-dropdown--inline-chip,
+.email-compose-to-field .property-dropdown--inline-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .email-compose-to-field .email-compose-field {
   flex: 1 1 auto;
   min-width: 0;
@@ -3273,6 +3784,23 @@ body[data-keyboard-nav-hover="suppressed"]
   margin-bottom: 0.875rem;
 }
 
+/* Draft chrome — match the footer action bar. */
+.email-thread-message.is-concept > .email-thread-message__header {
+  margin: -1rem -1.1rem 0;
+  padding: 0.7rem 1.1rem 0.45rem;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #1a1a1a;
+}
+
+/* From / To / Subject share the same chrome as the draft title bar. */
+.email-thread-message.is-concept .email-thread-message__identity {
+  margin: 0 -1.1rem 1rem;
+  padding: 0.2rem 1.1rem 1rem;
+  border-bottom: 0.5px solid #343434;
+  background: #1a1a1a;
+}
+
 .email-thread-message__header-start {
   display: flex;
   min-width: 0;
@@ -3286,7 +3814,7 @@ body[data-keyboard-nav-hover="suppressed"]
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.3;
-  color: var(--accent-color, #6b8afd);
+  color: #fff;
 }
 
 .email-thread-message__subject {
@@ -3298,21 +3826,480 @@ body[data-keyboard-nav-hover="suppressed"]
   line-height: 1.3;
 }
 
+.email-thread-message__header-end {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
 .email-thread-message__date {
   flex-shrink: 0;
-  margin-top: 0.2rem;
   font-size: 0.8125rem;
   line-height: 1.3;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
   white-space: nowrap;
 }
 
+.email-thread-message__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin: 0 0 1rem;
+  padding: 0 0 1rem;
+  border-bottom: 0.5px solid #343434;
+}
+
+/* Gmail-style compact header on regular (read-only) messages. */
+.email-thread-message__topbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.email-thread-message__topbar-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.email-thread-message__topbar-avatar {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 2.375rem;
+  height: 2.375rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #343434;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
+/* Direction dot on the avatar — green incoming, blue outgoing. */
+.email-thread-message__direction-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--background);
+  color: #0a0a0a;
+}
+
+.email-thread-message__direction-dot svg {
+  display: block;
+}
+
+.email-thread-message__direction-dot--received {
+  background: #4ade80;
+}
+
+.email-thread-message__direction-dot--sent {
+  background: #60a5fa;
+}
+
+.email-thread-message__topbar-avatar img,
+.email-thread-message__topbar-avatar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.email-thread-message__topbar-identity {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.email-thread-message__topbar-from {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.email-thread-message__topbar-name {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email-thread-message__topbar-from .email-compose-from-field {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+}
+
+.email-thread-message__topbar-address {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email-thread-message__topbar-to {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.email-thread-message__topbar-to-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email-thread-message__topbar-end {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.05rem;
+}
+
+.email-thread-message__reply-btn svg {
+  display: block;
+}
+
+/* Source view — raw headers, auth results, .eml download. */
+.email-source {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.email-source__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Route header used standalone in plain-text mode (outside .email-source). */
+.email-thread-message > .email-source__header {
+  margin: 0 0 1rem;
+}
+
+.email-source__route {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.email-source__direction {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.email-source__direction--received {
+  color: #4ade80;
+}
+
+.email-source__direction--sent {
+  color: #60a5fa;
+}
+
+.email-source__from {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+}
+
+.email-source__route-arrow,
+.email-source__to {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  white-space: nowrap;
+}
+
+.email-source__to {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email-source__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.email-source__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.email-source__download:hover {
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+}
+
+.email-source__download-icon {
+  display: inline-flex;
+}
+
+.email-source__headers {
+  display: grid;
+  margin: 0;
+  padding: 0 0.9rem;
+  border: 1px solid #343434;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.02);
+}
+
+.email-source__row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) 1fr;
+  gap: 1.25rem;
+  padding: 0.7rem 0;
+  border-bottom: 0.5px solid #2c2c2c;
+}
+
+.email-source__row:last-child {
+  border-bottom: none;
+}
+
+.email-source__row dt {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.email-source__row dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.email-source__status {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.email-source__status--error {
+  color: #f87171;
+}
+
+.email-source__auth {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.email-source__auth-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.email-source__auth-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.email-source__auth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.email-source__auth-pill.is-pass {
+  border: 1px solid color-mix(in srgb, #4ade80 45%, transparent);
+  color: #4ade80;
+}
+
+.email-source__auth-pill.is-fail {
+  border: 1px solid color-mix(in srgb, #f87171 45%, transparent);
+  color: #f87171;
+}
+
+/* Attachment chips under the message body. */
+.email-thread-message__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.email-attachment-chip,
+.email-attachment-card {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #343434;
+  background: rgb(255 255 255 / 0.03);
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.email-attachment-chip:hover:not(:disabled),
+.email-attachment-card:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+  border-color: #454545;
+  color: color-mix(in srgb, var(--foreground) 92%, transparent);
+}
+
+.email-attachment-chip:disabled,
+.email-attachment-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.email-attachment-chip {
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.email-attachment-chip__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.email-attachment-chip__name {
+  max-width: 16rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.email-attachment-chip__size {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Larger cards below rendered HTML mail. */
+.email-attachment-card {
+  flex: 1 1 10rem;
+  max-width: 16rem;
+  min-width: 0;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.email-attachment-card__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+.email-attachment-card__meta {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.email-attachment-card__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.email-attachment-card__size {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Match From + To chip rows; slightly taller than two header lines. */
+.email-thread-message__party-avatar {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 3.75rem;
+  height: 3.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #343434;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  box-shadow: none;
+}
+
+.email-thread-message__party-avatar--sent {
+  border-color: #343434;
+}
+
+.email-thread-message__party-avatar img,
+.email-thread-message__party-avatar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .email-thread-message__headers {
   display: grid;
   gap: 0.35rem;
-  margin: 0 0 1rem;
-  padding: 0 0 1rem;
-  border-bottom: 0.5px solid var(--border);
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.email-thread-message__identity:not(.email-thread-message__identity--with-avatar)
+  .email-thread-message__headers {
+  margin: 0;
+  padding: 0;
 }
 
 .email-thread-message__header-row {
@@ -3329,6 +4316,7 @@ body[data-keyboard-nav-hover="suppressed"]
   margin: 0;
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
   font-weight: 500;
+  text-align: right;
 }
 
 .email-thread-message__header-row dd {
@@ -3342,6 +4330,40 @@ body[data-keyboard-nav-hover="suppressed"]
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font-size: 0.9rem;
   line-height: 1.55;
+}
+
+.email-thread-message__body--html {
+  white-space: normal;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.email-thread-message__html-host {
+  display: block;
+  width: 100%;
+  min-height: 1.5rem;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.email-thread-message__html-body {
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.email-thread-message__html-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.email-thread-message__html-body a {
+  color: #6eb6ff;
+}
+
+.email-thread-message__html-body table {
+  max-width: 100%;
 }
 
 .email-thread-message__body--markdown {
@@ -3463,7 +4485,9 @@ body[data-keyboard-nav-hover="suppressed"]
 }
 
 .email-draft-sign-off__avatar {
+  box-sizing: border-box;
   flex-shrink: 0;
+  border: 1px solid #343434;
   border-radius: 9999px;
 }
 
@@ -3507,9 +4531,12 @@ body[data-keyboard-nav-hover="suppressed"]
   justify-content: flex-end;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 0.5px solid var(--border);
+  /* Break out of card padding so the bar spans the full card width. */
+  margin: 0.85rem -1.1rem -1rem;
+  padding: 0.7rem 1.1rem;
+  border-top: 0.5px solid #343434;
+  border-radius: 0 0 8px 8px;
+  background: #1a1a1a;
 }
 
 .email-draft-actions {
@@ -5607,6 +6634,14 @@ button.settings-inbox-account-label:disabled {
   opacity: 0.45;
 }
 
+.task-item-row-item--calendar-timeline-draggable .task-item-row {
+  cursor: grab;
+}
+
+.task-item-row-item--calendar-timeline-draggable .task-item-row:active {
+  cursor: grabbing;
+}
+
 .task-item-row {
   display: flex;
   width: 100%;
@@ -5673,7 +6708,7 @@ button.settings-inbox-account-label:disabled {
 .task-item-row__properties {
   display: inline-flex;
   min-width: 0;
-  flex-shrink: 0;
+  flex: 0 1 auto;
   align-items: center;
   gap: 8px;
   margin-left: auto;
@@ -5977,6 +7012,47 @@ button.settings-inbox-account-label:disabled {
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
+.task-item-row__mailbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: calc(var(--task-id-column-ch, 6) * 1ch);
+  max-width: 16ch;
+  overflow: hidden;
+}
+
+.task-item-row__mailbox-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.task-item-row__email-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.task-item-row__email-party {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
 .task-item-row__title-wrap {
   display: inline-flex;
   min-width: 0;
@@ -6016,8 +7092,9 @@ button.settings-inbox-account-label:disabled {
 
 .task-item-row__project {
   display: inline-flex;
-  max-width: 8rem;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
   color: color-mix(in srgb, var(--foreground) 50%, transparent);
@@ -10522,8 +11599,9 @@ body.app-is-dragging * {
   overflow: hidden;
 }
 
-/* Letter / task detail: notes(+PDF) | properties — web data-detail-split parity */
+/* Letter / task / meeting detail: notes | properties — web data-detail-split parity */
 .letter-detail-split,
+.meeting-detail-split,
 .task-detail-view,
 .task-detail-split {
   display: flex;
@@ -10536,6 +11614,7 @@ body.app-is-dragging * {
 }
 
 .letter-detail-split .detail-with-properties,
+.meeting-detail-split .detail-with-properties,
 .task-detail-split .detail-with-properties,
 .email-detail-split .detail-with-properties {
   min-height: 0;
@@ -10829,6 +11908,64 @@ body.app-is-dragging * {
   flex-direction: column;
   gap: 12px;
   margin-top: 14px;
+}
+
+.task-link-attachments-modal__kind {
+  margin: 0 0 0.75rem;
+}
+
+.task-link-attachments-modal__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 16rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.task-link-attachments-modal__result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-link-attachments-modal__result:hover {
+  background: rgb(255 255 255 / 0.06);
+  border-color: #343434;
+}
+
+.task-link-attachments-modal__result-label {
+  font-size: 0.875rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.task-link-attachments-modal__result-detail {
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.task-link-attachments-modal__empty {
+  margin: 0.75rem 0 0;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.8125rem;
+}
+
+.task-link-attachments__link--button {
+  appearance: none;
+  font: inherit;
 }
 
 .task-link-attachments-modal__label {
@@ -11919,11 +13056,18 @@ body.app-is-dragging * {
   margin-bottom: 0;
 }
 
-/* Lock scroll parents so floating list/board + edit/preview docks stay put */
+.page-scroll:has([data-calendar-view]),
+.page-scroll:has([data-calendar-view]) > * {
+  background: transparent;
+}
+
+/* Lock scroll parents so floating list/board + calendar views fill the frame */
 .page-scroll:has([data-content-detail]),
 .page-scroll:has([data-list-board-view]),
+.page-scroll:has([data-calendar-view]),
 .bos-product-shell [data-content-detail],
-.bos-product-shell [data-list-board-view] {
+.bos-product-shell [data-list-board-view],
+.bos-product-shell [data-calendar-view] {
   display: flex;
   min-height: 0;
   width: 100%;
@@ -11938,9 +13082,19 @@ body.app-is-dragging * {
   flex-direction: row;
 }
 
+.bos-product-shell [data-content-detail][data-detail-split].journal-day-layout,
+.page-scroll .journal-day-layout[data-content-detail][data-detail-split] {
+  flex-direction: row !important;
+}
+
 @media (max-width: 1023px) {
   .bos-product-shell [data-content-detail][data-detail-split] > .detail-with-properties {
     flex-direction: column;
+  }
+
+  .bos-product-shell [data-content-detail][data-detail-split].journal-day-layout,
+  .page-scroll .journal-day-layout[data-content-detail][data-detail-split] {
+    flex-direction: column !important;
   }
 }
 
@@ -19732,4 +20886,986 @@ button.console-fs-tree-row.keyboard-nav-item-highlight:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+[data-list-board-view] {
+  width: 100%;
+  height: 100%;
+}
+
+[data-calendar-view] {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* Calendar (FullCalendar) */
+
+.calendar-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: transparent;
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: transparent;
+  --fc-non-business-color: transparent;
+}
+
+.calendar-view-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  background: transparent;
+  overflow: hidden;
+}
+
+.calendar-view-main > .fc {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.calendar-view .fc {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: transparent;
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: transparent;
+  --fc-neutral-text-color: var(--muted);
+  --fc-small-font-size: 0.75rem;
+  --fc-event-bg-color: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 24%,
+    var(--background)
+  );
+  --fc-event-border-color: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 45%,
+    transparent
+  );
+  --fc-event-text-color: var(--foreground);
+  --fc-event-selected-overlay-color: rgb(255 255 255 / 10%);
+  --fc-today-bg-color: transparent;
+  --fc-now-indicator-color: #e5534b;
+  --fc-highlight-color: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 16%,
+    transparent
+  );
+  --fc-list-event-hover-bg-color: color-mix(
+    in srgb,
+    var(--foreground) 6%,
+    transparent
+  );
+  --fc-button-bg-color: var(--surface);
+  --fc-button-border-color: var(--border);
+  --fc-button-text-color: var(--foreground);
+  --fc-button-hover-bg-color: color-mix(
+    in srgb,
+    var(--foreground) 8%,
+    var(--surface)
+  );
+  --fc-button-hover-border-color: var(--border);
+  --fc-button-active-bg-color: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color) 28%,
+    var(--surface)
+  );
+  --fc-button-active-border-color: var(--border);
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
+.calendar-view .fc .fc-scrollgrid {
+  background: transparent;
+}
+
+.calendar-view .fc .fc-view-harness,
+.calendar-view .fc .fc-view,
+.calendar-view .fc .fc-scrollgrid-section > td,
+.calendar-view .fc .fc-scrollgrid-section-body > *,
+.calendar-view .fc .fc-daygrid-day:not(.fc-day-today),
+.calendar-view .fc .fc-timegrid-col:not(.fc-day-today),
+.calendar-view .fc .fc-timegrid-slot-lane,
+.calendar-view .fc .fc-list-day-cushion,
+.calendar-view .fc .fc-list-empty {
+  background-color: transparent;
+}
+
+.calendar-view .fc .fc-header-toolbar {
+  flex-shrink: 0;
+  margin: 8px 8px 0;
+}
+
+.calendar-view .fc .fc-view-harness {
+  flex: 1;
+  min-height: 0;
+}
+
+.calendar-view .fc .fc-view-harness-active {
+  height: 100%;
+}
+
+.calendar-view .fc .fc-toolbar-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.calendar-view .fc .fc-button {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.calendar-view .fc .fc-button:focus,
+.calendar-view .fc .fc-button:focus-visible {
+  box-shadow: none;
+  outline: 1px solid var(--keyboard-nav-highlight-color);
+  outline-offset: 1px;
+}
+
+.calendar-view .fc .fc-col-header-cell-cushion,
+.calendar-view .fc .fc-daygrid-day-number {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.calendar-view .fc .fc-col-header-cell {
+  padding: 12px 4px;
+}
+
+.calendar-view .fc .fc-col-header-cell-cushion {
+  font-size: 0.9375rem;
+  line-height: 1.25;
+}
+
+.calendar-view .fc .fc-daygrid-day-top {
+  padding: 10px 8px 4px;
+}
+
+.calendar-view .fc .fc-daygrid-day-number {
+  font-size: 0.9375rem;
+  line-height: 1.25;
+}
+
+.calendar-view .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion,
+.calendar-view .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #e5534b;
+  color: #0a0a0a;
+  font-weight: 600;
+}
+
+.calendar-view .fc .fc-daygrid-day.fc-day-today,
+.calendar-view .fc .fc-timegrid-col.fc-day-today {
+  background-color: transparent !important;
+}
+
+.calendar-view .fc .fc-timegrid-slot-label-cushion,
+.calendar-view .fc .fc-timegrid-axis-cushion {
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.task-calendar-event {
+  cursor: grab;
+  border-radius: 4px;
+  border-width: 1px;
+  border-style: solid;
+  background-color: color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+}
+
+.task-calendar-event .fc-event-main {
+  color: var(--foreground);
+  background: transparent !important;
+  height: 100%;
+}
+
+.task-calendar-event__content {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 100%;
+  padding: 1px 2px;
+  line-height: 1.25;
+  box-sizing: border-box;
+}
+
+.task-calendar-event__content--expanded {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 6px 6px 4px;
+}
+
+.task-calendar-event__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  width: 100%;
+}
+
+.task-calendar-event__project {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  line-height: 1.2;
+  opacity: 0.72;
+}
+
+.task-calendar-event__status-icon {
+  flex-shrink: 0;
+}
+
+.task-calendar-event__time {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.task-calendar-event__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.task-calendar-event.fc-list-event .task-calendar-event__content {
+  padding: 0;
+}
+
+/* Journal day column: time slots only (no day header / all-day row) */
+.calendar-day-timeline .fc .fc-col-header,
+.calendar-day-timeline .fc .fc-timegrid-divider {
+  display: none;
+}
+
+/* No left / right / top frame — keep horizontal hour lines only */
+.calendar-day-timeline.calendar-view .fc {
+  --fc-border-color: transparent;
+}
+
+.calendar-day-timeline.calendar-view .fc .fc-scrollgrid {
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.calendar-day-timeline.calendar-view .fc .fc-scrollgrid-section > td,
+.calendar-day-timeline.calendar-view .fc .fc-timegrid-axis,
+.calendar-day-timeline.calendar-view .fc .fc-timegrid-slot-label,
+.calendar-day-timeline.calendar-view .fc .fc-timegrid-col {
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.calendar-day-timeline.calendar-view .fc .fc-timegrid-slot,
+.calendar-day-timeline.calendar-view .fc .fc-timegrid-slot-lane {
+  border-top: 0.5px solid var(--border);
+  border-left: none;
+  border-right: none;
+}
+
+.task-calendar-event-done {
+  opacity: 0.55;
+}
+
+.task-calendar-event-done .fc-event-title {
+  text-decoration: line-through;
+}
+
+/* External drag: morph cloned task row into a timeline event card */
+.calendar-external-drag-mirror.task-item-row-item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  opacity: 0.94;
+  pointer-events: none !important;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 7%,
+    transparent
+  ) !important;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+}
+
+.calendar-external-drag-mirror .task-item-row {
+  display: flex !important;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 6px;
+  background: transparent !important;
+}
+
+.calendar-external-drag-mirror .task-item-row__check,
+.calendar-external-drag-mirror .task-item-row__priority,
+.calendar-external-drag-mirror .task-item-row__id,
+.calendar-external-drag-mirror .task-item-row__due,
+.calendar-external-drag-mirror .task-item-row__project,
+.calendar-external-drag-mirror .task-item-row__assignee,
+.calendar-external-drag-mirror .task-item-row__properties,
+.calendar-external-drag-mirror .task-item-row__email-party,
+.calendar-external-drag-mirror .task-item-row__title-trailing {
+  display: none !important;
+}
+
+.calendar-external-drag-mirror .task-item-row__title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-external-drag-mirror .task-item-row__title {
+  font-size: 0.75rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-external-drag-mirror .task-item-row__status {
+  flex-shrink: 0;
+}
+
+/* In-grid drag ghost (external drop preview on timeline) */
+.fc-event-mirror,
+.fc-event.fc-event-mirror {
+  opacity: 0.94;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+  border-radius: 4px;
+}
+
+.fc-event-mirror.task-calendar-event,
+.fc-event.fc-event-mirror.task-calendar-event {
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) 7%,
+    transparent
+  ) !important;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+}
+
+.fc-event-mirror .fc-event-main,
+.fc-event.fc-event-mirror .fc-event-main {
+  color: var(--foreground);
+}
+
+.calendar-tasks-side-panel-item--draggable {
+  cursor: grab;
+}
+
+.calendar-tasks-side-panel-item--draggable:active {
+  cursor: grabbing;
+}
+
+.calendar-tasks-side-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.calendar-tasks-side-panel-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.calendar-tasks-side-panel-meta {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.calendar-tasks-side-panel-schedule {
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.calendar-side-panel-section + .calendar-side-panel-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.calendar-day-habits-slot {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px 4px;
+}
+
+.calendar-day-habits {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+}
+
+.calendar-day-habits__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calendar-day-habits__item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.calendar-day-habits__chip {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.calendar-day-habits__chip:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.calendar-day-habits__chip:disabled {
+  cursor: default;
+}
+
+.calendar-day-habits__chip--done {
+  background: #3d9a5b;
+}
+
+.calendar-day-habits__chip--pending {
+  background: #c44a4a;
+}
+
+.calendar-day-habits__icon {
+  display: inline-flex;
+  color: #000;
+}
+
+.calendar-day-habits__icon svg {
+  display: block;
+  width: 11px;
+  height: 11px;
+  color: #000;
+}
+
+.calendar-view .fc .fc-col-header-cell .calendar-day-habits-slot {
+  margin-top: 8px;
+  padding: 0 4px 6px;
+}
+
+.calendar-view .fc .fc-daygrid-day-frame .calendar-day-habits-slot {
+  margin-top: 8px;
+  padding: 2px 2px 4px;
+}
+
+.calendar-view .fc .fc-list-day-cushion .calendar-day-habits-slot {
+  margin-top: 8px;
+  padding-top: 0;
+}
+
+.app-content-side-panel-body .project-type-subgroup:first-child {
+  margin-top: 0;
+}
+
+.calendar-meeting-detail-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 25;
+  display: flex;
+  width: 360px;
+  max-width: min(420px, 92vw);
+  flex-direction: column;
+  border-right: 0.5px solid var(--border);
+  background: rgb(18 18 18 / 0.97);
+  box-shadow: 16px 0 40px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.calendar-meeting-detail-overlay .meeting-detail-view {
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.calendar-page {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.meeting-detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+
+.meeting-detail-view--panel {
+  flex: 1;
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  padding: 16px 20px 20px;
+  box-sizing: border-box;
+}
+
+.meeting-detail-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.meeting-detail-page__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.meeting-detail-view__content--page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
+  padding: 0 1rem 2.5rem;
+}
+
+.meeting-detail-view__content--page .meeting-detail-view__editor-shell
+  .content-markdown-view-layout {
+  padding-bottom: 52px;
+}
+
+.meeting-detail-view__content--page
+  .meeting-detail-view__editor-shell
+  .content-view-mode-toggle {
+  right: 1rem;
+}
+
+.meeting-detail-view__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.meeting-detail-view__id-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.meeting-detail-view__close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.meeting-detail-view__close:hover {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.meeting-detail-view .task-properties-inline {
+  flex-shrink: 0;
+  padding: 0 2px;
+}
+
+.meeting-detail-view__id {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.meeting-detail-view__title {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  outline: none;
+}
+
+.property-datetime-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 0.5px solid rgb(255 255 255 / 0.09);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.04);
+  color: inherit;
+  font: inherit;
+}
+
+.property-datetime-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  outline-offset: 1px;
+}
+
+.meeting-schedule-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+
+.meeting-schedule-panel .property-field-group__label {
+  margin-bottom: 4px;
+}
+
+.meeting-detail-view__content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+
+.meeting-detail-view--panel .meeting-detail-view__content {
+  min-height: 0;
+}
+
+.meeting-detail-view__tabs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.meeting-detail-view__tab {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.meeting-detail-view__tab:hover {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.meeting-detail-view__tab.is-active {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.1);
+}
+
+.meeting-detail-view__editor-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.meeting-detail-view__editor-shell .content-markdown-view-layout {
+  flex: 1;
+  min-height: 160px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.meeting-detail-view--panel
+  .meeting-detail-view__editor-shell
+  .content-markdown-view-layout {
+  max-width: 800px;
+  margin-inline: auto;
+  padding-bottom: 52px;
+}
+
+.meeting-detail-view--panel
+  .meeting-detail-view__editor-shell
+  .content-view-mode-toggle {
+  right: 0;
+}
+
+/* Calendar task click popover (Google Calendar–style) */
+
+.calendar-task-event-popover {
+  position: fixed;
+  z-index: 350;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  padding: 0;
+}
+
+.calendar-task-event-popover__accent {
+  height: 4px;
+  flex-shrink: 0;
+}
+
+.calendar-task-event-popover__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.calendar-task-event-popover__schedule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.calendar-task-event-popover__schedule-icon {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.calendar-task-event-popover__close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -4px 0 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.calendar-task-event-popover__close:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.calendar-task-event-popover__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 12px;
+}
+
+.calendar-task-event-popover__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.calendar-task-event-popover__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.calendar-task-event-popover__id {
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-task-event-popover__dot {
+  flex-shrink: 0;
+}
+
+.calendar-task-event-popover__project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-task-event-popover__description {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.calendar-task-event-popover__properties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.calendar-task-event-popover__property {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendar-task-event-popover__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 12px;
+}
+
+.calendar-task-event-popover__open {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  cursor: pointer;
+}
+
+.calendar-task-event-popover__open:hover {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+/* Journal day entry: markdown body | single-day timeline (task chat panel pattern) */
+.bos-product-shell .journal-day-layout[data-content-detail],
+.page-scroll .journal-day-layout[data-content-detail],
+.journal-day-layout[data-content-detail],
+.journal-day-layout {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.journal-day-layout__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.journal-day-layout__main > .inbox-detail-layout {
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.journal-day-layout__calendar.resizable-side-panel {
+  flex-shrink: 0;
+  height: 100%;
+  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  background: var(--background);
+}
+
+.journal-day-layout__calendar .resizable-side-panel__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .bos-product-shell .journal-day-layout[data-content-detail],
+  .page-scroll .journal-day-layout[data-content-detail],
+  .journal-day-layout[data-content-detail],
+  .journal-day-layout {
+    flex-direction: column !important;
+  }
+
+  .journal-day-layout__calendar.resizable-side-panel {
+    border-left: none;
+    border-top: 0.5px solid var(--border);
+    max-height: 42vh;
+    height: auto;
+  }
 }

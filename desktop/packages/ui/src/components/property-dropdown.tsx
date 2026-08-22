@@ -16,13 +16,13 @@ export type PropertyDropdownTriggerVariant =
 
 /** Same chrome as the inline-chip dropdown trigger, but not interactive. */
 export type PropertyInlineChipProps = {
-  icon: ReactNode;
+  icon?: ReactNode;
   label: string;
   ariaLabel?: string;
 };
 
 export function PropertyInlineChip({
-  icon,
+  icon = null,
   label,
   ariaLabel,
 }: PropertyInlineChipProps) {
@@ -32,9 +32,11 @@ export function PropertyInlineChip({
       title={label}
       aria-label={ariaLabel ?? label}
     >
-      <span className="property-dropdown-trigger__icon" aria-hidden="true">
-        {icon}
-      </span>
+      {icon != null ? (
+        <span className="property-dropdown-trigger__icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
       <span className="property-dropdown-trigger__label">{label}</span>
     </span>
   );
@@ -47,7 +49,7 @@ export type PropertyDropdownProps<T extends string> = {
   searchPlaceholder: string;
   searchShortcutLabel?: string;
   ariaLabel: string;
-  fallbackIcon: ReactNode;
+  fallbackIcon?: ReactNode;
   fallbackLabel: string;
   registerOpenMenu?: (api: SearchableDropdownMenuApi | null) => void;
   taskPropertyDropdownId?: TaskPropertyDropdownId;
@@ -72,6 +74,12 @@ export type PropertyDropdownProps<T extends string> = {
   triggerVariant?: PropertyDropdownTriggerVariant;
   /** When true, the trigger shows only the icon; option labels still appear in the menu. */
   hideTriggerLabel?: boolean;
+  /** When true, the trigger omits the leading icon (menu options keep theirs). */
+  hideTriggerIcon?: boolean;
+  /** Open the panel on mount (used by deferred list-row mounts). */
+  defaultOpen?: boolean;
+  /** Placement for the initial `defaultOpen` (deferred shortcut opens). */
+  defaultOpenPlacement?: "anchored" | "center";
 };
 
 export function PropertyDropdown<T extends string>({
@@ -81,7 +89,7 @@ export function PropertyDropdown<T extends string>({
   searchPlaceholder,
   searchShortcutLabel,
   ariaLabel,
-  fallbackIcon,
+  fallbackIcon = null,
   fallbackLabel,
   registerOpenMenu,
   taskPropertyDropdownId,
@@ -100,6 +108,9 @@ export function PropertyDropdown<T extends string>({
   onShiftTabFromSearch,
   triggerVariant = "default",
   hideTriggerLabel = false,
+  hideTriggerIcon = false,
+  defaultOpen = false,
+  defaultOpenPlacement,
 }: PropertyDropdownProps<T>) {
   if (options.length === 0) {
     return (
@@ -113,9 +124,11 @@ export function PropertyDropdown<T extends string>({
           .join(" ")}
         data-task-property-dropdown={taskPropertyDropdownId}
       >
-        <span className="property-dropdown-trigger__icon" aria-hidden="true">
-          {fallbackIcon}
-        </span>
+        {!hideTriggerIcon && fallbackIcon != null ? (
+          <span className="property-dropdown-trigger__icon" aria-hidden="true">
+            {fallbackIcon}
+          </span>
+        ) : null}
         {!hideTriggerLabel ? (
           <span className="property-dropdown-trigger__label">{fallbackLabel}</span>
         ) : null}
@@ -140,6 +153,8 @@ export function PropertyDropdown<T extends string>({
       onCreateFromQuery={onCreateFromQuery}
       onTabFromSearch={onTabFromSearch}
       onShiftTabFromSearch={onShiftTabFromSearch}
+      defaultOpen={defaultOpen}
+      defaultOpenPlacement={defaultOpenPlacement}
       className={
         shortcutAnchor
           ? "property-dropdown property-dropdown--shortcut-anchor"
@@ -159,7 +174,9 @@ export function PropertyDropdown<T extends string>({
           selected && displayOverride
             ? displayOverride
             : (selected?.label ?? fallbackLabel);
-        const icon = selected?.icon ?? fallbackIcon;
+        const icon = hideTriggerIcon
+          ? null
+          : (selected?.icon ?? fallbackIcon);
         return (
           <button
             type="button"

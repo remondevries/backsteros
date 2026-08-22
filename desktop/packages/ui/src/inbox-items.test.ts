@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  buildInboxEmailListItem,
   buildInboxTaskListItem,
+  emailBelongsInInbox,
   getInboxAttentionGroupKey,
   getInboxAttentionKeyboardItemIds,
   getInboxHrefAfterRemovingItem,
@@ -11,6 +13,7 @@ import {
   isAgentInboxPending,
   isInboxOverdueTask,
   pickIdAfterRemoving,
+  resolveInboxEmailIconColor,
   taskBelongsInInbox,
 } from "./inbox-items.js";
 
@@ -292,6 +295,7 @@ test("getInboxAttentionKeyboardItemIds follows visual group order, not updatedAt
     }),
     task({ id: "review", status: "in_review", updatedAt: 99 }),
     task({ id: "triage", status: "triage", inbox: true, updatedAt: 1 }),
+    task({ id: "progress", status: "in_progress", updatedAt: 90 }),
     task({ id: "overdue", status: "backlog", dueDate: past, updatedAt: 50 }),
     task({ id: "hold", status: "on_hold", updatedAt: 80 }),
   ];
@@ -299,11 +303,93 @@ test("getInboxAttentionKeyboardItemIds follows visual group order, not updatedAt
     "agent",
     "overdue",
     "triage",
+    "progress",
     "hold",
     "review",
   ]);
   assert.deepEqual(
     getInboxAttentionKeyboardItemIds(items, new Set(["triage"]), wednesday),
-    ["agent", "overdue", "hold", "review"],
+    ["agent", "overdue", "progress", "hold", "review"],
   );
+});
+
+test("email inbox items group by status and link to email routes", () => {
+  const email = buildInboxEmailListItem({
+    inboxId: "in_1",
+    messageId: "msg_1",
+    threadId: "thr_1",
+    title: "Invoice",
+    status: "triage",
+    updatedAt: 10,
+  });
+  assert.equal(email.kind, "email");
+  assert.equal(email.id, "email:in_1:thr_1");
+  assert.equal(getInboxItemHref(email), "/email/in_1/msg_1?list=inbox");
+  assert.equal(getInboxAttentionGroupKey(email, wednesday), "triage");
+  const groups = groupInboxItemsByAttentionStatus(
+    [
+      email,
+      buildInboxEmailListItem({
+        inboxId: "in_1",
+        messageId: "msg_2",
+        title: "Working",
+        status: "in_progress",
+        updatedAt: 11,
+      }),
+    ],
+    wednesday,
+  );
+  assert.equal(groups[0]?.status, "triage");
+  assert.equal(groups[0]?.label, "Triage");
+  assert.equal(groups[1]?.status, "in_progress");
+});
+
+test("emailBelongsInInbox keeps untriaged mail visible; applies task rules otherwise", () => {
+  const past = new Date(2026, 6, 10).getTime();
+  const future = new Date(2026, 6, 20).getTime();
+  assert.equal(emailBelongsInInbox({ status: null }, wednesday), true);
+  assert.equal(emailBelongsInInbox({ status: "triage" }, wednesday), true);
+  assert.equal(
+    emailBelongsInInbox({ status: "in_progress" }, wednesday),
+    true,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "on_hold", dueDate: future }, wednesday),
+    false,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "on_hold", dueDate: past }, wednesday),
+    true,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "ready_to_start", dueDate: past }, wednesday),
+    true,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "ready_to_start", dueDate: null }, wednesday),
+    false,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "completed" }, wednesday),
+    false,
+  );
+});
+
+test("resolveInboxEmailIconColor uses triage orange for untriaged mail", () => {
+  assert.equal(resolveInboxEmailIconColor(null), "#ee7a47");
+  assert.equal(resolveInboxEmailIconColor("triage"), "#ee7a47");
+  assert.equal(resolveInboxEmailIconColor("in_progress"), "#e9c141");
+});
+
+test("untriaged email with past due groups in Overdue like tasks", () => {
+  const past = new Date(2026, 6, 10).getTime();
+  const email = buildInboxEmailListItem({
+    inboxId: "in_1",
+    messageId: "msg_1",
+    title: "New mail",
+    status: "triage",
+    dueDate: past,
+    updatedAt: 10,
+  });
+  assert.equal(getInboxAttentionGroupKey(email, wednesday), "overdue");
 });

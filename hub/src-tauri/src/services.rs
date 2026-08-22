@@ -511,17 +511,29 @@ fn api_phase() -> (ServicePhase, String) {
         clear_starting(&[ServiceId::Api]);
         return (ServicePhase::Running, format!(":{API_PORT} ok"));
     }
-    let pid_starting = get_pid(ServiceId::Api).is_some_and(pid_alive);
     let port_up = port_open(API_PORT);
-    if is_marked_starting(ServiceId::Api) || pid_starting || port_up {
+    // Port open but /health failing — still coming up (or wedged mid-bind).
+    if port_up {
         return (
             ServicePhase::Starting,
-            if port_up {
-                format!(":{API_PORT} starting…")
-            } else {
-                "starting…".into()
-            },
+            format!(":{API_PORT} starting…"),
         );
+    }
+    if is_marked_starting(ServiceId::Api) {
+        // Marked starting but no listener — pid may be zombie tsx; keep
+        // "starting…" only while the tracked process is still alive.
+        if let Some(pid) = get_pid(ServiceId::Api) {
+            if pid_alive(pid) {
+                return (ServicePhase::Starting, "starting…".into());
+            }
+            set_pid(ServiceId::Api, None);
+        }
+        clear_starting(&[ServiceId::Api]);
+    } else if let Some(pid) = get_pid(ServiceId::Api) {
+        // Leftover pid that never became healthy — do not pretend forever.
+        if !pid_alive(pid) {
+            set_pid(ServiceId::Api, None);
+        }
     }
     (ServicePhase::Stopped, "stopped".into())
 }
@@ -753,11 +765,22 @@ fn start_api(repo_root: &Path) -> Result<String, String> {
     if api_healthy() {
         return Ok("Core API already running".into());
     }
+
+    // `tsx watch` can leave a parent pid alive after a failed restart while
+    // nothing listens on :8788. Treating that as "still starting" left Hub
+    // and desktop stuck indefinitely — kill the zombie and respawn.
     if let Some(pid) = get_pid(ServiceId::Api) {
         if pid_alive(pid) {
-            return Ok(format!("Core API starting (pid {pid})"));
+            append_log_line(
+                ServiceId::Api,
+                &format!("unhealthy pid {pid} still alive; killing before respawn"),
+            );
+            kill_pid_tree(pid);
         }
+        set_pid(ServiceId::Api, None);
     }
+    clear_starting(&[ServiceId::Api]);
+    kill_port_listeners(API_PORT);
 
     let pnpm = pnpm_bin();
     append_log_line(

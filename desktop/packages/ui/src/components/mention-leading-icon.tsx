@@ -6,6 +6,7 @@ import {
 } from "./project-octicon.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { DocumentIcon } from "./document-icon.js";
+import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { LetterIcon } from "./letter-icon.js";
 import { OrganizationIcon } from "./organization-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
@@ -41,6 +42,15 @@ export function MentionLeadingIcon({
   if (kind === "letter") {
     return (
       <LetterIcon
+        size={16}
+        className="mention-menu__icon mention-menu__icon--muted"
+      />
+    );
+  }
+
+  if (kind === "email") {
+    return (
+      <EmailNavIcon
         size={16}
         className="mention-menu__icon mention-menu__icon--muted"
       />

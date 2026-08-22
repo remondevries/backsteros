@@ -45,6 +45,11 @@ export type TaskCommentEditorProps = {
   onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   /** Fired for Cmd/Ctrl+Enter when the mention menu is closed. */
   onSubmitShortcut?: () => void;
+  /**
+   * When true, plain Enter submits (Shift+Enter still inserts a newline).
+   * Use for chat-style prompts; leave false for multi-line comment fields.
+   */
+  submitOnEnter?: boolean;
   placeholder?: string;
   disabled?: boolean;
   ariaLabel?: string;
@@ -117,6 +122,7 @@ export function TaskCommentEditor({
   onFocus,
   onKeyDown,
   onSubmitShortcut,
+  submitOnEnter = false,
   placeholder,
   disabled = false,
   ariaLabel,
@@ -176,10 +182,21 @@ export function TaskCommentEditor({
               return true;
             },
           },
+          ...(submitOnEnter
+            ? [
+                {
+                  key: "Enter",
+                  run: () => {
+                    onSubmitShortcutRef.current?.();
+                    return true;
+                  },
+                },
+              ]
+            : []),
         ]),
       ),
     ],
-    [disabled, mentionController, mentionsEnabled, placeholder],
+    [disabled, mentionController, mentionsEnabled, placeholder, submitOnEnter],
   );
 
   const rootClassName = [

@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { SyncIcon } from "@primer/octicons-react";
+
+import { TaskCommentEditor } from "./task-comment-editor.js";
 
 export type EmailThreadCommentComposerProps = {
   onSubmit: (body: string) => void | Promise<void>;
   disabled?: boolean;
   sending?: boolean;
   placeholder?: string;
+  /** When set, shows a context chip (e.g. draft edit mode). */
+  contextLabel?: string | null;
 };
 
 function CommentPromptSendIcon() {
@@ -38,11 +42,13 @@ export function EmailThreadCommentComposer({
   disabled = false,
   sending = false,
   placeholder = "Message the agent about this email…",
+  contextLabel = null,
 }: EmailThreadCommentComposerProps) {
   const [draft, setDraft] = useState("");
   const busy = sending;
   const inputDisabled = disabled || busy;
   const submitDisabled = inputDisabled || !draft.trim();
+  const context = contextLabel?.trim() || null;
 
   async function submit() {
     const text = draft.trim();
@@ -56,36 +62,51 @@ export function EmailThreadCommentComposer({
     void submit();
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit();
-    }
-  }
-
   return (
     <form className="email-thread-comment-composer" onSubmit={handleSubmit}>
-      <div className="email-agent-prompt">
+      <div
+        className={[
+          "email-agent-prompt",
+          context ? "email-agent-prompt--has-context" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div className="email-agent-prompt__shell">
           <div
             className={[
               "email-agent-prompt__host",
               disabled && !busy ? "email-agent-prompt__host--inactive" : "",
+              context ? "email-agent-prompt__host--context" : "",
             ]
               .filter(Boolean)
               .join(" ")}
           >
             <div className="email-agent-prompt__inner">
+              {context ? (
+                <div className="email-agent-prompt__context" aria-live="polite">
+                  <span className="email-agent-prompt__context-chip">
+                    {context}
+                  </span>
+                </div>
+              ) : null}
               <div className="email-agent-prompt__input-row">
-                <textarea
+                <TaskCommentEditor
                   className="email-agent-prompt__input"
+                  variant="composer"
                   value={draft}
                   disabled={inputDisabled}
                   placeholder={placeholder}
-                  aria-label="Thread comment"
-                  rows={2}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={handleKeyDown}
+                  ariaLabel={
+                    context
+                      ? `Ask AI to update ${context}`
+                      : "Thread comment"
+                  }
+                  submitOnEnter
+                  onChange={setDraft}
+                  onSubmitShortcut={() => {
+                    void submit();
+                  }}
                 />
               </div>
               <div className="email-agent-prompt__toolbar">

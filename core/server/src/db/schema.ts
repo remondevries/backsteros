@@ -106,6 +106,12 @@ export const workspaceIntegrationSecrets = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     agentmailReplyGreetingTemplate: text("agentmail_reply_greeting_template"),
+    agentmailReplyGreetingTemplateEn: text(
+      "agentmail_reply_greeting_template_en",
+    ),
+    agentmailReplyGreetingTemplateNl: text(
+      "agentmail_reply_greeting_template_nl",
+    ),
     agentmailReplySignOffTemplate: text("agentmail_reply_sign_off_template"),
     agentmailReplySignOffTemplateEn: text("agentmail_reply_sign_off_template_en"),
     agentmailReplySignOffTemplateNl: text("agentmail_reply_sign_off_template_nl"),
@@ -321,6 +327,8 @@ export const tasks = pgTable(
     priority: integer("priority").notNull().default(0),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     dueDate: timestamp("due_date", { withTimezone: true }),
+    /** Optional end of a timed calendar block; null = all-day due date. */
+    dueEndDate: timestamp("due_end_date", { withTimezone: true }),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
     inbox: boolean("inbox").notNull().default(false),
     links: jsonb("links")
@@ -409,6 +417,48 @@ export const habits = pgTable(
     index("habits_workspace_id_idx").on(table.workspaceId),
     index("habits_project_id_idx").on(table.projectId),
     index("habits_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+/** Calendar meetings (workspace-scoped, M-1 display ids). */
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    number: integer("number"),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    notes: text("notes"),
+    transcription: text("transcription"),
+    status: text("status").notNull().default("ready_to_start"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
+    attendeeContactIds: jsonb("attendee_contact_ids")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("meetings_workspace_id_idx").on(table.workspaceId),
+    index("meetings_workspace_number_idx").on(table.workspaceId, table.number),
+    index("meetings_workspace_start_at_idx").on(table.workspaceId, table.startAt),
   ],
 );
 
@@ -1035,6 +1085,7 @@ export const emailThreads = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     inboxId: text("inbox_id").notNull(),
     threadKey: text("thread_key").notNull(),
+    number: integer("number").notNull(),
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "set null",
     }),
@@ -1058,6 +1109,10 @@ export const emailThreads = pgTable(
       table.workspaceId,
       table.inboxId,
       table.threadKey,
+    ),
+    uniqueIndex("email_threads_workspace_number_idx").on(
+      table.workspaceId,
+      table.number,
     ),
     index("email_threads_workspace_id_idx").on(table.workspaceId),
     index("email_threads_organization_id_idx").on(table.organizationId),
@@ -1103,6 +1158,7 @@ export type DbProject = typeof projects.$inferSelect;
 export type DbRecurringTask = typeof recurringTasks.$inferSelect;
 export type DbTask = typeof tasks.$inferSelect;
 export type DbHabit = typeof habits.$inferSelect;
+export type DbMeeting = typeof meetings.$inferSelect;
 export type DbTaskComment = typeof taskComments.$inferSelect;
 export type DbTaskActivity = typeof taskActivities.$inferSelect;
 export type DbDocument = typeof documents.$inferSelect;

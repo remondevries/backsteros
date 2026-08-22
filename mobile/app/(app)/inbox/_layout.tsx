@@ -8,7 +8,7 @@ import {
   PadSidePanelCollapsedRail,
   usePadSidePanelCollapsed,
 } from "../../../lib/pad-side-panel-collapse";
-import { tabDetailScreenOptions } from "../../../lib/tab-stack-options";
+import {tabDetailScreenOptions, iosStackGestureOptions} from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 const LIST_PANE_WIDTH = 360;
@@ -36,8 +36,7 @@ export default function InboxLayout() {
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
-          gestureEnabled: true,
-          fullScreenGestureEnabled: true,
+          ...iosStackGestureOptions,
         }}
       >
         <Stack.Screen
@@ -49,6 +48,11 @@ export default function InboxLayout() {
         />
         <Stack.Screen name="new" options={tabDetailScreenOptions()} />
         <Stack.Screen name="[id]" options={tabDetailScreenOptions()} />
+        <Stack.Screen
+          name="email/[inboxId]/[messageId]"
+          options={tabDetailScreenOptions()}
+        />
+        <Stack.Screen name="email/compose" options={tabDetailScreenOptions()} />
       </Stack>
     );
   }
@@ -77,8 +81,7 @@ export default function InboxLayout() {
           screenOptions={{
             contentStyle: { backgroundColor: colors.background },
             headerStyle: { backgroundColor: colors.background },
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            ...iosStackGestureOptions,
           }}
         >
           <Stack.Screen
@@ -102,6 +105,18 @@ export default function InboxLayout() {
               animation: "fade",
               animationDuration: 220,
             }}
+          />
+          <Stack.Screen
+            name="email/[inboxId]/[messageId]"
+            options={{
+              ...padTaskSurfaceOptions(),
+              animation: "fade",
+              animationDuration: 220,
+            }}
+          />
+          <Stack.Screen
+            name="email/compose"
+            options={padTaskSurfaceOptions()}
           />
         </Stack>
       </View>

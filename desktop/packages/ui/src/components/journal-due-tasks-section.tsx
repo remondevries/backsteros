@@ -11,6 +11,7 @@ import {
   taskIdColumnCssVars,
 } from "../task-id-column-width.js";
 import { getTaskDueDateYmd } from "../tasks-due-filters.js";
+import { useCalendarExternalTaskDrag } from "../use-calendar-external-task-drag.js";
 import type { TaskStatus } from "../task-status.js";
 import { useListMultiSelect } from "../use-list-multi-select.js";
 import {
@@ -43,6 +44,8 @@ export type JournalDueTasksSectionProps = {
   calendarTimeZone?: string;
   onSelectTask?: (taskId: string) => void;
   onToggleHabit?: (item: JournalHabitDayItem, checked: boolean) => void;
+  /** Enable dragging task rows onto the journal day timeline. */
+  dayTimelineDraggable?: boolean;
   /**
    * Fixed monospace width (in `ch`) for the task-id column.
    * Prefer the global workspace max; defaults from the unfiltered `tasks` prop.
@@ -74,6 +77,7 @@ export function JournalDueTasksSection({
   calendarTimeZone,
   onSelectTask,
   onToggleHabit,
+  dayTimelineDraggable = false,
   taskIdColumnCh: taskIdColumnChProp,
 }: JournalDueTasksSectionProps) {
   const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
@@ -146,6 +150,17 @@ export function JournalDueTasksSection({
 
   const { hasBulkSelection, isSelected, toggleSelected } =
     useListMultiSelect(itemIds);
+
+  const dragEnabled =
+    dayTimelineDraggable &&
+    listMode === "tasks" &&
+    tasks.length > 0 &&
+    !isLoading;
+
+  useCalendarExternalTaskDrag(listRef, {
+    enabled: dragEnabled,
+    appendTo: typeof document !== "undefined" ? document.body : null,
+  });
 
   return (
     <section
@@ -242,6 +257,7 @@ export function JournalDueTasksSection({
                       key={task.id}
                       task={task}
                       showDueMeta={false}
+                      calendarTimelineDrag={dayTimelineDraggable}
                       keyboardHighlighted={highlightedId === task.id}
                       onSelect={onSelectTask}
                       selected={isSelected(task.id)}
@@ -260,6 +276,7 @@ export function JournalDueTasksSection({
                 key={task.id}
                 task={task}
                 showDueMeta={false}
+                calendarTimelineDrag={dayTimelineDraggable}
                 keyboardHighlighted={highlightedId === task.id}
                 onSelect={onSelectTask}
                 selected={isSelected(task.id)}

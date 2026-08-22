@@ -20,6 +20,12 @@ import {
   TasksTodayHabitsChips,
   collapseHabitItemsByHabitId,
 } from "../../../components/tasks-today-habits-chips";
+import { useAgentMail } from "../../../lib/agentmail-context";
+import { formatEmailDisplayId } from "../../../lib/email-display-id";
+import {
+  emailPartyLabel,
+  resolveEmailListItemStatus,
+} from "../../../lib/email-list";
 import { getMobileEnvironment } from "../../../lib/env";
 import { listHabits, recordHabitDay } from "../../../lib/habits/api";
 import { getTaskDueDateYmd } from "../../../lib/habits/dates";
@@ -203,9 +209,33 @@ export default function TasksScreen() {
     connected: powerSync.connected,
   });
 
+  // Email thread rows alongside tasks — desktop Tasks page parity. The due
+  // filter applies the same way (emails without a due date show under All).
+  const { messages: emailMessages } = useAgentMail();
+  const emailRows = useMemo<GroupedTaskRow[]>(
+    () =>
+      emailMessages.map((item) => ({
+        id: `email::${item.inboxId}::${item.id}`,
+        title: item.subject?.trim() || "(no subject)",
+        status: resolveEmailListItemStatus(item),
+        priority: item.priority ?? 0,
+        due_date: item.dueDate ?? null,
+        project_name: item.projectName ?? null,
+        project_key: item.projectKey ?? null,
+        display_id:
+          item.displayId ??
+          (item.number != null ? formatEmailDisplayId(item.number) : null),
+        item_type: "email" as const,
+        email_from: item.contactName?.trim() || emailPartyLabel(item.from),
+        email_inbox_id: item.inboxId,
+        email_message_id: item.id,
+      })),
+    [emailMessages],
+  );
+
   const rows = useMemo(
-    () => filterTasksByDueFilter(allRows, dueFilter),
-    [allRows, dueFilter],
+    () => filterTasksByDueFilter([...allRows, ...emailRows], dueFilter),
+    [allRows, dueFilter, emailRows],
   );
 
   const todayHabits = useMemo((): HabitCheckChipItem[] => {
@@ -307,6 +337,16 @@ export default function TasksScreen() {
   const onPressRow = useCallback(
     (row: GroupedTaskRow) => {
       // Stay inside the Tasks tab stack so the due-filter tab + list state survive back.
+      if (
+        row.item_type === "email" &&
+        row.email_inbox_id &&
+        row.email_message_id
+      ) {
+        router.push(
+          `/(app)/tasks/email/${encodeURIComponent(row.email_inbox_id)}/${encodeURIComponent(row.email_message_id)}` as const,
+        );
+        return;
+      }
       router.push(`/(app)/tasks/${row.id}`);
     },
     [router],

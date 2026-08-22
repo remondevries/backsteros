@@ -24,6 +24,8 @@ export type EntityActionsMenuItem = {
   onSelect: () => void;
   danger?: boolean;
   disabled?: boolean;
+  /** Optional leading 16px icon. */
+  icon?: ReactNode;
 };
 
 export type EntityActionsMenuProps = {
@@ -183,6 +185,14 @@ export function EntityActionsMenu({
               item.danger ? " entity-header-action-menu-item-danger" : ""
             }`}
           >
+            {item.icon ? (
+              <span
+                className="entity-header-action-menu-item-icon"
+                aria-hidden="true"
+              >
+                {item.icon}
+              </span>
+            ) : null}
             <span className="app-side-panel-item-label">{item.label}</span>
           </button>
         ))}

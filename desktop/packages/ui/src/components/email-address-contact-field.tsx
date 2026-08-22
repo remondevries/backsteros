@@ -4,12 +4,10 @@ import { useMemo, type ReactNode } from "react";
 
 import { formatEmailPersonWithAddress, parseReplyToAddress } from "../email.js";
 import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
-import { ContactPersonIcon } from "./contact-person-icon.js";
 import {
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,
 } from "./dropdown-options.js";
-import { EntityAvatarIcon } from "./entity-avatar-icon.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 
@@ -56,9 +54,13 @@ export type EmailAddressContactFieldProps = {
   disabled?: boolean;
   /** Optional control beside the chip (e.g. composer pencil to edit raw email). */
   endAction?: ReactNode;
+  /** Render a `<span>` instead of `<dd>` — for use outside definition lists. */
+  bare?: boolean;
+  /** Show only the linked contact name in the chip (address shown elsewhere). */
+  nameOnly?: boolean;
 };
 
-/** Avatar contact dropdown for a From/To header row (`<dd>` wrapper included). */
+/** Contact dropdown for a From/To header row (`<dd>` wrapper included). */
 export function EmailAddressContactField({
   address,
   addressLabel,
@@ -66,16 +68,20 @@ export function EmailAddressContactField({
   ariaLabel,
   disabled = false,
   endAction = null,
+  bare = false,
+  nameOnly = false,
 }: EmailAddressContactFieldProps) {
+  const Wrapper = bare ? "span" : "dd";
   const linkedContactId = contact.contactId?.trim() || null;
   const linkedContactName = contact.contactName?.trim() || null;
-  const linkedContactAvatarSrc = contact.contactAvatarSrc ?? null;
   const addressForLabel = primaryAddressForContactLabel(
     address,
     contact.contactEmail,
   );
   const selectedLabel = linkedContactName
-    ? formatEmailPersonWithAddress(linkedContactName, addressForLabel)
+    ? nameOnly
+      ? linkedContactName
+      : formatEmailPersonWithAddress(linkedContactName, addressForLabel)
     : addressLabel;
 
   const contactOptions = useMemo(() => {
@@ -83,7 +89,7 @@ export function EmailAddressContactField({
       option.value === DROPDOWN_NONE_VALUE
         ? {
             ...option,
-            label: addressLabel,
+            label: "No contact",
             searchTerms: [
               "no contact",
               "none",
@@ -99,15 +105,15 @@ export function EmailAddressContactField({
 
   if (contactOptions.length === 0) {
     return (
-      <dd className={endAction ? "email-compose-to-field" : undefined}>
+      <Wrapper className={endAction ? "email-compose-to-field" : undefined}>
         <span>{addressLabel}</span>
         {endAction}
-      </dd>
+      </Wrapper>
     );
   }
 
   return (
-    <dd
+    <Wrapper
       className={
         endAction
           ? "email-compose-from-field email-compose-to-field"
@@ -122,20 +128,10 @@ export function EmailAddressContactField({
         searchPlaceholder="Link contact…"
         searchShortcutLabel="C"
         ariaLabel={ariaLabel}
-        fallbackIcon={
-          linkedContactAvatarSrc ? (
-            <EntityAvatarIcon
-              src={linkedContactAvatarSrc}
-              size={14}
-              kind="contact"
-            />
-          ) : (
-            <ContactPersonIcon size={14} />
-          )
-        }
         fallbackLabel={selectedLabel}
-        selectedDisplayLabel={linkedContactId ? selectedLabel : null}
+        selectedDisplayLabel={selectedLabel}
         mutedFallback={!linkedContactId}
+        hideTriggerIcon
         triggerVariant="inlineChip"
         panelAlign="start"
         panelWidth={320}
@@ -147,6 +143,6 @@ export function EmailAddressContactField({
         onCreateFromQuery={contact.onCreateContactFromQuery}
       />
       {endAction}
-    </dd>
+    </Wrapper>
   );
 }

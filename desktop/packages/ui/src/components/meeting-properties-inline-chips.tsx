@@ -1,0 +1,317 @@
+"use client";
+
+import {
+  getTaskStatusLabel,
+  migrateLegacyTaskStatus,
+  TASK_STATUS_ORDER,
+  type TaskStatus,
+} from "../task-status.js";
+import {
+  DROPDOWN_NONE_VALUE,
+  DROPDOWN_NO_PROJECT_VALUE,
+  resolveDropdownNone,
+  resolveDropdownProjectKey,
+} from "./dropdown-options.js";
+import { ContactPersonIcon } from "./contact-person-icon.js";
+import { DefaultProjectIcon } from "./default-project-icon.js";
+import { OrganizationIcon } from "./organization-icon.js";
+import type { PropertyDropdownTriggerVariant } from "./property-dropdown.js";
+import { PropertyDropdown } from "./property-dropdown.js";
+import type { SearchableDropdownOption } from "./searchable-dropdown.js";
+import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
+import { SearchableDropdown } from "./searchable-dropdown.js";
+import { TaskStatusIcon } from "./task-status-icon.js";
+
+export type MeetingPropertiesMeeting = {
+  status: string;
+  startAt: Date | null;
+  endAt: Date | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  attendeeContactIds: string[];
+};
+
+export type MeetingPropertiesInlineChipsProps = {
+  meeting: MeetingPropertiesMeeting | null;
+  onStatusChange?: (status: TaskStatus) => void;
+  onStartChange?: (value: Date | null) => void;
+  onEndChange?: (value: Date | null) => void;
+  onProjectChange?: (projectKey: string | null) => void;
+  onOrganizationChange?: (organizationId: string | null) => void;
+  onAttendeeContactIdsChange?: (contactIds: string[]) => void;
+  onFieldActivate?: (field: string) => void;
+  organizationOptions?: SearchableDropdownOption<string>[];
+  contactOptions?: SearchableDropdownOption<string>[];
+  projectOptions?: SearchableDropdownOption<string>[];
+  onCreateOrganizationFromQuery?: (query: string) => void;
+  onCreateContactFromQuery?: (query: string) => void;
+  triggerVariant?: PropertyDropdownTriggerVariant;
+};
+
+function toDate(value: Date | null): Date | null {
+  if (!value || Number.isNaN(value.getTime())) return null;
+  return value;
+}
+
+export function MeetingPropertiesInlineChips({
+  meeting,
+  onStatusChange,
+  onStartChange,
+  onEndChange,
+  onProjectChange,
+  onOrganizationChange,
+  onAttendeeContactIdsChange,
+  onFieldActivate,
+  organizationOptions = [],
+  contactOptions = [],
+  projectOptions = [],
+  onCreateOrganizationFromQuery,
+  onCreateContactFromQuery,
+  triggerVariant = "inlineChip",
+}: MeetingPropertiesInlineChipsProps) {
+  const disabled = meeting == null;
+  const status = migrateLegacyTaskStatus(meeting?.status ?? "ready_to_start");
+  const startAt = toDate(meeting?.startAt ?? null);
+  const endAt = toDate(meeting?.endAt ?? null);
+
+  const statusOptions: SearchableDropdownOption<TaskStatus>[] =
+    TASK_STATUS_ORDER.map((value) => ({
+      value,
+      label: getTaskStatusLabel(value),
+      searchTerms: value.replaceAll("_", " "),
+      icon: <TaskStatusIcon status={value} size={14} />,
+    }));
+
+  const canEditOrg =
+    Boolean(onOrganizationChange) && organizationOptions.length > 0;
+  const canEditProject =
+    Boolean(onProjectChange) && projectOptions.length > 0;
+  const canEditAttendees =
+    Boolean(onAttendeeContactIdsChange) && contactOptions.length > 0;
+
+  const attendeeOptions = contactOptions.filter(
+    (option) => option.value !== DROPDOWN_NONE_VALUE,
+  );
+
+  return (
+    <div className="task-properties-inline" aria-label="Meeting properties">
+      <div className="task-properties-inline__fields">
+        <PropertyDropdown
+          value={status}
+          options={statusOptions}
+          onChange={onStatusChange}
+          disabled={disabled || !onStatusChange}
+          searchPlaceholder="Change status…"
+          searchShortcutLabel="S"
+          ariaLabel="Status"
+          taskPropertyDropdownId="status"
+          fallbackIcon={<TaskStatusIcon status={status} size={14} />}
+          fallbackLabel={getTaskStatusLabel(status)}
+          triggerVariant={triggerVariant}
+          panelAlign="start"
+        />
+        <MeetingScheduleDropdown
+          startAt={startAt}
+          endAt={endAt}
+          disabled={disabled}
+          onStartChange={onStartChange}
+          onEndChange={onEndChange}
+          triggerVariant={triggerVariant}
+        />
+        {canEditProject ? (
+          <PropertyDropdown
+            value={meeting?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}
+            options={projectOptions}
+            onChange={(next) =>
+              onProjectChange?.(resolveDropdownProjectKey(next))
+            }
+            disabled={disabled}
+            searchPlaceholder="Change project…"
+            searchShortcutLabel="⇧P"
+            ariaLabel="Project"
+            taskPropertyDropdownId="project"
+            fallbackIcon={<DefaultProjectIcon size={14} />}
+            fallbackLabel="No project"
+            mutedFallback
+            triggerVariant={triggerVariant}
+            panelAlign="start"
+          />
+        ) : (
+          <button
+            type="button"
+            className={[
+              "property-dropdown-trigger",
+              triggerVariant === "inlineChip"
+                ? "property-dropdown-trigger--inline-chip"
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-task-property-dropdown="project"
+            disabled={disabled}
+            onClick={() => onFieldActivate?.("project")}
+          >
+            <span className="property-dropdown-trigger__icon" aria-hidden="true">
+              <DefaultProjectIcon size={14} />
+            </span>
+            <span className="property-dropdown-trigger__label">
+              {meeting?.projectName?.trim() || "No project"}
+            </span>
+          </button>
+        )}
+        {canEditOrg ? (
+          <PropertyDropdown
+            value={meeting?.organizationId ?? DROPDOWN_NONE_VALUE}
+            options={organizationOptions}
+            onChange={(next) =>
+              onOrganizationChange?.(resolveDropdownNone(next))
+            }
+            disabled={disabled}
+            searchPlaceholder="Change organization…"
+            searchShortcutLabel="O"
+            ariaLabel="Organization"
+            taskPropertyDropdownId="organization"
+            fallbackIcon={<OrganizationIcon size={14} />}
+            fallbackLabel="No organization"
+            mutedFallback
+            triggerVariant={triggerVariant}
+            panelAlign="start"
+            createFromQueryLabel={
+              onCreateOrganizationFromQuery
+                ? (query) => getCreateEntityFromQueryLabel("organization", query)
+                : undefined
+            }
+            onCreateFromQuery={onCreateOrganizationFromQuery}
+          />
+        ) : (
+          <button
+            type="button"
+            className={[
+              "property-dropdown-trigger",
+              triggerVariant === "inlineChip"
+                ? "property-dropdown-trigger--inline-chip"
+                : null,
+              !meeting?.organizationName?.trim() ? "is-muted" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-task-property-dropdown="organization"
+            disabled={disabled}
+            onClick={() => onFieldActivate?.("organization")}
+          >
+            <span className="property-dropdown-trigger__icon" aria-hidden="true">
+              <OrganizationIcon size={14} />
+            </span>
+            <span className="property-dropdown-trigger__label">
+              {meeting?.organizationName?.trim() || "No organization"}
+            </span>
+          </button>
+        )}
+        {canEditAttendees ? (
+          <SearchableDropdown
+            multiple
+            values={meeting?.attendeeContactIds ?? []}
+            options={attendeeOptions}
+            onValuesChange={onAttendeeContactIdsChange}
+            disabled={disabled}
+            searchPlaceholder="Add attendees…"
+            searchShortcutLabel="A"
+            ariaLabel="Attendees"
+            taskPropertyDropdownId="assignee"
+            emptySelectionLabel="No attendees"
+            className={
+              triggerVariant === "inlineChip"
+                ? "property-dropdown property-dropdown--inline-chip"
+                : "property-dropdown"
+            }
+            panelWidth={280}
+            panelAlign="start"
+            createFromQueryLabel={
+              onCreateContactFromQuery
+                ? (query) => getCreateEntityFromQueryLabel("contact", query)
+                : undefined
+            }
+            onCreateFromQuery={onCreateContactFromQuery}
+            renderTrigger={({
+              open,
+              disabled: isDisabled,
+              triggerId,
+              onToggle,
+            }) => (
+              <button
+                type="button"
+                id={triggerId}
+                className={[
+                  "property-dropdown-trigger",
+                  triggerVariant === "inlineChip"
+                    ? "property-dropdown-trigger--inline-chip"
+                    : null,
+                  open ? "is-open" : null,
+                  (meeting?.attendeeContactIds?.length ?? 0) === 0
+                    ? "is-muted"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-task-property-dropdown="assignee"
+                disabled={isDisabled}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-label="Attendees"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle();
+                }}
+              >
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  <ContactPersonIcon size={14} />
+                </span>
+                <span className="property-dropdown-trigger__label">
+                  {(meeting?.attendeeContactIds?.length ?? 0) === 0
+                    ? "No attendees"
+                    : meeting!.attendeeContactIds.length === 1
+                      ? (attendeeOptions.find(
+                          (option) =>
+                            option.value === meeting!.attendeeContactIds[0],
+                        )?.label ?? "1 attendee")
+                      : `${meeting!.attendeeContactIds.length} attendees`}
+                </span>
+              </button>
+            )}
+          />
+        ) : (
+          <button
+            type="button"
+            className={[
+              "property-dropdown-trigger",
+              triggerVariant === "inlineChip"
+                ? "property-dropdown-trigger--inline-chip"
+                : null,
+              (meeting?.attendeeContactIds?.length ?? 0) === 0 ? "is-muted" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            data-task-property-dropdown="assignee"
+            disabled={disabled}
+            onClick={() => onFieldActivate?.("attendees")}
+          >
+            <span className="property-dropdown-trigger__icon" aria-hidden="true">
+              <ContactPersonIcon size={14} />
+            </span>
+            <span className="property-dropdown-trigger__label">
+              {(meeting?.attendeeContactIds?.length ?? 0) === 0
+                ? "No attendees"
+                : `${meeting!.attendeeContactIds.length} attendees`}
+            </span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

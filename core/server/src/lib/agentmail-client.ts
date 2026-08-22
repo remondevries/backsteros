@@ -98,6 +98,15 @@ export type AgentMailMessageSummary = {
   timestamp: string;
 };
 
+export type AgentMailMessageAttachment = {
+  attachmentId: string;
+  size: number;
+  filename: string | null;
+  contentType: string | null;
+  contentDisposition: string | null;
+  contentId: string | null;
+};
+
 export type AgentMailMessageDetail = AgentMailMessageSummary & {
   text: string | null;
   html: string | null;
@@ -106,6 +115,7 @@ export type AgentMailMessageDetail = AgentMailMessageSummary & {
   to: string[];
   labels: string[];
   inReplyTo: string | null;
+  attachments: AgentMailMessageAttachment[];
 };
 
 export type AgentMailThread = {
@@ -127,9 +137,19 @@ export type AgentMailDraftSummary = {
   createdAt: string;
 };
 
+export type AgentMailDraftAttachment = AgentMailMessageAttachment;
+
 export type AgentMailDraftDetail = AgentMailDraftSummary & {
   html: string | null;
   to: string[];
+  attachments: AgentMailDraftAttachment[];
+};
+
+/** AgentMail `/drafts/{id}/send` returns only message_id + thread_id. */
+export type AgentMailSendDraftResult = {
+  inboxId: string;
+  messageId: string;
+  threadId: string;
 };
 
 export function formatAgentMailAddress(value: unknown): string {
@@ -187,6 +207,7 @@ export function mapAgentMailMessageDetail(
       ? raw.labels.filter((label): label is string => typeof label === "string")
       : [],
     inReplyTo: asOptionalString(raw.in_reply_to),
+    attachments: mapAgentMailAttachments(raw.attachments),
   };
 }
 
@@ -220,7 +241,32 @@ export function mapAgentMailDraftDetail(
     ...mapAgentMailDraftSummary(raw),
     html: asOptionalString(raw.html),
     to: mapAddressList(raw.to),
+    attachments: mapAgentMailAttachments(raw.attachments),
   };
+}
+
+export function mapAgentMailAttachments(
+  value: unknown,
+): AgentMailMessageAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const out: AgentMailMessageAttachment[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+    const attachmentId = asOptionalString(rec.attachment_id);
+    if (!attachmentId) continue;
+    const size =
+      typeof rec.size === "number" && Number.isFinite(rec.size) ? rec.size : 0;
+    out.push({
+      attachmentId,
+      size,
+      filename: asOptionalString(rec.filename),
+      contentType: asOptionalString(rec.content_type),
+      contentDisposition: asOptionalString(rec.content_disposition),
+      contentId: asOptionalString(rec.content_id),
+    });
+  }
+  return out;
 }
 
 export type AgentMailClientOptions = {
@@ -364,7 +410,77 @@ export class AgentMailClient {
     const raw = await this.requestJson<Record<string, unknown>>(
       `/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
     );
-    return mapAgentMailMessageDetail(raw);
+    return mapAgentMailMessageDetail({
+      ...raw,
+      inbox_id: raw.inbox_id ?? inboxId,
+    });
+  }
+
+  async getMessageAttachment(
+    inboxId: string,
+    messageId: string,
+    attachmentId: string,
+  ): Promise<{
+    bytes: Uint8Array;
+    contentType: string;
+    filename: string | null;
+  }> {
+    const raw = await this.requestJson<Record<string, unknown>>(
+      `/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+    const downloadUrl = asOptionalString(raw.download_url);
+    if (!downloadUrl) {
+      throw new AgentMailApiError(
+        502,
+        "",
+        "AgentMail attachment missing download_url",
+      );
+    }
+    const response = await this.fetchImpl(downloadUrl, {
+      signal: this.requestAbortSignal(),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new AgentMailApiError(response.status, body);
+    }
+    const buffer = await response.arrayBuffer();
+    return {
+      bytes: new Uint8Array(buffer),
+      contentType:
+        asOptionalString(raw.content_type) ?? "application/octet-stream",
+      filename: asOptionalString(raw.filename),
+    };
+  }
+
+  /** Raw MIME source (.eml) — metadata call returns a presigned download URL. */
+  async getMessageRaw(
+    inboxId: string,
+    messageId: string,
+  ): Promise<{ raw: string; sizeBytes: number }> {
+    const meta = await this.requestJson<Record<string, unknown>>(
+      `/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/raw`,
+    );
+    const downloadUrl = asOptionalString(meta.download_url);
+    if (!downloadUrl) {
+      throw new AgentMailApiError(
+        502,
+        "",
+        "AgentMail raw message missing download_url",
+      );
+    }
+    const response = await this.fetchImpl(downloadUrl, {
+      signal: this.requestAbortSignal(),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new AgentMailApiError(response.status, body);
+    }
+    const raw = await response.text();
+    const sizeBytes =
+      typeof meta.size === "number" && Number.isFinite(meta.size)
+        ? meta.size
+        : new TextEncoder().encode(raw).length;
+    return { raw, sizeBytes };
   }
 
   async getThread(
@@ -438,7 +554,10 @@ export class AgentMailClient {
     const raw = await this.requestJson<Record<string, unknown>>(
       `/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
     );
-    return mapAgentMailDraftDetail(raw);
+    return mapAgentMailDraftDetail({
+      ...raw,
+      inbox_id: raw.inbox_id ?? inboxId,
+    });
   }
 
   async createDraft(
@@ -449,7 +568,10 @@ export class AgentMailClient {
       `/inboxes/${encodeURIComponent(inboxId)}/drafts`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    return mapAgentMailDraftDetail(raw);
+    return mapAgentMailDraftDetail({
+      ...raw,
+      inbox_id: raw.inbox_id ?? inboxId,
+    });
   }
 
   async updateDraft(
@@ -461,19 +583,27 @@ export class AgentMailClient {
       `/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}`,
       { method: "PATCH", body: JSON.stringify(body) },
     );
-    return mapAgentMailDraftDetail(raw);
+    return mapAgentMailDraftDetail({
+      ...raw,
+      inbox_id: raw.inbox_id ?? inboxId,
+    });
   }
 
   async sendDraft(
     inboxId: string,
     draftId: string,
     body: Record<string, unknown> = {},
-  ): Promise<AgentMailMessageDetail> {
+  ): Promise<AgentMailSendDraftResult> {
     const raw = await this.requestJson<Record<string, unknown>>(
       `/inboxes/${encodeURIComponent(inboxId)}/drafts/${encodeURIComponent(draftId)}/send`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    return mapAgentMailMessageDetail(raw);
+    // Docs: send returns only { message_id, thread_id } — not a full Message.
+    return {
+      inboxId: asRequiredString(raw.inbox_id ?? inboxId, "inbox_id"),
+      messageId: asRequiredString(raw.message_id, "message_id"),
+      threadId: asRequiredString(raw.thread_id, "thread_id"),
+    };
   }
 
   async deleteDraft(inboxId: string, draftId: string): Promise<void> {
@@ -652,4 +782,121 @@ export function mapAgentMailWebhook(
     eventTypes,
     inboxIds,
   };
+}
+
+/** Merge thread summary rows with fully-fetched message bodies. */
+export function mergeAgentMailMessageDetail(
+  base: AgentMailMessageDetail,
+  overlay: AgentMailMessageDetail,
+): AgentMailMessageDetail {
+  return {
+    ...base,
+    subject: overlay.subject || base.subject,
+    from: overlay.from || base.from,
+    preview: overlay.preview ?? base.preview,
+    timestamp: overlay.timestamp || base.timestamp,
+    text: overlay.text ?? base.text,
+    html: overlay.html ?? base.html,
+    extractedText: overlay.extractedText ?? base.extractedText,
+    extractedHtml: overlay.extractedHtml ?? base.extractedHtml,
+    to: overlay.to.length > 0 ? overlay.to : base.to,
+    labels: overlay.labels.length > 0 ? overlay.labels : base.labels,
+    inReplyTo: overlay.inReplyTo ?? base.inReplyTo,
+    attachments:
+      overlay.attachments.length > 0 ? overlay.attachments : base.attachments,
+  };
+}
+
+export type EmailSourceHeader = { name: string; value: string };
+
+/**
+ * Parse the RFC 5322 header block from raw MIME source — unfolds continuation
+ * lines and stops at the first blank line (start of the body).
+ */
+export function parseEmailSourceHeaders(raw: string): EmailSourceHeader[] {
+  const headerBlock = raw.split(/\r?\n\r?\n/, 1)[0] ?? "";
+  const lines = headerBlock.split(/\r?\n/);
+  const headers: EmailSourceHeader[] = [];
+  for (const line of lines) {
+    if (!line) break;
+    if (/^[ \t]/.test(line)) {
+      const last = headers[headers.length - 1];
+      if (last) last.value += ` ${line.trim()}`;
+      continue;
+    }
+    const separator = line.indexOf(":");
+    if (separator <= 0) continue;
+    headers.push({
+      name: line.slice(0, separator).trim(),
+      value: line.slice(separator + 1).trim(),
+    });
+  }
+  return headers;
+}
+
+export function emailHtmlReferencesInlineAttachments(
+  html: string | null | undefined,
+): boolean {
+  return /cid:/i.test(html ?? "");
+}
+
+export function agentMailMessageNeedsFullHydration(
+  message: AgentMailMessageDetail,
+): boolean {
+  const hasPlain = Boolean(
+    message.extractedText?.trim() || message.text?.trim(),
+  );
+  const hasHtml = Boolean(
+    message.extractedHtml?.trim() || message.html?.trim(),
+  );
+  const needsInlineAttachments =
+    emailHtmlReferencesInlineAttachments(message.extractedHtml) ||
+    emailHtmlReferencesInlineAttachments(message.html);
+  const hasInlineAttachments = message.attachments.some((attachment) =>
+    Boolean(attachment.contentId?.trim()),
+  );
+  return (
+    !hasPlain ||
+    !hasHtml ||
+    (needsInlineAttachments && !hasInlineAttachments)
+  );
+}
+
+/**
+ * AgentMail thread listings can omit html/text on individual messages.
+ * Fetch full message rows when either plain or HTML bodies are missing.
+ */
+export async function hydrateAgentMailThreadMessages(
+  client: AgentMailClient,
+  inboxId: string,
+  anchorMessage: AgentMailMessageDetail,
+  threadMessages: AgentMailMessageDetail[],
+): Promise<AgentMailMessageDetail[]> {
+  const known = new Map<string, AgentMailMessageDetail>();
+  known.set(anchorMessage.messageId, anchorMessage);
+
+  return Promise.all(
+    threadMessages.map(async (summary) => {
+      const cached = known.get(summary.messageId);
+      let merged = cached
+        ? mergeAgentMailMessageDetail(summary, cached)
+        : summary;
+
+      if (!agentMailMessageNeedsFullHydration(merged)) {
+        return merged;
+      }
+
+      let full = known.get(summary.messageId);
+      if (!full) {
+        try {
+          full = await client.getMessage(inboxId, summary.messageId);
+          known.set(summary.messageId, full);
+        } catch {
+          return merged;
+        }
+      }
+
+      return mergeAgentMailMessageDetail(summary, full);
+    }),
+  );
 }

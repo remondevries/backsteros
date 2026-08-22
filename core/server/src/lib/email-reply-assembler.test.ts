@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assembleEmailHtml,
   assembleReplyEmail,
+  EMAIL_SIGN_OFF_AVATAR_CID,
   extractReplyBodyFromAssembled,
   parseReplyToAddress,
   parseSenderFirstName,
@@ -56,13 +58,32 @@ describe("email-reply-assembler", () => {
     assert.doesNotMatch(html, /&lt;script/);
   });
 
+  it("html footer places avatar beside sign-off text like the compose UI", () => {
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <ada@example.com>",
+      subject: "Invoice",
+      body: "Please send the contract.",
+      templates: {
+        signOffTemplateEn: "Best,\n{name}",
+        signOffName: "Ralph",
+      },
+    });
+    const html = assembleEmailHtml(assembled, {
+      signOffAvatarCid: EMAIL_SIGN_OFF_AVATAR_CID,
+    });
+    assert.match(html, new RegExp(`cid:${EMAIL_SIGN_OFF_AVATAR_CID}`));
+    assert.match(html, /Best,<br>\nRalph/);
+    assert.match(html, /border-radius:9999px/);
+    assert.match(html, /Please send the contract/);
+  });
+
   it("uses custom templates from settings", () => {
     const assembled = assembleReplyEmail({
       from: "Ada Lovelace <ada@example.com>",
       subject: "Invoice",
       body: "We appreciate your note.",
       templates: {
-        greetingTemplate: "Hello {firstName},",
+        greetingTemplateEn: "Hello {firstName},",
         signOffTemplateEn: "Cheers,\n{name}",
         signOffTemplateNl: "Groeten,\n{name}",
         signOffName: "Team",
@@ -74,6 +95,24 @@ describe("email-reply-assembler", () => {
         "\n",
       ),
     );
+  });
+
+  it("picks Dutch greeting and sign-off from language detection", () => {
+    const assembled = assembleReplyEmail({
+      from: "Ada Lovelace <ada@example.com>",
+      subject: "Factuur",
+      body: "Bedankt voor uw bericht. Wij hebben de factuur ontvangen.",
+      templates: {
+        greetingTemplateEn: "Hi {firstName},",
+        greetingTemplateNl: "Beste {firstName},",
+        signOffTemplateEn: "Best,\n{name}",
+        signOffTemplateNl: "Met vriendelijke groet,\n{name}",
+        signOffName: "Remon",
+      },
+      contextText: "Beste Remon, graag de factuur verwerken.",
+    });
+    assert.match(assembled.greeting, /^Beste Ada,/);
+    assert.match(assembled.signOff, /Met vriendelijke groet/);
   });
 
   it("extracts editable body from assembled draft text", () => {
@@ -107,7 +146,7 @@ describe("email-reply-assembler", () => {
     assert.equal(
       assembled.text,
       [
-        "Hi Remon,",
+        "Beste Remon,",
         "",
         "Bedankt voor het toesturen van factuur 8959599. We verwerken de betaling.",
         "",

@@ -208,6 +208,7 @@ export {
 
 export {
   INBOX_TASK_LIST_PANEL_WIDTH_KEY,
+  CALENDAR_TASK_LIST_PANEL_WIDTH_KEY,
   EMAIL_LIST_PANEL_WIDTH_KEY,
   JOURNAL_LIST_PANEL_WIDTH_KEY,
   KNOWLEDGE_LIST_PANEL_WIDTH_KEY,
@@ -218,6 +219,11 @@ export {
   shouldShowContentSidePanel,
   getContentSidePanelWidthKey,
   isInboxPath,
+  isInboxPanelPath,
+  isCalendarPath,
+  isCalendarListPath,
+  isCalendarTaskDetailPath,
+  isCalendarMeetingDetailPath,
   isEmailPath,
   getSelectedInboxSlugFromPathname,
 } from "./content-side-panel.js";
@@ -240,16 +246,21 @@ export {
 } from "./components/content-side-panel-list.js";
 
 export {
+  buildInboxEmailListItem,
   buildInboxTaskListItem,
+  buildTaskListEmailItem,
+  emailInboxItemId,
   encodeTaskSlug,
   findInboxItemBySlugOrId,
   formatInboxDueDateLabel,
+  getEmailTaskListHref,
   getFirstInboxItemHref,
   getInboxAttentionGroupKey,
   getInboxAttentionGroupLabel,
   getInboxHrefAfterRemovingItem,
   getInboxItemDisplayId,
   getInboxItemHref,
+  buildInboxItemHrefById,
   getInboxItemRouteSlug,
   getInboxTaskRouteHref,
   getInboxTaskRouteSlugForTask,
@@ -257,14 +268,19 @@ export {
   getInboxAttentionKeyboardItemIds,
   groupInboxItemsByAttentionStatus,
   isAgentInboxPending,
+  isEmailTaskListItem,
   isInboxOverdueTask,
   pickIdAfterRemoving,
+  resolveInboxEmailIconColor,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
+  emailBelongsInInbox,
+  isEmailIncomingStatus,
   INBOX_ATTENTION_REAL_STATUSES,
   INBOX_ATTENTION_STATUS_ORDER,
   type InboxAttentionStatus,
   type InboxAttentionStatusGroup,
+  type InboxEmailListItem,
   type InboxLetterListItem,
   type InboxListItem,
   type InboxTaskListItem,
@@ -272,10 +288,12 @@ export {
 
 export {
   emailListItemIsSelected,
+  emailMailboxFromDisplay,
   emailMailboxLabel,
   getEmailComposeHref,
   getEmailDraftHref,
   getEmailItemHref,
+  getEmailListContext,
   getEmailListItemHref,
   getSelectedEmailIdFromPathname,
   groupEmailItemsByMailbox,
@@ -284,23 +302,38 @@ export {
   collapseEmailListItemsByThread,
   getEmailStatusLabel,
   isEmailComposePath,
+  isEmailInboxListContext,
+  isEmailProjectListContext,
+  isEmailTasksListContext,
   parseEmailDraftPath,
   parseEmailMessagePath,
   parseReplyToAddress,
+  preserveEmailInboxListContext,
   replySubject,
+  stripEmailDraftShell,
   formatEmailPersonWithAddress,
+  formatEmailListPartyLabel,
+  emailMessageBody,
+  emailMessagePlainBody,
+  emailMessageHtmlBody,
+  type EmailThreadBodyViewMode,
   resolveEmailListItemStatus,
-  resolveEmailVisibleStatus,
+  withEmailInboxListContext,
+  withEmailListContext,
   EMAIL_COMPOSE_PATH,
+  EMAIL_INBOX_LIST_PARAM,
+  EMAIL_INBOX_LIST_VALUE,
+  EMAIL_PROJECT_LIST_VALUE,
+  EMAIL_TASKS_LIST_VALUE,
   EMAIL_STATUS_ORDER,
   type EmailDraftPath,
+  type EmailListContext,
   type EmailListItem,
   type EmailListItemKind,
   type EmailMailbox,
   type EmailMailboxGroup,
   type EmailMessagePath,
   type EmailStatusGroup,
-  type EmailVisibleStatus,
 } from "./email.js";
 
 export { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
@@ -347,6 +380,32 @@ export {
   EmailThreadCommentBubble,
   type EmailThreadCommentBubbleProps,
 } from "./components/email-thread-comment-bubble.js";
+export {
+  TaskMentionBlockChip,
+  type TaskMentionBlockChipProps,
+  type TaskMentionBlockChipTask,
+} from "./components/task-mention-block-chip.js";
+export {
+  EmailMentionBlockChip,
+  type EmailMentionBlockChipProps,
+  type EmailMentionBlockChipEmail,
+} from "./components/email-mention-block-chip.js";
+
+export {
+  EmailThreadMinimap,
+  type EmailThreadMinimapProps,
+} from "./components/email-thread-minimap.js";
+
+export {
+  compactEmailMinimapPreview,
+  deriveEmailThreadMinimapItems,
+  emailThreadMinimapSectionId,
+  resolveEmailThreadMinimapHasPersistentGutter,
+  resolveEmailThreadMinimapHitStripWidth,
+  type EmailThreadMinimapDirection,
+  type EmailThreadMinimapItem,
+  type EmailThreadMinimapMessageInput,
+} from "./email-thread-minimap.js";
 
 export {
   EmailThreadCommentComposer,
@@ -363,6 +422,21 @@ export {
   EmailThreadMessageCard,
   type EmailThreadMessageCardProps,
 } from "./components/email-thread-message-card.js";
+export {
+  EmailMessageHtmlBody,
+  type EmailMessageHtmlBodyProps,
+} from "./components/email-message-html-body.js";
+export {
+  resolveEmailInlineAttachments,
+  type EmailMessageInlineAttachment,
+} from "./email-message-html.js";
+export {
+  formatEmailSourceSize,
+  parseEmailAuthenticationResults,
+  type EmailAuthenticationCheck,
+  type EmailMessageSourceDetail,
+  type EmailMessageSourceHeader,
+} from "./email-message-source.js";
 export {
   EmailThreadView,
   type EmailDraftActionsConfig,
@@ -391,6 +465,85 @@ export {
   InboxDetailLayout,
   type InboxDetailLayoutProps,
 } from "./components/inbox-detail-layout.js";
+
+export {
+  DEFAULT_TIMED_TASK_DURATION_MINUTES,
+  calendarChangeToTaskPatch,
+  isTerminalCalendarTaskStatus,
+  isHiddenCalendarTaskStatus,
+  isHabitLinkedCalendarTask,
+  shouldIncludeTaskInCalendarUi,
+  taskCalendarEventClassNames,
+  taskCalendarEventColors,
+  taskCalendarEventNeutralColors,
+  taskToCalendarEvent,
+  tasksToCalendarEvents,
+  tasksToCalendarEventsForDate,
+  formatCalendarTaskScheduleLabel,
+  calendarChangeToMeetingPatch,
+  calendarEntityFromEvent,
+  meetingToCalendarEvent,
+  meetingsToCalendarEvents,
+  mergeCalendarGridEvents,
+  unscheduledCalendarTasks,
+  type CalendarEventChange,
+  type CalendarTaskLike,
+  type MeetingCalendarLike,
+  type MeetingCalendarPatch,
+  type TaskCalendarEvent,
+  type TaskCalendarPatch,
+} from "./calendar-events.js";
+
+export { calendarTaskDragEventData, taskDueEpochAttribute } from "./calendar-task-drag.js";
+
+export {
+  useCalendarExternalTaskDrag,
+  type UseCalendarExternalTaskDragOptions,
+} from "./use-calendar-external-task-drag.js";
+
+export {
+  CalendarView,
+  type CalendarViewProps,
+} from "./components/calendar-view.js";
+
+export {
+  CalendarTaskEventPopover,
+  type CalendarTaskEventPopoverProps,
+  type CalendarTaskPopoverTask,
+} from "./components/calendar-task-event-popover.js";
+
+export {
+  CalendarMeetingEventPopover,
+  type CalendarMeetingEventPopoverProps,
+  type CalendarMeetingPopoverMeeting,
+} from "./components/calendar-meeting-event-popover.js";
+
+export {
+  CalendarHabitsIconRow,
+  type CalendarHabitsIconRowProps,
+  type CalendarHabitIconItem,
+} from "./components/calendar-habits-icon-row.js";
+
+export {
+  buildCalendarDayHabitsByDate,
+  type CalendarHabitDefinition,
+  type CalendarHabitDayTask,
+} from "./calendar-day-habits.js";
+
+export {
+  CalendarTasksSidePanelView,
+  type CalendarTasksSidePanelViewProps,
+} from "./components/calendar-tasks-side-panel-view.js";
+
+export {
+  CalendarDayTimeline,
+  type CalendarDayTimelineProps,
+} from "./components/calendar-day-timeline.js";
+
+export {
+  JournalDayLayout,
+  type JournalDayLayoutProps,
+} from "./components/journal-day-layout.js";
 
 export {
   formatLocalYmd,
@@ -469,6 +622,7 @@ export {
   isJournalDetailPath,
   isJournalReservedSlug,
   isJournalSectionPath,
+  JOURNAL_DAY_CALENDAR_PANEL_WIDTH_KEY,
 } from "./journal.js";
 
 export {
@@ -619,6 +773,52 @@ export {
   type LetterListItem,
   type LetterStatusGroup,
 } from "./letters.js";
+
+export {
+  MEETING_DISPLAY_KEY,
+  formatMeetingDisplayId,
+  parseMeetingDisplayId,
+  resolveMeetingAccentColor,
+  defaultNewMeetingTimes,
+  getCalendarMeetingHref,
+  getCalendarMeetingOverlayHref,
+  CALENDAR_MEETING_OVERLAY_PARAM,
+  parseCalendarMeetingOverlayId,
+  sortMeetingsByStart,
+  type MeetingListItem,
+} from "./meetings.js";
+
+export {
+  CalendarMeetingDetailOverlay,
+  type CalendarMeetingDetailOverlayProps,
+} from "./components/calendar-meeting-detail-overlay.js";
+
+export {
+  MeetingDetailView,
+  type MeetingDetailViewProps,
+} from "./components/meeting-detail-view.js";
+
+export {
+  MeetingPropertiesDisplay,
+  type MeetingPropertiesDisplayProps,
+} from "./components/meeting-properties-display.js";
+
+export {
+  MeetingPropertiesInlineChips,
+  type MeetingPropertiesInlineChipsProps,
+  type MeetingPropertiesMeeting,
+} from "./components/meeting-properties-inline-chips.js";
+
+export {
+  MeetingScheduleDropdown,
+  type MeetingScheduleDropdownProps,
+} from "./components/meeting-schedule-dropdown.js";
+
+export {
+  EMAIL_DISPLAY_KEY,
+  formatEmailDisplayId,
+  parseEmailDisplayId,
+} from "./email-display-id.js";
 
 export {
   getOrganizationsHref,
@@ -1668,6 +1868,7 @@ export {
   LEGACY_INBOX_TASK_PROPERTIES_PANEL_WIDTH_KEY,
   LETTER_PROPERTIES_PANEL_WIDTH_KEY,
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
+  MEETING_PROPERTIES_PANEL_WIDTH_KEY,
   isTaskDetailPath,
 } from "./properties-panel.js";
 
@@ -1774,6 +1975,7 @@ export type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogEmail,
   MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
@@ -1904,11 +2106,15 @@ export {
   TaskLinkAttachments,
   TaskLinkIcon,
   coerceSparkEmailUrl,
+  isAppDocumentTaskLinkUrl,
+  isAppEmailTaskLinkUrl,
   isGithubTaskLinkUrl,
   isSparkEmailTaskLinkUrl,
   normalizeTaskLinkUrl,
   taskLinkDisplayLabel,
+  type TaskLinkAttachmentKind,
   type TaskLinkAttachmentsProps,
+  type TaskLinkPickerOption,
 } from "./components/task-link-attachments.js";
 
 export {
@@ -2074,6 +2280,7 @@ export {
   resolveMentionCatalogOrganization,
   resolveMentionCatalogDocument,
   resolveMentionCatalogLetter,
+  resolveMentionCatalogEmail,
 } from "./mentions/resolve-catalog-entry.js";
 
 export {

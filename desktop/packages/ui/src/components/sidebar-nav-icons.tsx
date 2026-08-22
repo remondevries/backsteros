@@ -29,20 +29,19 @@ export function InboxNavIcon({ className }: SidebarNavIconProps) {
   );
 }
 
-export function EmailNavIcon({ className }: SidebarNavIconProps) {
+export function EmailNavIcon({ className, size = 16 }: SidebarNavIconProps) {
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 16 16"
       fill="none"
+      xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
       className={className}
     >
       <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M1.75 2h12.5c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 14H1.75A1.75 1.75 0 0 1 0 12.25v-8.5C0 2.784.784 2 1.75 2ZM1.5 12.251c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V5.809L8.38 9.397a.75.75 0 0 1-.76 0L1.5 5.809v6.442Zm13-8.181v-.32a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25v.32L8 7.88Z"
+        d="M14.9341 1.65742L10.0527 14.5271C9.85398 15.0514 9.36691 15.1558 8.97104 14.7594C8.97104 14.7594 5.89577 11.6842 5.61555 11.4039C5.33533 11.1237 5.43264 10.573 5.83208 10.1796L12.6164 3.50024C13.0159 3.10692 12.9787 3.06412 12.5334 3.40497L4.89564 9.25594C4.45086 9.59678 3.76254 9.55144 3.36615 9.15506L1.24057 7.02947C0.844185 6.63309 0.94863 6.14653 1.47289 5.94732L14.3426 1.0659C14.8668 0.867203 15.1328 1.13316 14.9341 1.65742ZM3.93729 10.4466C3.7391 10.2484 3.57708 10.3157 3.57708 10.5959V12.9324C3.57708 13.2126 3.77375 13.3237 4.01371 13.1795L5.237 12.4453C5.47748 12.3012 5.51161 12.0209 5.31342 11.8227L3.93729 10.4466Z"
         fill="currentColor"
       />
     </svg>
@@ -69,6 +68,25 @@ export function TasksNavIcon({ className }: SidebarNavIconProps) {
         fillRule="evenodd"
         clipRule="evenodd"
         d="M8.1543 1.00391C9.73945 1.08421 11 2.39489 11 4V8L10.9961 8.1543C10.9184 9.68834 9.68834 10.9184 8.1543 10.9961L8 11H4L3.8457 10.9961C2.31166 10.9184 1.08163 9.68834 1.00391 8.1543L1 8V4C1 2.39489 2.26055 1.08421 3.8457 1.00391L4 1H8L8.1543 1.00391ZM4 2.5C3.17157 2.5 2.5 3.17157 2.5 4V8C2.5 8.82843 3.17157 9.5 4 9.5H8C8.82843 9.5 9.5 8.82843 9.5 8V4C9.5 3.17157 8.82843 2.5 8 2.5H4Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+export function CalendarNavIcon({ className }: SidebarNavIconProps) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M11 1C13.2091 1 15 2.79086 15 5V11C15 13.2091 13.2091 15 11 15H5C2.79086 15 1 13.2091 1 11V5C1 2.79086 2.79086 1 5 1H11ZM13.5 6H2.5V11C2.5 12.3807 3.61929 13.5 5 13.5H11C12.3807 13.5 13.5 12.3807 13.5 11V6Z"
         fill="currentColor"
       />
     </svg>

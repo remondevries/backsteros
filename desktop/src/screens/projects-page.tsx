@@ -83,6 +83,14 @@ import {
   withAvatarSrc,
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
+import { useAgentMail } from "../lib/agentmail-context";
+import {
+  filterEmailTaskRowsForProject,
+  getEmailTaskListHref,
+  isEmailTaskListItem,
+  mapEmailMessagesToTaskRows,
+  patchEmailTaskListItem,
+} from "../lib/email-list-tasks";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
 import { writeDocumentContentCache } from "../lib/document-content-cache";
@@ -170,6 +178,7 @@ export function ProjectsPage({
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
+  const agentMail = useAgentMail();
   const [projectOverlay, setProjectOverlay] = useState<
     Record<string, Partial<WorkspaceProject>>
   >({});
@@ -688,6 +697,84 @@ export function ProjectsPage({
     workspace,
   ]);
 
+  const projectTasks = useMemo(() => {
+    if (!selected) return [];
+    const taskRows = tasks.filter(
+      (task) =>
+        !task.habitId &&
+        (task.projectId === selected.id ||
+          (task.projectKey &&
+            task.projectKey.toLowerCase() === selected.key.toLowerCase())),
+    );
+    const mailboxes = agentMail.mailboxes.map((mailbox) => ({
+      ...mailbox,
+      avatarSrc: mailbox.contactId
+        ? contactAvatarSrc[mailbox.contactId] ?? null
+        : null,
+    }));
+    const emailRows = filterEmailTaskRowsForProject(
+      mapEmailMessagesToTaskRows(agentMail.messages, mailboxes),
+      selected,
+    );
+    return [...taskRows, ...emailRows];
+  }, [
+    agentMail.mailboxes,
+    agentMail.messages,
+    contactAvatarSrc,
+    selected,
+    tasks,
+  ]);
+
+  const projectList = workspace.projects;
+
+  const assigneeOptions = useMemo(
+    () => buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts],
+  );
+
+  const organizationOptions = useMemo(
+    () =>
+      buildOrganizationDropdownOptions(
+        withAvatarSrc(organizations, organizationAvatarSrc),
+        { includeNone: false },
+      ),
+    [organizationAvatarSrc, organizations],
+  );
+
+  const letterOrganizationOptions = useMemo(
+    () =>
+      buildOrganizationDropdownOptions(
+        withAvatarSrc(organizations, organizationAvatarSrc),
+      ),
+    [organizationAvatarSrc, organizations],
+  );
+
+  const projectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projectList.map((entry) => ({
+          key: entry.key,
+          name: entry.name,
+          icon: entry.icon,
+        })),
+        { includeNone: false },
+      ),
+    [projectList],
+  );
+
+  const composeProjectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projectList.map((entry) => ({
+          key: entry.key,
+          name: entry.name,
+          icon: entry.icon,
+        })),
+        { includeNone: true },
+      ),
+    [projectList],
+  );
+
   if (!routeSlug) {
     const areaFilter =
       parseProjectAreaFilterFromLocation(location.pathname, location.search) ??
@@ -841,46 +928,6 @@ export function ProjectsPage({
     }));
   };
 
-  const projectTasks = tasks.filter(
-    (task) =>
-      !task.habitId &&
-      (task.projectId === project.id ||
-        (task.projectKey &&
-          task.projectKey.toLowerCase() === projectKey.toLowerCase())),
-  );
-
-  const projectList = workspace.projects;
-
-  const assigneeOptions = buildAssigneeDropdownOptions(
-    withAvatarSrc(contacts, contactAvatarSrc),
-  );
-
-  const organizationOptions = buildOrganizationDropdownOptions(
-    withAvatarSrc(organizations, organizationAvatarSrc),
-    { includeNone: false },
-  );
-
-  const letterOrganizationOptions = buildOrganizationDropdownOptions(
-    withAvatarSrc(organizations, organizationAvatarSrc),
-  );
-
-  const projectOptions = buildProjectDropdownOptions(
-    projectList.map((entry) => ({
-      key: entry.key,
-      name: entry.name,
-      icon: entry.icon,
-    })),
-    { includeNone: false },
-  );
-
-  const composeProjectOptions = buildProjectDropdownOptions(
-    projectList.map((entry) => ({
-      key: entry.key,
-      name: entry.name,
-      icon: entry.icon,
-    })),
-  );
-
   const taskProgress = computeTaskProgress(projectTasks);
 
   function handleSectionChange(next: ProjectSectionId) {
@@ -914,19 +961,31 @@ export function ProjectsPage({
           view={projectTasksView}
           onViewChange={navigateProjectTasksView}
           renderTaskTitleTrailing={(task) =>
-            renderTaskAgentTitleTrailing({
-              taskId: task.id,
-              agentChatId: task.agentChatId,
-              taskStatus: task.status,
-              agentStatus,
-              workingShownOnStatusIcon: true,
-            })
+            isEmailTaskListItem(task)
+              ? null
+              : renderTaskAgentTitleTrailing({
+                  taskId: task.id,
+                  agentChatId: task.agentChatId,
+                  taskStatus: task.status,
+                  agentStatus,
+                  workingShownOnStatusIcon: true,
+                })
           }
           isTaskAgentWorking={(task) =>
-            isTaskAgentWorkingForUi(task, agentStatus)
+            isEmailTaskListItem(task)
+              ? false
+              : isTaskAgentWorkingForUi(task, agentStatus)
           }
           onSelectTask={(id) => {
             const task = projectTasks.find((entry) => entry.id === id);
+            const emailHref = task
+              ? getEmailTaskListHref(task, { list: "project" })
+              : null;
+            if (emailHref) {
+              if (task?.title) primeTabTitle(emailHref, task.title);
+              navigate(emailHref);
+              return;
+            }
             const href =
               task?.number != null
                 ? getScopedProjectTaskHref(projectKey, task.number, routeScope)
@@ -937,26 +996,64 @@ export function ProjectsPage({
             navigate(href);
           }}
           onStatusChange={(taskId, status) => {
+            const task = projectTasks.find((entry) => entry.id === taskId);
+            if (task && isEmailTaskListItem(task)) {
+              void patchEmailTaskListItem(client, task, { status });
+              return;
+            }
             void workspace.patchTask(taskId, { status });
           }}
           onPriorityChange={(taskId, priority) => {
+            const task = projectTasks.find((entry) => entry.id === taskId);
+            if (task && isEmailTaskListItem(task)) {
+              void patchEmailTaskListItem(client, task, { priority });
+              return;
+            }
             void workspace.patchTask(taskId, { priority });
           }}
           onDueDateChange={(taskId, dueDate) => {
+            const task = projectTasks.find((entry) => entry.id === taskId);
+            if (task && isEmailTaskListItem(task)) {
+              void patchEmailTaskListItem(client, task, {
+                dueDate: dueDate ? dueDate.toISOString() : null,
+              });
+              return;
+            }
             void workspace.patchTask(taskId, {
               dueDate: dueDate ? dueDate.toISOString() : null,
             });
           }}
           onAssigneeChange={(taskId, assigneeId) => {
+            const task = projectTasks.find((entry) => entry.id === taskId);
+            if (task && isEmailTaskListItem(task)) {
+              const assignee = assigneeId
+                ? workspace.contacts.find((entry) => entry.id === assigneeId) ??
+                  null
+                : null;
+              void patchEmailTaskListItem(
+                client,
+                task,
+                { assigneeId },
+                { assigneeName: assignee?.name ?? null },
+              );
+              return;
+            }
             void workspace.patchTask(taskId, { assigneeId });
           }}
           onBulkDelete={async (taskIds) => {
             for (const taskId of taskIds) {
+              const task = projectTasks.find((entry) => entry.id === taskId);
+              if (task && isEmailTaskListItem(task)) continue;
               await workspace.softDeleteTask(taskId);
             }
           }}
           onReorder={(request) => {
-            const patches = taskReorderPatches(projectTasks, request);
+            const patches = taskReorderPatches(projectTasks, request).filter(
+              (patch) => {
+                const task = projectTasks.find((entry) => entry.id === patch.id);
+                return !task || !isEmailTaskListItem(task);
+              },
+            );
             for (const patch of patches) {
               void workspace.patchTask(patch.id, {
                 status: patch.status,

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type {
   EmailThreadComment,
@@ -11,6 +11,7 @@ import {
   contacts,
   emailThreadComments,
   emailThreads,
+  entityCounters,
   organizations,
   projects,
   type DbEmailThread,
@@ -25,7 +26,23 @@ import {
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
+export const EMAIL_DISPLAY_KEY = "E";
+
+export function formatEmailDisplayId(number: number): string {
+  return `${EMAIL_DISPLAY_KEY}-${number}`;
+}
+
+export function parseEmailDisplayId(displayId: string): number | null {
+  const match = displayId.trim().match(/^E-(\d+)$/i);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export type EmailThreadListMeta = {
+  id: string;
+  number: number;
+  displayId: string;
   status: EmailThreadMetadata["status"];
   priority: number;
   dueDate: string | null;
@@ -47,6 +64,41 @@ export function resolveEmailThreadKey(input: {
   const threadId = input.threadId?.trim();
   if (threadId) return threadId;
   return input.messageId.trim();
+}
+
+async function nextEmailThreadNumber(
+  workspaceId: string,
+  executor: DbExecutor = db,
+): Promise<number> {
+  const [maxRow] = await executor
+    .select({
+      maxNumber: sql<number>`coalesce(max(${emailThreads.number}), 0)`,
+    })
+    .from(emailThreads)
+    .where(eq(emailThreads.workspaceId, workspaceId));
+  const minNext = Number(maxRow?.maxNumber ?? 0) + 1;
+
+  const [counter] = await executor
+    .insert(entityCounters)
+    .values({
+      workspaceId,
+      entity: "email",
+      scopeId: "__workspace__",
+      nextValue: minNext + 1,
+    })
+    .onConflictDoUpdate({
+      target: [
+        entityCounters.workspaceId,
+        entityCounters.entity,
+        entityCounters.scopeId,
+      ],
+      set: {
+        nextValue: sql`greatest(${entityCounters.nextValue}, ${minNext}) + 1`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ nextValue: entityCounters.nextValue });
+  return counter!.nextValue - 1;
 }
 
 async function organizationExists(
@@ -130,6 +182,8 @@ async function toEmailThreadMetadata(
     id: row.id,
     inboxId: row.inboxId,
     threadKey: row.threadKey,
+    number: row.number,
+    displayId: formatEmailDisplayId(row.number),
     organizationId: row.organizationId ?? null,
     organizationName: organization?.name ?? null,
     contactId: row.contactId ?? null,
@@ -163,6 +217,7 @@ export async function getOrCreateEmailThreadMetadata(
     return toEmailThreadMetadata(workspaceId, existing);
   }
   const id = newId();
+  const number = await nextEmailThreadNumber(workspaceId, executor);
   const [row] = await executor
     .insert(emailThreads)
     .values({
@@ -170,11 +225,82 @@ export async function getOrCreateEmailThreadMetadata(
       workspaceId,
       inboxId,
       threadKey,
-      status: "backlog",
+      number,
+      status: "triage",
       priority: 0,
     })
     .returning();
   return toEmailThreadMetadata(workspaceId, row!);
+}
+
+export type EmailThreadRegistration = {
+  inboxId: string;
+  threadKey: string;
+};
+
+/** Create missing thread rows so every listed message gets a display number. */
+export async function ensureEmailThreadsRegistered(
+  workspaceId: string,
+  threads: readonly EmailThreadRegistration[],
+  executor: DbExecutor = db,
+): Promise<void> {
+  const unique = new Map<string, EmailThreadRegistration>();
+  for (const thread of threads) {
+    const inboxId = thread.inboxId.trim();
+    const threadKey = thread.threadKey.trim();
+    if (!inboxId || !threadKey) continue;
+    unique.set(emailThreadStatusLookupKey(inboxId, threadKey), {
+      inboxId,
+      threadKey,
+    });
+  }
+  if (unique.size === 0) return;
+
+  const existingRows = await executor
+    .select({
+      inboxId: emailThreads.inboxId,
+      threadKey: emailThreads.threadKey,
+    })
+    .from(emailThreads)
+    .where(eq(emailThreads.workspaceId, workspaceId));
+
+  const existingKeys = new Set(
+    existingRows.map((row) =>
+      emailThreadStatusLookupKey(row.inboxId, row.threadKey),
+    ),
+  );
+
+  for (const thread of unique.values()) {
+    const key = emailThreadStatusLookupKey(thread.inboxId, thread.threadKey);
+    if (existingKeys.has(key)) continue;
+    await getOrCreateEmailThreadMetadata(
+      workspaceId,
+      thread.inboxId,
+      thread.threadKey,
+      executor,
+    );
+    existingKeys.add(key);
+  }
+}
+
+export async function getEmailThreadByDisplayId(
+  workspaceId: string,
+  displayId: string,
+  executor: DbExecutor = db,
+): Promise<EmailThreadMetadata | null> {
+  const number = parseEmailDisplayId(displayId);
+  if (number == null) return null;
+  const [row] = await executor
+    .select()
+    .from(emailThreads)
+    .where(
+      and(
+        eq(emailThreads.workspaceId, workspaceId),
+        eq(emailThreads.number, number),
+      ),
+    )
+    .limit(1);
+  return row ? toEmailThreadMetadata(workspaceId, row) : null;
 }
 
 /** Map of `inboxId\\0threadKey` → list meta for side-panel enrichment (no row create). */
@@ -184,8 +310,10 @@ export async function listEmailThreadListMetaMap(
 ): Promise<Map<string, EmailThreadListMeta>> {
   const rows = await executor
     .select({
+      id: emailThreads.id,
       inboxId: emailThreads.inboxId,
       threadKey: emailThreads.threadKey,
+      number: emailThreads.number,
       status: emailThreads.status,
       priority: emailThreads.priority,
       dueDate: emailThreads.dueDate,
@@ -283,6 +411,9 @@ export async function listEmailThreadListMetaMap(
   for (const row of rows) {
     const project = row.projectId ? projectById.get(row.projectId) : null;
     map.set(`${row.inboxId}\0${row.threadKey}`, {
+      id: row.id,
+      number: row.number,
+      displayId: formatEmailDisplayId(row.number),
       status: row.status as EmailThreadMetadata["status"],
       priority: row.priority ?? 0,
       dueDate: row.dueDate ? row.dueDate.toISOString() : null,
@@ -399,7 +530,8 @@ export async function updateEmailThreadMetadata(
       workspaceId,
       inboxId,
       threadKey,
-      status: input.status ?? "backlog",
+      number: await nextEmailThreadNumber(workspaceId, executor),
+      status: input.status ?? "triage",
       priority: input.priority ?? 0,
       dueDate: dueDate === undefined ? null : dueDate,
       organizationId: input.organizationId ?? null,

@@ -3,7 +3,14 @@ import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
+import { useAgentMail } from "../lib/agentmail-context";
 import { isPadDevice } from "../lib/device";
+import { formatEmailDisplayId } from "../lib/email-display-id";
+import {
+  emailBelongsInInbox,
+  emailPartyLabel,
+  resolveEmailListItemStatus,
+} from "../lib/email-list";
 import { getMobileEnvironment } from "../lib/env";
 import { taskBelongsInInbox } from "../lib/inbox-attention";
 import {
@@ -32,8 +39,21 @@ export function inboxSelectedIdFromPathname(pathname: string): string | null {
   const match = normalized.match(/^\/inbox\/([^/]+)$/);
   if (!match) return null;
   const segment = match[1];
-  if (!segment || segment === "new") return null;
+  if (!segment || segment === "new" || segment === "email") return null;
   return segment;
+}
+
+/** `/inbox/email/<inboxId>/<messageId>` → email row id / null. */
+export function inboxSelectedEmailRowIdFromPathname(
+  pathname: string,
+): string | null {
+  const normalized = normalizePathname(pathname);
+  const match = normalized.match(/^\/inbox\/email\/([^/]+)\/([^/]+)$/);
+  if (!match) return null;
+  const inboxId = decodeURIComponent(match[1] ?? "");
+  const messageId = decodeURIComponent(match[2] ?? "");
+  if (!inboxId || !messageId || messageId === "compose") return null;
+  return `email::${inboxId}::${messageId}`;
 }
 
 type Props = {
@@ -74,7 +94,10 @@ export function InboxListPane({
   const client = useMobileApiClient();
   const isPad = isPadDevice();
 
-  const pathSelectedId = selectedId ?? inboxSelectedIdFromPathname(pathname);
+  const pathSelectedId =
+    selectedId ??
+    inboxSelectedIdFromPathname(pathname) ??
+    inboxSelectedEmailRowIdFromPathname(pathname);
 
   const { data: syncedTasks, isLoading: syncLoading } = useLocalQuery<
     InboxSyncedRow
@@ -173,11 +196,43 @@ export function InboxListPane({
 
   useRestListHydration(reloadRest);
 
-  const rows = resolveSyncedOrRestRows({
+  const taskRows = resolveSyncedOrRestRows({
     localRows,
     restRows,
     connected: powerSync.connected,
   });
+
+  // Email thread rows alongside tasks — desktop inbox parity.
+  const { messages: emailMessages } = useAgentMail();
+  const emailRows = useMemo<GroupedTaskRow[]>(
+    () =>
+      emailMessages
+        .filter((item) =>
+          emailBelongsInInbox({ status: item.status, dueDate: item.dueDate }),
+        )
+        .map((item) => ({
+          id: `email::${item.inboxId}::${item.id}`,
+          title: item.subject?.trim() || "(no subject)",
+          status: resolveEmailListItemStatus(item),
+          priority: item.priority ?? 0,
+          due_date: item.dueDate ?? null,
+          project_name: item.projectName ?? null,
+          project_key: item.projectKey ?? null,
+          display_id:
+            item.displayId ??
+            (item.number != null ? formatEmailDisplayId(item.number) : null),
+          item_type: "email" as const,
+          email_from: item.contactName?.trim() || emailPartyLabel(item.from),
+          email_inbox_id: item.inboxId,
+          email_message_id: item.id,
+        })),
+    [emailMessages],
+  );
+
+  const rows = useMemo(
+    () => [...taskRows, ...emailRows],
+    [emailRows, taskRows],
+  );
 
   const waitingForSync =
     rows.length === 0 &&
@@ -201,7 +256,8 @@ export function InboxListPane({
     // Journal) clears pathSelectedId and this effect replace()s back to inbox.
     if (!normalized.startsWith("/inbox")) return;
     if (normalized.endsWith("/inbox/new") || normalized === "/inbox/new") return;
-    const first = rows[0];
+    // Auto-select the first task row; email rows are selectable manually.
+    const first = rows.find((row) => row.item_type !== "email");
     if (!first) return;
     router.replace(`/(app)/inbox/${first.id}`);
   }, [
@@ -217,6 +273,17 @@ export function InboxListPane({
 
   const onPressRow = useCallback(
     (row: GroupedTaskRow) => {
+      if (row.item_type === "email" && row.email_inbox_id && row.email_message_id) {
+        // Open inside the Inbox stack — desktop shows email in the inbox pane.
+        const href =
+          `/(app)/inbox/email/${encodeURIComponent(row.email_inbox_id)}/${encodeURIComponent(row.email_message_id)}` as const;
+        if (isPad) {
+          router.replace(href);
+          return;
+        }
+        router.push(href);
+        return;
+      }
       if (onPressRowProp) {
         onPressRowProp(row);
         return;

@@ -36,6 +36,30 @@ export function planUsageTone(percent: number): "ok" | "warn" | "critical" {
   return "ok";
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Whole days until the billing cycle resets (ceil partial days). */
+export function daysUntilReset(
+  billingCycleEndMs: number | null | undefined,
+  nowMs: number = Date.now(),
+): number | null {
+  if (billingCycleEndMs == null || !Number.isFinite(billingCycleEndMs)) {
+    return null;
+  }
+  const msLeft = billingCycleEndMs - nowMs;
+  if (msLeft <= 0) return 0;
+  return Math.ceil(msLeft / MS_PER_DAY);
+}
+
+export function formatDaysUntilReset(
+  billingCycleEndMs: number | null | undefined,
+  nowMs: number = Date.now(),
+): string | null {
+  const days = daysUntilReset(billingCycleEndMs, nowMs);
+  if (days == null) return null;
+  return `${days}d`;
+}
+
 export function cursorUsageTitle(usage: CursorUsage | null): string {
   if (!usage) return "Cursor credits";
   if (!usage.available) {

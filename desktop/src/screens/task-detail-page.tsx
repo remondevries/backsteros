@@ -37,6 +37,11 @@ import {
 } from "../lib/avatar-src";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
+import {
+  buildDocumentLinkOptions,
+  buildEmailLinkOptions,
+} from "../lib/task-link-picker-options";
+import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 export type TaskDetailPageProps = {
@@ -113,7 +118,16 @@ export function TaskDetailPage({
     backHrefProp ??
     (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
   const workspace = useDesktopWorkspaceData();
-  const { allTasks, projects, contacts, organizations } = workspace;
+  const { allTasks, projects, contacts, organizations, documents } = workspace;
+  const agentMail = useAgentMail();
+  const documentLinkOptions = useMemo(
+    () => buildDocumentLinkOptions(documents),
+    [documents],
+  );
+  const emailLinkOptions = useMemo(
+    () => buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages],
+  );
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
   const spellcheckNonceRef = useRef(0);
@@ -590,6 +604,11 @@ export function TaskDetailPage({
           onProjectChange={patchProjectKey}
           onSaveDescription={saveDescription}
           onChangeLinks={changeLinks}
+          documentLinkOptions={documentLinkOptions}
+          emailLinkOptions={emailLinkOptions}
+          onNavigateLink={(href) => {
+            navigate(href);
+          }}
           onUploadImages={onUploadImages}
           resolveImageSrc={resolveImageSrc}
           onSaveTitle={saveTitle}

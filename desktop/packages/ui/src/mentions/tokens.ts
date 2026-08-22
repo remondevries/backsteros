@@ -4,6 +4,7 @@ import {
   getOrganizationsHref,
   getProjectsHref,
 } from "../entity-routes.js";
+import { getEmailItemHref } from "../email.js";
 import { encodeTaskSlug, getInboxTaskRouteHref } from "../inbox-items.js";
 import { getLettersHref, parseLetterSlug } from "../letters.js";
 import { getScopedProjectLetterHref, getScopedProjectTaskHref } from "../project-route-scope.js";
@@ -25,6 +26,8 @@ export function buildMentionToken(item: MentionItem): string {
       return `[@task:${item.displayId}]`;
     case "letter":
       return `[@letter:${item.displayId}]`;
+    case "email":
+      return `[@email:${item.displayId}]`;
     case "project":
       return `[@project:${item.key}]`;
     case "contact":
@@ -41,7 +44,11 @@ export function getMentionTokenCacheKey(token: ParsedMentionToken): string {
   if (token.kind === "document") {
     return `${token.kind}:${token.projectKey}/${token.relativePath}`;
   }
-  if (token.kind === "task" || token.kind === "letter") {
+  if (
+    token.kind === "task" ||
+    token.kind === "letter" ||
+    token.kind === "email"
+  ) {
     return `${token.kind}:${token.displayId}`;
   }
   return `${token.kind}:${token.key}`;
@@ -144,6 +151,16 @@ export function resolveMentionHref(
         return getScopedProjectLetterHref(letter.projectKey, letterNumber);
       }
       return getLettersHref(letterNumber);
+    }
+    case "email": {
+      const email = catalog.emails.find(
+        (entry) =>
+          entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+      );
+      if (!email) {
+        return null;
+      }
+      return getEmailItemHref(email.inboxId, email.messageId);
     }
   }
 }

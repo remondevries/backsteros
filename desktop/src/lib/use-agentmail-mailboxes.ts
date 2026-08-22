@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentMailMessage,
   AgentMailSettings,
@@ -15,6 +15,19 @@ import { createRequestAbortSignal } from "./request-timeout";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
 
 export const EMAIL_LIST_PATCH_EVENT = "backsteros-email-list-patch";
+export const EMAIL_LIST_REMOVE_EVENT = "backsteros-email-list-remove";
+/** Fired when AgentMail inbox SSE (or a live subscriber) reports an update. */
+export const EMAIL_INBOX_UPDATED_EVENT = "backsteros-email-inbox-updated";
+
+/** Coalesce bursty webhook/SSE updates into one list reload. */
+const SSE_RELOAD_DEBOUNCE_MS = 400;
+/** Catch-up poll while SSE is subscribed (SSE is primary). */
+const LIVE_CATCHUP_POLL_MS = 60_000;
+
+export type EmailInboxUpdatedDetail = {
+  inboxId: string;
+  messageId: string | null;
+};
 
 export type EmailListPatchDetail = {
   inboxId: string;
@@ -32,11 +45,27 @@ export type EmailListPatchDetail = {
   projectId?: string | null;
   projectName?: string | null;
   projectKey?: string | null;
+  /** Clear the concept-draft badge on list rows. */
+  conceptDraftId?: string | null;
+};
+
+export type EmailListRemoveDetail = {
+  inboxId: string;
+  /** Remove this message id from the list. */
+  messageId?: string | null;
+  /** Remove every list row for this thread. */
+  threadId?: string | null;
 };
 
 export function dispatchEmailListPatch(detail: EmailListPatchDetail): void {
   window.dispatchEvent(
     new CustomEvent(EMAIL_LIST_PATCH_EVENT, { detail }),
+  );
+}
+
+export function dispatchEmailListRemove(detail: EmailListRemoveDetail): void {
+  window.dispatchEvent(
+    new CustomEvent(EMAIL_LIST_REMOVE_EVENT, { detail }),
   );
 }
 
@@ -65,6 +94,9 @@ function toListItem(entry: AgentMailMessage): EmailListItem | null {
     projectId: entry.projectId ?? null,
     projectName: entry.projectName ?? null,
     projectKey: entry.projectKey ?? null,
+    emailThreadId: entry.emailThreadId ?? null,
+    number: entry.number ?? null,
+    displayId: entry.displayId ?? null,
   };
 }
 
@@ -109,11 +141,40 @@ function applyListPatch(
       ...(patch.projectKey !== undefined
         ? { projectKey: patch.projectKey }
         : {}),
+      ...(patch.conceptDraftId !== undefined
+        ? { conceptDraftId: patch.conceptDraftId }
+        : {}),
     };
   });
 }
 
-export function useAgentMailMailboxes(active: boolean) {
+function applyListRemove(
+  items: EmailListItem[],
+  detail: EmailListRemoveDetail,
+): EmailListItem[] {
+  const messageId = detail.messageId?.trim() || null;
+  const threadId = detail.threadId?.trim() || null;
+  if (!messageId && !threadId) return items;
+  return items.filter((item) => {
+    if (item.inboxId !== detail.inboxId) return true;
+    if (messageId && item.id === messageId) return false;
+    if (
+      threadId &&
+      (item.threadId === threadId ||
+        (!item.threadId && item.id === threadId) ||
+        item.id === threadId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function useAgentMailMailboxes(
+  active: boolean,
+  options?: { liveUpdates?: boolean },
+) {
+  const liveUpdates = options?.liveUpdates !== false;
   const { client } = useDesktopApi();
   const [mailboxes, setMailboxes] = useState<EmailMailbox[]>([]);
   const [messages, setMessages] = useState<EmailListItem[]>([]);
@@ -121,16 +182,24 @@ export function useAgentMailMailboxes(active: boolean) {
   const [loading, setLoading] = useState(active);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const reloadAbortRef = useRef<AbortController | null>(null);
+  const reloadGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const hydratedRef = useRef(false);
+  const sseReloadTimerRef = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
-    reloadAbortRef.current?.abort();
+    const generation = ++reloadGenerationRef.current;
+    const silent = hydratedRef.current;
     const controller = new AbortController();
-    reloadAbortRef.current = controller;
+    if (silent) {
+      // Background refresh: do not abort an in-flight initial load.
+    } else {
+      reloadAbortRef.current?.abort();
+      reloadAbortRef.current = controller;
+    }
     const signal = createRequestAbortSignal(undefined, controller.signal);
 
     // Keep existing list visible while refreshing (letters-style; no loader flash).
-    const silent = hydratedRef.current;
     if (!silent) {
       setLoading(true);
       setMessagesLoading(true);
@@ -140,7 +209,8 @@ export function useAgentMailMailboxes(active: boolean) {
         "/api/v1/settings/agentmail",
         { signal },
       );
-      if (signal.aborted) return;
+      if (signal.aborted || generation !== reloadGenerationRef.current) return;
+      if (!mountedRef.current) return;
       setApiKeyConfigured(body.apiKeyConfigured);
       setMailboxes(
         (body.inboxes ?? []).map((inbox) => ({
@@ -163,7 +233,10 @@ export function useAgentMailMailboxes(active: boolean) {
           "/api/v1/email/messages",
           { signal },
         );
-        if (signal.aborted) return;
+        if (signal.aborted || generation !== reloadGenerationRef.current) {
+          return;
+        }
+        if (!mountedRef.current) return;
         setMessages(
           collapseEmailListItemsByThread(
             (listed.messages ?? [])
@@ -172,30 +245,54 @@ export function useAgentMailMailboxes(active: boolean) {
           ),
         );
       } catch {
-        if (signal.aborted) return;
+        if (signal.aborted || generation !== reloadGenerationRef.current) {
+          return;
+        }
         if (!silent) setMessages([]);
       }
     } catch {
-      if (signal.aborted) return;
+      if (signal.aborted || generation !== reloadGenerationRef.current) return;
+      if (!mountedRef.current) return;
       setApiKeyConfigured(false);
       if (!silent) {
         setMailboxes([]);
         setMessages([]);
       }
     } finally {
-      if (reloadAbortRef.current === controller) {
-        hydratedRef.current = true;
-        setLoading(false);
-        setMessagesLoading(false);
+      if (generation !== reloadGenerationRef.current || !mountedRef.current) {
+        return;
+      }
+      hydratedRef.current = true;
+      setLoading(false);
+      setMessagesLoading(false);
+      if (!silent && reloadAbortRef.current === controller) {
+        reloadAbortRef.current = null;
       }
     }
   }, [client]);
 
+  const scheduleDebouncedReload = useCallback(() => {
+    if (sseReloadTimerRef.current != null) {
+      window.clearTimeout(sseReloadTimerRef.current);
+    }
+    sseReloadTimerRef.current = window.setTimeout(() => {
+      sseReloadTimerRef.current = null;
+      void reload();
+    }, SSE_RELOAD_DEBOUNCE_MS);
+  }, [reload]);
+
   useEffect(() => {
+    mountedRef.current = true;
     if (!active) return;
     void reload();
     return () => {
+      mountedRef.current = false;
       reloadAbortRef.current?.abort();
+      reloadAbortRef.current = null;
+      if (sseReloadTimerRef.current != null) {
+        window.clearTimeout(sseReloadTimerRef.current);
+        sseReloadTimerRef.current = null;
+      }
     };
   }, [active, reload]);
 
@@ -209,36 +306,83 @@ export function useAgentMailMailboxes(active: boolean) {
       if (!detail?.inboxId || !detail.messageId) return;
       setMessages((current) => applyListPatch(current, detail));
     }
+    function handleRemove(event: Event) {
+      const detail = (event as CustomEvent<EmailListRemoveDetail>).detail;
+      if (!detail?.inboxId) return;
+      setMessages((current) => applyListRemove(current, detail));
+    }
     window.addEventListener("backsteros-email-mailboxes-reload", handleReload);
     window.addEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
+    window.addEventListener(EMAIL_LIST_REMOVE_EVENT, handleRemove);
     return () => {
       window.removeEventListener(
         "backsteros-email-mailboxes-reload",
         handleReload,
       );
       window.removeEventListener(EMAIL_LIST_PATCH_EVENT, handlePatch);
+      window.removeEventListener(EMAIL_LIST_REMOVE_EVENT, handleRemove);
     };
   }, [active, reload]);
 
   useEffect(() => {
-    if (!active || !apiKeyConfigured) return;
+    if (!active || !apiKeyConfigured || !liveUpdates) return;
     const controller = new AbortController();
     startEmailInboxEventsLoop({
       client,
       signal: controller.signal,
-      onUpdated: () => {
-        void reload();
+      onUpdated: (payload) => {
+        window.dispatchEvent(
+          new CustomEvent<EmailInboxUpdatedDetail>(EMAIL_INBOX_UPDATED_EVENT, {
+            detail: {
+              inboxId: payload.inboxId,
+              messageId: payload.messageId,
+            },
+          }),
+        );
+        scheduleDebouncedReload();
       },
     });
-    return () => controller.abort();
-  }, [active, apiKeyConfigured, client, reload]);
-
-  return {
-    mailboxes,
-    messages,
+    return () => {
+      controller.abort();
+      if (sseReloadTimerRef.current != null) {
+        window.clearTimeout(sseReloadTimerRef.current);
+        sseReloadTimerRef.current = null;
+      }
+    };
+  }, [
+    active,
     apiKeyConfigured,
-    loading,
-    messagesLoading,
-    reload,
-  };
+    client,
+    liveUpdates,
+    scheduleDebouncedReload,
+  ]);
+
+  // Catch-up while live: SSE is primary; poll less often so we don't stack
+  // full AgentMail list fetches on top of every webhook.
+  useEffect(() => {
+    if (!active || !apiKeyConfigured || !liveUpdates) return;
+    const timer = window.setInterval(() => {
+      void reload();
+    }, LIVE_CATCHUP_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [active, apiKeyConfigured, liveUpdates, reload]);
+
+  return useMemo(
+    () => ({
+      mailboxes,
+      messages,
+      apiKeyConfigured,
+      loading,
+      messagesLoading,
+      reload,
+    }),
+    [
+      mailboxes,
+      messages,
+      apiKeyConfigured,
+      loading,
+      messagesLoading,
+      reload,
+    ],
+  );
 }

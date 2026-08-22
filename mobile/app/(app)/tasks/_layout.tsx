@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 
-import { tabDetailScreenOptions } from "../../../lib/tab-stack-options";
+import { tabDetailScreenOptions, iosStackGestureOptions } from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 export default function TasksLayout() {
@@ -8,8 +8,7 @@ export default function TasksLayout() {
     <Stack
       screenOptions={{
         contentStyle: { backgroundColor: colors.background },
-        gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        ...iosStackGestureOptions,
       }}
     >
       <Stack.Screen
@@ -21,6 +20,11 @@ export default function TasksLayout() {
       />
       <Stack.Screen name="new" options={tabDetailScreenOptions()} />
       <Stack.Screen name="[id]" options={tabDetailScreenOptions()} />
+      <Stack.Screen
+        name="email/[inboxId]/[messageId]"
+        options={tabDetailScreenOptions()}
+      />
+      <Stack.Screen name="email/compose" options={tabDetailScreenOptions()} />
     </Stack>
   );
 }

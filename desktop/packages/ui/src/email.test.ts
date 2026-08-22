@@ -3,21 +3,30 @@ import { test } from "node:test";
 
 import {
   emailListItemIsSelected,
+  emailMessageBody,
+  emailMessageHtmlBody,
+  emailMessagePlainBody,
   emailMailboxLabel,
   filterEmailListItems,
   collapseEmailListItemsByThread,
   formatEmailPersonWithAddress,
+  formatEmailListPartyLabel,
+  getEmailComposeHref,
   getEmailDraftHref,
   getEmailItemHref,
   getEmailListItemHref,
   groupEmailItemsByMailbox,
   groupEmailItemsByStatus,
+  isEmailInboxListContext,
   isEmailPath,
   parseEmailDraftPath,
   parseEmailMessagePath,
   parseReplyToAddress,
+  preserveEmailInboxListContext,
   replySubject,
   resolveEmailListItemStatus,
+  stripEmailDraftShell,
+  withEmailInboxListContext,
 } from "./email.js";
 
 test("isEmailPath matches the email section", () => {
@@ -25,6 +34,31 @@ test("isEmailPath matches the email section", () => {
   assert.equal(isEmailPath("/email/inbox/msg"), true);
   assert.equal(isEmailPath("/settings/email"), false);
   assert.equal(isEmailPath("/inbox"), false);
+});
+
+test("inbox list context is opt-in via ?list=inbox", () => {
+  assert.equal(isEmailInboxListContext("?list=inbox"), true);
+  assert.equal(isEmailInboxListContext("list=inbox"), true);
+  assert.equal(isEmailInboxListContext(""), false);
+  assert.equal(isEmailInboxListContext("?list=tasks"), false);
+  assert.equal(
+    withEmailInboxListContext("/email/a/1"),
+    "/email/a/1?list=inbox",
+  );
+  assert.equal(
+    preserveEmailInboxListContext("/email/a/2", "?list=inbox"),
+    "/email/a/2?list=inbox",
+  );
+  assert.equal(
+    preserveEmailInboxListContext("/email/a/2", "?list=tasks"),
+    "/email/a/2?list=tasks",
+  );
+  assert.equal(
+    preserveEmailInboxListContext("/email/a/2", ""),
+    "/email/a/2",
+  );
+  assert.equal(getEmailComposeHref({ inboxList: true }), "/email/compose?list=inbox");
+  assert.equal(getEmailComposeHref(), "/email/compose");
 });
 
 test("parseEmailMessagePath reads inbox and message ids", () => {
@@ -60,6 +94,22 @@ test("formatEmailPersonWithAddress keeps name and sender address", () => {
     formatEmailPersonWithAddress(null, "ada@example.com"),
     "ada@example.com",
   );
+});
+
+test("formatEmailListPartyLabel prefers contact name and From address", () => {
+  assert.equal(
+    formatEmailListPartyLabel(
+      "Remon de Vries",
+      "Remon <remon@lemo-design.com>",
+    ),
+    "Remon de Vries (remon@lemo-design.com)",
+  );
+  assert.equal(
+    formatEmailListPartyLabel(null, "Remon de Vries <remon@lemo-design.com>"),
+    "Remon de Vries (remon@lemo-design.com)",
+  );
+  assert.equal(formatEmailListPartyLabel(null, "remon@lemo-design.com"), "remon@lemo-design.com");
+  assert.equal(formatEmailListPartyLabel(null, null), null);
 });
 
 test("replySubject prefixes Re when missing", () => {
@@ -139,7 +189,7 @@ test("groupEmailItemsByMailbox keeps empty inboxes visible", () => {
   assert.equal(getEmailItemHref("a", "1"), "/email/a/1");
 });
 
-test("groupEmailItemsByStatus defaults missing status to Inbox (triage)", () => {
+test("groupEmailItemsByStatus uses task statuses and defaults missing status to Triage", () => {
   const items = [
     {
       kind: "message" as const,
@@ -178,27 +228,30 @@ test("groupEmailItemsByStatus defaults missing status to Inbox (triage)", () => 
     },
   ];
   assert.equal(resolveEmailListItemStatus(items[0]!), "triage");
-  assert.equal(resolveEmailListItemStatus(items[2]!), "triage");
+  assert.equal(resolveEmailListItemStatus(items[2]!), "backlog");
   const groups = groupEmailItemsByStatus(items);
-  assert.equal(groups.length, 3);
+  assert.equal(groups.length, 4);
   assert.equal(groups[0]?.status, "triage");
-  assert.equal(groups[0]?.label, "Inbox");
-  assert.equal(groups[0]?.items.map((item) => item.id).join(","), "1,3");
-  assert.equal(groups[1]?.status, "in_progress");
-  assert.equal(groups[1]?.label, "In Progress");
-  assert.equal(groups[1]?.items[0]?.id, "2");
-  assert.equal(groups[2]?.status, "completed");
-  assert.equal(groups[2]?.label, "Archive");
+  assert.equal(groups[0]?.label, "Triage");
+  assert.equal(groups[0]?.items.map((item) => item.id).join(","), "1");
+  assert.equal(groups[1]?.status, "backlog");
+  assert.equal(groups[1]?.label, "Backlog");
+  assert.equal(groups[1]?.items[0]?.id, "3");
+  assert.equal(groups[2]?.status, "in_progress");
+  assert.equal(groups[2]?.label, "In Progress");
+  assert.equal(groups[2]?.items[0]?.id, "2");
+  assert.equal(groups[3]?.status, "completed");
+  assert.equal(groups[3]?.label, "Completed");
 
   const withEmpty = groupEmailItemsByStatus(items, { includeEmpty: true });
-  assert.equal(withEmpty.length, 5);
+  assert.equal(withEmpty.length, 9);
   assert.equal(
     withEmpty.find((group) => group.status === "on_hold")?.items.length,
     0,
   );
   assert.equal(
-    withEmpty.find((group) => group.status === "canceled"),
-    undefined,
+    withEmpty.find((group) => group.status === "canceled")?.items.length,
+    0,
   );
 });
 
@@ -232,4 +285,57 @@ test("collapseEmailListItemsByThread keeps one row and prefers concept parent", 
   assert.equal(collapsed[0]?.conceptDraftId, "draft_1");
   assert.equal(collapsed[0]?.receivedAt, 200);
   assert.equal(collapsed[0]?.subject, "Factuur 8959599");
+});
+
+test("stripEmailDraftShell removes greeting already shown above the body", () => {
+  assert.equal(
+    stripEmailDraftShell(
+      ["Aan Remon,", "", "Bedankt voor je bericht."].join("\n"),
+      { greeting: "Aan Remon," },
+    ),
+    "Bedankt voor je bericht.",
+  );
+});
+
+test("emailMessagePlainBody prefers extracted text over html", () => {
+  assert.equal(
+    emailMessagePlainBody({
+      extractedText: "Hello",
+      html: "<p>Hello</p>",
+    }),
+    "Hello",
+  );
+});
+
+test("emailMessagePlainBody strips tags from html fallback", () => {
+  assert.equal(
+    emailMessagePlainBody({
+      html: "<p>Hello <strong>world</strong></p>",
+    }),
+    "Hello world",
+  );
+});
+
+test("emailMessageHtmlBody prefers extracted html", () => {
+  assert.equal(
+    emailMessageHtmlBody({
+      extractedHtml: "<p>Rendered</p>",
+      html: "<p>Raw</p>",
+    }),
+    "<p>Rendered</p>",
+  );
+});
+
+test("emailMessageHtmlBody uses raw html when extracted html is missing", () => {
+  assert.equal(
+    emailMessageHtmlBody({
+      extractedText: "Plain",
+      html: "<p>Raw</p>",
+    }),
+    "<p>Raw</p>",
+  );
+});
+
+test("emailMessageBody is an alias for plain body", () => {
+  assert.equal(emailMessageBody, emailMessagePlainBody);
 });

@@ -17,15 +17,32 @@ import {
   ADD_TASK_LINK_SHORTCUT_HINT,
   shouldHandleAddTaskLinkShortcut,
 } from "../task-link-add-shortcut.js";
+import { isInternalAppHref } from "../is-internal-app-href.js";
+import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import { ProjectOcticon } from "./project-octicon.js";
 
 const MAX_TASK_LINKS = 20;
 const MAX_TASK_LINK_URL_LENGTH = 2000;
 
+export type TaskLinkAttachmentKind = "url" | "document" | "email";
+
+export type TaskLinkPickerOption = {
+  id: string;
+  label: string;
+  href: string;
+  detail?: string | null;
+};
+
 export type TaskLinkAttachmentsProps = {
   links?: TaskLink[] | null;
   onChangeLinks?: (links: TaskLink[]) => void;
   readOnly?: boolean;
+  /** Documents available to attach (filtered client-side by search). */
+  documentOptions?: readonly TaskLinkPickerOption[];
+  /** Emails available to attach (filtered client-side by search). */
+  emailOptions?: readonly TaskLinkPickerOption[];
+  /** Prefer app navigation for internal hrefs. */
+  onNavigate?: (href: string) => void;
 };
 
 /**
@@ -63,6 +80,14 @@ export function normalizeTaskLinkUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) {
     return null;
+  }
+  if (trimmed.length > MAX_TASK_LINK_URL_LENGTH) {
+    return null;
+  }
+
+  // In-app paths (email, documents, tasks).
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
   }
 
   const spark = coerceSparkEmailUrl(trimmed);
@@ -110,9 +135,30 @@ export function isSparkEmailTaskLinkUrl(url: string): boolean {
   return coerceSparkEmailUrl(url) != null;
 }
 
+export function isAppEmailTaskLinkUrl(url: string): boolean {
+  return /^\/email\//i.test(url.trim());
+}
+
+export function isAppDocumentTaskLinkUrl(url: string): boolean {
+  const trimmed = url.trim();
+  return (
+    /^\/knowledge\//i.test(trimmed) ||
+    /\/documents\//i.test(trimmed)
+  );
+}
+
 export function taskLinkDisplayLabel(url: string): string {
-  if (isSparkEmailTaskLinkUrl(url)) {
+  if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return "E-mail";
+  }
+  if (isAppDocumentTaskLinkUrl(url)) {
+    try {
+      const parts = url.split("/").filter(Boolean);
+      const last = parts[parts.length - 1] ?? "Document";
+      return decodeURIComponent(last);
+    } catch {
+      return "Document";
+    }
   }
   try {
     const parsed = new URL(url);
@@ -156,8 +202,11 @@ function TaskLinkFavicon({ url }: { url: string }) {
 }
 
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
-  if (isSparkEmailTaskLinkUrl(url)) {
+  if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return <ProjectOcticon icon="mail" size={16} />;
+  }
+  if (isAppDocumentTaskLinkUrl(url)) {
+    return <ProjectOcticon icon="file" size={16} />;
   }
   if (isGithubTaskLinkUrl(url)) {
     return <ProjectOcticon icon="mark-github" size={16} />;
@@ -205,6 +254,9 @@ export function TaskLinkAttachments({
   links,
   onChangeLinks,
   readOnly = false,
+  documentOptions = [],
+  emailOptions = [],
+  onNavigate,
 }: TaskLinkAttachmentsProps) {
   const remoteLinks = links ?? [];
   const remoteKey = JSON.stringify(remoteLinks);
@@ -217,7 +269,9 @@ export function TaskLinkAttachments({
 
   const canEdit = Boolean(onChangeLinks) && !readOnly;
   const [modalOpen, setModalOpen] = useState(false);
+  const [attachKind, setAttachKind] = useState<TaskLinkAttachmentKind>("url");
   const [draftUrl, setDraftUrl] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -225,6 +279,8 @@ export function TaskLinkAttachments({
 
   const openModal = useCallback(() => {
     setDraftUrl("");
+    setSearchQuery("");
+    setAttachKind("url");
     setFormError(null);
     setModalOpen(true);
   }, []);
@@ -232,6 +288,7 @@ export function TaskLinkAttachments({
   const closeModal = useCallback(() => {
     setModalOpen(false);
     setDraftUrl("");
+    setSearchQuery("");
     setFormError(null);
   }, []);
 
@@ -284,19 +341,9 @@ export function TaskLinkAttachments({
       window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [closeModal, modalOpen]);
+  }, [attachKind, closeModal, modalOpen]);
 
-  function handleRemove(id: string) {
-    if (!onChangeLinks) {
-      return;
-    }
-    const next = items.filter((item) => item.id !== id);
-    setItems(next);
-    onChangeLinks(next);
-  }
-
-  function handleSave(event?: FormEvent) {
-    event?.preventDefault();
+  function appendLink(url: string) {
     if (!onChangeLinks) {
       return;
     }
@@ -304,7 +351,7 @@ export function TaskLinkAttachments({
       setFormError(`You can attach up to ${MAX_TASK_LINKS} links.`);
       return;
     }
-    const normalized = normalizeTaskLinkUrl(draftUrl);
+    const normalized = normalizeTaskLinkUrl(url);
     if (!normalized) {
       setFormError("Enter a valid URL.");
       return;
@@ -325,6 +372,41 @@ export function TaskLinkAttachments({
     onChangeLinks(next);
     closeModal();
   }
+
+  function handleRemove(id: string) {
+    if (!onChangeLinks) {
+      return;
+    }
+    const next = items.filter((item) => item.id !== id);
+    setItems(next);
+    onChangeLinks(next);
+  }
+
+  function handleSave(event?: FormEvent) {
+    event?.preventDefault();
+    if (attachKind !== "url") return;
+    appendLink(draftUrl);
+  }
+
+  const query = searchQuery.trim().toLowerCase();
+  const filteredDocuments = documentOptions
+    .filter((option) => {
+      if (!query) return true;
+      return (
+        option.label.toLowerCase().includes(query) ||
+        (option.detail?.toLowerCase().includes(query) ?? false)
+      );
+    })
+    .slice(0, 40);
+  const filteredEmails = emailOptions
+    .filter((option) => {
+      if (!query) return true;
+      return (
+        option.label.toLowerCase().includes(query) ||
+        (option.detail?.toLowerCase().includes(query) ?? false)
+      );
+    })
+    .slice(0, 40);
 
   const addShortcutTitle = `Add attachment (${ADD_TASK_LINK_SHORTCUT_HINT})`;
 
@@ -351,25 +433,50 @@ export function TaskLinkAttachments({
         <ul className="task-link-attachments__list">
           {items.map((item) => {
             const href = coerceSparkEmailUrl(item.url) ?? item.url;
+            const internal = isInternalAppHref(href);
             return (
             <li key={item.id} className="task-link-attachments__row">
-              <a
-                className="task-link-attachments__link"
-                href={href}
-                target="_blank"
-                rel="noreferrer"
-                title={href}
-              >
-                <span
-                  className="task-link-attachments__icon"
-                  aria-hidden="true"
+              {internal && onNavigate ? (
+                <button
+                  type="button"
+                  className="task-link-attachments__link task-link-attachments__link--button"
+                  title={href}
+                  onClick={() => onNavigate(href)}
                 >
-                  <TaskLinkIcon url={href} />
-                </span>
-                <span className="task-link-attachments__label">
-                  {taskLinkDisplayLabel(href)}
-                </span>
-              </a>
+                  <span
+                    className="task-link-attachments__icon"
+                    aria-hidden="true"
+                  >
+                    <TaskLinkIcon url={href} />
+                  </span>
+                  <span className="task-link-attachments__label">
+                    {taskLinkDisplayLabel(href)}
+                  </span>
+                </button>
+              ) : (
+                <a
+                  className="task-link-attachments__link"
+                  href={href}
+                  target={internal ? undefined : "_blank"}
+                  rel={internal ? undefined : "noreferrer"}
+                  title={href}
+                  onClick={(event) => {
+                    if (!internal || !onNavigate) return;
+                    event.preventDefault();
+                    onNavigate(href);
+                  }}
+                >
+                  <span
+                    className="task-link-attachments__icon"
+                    aria-hidden="true"
+                  >
+                    <TaskLinkIcon url={href} />
+                  </span>
+                  <span className="task-link-attachments__label">
+                    {taskLinkDisplayLabel(href)}
+                  </span>
+                </a>
+              )}
               {canEdit ? (
                 <button
                   type="button"
@@ -412,53 +519,142 @@ export function TaskLinkAttachments({
                 <h2 id={titleId} className="entity-delete-modal-title">
                   Add attachment
                 </h2>
-                <p className="entity-delete-modal-body">
-                  Paste a link to attach it to this task.
-                </p>
-                <form
-                  className="task-link-attachments-modal__form"
-                  onSubmit={handleSave}
-                >
-                  <label className="task-link-attachments-modal__label">
-                    <span className="sr-only">URL</span>
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      inputMode="url"
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="https://…"
-                      value={draftUrl}
-                      onChange={(event) => {
-                        setDraftUrl(event.target.value);
-                        if (formError) {
-                          setFormError(null);
-                        }
-                      }}
-                      className="task-link-attachments-modal__input"
-                    />
-                  </label>
-                  {formError ? (
-                    <p className="entity-delete-modal-error" role="alert">
-                      {formError}
+                <div className="task-link-attachments-modal__kind">
+                  <SegmentedPillToggle
+                    value={attachKind}
+                    options={[
+                      { value: "url", label: "URL" },
+                      { value: "document", label: "Document" },
+                      { value: "email", label: "Email" },
+                    ]}
+                    onChange={setAttachKind}
+                    ariaLabel="Attachment type"
+                  />
+                </div>
+                {attachKind === "url" ? (
+                  <>
+                    <p className="entity-delete-modal-body">
+                      Paste a link to attach it to this task.
                     </p>
-                  ) : null}
-                  <div className="entity-delete-modal-actions">
-                    <button
-                      type="button"
-                      className="entity-delete-modal-cancel"
-                      onClick={closeModal}
+                    <form
+                      className="task-link-attachments-modal__form"
+                      onSubmit={handleSave}
                     >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="entity-delete-modal-confirm"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </form>
+                      <label className="task-link-attachments-modal__label">
+                        <span className="sr-only">URL</span>
+                        <input
+                          ref={inputRef}
+                          type="text"
+                          inputMode="url"
+                          autoComplete="off"
+                          spellCheck={false}
+                          placeholder="https://…"
+                          value={draftUrl}
+                          onChange={(event) => {
+                            setDraftUrl(event.target.value);
+                            if (formError) {
+                              setFormError(null);
+                            }
+                          }}
+                          className="task-link-attachments-modal__input"
+                        />
+                      </label>
+                      {formError ? (
+                        <p className="entity-delete-modal-error" role="alert">
+                          {formError}
+                        </p>
+                      ) : null}
+                      <div className="entity-delete-modal-actions">
+                        <button
+                          type="button"
+                          className="entity-delete-modal-cancel"
+                          onClick={closeModal}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="entity-delete-modal-confirm"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <p className="entity-delete-modal-body">
+                      {attachKind === "document"
+                        ? "Search and select a document from BacksterOS."
+                        : "Search and select an email from BacksterOS."}
+                    </p>
+                    <label className="task-link-attachments-modal__label">
+                      <span className="sr-only">Search</span>
+                      <input
+                        ref={inputRef}
+                        type="search"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={
+                          attachKind === "document"
+                            ? "Search documents…"
+                            : "Search emails…"
+                        }
+                        value={searchQuery}
+                        onChange={(event) => {
+                          setSearchQuery(event.target.value);
+                          if (formError) setFormError(null);
+                        }}
+                        className="task-link-attachments-modal__input"
+                      />
+                    </label>
+                    {formError ? (
+                      <p className="entity-delete-modal-error" role="alert">
+                        {formError}
+                      </p>
+                    ) : null}
+                    <ul className="task-link-attachments-modal__results">
+                      {(attachKind === "document"
+                        ? filteredDocuments
+                        : filteredEmails
+                      ).map((option) => (
+                        <li key={option.id}>
+                          <button
+                            type="button"
+                            className="task-link-attachments-modal__result"
+                            onClick={() => appendLink(option.href)}
+                          >
+                            <span className="task-link-attachments-modal__result-label">
+                              {option.label}
+                            </span>
+                            {option.detail ? (
+                              <span className="task-link-attachments-modal__result-detail">
+                                {option.detail}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {(attachKind === "document"
+                      ? filteredDocuments
+                      : filteredEmails
+                    ).length === 0 ? (
+                      <p className="task-link-attachments-modal__empty">
+                        No matches.
+                      </p>
+                    ) : null}
+                    <div className="entity-delete-modal-actions">
+                      <button
+                        type="button"
+                        className="entity-delete-modal-cancel"
+                        onClick={closeModal}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>,
             document.body,

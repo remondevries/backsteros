@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { AgentMailMessageDetail } from "@backsteros/contracts";
+import { TaskCommentEditor } from "@backsteros/ui";
 
 import { readAgentChatMode } from "../lib/agent/agent-chat-mode";
 import { readAgentChatModelId } from "../lib/agent/agent-chat-model";
@@ -30,6 +31,8 @@ export type DesktopEmailAgentPromptProps = {
   onWorkingChange?: (working: boolean) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Shown as a context chip (e.g. when revising an open draft). */
+  contextLabel?: string | null;
 };
 
 function countAssistantMessages(rows: readonly AgentChatMessage[]): number {
@@ -78,6 +81,7 @@ export function DesktopEmailAgentPrompt({
   onWorkingChange,
   disabled = false,
   placeholder = "Describe the email you want…",
+  contextLabel = null,
 }: DesktopEmailAgentPromptProps) {
   const [draft, setDraft] = useState("");
   const [working, setWorking] = useState(false);
@@ -198,7 +202,7 @@ export function DesktopEmailAgentPrompt({
     taskId,
     chatId: agentChatId,
     cwd: "~",
-    enabled: Boolean(taskId.trim()),
+    enabled: Boolean(taskId.trim()) && (working || creatingAgent),
     onAssistantMessage: (forTaskId, text) => {
       if (forTaskId !== taskId) return;
       const trimmed = text.trim();
@@ -353,9 +357,17 @@ export function DesktopEmailAgentPrompt({
   const submitDisabled = inputDisabled || !draft.trim();
 
   const busy = working || creatingAgent;
+  const context = contextLabel?.trim() || null;
 
   return (
-    <div className="email-agent-prompt">
+    <div
+      className={[
+        "email-agent-prompt",
+        context ? "email-agent-prompt--has-context" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {displayError ? (
         <p className="email-agent-prompt__error" role="alert">
           {displayError}
@@ -366,25 +378,35 @@ export function DesktopEmailAgentPrompt({
           className={[
             "email-agent-prompt__host",
             disabled && !busy ? "email-agent-prompt__host--inactive" : "",
+            context ? "email-agent-prompt__host--context" : "",
           ]
             .filter(Boolean)
             .join(" ")}
         >
           <div className="email-agent-prompt__inner">
+            {context ? (
+              <div className="email-agent-prompt__context" aria-live="polite">
+                <span className="email-agent-prompt__context-chip">
+                  {context}
+                </span>
+              </div>
+            ) : null}
             <div className="email-agent-prompt__input-row">
-              <textarea
+              <TaskCommentEditor
                 className="email-agent-prompt__input"
+                variant="composer"
                 value={draft}
                 disabled={inputDisabled}
                 placeholder={placeholder}
-                aria-label="Email drafting instructions"
-                rows={2}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSubmit();
-                  }
+                ariaLabel={
+                  context
+                    ? `Ask AI to update ${context}`
+                    : "Email drafting instructions"
+                }
+                submitOnEnter
+                onChange={setDraft}
+                onSubmitShortcut={() => {
+                  void handleSubmit();
                 }}
               />
             </div>

@@ -10,10 +10,7 @@ import {
   PadSidePanelCollapsedRail,
   usePadSidePanelCollapsed,
 } from "../../../lib/pad-side-panel-collapse";
-import {
-  tabDetailScreenOptions,
-  tabRootScreenOptions,
-} from "../../../lib/tab-stack-options";
+import {tabDetailScreenOptions, tabRootScreenOptions, iosStackGestureOptions} from "../../../lib/tab-stack-options";
 import { colors } from "../../../lib/theme";
 
 const LIST_PANE_WIDTH = 256;
@@ -36,8 +33,7 @@ export default function JournalLayout() {
       <Stack
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
-          gestureEnabled: true,
-          fullScreenGestureEnabled: true,
+          ...iosStackGestureOptions,
         }}
       >
         <Stack.Screen name="index" options={tabRootScreenOptions("Journal")} />
@@ -72,8 +68,7 @@ export default function JournalLayout() {
           screenOptions={{
             contentStyle: { backgroundColor: colors.surface },
             headerStyle: { backgroundColor: colors.surface },
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            ...iosStackGestureOptions,
           }}
         >
           <Stack.Screen

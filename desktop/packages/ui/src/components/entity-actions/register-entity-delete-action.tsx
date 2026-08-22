@@ -11,6 +11,7 @@ import { useLatestRef } from "./use-latest-ref.js";
 export function RegisterEntityDeleteAction({
   entityLabel,
   confirmLabel,
+  actionVerb,
   onDelete,
 }: EntityDeleteConfig) {
   const ownerId = useId();
@@ -22,10 +23,12 @@ export function RegisterEntityDeleteAction({
     registerDeleteConfig(ownerId, {
       entityLabel,
       confirmLabel,
+      actionVerb,
       onDelete: () => onDeleteRef.current(),
     });
     return () => clearDeleteConfig(ownerId);
   }, [
+    actionVerb,
     clearDeleteConfig,
     confirmLabel,
     entityLabel,

@@ -183,13 +183,15 @@ export function EmailComposeBodyStage({
       >
         {displayChildren}
       </div>
-      <div
-        ref={measureRef}
-        className="email-compose-body-stage__measure"
-        aria-hidden
-      >
-        {children}
-      </div>
+      {phase !== "idle" ? (
+        <div
+          ref={measureRef}
+          className="email-compose-body-stage__measure"
+          aria-hidden
+        >
+          {children}
+        </div>
+      ) : null}
       <div
         className={`email-compose-body-stage__overlay${
           indicatorVisible ? " is-visible" : ""

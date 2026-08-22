@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 
 import {
   cursorUsageTitle,
+  daysUntilReset,
+  formatDaysUntilReset,
   formatPlanPercent,
   formatUsdCents,
   planUsageTone,
@@ -42,6 +44,16 @@ describe("cursor-usage formatting", () => {
     assert.equal(planUsageTone(10), "ok");
     assert.equal(planUsageTone(75), "warn");
     assert.equal(planUsageTone(95), "critical");
+  });
+
+  it("formats days until billing reset", () => {
+    const now = Date.parse("2026-08-22T12:00:00.000Z");
+    const end = Date.parse("2026-09-06T15:24:36.000Z");
+    assert.equal(daysUntilReset(end, now), 16);
+    assert.equal(formatDaysUntilReset(end, now), "16d");
+    assert.equal(formatDaysUntilReset(end, end + 1), "0d");
+    assert.equal(formatDaysUntilReset(end, end - 12 * 60 * 60 * 1000), "1d");
+    assert.equal(formatDaysUntilReset(null, now), null);
   });
 
   it("builds a tooltip title", () => {

@@ -1,4 +1,4 @@
-import { isEmailPath } from "./email.js";
+import { isEmailInboxListContext, isEmailPath } from "./email.js";
 import { isJournalSectionPath } from "./journal.js";
 import {
   isContactSectionPath,
@@ -15,6 +15,7 @@ import { isProjectDocumentsSectionPath } from "./should-handle-document-tree-cre
 export { isEmailPath } from "./email.js";
 
 export const INBOX_TASK_LIST_PANEL_WIDTH_KEY = "inbox-task-list-panel-width";
+export const CALENDAR_TASK_LIST_PANEL_WIDTH_KEY = "calendar-task-list-panel-width";
 export const EMAIL_LIST_PANEL_WIDTH_KEY = "email-list-panel-width";
 export const JOURNAL_LIST_PANEL_WIDTH_KEY = "journal-list-panel-width";
 export const KNOWLEDGE_LIST_PANEL_WIDTH_KEY = "knowledge-list-panel-width";
@@ -25,12 +26,19 @@ export const ORGANIZATIONS_LIST_PANEL_WIDTH_KEY =
 export const LETTERS_LIST_PANEL_WIDTH_KEY = "letters-list-panel-width";
 export const FINANCE_LIST_PANEL_WIDTH_KEY = "finance-list-panel-width";
 
-/** Routes that show the left content side panel (list + detail). */
-export function shouldShowContentSidePanel(pathname: string): boolean {
+/**
+ * Routes that show the left content side panel (list + detail).
+ * Email detail only keeps the panel when opened from Inbox (`?list=inbox`).
+ */
+export function shouldShowContentSidePanel(
+  pathname: string,
+  search = "",
+): boolean {
   return (
     pathname === "/inbox" ||
     pathname.startsWith("/inbox/") ||
-    isEmailPath(pathname) ||
+    isCalendarListPath(pathname) ||
+    (isEmailPath(pathname) && isEmailInboxListContext(search)) ||
     isJournalSectionPath(pathname) ||
     isKnowledgeSectionPath(pathname) ||
     isLettersSectionPath(pathname) ||
@@ -67,14 +75,47 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   if (isJournalSectionPath(pathname)) {
     return JOURNAL_LIST_PANEL_WIDTH_KEY;
   }
+  if (pathname === "/calendar" || pathname.startsWith("/calendar/")) {
+    return CALENDAR_TASK_LIST_PANEL_WIDTH_KEY;
+  }
   if (isEmailPath(pathname)) {
-    return EMAIL_LIST_PANEL_WIDTH_KEY;
+    return INBOX_TASK_LIST_PANEL_WIDTH_KEY;
   }
   return INBOX_TASK_LIST_PANEL_WIDTH_KEY;
 }
 
 export function isInboxPath(pathname: string): boolean {
   return pathname === "/inbox" || pathname.startsWith("/inbox/");
+}
+
+export function isCalendarPath(pathname: string): boolean {
+  return pathname === "/calendar" || pathname.startsWith("/calendar/");
+}
+
+/** Calendar main view with the unscheduled task list side panel. */
+export function isCalendarListPath(pathname: string): boolean {
+  return pathname === "/calendar";
+}
+
+/** Opened task detail scoped under Calendar — no list side panel. */
+export function isCalendarTaskDetailPath(pathname: string): boolean {
+  return pathname.startsWith("/calendar/tasks/");
+}
+
+/** Opened meeting detail scoped under Calendar — no list side panel. */
+export function isCalendarMeetingDetailPath(pathname: string): boolean {
+  return pathname.startsWith("/calendar/meetings/");
+}
+
+/**
+ * True when the Inbox side panel should host the list.
+ * Email routes only qualify when opened from Inbox (`?list=inbox`).
+ */
+export function isInboxPanelPath(pathname: string, search = ""): boolean {
+  return (
+    isInboxPath(pathname) ||
+    (isEmailPath(pathname) && isEmailInboxListContext(search))
+  );
 }
 
 export function getSelectedInboxSlugFromPathname(

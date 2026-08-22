@@ -1,0 +1,156 @@
+import { useMemo } from "react";
+
+import {
+  buildAssigneeDropdownOptions,
+  buildOrganizationDropdownOptions,
+  buildProjectDropdownOptions,
+  type MeetingDetailViewProps,
+  type MeetingListItem,
+  type MeetingPropertiesMeeting,
+} from "@backsteros/ui";
+
+import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "./avatar-src";
+import type { useDesktopWorkspaceData } from "./workspace-data";
+
+type Workspace = ReturnType<typeof useDesktopWorkspaceData>;
+
+export function useMeetingDetailViewProps(
+  meeting: MeetingListItem | null | undefined,
+  workspace: Workspace,
+  patchMeeting: (values: Record<string, unknown>) => void,
+): Pick<
+  MeetingDetailViewProps,
+  | "meeting"
+  | "onStatusChange"
+  | "onStartChange"
+  | "onEndChange"
+  | "onProjectChange"
+  | "onOrganizationChange"
+  | "onAttendeeContactIdsChange"
+  | "organizationOptions"
+  | "contactOptions"
+  | "projectOptions"
+> {
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    workspace.contacts,
+  );
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    workspace.organizations,
+  );
+
+  const organizationOptions = useMemo(
+    () =>
+      buildOrganizationDropdownOptions(
+        withAvatarSrc(workspace.organizations, organizationAvatarSrc).map(
+          (org) => ({
+            id: org.id,
+            name: org.name,
+            avatarSrc: org.avatarSrc,
+          }),
+        ),
+      ),
+    [organizationAvatarSrc, workspace.organizations],
+  );
+
+  const contactOptions = useMemo(
+    () =>
+      buildAssigneeDropdownOptions(
+        withAvatarSrc(workspace.contacts, contactAvatarSrc),
+      ),
+    [contactAvatarSrc, workspace.contacts],
+  );
+
+  const projectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        workspace.projects.map((project) => ({
+          key: project.key,
+          name: project.name,
+          icon: project.icon,
+          type: project.type,
+        })),
+      ),
+    [workspace.projects],
+  );
+
+  const meetingProperties = useMemo((): MeetingPropertiesMeeting | null => {
+    if (!meeting) return null;
+    const startAt = new Date(meeting.startAt);
+    const endAt = new Date(meeting.endAt);
+    const project = meeting.projectId
+      ? workspace.projects.find((entry) => entry.id === meeting.projectId)
+      : null;
+    const organization = meeting.organizationId
+      ? workspace.organizations.find(
+          (entry) => entry.id === meeting.organizationId,
+        )
+      : null;
+    return {
+      status: meeting.status ?? "ready_to_start",
+      startAt: Number.isNaN(startAt.getTime()) ? null : startAt,
+      endAt: Number.isNaN(endAt.getTime()) ? null : endAt,
+      projectKey: project?.key ?? null,
+      projectName: project?.name ?? null,
+      organizationId: meeting.organizationId ?? null,
+      organizationName: organization?.name ?? null,
+      attendeeContactIds: meeting.attendeeContactIds ?? [],
+    };
+  }, [meeting, workspace.organizations, workspace.projects]);
+
+  return {
+    meeting: meetingProperties,
+    onStatusChange: (status) => patchMeeting({ status }),
+    onStartChange: (value) => {
+      if (!value) return;
+      patchMeeting({ startAt: value.toISOString() });
+    },
+    onEndChange: (value) => {
+      if (!value) return;
+      patchMeeting({ endAt: value.toISOString() });
+    },
+    onProjectChange: (projectKey) => {
+      const project = projectKey
+        ? workspace.projects.find((entry) => entry.key === projectKey)
+        : null;
+      patchMeeting({ projectId: project?.id ?? null });
+    },
+    onOrganizationChange: (organizationId) => {
+      patchMeeting({ organizationId });
+    },
+    onAttendeeContactIdsChange: (contactIds) => {
+      patchMeeting({ attendeeContactIds: contactIds });
+    },
+    organizationOptions,
+    contactOptions,
+    projectOptions,
+  };
+}
+
+export function parseMeetingAttendeeContactIdsFromRow(
+  row: Record<string, unknown>,
+): string[] {
+  const raw = row.attendee_contact_ids ?? row.attendeeContactIds;
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (id): id is string => typeof id === "string" && id.trim().length > 0,
+    );
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        );
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}

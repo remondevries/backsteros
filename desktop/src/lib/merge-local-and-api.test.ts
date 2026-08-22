@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import {
   fillMissingCodebaseFieldsFromApi,
+  fillMissingDueDatesFromApi,
   fillMissingLinksFromApi,
+  fillMissingMeetingPropertiesFromApi,
   fillMissingTypeFromApi,
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
@@ -31,6 +33,29 @@ test("mergeLocalAndApiByUpdatedAt prefers newer API row", () => {
     [{ id: "1", updatedAt: "2026-01-02T00:00:00.000Z", title: "api" }],
   );
   assert.equal(merged[0]?.title, "api");
+});
+
+test("fillMissingDueDatesFromApi copies scheduling when local omitted due date", () => {
+  const filled = fillMissingDueDatesFromApi(
+    [
+      {
+        id: "1",
+        dueDate: null,
+        dueEndDate: null,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        dueDate: "2026-08-24T09:00:00.000Z",
+        dueEndDate: "2026-08-24T10:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.dueDate, "2026-08-24T09:00:00.000Z");
+  assert.equal(filled[0]?.dueEndDate, "2026-08-24T10:00:00.000Z");
 });
 
 test("fillMissingLinksFromApi copies API links when local is empty", () => {
@@ -136,6 +161,32 @@ test("fillMissingCodebaseFieldsFromApi keeps local repo and cwd when present", (
   );
   assert.equal(filled[0]?.githubRepository, "local/repo");
   assert.equal(filled[0]?.localWorkingDirectory, "/tmp/local");
+});
+
+test("fillMissingMeetingPropertiesFromApi copies project when local omitted", () => {
+  const filled = fillMissingMeetingPropertiesFromApi(
+    [
+      {
+        id: "1",
+        projectId: null,
+        organizationId: null,
+        attendeeContactIds: [],
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        projectId: "proj-1",
+        organizationId: "org-1",
+        attendeeContactIds: ["contact-1"],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  );
+  assert.equal(filled[0]?.projectId, "proj-1");
+  assert.equal(filled[0]?.organizationId, "org-1");
+  assert.deepEqual(filled[0]?.attendeeContactIds, ["contact-1"]);
 });
 
 test("preservePendingApiRows keeps optimistic creates missing from hydrate", () => {

@@ -375,6 +375,8 @@ export const taskSchema = z.object({
   priority: z.number().int().min(0).max(4),
   sortOrder: z.number().int(),
   dueDate: z.string().datetime().nullable(),
+  /** End of a timed calendar block; null = all-day due date. */
+  dueEndDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable(),
   inbox: z.boolean(),
   links: z.array(taskLinkSchema),
@@ -402,6 +404,8 @@ export const createTaskSchema = z.object({
   priority: z.number().int().min(0).max(4).optional(),
   sortOrder: z.number().int().optional(),
   dueDate: z.string().datetime().nullable().optional(),
+  /** End of a timed calendar block; null = all-day due date. */
+  dueEndDate: z.string().datetime().nullable().optional(),
   triagedAt: z.string().datetime().nullable().optional(),
   inbox: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
@@ -1399,6 +1403,8 @@ export const agentMailSettingsSchema = z.object({
   organizationId: z.string().nullable(),
   connected: z.boolean(),
   replyGreetingTemplate: z.string(),
+  replyGreetingTemplateEn: z.string(),
+  replyGreetingTemplateNl: z.string(),
   replySignOffTemplateEn: z.string(),
   replySignOffTemplateNl: z.string(),
   webhookConfigured: z.boolean(),
@@ -1410,7 +1416,10 @@ export const updateAgentMailSettingsSchema = z.object({
   inboxId: z.string().nullable().optional(),
   /** Replace the selected inbox list. Empty array clears selection. */
   inboxIds: z.array(z.string()).optional(),
+  /** @deprecated Prefer replyGreetingTemplateEn. */
   replyGreetingTemplate: z.string().max(500).optional(),
+  replyGreetingTemplateEn: z.string().max(500).optional(),
+  replyGreetingTemplateNl: z.string().max(500).optional(),
   replySignOffTemplateEn: z.string().max(500).optional(),
   replySignOffTemplateNl: z.string().max(500).optional(),
   /** Merge inbox id → contact id (null clears). Only selected inboxes are kept. */
@@ -1457,6 +1466,11 @@ export const agentMailMessageSchema = z.object({
   from: z.string(),
   preview: z.string().nullable(),
   timestamp: z.string(),
+  /** Workspace email thread row id (when registered). */
+  emailThreadId: z.string().optional(),
+  /** Workspace-wide display number (E-1, E-2, …). */
+  number: z.number().int().positive().optional(),
+  displayId: z.string().optional(),
   /** Workspace thread property; defaults to backlog when unset. */
   status: taskStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
@@ -1478,6 +1492,8 @@ export const emailThreadMetadataSchema = z.object({
   id: z.string(),
   inboxId: z.string(),
   threadKey: z.string(),
+  number: z.number().int().positive(),
+  displayId: z.string(),
   organizationId: z.string().nullable(),
   organizationName: z.string().nullable().optional(),
   contactId: z.string().nullable(),
@@ -1521,6 +1537,14 @@ export const updateEmailThreadCommentSchema = z.object({
 export const emailThreadCommentsResponseSchema = z.object({
   comments: z.array(emailThreadCommentSchema),
 });
+export const agentMailMessageAttachmentSchema = z.object({
+  attachmentId: z.string(),
+  size: z.number().int().nonnegative().optional(),
+  filename: z.string().nullable().optional(),
+  contentType: z.string().nullable().optional(),
+  contentDisposition: z.string().nullable().optional(),
+  contentId: z.string().nullable().optional(),
+});
 export const agentMailMessageDetailSchema = agentMailMessageSchema
   .omit({ kind: true, draftId: true, inReplyToMessageId: true })
   .extend({
@@ -1533,6 +1557,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
     extractedHtml: z.string().nullable(),
     to: z.array(z.string()).optional(),
     labels: z.array(z.string()).optional(),
+    attachments: z.array(agentMailMessageAttachmentSchema).optional(),
     inboxEmail: z.string().nullable().optional(),
     conceptDraft: agentMailConceptDraftSchema.nullable().optional(),
     threadMetadata: emailThreadMetadataSchema.optional(),
@@ -1553,6 +1578,7 @@ export const agentMailMessageDetailSchema = agentMailMessageSchema
           extractedHtml: z.string().nullable(),
           labels: z.array(z.string()).optional(),
           inReplyTo: z.string().nullable().optional(),
+          attachments: z.array(agentMailMessageAttachmentSchema).optional(),
         }),
       )
       .optional(),
@@ -2052,6 +2078,60 @@ export type HabitCadence = z.infer<typeof habitCadenceSchema>;
 export type CreateHabitInput = z.infer<typeof createHabitSchema>;
 export type UpdateHabitInput = z.infer<typeof updateHabitSchema>;
 export type RecordHabitDayInput = z.infer<typeof recordHabitDaySchema>;
+
+export const createMeetingSchema = z.object({
+  title: z.string().min(1).max(500).optional(),
+  summary: z.string().max(100000).nullable().optional(),
+  notes: z.string().max(100000).nullable().optional(),
+  transcription: z.string().max(100000).nullable().optional(),
+  status: taskStatusSchema.optional(),
+  projectId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  attendeeContactIds: z.array(z.string()).optional(),
+  startAt: isoDateSchema,
+  endAt: isoDateSchema,
+});
+
+export const updateMeetingSchema = z
+  .object({
+    title: z.string().min(1).max(500).optional(),
+    summary: z.string().max(100000).nullable().optional(),
+    notes: z.string().max(100000).nullable().optional(),
+    transcription: z.string().max(100000).nullable().optional(),
+    status: taskStatusSchema.optional(),
+    projectId: z.string().nullable().optional(),
+    organizationId: z.string().nullable().optional(),
+    attendeeContactIds: z.array(z.string()).optional(),
+    startAt: isoDateSchema.optional(),
+    endAt: isoDateSchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const meetingSchema = z.object({
+  id: z.string(),
+  number: z.number().int(),
+  title: z.string(),
+  summary: z.string().nullable(),
+  notes: z.string().nullable(),
+  transcription: z.string().nullable(),
+  status: taskStatusSchema,
+  projectId: z.string().nullable(),
+  organizationId: z.string().nullable(),
+  attendeeContactIds: z.array(z.string()),
+  startAt: isoDateSchema,
+  endAt: isoDateSchema,
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+export type Meeting = z.infer<typeof meetingSchema>;
+export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
+export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
+
 export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;
 export type TaskActivity = z.infer<typeof taskActivitySchema>;
@@ -2193,6 +2273,9 @@ export type AgentMailConceptDraft = z.infer<typeof agentMailConceptDraftSchema>;
 export type AgentMailMessage = z.infer<typeof agentMailMessageSchema>;
 export type AgentMailMessageDetail = z.infer<
   typeof agentMailMessageDetailSchema
+>;
+export type AgentMailMessageAttachment = z.infer<
+  typeof agentMailMessageAttachmentSchema
 >;
 export type AgentMailDraftDetail = z.infer<typeof agentMailDraftDetailSchema>;
 export type EmailConceptReplyInput = z.infer<

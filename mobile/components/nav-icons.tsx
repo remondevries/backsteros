@@ -19,6 +19,18 @@ export function InboxNavIcon({ color, size = 22 }: NavIconProps) {
   );
 }
 
+/** Same path as `@backsteros/ui` `EmailNavIcon`. */
+export function EmailNavIcon({ color, size = 22 }: NavIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Path
+        fill={color}
+        d="M14.9341 1.65742L10.0527 14.5271C9.85398 15.0514 9.36691 15.1558 8.97104 14.7594C8.97104 14.7594 5.89577 11.6842 5.61555 11.4039C5.33533 11.1237 5.43264 10.573 5.83208 10.1796L12.6164 3.50024C13.0159 3.10692 12.9787 3.06412 12.5334 3.40497L4.89564 9.25594C4.45086 9.59678 3.76254 9.55144 3.36615 9.15506L1.24057 7.02947C0.844185 6.63309 0.94863 6.14653 1.47289 5.94732L14.3426 1.0659C14.8668 0.867203 15.1328 1.13316 14.9341 1.65742ZM3.93729 10.4466C3.7391 10.2484 3.57708 10.3157 3.57708 10.5959V12.9324C3.57708 13.2126 3.77375 13.3237 4.01371 13.1795L5.237 12.4453C5.47748 12.3012 5.51161 12.0209 5.31342 11.8227L3.93729 10.4466Z"
+      />
+    </Svg>
+  );
+}
+
 /** Same paths as `@backsteros/ui` `TasksNavIcon`. */
 export function TasksNavIcon({ color, size = 22 }: NavIconProps) {
   return (

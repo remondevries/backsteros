@@ -1,5 +1,7 @@
 import { Stack } from "expo-router";
 
+import { iosStackGestureOptions } from "../../../lib/tab-stack-options";
+
 import { colors } from "../../../lib/theme";
 
 export default function DevelopmentLayout() {
@@ -7,8 +9,7 @@ export default function DevelopmentLayout() {
     <Stack
       screenOptions={{
         contentStyle: { backgroundColor: colors.background },
-        gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        ...iosStackGestureOptions,
       }}
     >
       <Stack.Screen

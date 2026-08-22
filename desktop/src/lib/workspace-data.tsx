@@ -15,6 +15,7 @@ import type {
   Organization as ApiOrganization,
   Project as ApiProject,
   Habit as ApiHabit,
+  Meeting as ApiMeeting,
   Task as ApiTask,
   TaskLink,
 } from "@backsteros/contracts";
@@ -29,6 +30,7 @@ import {
   type JournalListItem,
   type KnowledgeListItem,
   type LetterListItem,
+  type MeetingListItem,
   type OrganizationListItem,
   type ProjectOverviewRowProject,
   type TaskItemRowTask,
@@ -39,10 +41,12 @@ import { createRequestAbortSignal } from "./request-timeout";
 import { resolveCreateAssigneeId } from "./default-assignee";
 import {
   fillMissingAgentChatIdFromApi,
+  fillMissingDueDatesFromApi,
   fillMissingHabitIdFromApi,
   dropStaleLocalHabitTasks,
   fillMissingCodebaseFieldsFromApi,
   fillMissingLinksFromApi,
+  fillMissingMeetingPropertiesFromApi,
   fillMissingMoneybirdContactIdFromApi,
   fillMissingParentFromApi,
   fillMissingTypeFromApi,
@@ -54,6 +58,7 @@ import { getDesktopPublicEnvironment } from "./env";
 import { rememberProjectTypes } from "./project-type-cache";
 import { noteLocalTaskStatusPatch } from "./agent/agent-status-notifications";
 import { nudgeDynamicIslandTasksRefresh } from "./dynamic-island-nudge";
+import { parseMeetingAttendeeContactIdsFromRow } from "./use-meeting-detail-props";
 
 function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};
@@ -135,6 +140,7 @@ function mapTask(
     status: task.status,
     priority: task.priority,
     dueDate: asEpoch(task.dueDate),
+    dueEndDate: asEpoch(task.dueEndDate ?? null),
     projectId: task.projectId,
     projectKey: project?.key ?? null,
     projectName: project?.name ?? null,
@@ -209,6 +215,35 @@ function mapLetter(
   };
 }
 
+function mapMeeting(
+  meeting: ApiMeeting,
+  projectsById: Map<string, ApiProject>,
+): MeetingListItem {
+  const attendeeContactIds = Array.isArray(meeting.attendeeContactIds)
+    ? meeting.attendeeContactIds
+    : parseMeetingAttendeeContactIdsFromRow(
+        meeting as unknown as Record<string, unknown>,
+      );
+  const project = meeting.projectId
+    ? projectsById.get(meeting.projectId) ?? null
+    : null;
+  return {
+    id: meeting.id,
+    number: meeting.number,
+    title: meeting.title,
+    summary: meeting.summary ?? null,
+    notes: meeting.notes ?? null,
+    transcription: meeting.transcription ?? null,
+    status: meeting.status,
+    projectId: meeting.projectId ?? null,
+    projectName: project?.name ?? null,
+    organizationId: meeting.organizationId ?? null,
+    attendeeContactIds,
+    startAt: meeting.startAt,
+    endAt: meeting.endAt,
+  };
+}
+
 function mapContact(
   contact: ApiContact,
   organizationsById: Map<string, ApiOrganization>,
@@ -263,6 +298,7 @@ export type DesktopWorkspaceData = {
     }
   >;
   letters: LetterListItem[];
+  meetings: MeetingListItem[];
   /** All documents (project + knowledge + journal metadata). */
   documents: KnowledgeListItem[];
   knowledgeDocuments: KnowledgeListItem[];
@@ -289,6 +325,7 @@ export type DesktopWorkspaceData = {
   ) => Promise<{ number?: number } | void>;
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchMeeting: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchContact: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchOrganization: (
     id: string,
@@ -297,6 +334,7 @@ export type DesktopWorkspaceData = {
   softDeleteTask: (id: string) => Promise<void>;
   softDeleteProject: (id: string) => Promise<void>;
   softDeleteLetter: (id: string) => Promise<void>;
+  softDeleteMeeting: (id: string) => Promise<void>;
   softDeleteContact: (id: string) => Promise<void>;
   softDeleteOrganization: (id: string) => Promise<void>;
   softDeleteDocument: (id: string) => Promise<void>;
@@ -380,6 +418,14 @@ export type DesktopWorkspaceData = {
     dueDate?: string | null;
     receivedDate?: string | null;
   }) => Promise<{ id: string; number: number | null }>;
+  createMeeting: (input: {
+    title?: string;
+    summary?: string | null;
+    notes?: string | null;
+    transcription?: string | null;
+    startAt: string;
+    endAt: string;
+  }) => Promise<{ id: string; number: number }>;
   createKnowledgeDocument: (input: {
     title: string;
     content?: string;
@@ -499,6 +545,11 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       ? "SELECT * FROM habits WHERE deleted_at IS NULL ORDER BY sort_order, created_at"
       : null,
   );
+  const localMeetings = usePowerSyncQuery<Record<string, unknown>>(
+    authenticated
+      ? "SELECT * FROM meetings WHERE deleted_at IS NULL ORDER BY start_at, number"
+      : null,
+  );
 
   const [apiTasks, setApiTasks] = useState<ApiTask[] | null>(null);
   const [apiInboxTasks, setApiInboxTasks] = useState<ApiTask[] | null>(null);
@@ -511,6 +562,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   const [apiAreas, setApiAreas] = useState<ApiArea[] | null>(null);
   const [apiDocuments, setApiDocuments] = useState<ApiDocument[] | null>(null);
   const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
+  const [apiMeetings, setApiMeetings] = useState<ApiMeeting[] | null>(null);
   const [restHydrateSettled, setRestHydrateSettled] = useState(!authenticated);
   const [queriesGracePeriodExpired, setQueriesGracePeriodExpired] =
     useState(false);
@@ -546,6 +598,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       setApiAreas(null);
       setApiDocuments(null);
       setApiHabits(null);
+      setApiMeetings(null);
     }
   }, [authenticated]);
 
@@ -629,6 +682,12 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         );
         if (cancelled) return;
         setApiHabits(habitsBody.habits);
+        const meetingsBody = await client.requestJson<{ meetings: ApiMeeting[] }>(
+          "/api/v1/meetings",
+          { signal },
+        );
+        if (cancelled) return;
+        setApiMeetings(meetingsBody.meetings);
         const tasksAfterHabits = await client.requestJson<{
           tasks: ApiTask[];
         }>("/api/v1/tasks", { signal });
@@ -637,6 +696,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       } catch {
         if (cancelled) return;
         setApiHabits((current) => current ?? []);
+        setApiMeetings((current) => current ?? []);
       } finally {
         if (!cancelled) {
           markHydrated();
@@ -691,11 +751,14 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     apiProjects,
   );
   const rawTasks = dropStaleLocalHabitTasks(
-    fillMissingHabitIdFromApi(
-      fillMissingAgentChatIdFromApi(
-        fillMissingLinksFromApi(
-          mergeLocalAndApiByUpdatedAt(
-            localTasks.data?.map((row) => snakeRow(row) as ApiTask),
+    fillMissingDueDatesFromApi(
+      fillMissingHabitIdFromApi(
+        fillMissingAgentChatIdFromApi(
+          fillMissingLinksFromApi(
+            mergeLocalAndApiByUpdatedAt(
+              localTasks.data?.map((row) => snakeRow(row) as ApiTask),
+              apiTasks,
+            ),
             apiTasks,
           ),
           apiTasks,
@@ -707,11 +770,14 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     apiTasks,
   );
   const rawInboxTasks = dropStaleLocalHabitTasks(
-    fillMissingHabitIdFromApi(
-      fillMissingAgentChatIdFromApi(
-        fillMissingLinksFromApi(
-          mergeLocalAndApiByUpdatedAt(
-            localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask),
+    fillMissingDueDatesFromApi(
+      fillMissingHabitIdFromApi(
+        fillMissingAgentChatIdFromApi(
+          fillMissingLinksFromApi(
+            mergeLocalAndApiByUpdatedAt(
+              localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask),
+              apiInboxTasks,
+            ),
             apiInboxTasks,
           ),
           apiInboxTasks,
@@ -727,6 +793,13 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
   const rawLetters = mergeLocalAndApiByUpdatedAt(
     localLetters.data?.map((row) => snakeRow(row) as ApiLetter),
     apiLetters,
+  );
+  const rawMeetings = fillMissingMeetingPropertiesFromApi(
+    mergeLocalAndApiByUpdatedAt(
+      localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting),
+      apiMeetings,
+    ),
+    apiMeetings,
   );
   const rawContacts = mergeLocalAndApiByUpdatedAt(
     localContacts.data?.map((row) => snakeRow(row) as ApiContact),
@@ -877,6 +950,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       return `/api/v1/projects/${encodeURIComponent(id)}`;
     if (table === "letters")
       return `/api/v1/letters/${encodeURIComponent(id)}`;
+    if (table === "meetings")
+      return `/api/v1/meetings/${encodeURIComponent(id)}`;
     if (table === "contacts")
       return `/api/v1/contacts/${encodeURIComponent(id)}`;
     if (table === "documents")
@@ -965,6 +1040,21 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     [],
   );
 
+  const applyApiMeetingPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      const nextUpdatedAt = new Date().toISOString();
+      setApiMeetings((rows) => {
+        if (!rows) return rows;
+        return rows.map((row) =>
+          row.id === id
+            ? ({ ...row, ...values, updatedAt: nextUpdatedAt } as ApiMeeting)
+            : row,
+        );
+      });
+    },
+    [],
+  );
+
   const softRefreshApiTasks = useCallback(async () => {
     if (!authenticated) return;
     try {
@@ -986,6 +1076,18 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         "/api/v1/projects",
       );
       setApiProjects(projectsBody.projects);
+    } catch {
+      // PowerSync remains the primary source.
+    }
+  }, [authenticated, client]);
+
+  const softRefreshApiMeetings = useCallback(async () => {
+    if (!authenticated) return;
+    try {
+      const meetingsBody = await client.requestJson<{ meetings: ApiMeeting[] }>(
+        "/api/v1/meetings",
+      );
+      setApiMeetings(meetingsBody.meetings);
     } catch {
       // PowerSync remains the primary source.
     }
@@ -1025,6 +1127,36 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         }
       };
 
+      const applyMeetingServerRow = async (row: ApiMeeting | null | undefined) => {
+        if (!row || table !== "meetings") return;
+        applyApiMeetingPatch(id, {
+          projectId: row.projectId,
+          organizationId: row.organizationId,
+          attendeeContactIds: row.attendeeContactIds,
+          status: row.status,
+          updatedAt: row.updatedAt,
+        });
+        if (powerSync.ready && powerSync.patchMetadata) {
+          try {
+            await powerSync.patchMetadata("meetings", id, toSnakeFields({
+              projectId: row.projectId ?? null,
+              organizationId: row.organizationId ?? null,
+              attendeeContactIds: row.attendeeContactIds ?? [],
+              status: row.status,
+            }));
+          } catch (error) {
+            console.warn("[desktop] local meeting property sync failed", error);
+          }
+        }
+      };
+
+      const meetingPatchNeedsApiRefresh =
+        table === "meetings" &&
+        ("projectId" in values ||
+          "organizationId" in values ||
+          "attendeeContactIds" in values ||
+          "status" in values);
+
       // Match Next.js: optimistic local SQLite + REST so other clients see
       // changes even when the PowerSync upload queue is slow or stalled.
       if (powerSync.ready && powerSync.patchMetadata) {
@@ -1034,6 +1166,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
               | "tasks"
               | "projects"
               | "letters"
+              | "meetings"
               | "contacts"
               | "organizations"
               | "documents",
@@ -1043,6 +1176,32 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         } catch (error) {
           // Local SQLite may lag schema (e.g. new columns). Still hit REST.
           console.warn("[desktop] local metadata patch failed", error);
+          if (table === "tasks" && "dueEndDate" in values) {
+            const { dueEndDate: _dueEndDate, ...rest } = values;
+            if (Object.keys(rest).length > 0) {
+              try {
+                await powerSync.patchMetadata("tasks", id, toSnakeFields(rest));
+              } catch (retryError) {
+                console.warn("[desktop] local task patch retry failed", retryError);
+              }
+            }
+          }
+          if (table === "meetings") {
+            const {
+              projectId: _projectId,
+              organizationId: _organizationId,
+              attendeeContactIds: _attendeeContactIds,
+              status: _status,
+              ...rest
+            } = values;
+            if (Object.keys(rest).length > 0) {
+              try {
+                await powerSync.patchMetadata("meetings", id, toSnakeFields(rest));
+              } catch (retryError) {
+                console.warn("[desktop] local meeting patch retry failed", retryError);
+              }
+            }
+          }
         }
         // Optimistic API cache — REST-created orgs/contacts may not exist in
         // local SQLite yet, so side panels would stay stale without this.
@@ -1054,6 +1213,9 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         }
         if (table === "letters") {
           applyApiLetterPatch(id, values);
+        }
+        if (table === "meetings") {
+          applyApiMeetingPatch(id, values);
         }
         if (table === "tasks") {
           // Optimistic so agentChatId / status show in lists before REST returns.
@@ -1071,11 +1233,17 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify(values),
                 })
-              : await client.requestJson(path, {
-                  method: "PATCH",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify(values),
-                });
+              : table === "meetings"
+                ? await client.requestJson<ApiMeeting>(path, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(values),
+                  })
+                : await client.requestJson(path, {
+                    method: "PATCH",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(values),
+                  });
           if (table === "tasks") {
             await applyTaskServerRow(updated as ApiTask);
             // Re-fetch when links / agent chat binding change so merge can fill
@@ -1086,6 +1254,12 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
             return typeof (updated as ApiTask)?.number === "number"
               ? { number: (updated as ApiTask).number }
               : undefined;
+          }
+          if (table === "meetings") {
+            await applyMeetingServerRow(updated as ApiMeeting);
+            if (meetingPatchNeedsApiRefresh) {
+              void softRefreshApiMeetings();
+            }
           }
           if (table === "projects") {
             applyApiProjectPatch(id, values);
@@ -1134,6 +1308,18 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
           ? { number: updated.number }
           : undefined;
       }
+      if (table === "meetings") {
+        const updated = await client.requestJson<ApiMeeting>(path, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(values),
+        });
+        await applyMeetingServerRow(updated);
+        if (meetingPatchNeedsApiRefresh) {
+          void softRefreshApiMeetings();
+        }
+        return;
+      }
       await client.requestJson(path, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -1162,6 +1348,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     [
       applyApiContactPatch,
       applyApiLetterPatch,
+      applyApiMeetingPatch,
       applyApiOrganizationPatch,
       applyApiProjectPatch,
       applyApiTaskPatch,
@@ -1170,6 +1357,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       entityPatchPath,
       powerSync,
       softRefreshApiProjects,
+      softRefreshApiMeetings,
       softRefreshApiTasks,
       toSnakeFields,
     ],
@@ -1179,6 +1367,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     | "tasks"
     | "projects"
     | "letters"
+    | "meetings"
     | "contacts"
     | "organizations"
     | "documents";
@@ -1195,6 +1384,10 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     }
     if (table === "letters") {
       setApiLetters((rows) => rows?.filter((row) => row.id !== id) ?? null);
+      return;
+    }
+    if (table === "meetings") {
+      setApiMeetings((rows) => rows?.filter((row) => row.id !== id) ?? null);
       return;
     }
     if (table === "contacts") {
@@ -1858,6 +2051,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(source.assigneeId),
         dueDate: toApiDueDateIso(source.dueDate),
+        dueEndDate: toApiDueDateIso(source.dueEndDate ?? null),
         projectId: source.projectId ?? null,
         contactId: source.contactId ?? null,
         inbox: Boolean(source.inbox),
@@ -2004,6 +2198,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
             sortOrder: sortBase++,
             assigneeId: resolveCreateAssigneeId(sourceTask.assigneeId),
             dueDate: toApiDueDateIso(sourceTask.dueDate),
+            dueEndDate: toApiDueDateIso(sourceTask.dueEndDate ?? null),
             contactId: sourceTask.contactId ?? null,
             inbox: false,
             ...(links.length > 0 ? { links } : {}),
@@ -2081,6 +2276,53 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
         }
       }
       return { id: letter.id, number: letter.number };
+    },
+    [authenticated, client, powerSync, toSnakeFields],
+  );
+
+  const createMeeting = useCallback(
+    async (input: {
+      title?: string;
+      summary?: string | null;
+      notes?: string | null;
+      transcription?: string | null;
+      startAt: string;
+      endAt: string;
+    }) => {
+      if (!authenticated) throw new Error("Sign in to create meetings.");
+      const meeting = await client.requestJson<ApiMeeting>("/api/v1/meetings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: input.title?.trim() || "New meeting",
+          summary: input.summary ?? null,
+          notes: input.notes ?? null,
+          transcription: input.transcription ?? null,
+          startAt: input.startAt,
+          endAt: input.endAt,
+        }),
+      });
+      setApiMeetings((rows) => {
+        if (!rows) return [meeting];
+        if (rows.some((entry) => entry.id === meeting.id)) {
+          return rows.map((entry) =>
+            entry.id === meeting.id ? meeting : entry,
+          );
+        }
+        return [meeting, ...rows];
+      });
+      if (powerSync.ready && powerSync.createMetadata) {
+        try {
+          await powerSync.createMetadata(
+            "meetings",
+            toSnakeFields(meeting as unknown as Record<string, unknown>),
+            meeting.id,
+          );
+        } catch {
+          // Download sync will eventually bring the row in.
+        }
+      }
+      return { id: meeting.id, number: meeting.number };
     },
     [authenticated, client, powerSync, toSnakeFields],
   );
@@ -2392,6 +2634,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
       localInboxTasks.loading ||
       localProjects.loading ||
       localLetters.loading ||
+      localMeetings.loading ||
       localContacts.loading ||
       localOrganizations.loading ||
       localAreas.loading ||
@@ -2408,7 +2651,8 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     apiAreas !== null ||
     apiContacts !== null ||
     apiDocuments !== null ||
-    apiLetters !== null;
+    apiLetters !== null ||
+    apiMeetings !== null;
 
   return {
     source,
@@ -2425,6 +2669,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     letters: rawLetters
       .filter((letter) => letter.number != null)
       .map((letter) => mapLetter(letter, projectsById)),
+    meetings: rawMeetings.map((meeting) => mapMeeting(meeting, projectsById)),
     documents,
     knowledgeDocuments,
     projectDocuments,
@@ -2525,6 +2770,9 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     patchLetter: async (id, values) => {
       await patchViaPowerSyncOrApi("letters", id, values);
     },
+    patchMeeting: async (id, values) => {
+      await patchViaPowerSyncOrApi("meetings", id, values);
+    },
     patchContact: async (id, values) => {
       await patchViaPowerSyncOrApi("contacts", id, values);
     },
@@ -2534,6 +2782,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     softDeleteTask: (id) => softDeleteViaPowerSyncOrApi("tasks", id),
     softDeleteProject: (id) => softDeleteViaPowerSyncOrApi("projects", id),
     softDeleteLetter: (id) => softDeleteViaPowerSyncOrApi("letters", id),
+    softDeleteMeeting: (id) => softDeleteViaPowerSyncOrApi("meetings", id),
     softDeleteContact: (id) => softDeleteViaPowerSyncOrApi("contacts", id),
     softDeleteOrganization: (id) =>
       softDeleteViaPowerSyncOrApi("organizations", id),
@@ -2552,6 +2801,7 @@ function useDesktopWorkspaceDataImpl(): DesktopWorkspaceData {
     duplicateTask,
     duplicateProject,
     createLetter,
+    createMeeting,
     createKnowledgeDocument,
     createProjectDocument,
     createKnowledgeFolder,

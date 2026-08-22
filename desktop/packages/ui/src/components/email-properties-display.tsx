@@ -1,12 +1,9 @@
 "use client";
 
 import {
-  EMAIL_STATUS_ORDER,
-  getEmailStatusLabel,
-  resolveEmailVisibleStatus,
-} from "../email.js";
-import {
+  getTaskStatusLabel,
   migrateLegacyTaskStatus,
+  TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../task-status.js";
 import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
@@ -97,17 +94,15 @@ export function EmailPropertiesDisplay({
   onCreateContactFromQuery,
   onCreateAssigneeFromQuery,
 }: EmailPropertiesDisplayProps) {
-  const status = resolveEmailVisibleStatus(
-    migrateLegacyTaskStatus(thread.status ?? "triage"),
-  );
+  const status = migrateLegacyTaskStatus(thread.status?.trim() || "triage");
   const priority = thread.priority ?? 0;
   const due = toDate(thread.dueDate);
 
   const statusOptions: SearchableDropdownOption<TaskStatus>[] =
-    EMAIL_STATUS_ORDER.map((value) => ({
+    TASK_STATUS_ORDER.map((value) => ({
       value,
-      label: getEmailStatusLabel(value),
-      searchTerms: `${value.replaceAll("_", " ")} ${getEmailStatusLabel(value)}`,
+      label: getTaskStatusLabel(value),
+      searchTerms: `${value.replaceAll("_", " ")} ${getTaskStatusLabel(value)}`,
       icon: <TaskStatusIcon status={value} size={14} />,
     }));
 
@@ -305,7 +300,7 @@ export function EmailPropertiesDisplay({
       ariaLabel="Status"
       taskPropertyDropdownId="status"
       fallbackIcon={<TaskStatusIcon status={status} size={14} />}
-      fallbackLabel={getEmailStatusLabel(status)}
+      fallbackLabel={getTaskStatusLabel(status)}
     />
   );
 

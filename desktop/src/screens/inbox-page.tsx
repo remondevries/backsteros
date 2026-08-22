@@ -29,6 +29,11 @@ import {
 } from "../lib/avatar-src";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
+import {
+  buildDocumentLinkOptions,
+  buildEmailLinkOptions,
+} from "../lib/task-link-picker-options";
+import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 type MovedToProjectNotice = {
@@ -85,6 +90,15 @@ export function InboxPage() {
   const navigate = useNavigate();
   const { itemId } = useParams<{ itemId?: string }>();
   const workspace = useDesktopWorkspaceData();
+  const agentMail = useAgentMail();
+  const documentLinkOptions = useMemo(
+    () => buildDocumentLinkOptions(workspace.documents),
+    [workspace.documents],
+  );
+  const emailLinkOptions = useMemo(
+    () => buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages],
+  );
   const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
     null,
   );
@@ -381,6 +395,11 @@ export function InboxPage() {
         resolveImageSrc={resolveImageSrc}
         onChangeLinks={(links) => {
           void workspace.patchTask(selectedTask.id, { links });
+        }}
+        documentLinkOptions={documentLinkOptions}
+        emailLinkOptions={emailLinkOptions}
+        onNavigateLink={(href) => {
+          navigate(href);
         }}
         onSaveTitle={async (title) => {
           const trimmed = title.trim();

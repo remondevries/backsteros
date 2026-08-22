@@ -3,6 +3,7 @@ import type {
   MentionCatalog,
   MentionCatalogContact,
   MentionCatalogDocument,
+  MentionCatalogEmail,
   MentionCatalogLetter,
   MentionCatalogOrganization,
   MentionCatalogProject,
@@ -97,6 +98,22 @@ export function resolveMentionCatalogLetter(
 
   return (
     catalog.letters.find(
+      (entry) =>
+        entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+    ) ?? null
+  );
+}
+
+export function resolveMentionCatalogEmail(
+  parsed: ParsedMentionToken,
+  catalog: MentionCatalog,
+): MentionCatalogEmail | null {
+  if (parsed.kind !== "email") {
+    return null;
+  }
+
+  return (
+    catalog.emails.find(
       (entry) =>
         entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
     ) ?? null
