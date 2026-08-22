@@ -7,15 +7,15 @@ import {
   getInboxItemDisplayId,
   resolveInboxEmailIconColor,
   type InboxListItem,
-} from "../inbox-items.js";
-import { iconSvgColorStyle } from "../icon-color.js";
-import { keyboardNavItemProps } from "../keyboard-nav-item.js";
+} from "../inbox/inbox-items.js";
+import { iconSvgColorStyle } from "../entity/icon-color.js";
+import { keyboardNavItemProps } from "../list-nav/keyboard-nav-item.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../tasks/task-status-color.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,

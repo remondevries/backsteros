@@ -8,7 +8,7 @@ import {
   prepareEmailHtmlForDisplay,
   resolveEmailInlineAttachments,
   type EmailMessageInlineAttachment,
-} from "../email-message-html.js";
+} from "../email/email-message-html.js";
 
 export type EmailMessageHtmlBodyProps = {
   html: string;

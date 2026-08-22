@@ -5,18 +5,18 @@ import { useRef, useState } from "react";
 import {
   formatCalendarTaskScheduleLabel,
   type CalendarTaskLike,
-} from "../calendar-events.js";
+} from "../calendar/calendar-events.js";
 import {
   formatMeetingDisplayId,
   sortMeetingsByStart,
   type MeetingListItem,
-} from "../meetings.js";
+} from "../meetings/meetings.js";
 import {
   meetingEpochAttribute,
   CALENDAR_EXTERNAL_DRAG_ITEM_SELECTOR,
-} from "../calendar-task-drag.js";
-import { useCalendarExternalTaskDrag } from "../use-calendar-external-task-drag.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../calendar/calendar-task-drag.js";
+import { useCalendarExternalTaskDrag } from "../calendar/use-calendar-external-task-drag.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,

@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import type { NavigationItemIconId } from "../navigation.js";
+import type { NavigationItemIconId } from "../navigation/navigation.js";
 import {
   AreasNavIcon,
   CalendarNavIcon,

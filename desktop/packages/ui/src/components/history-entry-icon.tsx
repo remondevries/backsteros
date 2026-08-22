@@ -2,9 +2,9 @@
 
 import type { ComponentType } from "react";
 
-import type { HistoryEntryDisplay } from "../resolve-history-entry-display.js";
-import type { NavigationItemIconId } from "../navigation.js";
-import type { TaskStatus } from "../task-status.js";
+import type { HistoryEntryDisplay } from "../navigation/resolve-history-entry-display.js";
+import type { NavigationItemIconId } from "../navigation/navigation.js";
+import type { TaskStatus } from "../tasks/task-status.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { DocumentIcon } from "./document-icon.js";

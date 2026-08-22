@@ -5,18 +5,18 @@ import { useSyncExternalStore } from "react";
 import {
   iconSvgColorStyle,
   mergeIconSvgClassName,
-} from "../icon-color.js";
+} from "../entity/icon-color.js";
 import {
   getTaskPriorityActiveBars,
   getTaskPriorityLabel,
   isTaskPriorityNone,
   isTaskPriorityUrgent,
-} from "../task-priority.js";
+} from "../tasks/task-priority.js";
 import {
   getPreferredColorSchemeSnapshot,
   resolveTaskStatusColor,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 
 const BAR_HEIGHTS = [5, 8, 11] as const;
 

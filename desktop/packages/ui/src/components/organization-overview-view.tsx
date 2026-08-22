@@ -2,8 +2,8 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 
-import { adoptRemoteField } from "../adopt-remote-field.js";
-import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
+import { adoptRemoteField } from "../shared/adopt-remote-field.js";
+import { useTitleRenameShortcut } from "../shortcuts/title-rename-shortcut.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
 
 export type OrganizationOverviewDetails = {

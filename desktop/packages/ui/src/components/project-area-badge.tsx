@@ -1,6 +1,6 @@
 "use client";
 
-import { PROJECT_AREA_LABELS, type ProjectArea } from "../project-areas.js";
+import { PROJECT_AREA_LABELS, type ProjectArea } from "../projects/project-areas.js";
 
 type ProjectAreaBadgeProps = {
   area: ProjectArea | null;

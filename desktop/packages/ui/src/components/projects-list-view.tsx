@@ -5,7 +5,7 @@ import type { ComponentType, ReactNode } from "react";
 import {
   getProjectsHref,
   type ProjectListItem,
-} from "../entity-routes.js";
+} from "../navigation/entity-routes.js";
 import { ProjectOcticon } from "./project-octicon.js";
 
 export type ProjectsListLinkComponent = ComponentType<{

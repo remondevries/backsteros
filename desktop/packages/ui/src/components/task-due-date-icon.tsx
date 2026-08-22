@@ -2,13 +2,13 @@
 
 import { useSyncExternalStore } from "react";
 
-import { iconSvgColorStyle, mergeIconSvgClassName } from "../icon-color.js";
-import type { TaskDueDateUrgency } from "../task-due-date.js";
+import { iconSvgColorStyle, mergeIconSvgClassName } from "../entity/icon-color.js";
+import type { TaskDueDateUrgency } from "../tasks/task-due-date.js";
 import {
   getPreferredColorSchemeSnapshot,
   resolveTaskStatusColor,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 
 export type TaskDueDateIconProps = {
   active?: boolean;

@@ -1,4 +1,4 @@
-import type { ParsedMentionToken } from "../mention-tokens.js";
+import type { ParsedMentionToken } from "./mention-tokens.js";
 import type {
   MentionCatalog,
   MentionCatalogContact,

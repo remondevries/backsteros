@@ -12,11 +12,11 @@ import {
   isNavigationPathActive,
   navigation,
   navigationSections,
-} from "../navigation.js";
+} from "../navigation/navigation.js";
 import {
   SETTINGS_SHORTCUT_HINT,
   getDefaultSettingsHref,
-} from "../settings.js";
+} from "../navigation/settings.js";
 import { getNavigationItemIcon } from "./navigation-item-icon.js";
 import { DevelopmentAdeLogoIcon } from "./development-ade-logo-icon.js";
 import {

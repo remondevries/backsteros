@@ -8,21 +8,21 @@ import {
   projectAreaGroupKey,
   type NestedAreaRef,
   type ProjectAreaGroupKey,
-} from "../group-projects-by-area.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
-import type { ProjectArea } from "../project-areas.js";
-import { PROJECT_AREA_LABELS } from "../project-areas.js";
+} from "../projects/group-projects-by-area.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
+import type { ProjectArea } from "../projects/project-areas.js";
+import { PROJECT_AREA_LABELS } from "../projects/project-areas.js";
 import {
   projectAreaGroupAppendOrderKey,
   projectAreaOrderKey,
   type ProjectAreaReorderRequest,
-} from "../project-area-list-drag.js";
-import { applyOptimisticProjectAreaReorder } from "../project-area-reorder.js";
+} from "../projects/project-area-list-drag.js";
+import { applyOptimisticProjectAreaReorder } from "../projects/project-area-reorder.js";
 import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
-} from "../use-grouped-list-pointer-reorder.js";
-import type { ProjectStatus } from "../project-status.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
+import type { ProjectStatus } from "../projects/project-status.js";
 import {
   ListBoardViewShell,
   type ListBoardView,

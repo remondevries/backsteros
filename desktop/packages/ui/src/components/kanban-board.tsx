@@ -11,18 +11,18 @@ import {
   type ReactNode,
 } from "react";
 
-import { stepBoardTaskId } from "../board-keyboard-nav.js";
+import { stepBoardTaskId } from "../list-nav/board-keyboard-nav.js";
 import {
   computeKanbanDropIndicator,
   type KanbanDropIndicator,
-} from "../compute-kanban-drop-indicator.js";
-import { isKanbanInteractiveCardTarget } from "../kanban-interactive-target.js";
+} from "../list-nav/compute-kanban-drop-indicator.js";
+import { isKanbanInteractiveCardTarget } from "../list-nav/kanban-interactive-target.js";
 import {
   keyboardNavItemClass,
   keyboardNavItemProps,
-} from "../keyboard-nav-item.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
-import { boardKeyboardNavDirection } from "../should-handle-list-keyboard-navigation.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
+import { boardKeyboardNavDirection } from "../list-nav/should-handle-list-keyboard-navigation.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,

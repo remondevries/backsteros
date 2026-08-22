@@ -12,14 +12,14 @@ import {
   type CSSProperties,
 } from "react";
 
-import type { OrganizationListItem } from "../entity-routes.js";
+import type { OrganizationListItem } from "../navigation/entity-routes.js";
 import {
   filterFinanceInvoices,
   type FinanceInvoiceFilterRow,
-} from "../filter-finance-invoices.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
-import { getTaskStatusHeaderGradientStyle } from "../task-status-header-gradient.js";
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+} from "../finance/filter-finance-invoices.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
+import { getTaskStatusHeaderGradientStyle } from "../tasks/task-status-header-gradient.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
 import {
   DROPDOWN_NONE_VALUE,

@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
 } from "react";
 
-import { shouldHandleGlobalShortcut } from "../../shortcut-guards.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { SegmentedPillToggle } from "../list-board-view-shell.js";
 import { useListKeyboardNavigationZone } from "../list-keyboard-navigation-provider.js";
 import { FileCodeViewer } from "./file-code-viewer.js";

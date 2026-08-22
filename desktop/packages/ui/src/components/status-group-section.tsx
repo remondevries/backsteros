@@ -5,14 +5,14 @@ import type { CSSProperties, DragEvent, ReactNode } from "react";
 import type {
   GroupedListPointerAppendBind,
   GroupedListPointerItemBind,
-} from "../use-grouped-list-pointer-reorder.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
-import { useStickyStuck } from "../use-sticky-stuck.js";
-import { getTaskStatusHeaderGradientStyle } from "../task-status-header-gradient.js";
-import type { TaskStatus } from "../task-status.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { useStickyStuck } from "../shared/use-sticky-stuck.js";
+import { getTaskStatusHeaderGradientStyle } from "../tasks/task-status-header-gradient.js";
+import type { TaskStatus } from "../tasks/task-status.js";
 import { PolishedCheckbox } from "./polished-checkbox.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 

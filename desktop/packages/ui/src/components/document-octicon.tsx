@@ -6,8 +6,8 @@ import {
   type CSSProperties,
 } from "react";
 
-import { isProjectIconKey } from "../project-icon-keys.js";
-import { getOcticonComponent } from "../project-octicon-registry.js";
+import { isProjectIconKey } from "../projects/project-icon-keys.js";
+import { getOcticonComponent } from "../projects/project-octicon-registry.js";
 import { DocumentIcon } from "./document-icon.js";
 import {
   getDisplayProjectIcon,

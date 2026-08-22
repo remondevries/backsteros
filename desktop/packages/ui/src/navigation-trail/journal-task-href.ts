@@ -1,5 +1,5 @@
-import { encodeTaskSlug } from "../inbox-items.js";
-import { INBOX_TASK_KEY } from "../task-display-id.js";
+import { encodeTaskSlug } from "../inbox/inbox-items.js";
+import { INBOX_TASK_KEY } from "../tasks/task-display-id.js";
 import { appendNavigationTrailNode } from "./codec.js";
 
 /** Append a task slug leaf under a journal (or other) source path. */

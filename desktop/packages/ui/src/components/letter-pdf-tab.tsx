@@ -6,8 +6,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   stripPdfExtension,
   withPdfExtension,
-} from "../letter-pdf-filename.js";
-import type { LetterPdfTabReorderBind } from "../use-letter-pdf-tab-reorder.js";
+} from "../letters/letter-pdf-filename.js";
+import type { LetterPdfTabReorderBind } from "../letters/use-letter-pdf-tab-reorder.js";
 import { LetterIcon } from "./letter-icon.js";
 
 export type LetterPdfTabAttachment = {

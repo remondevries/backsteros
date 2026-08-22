@@ -1,7 +1,7 @@
 import {
   isScopedFilterMode,
   type CommandPaletteFilterMode,
-} from "../command-palette.js";
+} from "./command-palette.js";
 import type { CommandPaletteSearchContext } from "./search-context.js";
 
 const FILTER_BREADCRUMB_LABELS: Record<

@@ -5,9 +5,9 @@ import {
   getInboxItemDisplayId,
   type InboxListItem,
   type InboxTaskListItem,
-} from "../inbox-items.js";
-import { getTaskPriorityLabel } from "../task-priority.js";
-import { getTaskStatusLabel, isTaskStatus } from "../task-status.js";
+} from "../inbox/inbox-items.js";
+import { getTaskPriorityLabel } from "../tasks/task-priority.js";
+import { getTaskStatusLabel, isTaskStatus } from "../tasks/task-status.js";
 
 export type InboxDetailLayoutProps = {
   item: InboxListItem | null;

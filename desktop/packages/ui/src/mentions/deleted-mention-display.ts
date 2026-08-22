@@ -1,4 +1,4 @@
-import type { ParsedMentionToken } from "../mention-tokens.js";
+import type { ParsedMentionToken } from "./mention-tokens.js";
 
 export type DeletedMentionDisplay = {
   ariaLabel: string;

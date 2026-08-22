@@ -15,8 +15,8 @@ import {
   groupLettersByStatus,
   letterMatchesSlug,
   type LetterListItem,
-} from "../letters.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../letters/letters.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,

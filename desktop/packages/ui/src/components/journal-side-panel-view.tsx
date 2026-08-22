@@ -11,9 +11,9 @@ import {
   getJournalHref,
   getSelectedJournalDateFromPathname,
   getTodayJournalDateSlug,
-} from "../journal.js";
-import { keyboardNavItemProps } from "../keyboard-nav-item.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../journal/journal.js";
+import { keyboardNavItemProps } from "../list-nav/keyboard-nav-item.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,

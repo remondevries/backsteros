@@ -16,8 +16,8 @@ import type { TaskLink } from "@backsteros/contracts";
 import {
   ADD_TASK_LINK_SHORTCUT_HINT,
   shouldHandleAddTaskLinkShortcut,
-} from "../task-link-add-shortcut.js";
-import { isInternalAppHref } from "../is-internal-app-href.js";
+} from "../tasks/task-link-add-shortcut.js";
+import { isInternalAppHref } from "../navigation/is-internal-app-href.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import { ProjectOcticon } from "./project-octicon.js";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { fireHabitCompleteConfetti } from "../habit-complete-confetti.js";
+import { fireHabitCompleteConfetti } from "../habits/habit-complete-confetti.js";
 
 export function collapseHabitItemsByHabitId<
   T extends { habitId: string; checked: boolean; title?: string },

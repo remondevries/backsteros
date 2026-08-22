@@ -5,7 +5,7 @@ import { TriangleDownIcon, TriangleUpIcon } from "@primer/octicons-react";
 import {
   formatNetIncomeRangeLabel,
   netIncomeChangePercent,
-} from "../net-income-year-chart-series.js";
+} from "../finance/net-income-year-chart-series.js";
 
 function formatEuro(value: number, fractionDigits = 2): string {
   try {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+import { useContentTitleEditorNavigation } from "../content/use-content-title-editor-navigation.js";
 import {
   ContentMarkdownPreviewBody,
   ContentMarkdownViewLayout,

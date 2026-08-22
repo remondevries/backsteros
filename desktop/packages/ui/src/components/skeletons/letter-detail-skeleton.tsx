@@ -1,4 +1,4 @@
-import { DOCUMENT_CONTENT_MAX_WIDTH } from "../../document-editor-theme.js";
+import { DOCUMENT_CONTENT_MAX_WIDTH } from "../../documents/document-editor-theme.js";
 import { SkeletonBlock } from "./skeleton-block.js";
 
 export type LetterDetailSkeletonProps = {

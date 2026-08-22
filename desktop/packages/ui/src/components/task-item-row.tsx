@@ -10,27 +10,27 @@ import {
   type SyntheticEvent,
 } from "react";
 
-import type { GroupedListPointerItemBind } from "../use-grouped-list-pointer-reorder.js";
-import { resolveInboxEmailIconColor } from "../inbox-items.js";
-import { formatEmailDisplayId } from "../email-display-id.js";
-import { iconSvgColorStyle } from "../icon-color.js";
-import { getTaskDisplayId } from "../task-display-id.js";
+import type { GroupedListPointerItemBind } from "../list-nav/use-grouped-list-pointer-reorder.js";
+import { resolveInboxEmailIconColor } from "../inbox/inbox-items.js";
+import { formatEmailDisplayId } from "../email/email-display-id.js";
+import { iconSvgColorStyle } from "../entity/icon-color.js";
+import { getTaskDisplayId } from "../tasks/task-display-id.js";
 import {
   taskDueEpochAttribute,
-} from "../calendar-task-drag.js";
-import { keyboardNavItemProps, keyboardNavListItemClass } from "../keyboard-nav-item.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+} from "../calendar/calendar-task-drag.js";
+import { keyboardNavItemProps, keyboardNavListItemClass } from "../list-nav/keyboard-nav-item.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,

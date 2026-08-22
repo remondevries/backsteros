@@ -2,9 +2,9 @@
 
 import { useCallback, useState, type ReactNode } from "react";
 
-import { adoptRemoteField } from "../adopt-remote-field.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
-import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
+import { adoptRemoteField } from "../shared/adopt-remote-field.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
+import { useTitleRenameShortcut } from "../shortcuts/title-rename-shortcut.js";
 import {
   DROPDOWN_NONE_VALUE,
   buildOrganizationDropdownOptions,

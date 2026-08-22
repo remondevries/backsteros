@@ -5,7 +5,7 @@ import { useId, useMemo, useRef, useState } from "react";
 import {
   consumeSearchableDropdownOpenPlacement,
   type SearchableDropdownOpenPlacement,
-} from "../searchable-dropdown-open-placement.js";
+} from "../dropdowns/searchable-dropdown-open-placement.js";
 import {
   SearchableDropdown,
   type SearchableDropdownOption,

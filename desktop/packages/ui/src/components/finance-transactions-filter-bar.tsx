@@ -15,7 +15,7 @@ import {
   SearchableDropdown,
   type SearchableDropdownOption,
 } from "./searchable-dropdown.js";
-import { FINANCE_FILTER_SCOPE_ATTRIBUTE } from "../task-property-dropdown-keys.js";
+import { FINANCE_FILTER_SCOPE_ATTRIBUTE } from "../tasks/task-property-dropdown-keys.js";
 
 export const FINANCE_FILTER_ALL_VALUE = "__all__";
 

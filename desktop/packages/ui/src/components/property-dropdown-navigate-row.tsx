@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { ClientLink } from "../client-link.js";
+import { ClientLink } from "../shared/client-link.js";
 
 export type PropertyDropdownNavigateRowProps = {
   children: ReactNode;

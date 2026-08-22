@@ -2,23 +2,23 @@
 
 import { useSyncExternalStore } from "react";
 
-import { iconSvgColorStyle, mergeIconSvgClassName } from "../icon-color.js";
+import { iconSvgColorStyle, mergeIconSvgClassName } from "../entity/icon-color.js";
 import {
   describeProjectProgressHexagonPath,
   describeProjectProgressPieWedge,
   PROJECT_BACKLOG_HEX_STROKE_DASHARRAY,
   PROJECT_PROGRESS_HEX_STROKE_WIDTH,
-} from "../project-progress-ring.js";
+} from "../projects/project-progress-ring.js";
 import {
   getProjectStatusLabel,
   isProjectStatus,
   type ProjectStatus,
-} from "../project-status.js";
-import { computeProjectStatusIconModel } from "../project-status-icon-model.js";
+} from "../projects/project-status.js";
+import { computeProjectStatusIconModel } from "../projects/project-status-icon-model.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 
 function CompletedCheckIcon() {
   return (

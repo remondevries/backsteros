@@ -12,7 +12,7 @@ import {
   hsvToHex,
   normalizeHexColor,
   type HsvColor,
-} from "../color-utils.js";
+} from "../shared/color-utils.js";
 
 export type CustomColorPickerPanelProps = {
   color: string;

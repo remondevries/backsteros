@@ -6,12 +6,12 @@ import {
   formatDueDateInputValue,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
-} from "../task-due-date.js";
-import { getTaskPriorityLabel } from "../task-priority.js";
+} from "../tasks/task-due-date.js";
+import { getTaskPriorityLabel } from "../tasks/task-priority.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 import {
   resolveTaskDueDateUrgencyColor,
   TaskDueDateIcon,

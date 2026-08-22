@@ -6,7 +6,7 @@ import { ComposeFolderIcon } from "./compose-folder-icon.js";
 import {
   ensurePierreIconSprite,
   resolvePierreIconForEntry,
-} from "../pierre-icons.js";
+} from "../codebase/pierre-icons.js";
 
 /** Dark-theme token colors from T3 `PierreEntryIcon`. */
 const ICON_COLORS: Record<string, string> = {

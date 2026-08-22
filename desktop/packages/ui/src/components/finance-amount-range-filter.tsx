@@ -19,8 +19,8 @@ import {
   computeAmountRangeDomain,
   isFullAmountRange,
   type AmountRangeDomain,
-} from "../filter-finance-transactions.js";
-import { TASK_PROPERTY_DROPDOWN_ATTRIBUTE } from "../task-property-dropdown-keys.js";
+} from "../finance/filter-finance-transactions.js";
+import { TASK_PROPERTY_DROPDOWN_ATTRIBUTE } from "../tasks/task-property-dropdown-keys.js";
 
 const PANEL_WIDTH = 320;
 const PANEL_GAP = 6;

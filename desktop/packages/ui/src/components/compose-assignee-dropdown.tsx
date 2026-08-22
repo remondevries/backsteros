@@ -1,7 +1,7 @@
 "use client";
 
-import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
-import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+import type { SearchableDropdownMenuApi } from "../dropdowns/searchable-dropdown-menu-api.js";
+import type { TaskPropertyDropdownId } from "../tasks/task-property-dropdown-keys.js";
 import {
   buildAssigneeDropdownOptions,
   DROPDOWN_NONE_VALUE,

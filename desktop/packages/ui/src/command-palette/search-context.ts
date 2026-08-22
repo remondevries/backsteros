@@ -1,17 +1,17 @@
 import {
   getActiveContactSection,
   type ContactSectionId,
-} from "../contact-sections.js";
+} from "../contacts/contact-sections.js";
 import {
   getActiveOrganizationSection,
   type OrganizationSectionId,
-} from "../organization-sections.js";
-import { parseOrganizationProjectRoute } from "../project-route-scope.js";
+} from "../organizations/organization-sections.js";
+import { parseOrganizationProjectRoute } from "../projects/project-route-scope.js";
 import {
   getActiveProjectSection,
   type ProjectSectionId,
-} from "../project-sections.js";
-import type { CommandPaletteFilterMode } from "../command-palette.js";
+} from "../projects/project-sections.js";
+import type { CommandPaletteFilterMode } from "./command-palette.js";
 
 export type CommandPaletteSearchContext =
   | { kind: "inbox"; label: "Inbox" }

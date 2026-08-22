@@ -7,14 +7,14 @@ import {
   migrateLegacyProjectStatus,
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
-} from "../project-status.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+} from "../projects/project-status.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import {
   formatProjectTaskProgressPercent,
   type ProjectTaskProgress,
-} from "../project-progress-ring.js";
-import type { ProjectArea } from "../project-areas.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
+} from "../projects/project-progress-ring.js";
+import type { ProjectArea } from "../projects/project-areas.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";

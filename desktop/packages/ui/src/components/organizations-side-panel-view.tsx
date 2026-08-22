@@ -7,15 +7,15 @@ import type {
   Ref,
 } from "react";
 
-import { groupItemsByAlphaLetter } from "../alpha-group.js";
+import { groupItemsByAlphaLetter } from "../shared/alpha-group.js";
 import {
   getSelectedOrganizationSlugFromPathname,
   getUniqueListItemRouteParam,
   organizationMatchesSlug,
   type OrganizationListItem,
-} from "../entity-routes.js";
-import { getOrganizationSidePanelHref } from "../entity-side-panel-href.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../navigation/entity-routes.js";
+import { getOrganizationSidePanelHref } from "../navigation/entity-side-panel-href.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,

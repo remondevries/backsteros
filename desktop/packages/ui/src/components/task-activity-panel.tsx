@@ -15,27 +15,27 @@ import { createPortal } from "react-dom";
 
 import { ChevronRightIcon } from "@primer/octicons-react";
 
-import { isAgentHoldCommentBody } from "../agent-hold-comment.js";
-import { shouldHandleGlobalShortcut } from "../shortcut-guards.js";
+import { isAgentHoldCommentBody } from "../tasks/agent-hold-comment.js";
+import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 import {
   agentWorkTotals,
   formatActivityDurationMs,
   formatActivityTokenCount,
   groupConsecutiveAgentWorked,
   type GroupedActivity,
-} from "../task-activity-format.js";
+} from "../tasks/task-activity-format.js";
 import {
   formatTaskDueMetaLabel,
-} from "../task-due-date.js";
+} from "../tasks/task-due-date.js";
 import {
   getTaskPriorityLabel,
-} from "../task-priority.js";
+} from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   isTaskStatus,
   migrateLegacyTaskStatus,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import { AgentActivityIcon } from "./agent-activity-icon.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";

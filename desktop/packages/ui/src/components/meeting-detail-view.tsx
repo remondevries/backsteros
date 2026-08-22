@@ -3,7 +3,7 @@
 import { XIcon } from "@primer/octicons-react";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 
-import { MEETING_PROPERTIES_PANEL_WIDTH_KEY } from "../properties-panel.js";
+import { MEETING_PROPERTIES_PANEL_WIDTH_KEY } from "../content/properties-panel.js";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -24,7 +24,7 @@ import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
 } from "./meeting-properties-inline-chips.js";
-import type { TaskStatus } from "../task-status.js";
+import type { TaskStatus } from "../tasks/task-status.js";
 
 export type MeetingContentTab = "summary" | "notes" | "transcription";
 

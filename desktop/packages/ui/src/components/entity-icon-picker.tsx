@@ -18,15 +18,15 @@ import {
   parseEntityIcon,
   serializeEntityIcon,
   type ParsedEntityIcon,
-} from "../entity-icon.js";
-import { filterEntityIconEmojis } from "../entity-icon-emojis.js";
+} from "../entity/entity-icon.js";
+import { filterEntityIconEmojis } from "../entity/entity-icon-emojis.js";
 import {
   formatProjectIconLabel,
   isProjectBrandIconKey,
   partitionProjectIconKeys,
   PROJECT_ICON_KEYS,
   type ProjectIconKey,
-} from "../project-icon-keys.js";
+} from "../projects/project-icon-keys.js";
 import { CustomColorPickerPanel } from "./custom-color-picker-panel.js";
 import { ProjectOcticon } from "./project-octicon.js";
 

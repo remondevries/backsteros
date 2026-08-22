@@ -7,8 +7,8 @@ import {
   DUE_DATE_CALENDAR_WEEKDAY_LABELS,
   formatCalendarMonthTitle,
   shiftCalendarMonth,
-} from "../due-date-calendar.js";
-import { formatLocalYmd, parseYmdLocal } from "../task-due-date.js";
+} from "../tasks/due-date-calendar.js";
+import { formatLocalYmd, parseYmdLocal } from "../tasks/task-due-date.js";
 
 export type DueDateCalendarProps = {
   value: string | null | undefined;

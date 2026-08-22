@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import {
   DROPDOWN_NONE_VALUE,
@@ -32,7 +32,7 @@ import type { TaskItemRowTask } from "./task-item-row.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { Tooltip } from "./tooltip.js";
-import { TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE } from "../task-property-dropdown-keys.js";
+import { TASK_BULK_PROPERTY_SCOPE_ATTRIBUTE } from "../tasks/task-property-dropdown-keys.js";
 
 export type TaskBulkPatch = {
   status?: TaskStatus;

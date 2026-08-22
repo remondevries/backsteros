@@ -15,10 +15,10 @@ import {
   getHabitTrackerHref,
   getSelectedHabitIdFromPathname,
   HABIT_TRACKER_ALL_ID,
-} from "../journal-nav.js";
-import { fireHabitCompleteConfetti } from "../habit-complete-confetti.js";
-import { keyboardNavItemProps } from "../keyboard-nav-item.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../journal/journal-nav.js";
+import { fireHabitCompleteConfetti } from "../habits/habit-complete-confetti.js";
+import { keyboardNavItemProps } from "../list-nav/keyboard-nav-item.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import { ContentSidePanelList } from "./content-side-panel-list.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";

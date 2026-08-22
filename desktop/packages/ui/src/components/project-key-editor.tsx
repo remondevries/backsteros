@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import {
   isValidProjectKey,
   normalizeProjectKey,
-} from "../project-key.js";
+} from "../projects/project-key.js";
 
 export type ProjectKeyEditorProps = {
   value: string;

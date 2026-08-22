@@ -10,8 +10,8 @@ import {
   type SetStateAction,
 } from "react";
 
-import { createContentViewModeDoubleClickHandler } from "../content-view-mode-double-click.js";
-import { isBlockingModalOpen } from "../shortcut-guards.js";
+import { createContentViewModeDoubleClickHandler } from "../content/content-view-mode-double-click.js";
+import { isBlockingModalOpen } from "../shortcuts/shortcut-guards.js";
 
 export type ContentMarkdownViewMode = "edit" | "preview";
 

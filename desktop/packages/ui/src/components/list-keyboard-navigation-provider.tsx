@@ -20,15 +20,15 @@ import {
   resolveListKeyboardAnchorId,
   setKeyboardNavMouseResumeHandler,
   suppressKeyboardNavHover,
-} from "../keyboard-nav-hover-modality.js";
-import { registerActiveListKeyboardItemResolver } from "../active-list-keyboard-item.js";
-import { registerFocusedListKeyboardItemResolver } from "../focused-list-keyboard-item.js";
+} from "../list-nav/keyboard-nav-hover-modality.js";
+import { registerActiveListKeyboardItemResolver } from "../list-nav/active-list-keyboard-item.js";
+import { registerFocusedListKeyboardItemResolver } from "../list-nav/focused-list-keyboard-item.js";
 import {
   KEYBOARD_NAV_ITEM_ATTR,
   focusListKeyboardNavItem,
   scrollKeyboardNavItemIntoView,
-} from "../keyboard-nav-item.js";
-import { stepListKeyboardIndex } from "../list-keyboard-nav-index.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { stepListKeyboardIndex } from "../list-nav/list-keyboard-nav-index.js";
 import {
   getDefaultListKeyboardNavZone,
   getListKeyboardNavTabDirection,
@@ -41,19 +41,19 @@ import {
   shouldHandleListKeyboardZoneTab,
   type ApplyListKeyboardNavZoneOptions,
   type ListKeyboardNavZone,
-} from "../list-keyboard-nav-zone.js";
+} from "../list-nav/list-keyboard-nav-zone.js";
 import {
   boardKeyboardNavDirection,
   listKeyboardNavDirection,
   shouldHandleBoardKeyboardNavigation,
   shouldHandleListKeyboardActivate,
   shouldHandleListKeyboardNavigation,
-} from "../should-handle-list-keyboard-navigation.js";
+} from "../list-nav/should-handle-list-keyboard-navigation.js";
 import {
   isListDetailPanelOpen,
   shouldYieldListKeyboardEscapeToShortcutStack,
-} from "../use-list-clear-selection-shortcut.js";
-import { isBlockingModalOpen } from "../shortcut-guards.js";
+} from "../list-nav/use-list-clear-selection-shortcut.js";
+import { isBlockingModalOpen } from "../shortcuts/shortcut-guards.js";
 import { useCommandPalette } from "./command-palette-context.js";
 
 function shouldHandleListKeyboardEscape(
@@ -93,7 +93,7 @@ function shouldHandleListKeyboardEscape(
 }
 
 export const LIST_KEYBOARD_NAV_SIDE_PANEL_PRIORITY = 10;
-export { LIST_KEYBOARD_NAV_CONTENT_PRIORITY } from "../list-keyboard-nav-zone.js";
+export { LIST_KEYBOARD_NAV_CONTENT_PRIORITY } from "../list-nav/list-keyboard-nav-zone.js";
 export const LIST_KEYBOARD_NAV_MAIN_PRIORITY = 5;
 
 function useLatestRef<T>(value: T): RefObject<T> {

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { primeTabTitle } from "../primed-tab-title.js";
+import { primeTabTitle } from "../navigation/primed-tab-title.js";
 
 export type RegisterPageTitleContextValue = {
   pathname: string;

@@ -11,12 +11,12 @@ import {
 import {
   consumeSearchableDropdownOpenPlacement,
   type SearchableDropdownOpenPlacement,
-} from "../searchable-dropdown-open-placement.js";
+} from "../dropdowns/searchable-dropdown-open-placement.js";
 import {
   formatDueDateInputValue,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
-} from "../task-due-date.js";
+} from "../tasks/task-due-date.js";
 import {
   TaskDueDateDropdown,
   type TaskDueDateDropdownProps,

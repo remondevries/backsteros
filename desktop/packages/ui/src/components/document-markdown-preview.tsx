@@ -14,14 +14,14 @@ import {
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { ClientLink } from "../client-link.js";
-import { isInternalAppHref } from "../is-internal-app-href.js";
+import { ClientLink } from "../shared/client-link.js";
+import { isInternalAppHref } from "../navigation/is-internal-app-href.js";
 import {
   normalizeMarkdownTaskLists,
   parseMarkdownTaskCheckbox,
-} from "../markdown-task-list.js";
-import { getTaskListItemChecked } from "../markdown-task-list-checked.js";
-import { MarkdownTaskListInteractProvider } from "../markdown-task-list-interact.js";
+} from "../documents/markdown-task-list.js";
+import { getTaskListItemChecked } from "../documents/markdown-task-list-checked.js";
+import { MarkdownTaskListInteractProvider } from "../documents/markdown-task-list-interact.js";
 import { MarkdownTaskCheckbox } from "./markdown-task-checkbox.js";
 import {
   useMentionCatalogOptional,
@@ -51,14 +51,14 @@ import {
   segmentMarkdownWithMentions,
   type MentionSegment,
   type ParsedMentionToken,
-} from "../mention-tokens.js";
+} from "../mentions/mention-tokens.js";
 import { resolveMentionTrailHref } from "../navigation-trail/mention-trail.js";
-import { PROJECT_AREA_LABELS } from "../project-areas.js";
+import { PROJECT_AREA_LABELS } from "../projects/project-areas.js";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
-} from "../task-due-date.js";
-import { useContentPreviewLinkNavigation } from "../use-content-preview-link-navigation.js";
+} from "../tasks/task-due-date.js";
+import { useContentPreviewLinkNavigation } from "../content/use-content-preview-link-navigation.js";
 import { DocumentMentionHoverCard } from "./document-mention-hover-card.js";
 import { EmailMentionBlockChip } from "./email-mention-block-chip.js";
 import { LetterIcon } from "./letter-icon.js";

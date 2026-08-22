@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { TextRange } from "../text-diff-ranges.js";
+import type { TextRange } from "../shared/text-diff-ranges.js";
 
 export type HighlightedTextProps = {
   text: string;

@@ -7,7 +7,7 @@ export {
   isTriageStatus,
   migrateLegacyTaskStatus,
   type TaskStatus,
-} from "./task-status.js";
+} from "./tasks/task-status.js";
 
 export {
   TASK_PRIORITY_LABELS,
@@ -21,7 +21,7 @@ export {
   isTaskPriorityNone,
   type TaskPriority,
   type TaskPriorityDropdownValue,
-} from "./task-priority.js";
+} from "./tasks/task-priority.js";
 
 export {
   formatTaskStatusOklch,
@@ -33,14 +33,14 @@ export {
   resolveTaskStatusColor,
   type TaskStatusColorScheme,
   type TaskStatusOklch,
-} from "./task-status-color.js";
+} from "./tasks/task-status-color.js";
 
 export {
   formatTaskStatusHeaderGradientCss,
   getTaskStatusHeaderGradient,
   getTaskStatusHeaderGradientStyle,
   type TaskStatusHeaderGradient,
-} from "./task-status-header-gradient.js";
+} from "./tasks/task-status-header-gradient.js";
 
 export {
   computeTaskStatusIconModel,
@@ -49,7 +49,7 @@ export {
   TASK_STATUS_RING_RADIUS,
   TASK_STATUS_RING_STROKE_WIDTH,
   type TaskStatusIconModel,
-} from "./task-status-icon-model.js";
+} from "./tasks/task-status-icon-model.js";
 
 export {
   DEFAULT_ENTITY_ICON_COLOR,
@@ -57,14 +57,14 @@ export {
   iconSvgColorStyle,
   mergeIconSvgClassName,
   classNameWithoutTextColor,
-} from "./icon-color.js";
+} from "./entity/icon-color.js";
 
 export {
   INBOX_TASK_KEY,
   formatTaskDisplayId,
   getTaskDisplayId,
   type TaskDisplayIdSource,
-} from "./task-display-id.js";
+} from "./tasks/task-display-id.js";
 
 export {
   DEFAULT_TASK_ID_COLUMN_CH,
@@ -73,7 +73,7 @@ export {
   taskIdColumnCssVars,
   taskNumberDigitCount,
   type TaskIdColumnWidthSource,
-} from "./task-id-column-width.js";
+} from "./tasks/task-id-column-width.js";
 
 export {
   DEFAULT_TX_CATEGORY_COLUMN_PX,
@@ -82,7 +82,7 @@ export {
   computeTxCategoryColumnWidthPx,
   txCategoryColumnCssVars,
   useTxCategoryColumnWidthPx,
-} from "./finance-tx-category-column-width.js";
+} from "./finance/finance-tx-category-column-width.js";
 
 export {
   TaskStatusIcon,
@@ -122,7 +122,7 @@ export {
   type NavigationItem,
   type NavigationItemIconId,
   type NavigationSectionId,
-} from "./navigation.js";
+} from "./navigation/navigation.js";
 
 export {
   getNavigationItemIcon,
@@ -190,13 +190,13 @@ export {
   syncActiveTabToPath,
   type ProductTab,
   type ProductTabsState,
-} from "./tabs.js";
+} from "./navigation/tabs.js";
 
 export {
   clearPrimedTabTitles,
   getPrimedTabTitle,
   primeTabTitle,
-} from "./primed-tab-title.js";
+} from "./navigation/primed-tab-title.js";
 
 export {
   extractTaskRouteParamFromHref,
@@ -204,7 +204,7 @@ export {
   resolveProductTabTaskMeta,
   taskMatchesTabRouteParam,
   type ProductTabTaskMeta,
-} from "./product-tab-task-meta.js";
+} from "./navigation/product-tab-task-meta.js";
 
 export {
   INBOX_TASK_LIST_PANEL_WIDTH_KEY,
@@ -226,9 +226,9 @@ export {
   isCalendarMeetingDetailPath,
   isEmailPath,
   getSelectedInboxSlugFromPathname,
-} from "./content-side-panel.js";
+} from "./content/content-side-panel.js";
 
-export { sidePanelItemClass } from "./side-panel-styles.js";
+export { sidePanelItemClass } from "./content/side-panel-styles.js";
 
 export {
   ResizableContextPanel,
@@ -284,7 +284,7 @@ export {
   type InboxLetterListItem,
   type InboxListItem,
   type InboxTaskListItem,
-} from "./inbox-items.js";
+} from "./inbox/inbox-items.js";
 
 export {
   emailListItemIsSelected,
@@ -334,9 +334,9 @@ export {
   type EmailMailboxGroup,
   type EmailMessagePath,
   type EmailStatusGroup,
-} from "./email.js";
+} from "./email/email.js";
 
-export { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
+export { resolveDuplicatedTaskHref } from "./tasks/duplicated-task-href.js";
 
 export {
   InboxItemTypeIcon,
@@ -405,7 +405,7 @@ export {
   type EmailThreadMinimapDirection,
   type EmailThreadMinimapItem,
   type EmailThreadMinimapMessageInput,
-} from "./email-thread-minimap.js";
+} from "./email/email-thread-minimap.js";
 
 export {
   EmailThreadCommentComposer,
@@ -429,14 +429,14 @@ export {
 export {
   resolveEmailInlineAttachments,
   type EmailMessageInlineAttachment,
-} from "./email-message-html.js";
+} from "./email/email-message-html.js";
 export {
   formatEmailSourceSize,
   parseEmailAuthenticationResults,
   type EmailAuthenticationCheck,
   type EmailMessageSourceDetail,
   type EmailMessageSourceHeader,
-} from "./email-message-source.js";
+} from "./email/email-message-source.js";
 export {
   EmailThreadView,
   type EmailDraftActionsConfig,
@@ -459,7 +459,7 @@ export {
   ComposeQuickCapture,
   type ComposeQuickCaptureProps,
 } from "./components/compose-quick-capture.js";
-export { useComposeShortcut } from "./use-compose-shortcut.js";
+export { useComposeShortcut } from "./compose/use-compose-shortcut.js";
 
 export {
   InboxDetailLayout,
@@ -492,14 +492,14 @@ export {
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
-} from "./calendar-events.js";
+} from "./calendar/calendar-events.js";
 
-export { calendarTaskDragEventData, taskDueEpochAttribute } from "./calendar-task-drag.js";
+export { calendarTaskDragEventData, taskDueEpochAttribute } from "./calendar/calendar-task-drag.js";
 
 export {
   useCalendarExternalTaskDrag,
   type UseCalendarExternalTaskDragOptions,
-} from "./use-calendar-external-task-drag.js";
+} from "./calendar/use-calendar-external-task-drag.js";
 
 export {
   CalendarView,
@@ -528,7 +528,7 @@ export {
   buildCalendarDayHabitsByDate,
   type CalendarHabitDefinition,
   type CalendarHabitDayTask,
-} from "./calendar-day-habits.js";
+} from "./calendar/calendar-day-habits.js";
 
 export {
   CalendarTasksSidePanelView,
@@ -555,7 +555,7 @@ export {
   parseDueDateInputValue,
   toApiDueDateIso,
   type TaskDueDateUrgency,
-} from "./task-due-date.js";
+} from "./tasks/task-due-date.js";
 
 export {
   TASK_NO_DUE_DATE_VALUE,
@@ -564,13 +564,13 @@ export {
   taskDueDateFromDropdownValue,
   isPickDueDateValue,
   buildTaskDueDateDropdownOptions,
-} from "./task-due-date-dropdown.js";
+} from "./tasks/task-due-date-dropdown.js";
 
 export {
   parseNaturalLanguageDueDate,
   naturalLanguageDueDatePreview,
   type NaturalLanguageDueDateParseResult,
-} from "./parse-natural-language-due-date.js";
+} from "./tasks/parse-natural-language-due-date.js";
 
 export {
   buildDueDateCalendarGrid,
@@ -578,7 +578,7 @@ export {
   formatCalendarMonthTitle,
   shiftCalendarMonth,
   type DueDateCalendarCell,
-} from "./due-date-calendar.js";
+} from "./tasks/due-date-calendar.js";
 
 export {
   DueDateCalendar,
@@ -623,7 +623,7 @@ export {
   isJournalReservedSlug,
   isJournalSectionPath,
   JOURNAL_DAY_CALENDAR_PANEL_WIDTH_KEY,
-} from "./journal.js";
+} from "./journal/journal.js";
 
 export {
   HABIT_TRACKER_ALL_ID,
@@ -636,26 +636,26 @@ export {
   isJournalNavId,
   type JournalNavId,
   type JournalNavItem,
-} from "./journal-nav.js";
+} from "./journal/journal-nav.js";
 
 export {
   HABIT_CADENCE_OPTIONS,
   getHabitCadenceLabel,
   isHabitDueYmd,
   parseHabitCadence,
-} from "./habit-cadence.js";
+} from "./habits/habit-cadence.js";
 
 export {
   HABIT_SORT_OPTIONS,
   getHabitSortLabel,
   parseHabitSort,
-} from "./habit-sort.js";
+} from "./habits/habit-sort.js";
 
 export {
   deriveHabitTimelineMinimapItems,
   habitTimelineSectionId,
   type HabitTimelineMinimapItem,
-} from "./habit-timeline-minimap.js";
+} from "./habits/habit-timeline-minimap.js";
 
 export {
   buildHabitDayHeatByYmd,
@@ -676,7 +676,7 @@ export {
   type HabitGridInstance,
   type HabitMonthGrid,
   type HabitSortGranularity,
-} from "./habit-month-grid.js";
+} from "./habits/habit-month-grid.js";
 
 export {
   JournalSidePanelView,
@@ -755,7 +755,7 @@ export {
   type ProjectDropdownItem,
 } from "./components/dropdown-options.js";
 
-export { groupItemsByAlphaLetter } from "./alpha-group.js";
+export { groupItemsByAlphaLetter } from "./shared/alpha-group.js";
 
 export {
   LETTER_DISPLAY_KEY,
@@ -772,7 +772,7 @@ export {
   parseLetterSlug,
   type LetterListItem,
   type LetterStatusGroup,
-} from "./letters.js";
+} from "./letters/letters.js";
 
 export {
   MEETING_DISPLAY_KEY,
@@ -786,7 +786,7 @@ export {
   parseCalendarMeetingOverlayId,
   sortMeetingsByStart,
   type MeetingListItem,
-} from "./meetings.js";
+} from "./meetings/meetings.js";
 
 export {
   CalendarMeetingDetailOverlay,
@@ -818,7 +818,7 @@ export {
   EMAIL_DISPLAY_KEY,
   formatEmailDisplayId,
   parseEmailDisplayId,
-} from "./email-display-id.js";
+} from "./email/email-display-id.js";
 
 export {
   getOrganizationsHref,
@@ -843,7 +843,7 @@ export {
   type KnowledgeListItem,
   type ProjectListItem,
   type BankAccountListItem,
-} from "./entity-routes.js";
+} from "./navigation/entity-routes.js";
 
 export {
   BANK_ACCOUNT_SECTION_IDS,
@@ -854,16 +854,16 @@ export {
   getFinanceHref,
   type BankAccountSectionId,
   type BankAccountSectionConfig,
-} from "./bank-account-sections.js";
+} from "./finance/bank-account-sections.js";
 
 export {
   groupTransactionsByMonthWeek,
   startOfWeekMonday,
   type TransactionMonthGroup,
   type TransactionWeekGroup,
-} from "./group-transactions-by-month-week.js";
+} from "./finance/group-transactions-by-month-week.js";
 
-export { suggestOrganizationForPayee } from "./suggest-organization-for-payee.js";
+export { suggestOrganizationForPayee } from "./finance/suggest-organization-for-payee.js";
 
 export {
   FinanceCsvDropzone,
@@ -931,7 +931,7 @@ export {
   type FinanceAccountGroupId,
   type FinanceAccountGroup,
   type FinanceGoNavigationItem,
-} from "./finance-nav.js";
+} from "./finance/finance-nav.js";
 
 export {
   AccountActionsMenu,
@@ -979,7 +979,7 @@ export {
   type AmountHistogramBin,
   type AmountRangeDomain,
   type FinanceTransactionListFilters,
-} from "./filter-finance-transactions.js";
+} from "./finance/filter-finance-transactions.js";
 
 export {
   CategorySpendChart,
@@ -1039,7 +1039,7 @@ export {
   type RecurringDateGroup,
 } from "./components/finance-recurrings-view.js";
 
-export { advanceMonthlyNextDate, upcomingMonthlyPaymentDate } from "./recurring-next-date.js";
+export { advanceMonthlyNextDate, upcomingMonthlyPaymentDate } from "./finance/recurring-next-date.js";
 
 export {
   RecurringYearChart,
@@ -1057,7 +1057,7 @@ export {
   type BuildGoalChartSeriesInput,
   type GoalChartPoint,
   type GoalChartSeries,
-} from "./goal-chart-series.js";
+} from "./finance/goal-chart-series.js";
 
 export {
   buildCategorySpendBarSeries,
@@ -1065,7 +1065,7 @@ export {
   CATEGORY_SPEND_DIRECT_KEY,
   type CategorySpendBarSeries,
   type CategorySpendMonthInput,
-} from "./category-spend-chart-series.js";
+} from "./finance/category-spend-chart-series.js";
 
 export {
   FinanceSectionPlaceholder,
@@ -1093,7 +1093,7 @@ export {
   filterFinanceInvoices,
   type FinanceInvoiceFilterRow,
   type FinanceInvoiceListFilters,
-} from "./filter-finance-invoices.js";
+} from "./finance/filter-finance-invoices.js";
 
 export {
   FinanceMonthNavigator,
@@ -1117,7 +1117,7 @@ export {
   buildMonthIncomeExpenseDailyChartSeries,
   type AccountChartPoint,
   type AccountChartSeries,
-} from "./account-income-expense-chart-series.js";
+} from "./finance/account-income-expense-chart-series.js";
 
 export {
   FinanceChartLoading,
@@ -1162,7 +1162,7 @@ export {
   isSettingsTabId,
   type SettingsTabId,
   type SettingsTabGroup,
-} from "./settings.js";
+} from "./navigation/settings.js";
 
 export {
   StatusGroupSection,
@@ -1240,7 +1240,7 @@ export {
   DEFAULT_APP_TIMEZONE,
   isValidAppTimezone,
   normalizeAppTimezone,
-} from "./app-timezone.js";
+} from "./shared/app-timezone.js";
 
 export {
   ProjectsListView,
@@ -1255,7 +1255,7 @@ export {
   getProjectStatusLabel,
   migrateLegacyProjectStatus,
   type ProjectStatus,
-} from "./project-status.js";
+} from "./projects/project-status.js";
 
 export {
   PROJECT_TYPES,
@@ -1265,7 +1265,7 @@ export {
   getProjectTypeLabel,
   migrateLegacyProjectType,
   type ProjectType,
-} from "./project-type.js";
+} from "./projects/project-type.js";
 
 export {
   describeProjectProgressHexagonPath,
@@ -1276,13 +1276,13 @@ export {
   formatProjectTaskProgressPercent,
   formatProjectTaskProgressLabel,
   type ProjectTaskProgress,
-} from "./project-progress-ring.js";
+} from "./projects/project-progress-ring.js";
 
 export {
   computeProjectStatusIconModel,
   mapProjectStatusToTaskStatusIcon,
   type ProjectStatusIconModel,
-} from "./project-status-icon-model.js";
+} from "./projects/project-status-icon-model.js";
 
 export {
   ProjectStatusIcon,
@@ -1299,7 +1299,7 @@ export {
   type TaskStatusGroup,
   type TaskLikeForGrouping,
   type GroupTasksByStatusOptions,
-} from "./group-tasks-by-status.js";
+} from "./tasks/group-tasks-by-status.js";
 
 export {
   mapMarkdownOutsideCode,
@@ -1309,9 +1309,9 @@ export {
   toggleMarkdownTaskListItem,
   type MarkdownTaskCheckboxParse,
   type MarkdownTaskListCheckboxMatch,
-} from "./markdown-task-list.js";
+} from "./documents/markdown-task-list.js";
 
-export { getTaskListItemChecked } from "./markdown-task-list-checked.js";
+export { getTaskListItemChecked } from "./documents/markdown-task-list-checked.js";
 
 export {
   MarkdownTaskCheckbox,
@@ -1327,14 +1327,14 @@ export {
   MarkdownTaskListInteractProvider,
   useMarkdownTaskListInteract,
   type MarkdownTaskListInteract,
-} from "./markdown-task-list-interact.js";
+} from "./documents/markdown-task-list-interact.js";
 
 export {
   groupProjectsByStatus,
   type ProjectStatusGroup,
   type ProjectLikeForGrouping,
   type GroupProjectsByStatusOptions,
-} from "./group-projects-by-status.js";
+} from "./projects/group-projects-by-status.js";
 
 export {
   groupProjectsByArea,
@@ -1349,7 +1349,7 @@ export {
   type NestedAreaBucket,
   type ProjectLikeForAreaGrouping,
   type GroupProjectsByAreaOptions,
-} from "./group-projects-by-area.js";
+} from "./projects/group-projects-by-area.js";
 
 export {
   groupProjectsByOrganization,
@@ -1357,14 +1357,14 @@ export {
   type OrganizationRef,
   type OrganizationBucket,
   type ProjectLikeForOrganizationGrouping,
-} from "./group-projects-by-organization.js";
+} from "./projects/group-projects-by-organization.js";
 
 export {
   groupProjectsByType,
   projectTypeCollapseKey,
   type ProjectTypeGroup,
   type ProjectLikeForTypeGrouping,
-} from "./group-projects-by-type.js";
+} from "./projects/group-projects-by-type.js";
 
 export {
   ProjectTypeGroupSection,
@@ -1387,13 +1387,13 @@ export {
   type ProjectAreaReorderRequest,
   type ProjectAreaDragPayload,
   type ProjectLikeForAreaDrag,
-} from "./project-area-list-drag.js";
+} from "./projects/project-area-list-drag.js";
 
 export {
   applyOptimisticProjectAreaReorder,
   projectAreaReorderPatches,
   type ProjectLikeForAreaReorder,
-} from "./project-area-reorder.js";
+} from "./projects/project-area-reorder.js";
 
 export {
   PROJECT_LIST_DRAG_TYPE,
@@ -1409,13 +1409,13 @@ export {
   type ProjectReorderRequest,
   type ProjectDragPayload,
   type ProjectLikeForDrag,
-} from "./project-list-drag.js";
+} from "./projects/project-list-drag.js";
 
 export {
   applyOptimisticProjectReorder,
   projectReorderPatches,
   type ProjectLikeForReorder,
-} from "./project-reorder.js";
+} from "./projects/project-reorder.js";
 
 export {
   applyOptimisticGroupedSortReorder,
@@ -1444,20 +1444,20 @@ export {
   type FinanceListReorderRequest,
   type RecurringReorderGroup,
   type RecurringGroupResolver,
-} from "./finance-list-reorder.js";
+} from "./finance/finance-list-reorder.js";
 
 export {
   formatMoneyInput,
   moneyCentsToInput,
   moneyInputContentWidth,
   parseMoneyInput,
-} from "./money-input.js";
+} from "./finance/money-input.js";
 
 export {
   measureFinanceMoneyLabelWidthPx,
   useFinanceMoneyColumnWidthFromValues,
   useFinanceMoneyColumnWidthPx,
-} from "./finance-money-column-width.js";
+} from "./finance/finance-money-column-width.js";
 
 export {
   buildNetThisMonthPeriods,
@@ -1467,13 +1467,13 @@ export {
   resolveNetThisMonthAsOfDay,
   type NetThisMonthPeriod,
   type NetThisMonthStats,
-} from "./net-this-month.js";
+} from "./finance/net-this-month.js";
 
 export {
   buildNonCashflowCategoryIdSet,
   isCashflowCategory,
   isCashflowTransaction,
-} from "./cashflow-exclusion.js";
+} from "./finance/cashflow-exclusion.js";
 
 export {
   categoryNetSpendAbsCents,
@@ -1481,30 +1481,30 @@ export {
   categoryNetSpendSign,
   toCategoryNetSpendCents,
   type CategoryNetSpendSign,
-} from "./category-net-spend.js";
+} from "./finance/category-net-spend.js";
 
 export {
   applyShiftRangeSelection,
   useKeyHeld,
-} from "./shift-range-selection.js";
+} from "./list-nav/shift-range-selection.js";
 
-export { useListMultiSelect } from "./use-list-multi-select.js";
-export type { UseListMultiSelectOptions } from "./use-list-multi-select.js";
+export { useListMultiSelect } from "./list-nav/use-list-multi-select.js";
+export type { UseListMultiSelectOptions } from "./list-nav/use-list-multi-select.js";
 
 export {
   isSelectAllShortcut,
   shouldHandleSelectAllShortcut,
   selectAllInFocusedEditable,
   SELECT_ALL_EVENT,
-} from "./list-select-all-shortcut.js";
+} from "./list-nav/list-select-all-shortcut.js";
 
 export {
   useListSelectAllShortcut,
   handleSelectAllRequest,
   installSelectAllShortcutListeners,
-} from "./use-list-select-all-shortcut.js";
+} from "./list-nav/use-list-select-all-shortcut.js";
 
-export { shouldHandleClearSelectionShortcut } from "./list-clear-selection-shortcut.js";
+export { shouldHandleClearSelectionShortcut } from "./list-nav/list-clear-selection-shortcut.js";
 
 export {
   useListClearSelectionShortcut,
@@ -1515,14 +1515,14 @@ export {
   ENTITY_TITLE_INPUT_ATTRIBUTE,
   isEntityTitleInputFocused,
   isOverviewNameEditorInputFocused,
-} from "./use-list-clear-selection-shortcut.js";
+} from "./list-nav/use-list-clear-selection-shortcut.js";
 
 export {
   isToggleHighlightedSelectionShortcut,
   shouldHandleToggleHighlightedSelectionShortcut,
-} from "./list-toggle-highlighted-selection-shortcut.js";
+} from "./list-nav/list-toggle-highlighted-selection-shortcut.js";
 
-export { useListToggleHighlightedSelectionShortcut } from "./use-list-toggle-highlighted-selection-shortcut.js";
+export { useListToggleHighlightedSelectionShortcut } from "./list-nav/use-list-toggle-highlighted-selection-shortcut.js";
 
 export {
   TASK_LIST_DRAG_TYPE,
@@ -1538,13 +1538,13 @@ export {
   type TaskReorderRequest,
   type TaskDragPayload,
   type TaskLikeForDrag,
-} from "./task-list-drag.js";
+} from "./tasks/task-list-drag.js";
 
 export {
   applyOptimisticTaskReorder,
   taskReorderPatches,
   type TaskLikeForReorder,
-} from "./task-reorder.js";
+} from "./tasks/task-reorder.js";
 
 export {
   LIST_REORDER_ITEM_ATTR,
@@ -1556,14 +1556,14 @@ export {
   insertBeforeKeyForPointerTarget,
   type GroupedListPointerDropTarget,
   type GroupedListPointerReorderRequest,
-} from "./grouped-list-pointer-reorder.js";
+} from "./list-nav/grouped-list-pointer-reorder.js";
 
 export {
   useGroupedListPointerReorder,
   type GroupedListPointerItemBind,
   type GroupedListPointerAppendBind,
   type UseGroupedListPointerReorderOptions,
-} from "./use-grouped-list-pointer-reorder.js";
+} from "./list-nav/use-grouped-list-pointer-reorder.js";
 
 export {
   TASKS_DUE_FILTERS,
@@ -1584,7 +1584,7 @@ export {
   parseTasksDueFilterFromLocation,
   getCanonicalTasksDueTabLocation,
   type TasksDueFilter,
-} from "./tasks-due-filters.js";
+} from "./tasks/tasks-due-filters.js";
 
 export {
   PROJECT_AREAS,
@@ -1601,7 +1601,7 @@ export {
   parseProjectAreaFilterFromLocation,
   type ProjectArea,
   type ProjectAreaFilter,
-} from "./project-areas.js";
+} from "./projects/project-areas.js";
 
 export { PillNav, type PillNavProps, type PillNavItem } from "./components/pill-nav.js";
 
@@ -1710,7 +1710,7 @@ export {
   isValidProjectKey,
   normalizeProjectKey,
   type TaskProjectChangeRedirectInput,
-} from "./project-key.js";
+} from "./projects/project-key.js";
 
 export {
   ProjectLettersSectionView,
@@ -1761,7 +1761,7 @@ export {
   type DocumentTreeNode,
   type DocumentTreeFolderNode,
   type DocumentTreeDocumentNode,
-} from "./document-tree.js";
+} from "./documents/document-tree.js";
 
 export {
   treeNodeOrderKey,
@@ -1769,7 +1769,7 @@ export {
   type TreeDragItemType,
   type TreeDragPayload,
   type TreeReorderRequest,
-} from "./document-tree-order.js";
+} from "./documents/document-tree-order.js";
 
 export {
   DOCUMENT_TREE_DRAG_TYPE,
@@ -1780,17 +1780,17 @@ export {
   isTreeDragActive,
   resolveFolderDragOverMode,
   resolveTreeDropAction,
-} from "./document-tree-drag.js";
+} from "./documents/document-tree-drag.js";
 
 export {
   registerDocumentTreeDeleteResolver,
   resolveDocumentTreeDeleteConfig,
-} from "./document-tree-delete-shortcut.js";
+} from "./documents/document-tree-delete-shortcut.js";
 
 export {
   registerDocumentTreeCreateFolderHandler,
   requestDocumentTreeCreateFolder,
-} from "./document-tree-create-folder-shortcut.js";
+} from "./documents/document-tree-create-folder-shortcut.js";
 
 export {
   DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT,
@@ -1799,9 +1799,9 @@ export {
   isDocumentTreeCreateFolderShortcutKey,
   hasDocumentTreeCreateFolderShortcutModifiers,
   shouldHandleDocumentTreeCreateFolderShortcut,
-} from "./should-handle-document-tree-create-folder-shortcut.js";
+} from "./documents/should-handle-document-tree-create-folder-shortcut.js";
 
-export { useDocumentTreeCreateFolderShortcut } from "./use-document-tree-create-folder-shortcut.js";
+export { useDocumentTreeCreateFolderShortcut } from "./documents/use-document-tree-create-folder-shortcut.js";
 
 export {
   DocumentsEmptyCreateView,
@@ -1821,7 +1821,7 @@ export {
   parseProjectSectionId,
   type ProjectSectionConfig,
   type ProjectSectionId,
-} from "./project-sections.js";
+} from "./projects/project-sections.js";
 
 export {
   getOrganizationProjectHref,
@@ -1834,7 +1834,7 @@ export {
   isOrganizationProjectDetailPath,
   parseOrganizationProjectRoute,
   type ProjectRouteScope,
-} from "./project-route-scope.js";
+} from "./projects/project-route-scope.js";
 
 export {
   getContactRouteScopeFromPathname,
@@ -1847,7 +1847,7 @@ export {
   isOrganizationContactDetailPath,
   parseOrganizationContactRoute,
   type ContactRouteScope,
-} from "./contact-route-scope.js";
+} from "./contacts/contact-route-scope.js";
 
 export {
   ResizableSidePanel,
@@ -1870,7 +1870,7 @@ export {
   EMAIL_PROPERTIES_PANEL_WIDTH_KEY,
   MEETING_PROPERTIES_PANEL_WIDTH_KEY,
   isTaskDetailPath,
-} from "./properties-panel.js";
+} from "./content/properties-panel.js";
 
 export {
   EntityPropertiesSection,
@@ -1950,9 +1950,9 @@ export {
   ClientLinkProvider,
   type ClientLinkComponent,
   type ClientLinkProps,
-} from "./client-link.js";
+} from "./shared/client-link.js";
 
-export { isInternalAppHref } from "./is-internal-app-href.js";
+export { isInternalAppHref } from "./navigation/is-internal-app-href.js";
 
 export {
   MentionNavigationProvider,
@@ -2004,7 +2004,7 @@ export {
   documentEditorHighlightStyle,
   documentEditorSyntaxHighlighting,
   createDocumentEditorContentLayoutTheme,
-} from "./document-editor-theme.js";
+} from "./documents/document-editor-theme.js";
 
 export {
   documentEditorListBullets,
@@ -2013,13 +2013,13 @@ export {
   isUnorderedListMark,
   listMarkReplaceTo,
   LIST_BULLET_GUTTER,
-} from "./document-editor-list-bullets.js";
+} from "./documents/document-editor-list-bullets.js";
 
 export {
   documentEditorListHangIndent,
   listHangIndentColumns,
   LIST_HANG_INDENT_PREFIX,
-} from "./document-editor-list-hang-indent.js";
+} from "./documents/document-editor-list-hang-indent.js";
 
 export {
   parseMarkdownDocument,
@@ -2029,7 +2029,7 @@ export {
   serializeDocumentBody,
   mergeJournalContent,
   type DocumentFrontmatter,
-} from "./document-frontmatter.js";
+} from "./documents/document-frontmatter.js";
 
 export {
   COMMAND_PALETTE_RESULT_SECTIONS,
@@ -2049,7 +2049,7 @@ export {
   type CommandPaletteHit,
   type CommandPaletteResultSection,
   type GoNavigationItem,
-} from "./command-palette.js";
+} from "./command-palette/command-palette.js";
 
 export {
   appendCommandPaletteSearchParams,
@@ -2074,7 +2074,7 @@ export {
   type CommandPaletteViewProps,
 } from "./components/command-palette-view.js";
 
-export { isCommandPaletteToggleKey } from "./command-palette-toggle-key.js";
+export { isCommandPaletteToggleKey } from "./command-palette/command-palette-toggle-key.js";
 
 export { shouldBlockBrowserTabFocus } from "./shortcuts/should-block-browser-tab-focus.js";
 export { useBlockBrowserTabFocus } from "./shortcuts/use-block-browser-tab-focus.js";
@@ -2089,7 +2089,7 @@ export {
   type SpellcheckMarkRange,
   type SpellcheckSegment,
   type TextRange,
-} from "./text-diff-ranges.js";
+} from "./shared/text-diff-ranges.js";
 
 export { SpellcheckSegmentText } from "./components/spellcheck-segment-text.js";
 
@@ -2121,7 +2121,7 @@ export {
   ADD_TASK_LINK_SHORTCUT_HINT,
   isAddTaskLinkShortcut,
   shouldHandleAddTaskLinkShortcut,
-} from "./task-link-add-shortcut.js";
+} from "./tasks/task-link-add-shortcut.js";
 
 export {
   TaskStackedDetailView,
@@ -2149,7 +2149,7 @@ export {
 export {
   AGENT_HOLD_COMMENT_PREFIXES,
   isAgentHoldCommentBody,
-} from "./agent-hold-comment.js";
+} from "./tasks/agent-hold-comment.js";
 
 export {
   agentWorkTotals,
@@ -2158,7 +2158,7 @@ export {
   groupConsecutiveAgentWorked,
   mergeAgentWorkedActivities,
   type GroupedActivity,
-} from "./task-activity-format.js";
+} from "./tasks/task-activity-format.js";
 
 export {
   ContentChromeHeader,
@@ -2255,7 +2255,7 @@ export {
   createMarkdownImagePasteExtensions,
   markdownImageSnippet,
   type UploadMarkdownImages,
-} from "./markdown-image-paste.js";
+} from "./documents/markdown-image-paste.js";
 
 export {
   DocumentMentionHoverCard,
@@ -2305,7 +2305,7 @@ export {
   type MentionKind,
   type MentionSegment,
   type ParsedMentionToken,
-} from "./mention-tokens.js";
+} from "./mentions/mention-tokens.js";
 
 export {
   ContactOverviewView,
@@ -2369,7 +2369,7 @@ export {
   shouldShowContactNav,
   type ContactSectionConfig,
   type ContactSectionId,
-} from "./contact-sections.js";
+} from "./contacts/contact-sections.js";
 
 export {
   ORGANIZATION_SECTIONS,
@@ -2387,19 +2387,19 @@ export {
   type OrganizationSectionConfig,
   type OrganizationSectionId,
   type VisibleOrganizationSectionsOptions,
-} from "./organization-sections.js";
+} from "./organizations/organization-sections.js";
 
 export {
   getRememberedContactSection,
   getRememberedOrganizationSection,
   rememberContactSection,
   rememberOrganizationSection,
-} from "./entity-section-memory.js";
+} from "./navigation/entity-section-memory.js";
 
 export {
   getContactSidePanelHref,
   getOrganizationSidePanelHref,
-} from "./entity-side-panel-href.js";
+} from "./navigation/entity-side-panel-href.js";
 
 export {
   MarkdownDocumentDetailView,
@@ -2451,7 +2451,7 @@ export {
   ORGANIZATION_DISPLAY_KEY,
   type HistoryEntryKind,
   type HistoryEntryDisplay,
-} from "./resolve-history-entry-display.js";
+} from "./navigation/resolve-history-entry-display.js";
 
 export { HistoryEntryIcon } from "./components/history-entry-icon.js";
 export {
@@ -2479,32 +2479,32 @@ export {
   type SearchableDropdownProps,
 } from "./components/searchable-dropdown.js";
 
-export type { SearchableDropdownMenuApi } from "./searchable-dropdown-menu-api.js";
+export type { SearchableDropdownMenuApi } from "./dropdowns/searchable-dropdown-menu-api.js";
 
 export {
   SEARCHABLE_DROPDOWN_REQUEST_CLOSE,
   requestCloseSearchableDropdowns,
-} from "./searchable-dropdown-events.js";
+} from "./dropdowns/searchable-dropdown-events.js";
 
 export {
   SEARCHABLE_DROPDOWN_OPEN_PLACEMENT_ATTRIBUTE,
   markSearchableDropdownOpenPlacement,
   consumeSearchableDropdownOpenPlacement,
   type SearchableDropdownOpenPlacement,
-} from "./searchable-dropdown-open-placement.js";
+} from "./dropdowns/searchable-dropdown-open-placement.js";
 
 export {
   SEARCHABLE_DROPDOWN_ROOT_ATTRIBUTE,
   getOrderedSearchableDropdownRoots,
   openAdjacentSearchableDropdown,
-} from "./searchable-dropdown-tab-chain.js";
+} from "./dropdowns/searchable-dropdown-tab-chain.js";
 
 export {
   getCreateEntityFromQueryLabel,
   PENDING_ASSIGNABLE_ENTITY_PREFIX,
   createPendingAssignableId,
   isPendingAssignableId,
-} from "./searchable-dropdown-create-from-query.js";
+} from "./dropdowns/searchable-dropdown-create-from-query.js";
 
 export {
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
@@ -2524,11 +2524,11 @@ export {
   isTaskPropertyDropdownShortcutKey,
   type TaskPropertyDropdownId,
   type TaskPropertyDropdownShortcutKey,
-} from "./task-property-dropdown-keys.js";
+} from "./tasks/task-property-dropdown-keys.js";
 
-export { isListKeyboardActivateKey } from "./is-list-keyboard-activate-key.js";
+export { isListKeyboardActivateKey } from "./list-nav/is-list-keyboard-activate-key.js";
 
-export { createId } from "./create-id.js";
+export { createId } from "./shared/create-id.js";
 
 export {
   PropertyDropdown,
@@ -2553,9 +2553,9 @@ export {
 
 export {
   computeKanbanDropIndicator,
-} from "./compute-kanban-drop-indicator.js";
+} from "./list-nav/compute-kanban-drop-indicator.js";
 
-export { isKanbanInteractiveCardTarget } from "./kanban-interactive-target.js";
+export { isKanbanInteractiveCardTarget } from "./list-nav/kanban-interactive-target.js";
 
 export {
   TaskBoardCard,
@@ -2573,7 +2573,7 @@ export {
   useLetterPdfTabReorder,
   type LetterPdfTabReorderItem,
   type LetterPdfTabReorderBind,
-} from "./use-letter-pdf-tab-reorder.js";
+} from "./letters/use-letter-pdf-tab-reorder.js";
 
 export {
   LETTER_PDF_TAB_DRAG_TYPE,
@@ -2584,7 +2584,7 @@ export {
   writeLetterPdfTabDragPayload,
   isLetterPdfTabDragActive,
   reorderAttachmentIds,
-} from "./letter-pdf-tab-drag.js";
+} from "./letters/letter-pdf-tab-drag.js";
 
 export {
   LetterPdfDock,
@@ -2608,26 +2608,26 @@ export {
 export {
   stripPdfExtension,
   withPdfExtension,
-} from "./letter-pdf-filename.js";
+} from "./letters/letter-pdf-filename.js";
 
 export {
   LETTER_PDF_TOGGLE_SHORTCUT_HINT,
   isLetterPdfToggleShortcut,
   useLetterPdfToggleShortcut,
-} from "./letter-pdf-toggle-shortcut.js";
+} from "./letters/letter-pdf-toggle-shortcut.js";
 
 export {
   LETTER_PDF_MAXIMIZE_SHORTCUT_HINT,
   isLetterPdfMaximizeShortcut,
   useLetterPdfMaximizeShortcut,
-} from "./letter-pdf-maximize-shortcut.js";
+} from "./letters/letter-pdf-maximize-shortcut.js";
 
 export {
   LETTER_PDF_ATTACHMENT_SHORTCUT_MAX,
   parseLetterPdfAttachmentShortcutIndex,
   resolveLetterPdfAttachmentShortcutTarget,
   useLetterPdfAttachmentShortcuts,
-} from "./letter-pdf-attachment-shortcut.js";
+} from "./letters/letter-pdf-attachment-shortcut.js";
 
 export {
   LETTER_PDF_ZOOM_IN_SHORTCUT_HINT,
@@ -2635,7 +2635,7 @@ export {
   resolveLetterPdfZoomShortcut,
   useLetterPdfZoomShortcut,
   type LetterPdfZoomDirection,
-} from "./letter-pdf-zoom-shortcut.js";
+} from "./letters/letter-pdf-zoom-shortcut.js";
 
 export type { ProductSidebarRecentPage } from "./components/product-sidebar.js";
 
@@ -2650,7 +2650,7 @@ export {
   requestOpenComposeModal,
   type ComposeKind,
   type HorizontalArrowDirection,
-} from "./compose-modal-events.js";
+} from "./compose/compose-modal-events.js";
 
 export {
   COMPOSE_NO_PROJECT_VALUE,
@@ -2666,13 +2666,13 @@ export {
   isProjectDocumentDetailPath,
   isKnowledgeDocumentDetailPath,
   type ComposeContextKind,
-} from "./compose-task.js";
+} from "./compose/compose-task.js";
 
 export {
   getNextComposeTaskTabField,
   type ComposeTaskTabField,
   type ComposeTaskTabFlowContext,
-} from "./compose-task-tab-flow.js";
+} from "./compose/compose-task-tab-flow.js";
 
 export {
   COMPOSE_DOCUMENT_ROOT_FOLDER_VALUE,
@@ -2689,7 +2689,7 @@ export {
   type ComposeDocumentFolderOption,
   type ComposeDocumentFoldersByTarget,
   type ComposeFolderCascadeSegment,
-} from "./compose-document-folders.js";
+} from "./compose/compose-document-folders.js";
 
 export { ComposeFolderIcon, type ComposeFolderIconProps } from "./components/compose-folder-icon.js";
 
@@ -2736,7 +2736,7 @@ export {
   partitionProjectIconKeys,
   type ProjectIconKey,
   type ProjectBrandIconKey,
-} from "./project-icon-keys.js";
+} from "./projects/project-icon-keys.js";
 
 export {
   ENTITY_ICON_COLOR_PRESETS,
@@ -2750,13 +2750,13 @@ export {
   getEntityIconColor,
   type ParsedEntityIcon,
   type EntityIconApiDetail,
-} from "./entity-icon.js";
+} from "./entity/entity-icon.js";
 
 export {
   ENTITY_ICON_EMOJIS,
   filterEntityIconEmojis,
   type EntityIconEmojiEntry,
-} from "./entity-icon-emojis.js";
+} from "./entity/entity-icon-emojis.js";
 
 export {
   EntityIconPicker,
@@ -2774,16 +2774,16 @@ export {
   isGoLeaderSequencePending,
   clearGoLeaderSequence,
   GO_NAVIGATION_SEQUENCE_TIMEOUT_MS,
-} from "./go-leader-sequence-gate.js";
+} from "./shortcuts/go-leader-sequence-gate.js";
 
 export {
   registerFinanceLeaderKeyPress,
   isFinanceLeaderSequencePending,
   clearFinanceLeaderSequence,
   FINANCE_LEADER_SEQUENCE_TIMEOUT_MS,
-} from "./finance-leader-sequence-gate.js";
+} from "./finance/finance-leader-sequence-gate.js";
 
-export { isAnyLeaderSequencePending } from "./leader-sequence-gate.js";
+export { isAnyLeaderSequencePending } from "./shortcuts/leader-sequence-gate.js";
 
 export {
   isBlockingModalOpen,
@@ -2794,7 +2794,7 @@ export {
   shouldHandleGlobalShortcut,
   shouldHandleTabChromeShortcut,
   BLOCKING_MODAL_SELECTOR,
-} from "./shortcut-guards.js";
+} from "./shortcuts/shortcut-guards.js";
 
 export {
   resolveDesktopSectionTabHrefs,
@@ -2805,40 +2805,40 @@ export {
   findActiveSectionTabIndex,
   resolveAdjacentSectionTabHref,
   type SectionTabCycleDirection,
-} from "./section-tab-hrefs.js";
+} from "./navigation/section-tab-hrefs.js";
 
-export { useNavigationShortcuts } from "./use-navigation-shortcuts.js";
-export { useFinanceNavigationShortcuts } from "./use-finance-navigation-shortcuts.js";
-export { useSettingsShortcut } from "./use-settings-shortcut.js";
-export { useSectionTabShortcuts } from "./use-section-tab-shortcuts.js";
-export { useEscapeBackNavigation } from "./use-escape-back-navigation.js";
-export { useTaskPropertyDropdownShortcuts } from "./use-task-property-dropdown-shortcuts.js";
-export { useListBoardViewShortcuts } from "./use-list-board-view-shortcuts.js";
+export { useNavigationShortcuts } from "./navigation/use-navigation-shortcuts.js";
+export { useFinanceNavigationShortcuts } from "./finance/use-finance-navigation-shortcuts.js";
+export { useSettingsShortcut } from "./shortcuts/use-settings-shortcut.js";
+export { useSectionTabShortcuts } from "./navigation/use-section-tab-shortcuts.js";
+export { useEscapeBackNavigation } from "./navigation/use-escape-back-navigation.js";
+export { useTaskPropertyDropdownShortcuts } from "./tasks/use-task-property-dropdown-shortcuts.js";
+export { useListBoardViewShortcuts } from "./list-nav/use-list-board-view-shortcuts.js";
 export {
   resolveTabCycleShortcut,
   useTabShortcuts,
   type TabCycleDirection,
-} from "./use-tab-shortcuts.js";
+} from "./navigation/use-tab-shortcuts.js";
 
-export { useContentSidePanelToggleShortcut } from "./use-content-side-panel-toggle-shortcut.js";
+export { useContentSidePanelToggleShortcut } from "./content/use-content-side-panel-toggle-shortcut.js";
 
 export {
   isTitleRenameShortcut,
   focusAndSelectTitleInput,
   useTitleRenameShortcut,
-} from "./title-rename-shortcut.js";
+} from "./shortcuts/title-rename-shortcut.js";
 
 export {
   deferFocusAfterTitleLeave,
   useContentTitleEditorNavigation,
-} from "./use-content-title-editor-navigation.js";
+} from "./content/use-content-title-editor-navigation.js";
 
 export {
   registerDocumentTreeFolderRenameHandler,
   requestDocumentTreeFolderRename,
-} from "./document-tree-folder-rename-shortcut.js";
+} from "./documents/document-tree-folder-rename-shortcut.js";
 
-export { isNativeDatePickerOpen } from "./native-date-picker.js";
+export { isNativeDatePickerOpen } from "./dropdowns/native-date-picker.js";
 
 export {
   LIST_BOARD_VIEW_SEARCH_PARAM,
@@ -2852,7 +2852,7 @@ export {
   parseListBoardViewFromLocation,
   persistListBoardView,
   type ListBoardView as ListBoardViewMode,
-} from "./list-board-view.js";
+} from "./list-nav/list-board-view.js";
 
 export {
   LIST_BOARD_VIEW_LIST_KEY,
@@ -2861,18 +2861,18 @@ export {
   getListBoardViewForShortcutKey,
   hasListBoardViewShortcutModifiers,
   isListBoardViewShortcutKey,
-} from "./list-board-view-shortcut.js";
+} from "./list-nav/list-board-view-shortcut.js";
 
 export {
   stepBoardTaskId,
   boardKeyboardNavDirection as boardKeyboardNavStepDirection,
   isBoardKeyboardNavigationKey,
-} from "./board-keyboard-nav.js";
+} from "./list-nav/board-keyboard-nav.js";
 
 export {
   isContentEditModeActive,
   isContentPreviewModeActive,
-} from "./content-view-mode.js";
+} from "./content/content-view-mode.js";
 
 export {
   CONTENT_PREVIEW_SCROLL_SELECTOR,
@@ -2881,7 +2881,7 @@ export {
   getContentPreviewScrollStep,
   shouldHandleContentPreviewArrowScroll,
   scrollContentPreviewByArrowKey,
-} from "./content-preview-scroll.js";
+} from "./content/content-preview-scroll.js";
 
 export {
   CONTENT_PREVIEW_LINKS_SELECTOR,
@@ -2891,27 +2891,27 @@ export {
   syncContentPreviewLinkHighlights,
   activateContentPreviewLink,
   isContentKeyboardNavZoneActive,
-} from "./content-preview-links.js";
+} from "./content/content-preview-links.js";
 
-export { useContentPreviewScrollShortcuts } from "./use-content-preview-scroll-shortcuts.js";
-export { useContentPreviewLinkNavigation } from "./use-content-preview-link-navigation.js";
+export { useContentPreviewScrollShortcuts } from "./content/use-content-preview-scroll-shortcuts.js";
+export { useContentPreviewLinkNavigation } from "./content/use-content-preview-link-navigation.js";
 
 export {
   getActiveListKeyboardItemId,
   registerActiveListKeyboardItemResolver,
-} from "./active-list-keyboard-item.js";
+} from "./list-nav/active-list-keyboard-item.js";
 
 export {
   getFocusedListKeyboardItemId,
   registerFocusedListKeyboardItemResolver,
-} from "./focused-list-keyboard-item.js";
+} from "./list-nav/focused-list-keyboard-item.js";
 
 export {
   openTaskPropertyDropdown,
   openFinanceChromeDropdown,
   openFinanceTxPropertyDropdown,
-} from "./open-task-property-dropdown.js";
-export { isContentSidePanelToggleShortcut } from "./content-side-panel-toggle-shortcut.js";
+} from "./tasks/open-task-property-dropdown.js";
+export { isContentSidePanelToggleShortcut } from "./content/content-side-panel-toggle-shortcut.js";
 
 export {
   NAVIGATION_HISTORY_STORAGE_KEY,
@@ -2963,12 +2963,12 @@ export {
   queryKeyboardNavItem,
   focusListKeyboardNavItem,
   scrollKeyboardNavItemIntoView,
-} from "./keyboard-nav-item.js";
+} from "./list-nav/keyboard-nav-item.js";
 export {
   stepListKeyboardIndex,
   flattenGroupedListItemIds,
   type ListKeyboardNavDirection,
-} from "./list-keyboard-nav-index.js";
+} from "./list-nav/list-keyboard-nav-index.js";
 export {
   LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
@@ -2983,19 +2983,19 @@ export {
   filterListKeyboardNavZonesForTab,
   type ListKeyboardNavZone,
   type ApplyListKeyboardNavZoneOptions,
-} from "./list-keyboard-nav-zone.js";
+} from "./list-nav/list-keyboard-nav-zone.js";
 export {
   shouldHandleListKeyboardNavigation,
   shouldHandleListKeyboardActivate,
   shouldHandleBoardKeyboardNavigation,
   boardKeyboardNavDirection,
-} from "./should-handle-list-keyboard-navigation.js";
+} from "./list-nav/should-handle-list-keyboard-navigation.js";
 export {
   setKeyboardNavMouseResumeHandler,
   installKeyboardNavHoverModalityListeners,
   resolveListKeyboardAnchorId,
   suppressKeyboardNavHover,
-} from "./keyboard-nav-hover-modality.js";
+} from "./list-nav/keyboard-nav-hover-modality.js";
 export {
   ListKeyboardNavigationProvider,
   useListKeyboardNavigation,
@@ -3106,7 +3106,7 @@ export {
   inferEntryKindFromPath,
   T3_PIERRE_ICONS,
   type PierreIconResolution,
-} from "./pierre-icons.js";
+} from "./codebase/pierre-icons.js";
 
 export {
   CodebaseProjectOverviewPane,
@@ -3154,4 +3154,4 @@ export {
   isCodebaseWorkbenchPath,
   parseCodebaseWorkbenchPath,
   type CodebaseWorkbenchSelection,
-} from "./codebase-workbench-path.js";
+} from "./codebase/codebase-workbench-path.js";

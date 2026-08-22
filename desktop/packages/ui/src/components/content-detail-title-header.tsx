@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { DOCUMENT_CONTENT_MAX_WIDTH } from "../document-editor-theme.js";
+import { DOCUMENT_CONTENT_MAX_WIDTH } from "../documents/document-editor-theme.js";
 
 export const CONTENT_DETAIL_TITLE_CLASS = "content-detail-title";
 

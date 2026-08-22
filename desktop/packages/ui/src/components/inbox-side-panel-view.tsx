@@ -9,16 +9,16 @@ import {
   type Ref,
 } from "react";
 
-import { getSelectedInboxSlugFromPathname } from "../content-side-panel.js";
-import { parseEmailMessagePath } from "../email.js";
+import { getSelectedInboxSlugFromPathname } from "../content/content-side-panel.js";
+import { parseEmailMessagePath } from "../email/email.js";
 import {
   buildInboxItemHrefById,
   findInboxItemBySlugOrId,
   getInboxItemHref,
   groupInboxItemsByAttentionStatus,
   type InboxListItem,
-} from "../inbox-items.js";
-import { isTaskStatus } from "../task-status.js";
+} from "../inbox/inbox-items.js";
+import { isTaskStatus } from "../tasks/task-status.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {

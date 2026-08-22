@@ -10,8 +10,8 @@ import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import { LetterIcon } from "./letter-icon.js";
 import { OrganizationIcon } from "./organization-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
-import type { TaskStatus } from "../task-status.js";
-import type { MentionKind } from "../mention-tokens.js";
+import type { TaskStatus } from "../tasks/task-status.js";
+import type { MentionKind } from "../mentions/mention-tokens.js";
 
 export function MentionLeadingIcon({
   kind,

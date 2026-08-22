@@ -15,7 +15,7 @@ import {
   formatNetIncomeRangeLabel,
   netIncomeYearChartHasData,
   type NetIncomeYearBarPoint,
-} from "../net-income-year-chart-series.js";
+} from "../finance/net-income-year-chart-series.js";
 import {
   handleCashflowBarMonthClick,
   CashflowSelectedMonthBand,

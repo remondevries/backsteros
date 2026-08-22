@@ -6,7 +6,7 @@ import {
   getTaskStatusLabel,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../../task-status.js";
+} from "../../tasks/task-status.js";
 import { StatusGroupSection } from "../status-group-section.js";
 import { TaskStatusIcon } from "../task-status-icon.js";
 import { SkeletonBlock } from "./skeleton-block.js";

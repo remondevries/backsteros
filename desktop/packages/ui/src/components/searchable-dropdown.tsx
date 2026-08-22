@@ -14,16 +14,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { isListKeyboardActivateKey } from "../is-list-keyboard-activate-key.js";
-import { SEARCHABLE_DROPDOWN_REQUEST_CLOSE } from "../searchable-dropdown-events.js";
-import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
-import { consumeSearchableDropdownOpenPlacement } from "../searchable-dropdown-open-placement.js";
+import { isListKeyboardActivateKey } from "../list-nav/is-list-keyboard-activate-key.js";
+import { SEARCHABLE_DROPDOWN_REQUEST_CLOSE } from "../dropdowns/searchable-dropdown-events.js";
+import type { SearchableDropdownMenuApi } from "../dropdowns/searchable-dropdown-menu-api.js";
+import { consumeSearchableDropdownOpenPlacement } from "../dropdowns/searchable-dropdown-open-placement.js";
 import {
   searchableDropdownShortcut,
   searchableDropdownShortcutIndex,
-} from "../searchable-dropdown-shortcuts.js";
-import { openAdjacentSearchableDropdown } from "../searchable-dropdown-tab-chain.js";
-import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+} from "../dropdowns/searchable-dropdown-shortcuts.js";
+import { openAdjacentSearchableDropdown } from "../dropdowns/searchable-dropdown-tab-chain.js";
+import type { TaskPropertyDropdownId } from "../tasks/task-property-dropdown-keys.js";
 
 export type SearchableDropdownOption<T extends string = string> = {
   value: T;
@@ -58,7 +58,7 @@ const VIEWPORT_PADDING = 8;
 export {
   searchableDropdownShortcut,
   searchableDropdownShortcutIndex,
-} from "../searchable-dropdown-shortcuts.js";
+} from "../dropdowns/searchable-dropdown-shortcuts.js";
 
 function CheckIcon() {
   return (

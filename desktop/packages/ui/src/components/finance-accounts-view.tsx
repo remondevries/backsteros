@@ -22,34 +22,34 @@ import {
   bankAccountTypeForFinanceAccountGroupId,
   groupBankAccountsForFinanceNav,
   type FinanceAccountGroupId,
-} from "../finance-nav.js";
+} from "../finance/finance-nav.js";
 import {
   applyOptimisticAccountReorder,
   financeAccountGroupAppendOrderKey,
   financeAccountGroupKey,
   financeAccountOrderKey,
   type FinanceListReorderRequest,
-} from "../finance-list-reorder.js";
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+} from "../finance/finance-list-reorder.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import {
   useGroupedListPointerReorder,
-} from "../use-grouped-list-pointer-reorder.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
+} from "../list-nav/keyboard-nav-item.js";
 import {
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
   LIST_KEYBOARD_NAV_ZONE_MAIN,
-} from "../list-keyboard-nav-zone.js";
+} from "../list-nav/list-keyboard-nav-zone.js";
 import {
   ENTITY_TITLE_INPUT_ATTRIBUTE,
   useListDismissDetailShortcut,
-} from "../use-list-clear-selection-shortcut.js";
+} from "../list-nav/use-list-clear-selection-shortcut.js";
 import {
   focusAndSelectTitleInput,
   useTitleRenameShortcut,
-} from "../title-rename-shortcut.js";
+} from "../shortcuts/title-rename-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -66,7 +66,7 @@ import { useEntityHeaderActionsContext } from "./entity-actions/entity-header-ac
 import { EntityDetailLayout } from "./entity-detail-layout.js";
 import { EntityListAvatar } from "./entity-list-avatar.js";
 import { AccountIncomeExpenseChart } from "./account-income-expense-chart.js";
-import { buildNonCashflowCategoryIdSet } from "../cashflow-exclusion.js";
+import { buildNonCashflowCategoryIdSet } from "../finance/cashflow-exclusion.js";
 import {
   FinanceYearNavigator,
   localCalendarYear,
@@ -77,7 +77,7 @@ import {
   getEntityIconColor,
   isValidEntityIconColor,
   serializeEntityIcon,
-} from "../entity-icon.js";
+} from "../entity/entity-icon.js";
 import { EntityIconPicker } from "./entity-icon-picker.js";
 import {
   FinanceOverviewPie,

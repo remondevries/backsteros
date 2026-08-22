@@ -21,9 +21,9 @@ import {
   isFinanceNavId,
   type FinanceAccountGroupId,
   type FinanceNavId,
-} from "../finance-nav.js";
-import { bankAccountMatchesSlug } from "../entity-routes.js";
-import { keyboardNavItemClass, keyboardNavItemProps } from "../keyboard-nav-item.js";
+} from "../finance/finance-nav.js";
+import { bankAccountMatchesSlug } from "../navigation/entity-routes.js";
+import { keyboardNavItemClass, keyboardNavItemProps } from "../list-nav/keyboard-nav-item.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import { EntityListAvatar } from "./entity-list-avatar.js";
 import { ProjectsSidePanelIcon } from "./codebase/projects-side-panel-icon.js";

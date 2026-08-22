@@ -2,22 +2,22 @@
 
 import type { DragEvent, SyntheticEvent } from "react";
 
-import type { GroupedListPointerItemBind } from "../use-grouped-list-pointer-reorder.js";
+import type { GroupedListPointerItemBind } from "../list-nav/use-grouped-list-pointer-reorder.js";
 import {
   getProjectStatusLabel,
   migrateLegacyProjectStatus,
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
-} from "../project-status.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
-import { formatTaskDueMetaLabel } from "../task-due-date.js";
+} from "../projects/project-status.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
+import { formatTaskDueMetaLabel } from "../tasks/task-due-date.js";
 import {
   formatProjectTaskProgressPercent,
   type ProjectTaskProgress,
-} from "../project-progress-ring.js";
-import type { ProjectArea } from "../project-areas.js";
-import { keyboardNavItemProps, keyboardNavListItemClass } from "../keyboard-nav-item.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
+} from "../projects/project-progress-ring.js";
+import type { ProjectArea } from "../projects/project-areas.js";
+import { keyboardNavItemProps, keyboardNavListItemClass } from "../list-nav/keyboard-nav-item.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";

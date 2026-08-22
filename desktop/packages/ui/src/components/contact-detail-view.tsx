@@ -5,8 +5,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   CONTACT_SECTIONS,
   type ContactSectionId,
-} from "../contact-sections.js";
-import { rememberContactSection } from "../entity-section-memory.js";
+} from "../contacts/contact-sections.js";
+import { rememberContactSection } from "../navigation/entity-section-memory.js";
 import {
   ContactOverviewView,
   type ContactOverviewDetails,

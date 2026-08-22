@@ -13,7 +13,7 @@ import { useId, useMemo } from "react";
 import {
   buildGoalChartSeries,
   goalChartHasPlan,
-} from "../goal-chart-series.js";
+} from "../finance/goal-chart-series.js";
 import {
   FinanceChartEmpty,
   FinanceChartFadeIn,

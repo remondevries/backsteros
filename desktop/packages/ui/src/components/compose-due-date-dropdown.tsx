@@ -2,23 +2,23 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
-import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+import type { SearchableDropdownMenuApi } from "../dropdowns/searchable-dropdown-menu-api.js";
+import type { TaskPropertyDropdownId } from "../tasks/task-property-dropdown-keys.js";
 import { DueDateCalendarPopover } from "./due-date-calendar-popover.js";
 import {
   naturalLanguageDueDatePreview,
   parseNaturalLanguageDueDate,
-} from "../parse-natural-language-due-date.js";
+} from "../tasks/parse-natural-language-due-date.js";
 import {
   buildTaskDueDateDropdownOptions,
   isPickDueDateValue,
   taskDueDateDropdownValue,
   taskDueDateFromDropdownValue,
-} from "../task-due-date-dropdown.js";
+} from "../tasks/task-due-date-dropdown.js";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
-} from "../task-due-date.js";
+} from "../tasks/task-due-date.js";
 import { PropertyDropdown, type PropertyDropdownTriggerVariant } from "./property-dropdown.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 

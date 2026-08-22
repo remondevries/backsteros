@@ -5,8 +5,8 @@ import {
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
-import { formatTaskDueMetaLabel } from "../task-due-date.js";
+} from "../tasks/task-status.js";
+import { formatTaskDueMetaLabel } from "../tasks/task-due-date.js";
 import {
   DROPDOWN_NO_PROJECT_VALUE,
   resolveDropdownProjectKey,
@@ -19,7 +19,7 @@ import { PropertyDropdown } from "./property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "./property-dropdown-navigate-row.js";
 import { PropertyFieldGroup } from "./property-field-group.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 

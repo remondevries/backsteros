@@ -63,14 +63,14 @@ import {
 import {
   computeNetThisMonthStats,
   formatNetThisMonthRangeLabel,
-} from "../net-this-month.js";
-import { buildNonCashflowCategoryIdSet } from "../cashflow-exclusion.js";
+} from "../finance/net-this-month.js";
+import { buildNonCashflowCategoryIdSet } from "../finance/cashflow-exclusion.js";
 import {
   categoryNetSpendAbsCents,
   categoryNetSpendDisplayCents,
   categoryNetSpendSign,
-} from "../category-net-spend.js";
-import { upcomingMonthlyPaymentDate } from "../recurring-next-date.js";
+} from "../finance/category-net-spend.js";
+import { upcomingMonthlyPaymentDate } from "../finance/recurring-next-date.js";
 
 const REVIEW_TRANSACTIONS_LIMIT = 10;
 const REVIEW_EXIT_MS = 320;

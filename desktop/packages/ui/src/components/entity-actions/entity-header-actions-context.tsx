@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { resolveDocumentTreeDeleteConfig } from "../../document-tree-delete-shortcut.js";
+import { resolveDocumentTreeDeleteConfig } from "../../documents/document-tree-delete-shortcut.js";
 
 export type EntityDeleteResult =
   | { ok: true }

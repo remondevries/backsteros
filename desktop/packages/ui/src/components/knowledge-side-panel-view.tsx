@@ -15,7 +15,7 @@ import {
   getKnowledgeHref,
   getSelectedKnowledgeSlugFromPathname,
   type KnowledgeListItem,
-} from "../entity-routes.js";
+} from "../navigation/entity-routes.js";
 import {
   buildDocumentTree,
   countDocumentTreeFolderItems,
@@ -23,13 +23,13 @@ import {
   flattenVisibleDocumentTreeNavItemIds,
   formatFolderDeleteConfirmLabel,
   parseFolderNavId,
-} from "../document-tree.js";
-import { registerDocumentTreeCreateFolderHandler } from "../document-tree-create-folder-shortcut.js";
-import { registerDocumentTreeDeleteResolver } from "../document-tree-delete-shortcut.js";
-import type { TreeReorderRequest } from "../document-tree-drag.js";
-import type { TreeDragPayload } from "../document-tree-order.js";
-import { getFocusedListKeyboardItemId } from "../focused-list-keyboard-item.js";
-import { DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT } from "../should-handle-document-tree-create-folder-shortcut.js";
+} from "../documents/document-tree.js";
+import { registerDocumentTreeCreateFolderHandler } from "../documents/document-tree-create-folder-shortcut.js";
+import { registerDocumentTreeDeleteResolver } from "../documents/document-tree-delete-shortcut.js";
+import type { TreeReorderRequest } from "../documents/document-tree-drag.js";
+import type { TreeDragPayload } from "../documents/document-tree-order.js";
+import { getFocusedListKeyboardItemId } from "../list-nav/focused-list-keyboard-item.js";
+import { DOCUMENT_TREE_CREATE_FOLDER_SHORTCUT_HINT } from "../documents/should-handle-document-tree-create-folder-shortcut.js";
 import { AddFolderInline } from "./add-folder-inline.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {

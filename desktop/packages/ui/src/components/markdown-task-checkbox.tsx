@@ -1,6 +1,6 @@
 "use client";
 
-import { useMarkdownTaskListInteract } from "../markdown-task-list-interact.js";
+import { useMarkdownTaskListInteract } from "../documents/markdown-task-list-interact.js";
 import { PolishedCheckbox } from "./polished-checkbox.js";
 
 export type MarkdownTaskCheckboxProps = {

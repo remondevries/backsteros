@@ -1,11 +1,11 @@
 "use client";
 
-import { ClientLink } from "../client-link.js";
+import { ClientLink } from "../shared/client-link.js";
 import type { MentionCatalogTask } from "../mentions/mention-menu-types.js";
 import {
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
-} from "../task-due-date.js";
+} from "../tasks/task-due-date.js";
 import { getDisplayProjectIcon, ProjectOcticon } from "./project-octicon.js";
 import { MentionLeadingIcon } from "./mention-leading-icon.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";

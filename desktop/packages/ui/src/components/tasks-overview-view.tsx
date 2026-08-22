@@ -10,40 +10,40 @@ import {
   type ReactNode,
 } from "react";
 
-import { groupTasksByStatus } from "../group-tasks-by-status.js";
-import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
+import { groupTasksByStatus } from "../tasks/group-tasks-by-status.js";
+import { flattenGroupedListItemIds } from "../list-nav/list-keyboard-nav-index.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
 import {
   migrateLegacyTaskStatus,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import {
   taskGroupAppendOrderKey,
   taskOrderKey,
   type TaskReorderRequest,
-} from "../task-list-drag.js";
+} from "../tasks/task-list-drag.js";
 import {
   applyOptimisticTaskReorder,
   taskReorderPatches,
-} from "../task-reorder.js";
+} from "../tasks/task-reorder.js";
 import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
-} from "../use-grouped-list-pointer-reorder.js";
-import { useListMultiSelect } from "../use-list-multi-select.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
+import { useListMultiSelect } from "../list-nav/use-list-multi-select.js";
 import {
   DEFAULT_TASKS_DUE_FILTER,
   filterTasksByDueFilter,
   getTasksDueFilterLabel,
   TASKS_DUE_FILTERS,
   type TasksDueFilter,
-} from "../tasks-due-filters.js";
+} from "../tasks/tasks-due-filters.js";
 import { isHabitLinkedTask } from "./journal-due-tasks-section.js";
 import {
   computeTaskDisplayIdColumnCh,
   taskIdColumnCssVars,
-} from "../task-id-column-width.js";
-import { useOptimisticTaskList } from "../use-optimistic-task-list.js";
+} from "../tasks/task-id-column-width.js";
+import { useOptimisticTaskList } from "../tasks/use-optimistic-task-list.js";
 import { AddInboxTaskInline } from "./add-inbox-task-inline.js";
 import { KanbanBoard } from "./kanban-board.js";
 import {

@@ -13,13 +13,13 @@ import {
   type ReactNode,
 } from "react";
 
-import { DOCUMENT_CONTENT_MAX_WIDTH } from "../document-editor-theme.js";
+import { DOCUMENT_CONTENT_MAX_WIDTH } from "../documents/document-editor-theme.js";
 import {
   HABIT_CADENCE_OPTIONS,
   getHabitCadenceLabel,
   parseHabitCadence,
   resolveNextHabitDueYmd,
-} from "../habit-cadence.js";
+} from "../habits/habit-cadence.js";
 import {
   buildHabitTimelineGrids,
   earliestHabitInstanceYmd,
@@ -30,23 +30,23 @@ import {
   type HabitGridInstance,
   type HabitMonthGrid,
   type HabitSortGranularity,
-} from "../habit-month-grid.js";
+} from "../habits/habit-month-grid.js";
 import {
   HABIT_SORT_OPTIONS,
   getHabitSortLabel,
   parseHabitSort,
-} from "../habit-sort.js";
+} from "../habits/habit-sort.js";
 import {
   deriveHabitTimelineMinimapItems,
   habitTimelineSectionId,
   resolveHabitTimelineMinimapHasPersistentGutter,
   resolveHabitTimelineMinimapHitStripWidth,
   type HabitTimelineMinimapItem,
-} from "../habit-timeline-minimap.js";
+} from "../habits/habit-timeline-minimap.js";
 import {
   fireHabitCompleteConfetti,
-} from "../habit-complete-confetti.js";
-import { formatLocalYmd } from "../task-due-date.js";
+} from "../habits/habit-complete-confetti.js";
+import { formatLocalYmd } from "../tasks/task-due-date.js";
 import { HabitDayDeleteConfirmModal } from "./habit-day-delete-confirm-modal.js";
 import { HabitTimelineMinimap } from "./habit-timeline-minimap.js";
 import {

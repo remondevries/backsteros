@@ -18,7 +18,7 @@ import {
   buildAccountIncomeExpenseChartSeries,
   buildAccountIncomeExpenseChartSeriesFromCashflow,
   buildMonthIncomeExpenseDailyChartSeries,
-} from "../account-income-expense-chart-series.js";
+} from "../finance/account-income-expense-chart-series.js";
 import { FinanceChartTooltip } from "./finance-chart-tooltip.js";
 import {
   FinanceChartEmpty,

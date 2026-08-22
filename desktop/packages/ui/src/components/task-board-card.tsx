@@ -2,15 +2,15 @@
 
 import { memo, useMemo, type ReactNode, type SyntheticEvent } from "react";
 
-import { getTaskDisplayId } from "../task-display-id.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { getTaskDisplayId } from "../tasks/task-display-id.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DeferredSearchableDropdown } from "./deferred-searchable-dropdown.js";

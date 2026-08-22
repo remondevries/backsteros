@@ -11,7 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { useLatestRef } from "../use-latest-ref.js";
+import { useLatestRef } from "../shared/use-latest-ref.js";
 import type { MentionMenuController } from "../mentions/codemirror/mention-menu-controller.js";
 import { useMentionCatalogOptional } from "../mentions/mention-catalog-context.js";
 import type {

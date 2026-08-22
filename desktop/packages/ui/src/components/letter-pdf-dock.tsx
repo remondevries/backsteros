@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { LETTER_PDF_ATTACHMENT_SHORTCUT_MAX } from "../letter-pdf-attachment-shortcut.js";
-import { stripPdfExtension } from "../letter-pdf-filename.js";
-import { LETTER_PDF_MAXIMIZE_SHORTCUT_HINT } from "../letter-pdf-maximize-shortcut.js";
-import { LETTER_PDF_TOGGLE_SHORTCUT_HINT } from "../letter-pdf-toggle-shortcut.js";
-import { useLetterPdfTabReorder } from "../use-letter-pdf-tab-reorder.js";
+import { LETTER_PDF_ATTACHMENT_SHORTCUT_MAX } from "../letters/letter-pdf-attachment-shortcut.js";
+import { stripPdfExtension } from "../letters/letter-pdf-filename.js";
+import { LETTER_PDF_MAXIMIZE_SHORTCUT_HINT } from "../letters/letter-pdf-maximize-shortcut.js";
+import { LETTER_PDF_TOGGLE_SHORTCUT_HINT } from "../letters/letter-pdf-toggle-shortcut.js";
+import { useLetterPdfTabReorder } from "../letters/use-letter-pdf-tab-reorder.js";
 import { LetterIcon } from "./letter-icon.js";
 import { LetterPdfDropzone } from "./letter-pdf-dropzone.js";
 import {

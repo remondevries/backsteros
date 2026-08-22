@@ -44,28 +44,28 @@ import {
 import { useEntityHeaderActionsContext } from "./entity-actions/entity-header-actions-context.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { buildCategoryDropdownOptions } from "./finance-categories-view.js";
-import { groupTransactionsByMonthWeek } from "../group-transactions-by-month-week.js";
+import { groupTransactionsByMonthWeek } from "../finance/group-transactions-by-month-week.js";
 import {
   computeAmountRangeDomain,
   isFullAmountRange,
-} from "../filter-finance-transactions.js";
+} from "../finance/filter-finance-transactions.js";
 import {
   isBlockingModalOpen,
   isDirectRoleButtonActivationKey,
   isEditableShortcutTarget,
-} from "../shortcut-guards.js";
+} from "../shortcuts/shortcut-guards.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
 import {
   useListClearSelectionShortcut,
   useListDismissDetailShortcut,
-} from "../use-list-clear-selection-shortcut.js";
-import { useListSelectAllShortcut } from "../use-list-select-all-shortcut.js";
-import { useListToggleHighlightedSelectionShortcut } from "../use-list-toggle-highlighted-selection-shortcut.js";
-import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
+} from "../list-nav/use-list-clear-selection-shortcut.js";
+import { useListSelectAllShortcut } from "../list-nav/use-list-select-all-shortcut.js";
+import { useListToggleHighlightedSelectionShortcut } from "../list-nav/use-list-toggle-highlighted-selection-shortcut.js";
+import { useTitleRenameShortcut } from "../shortcuts/title-rename-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -73,12 +73,12 @@ import {
 import {
   txCategoryColumnCssVars,
   useTxCategoryColumnWidthPx,
-} from "../finance-tx-category-column-width.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
-import { useKeyHeld } from "../shift-range-selection.js";
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
-import { useProgressiveReveal } from "../use-progressive-reveal.js";
-import { suggestOrganizationForPayee } from "../suggest-organization-for-payee.js";
+} from "../finance/finance-tx-category-column-width.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
+import { useKeyHeld } from "../list-nav/shift-range-selection.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
+import { useProgressiveReveal } from "../shared/use-progressive-reveal.js";
+import { suggestOrganizationForPayee } from "../finance/suggest-organization-for-payee.js";
 import { EntityDetailLayout } from "./entity-detail-layout.js";
 import type { AvatarActionResult } from "./avatar-upload.js";
 import {

@@ -14,7 +14,7 @@ import { animated, useSpring } from "@react-spring/web";
 import { TriangleDownIcon, TriangleUpIcon } from "@primer/octicons-react";
 import { useId, useMemo } from "react";
 
-import { netIncomeChangePercent } from "../net-income-year-chart-series.js";
+import { netIncomeChangePercent } from "../finance/net-income-year-chart-series.js";
 import {
   FinanceChartEmpty,
   FinanceChartFadeIn,

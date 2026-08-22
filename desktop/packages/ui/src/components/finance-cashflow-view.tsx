@@ -7,7 +7,7 @@ import type {
 } from "@backsteros/contracts";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import {
   CashflowIncomeYearChart,
   CashflowSpendYearChart,

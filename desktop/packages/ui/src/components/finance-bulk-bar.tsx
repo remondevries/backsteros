@@ -4,7 +4,7 @@ import { TrashIcon } from "@primer/octicons-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { FINANCE_BULK_SCOPE_ATTRIBUTE } from "../task-property-dropdown-keys.js";
+import { FINANCE_BULK_SCOPE_ATTRIBUTE } from "../tasks/task-property-dropdown-keys.js";
 
 export type FinanceBulkBarProps = {
   selectionCount: number;

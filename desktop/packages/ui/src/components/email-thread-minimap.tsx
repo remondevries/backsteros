@@ -15,7 +15,7 @@ import {
   resolveEmailThreadMinimapInteractiveWidth,
   resolveEmailThreadMinimapTopPercent,
   type EmailThreadMinimapItem,
-} from "../email-thread-minimap.js";
+} from "../email/email-thread-minimap.js";
 
 export type EmailThreadMinimapProps = {
   items: ReadonlyArray<EmailThreadMinimapItem>;

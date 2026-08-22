@@ -4,7 +4,7 @@ import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 export type TaskStatusBadgeProps = {

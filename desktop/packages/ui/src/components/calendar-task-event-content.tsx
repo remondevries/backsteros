@@ -6,7 +6,7 @@ import {
   calendarEntityFromEvent,
   calendarEventDurationMs,
   calendarEventHasExpandedContent,
-} from "../calendar-events.js";
+} from "../calendar/calendar-events.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 

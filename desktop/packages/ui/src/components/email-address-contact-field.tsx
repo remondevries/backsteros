@@ -2,8 +2,8 @@
 
 import { useMemo, type ReactNode } from "react";
 
-import { formatEmailPersonWithAddress, parseReplyToAddress } from "../email.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { formatEmailPersonWithAddress, parseReplyToAddress } from "../email/email.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 import {
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,

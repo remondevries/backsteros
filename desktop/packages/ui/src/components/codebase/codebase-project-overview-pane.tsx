@@ -19,13 +19,13 @@ import {
   type ReactNode,
 } from "react";
 
-import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-keyboard-nav-zone.js";
+import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-nav/list-keyboard-nav-zone.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../../keyboard-nav-item.js";
-import type { ProjectArea } from "../../project-areas.js";
-import type { ProjectStatus } from "../../project-status.js";
+} from "../../list-nav/keyboard-nav-item.js";
+import type { ProjectArea } from "../../projects/project-areas.js";
+import type { ProjectStatus } from "../../projects/project-status.js";
 import { buildOrganizationDropdownOptions } from "../dropdown-options.js";
 import { ComposeFolderIcon } from "../compose-folder-icon.js";
 import { DocumentIcon } from "../document-icon.js";

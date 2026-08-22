@@ -10,14 +10,14 @@ import {
   type MouseEvent,
 } from "react";
 
-import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-keyboard-nav-zone.js";
-import { boardKeyboardNavDirection } from "../../board-keyboard-nav.js";
-import { isBlockingModalOpen } from "../../shortcut-guards.js";
+import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../../list-nav/list-keyboard-nav-zone.js";
+import { boardKeyboardNavDirection } from "../../list-nav/board-keyboard-nav.js";
+import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../../keyboard-nav-item.js";
-import { shouldHandleGlobalShortcut } from "../../shortcut-guards.js";
+} from "../../list-nav/keyboard-nav-item.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { useCommandPalette } from "../command-palette-context.js";
 import {
   useListKeyboardNavigation,

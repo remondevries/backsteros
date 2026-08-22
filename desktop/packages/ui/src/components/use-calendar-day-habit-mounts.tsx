@@ -4,7 +4,7 @@ import type { DayCellMountArg, DayHeaderMountArg } from "@fullcalendar/core";
 import { useCallback, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import { formatLocalYmd } from "../task-due-date.js";
+import { formatLocalYmd } from "../tasks/task-due-date.js";
 import {
   CalendarHabitsIconRow,
   type CalendarHabitIconItem,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { segmentMarkdownWithMentions } from "../mention-tokens.js";
+import { segmentMarkdownWithMentions } from "./mention-tokens.js";
 import {
   listItemLeadingNewlinesContinueList,
   matchListItemOpener,

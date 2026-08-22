@@ -13,24 +13,24 @@ import { DueDateCalendarPopover } from "./due-date-calendar-popover.js";
 import {
   naturalLanguageDueDatePreview,
   parseNaturalLanguageDueDate,
-} from "../parse-natural-language-due-date.js";
+} from "../tasks/parse-natural-language-due-date.js";
 import {
   buildTaskDueDateDropdownOptions,
   isPickDueDateValue,
   taskDueDateDropdownValue,
   taskDueDateFromDropdownValue,
-} from "../task-due-date-dropdown.js";
+} from "../tasks/task-due-date-dropdown.js";
 import {
   formatDueDateInputValue,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
   parseDueDateInputValue,
-} from "../task-due-date.js";
-import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+} from "../tasks/task-due-date.js";
+import type { TaskPropertyDropdownId } from "../tasks/task-property-dropdown-keys.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
 import {

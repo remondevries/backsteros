@@ -2,40 +2,40 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 
-import { groupProjectsByStatus } from "../group-projects-by-status.js";
+import { groupProjectsByStatus } from "../projects/group-projects-by-status.js";
 import {
   groupProjectsByNestedArea,
   projectNestedAreaCollapseKey,
   type NestedAreaRef,
-} from "../group-projects-by-area.js";
+} from "../projects/group-projects-by-area.js";
 import {
   groupProjectsByOrganization,
   projectOrganizationCollapseKey,
   type OrganizationRef,
-} from "../group-projects-by-organization.js";
+} from "../projects/group-projects-by-organization.js";
 import {
   groupProjectsByType,
   projectTypeCollapseKey,
-} from "../group-projects-by-type.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
+} from "../projects/group-projects-by-type.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
 import {
   filterProjectsByArea,
   getProjectAreaFilterLabel,
   PROJECT_AREA_FILTER_ALL,
   PROJECT_AREA_FILTERS,
   type ProjectAreaFilter,
-} from "../project-areas.js";
-import type { ProjectStatus } from "../project-status.js";
+} from "../projects/project-areas.js";
+import type { ProjectStatus } from "../projects/project-status.js";
 import {
   projectGroupAppendOrderKey,
   projectOrderKey,
   type ProjectReorderRequest,
-} from "../project-list-drag.js";
-import { applyOptimisticProjectReorder } from "../project-reorder.js";
+} from "../projects/project-list-drag.js";
+import { applyOptimisticProjectReorder } from "../projects/project-reorder.js";
 import {
   useGroupedListPointerReorder,
   type GroupedListPointerReorderRequest,
-} from "../use-grouped-list-pointer-reorder.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
 import {
   ListBoardViewShell,
   type ListBoardView,
@@ -56,8 +56,8 @@ import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "./list-keyboard-navigation-provider.js";
-import { mapProjectStatusToTaskStatusIcon } from "../project-status-icon-model.js";
-import { migrateLegacyProjectStatus } from "../project-status.js";
+import { mapProjectStatusToTaskStatusIcon } from "../projects/project-status-icon-model.js";
+import { migrateLegacyProjectStatus } from "../projects/project-status.js";
 
 type SecondaryBucket = {
   id: string | null;

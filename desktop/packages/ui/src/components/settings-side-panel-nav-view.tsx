@@ -8,7 +8,7 @@ import {
   getSettingsSectionLabel,
   getSettingsTabFromPath,
   type SettingsTabGroup,
-} from "../settings.js";
+} from "../navigation/settings.js";
 import { SidebarChevronIcon } from "./sidebar-nav-icons.js";
 
 export type SettingsSidePanelLinkComponent = ComponentType<{

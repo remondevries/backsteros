@@ -2,18 +2,18 @@
 
 import { useMemo, useRef, useState } from "react";
 
-import { DOCUMENT_CONTENT_MAX_WIDTH } from "../document-editor-theme.js";
-import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
-import { groupTasksByStatus } from "../group-tasks-by-status.js";
+import { DOCUMENT_CONTENT_MAX_WIDTH } from "../documents/document-editor-theme.js";
+import { flattenGroupedListItemIds } from "../list-nav/list-keyboard-nav-index.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
+import { groupTasksByStatus } from "../tasks/group-tasks-by-status.js";
 import {
   computeTaskDisplayIdColumnCh,
   taskIdColumnCssVars,
-} from "../task-id-column-width.js";
-import { getTaskDueDateYmd } from "../tasks-due-filters.js";
-import { useCalendarExternalTaskDrag } from "../use-calendar-external-task-drag.js";
-import type { TaskStatus } from "../task-status.js";
-import { useListMultiSelect } from "../use-list-multi-select.js";
+} from "../tasks/task-id-column-width.js";
+import { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
+import { useCalendarExternalTaskDrag } from "../calendar/use-calendar-external-task-drag.js";
+import type { TaskStatus } from "../tasks/task-status.js";
+import { useListMultiSelect } from "../list-nav/use-list-multi-select.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,

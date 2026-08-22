@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { iconSvgColorStyle } from "../icon-color.js";
+import { iconSvgColorStyle } from "../entity/icon-color.js";
 import {
   computeProjectTaskProgressRatio,
   describeProjectProgressHexagonPath,
@@ -10,12 +10,12 @@ import {
   formatProjectTaskProgressLabel,
   PROJECT_PROGRESS_HEX_STROKE_WIDTH,
   type ProjectTaskProgress,
-} from "../project-progress-ring.js";
+} from "../projects/project-progress-ring.js";
 import {
   getPreferredColorSchemeSnapshot,
   resolveTaskStatusColor,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 
 export type ProjectProgressRingProps = {
   progress: ProjectTaskProgress;

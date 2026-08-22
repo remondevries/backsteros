@@ -14,7 +14,7 @@ import { DocumentOcticon } from "./document-octicon.js";
 import { FloatingPillToggleDock } from "./floating-pill-toggle-dock.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
-import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+import { useContentTitleEditorNavigation } from "../content/use-content-title-editor-navigation.js";
 
 export type DocumentsEmptyCreateResult = {
   id: string;

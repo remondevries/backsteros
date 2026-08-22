@@ -32,7 +32,7 @@ import {
   DEFAULT_ENTITY_ICON_COLOR,
   ENTITY_ICON_COLOR_PRESETS,
   parseEntityIcon,
-} from "../entity-icon.js";
+} from "../entity/entity-icon.js";
 import {
   bulkDropdownShowIcon,
   FinanceBulkBar,
@@ -46,11 +46,11 @@ import {
   FINANCE_FILTER_ALL_VALUE,
   FinanceTransactionsFilterBar,
 } from "./finance-transactions-filter-bar.js";
-import { filterFinanceTransactions } from "../filter-finance-transactions.js";
+import { filterFinanceTransactions } from "../finance/filter-finance-transactions.js";
 import {
   applyShiftRangeSelection,
   useKeyHeld,
-} from "../shift-range-selection.js";
+} from "../list-nav/shift-range-selection.js";
 import {
   applyOptimisticCategoryReorder,
   financeCategoryGroupAppendOrderKey,
@@ -59,23 +59,23 @@ import {
   financeCategoryOrderKey,
   financeCategoryParentGroupKey,
   type FinanceListReorderRequest,
-} from "../finance-list-reorder.js";
-import { useFinanceMoneyColumnWidthFromValues } from "../finance-money-column-width.js";
-import { isDirectRoleButtonActivationKey } from "../shortcut-guards.js";
+} from "../finance/finance-list-reorder.js";
+import { useFinanceMoneyColumnWidthFromValues } from "../finance/finance-money-column-width.js";
+import { isDirectRoleButtonActivationKey } from "../shortcuts/shortcut-guards.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
-import type { ListKeyboardNavZone } from "../list-keyboard-nav-zone.js";
-import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../list-keyboard-nav-zone.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
+import type { ListKeyboardNavZone } from "../list-nav/list-keyboard-nav-zone.js";
+import { LIST_KEYBOARD_NAV_ZONE_CONTENT } from "../list-nav/list-keyboard-nav-zone.js";
 import {
   ENTITY_TITLE_INPUT_ATTRIBUTE,
   useListClearSelectionShortcut,
   useListDismissDetailShortcut,
-} from "../use-list-clear-selection-shortcut.js";
-import { useListSelectAllShortcut } from "../use-list-select-all-shortcut.js";
-import { useListToggleHighlightedSelectionShortcut } from "../use-list-toggle-highlighted-selection-shortcut.js";
+} from "../list-nav/use-list-clear-selection-shortcut.js";
+import { useListSelectAllShortcut } from "../list-nav/use-list-select-all-shortcut.js";
+import { useListToggleHighlightedSelectionShortcut } from "../list-nav/use-list-toggle-highlighted-selection-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -83,13 +83,13 @@ import {
 import {
   focusAndSelectTitleInput,
   useTitleRenameShortcut,
-} from "../title-rename-shortcut.js";
+} from "../shortcuts/title-rename-shortcut.js";
 import {
   formatMoneyInput,
   moneyCentsToInput,
   moneyInputContentWidth,
   parseMoneyInput,
-} from "../money-input.js";
+} from "../finance/money-input.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import {
   DROPDOWN_NONE_VALUE,
@@ -115,18 +115,18 @@ import {
   SearchableDropdown,
   type SearchableDropdownOption,
 } from "./searchable-dropdown.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 import {
   txCategoryColumnCssVars,
   useTxCategoryColumnWidthPx,
-} from "../finance-tx-category-column-width.js";
-import { getTaskStatusHeaderGradientStyle } from "../task-status-header-gradient.js";
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+} from "../finance/finance-tx-category-column-width.js";
+import { getTaskStatusHeaderGradientStyle } from "../tasks/task-status-header-gradient.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import {
   useGroupedListPointerReorder,
   type GroupedListPointerItemBind,
-} from "../use-grouped-list-pointer-reorder.js";
-import { useProgressiveReveal } from "../use-progressive-reveal.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
+import { useProgressiveReveal } from "../shared/use-progressive-reveal.js";
 import { ProjectTypeGroupSection } from "./project-type-group-section.js";
 import { StatusGroupSection } from "./status-group-section.js";
 import { CategorySpendChart } from "./category-spend-chart.js";

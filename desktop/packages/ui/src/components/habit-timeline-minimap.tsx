@@ -15,7 +15,7 @@ import {
   resolveHabitTimelineMinimapInteractiveWidth,
   resolveHabitTimelineMinimapTopPercent,
   type HabitTimelineMinimapItem,
-} from "../habit-timeline-minimap.js";
+} from "../habits/habit-timeline-minimap.js";
 
 export type HabitTimelineMinimapProps = {
   items: ReadonlyArray<HabitTimelineMinimapItem>;

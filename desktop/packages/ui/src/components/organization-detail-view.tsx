@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { rememberOrganizationSection } from "../entity-section-memory.js";
+import { rememberOrganizationSection } from "../navigation/entity-section-memory.js";
 import {
   getOrganizationSectionHref,
   ORGANIZATION_SECTIONS,
   resolveVisibleOrganizationSections,
   type OrganizationSectionConfig,
   type OrganizationSectionId,
-} from "../organization-sections.js";
+} from "../organizations/organization-sections.js";
 import { OrganizationIcon } from "./organization-icon.js";
 import {
   OrganizationOverviewView,

@@ -7,27 +7,27 @@ import {
   PROJECT_AREAS,
   PROJECT_AREA_LABELS,
   type ProjectArea,
-} from "../project-areas.js";
+} from "../projects/project-areas.js";
 import {
   PROJECT_SECTIONS,
   type ProjectSectionId,
-} from "../project-sections.js";
+} from "../projects/project-sections.js";
 import {
   getProjectStatusLabel,
   migrateLegacyProjectStatus,
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
-} from "../project-status.js";
+} from "../projects/project-status.js";
 import {
   getProjectTypeLabel,
   migrateLegacyProjectType,
   PROJECT_TYPE_ORDER,
   type ProjectType,
-} from "../project-type.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../task-priority.js";
+} from "../projects/project-type.js";
+import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import { TerminalConsoleIcon } from "./terminal-console-icon.js";
-import { adoptRemoteField } from "../adopt-remote-field.js";
-import { useTitleRenameShortcut } from "../title-rename-shortcut.js";
+import { adoptRemoteField } from "../shared/adopt-remote-field.js";
+import { useTitleRenameShortcut } from "../shortcuts/title-rename-shortcut.js";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -41,7 +41,7 @@ import { OrganizationIcon } from "./organization-icon.js";
 import { OverviewNameEditor } from "./overview-name-editor.js";
 import { ProjectKeyEditor } from "./project-key-editor.js";
 import { ProjectProgressRing } from "./project-progress-ring.js";
-import { formatProjectTaskProgressPercent } from "../project-progress-ring.js";
+import { formatProjectTaskProgressPercent } from "../projects/project-progress-ring.js";
 import { ProjectStatusIcon } from "./project-status-icon.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "./property-dropdown-navigate-row.js";
@@ -49,7 +49,7 @@ import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 
 import {
   type ProjectDetailNestedArea,

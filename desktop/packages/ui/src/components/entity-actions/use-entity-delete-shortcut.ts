@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 
-import { resolveDocumentTreeDeleteConfig } from "../../document-tree-delete-shortcut.js";
-import { shouldHandleGlobalShortcut } from "../../shortcut-guards.js";
+import { resolveDocumentTreeDeleteConfig } from "../../documents/document-tree-delete-shortcut.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 
 import { useEntityHeaderActionsContext } from "./entity-header-actions-context.js";
 import { useLatestRef } from "./use-latest-ref.js";

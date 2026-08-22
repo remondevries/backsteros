@@ -12,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { formatCalendarTaskScheduleLabel } from "../calendar-events.js";
+import { formatCalendarTaskScheduleLabel } from "../calendar/calendar-events.js";
 import { PropertyFieldGroup } from "./property-field-group.js";
 import type { PropertyDropdownTriggerVariant } from "./property-dropdown.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";

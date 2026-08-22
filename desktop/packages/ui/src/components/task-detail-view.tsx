@@ -12,14 +12,14 @@ import {
 import {
   TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS,
   TASK_PROPERTIES_PANEL_WIDTH_KEY,
-} from "../properties-panel.js";
-import { isAgentInboxPending } from "../inbox-items.js";
+} from "../content/properties-panel.js";
+import { isAgentInboxPending } from "../inbox/inbox-items.js";
 import {
   spellcheckHasChanges,
   spellcheckMarkRanges,
   type SpellcheckSegment,
-} from "../text-diff-ranges.js";
-import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+} from "../shared/text-diff-ranges.js";
+import { useContentTitleEditorNavigation } from "../content/use-content-title-editor-navigation.js";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -45,7 +45,7 @@ import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
 import type { TaskLinkPickerOption } from "./task-link-attachments.js";
-import type { UploadMarkdownImages } from "../markdown-image-paste.js";
+import type { UploadMarkdownImages } from "../documents/markdown-image-paste.js";
 
 /** Below this width, properties render as inline chips; at/above as the card rail. */
 export const TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT = 720;
@@ -108,7 +108,7 @@ export type TaskDetailViewProps = {
     | { ok: false; error: string };
   onFieldActivate?: (field: string) => void;
   onStatusChange?: (
-    status: import("../task-status.js").TaskStatus,
+    status: import("../tasks/task-status.js").TaskStatus,
   ) => void;
   /** When true, status dropdown is read-only (inbox triage without a project). */
   statusDisabled?: boolean;

@@ -1,4 +1,4 @@
-import type { MentionSegment } from "../mention-tokens.js";
+import type { MentionSegment } from "./mention-tokens.js";
 
 export type MentionChipLayout = "inline" | "block";
 

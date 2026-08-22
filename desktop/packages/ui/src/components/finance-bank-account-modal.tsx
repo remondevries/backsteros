@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 
 import type { BankAccountType } from "@backsteros/contracts";
 
-import { BANK_ACCOUNT_TYPE_OPTIONS } from "../finance-nav.js";
+import { BANK_ACCOUNT_TYPE_OPTIONS } from "../finance/finance-nav.js";
 import {
   AvatarUpload,
   type AvatarActionResult,

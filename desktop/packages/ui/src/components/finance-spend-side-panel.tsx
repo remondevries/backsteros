@@ -14,7 +14,7 @@ import { useMemo, useState } from "react";
 
 import {
   DEFAULT_ENTITY_ICON_COLOR,
-} from "../entity-icon.js";
+} from "../entity/entity-icon.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { FinanceDetailSectionTitle } from "./finance-detail-section-title.js";
 import { FinanceChartTooltip } from "./finance-chart-tooltip.js";

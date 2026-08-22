@@ -15,13 +15,13 @@ import interactionPlugin, {
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 
-import { parseYmdLocal, formatLocalYmd } from "../task-due-date.js";
+import { parseYmdLocal, formatLocalYmd } from "../tasks/task-due-date.js";
 import {
   calendarChangeToTaskPatch,
   calendarEntityFromEvent,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
-} from "../calendar-events.js";
+} from "../calendar/calendar-events.js";
 import {
   CalendarTaskEventPopover,
   type CalendarTaskPopoverTask,

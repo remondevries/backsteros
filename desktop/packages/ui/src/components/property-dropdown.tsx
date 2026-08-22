@@ -2,8 +2,8 @@
 
 import type { ReactNode } from "react";
 
-import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
-import type { TaskPropertyDropdownId } from "../task-property-dropdown-keys.js";
+import type { SearchableDropdownMenuApi } from "../dropdowns/searchable-dropdown-menu-api.js";
+import type { TaskPropertyDropdownId } from "../tasks/task-property-dropdown-keys.js";
 import {
   SearchableDropdown,
   type SearchableDropdownOption,

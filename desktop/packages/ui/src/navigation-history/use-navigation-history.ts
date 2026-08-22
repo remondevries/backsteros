@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { normalizeTabHref } from "../tabs.js";
+import { normalizeTabHref } from "../navigation/tabs.js";
 import { NAVIGATION_HISTORY_STORAGE_KEY } from "./constants.js";
 import {
   applyPathnameChangeForTab,

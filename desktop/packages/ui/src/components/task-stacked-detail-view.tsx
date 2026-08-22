@@ -3,7 +3,7 @@
 import type { TaskLink } from "@backsteros/contracts";
 import { useState, type ReactNode } from "react";
 
-import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+import { useContentTitleEditorNavigation } from "../content/use-content-title-editor-navigation.js";
 import {
   ContentMarkdownPreviewColumn,
   ContentMarkdownViewLayout,
@@ -24,7 +24,7 @@ import {
 } from "./task-properties-inline-chips.js";
 import type { TaskDetailViewTask } from "./task-detail-view.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
-import type { UploadMarkdownImages } from "../markdown-image-paste.js";
+import type { UploadMarkdownImages } from "../documents/markdown-image-paste.js";
 
 export type TaskStackedDetailViewProps = {
   task: TaskDetailViewTask;
@@ -49,7 +49,7 @@ export type TaskStackedDetailViewProps = {
     | { ok: false; error: string };
   onFieldActivate?: (field: string) => void;
   onStatusChange?: (
-    status: import("../task-status.js").TaskStatus,
+    status: import("../tasks/task-status.js").TaskStatus,
   ) => void;
   statusDisabled?: boolean;
   onPriorityChange?: (priority: number) => void;

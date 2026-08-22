@@ -2,14 +2,14 @@
 
 import type { ReactNode } from "react";
 
-import { getTaskPriorityLabel } from "../task-priority.js";
-import { TASK_PRIORITY_ORDER } from "../task-priority.js";
+import { getTaskPriorityLabel } from "../tasks/task-priority.js";
+import { TASK_PRIORITY_ORDER } from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -20,7 +20,7 @@ import { ContactPersonIcon } from "./contact-person-icon.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import {

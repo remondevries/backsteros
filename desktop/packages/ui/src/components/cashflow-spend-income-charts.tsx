@@ -15,7 +15,7 @@ import { useMemo } from "react";
 import {
   buildCashflowSpendYearSeries,
   cashflowSpendYearChartHasData,
-} from "../cashflow-spend-year-chart-series.js";
+} from "../finance/cashflow-spend-year-chart-series.js";
 import {
   handleCashflowBarMonthClick,
   CashflowSelectedMonthBand,

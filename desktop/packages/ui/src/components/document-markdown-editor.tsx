@@ -6,12 +6,12 @@ import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { documentEditorListBullets } from "../document-editor-list-bullets.js";
+import { documentEditorListBullets } from "../documents/document-editor-list-bullets.js";
 import {
   createDocumentEditorContentLayoutTheme,
   documentEditorSyntaxHighlighting,
   documentEditorTheme,
-} from "../document-editor-theme.js";
+} from "../documents/document-editor-theme.js";
 import {
   createMentionExtensions,
   MentionMenuController,
@@ -21,11 +21,11 @@ import type {
   MentionCatalog,
   MentionSection,
 } from "../mentions/mention-menu-types.js";
-import type { TextRange } from "../text-diff-ranges.js";
+import type { TextRange } from "../shared/text-diff-ranges.js";
 import {
   createMarkdownImagePasteExtensions,
   type UploadMarkdownImages,
-} from "../markdown-image-paste.js";
+} from "../documents/markdown-image-paste.js";
 import { DocumentMentionMenu } from "./document-mention-menu.js";
 
 export type DocumentMarkdownEditorProps = {

@@ -6,8 +6,8 @@ import {
   getProjectStatusLabel,
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
-} from "../../project-status.js";
-import { mapProjectStatusToTaskStatusIcon } from "../../project-status-icon-model.js";
+} from "../../projects/project-status.js";
+import { mapProjectStatusToTaskStatusIcon } from "../../projects/project-status-icon-model.js";
 import { ProjectStatusIcon } from "../project-status-icon.js";
 import { ProjectsListHeader } from "../project-overview-row.js";
 import { StatusGroupSection } from "../status-group-section.js";

@@ -12,14 +12,14 @@ import {
 } from "react";
 
 import { DocumentIcon } from "./document-icon.js";
-import { keyboardNavItemProps } from "../keyboard-nav-item.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+import { keyboardNavItemProps } from "../list-nav/keyboard-nav-item.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import {
   folderNavId,
   type DocumentTreeDocumentNode,
   type DocumentTreeFolderNode,
   type DocumentTreeNode,
-} from "../document-tree.js";
+} from "../documents/document-tree.js";
 import {
   writeTreeDragPayload,
   isTreeDragActive,
@@ -27,12 +27,12 @@ import {
   resolveFolderDragOverMode,
   resolveTreeDropAction,
   type TreeReorderRequest,
-} from "../document-tree-drag.js";
-import { registerDocumentTreeFolderRenameHandler } from "../document-tree-folder-rename-shortcut.js";
+} from "../documents/document-tree-drag.js";
+import { registerDocumentTreeFolderRenameHandler } from "../documents/document-tree-folder-rename-shortcut.js";
 import {
   treeNodeOrderKey,
   type TreeDragPayload,
-} from "../document-tree-order.js";
+} from "../documents/document-tree-order.js";
 
 export type DocumentTreeLinkComponent = ComponentType<{
   to: string;

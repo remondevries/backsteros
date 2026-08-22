@@ -1,6 +1,6 @@
 "use client";
 
-import { formatJournalEntryTitle } from "../journal.js";
+import { formatJournalEntryTitle } from "../journal/journal.js";
 import { JournalNavIcon } from "./sidebar-nav-icons.js";
 
 export type JournalDetailLayoutProps = {

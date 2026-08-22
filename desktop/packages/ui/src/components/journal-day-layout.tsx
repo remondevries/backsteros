@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { JOURNAL_DAY_CALENDAR_PANEL_WIDTH_KEY } from "../journal.js";
+import { JOURNAL_DAY_CALENDAR_PANEL_WIDTH_KEY } from "../journal/journal.js";
 import { ResizableSidePanel } from "./resizable-side-panel.js";
 
 export type JournalDayLayoutProps = {

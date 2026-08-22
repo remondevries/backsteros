@@ -5,7 +5,7 @@ import {
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -18,7 +18,7 @@ import { OrganizationIcon } from "./organization-icon.js";
 import type { PropertyDropdownTriggerVariant } from "./property-dropdown.js";
 import { PropertyDropdown } from "./property-dropdown.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { getCreateEntityFromQueryLabel } from "../searchable-dropdown-create-from-query.js";
+import { getCreateEntityFromQueryLabel } from "../dropdowns/searchable-dropdown-create-from-query.js";
 import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { SearchableDropdown } from "./searchable-dropdown.js";
 import { TaskStatusIcon } from "./task-status-icon.js";

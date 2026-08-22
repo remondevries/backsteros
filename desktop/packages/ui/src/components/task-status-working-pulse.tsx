@@ -2,17 +2,17 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-import { iconSvgColorStyle, mergeIconSvgClassName } from "../icon-color.js";
+import { iconSvgColorStyle, mergeIconSvgClassName } from "../entity/icon-color.js";
 import {
   describeTaskStatusPieWedge,
   taskStatusRingPath,
   TASK_STATUS_RING_STROKE_WIDTH,
-} from "../task-status-icon-model.js";
+} from "../tasks/task-status-icon-model.js";
 import {
   getPreferredColorSchemeSnapshot,
   resolveTaskStatusColor,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 
 const FILL_MIN = 0.14;
 const FILL_MAX = 0.9;

@@ -29,9 +29,9 @@ import type {
 import { OverviewNameEditor } from "./overview-name-editor.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import { LETTER_PROPERTIES_PANEL_WIDTH_KEY } from "../properties-panel.js";
-import type { TaskStatus } from "../task-status.js";
-import { useContentTitleEditorNavigation } from "../use-content-title-editor-navigation.js";
+import { LETTER_PROPERTIES_PANEL_WIDTH_KEY } from "../content/properties-panel.js";
+import type { TaskStatus } from "../tasks/task-status.js";
+import { useContentTitleEditorNavigation } from "../content/use-content-title-editor-navigation.js";
 
 export type LetterDetailViewLetter = LetterPropertiesDisplayLetter & {
   title: string;

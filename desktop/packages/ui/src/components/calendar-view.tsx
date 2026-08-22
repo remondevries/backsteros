@@ -22,7 +22,7 @@ import {
   calendarViewModeToFcView,
   fcViewTypeToCalendarViewMode,
   type CalendarViewMode,
-} from "../calendar-view-modes.js";
+} from "../calendar/calendar-view-modes.js";
 import {
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
@@ -30,7 +30,7 @@ import {
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
-} from "../calendar-events.js";
+} from "../calendar/calendar-events.js";
 import {
   CalendarMeetingEventPopover,
   type CalendarMeetingPopoverMeeting,

@@ -1,15 +1,15 @@
 import {
   isKnowledgeDocumentDetailPath,
   isProjectDocumentDetailPath,
-} from "../compose-task.js";
-import { encodeTaskSlug } from "../inbox-items.js";
-import { parseLetterSlug } from "../letters.js";
+} from "../compose/compose-task.js";
+import { encodeTaskSlug } from "../inbox/inbox-items.js";
+import { parseLetterSlug } from "../letters/letters.js";
 import type {
   MentionCatalog,
   ParsedMentionToken,
 } from "../mentions/mention-menu-types.js";
-import { parseTaskSlug } from "../resolve-history-entry-display.js";
-import { INBOX_TASK_KEY } from "../task-display-id.js";
+import { parseTaskSlug } from "../navigation/resolve-history-entry-display.js";
+import { INBOX_TASK_KEY } from "../tasks/task-display-id.js";
 import { appendNavigationTrailNode, parseNavigationTrailPath } from "./codec.js";
 import { KNOWLEDGE_MENTION_PROJECT_KEY } from "../mentions/tokens.js";
 import type { NavigationTrailEntityRef } from "./types.js";

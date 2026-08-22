@@ -1,6 +1,6 @@
 "use client";
 
-import { fireHabitCompleteConfetti } from "../habit-complete-confetti.js";
+import { fireHabitCompleteConfetti } from "../habits/habit-complete-confetti.js";
 import { ProjectOcticon } from "./project-octicon.js";
 
 export type CalendarHabitIconItem = {

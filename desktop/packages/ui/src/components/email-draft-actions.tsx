@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { TrashIcon } from "@primer/octicons-react";
 
-import { isBlockingModalOpen } from "../shortcut-guards.js";
+import { isBlockingModalOpen } from "../shortcuts/shortcut-guards.js";
 import { SegmentedPillToggle } from "./list-board-view-shell.js";
 
 export type EmailDraftBodyMode = "edit" | "preview";

@@ -2,12 +2,12 @@
 
 import { useRef } from "react";
 
-import type { ContactListItem } from "../entity-routes.js";
+import type { ContactListItem } from "../navigation/entity-routes.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
+} from "../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
 import { EntityListAvatar } from "./entity-list-avatar.js";
 import {
   useListKeyboardNavigation,

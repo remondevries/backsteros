@@ -30,15 +30,15 @@ import { EmailMessageHtmlBody } from "./email-message-html-body.js";
 import {
   plainTextEmailToHtml,
   type EmailMessageInlineAttachment,
-} from "../email-message-html.js";
+} from "../email/email-message-html.js";
 import {
   formatEmailSourceSize,
   parseEmailAuthenticationResults,
   type EmailMessageSourceDetail,
-} from "../email-message-source.js";
+} from "../email/email-message-source.js";
 import { PropertyInlineChip } from "./property-dropdown.js";
-import type { EmailThreadBodyViewMode } from "../email.js";
-import { stripEmailDraftShell } from "../email.js";
+import type { EmailThreadBodyViewMode } from "../email/email.js";
+import { stripEmailDraftShell } from "../email/email.js";
 
 export type { EmailThreadFromContactPicker };
 

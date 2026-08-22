@@ -13,8 +13,8 @@ import {
   resolveEmailListItemStatus,
   type EmailListItem,
   type EmailMailbox,
-} from "../email.js";
-import { sidePanelItemClass } from "../side-panel-styles.js";
+} from "../email/email.js";
+import { sidePanelItemClass } from "../content/side-panel-styles.js";
 import { AssigneeListMark } from "./assignee-list-mark.js";
 import { ContentSidePanelHeader } from "./content-side-panel-header.js";
 import {

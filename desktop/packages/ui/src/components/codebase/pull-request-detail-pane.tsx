@@ -8,9 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../../keyboard-nav-item.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-keyboard-nav-zone.js";
-import { shouldHandleGlobalShortcut } from "../../shortcut-guards.js";
+} from "../../list-nav/keyboard-nav-item.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { useCommandPalette } from "../command-palette-context.js";
 import { DocumentMarkdownPreview } from "../document-markdown-preview.js";
 import {

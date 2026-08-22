@@ -9,7 +9,7 @@ import {
   emailMailboxLabel,
   stripEmailDraftShell,
   type EmailMailbox,
-} from "../email.js";
+} from "../email/email.js";
 import type { EmailDraftBodyMode } from "./email-draft-actions.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";

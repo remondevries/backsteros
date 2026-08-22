@@ -1,6 +1,6 @@
 import type { KeyboardEvent, ReactNode } from "react";
 
-import type { SpellcheckSegment } from "../text-diff-ranges.js";
+import type { SpellcheckSegment } from "../shared/text-diff-ranges.js";
 
 export type SpellcheckSegmentTextProps = {
   segments: readonly SpellcheckSegment[];

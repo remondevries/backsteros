@@ -5,14 +5,14 @@ import { useMemo, useRef, useState } from "react";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
+} from "../list-nav/keyboard-nav-item.js";
 import {
   formatLetterDisplayId,
   groupLettersByStatus,
   type LetterListItem,
-} from "../letters.js";
-import { flattenGroupedListItemIds } from "../list-keyboard-nav-index.js";
-import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-keyboard-nav-zone.js";
+} from "../letters/letters.js";
+import { flattenGroupedListItemIds } from "../list-nav/list-keyboard-nav-index.js";
+import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../list-nav/list-keyboard-nav-zone.js";
 import { LetterIcon } from "./letter-icon.js";
 import {
   useListKeyboardNavigation,

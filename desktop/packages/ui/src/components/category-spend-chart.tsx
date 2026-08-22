@@ -20,11 +20,11 @@ import {
   categorySpendChartHasData,
   type CategorySpendBarSeries,
   type CategorySpendMonthInput,
-} from "../category-spend-chart-series.js";
+} from "../finance/category-spend-chart-series.js";
 import {
   DEFAULT_ENTITY_ICON_COLOR,
   getEntityIconColor,
-} from "../entity-icon.js";
+} from "../entity/entity-icon.js";
 import {
   FinanceChartEmpty,
   FinanceChartFadeIn,

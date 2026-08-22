@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { entityIconsEqual } from "../entity-icon.js";
+import { entityIconsEqual } from "../entity/entity-icon.js";
 import { DocumentIcon } from "./document-icon.js";
 import { DocumentOcticon } from "./document-octicon.js";
 import { EntityIconPicker } from "./entity-icon-picker.js";

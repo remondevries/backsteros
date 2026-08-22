@@ -22,11 +22,11 @@ import type {
   MentionCatalogProject,
   MentionCatalogTask,
 } from "../mentions/mention-menu-types.js";
-import type { ParsedMentionToken } from "../mention-tokens.js";
-import { formatTaskDueMetaLabel } from "../task-due-date.js";
-import { getTaskPriorityLabel } from "../task-priority.js";
-import { getTaskStatusLabel } from "../task-status.js";
-import { getProjectStatusLabel } from "../project-status.js";
+import type { ParsedMentionToken } from "../mentions/mention-tokens.js";
+import { formatTaskDueMetaLabel } from "../tasks/task-due-date.js";
+import { getTaskPriorityLabel } from "../tasks/task-priority.js";
+import { getTaskStatusLabel } from "../tasks/task-status.js";
+import { getProjectStatusLabel } from "../projects/project-status.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { DocumentIcon } from "./document-icon.js";
 import { LetterIcon } from "./letter-icon.js";

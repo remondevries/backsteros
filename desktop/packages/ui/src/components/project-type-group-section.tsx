@@ -2,7 +2,7 @@
 
 import type { DragEvent, ReactNode } from "react";
 
-import type { GroupedListPointerAppendBind } from "../use-grouped-list-pointer-reorder.js";
+import type { GroupedListPointerAppendBind } from "../list-nav/use-grouped-list-pointer-reorder.js";
 import { PolishedCheckbox } from "./polished-checkbox.js";
 
 export type ProjectTypeGroupSectionListDrag = {

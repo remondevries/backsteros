@@ -9,7 +9,7 @@ import { OrganizationIcon } from "./organization-icon.js";
 import { ProjectOcticon } from "./project-octicon.js";
 import { EmailNavIcon } from "./sidebar-nav-icons.js";
 import type { SearchableDropdownOption } from "./searchable-dropdown.js";
-import type { EmailMailbox } from "../email.js";
+import type { EmailMailbox } from "../email/email.js";
 
 /** Sentinel for unassigned / none rows (assignee, contact, organization, area). */
 export const DROPDOWN_NONE_VALUE = "__none__";

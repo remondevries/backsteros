@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   APP_TIMEZONE_OPTIONS,
   normalizeAppTimezone,
-} from "../app-timezone.js";
+} from "../shared/app-timezone.js";
 import { SettingsContentHeader } from "./settings-content-header.js";
 
 export type GeneralSettingsSectionViewProps = {

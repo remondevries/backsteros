@@ -7,7 +7,7 @@ import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
 import {
   resolveTabNavIconId,
   type ProductTab,
-} from "../tabs.js";
+} from "../navigation/tabs.js";
 
 function isActivateKey(event: { key: string }) {
   return event.key === "Enter" || event.key === " ";

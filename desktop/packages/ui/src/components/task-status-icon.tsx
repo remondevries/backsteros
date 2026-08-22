@@ -2,22 +2,22 @@
 
 import { useSyncExternalStore } from "react";
 
-import { iconSvgColorStyle, mergeIconSvgClassName } from "../icon-color.js";
+import { iconSvgColorStyle, mergeIconSvgClassName } from "../entity/icon-color.js";
 import {
   getTaskStatusLabel,
   isTaskStatus,
   type TaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import {
   computeTaskStatusIconModel,
   describeTaskStatusPieWedge,
   taskStatusRingPath,
   TASK_STATUS_RING_STROKE_WIDTH,
-} from "../task-status-icon-model.js";
+} from "../tasks/task-status-icon-model.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 import { TaskStatusWorkingPulse } from "./task-status-working-pulse.js";
 
 function TriageIcon() {

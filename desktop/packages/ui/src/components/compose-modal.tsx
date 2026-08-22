@@ -18,18 +18,18 @@ import {
   hasCmdShiftArrowShortcutModifiers,
   isHorizontalArrowKey,
   type ComposeKind,
-} from "../compose-modal-events.js";
+} from "../compose/compose-modal-events.js";
 import {
   buildComposeFolderCascadeSegments,
   COMPOSE_DOCUMENT_ROOT_FOLDER_VALUE,
   folderPathFromComposeFolderValue,
   resolveComposeDocumentFolderValue,
   type ComposeDocumentFoldersByTarget,
-} from "../compose-document-folders.js";
+} from "../compose/compose-document-folders.js";
 import {
   getNextComposeTaskTabField,
   type ComposeTaskTabField,
-} from "../compose-task-tab-flow.js";
+} from "../compose/compose-task-tab-flow.js";
 import {
   COMPOSE_KNOWLEDGE_BASE_VALUE,
   COMPOSE_NO_PROJECT_VALUE,
@@ -39,22 +39,22 @@ import {
   resolveComposeContextDueDate,
   resolveComposeContextKind,
   resolveComposeContextProjectId,
-} from "../compose-task.js";
-import { requestCloseSearchableDropdowns } from "../searchable-dropdown-events.js";
-import type { SearchableDropdownMenuApi } from "../searchable-dropdown-menu-api.js";
-import { formatDueDateInputValue } from "../task-due-date.js";
+} from "../compose/compose-task.js";
+import { requestCloseSearchableDropdowns } from "../dropdowns/searchable-dropdown-events.js";
+import type { SearchableDropdownMenuApi } from "../dropdowns/searchable-dropdown-menu-api.js";
+import { formatDueDateInputValue } from "../tasks/task-due-date.js";
 import {
   getTaskPriorityLabel,
   isTaskPriority,
   isTaskPriorityNone,
   TASK_PRIORITY_ORDER,
   type TaskPriority,
-} from "../task-priority.js";
-import { getTaskStatusLabel, TASK_STATUS_ORDER, type TaskStatus } from "../task-status.js";
+} from "../tasks/task-priority.js";
+import { getTaskStatusLabel, TASK_STATUS_ORDER, type TaskStatus } from "../tasks/task-status.js";
 import {
   focusAndSelectTitleInput,
   isTitleRenameShortcut,
-} from "../title-rename-shortcut.js";
+} from "../shortcuts/title-rename-shortcut.js";
 import { ComposeAssigneeDropdown } from "./compose-assignee-dropdown.js";
 import { ComposeDueDateDropdown } from "./compose-due-date-dropdown.js";
 import { ComposeFolderIcon } from "./compose-folder-icon.js";

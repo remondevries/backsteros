@@ -1,4 +1,4 @@
-import { getTabTitleForHref, normalizeTabHref } from "../tabs.js";
+import { getTabTitleForHref, normalizeTabHref } from "../navigation/tabs.js";
 import {
   NAVIGATION_HISTORY_MAX_ENTRIES,
   NAVIGATION_HISTORY_RECENT_LIMIT,

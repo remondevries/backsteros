@@ -18,7 +18,7 @@ import {
   type CommandPaletteFilterState,
   type CommandPaletteHit,
   type GoNavigationItem,
-} from "../command-palette.js";
+} from "../command-palette/command-palette.js";
 import {
   buildCommandPaletteContextBreadcrumb,
   peelRouteSearchContext,
@@ -33,9 +33,9 @@ import {
   FINANCE_GO_LETTER_HINT,
   financeGoNavigationItemSearchValue,
   type FinanceGoNavigationItem,
-} from "../finance-nav.js";
-import { navigation } from "../navigation.js";
-import { isCommandPaletteToggleKey } from "../command-palette-toggle-key.js";
+} from "../finance/finance-nav.js";
+import { navigation } from "../navigation/navigation.js";
+import { isCommandPaletteToggleKey } from "../command-palette/command-palette-toggle-key.js";
 import {
   useCommandPalette,
   type CommandPaletteMode,

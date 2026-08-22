@@ -26,42 +26,42 @@ import { createPortal } from "react-dom";
 import {
   DEFAULT_ENTITY_ICON_COLOR,
   ENTITY_ICON_COLOR_PRESETS,
-} from "../entity-icon.js";
+} from "../entity/entity-icon.js";
 import {
   applyOptimisticGoalReorder,
   financeGoalGroupAppendOrderKey,
   financeGoalGroupKey,
   financeGoalOrderKey,
   type FinanceListReorderRequest,
-} from "../finance-list-reorder.js";
+} from "../finance/finance-list-reorder.js";
 import {
   formatMoneyInput,
   moneyCentsToInput,
   moneyInputContentWidth,
   parseMoneyInput,
-} from "../money-input.js";
-import { useFinanceMoneyColumnWidthFromValues } from "../finance-money-column-width.js";
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+} from "../finance/money-input.js";
+import { useFinanceMoneyColumnWidthFromValues } from "../finance/finance-money-column-width.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import {
   useGroupedListPointerReorder,
   type GroupedListPointerItemBind,
-} from "../use-grouped-list-pointer-reorder.js";
+} from "../list-nav/use-grouped-list-pointer-reorder.js";
 import {
   keyboardNavItemProps,
   keyboardNavListItemClass,
-} from "../keyboard-nav-item.js";
+} from "../list-nav/keyboard-nav-item.js";
 import {
   LIST_KEYBOARD_NAV_ZONE_CONTENT,
   LIST_KEYBOARD_NAV_ZONE_MAIN,
-} from "../list-keyboard-nav-zone.js";
+} from "../list-nav/list-keyboard-nav-zone.js";
 import {
   ENTITY_TITLE_INPUT_ATTRIBUTE,
   useListDismissDetailShortcut,
-} from "../use-list-clear-selection-shortcut.js";
+} from "../list-nav/use-list-clear-selection-shortcut.js";
 import {
   focusAndSelectTitleInput,
   useTitleRenameShortcut,
-} from "../title-rename-shortcut.js";
+} from "../shortcuts/title-rename-shortcut.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -95,7 +95,7 @@ import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import {
   deriveContributionCents,
   deriveEndDate,
-} from "../goal-plan.js";
+} from "../finance/goal-plan.js";
 
 export type FinanceGoalsChromeState = {
   hasSelection: boolean;

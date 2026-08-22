@@ -3,14 +3,14 @@ import {
   getKnowledgeHref,
   getOrganizationsHref,
   getProjectsHref,
-} from "../entity-routes.js";
-import { getEmailItemHref } from "../email.js";
-import { encodeTaskSlug, getInboxTaskRouteHref } from "../inbox-items.js";
-import { getLettersHref, parseLetterSlug } from "../letters.js";
-import { getScopedProjectLetterHref, getScopedProjectTaskHref } from "../project-route-scope.js";
-import { getProjectDocumentHref } from "../project-sections.js";
-import { parseTaskSlug } from "../resolve-history-entry-display.js";
-import { INBOX_TASK_KEY } from "../task-display-id.js";
+} from "../navigation/entity-routes.js";
+import { getEmailItemHref } from "../email/email.js";
+import { encodeTaskSlug, getInboxTaskRouteHref } from "../inbox/inbox-items.js";
+import { getLettersHref, parseLetterSlug } from "../letters/letters.js";
+import { getScopedProjectLetterHref, getScopedProjectTaskHref } from "../projects/project-route-scope.js";
+import { getProjectDocumentHref } from "../projects/project-sections.js";
+import { parseTaskSlug } from "../navigation/resolve-history-entry-display.js";
+import { INBOX_TASK_KEY } from "../tasks/task-display-id.js";
 import type {
   MentionCatalog,
   MentionItem,

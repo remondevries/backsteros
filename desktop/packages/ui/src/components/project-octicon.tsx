@@ -6,9 +6,9 @@ import {
   type CSSProperties,
 } from "react";
 
-import { isProjectIconKey } from "../project-icon-keys.js";
-import { getOcticonComponent } from "../project-octicon-registry.js";
-import { migrateLegacyProjectType } from "../project-type.js";
+import { isProjectIconKey } from "../projects/project-icon-keys.js";
+import { getOcticonComponent } from "../projects/project-octicon-registry.js";
+import { migrateLegacyProjectType } from "../projects/project-type.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import { TerminalConsoleIcon } from "./terminal-console-icon.js";
 

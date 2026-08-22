@@ -13,12 +13,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { formatCalendarTaskScheduleLabel } from "../calendar-events.js";
-import { formatMeetingDisplayId, resolveMeetingAccentColor } from "../meetings.js";
+import { formatCalendarTaskScheduleLabel } from "../calendar/calendar-events.js";
+import { formatMeetingDisplayId, resolveMeetingAccentColor } from "../meetings/meetings.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
-} from "../task-status-color.js";
+} from "../tasks/task-status-color.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 
 const PANEL_WIDTH = 360;

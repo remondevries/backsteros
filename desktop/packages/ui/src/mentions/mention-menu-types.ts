@@ -1,8 +1,8 @@
-import type { ProjectArea } from "../project-areas.js";
-import type { ProjectStatus } from "../project-status.js";
-import type { TaskPriority } from "../task-priority.js";
-import type { TaskStatus } from "../task-status.js";
-import type { MentionKind, ParsedMentionToken } from "../mention-tokens.js";
+import type { ProjectArea } from "../projects/project-areas.js";
+import type { ProjectStatus } from "../projects/project-status.js";
+import type { TaskPriority } from "../tasks/task-priority.js";
+import type { TaskStatus } from "../tasks/task-status.js";
+import type { MentionKind, ParsedMentionToken } from "./mention-tokens.js";
 
 export type {
   MentionKind,

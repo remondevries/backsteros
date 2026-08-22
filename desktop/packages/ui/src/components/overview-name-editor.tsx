@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { CONTENT_DETAIL_TITLE_CLASS } from "./content-detail-title-header.js";
-import { ENTITY_TITLE_INPUT_ATTRIBUTE } from "../use-list-clear-selection-shortcut.js";
+import { ENTITY_TITLE_INPUT_ATTRIBUTE } from "../list-nav/use-list-clear-selection-shortcut.js";
 
 export type OverviewNameEditorProps = {
   value: string;

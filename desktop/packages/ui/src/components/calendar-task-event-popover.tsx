@@ -12,17 +12,17 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { formatCalendarTaskScheduleLabel } from "../calendar-events.js";
-import { getTaskDisplayId } from "../task-display-id.js";
-import { getTaskPriorityLabel } from "../task-priority.js";
+import { formatCalendarTaskScheduleLabel } from "../calendar/calendar-events.js";
+import { getTaskDisplayId } from "../tasks/task-display-id.js";
+import { getTaskPriorityLabel } from "../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
-} from "../task-status.js";
+} from "../tasks/task-status.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
-import { resolveTaskStatusColor } from "../task-status-color.js";
+import { resolveTaskStatusColor } from "../tasks/task-status-color.js";
 
 const PANEL_WIDTH = 360;
 const PANEL_GAP = 10;

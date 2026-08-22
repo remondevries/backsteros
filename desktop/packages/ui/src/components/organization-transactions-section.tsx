@@ -14,7 +14,7 @@ import {
   type CSSProperties,
 } from "react";
 
-import { useFinancePanelResize } from "../use-finance-panel-resize.js";
+import { useFinancePanelResize } from "../finance/use-finance-panel-resize.js";
 import { DefaultProjectIcon } from "./default-project-icon.js";
 import {
   DROPDOWN_NO_GOAL_VALUE,
