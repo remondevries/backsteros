@@ -1,17 +1,12 @@
 import {
   createElement,
-  forwardRef,
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type FocusEvent,
-  type MouseEvent,
-  type PointerEvent,
   type ReactNode,
 } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   ChromeHeaderProvider,
@@ -20,24 +15,14 @@ import {
   CommandPaletteProvider,
   CommandPaletteView,
   ComposeModal,
-  ContactsSidePanelView,
-  CalendarTasksSidePanelView,
   EntityHeaderActionsShell,
-  FinanceSidePanelNavView,
   HistoryEntryIcon,
-  HabitSidePanelView,
-  InboxSidePanelView,
-  JournalSidePanelView,
-  KnowledgeSidePanelView,
-  LettersSidePanelView,
   ListKeyboardNavigationProvider,
   MentionCatalogProvider,
   EMPTY_MENTION_CATALOG,
   mergeMentionCatalogs,
-  OrganizationsSidePanelView,
   ProductAppShell,
   ProductSidebar,
-  ProjectDocumentsSidePanelView,
   ResizableContextPanel,
   SettingsSidePanelNavView,
   BreadcrumbChromeSkeleton,
@@ -47,20 +32,12 @@ import {
   buildProjectDropdownOptions,
   contactMatchesSlug,
   findDocumentTreeNodeById,
-  findInboxItemBySlugOrId,
   getContactsHref,
-  getContactSidePanelHref,
   getContentSidePanelWidthKey,
-  getInboxAttentionKeyboardItemIds,
-  getInboxItemHref,
   getInboxTaskRouteHref,
-  getHabitTrackerHref,
-  HABIT_TRACKER_ALL_ID,
-  getJournalHref,
   getKnowledgeHref,
   getLettersHref,
   getOrganizationsHref,
-  getOrganizationSidePanelHref,
   getProjectDocumentHref,
   getProjectRouteParamFromPathname,
   getProjectRouteScopeFromPathname,
@@ -68,28 +45,12 @@ import {
   getScopedProjectLetterHref,
   getScopedProjectTaskHref,
   getSelectedContactSlugFromPathname,
-  getSelectedInboxSlugFromPathname,
-  getSelectedHabitIdFromPathname,
-  getSelectedJournalDateFromPathname,
-  getSelectedKnowledgeSlugFromPathname,
-  getSelectedLetterSlugFromPathname,
   getSelectedOrganizationSlugFromPathname,
-  getSelectedFinanceNavIdFromPathname,
-  getSelectedProjectDocumentPathFromPathname,
-  getUniqueListItemRouteParam,
-  type ClientLinkProps,
-  getTaskDueDateYmd,
   getTodayJournalDateSlug,
-  groupItemsByAlphaLetter,
-  groupBankAccountsForFinanceNav,
-  FINANCE_NAV_ITEMS,
-  financeSidePanelAccountKeyboardId,
-  resolveFinanceSidePanelHref,
   isContactSectionPath,
   isEmailPath,
   getEmailComposeHref,
   isFinanceSectionPath,
-  isFinanceAccountPath,
   isInboxPath,
   isInboxPanelPath,
   isCalendarListPath,
@@ -98,21 +59,17 @@ import {
   unscheduledCalendarTasks,
   buildInboxEmailListItem,
   emailBelongsInInbox,
-  parseEmailMessagePath,
   sortInboxItemsByAttentionStatus,
   type InboxListItem,
   isJournalHabitsPath,
   isJournalSectionPath,
-  isValidJournalDateSlug,
   isKnowledgeSectionPath,
   isLettersSectionPath,
   isOrganizationSectionPath,
   isProjectDocumentsSectionPath,
   isProjectLettersSectionPath,
   isSettingsPath,
-  letterMatchesSlug,
   organizationMatchesSlug,
-  parseFolderNavId,
   parseNavigationTrailPath,
   resolveHistoryEntryDisplay,
   shouldHandleGlobalShortcut,
@@ -129,9 +86,6 @@ import {
   useDocumentTreeCreateFolderShortcut,
   useEscapeBackNavigation,
   useListBoardViewShortcuts,
-  useListKeyboardNavigation,
-  useListKeyboardNavigationContainerProps,
-  useListKeyboardNavigationZone,
   installSelectAllShortcutListeners,
   installClearSelectionShortcutListeners,
   useNavigationHistory,
@@ -144,31 +98,16 @@ import {
   useTaskPropertyDropdownShortcuts,
   useContentPreviewScrollShortcuts,
   COMPOSE_KNOWLEDGE_BASE_VALUE,
-  LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  createDefaultTabsState,
   createProductTab,
   primeTabTitle,
-  type ContactsSidePanelViewProps,
-  type FinanceAccountGroupId,
-  type FinanceSidePanelNavViewProps,
-  type HabitSidePanelViewProps,
-  type InboxSidePanelViewProps,
-  type JournalSidePanelViewProps,
-  type KnowledgeSidePanelViewProps,
-  type LettersSidePanelViewProps,
-  type OrganizationsSidePanelViewProps,
   type ProductSidebarRecentPage,
-  type ProjectDocumentsSidePanelViewProps,
   type ProductTabsState,
   type TreeReorderRequest,
 } from "@backsteros/ui";
-import type { BankAccount } from "@backsteros/contracts";
-import { useClerk } from "@clerk/clerk-react";
 
 import { useDesktopApi } from "../lib/api-context";
 import { useAgentMail } from "../lib/agentmail-context";
 import { buildMailboxByIdMap } from "../lib/email-list-tasks";
-import { prefetchEmailMessageDetail } from "../lib/email-message-detail-cache";
 import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
 import {
   buildDocumentLinkOptions,
@@ -184,22 +123,12 @@ import {
   getDefaultAssigneeId,
   syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
-import { getDesktopPublicEnvironment } from "../lib/env";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
-import {
-  prefetchJournalEntryContent,
-  prefetchKnowledgeDocumentContent,
-  prefetchLetterAttachments,
-  warmTodayJournalEntry,
-} from "../lib/prefetch-workspace-content";
-import {
-  JournalSelectionProvider,
-  useJournalSelection,
-} from "../lib/journal-selection-context";
-import { useDesktopResource } from "../lib/use-desktop-resource";
+import { warmTodayJournalEntry } from "../lib/prefetch-workspace-content";
+import { JournalSelectionProvider } from "../lib/journal-selection-context";
 import { buildMentionCatalogFromEmailMessages, buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
@@ -216,1051 +145,21 @@ import {
 } from "../lib/project-type-cache";
 import { DesktopOverlayMainNavigationListener } from "../components/desktop-overlay-main-navigation-listener";
 import { ExternalOpenHrefListener } from "../components/external-open-href-listener";
-
-const TABS_STORAGE_KEY = "backsteros.desktop.app-tabs";
-
-function RouterLink({
-  to,
-  className,
-  children,
-  onClick,
-  onDoubleClick,
-  onMouseEnter,
-  onFocus,
-  onPointerDown,
-  title,
-  ...rest
-}: {
-  to: string;
-  className?: string;
-  children?: ReactNode;
-  onClick?: (event?: MouseEvent<HTMLAnchorElement>) => void;
-  onDoubleClick?: (event: MouseEvent) => void;
-  onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
-  onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-  onPointerDown?: (event: PointerEvent<HTMLAnchorElement>) => void;
-  title?: string;
-  "aria-current"?: "page";
-  "aria-label"?: string;
-  [key: string]: unknown;
-}) {
-  return (
-    <NavLink
-      to={to}
-      className={className}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onMouseEnter={onMouseEnter}
-      onFocus={onFocus}
-      onPointerDown={onPointerDown}
-      title={title}
-      aria-current={rest["aria-current"] as "page" | undefined}
-      {...rest}
-    >
-      {children as never}
-    </NavLink>
-  );
-}
-
-const DesktopClientLink = forwardRef<HTMLAnchorElement, ClientLinkProps>(
-  function DesktopClientLink(
-    { href, className, title, children, ...rest },
-    ref,
-  ) {
-    // Duplicate @types/react in the monorepo (Expo 19.0 vs desktop 19.1+) makes
-    // React Router's Link props incompatible with AnchorHTMLAttributes — cast.
-    return (
-      <Link
-        ref={ref}
-        to={href}
-        className={className}
-        title={title}
-        {...(rest as object)}
-      >
-        {children as never}
-      </Link>
-    );
-  },
-);
-
-type SidePanelNavProps = { onNavigate: (href: string) => void };
-
-function DesktopInboxSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  InboxSidePanelViewProps,
-  | "highlightedId"
-  | "listRef"
-  | "listContainerProps"
-  | "collapsedGroups"
-  | "onToggleGroup"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const { pathname, items, groupByAttentionStatus = false } = viewProps;
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
-  const emailPath = parseEmailMessagePath(pathname);
-  const selectedId = emailPath
-    ? (items.find(
-        (entry) =>
-          entry.kind === "email" &&
-          entry.inboxId === emailPath.inboxId &&
-          entry.messageId === emailPath.messageId,
-      )?.id ?? null)
-    : selectedSlug
-      ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
-      : null;
-  const itemIds = useMemo(() => {
-    if (groupByAttentionStatus) {
-      return getInboxAttentionKeyboardItemIds(items, collapsedGroups);
-    }
-    return items.map((item) => item.id);
-  }, [collapsedGroups, groupByAttentionStatus, items]);
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getInboxItemHref(item, items));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: itemIds.length > 0,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-
-  const { client } = useDesktopApi();
-  useEffect(() => {
-    const item = items.find((entry) => entry.id === highlightedId);
-    if (item?.kind === "email") {
-      prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
-    }
-  }, [client, highlightedId, items]);
-
-  return (
-    <InboxSidePanelView
-      {...viewProps}
-      collapsedGroups={collapsedGroups}
-      onToggleGroup={(status) => {
-        setCollapsedGroups((current) => {
-          const next = new Set(current);
-          if (next.has(status)) next.delete(status);
-          else next.add(status);
-          return next;
-        });
-      }}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
-  );
-}
-
-function DesktopCalendarTasksSidePanel({
-  meetings,
-  tasks,
-  loading,
-  onCreateMeeting,
-  onMeetingOpen,
-  onTaskOpen,
-}: {
-  meetings: ReturnType<typeof useDesktopWorkspaceData>["meetings"];
-  tasks: ReturnType<typeof unscheduledCalendarTasks>;
-  loading?: boolean;
-  onCreateMeeting: () => void;
-  onMeetingOpen: (meetingId: string) => void;
-  onTaskOpen: (taskId: string) => void;
-}) {
-  return (
-    <CalendarTasksSidePanelView
-      meetings={meetings}
-      tasks={tasks}
-      loading={loading}
-      onCreateMeeting={onCreateMeeting}
-      onMeetingOpen={onMeetingOpen}
-      onTaskOpen={onTaskOpen}
-    />
-  );
-}
-
-function DesktopJournalSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  JournalSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps" | "Link"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const { client } = useDesktopApi();
-  const { selectDate } = useJournalSelection();
-  const workspace = useDesktopWorkspaceData();
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const resource = useDesktopResource<{
-    documents: Array<{ journalDate?: string | null }>;
-  }>((client) => client.requestJson("/api/v1/documents?type=journal"));
-  const { pathname } = viewProps;
-  const items = useMemo(() => {
-    if (viewProps.items.length > 0) return viewProps.items;
-    const dates =
-      resource.data?.documents
-        .map((document) => document.journalDate)
-        .filter((date): date is string => Boolean(date)) ?? [];
-    return [...new Set(dates)]
-      .sort((a, b) => b.localeCompare(a))
-      .map((dateSlug) => ({ dateSlug }));
-  }, [resource.data, viewProps.items]);
-  const selectedId = getSelectedJournalDateFromPathname(pathname) ?? null;
-  const itemIds = useMemo(
-    () => items.map((item) => item.dateSlug),
-    [items],
-  );
-  const documentIdByDateRef = useRef(workspace.journalDocumentIdsByDate);
-  documentIdByDateRef.current = workspace.journalDocumentIdsByDate;
-
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (dateSlug) => {
-      selectDate(dateSlug);
-      onNavigate(getJournalHref(dateSlug));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-
-  // Stable like Knowledge: only `[client]` — the date→id map is read via ref so
-  // workspace re-renders don't re-fire prefetch on every j/k highlight.
-  const prefetchItemId = useCallback(
-    (dateSlug: string) => {
-      prefetchJournalEntryContent(client, {
-        dateSlug,
-        documentIdByDate: documentIdByDateRef.current,
-      });
-    },
-    [client],
-  );
-
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
-
-  const PrefetchLink = useMemo(() => {
-    return function JournalPrefetchLink({
-      to,
-      onMouseEnter,
-      onFocus,
-      onClick,
-      ...rest
-    }: {
-      to: string;
-      className?: string;
-      children: ReactNode;
-      onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
-      onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-      onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
-      [key: string]: unknown;
-    }) {
-      const rawSlug = String(to).replace(/^\/journal\/?/, "");
-      const dateSlug = isValidJournalDateSlug(rawSlug) ? rawSlug : "";
-      return (
-        <RouterLink
-          to={to}
-          {...rest}
-          onMouseEnter={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (dateSlug) prefetchItemId(dateSlug);
-            onMouseEnter?.(event);
-          }}
-          onFocus={(event: FocusEvent<HTMLAnchorElement>) => {
-            if (dateSlug) prefetchItemId(dateSlug);
-            onFocus?.(event);
-          }}
-          onPointerDown={() => {
-            // Paint skeleton on press — before click/navigation settles.
-            if (dateSlug) selectDate(dateSlug);
-          }}
-          onClick={() => {
-            if (dateSlug) selectDate(dateSlug);
-            onClick?.({} as MouseEvent<HTMLAnchorElement>);
-          }}
-        />
-      );
-    };
-  }, [prefetchItemId, selectDate]);
-
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <JournalSidePanelView
-      {...viewProps}
-      items={items}
-      Link={PrefetchLink}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-      createTodayDisabled={isCreating}
-      createTodayError={createError}
-      onCreateToday={() => {
-        const todaySlug = getTodayJournalDateSlug();
-        setIsCreating(true);
-        setCreateError(null);
-        selectDate(todaySlug);
-        void (async () => {
-          try {
-            await client.requestJson(
-              `/api/v1/journal/${encodeURIComponent(todaySlug)}`,
-            );
-            resource.reload();
-            onNavigate(getJournalHref(todaySlug));
-          } catch (error) {
-            setCreateError(
-              error instanceof Error
-                ? error.message
-                : "Could not open today's journal.",
-            );
-          } finally {
-            setIsCreating(false);
-          }
-        })();
-      }}
-    />
-  );
-}
-
-function DesktopHabitSidePanel({
-  onNavigate,
-  pathname,
-}: Omit<
-  HabitSidePanelViewProps,
-  | "items"
-  | "Link"
-  | "highlightedId"
-  | "listRef"
-  | "listContainerProps"
-  | "onToggleToday"
-  | "onCreateHabit"
-  | "createDisabled"
-  | "createError"
-> & {
-  onNavigate: (href: string) => void;
-  pathname: string;
-}) {
-  const listRef = useRef<HTMLElement>(null);
-  const workspace = useDesktopWorkspaceData();
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [completedCollapsed, setCompletedCollapsed] = useState(false);
-  const [inactiveCollapsed, setInactiveCollapsed] = useState(false);
-  const todayYmd = getTodayJournalDateSlug();
-  const items = useMemo(() => {
-    return workspace.habits.map((habit) => {
-      const todayTask = workspace.allTasks.find((task) => {
-        if (task.habitId !== habit.id) return false;
-        return getTaskDueDateYmd(task.dueDate) === todayYmd;
-      });
-      return {
-        ...habit,
-        todayTaskId: todayTask?.id ?? null,
-        todayTaskStatus: (todayTask?.status ?? null) as typeof habit.todayTaskStatus,
-        checked: todayTask?.status === "completed",
-      };
-    });
-  }, [todayYmd, workspace.allTasks, workspace.habits]);
-  const openItems = useMemo(
-    () => items.filter((item) => item.todayTaskId && !item.checked),
-    [items],
-  );
-  const completedItems = useMemo(
-    () => items.filter((item) => item.todayTaskId && item.checked),
-    [items],
-  );
-  const inactiveItems = useMemo(
-    () => items.filter((item) => !item.todayTaskId),
-    [items],
-  );
-  const selectedId =
-    getSelectedHabitIdFromPathname(pathname) ?? HABIT_TRACKER_ALL_ID;
-  const itemIds = useMemo(
-    () => [
-      HABIT_TRACKER_ALL_ID,
-      ...openItems.map((item) => item.id),
-      ...(completedCollapsed ? [] : completedItems.map((item) => item.id)),
-      ...(inactiveCollapsed ? [] : inactiveItems.map((item) => item.id)),
-    ],
-    [
-      completedCollapsed,
-      completedItems,
-      inactiveCollapsed,
-      inactiveItems,
-      openItems,
-    ],
-  );
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (habitId) => {
-      onNavigate(getHabitTrackerHref(habitId));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: true,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-
-  return (
-    <HabitSidePanelView
-      pathname={pathname}
-      items={items}
-      Link={RouterLink}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-      createDisabled={isCreating}
-      createError={createError}
-      completedCollapsed={completedCollapsed}
-      onToggleCompletedGroup={() => {
-        setCompletedCollapsed((current) => !current);
-      }}
-      inactiveCollapsed={inactiveCollapsed}
-      onToggleInactiveGroup={() => {
-        setInactiveCollapsed((current) => !current);
-      }}
-      onToggleToday={(habit, checked) => {
-        if (!habit.todayTaskId) return;
-        void workspace.patchTask(habit.todayTaskId, {
-          status: checked ? "completed" : "ready_to_start",
-        });
-      }}
-      onCreateHabit={async ({ title, icon }) => {
-        setIsCreating(true);
-        setCreateError(null);
-        try {
-          const habit = await workspace.createHabit({ title, icon });
-          onNavigate(getHabitTrackerHref(habit.id));
-        } catch (error) {
-          setCreateError(
-            error instanceof Error ? error.message : "Could not create habit.",
-          );
-          throw error;
-        } finally {
-          setIsCreating(false);
-        }
-      }}
-    />
-  );
-}
-
-function DesktopKnowledgeSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  KnowledgeSidePanelViewProps,
-  | "highlightedId"
-  | "listRef"
-  | "listContainerProps"
-  | "onVisibleNavItemIdsChange"
-  | "onFolderActivateRef"
-  | "Link"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const folderActivateRef = useRef<(folderId: string) => void>(() => {});
-  const [navItemIds, setNavItemIds] = useState<string[]>([]);
-  const { client } = useDesktopApi();
-  const { pathname, items } = viewProps;
-  const selectedSlug = getSelectedKnowledgeSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (items.find(
-        (item) =>
-          selectedSlug === item.id ||
-          selectedSlug === item.path ||
-          selectedSlug === (item.path ?? item.id),
-      )?.id ?? null)
-    : null;
-
-  const prefetchItemId = useCallback(
-    (itemId: string) => {
-      if (parseFolderNavId(itemId) !== null) return;
-      prefetchKnowledgeDocumentContent(client, itemId);
-    },
-    [client],
-  );
-
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: navItemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const folderId = parseFolderNavId(itemId);
-      if (folderId !== null) {
-        folderActivateRef.current(folderId);
-        return;
-      }
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getKnowledgeHref(item.path ?? item.id));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: navItemIds.length > 0,
-  });
-
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
-
-  const PrefetchLink = useMemo(() => {
-    return function KnowledgePrefetchLink({
-      to,
-      onMouseEnter,
-      onFocus,
-      ...rest
-    }: {
-      to: string;
-      className?: string;
-      children: ReactNode;
-      onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
-      onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-      [key: string]: unknown;
-    }) {
-      const slug = String(to).replace(/^\/knowledge\/?/, "");
-      const item = items.find(
-        (entry) =>
-          slug === entry.id ||
-          slug === entry.path ||
-          slug === (entry.path ?? entry.id) ||
-          decodeURIComponent(slug) === entry.path,
-      );
-      return (
-        <RouterLink
-          to={to}
-          {...rest}
-          onMouseEnter={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
-            onMouseEnter?.(event);
-          }}
-          onFocus={(event: FocusEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
-            onFocus?.(event);
-          }}
-        />
-      );
-    };
-  }, [client, items]);
-
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <KnowledgeSidePanelView
-      {...viewProps}
-      Link={PrefetchLink}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-      onVisibleNavItemIdsChange={setNavItemIds}
-      onFolderActivateRef={folderActivateRef}
-    />
-  );
-}
-
-function DesktopLettersSidePanel({
-  onNavigate,
-  getLetterHref,
-  ...viewProps
-}: Omit<
-  LettersSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps" | "Link"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const { client } = useDesktopApi();
-  const { pathname, items } = viewProps;
-  const resolveHref =
-    getLetterHref ?? ((letter: { number: number }) => getLettersHref(letter.number));
-  const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)
-    : null;
-
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: items.map((item) => item.id),
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(resolveHref(item));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-
-  useEffect(() => {
-    if (highlightedId) prefetchLetterAttachments(client, highlightedId);
-  }, [client, highlightedId]);
-
-  const PrefetchLink = useMemo(() => {
-    return function LetterPrefetchLink({
-      to,
-      onMouseEnter,
-      onFocus,
-      ...rest
-    }: {
-      to: string;
-      className?: string;
-      children: ReactNode;
-      onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
-      onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-      [key: string]: unknown;
-    }) {
-      const href = String(to);
-      const item = items.find((entry) => href === resolveHref(entry));
-      return (
-        <RouterLink
-          to={to}
-          {...rest}
-          onMouseEnter={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (item) prefetchLetterAttachments(client, item.id);
-            onMouseEnter?.(event);
-          }}
-          onFocus={(event: FocusEvent<HTMLAnchorElement>) => {
-            if (item) prefetchLetterAttachments(client, item.id);
-            onFocus?.(event);
-          }}
-        />
-      );
-    };
-  }, [client, items, resolveHref]);
-
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <LettersSidePanelView
-      {...viewProps}
-      Link={PrefetchLink}
-      getLetterHref={getLetterHref}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
-  );
-}
-
-function DesktopProjectDocumentsSidePanel({
-  onNavigate,
-  getDocumentHref,
-  ...viewProps
-}: Omit<
-  ProjectDocumentsSidePanelViewProps,
-  | "highlightedId"
-  | "listRef"
-  | "listContainerProps"
-  | "onVisibleNavItemIdsChange"
-  | "onFolderActivateRef"
-  | "getDocumentHref"
-  | "Link"
-> &
-  SidePanelNavProps & {
-    getDocumentHref: (pathOrId: string) => string;
-  }) {
-  const listRef = useRef<HTMLElement>(null);
-  const folderActivateRef = useRef<(folderId: string) => void>(() => {});
-  const [navItemIds, setNavItemIds] = useState<string[]>([]);
-  const { client } = useDesktopApi();
-  const { pathname, items } = viewProps;
-  const selectedSlug = getSelectedProjectDocumentPathFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (items.find(
-        (item) =>
-          selectedSlug === item.id ||
-          selectedSlug === item.path ||
-          selectedSlug === (item.path ?? item.id),
-      )?.id ?? null)
-    : null;
-
-  const prefetchItemId = useCallback(
-    (itemId: string) => {
-      if (parseFolderNavId(itemId) !== null) return;
-      prefetchKnowledgeDocumentContent(client, itemId);
-    },
-    [client],
-  );
-
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: navItemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const folderId = parseFolderNavId(itemId);
-      if (folderId !== null) {
-        folderActivateRef.current(folderId);
-        return;
-      }
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getDocumentHref(item.path ?? item.id));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: navItemIds.length > 0,
-  });
-
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
-
-  const PrefetchLink = useMemo(() => {
-    return function ProjectDocPrefetchLink({
-      to,
-      onMouseEnter,
-      onFocus,
-      ...rest
-    }: {
-      to: string;
-      className?: string;
-      children: ReactNode;
-      onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
-      onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-      [key: string]: unknown;
-    }) {
-      const href = String(to);
-      const item = items.find((entry) => {
-        const target = getDocumentHref(entry.path ?? entry.id);
-        return href === target || href.endsWith(`/${entry.path ?? entry.id}`);
-      });
-      return (
-        <RouterLink
-          to={to}
-          {...rest}
-          onMouseEnter={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
-            onMouseEnter?.(event);
-          }}
-          onFocus={(event: FocusEvent<HTMLAnchorElement>) => {
-            if (item) prefetchKnowledgeDocumentContent(client, item.id);
-            onFocus?.(event);
-          }}
-        />
-      );
-    };
-  }, [client, getDocumentHref, items]);
-
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <ProjectDocumentsSidePanelView
-      {...viewProps}
-      Link={PrefetchLink}
-      getDocumentHref={getDocumentHref}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-      onVisibleNavItemIdsChange={setNavItemIds}
-      onFolderActivateRef={folderActivateRef}
-    />
-  );
-}
-
-function DesktopContactsSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  ContactsSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const { pathname, items } = viewProps;
-  const selectedSlug = getSelectedContactSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (items.find((item) => contactMatchesSlug(item, selectedSlug))?.id ?? null)
-    : null;
-  // Match DOM order from alpha-grouped rendering so j/k follows the visible list.
-  const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>
-    entries.map((item) => item.id),
-  );
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) {
-        onNavigate(
-          getContactSidePanelHref(
-            getUniqueListItemRouteParam(item, items),
-            pathname,
-          ),
-        );
-      }
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <ContactsSidePanelView
-      {...viewProps}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
-  );
-}
-
-function DesktopOrganizationsSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  OrganizationsSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps"
-> &
-  SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
-  const { pathname, items } = viewProps;
-  const selectedSlug = getSelectedOrganizationSlugFromPathname(pathname);
-  const selectedId = selectedSlug
-    ? (items.find((item) => organizationMatchesSlug(item, selectedSlug))?.id ??
-      null)
-    : null;
-  // Match DOM order from alpha-grouped rendering so j/k follows the visible list.
-  const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>
-    entries.map((item) => item.id),
-  );
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) {
-        onNavigate(
-          getOrganizationSidePanelHref(
-            getUniqueListItemRouteParam(item, items),
-            pathname,
-          ),
-        );
-      }
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-  return (
-    <OrganizationsSidePanelView
-      {...viewProps}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
-  );
-}
-
-const BANK_ACCOUNTS_CHANGED_EVENT = "backsteros:bank-accounts-changed";
-
-function DesktopFinanceSidePanel({
-  pathname,
-  Link,
-  collapsed,
-  onToggleCollapse,
-  onExpand,
-}: Pick<
-  FinanceSidePanelNavViewProps,
-  "pathname" | "Link" | "collapsed" | "onToggleCollapse"
-> & {
-  onExpand?: () => void;
-}) {
-  const navigate = useNavigate();
-  const { client } = useDesktopApi();
-  const listRef = useRef<HTMLElement>(null);
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<
-    Record<FinanceAccountGroupId, boolean>
-  >({
-    credit_cards: true,
-    savings: true,
-    investments: true,
-    bank_accounts: true,
-  });
-  const pendingKeyboardExpandRef = useRef(false);
-  const { activeZone, setActiveZone } = useListKeyboardNavigationZone();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = () => {
-      void client
-        .requestJson<{ bankAccounts: BankAccount[] }>("/api/v1/bank-accounts")
-        .then((body) => {
-          if (!cancelled) setAccounts(body.bankAccounts);
-        })
-        .catch(() => {
-          if (!cancelled) setAccounts([]);
-        });
-    };
-
-    load();
-    window.addEventListener(BANK_ACCOUNTS_CHANGED_EVENT, load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(BANK_ACCOUNTS_CHANGED_EVENT, load);
-    };
-  }, [client, pathname]);
-
-  const accountAvatarSrcById = useDesktopAvatarSrcMap(
-    "bank_account",
-    accounts,
-  );
-
-  const groups = useMemo(
-    () => groupBankAccountsForFinanceNav(accounts),
-    [accounts],
-  );
-
-  const itemIds = useMemo(() => {
-    const ids: string[] = FINANCE_NAV_ITEMS.map((item) => item.id);
-    for (const group of groups) {
-      if (!expandedGroups[group.id]) continue;
-      for (const account of group.accounts) {
-        ids.push(
-          financeSidePanelAccountKeyboardId(account.key ?? account.id),
-        );
-      }
-    }
-    return ids;
-  }, [expandedGroups, groups]);
-
-  const selectedId = useMemo(() => {
-    const navId = getSelectedFinanceNavIdFromPathname(pathname);
-    if (navId) return navId;
-    if (!isFinanceAccountPath(pathname)) return null;
-    const slug = decodeURIComponent(
-      pathname.split("/").filter(Boolean)[1] ?? "",
-    );
-    return slug ? financeSidePanelAccountKeyboardId(slug) : null;
-  }, [pathname]);
-
-  useEffect(() => {
-    if (activeZone === LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL && collapsed) {
-      pendingKeyboardExpandRef.current = true;
-      onExpand?.();
-    }
-  }, [activeZone, collapsed, onExpand]);
-
-  useEffect(() => {
-    if (collapsed || !pendingKeyboardExpandRef.current) return;
-    pendingKeyboardExpandRef.current = false;
-    setActiveZone(LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL, {
-      preferSidepanelForJk: true,
-      activate: true,
-    });
-  }, [collapsed, setActiveZone]);
-
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const href = resolveFinanceSidePanelHref(itemId);
-      if (href) navigate(href);
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: itemIds.length > 0,
-  });
-
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
-
-  return (
-    <FinanceSidePanelNavView
-      pathname={pathname}
-      accounts={accounts}
-      accountAvatarSrcById={accountAvatarSrcById}
-      Link={Link}
-      collapsed={collapsed}
-      onToggleCollapse={onToggleCollapse}
-      highlightedId={highlightedId}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      expandedGroups={expandedGroups}
-      onExpandedGroupsChange={setExpandedGroups}
-    />
-  );
-}
-
-function loadTabsState(pathname: string): ProductTabsState {
-  if (typeof window === "undefined") {
-    return createDefaultTabsState(pathname);
-  }
-  try {
-    const raw = window.localStorage.getItem(TABS_STORAGE_KEY);
-    if (!raw) {
-      return createDefaultTabsState(pathname);
-    }
-    const parsed = JSON.parse(raw) as ProductTabsState;
-    if (!parsed.tabs?.length || !parsed.activeTabId) {
-      return createDefaultTabsState(pathname);
-    }
-    return syncActiveTabToPath(parsed, pathname);
-  } catch {
-    return createDefaultTabsState(pathname);
-  }
-}
-
-/** Renders children only when Clerk is configured (safe to call useClerk). */
-function DesktopClerkProfileBridge({
-  children,
-}: {
-  children: (actions: {
-    onAccount?: () => void;
-    onSignOut?: () => void;
-  }) => ReactNode;
-}) {
-  const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
-  if (!clerkKey) {
-    return <>{children({})}</>;
-  }
-  return (
-    <DesktopClerkProfileBridgeInner>{children}</DesktopClerkProfileBridgeInner>
-  );
-}
-
-function DesktopClerkProfileBridgeInner({
-  children,
-}: {
-  children: (actions: {
-    onAccount?: () => void;
-    onSignOut?: () => void;
-  }) => ReactNode;
-}) {
-  const { openUserProfile, signOut } = useClerk();
-  return (
-    <>
-      {children({
-        onAccount: () => {
-          openUserProfile();
-        },
-        onSignOut: () => {
-          void signOut();
-        },
-      })}
-    </>
-  );
-}
+import { DesktopClerkProfileBridge } from "./app-shell-clerk";
+import { DesktopClientLink, RouterLink } from "./app-shell-links";
+import {
+  DesktopCalendarTasksSidePanel,
+  DesktopContactsSidePanel,
+  DesktopFinanceSidePanel,
+  DesktopHabitSidePanel,
+  DesktopInboxSidePanel,
+  DesktopJournalSidePanel,
+  DesktopKnowledgeSidePanel,
+  DesktopLettersSidePanel,
+  DesktopOrganizationsSidePanel,
+  DesktopProjectDocumentsSidePanel,
+} from "./app-shell-side-panels";
+import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
 
 function AppShellInner({ children }: { children?: ReactNode }) {
   const location = useLocation();
