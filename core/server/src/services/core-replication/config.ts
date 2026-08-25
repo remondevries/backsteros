@@ -71,6 +71,13 @@ export function isCoreReplicationEnabled(
   return getCoreReplicationConfig(env) !== null;
 }
 
+/** True when this core node is the VPS/cloud replica (not the operator laptop). */
+export function isCloudReplicationRole(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
+}
+
 /**
  * Cloud-core must not expose :8788 on 0.0.0.0 while replication is enabled —
  * /internal/* routes are Bearer-protected but must stay on loopback/Tailscale.

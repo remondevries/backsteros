@@ -1,9 +1,11 @@
 import {
   assertVaultPathUsable,
+  envVaultPath,
   getVaultPathCache,
   isStorageConfigured,
   setVaultPathCache,
 } from "../lib/storage.js";
+import { isCloudReplicationRole } from "./core-replication/config.js";
 import * as circleService from "./circle-domain.js";
 
 export type VaultStorageSettings = {
@@ -28,11 +30,15 @@ export async function warmVaultPathCache(workspaceId: string): Promise<void> {
   const settings = (await circleService.getSettings(
     workspaceId,
   )) as Record<string, unknown>;
-  const vaultPath = readVaultPathFromSettings(settings);
-  if (vaultPath) {
-    setVaultPathCache(vaultPath);
-  } else if (!getVaultPathCache() && process.env.BACKSTEROS_VAULT_PATH?.trim()) {
-    setVaultPathCache(process.env.BACKSTEROS_VAULT_PATH.trim());
+  const settingsVaultPath = readVaultPathFromSettings(settings);
+  const envPath = envVaultPath();
+  if (isCloudReplicationRole() && envPath) {
+    // Replicated desktop vaultPath must not replace the Docker volume mount.
+    setVaultPathCache(envPath);
+  } else if (settingsVaultPath) {
+    setVaultPathCache(settingsVaultPath);
+  } else if (!getVaultPathCache() && envPath) {
+    setVaultPathCache(envPath);
   }
   warmedForWorkspaceId = workspaceId;
 }
@@ -44,10 +50,13 @@ export async function getVaultStorageSettings(
   const settings = (await circleService.getSettings(
     workspaceId,
   )) as Record<string, unknown>;
+  const settingsVaultPath = readVaultPathFromSettings(settings);
+  const envPath = envVaultPath();
   const vaultPath =
-    readVaultPathFromSettings(settings) ||
+    (isCloudReplicationRole() && envPath ? envPath : null) ||
+    settingsVaultPath ||
     getVaultPathCache() ||
-    process.env.BACKSTEROS_VAULT_PATH?.trim() ||
+    envPath ||
     null;
   return {
     configured: Boolean(vaultPath),

@@ -14,9 +14,12 @@ import {
   buildTaskImageStorageKey,
   checksumForContent,
   ensureProjectVaultFolders,
+  getObject,
+  getVaultPathCache,
   isSpacesConfigured,
   isStorageConfigured,
   renameProjectVaultFolder,
+  resolveVaultPath,
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
   setVaultPathCache,
@@ -233,5 +236,112 @@ test("renameProjectVaultFolder moves the project folder and rewrites helpers", a
   } finally {
     setVaultPathCache(null);
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cloud-core prefers BACKSTEROS_VAULT_PATH over replicated desktop vaultPath", async () => {
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  const previousCache = getVaultPathCache();
+
+  const realVault = await mkdtemp(path.join(tmpdir(), "backsteros-cloud-vault-"));
+  const overlayVault = await mkdtemp(path.join(tmpdir(), "backsteros-overlay-vault-"));
+  const storageKey = buildStorageKey(
+    "project",
+    "overview-bills-allison.md",
+    "DI",
+  );
+  const realBody = "# Bills overview\nAllison export from Jul 28.\n";
+  await mkdir(path.dirname(path.join(realVault, storageKey)), { recursive: true });
+  await writeFile(path.join(realVault, storageKey), realBody, "utf8");
+  await mkdir(path.dirname(path.join(overlayVault, storageKey)), { recursive: true });
+  await writeFile(path.join(overlayVault, storageKey), "", "utf8");
+
+  process.env.CORE_REPLICATION_ROLE = "cloud";
+  process.env.BACKSTEROS_VAULT_PATH = realVault;
+  setVaultPathCache("/Users/remondevries/BacksterOS");
+
+  try {
+    const resolved = await resolveVaultPath("/Users/remondevries/BacksterOS");
+    assert.equal(resolved, path.resolve(realVault));
+    assert.equal(getVaultPathCache(), path.resolve(realVault));
+
+    const object = await getObject(storageKey);
+    assert.equal(object.body, realBody);
+    assert.equal(object.byteSize, Buffer.byteLength(realBody, "utf8"));
+  } finally {
+    setVaultPathCache(previousCache);
+    if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previousRole;
+    if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+    await rm(realVault, { recursive: true, force: true });
+    await rm(overlayVault, { recursive: true, force: true });
+  }
+});
+
+test("local-core still prefers workspace vaultPath over BACKSTEROS_VAULT_PATH", async () => {
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  const previousCache = getVaultPathCache();
+
+  const desktopVault = await mkdtemp(path.join(tmpdir(), "backsteros-desktop-vault-"));
+  const envVault = await mkdtemp(path.join(tmpdir(), "backsteros-env-vault-"));
+
+  process.env.CORE_REPLICATION_ROLE = "local";
+  process.env.BACKSTEROS_VAULT_PATH = envVault;
+  setVaultPathCache(null);
+
+  try {
+    const resolved = await resolveVaultPath(desktopVault);
+    assert.equal(resolved, path.resolve(desktopVault));
+    assert.equal(getVaultPathCache(), path.resolve(desktopVault));
+  } finally {
+    setVaultPathCache(previousCache);
+    if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previousRole;
+    if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+    await rm(desktopVault, { recursive: true, force: true });
+    await rm(envVault, { recursive: true, force: true });
+  }
+});
+
+test("empty overlay write cannot hide volume copy on cloud-core reads", async () => {
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  const previousCache = getVaultPathCache();
+
+  const realVault = await mkdtemp(path.join(tmpdir(), "backsteros-cloud-vault-"));
+  const overlayVault = await mkdtemp(path.join(tmpdir(), "backsteros-overlay-vault-"));
+  const storageKey = buildStorageKey(
+    "project",
+    "overview-bills-allison.md",
+    "DI",
+  );
+  const realBody = "# Bills overview\n355 bytes on the Docker volume.\n";
+  await mkdir(path.dirname(path.join(realVault, storageKey)), { recursive: true });
+  await writeFile(path.join(realVault, storageKey), realBody, "utf8");
+
+  process.env.CORE_REPLICATION_ROLE = "cloud";
+  process.env.BACKSTEROS_VAULT_PATH = realVault;
+  setVaultPathCache(overlayVault);
+
+  try {
+    await mkdir(path.dirname(path.join(overlayVault, storageKey)), {
+      recursive: true,
+    });
+    await writeFile(path.join(overlayVault, storageKey), "", "utf8");
+
+    const object = await getObject(storageKey, "/Users/remondevries/BacksterOS");
+    assert.equal(object.body, realBody);
+  } finally {
+    setVaultPathCache(previousCache);
+    if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+    else process.env.CORE_REPLICATION_ROLE = previousRole;
+    if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+    else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+    await rm(realVault, { recursive: true, force: true });
+    await rm(overlayVault, { recursive: true, force: true });
   }
 });

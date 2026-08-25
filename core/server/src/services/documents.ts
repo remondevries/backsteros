@@ -19,6 +19,7 @@ import {
   putObject,
   snippetForContent,
 } from "../lib/storage.js";
+import { isCloudReplicationRole } from "./core-replication/config.js";
 import { getProjectById } from "./tasks-projects.js";
 
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
@@ -292,6 +293,21 @@ export async function getDocumentContent(workspaceId: string, id: string) {
   }
 
   if (row.byteSize === 0) {
+    // Empty metadata from a desktop-path overlay write must not hide the Docker
+    // volume copy when cloud-core serves content from BACKSTEROS_VAULT_PATH.
+    if (isCloudReplicationRole()) {
+      try {
+        const object = await getObject(row.storageKey);
+        if (object.byteSize > 0) {
+          return {
+            row,
+            content: object.body,
+          };
+        }
+      } catch {
+        /* fall through to empty */
+      }
+    }
     return {
       row,
       content: "",

@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import { isCloudReplicationRole } from "../services/core-replication/config.js";
 import {
   PROJECT_VAULT_WORKFLOW_SKILL_ID,
   PROJECT_VAULT_WORKFLOW_SKILL_MARKDOWN,
@@ -60,9 +61,17 @@ export function getVaultPathCache(): string | null {
   return vaultPathCache;
 }
 
-function envVaultPath(): string | null {
+export function envVaultPath(): string | null {
   const value = process.env.BACKSTEROS_VAULT_PATH?.trim();
   return value || null;
+}
+
+/**
+ * Cloud-core keeps markdown on BACKSTEROS_VAULT_PATH (/data/vault). Replicated
+ * workspace_settings.vaultPath is the desktop folder and must not override env.
+ */
+function cloudEnvVaultPathOrNull(): string | null {
+  return isCloudReplicationRole() ? envVaultPath() : null;
 }
 
 /** True when a local vault path is configured (cache or env). */
@@ -78,12 +87,17 @@ export function isSpacesConfigured(): boolean {
 export async function resolveVaultPath(
   settingsVaultPath?: string | null,
 ): Promise<string> {
+  const envPath = envVaultPath();
+  const cloudEnvPath = cloudEnvVaultPathOrNull();
   const fromSettings = settingsVaultPath?.trim() || null;
-  const resolved = fromSettings || vaultPathCache || envVaultPath();
+  const resolved =
+    cloudEnvPath || fromSettings || vaultPathCache || envPath;
   if (!resolved) {
     throw new Error("STORAGE_NOT_CONFIGURED");
   }
-  if (fromSettings) {
+  if (cloudEnvPath) {
+    vaultPathCache = cloudEnvPath;
+  } else if (fromSettings) {
     vaultPathCache = fromSettings;
   }
   return path.resolve(resolved);
