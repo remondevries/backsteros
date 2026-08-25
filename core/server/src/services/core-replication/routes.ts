@@ -1,14 +1,14 @@
 import type { Hono } from "hono";
 
+import { extractBearerToken, verifyReplicationSecret } from "./auth.js";
+import { verifyAvatarReplicationAuth } from "./avatar-replication.js";
 import { getCoreReplicationConfig } from "./config.js";
-import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
-import {
-  applyRemoteChanges,
-  fetchAllLocalRows,
-  getChangesSince,
-} from "./sync.js";
-import { isImplementedReplicatedTable } from "./tables.js";
+import { tableExists } from "./cursors.js";
+import { applyRemoteChanges } from "./apply.js";
+import { fetchAllLocalRows } from "./fetch.js";
+import { getChangesSince } from "./sync.js";
+import type { KnownTable } from "./tables.js";
 import type { ReplicationApplyRequest, ReplicationCursor } from "./types.js";
 
 function unauthorized() {
@@ -18,17 +18,13 @@ function unauthorized() {
 function replicationAuth(authorization: string | undefined): boolean {
   const config = getCoreReplicationConfig();
   if (!config) return false;
-  const token = authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length).trim()
-    : null;
-  return token === config.secret;
+  const token = extractBearerToken(authorization);
+  return verifyReplicationSecret(token, config.secret);
 }
 
-function parseTable(value: string | undefined): ReplicatedTable | null {
-  if (!value) return null;
-  return (REPLICATED_TABLES as readonly string[]).includes(value)
-    ? (value as ReplicatedTable)
-    : null;
+function parseTable(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  return value.trim();
 }
 
 function parseCursor(
@@ -39,6 +35,13 @@ function parseCursor(
   return { updatedAt, rowId: sinceId?.trim() || "" };
 }
 
+async function isLiveReplicationTable(table: string): Promise<boolean> {
+  if (!(REPLICATED_TABLES as readonly string[]).includes(table)) {
+    return false;
+  }
+  return tableExists(table);
+}
+
 export function registerCoreReplicationRoutes(app: Hono) {
   app.get("/internal/core-replication/changes", async (c) => {
     if (!replicationAuth(c.req.header("Authorization"))) {
@@ -46,7 +49,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
     }
 
     const table = parseTable(c.req.query("table"));
-    if (!table || !isImplementedReplicatedTable(table)) {
+    if (!table || !(await isLiveReplicationTable(table))) {
       return c.json(
         { error: "Unknown or unsupported table", code: "bad_request" as const },
         400,
@@ -57,7 +60,10 @@ export function registerCoreReplicationRoutes(app: Hono) {
       c.req.query("since"),
       c.req.query("since_id"),
     );
-    const payload = await getChangesSince(table, since);
+    const payload = await getChangesSince(
+      table as (typeof REPLICATED_TABLES)[number],
+      since,
+    );
     return c.json(payload);
   });
 
@@ -68,7 +74,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
 
     const body = (await c.req.json()) as ReplicationApplyRequest;
     const table = parseTable(body.table);
-    if (!table || !isImplementedReplicatedTable(table)) {
+    if (!table || !(await isLiveReplicationTable(table))) {
       return c.json(
         { error: "Unknown or unsupported table", code: "bad_request" as const },
         400,
@@ -82,7 +88,7 @@ export function registerCoreReplicationRoutes(app: Hono) {
       );
     }
 
-    const result = await applyRemoteChanges(table, body.changes);
+    const result = await applyRemoteChanges(table as KnownTable, body.changes);
     return c.json(result);
   });
 
@@ -92,14 +98,28 @@ export function registerCoreReplicationRoutes(app: Hono) {
     }
 
     const table = parseTable(c.req.query("table"));
-    if (!table || !isImplementedReplicatedTable(table)) {
+    if (!table || !(await tableExists(table))) {
       return c.json(
         { error: "Unknown or unsupported table", code: "bad_request" as const },
         400,
       );
     }
 
-    const changes = await fetchAllLocalRows(table);
+    const changes = await fetchAllLocalRows(table as KnownTable);
     return c.json({ table, changes });
+  });
+
+  app.get("/internal/core-replication/avatar", async (c) => {
+    if (!verifyAvatarReplicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+    // Avatar bytes are vault-scoped; full copy lands in a follow-up if needed.
+    return c.json(
+      {
+        error: "Avatar byte replication not configured on this core",
+        code: "not_implemented" as const,
+      },
+      501,
+    );
   });
 }
