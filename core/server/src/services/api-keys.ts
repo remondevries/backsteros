@@ -58,6 +58,7 @@ export async function createApiKey(
     input.contactId,
   );
 
+  const now = new Date();
   const [row] = await db
     .insert(apiKeys)
     .values({
@@ -69,6 +70,7 @@ export async function createApiKey(
       keyHash: hashApiKey(secret),
       scopes: input.scopes as ApiKeyScope[],
       contactId,
+      updatedAt: now,
     })
     .returning();
 
@@ -78,7 +80,7 @@ export async function createApiKey(
 export async function revokeApiKey(workspaceId: string, id: string) {
   const [row] = await db
     .update(apiKeys)
-    .set({ revokedAt: new Date() })
+    .set({ revokedAt: new Date(), updatedAt: new Date() })
     .where(
       and(
         eq(apiKeys.id, id),
@@ -107,7 +109,7 @@ export async function updateApiKey(
 
   const [row] = await db
     .update(apiKeys)
-    .set(patch)
+    .set({ ...patch, updatedAt: new Date() })
     .where(
       and(
         eq(apiKeys.id, id),
@@ -141,6 +143,7 @@ export async function createBootstrapApiKey(
       .insert(workspaceSettings)
       .values({ workspaceId })
       .onConflictDoNothing();
+    const now = new Date();
     return tx
       .insert(apiKeys)
       .values({
@@ -152,6 +155,7 @@ export async function createBootstrapApiKey(
         keyHash: hashApiKey(secret),
         scopes,
         contactId: null,
+        updatedAt: now,
       })
       .returning();
   });

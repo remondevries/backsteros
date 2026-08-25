@@ -7,6 +7,7 @@ import {
   setVaultPathCache,
 } from "./lib/storage.js";
 import { startRecurringTaskRunner } from "./services/recurring-tasks.js";
+import { startCoreReplicationWorker } from "./services/core-replication/worker.js";
 
 assertPowerSyncSecrets();
 
@@ -34,5 +35,6 @@ serve(
     console.log(`backsteros-server listening on http://localhost:${info.port}`);
     console.log(`OpenAPI: http://localhost:${info.port}/api/v1/openapi.json`);
     startRecurringTaskRunner();
+    startCoreReplicationWorker();
   },
 );
