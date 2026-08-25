@@ -1,17 +1,18 @@
 import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import { getCoreReplicationConfig } from "./config.js";
+import { applyRemoteChanges } from "./apply.js";
 import {
-  applyRemoteChanges,
   fetchLocalChanges,
-  getChangesSince,
-  getReplicationCursor,
-  setReplicationCursor,
-} from "./sync.js";
-import { listActiveReplicatedTables } from "./tables.js";
+  listActiveReplicatedTables,
+} from "./fetch.js";
+import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
+import { getChangesSince } from "./sync.js";
+import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationApplyRequest, ReplicationChangesResponse } from "./types.js";
 
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const PAGE_SIZE = 100;
 
 function replicationHeaders(secret: string): HeadersInit {
   return {
@@ -20,7 +21,7 @@ function replicationHeaders(secret: string): HeadersInit {
   };
 }
 
-async function pullTable(table: ReturnType<typeof listActiveReplicatedTables>[number]) {
+async function pullTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
@@ -62,7 +63,7 @@ async function pullTable(table: ReturnType<typeof listActiveReplicatedTables>[nu
   }
 }
 
-async function pushTable(table: ReturnType<typeof listActiveReplicatedTables>[number]) {
+async function pushTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
@@ -99,7 +100,7 @@ async function pushTable(table: ReturnType<typeof listActiveReplicatedTables>[nu
       cursor = nextCursor;
       await setReplicationCursor(table, cursor);
 
-      if (changes.length < 100) {
+      if (changes.length < PAGE_SIZE) {
         break;
       }
     } finally {
@@ -120,7 +121,8 @@ export async function runCoreReplicationTick(): Promise<void> {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
-  for (const table of listActiveReplicatedTables()) {
+  const tables = await listActiveReplicatedTables();
+  for (const table of tables) {
     await pullTable(table);
     await pushTable(table);
   }
