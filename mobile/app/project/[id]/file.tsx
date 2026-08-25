@@ -2,11 +2,14 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { Text, View } from "react-native";
 
 import { ProjectFsFileEditor } from "../../../components/codebase/project-fs-file-editor";
+import { isPadDevice } from "../../../lib/device";
+import { useHideTabBar } from "../../../lib/tab-bar-visibility";
 import { colors } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 
 /** Phone stack route: edit a project working-directory file via Core FS API. */
 export default function ProjectFileEditorScreen() {
+  useHideTabBar(!isPadDevice());
   const { id, path: pathParam } = useLocalSearchParams<{
     id: string;
     path?: string;

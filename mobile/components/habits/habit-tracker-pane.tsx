@@ -556,7 +556,7 @@ export function HabitTrackerPane({
   const nextDueYmd = habit
     ? resolveNextHabitDueYmd({
         cadence: cadence ?? "daily",
-        cadenceAnchorYmd,
+        cadenceAnchorYmd: cadenceAnchorYmd ?? todayYmd,
         instances,
         todayYmd,
       })

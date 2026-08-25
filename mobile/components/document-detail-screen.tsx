@@ -11,6 +11,7 @@ import {
 import { isPadDevice } from "../lib/device";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
+import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -83,9 +84,12 @@ const EMPTY_META_SQL = `SELECT id, title, path, icon FROM documents WHERE 0`;
 export function DocumentDetailScreen({ documentId }: Props) {
   const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
+  const hidePhoneTabBar = !isPad;
+  useHideTabBar(hidePhoneTabBar);
   const segments = useSegments();
   const inPadKnowledgeSplit =
     isPad && (segments as string[]).includes("knowledge");
+  const scrollBottomInset = isPad ? FLOATING_TAB_BAR_CLEARANCE + 24 : 56;
 
   const client = useMobileApiClient();
 
@@ -304,7 +308,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
       <View style={styles.root}>
         <KeyboardAwareScrollView
           style={ui.screen}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={{ paddingBottom: scrollBottomInset }}
           keepEndVisibleWhileTyping
         >
           {bodyLoading ? (
@@ -323,10 +327,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
         {!bodyLoading && !bodyError ? (
           <View
             pointerEvents="box-none"
-            style={[
-              styles.viewModeDock,
-              { bottom: isPad ? 16 : FLOATING_TAB_BAR_CLEARANCE - 40 },
-            ]}
+            style={[styles.viewModeDock, { bottom: 16 }]}
           >
             <View style={styles.viewModeDockInner}>
               <SegmentedPillToggle
@@ -347,9 +348,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     minHeight: 0,
-  },
-  scrollContent: {
-    paddingBottom: FLOATING_TAB_BAR_CLEARANCE + 24,
   },
   loading: {
     paddingHorizontal: 16,
