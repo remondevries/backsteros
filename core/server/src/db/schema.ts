@@ -245,14 +245,25 @@ export const apiKeys = pgTable(
       .notNull()
       .defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("api_keys_prefix_idx").on(table.prefix),
     index("api_keys_workspace_id_idx").on(table.workspaceId),
     index("api_keys_user_id_idx").on(table.userId),
     index("api_keys_contact_id_idx").on(table.contactId),
+    index("api_keys_updated_at_id_idx").on(table.updatedAt, table.id),
   ],
 );
+
+/** Per-table cursor for local-core ↔ cloud-core replication worker. */
+export const coreReplicationCursors = pgTable("core_replication_cursors", {
+  tableName: text("table_name").primaryKey(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  rowId: text("row_id").notNull().default(""),
+});
 
 export const projects = pgTable(
   "projects",

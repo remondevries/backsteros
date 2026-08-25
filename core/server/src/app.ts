@@ -11,6 +11,7 @@ import { apiContract } from "@backsteros/contracts";
 import { registerApiRoutes } from "./app/routes.js";
 import { registerOpsRoutes } from "./app/ops-routes.js";
 import { registerSyncRoutes } from "./app/sync-routes.js";
+import { registerCoreReplicationRoutes } from "./services/core-replication/routes.js";
 import { installOpsLogConsoleCapture } from "./lib/ops-log-buffer.js";
 import { isSpacesConfigured } from "./lib/storage.js";
 import { MAX_UPLOAD_BYTES } from "./lib/upload-limits.js";
@@ -99,6 +100,7 @@ export function createApp() {
   registerApiRoutes(api);
   registerSyncRoutes(api);
   registerOpsRoutes(api);
+  registerCoreReplicationRoutes(api);
   app.route("/", api);
 
   return app;
