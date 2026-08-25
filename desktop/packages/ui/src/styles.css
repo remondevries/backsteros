@@ -2346,7 +2346,7 @@ body[data-keyboard-nav-hover="suppressed"]
 .inbox-list-item-title-wrap {
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1;
   max-width: 100%;
   align-items: center;
   gap: 6px;
@@ -2354,7 +2354,7 @@ body[data-keyboard-nav-hover="suppressed"]
 
 .inbox-list-item-title {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
