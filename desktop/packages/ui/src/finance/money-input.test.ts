@@ -48,9 +48,24 @@ describe("parseMoneyInput", () => {
     assert.equal(parseMoneyInput("-10"), null);
   });
 
+  it("parses signed amounts when signed is enabled", () => {
+    assert.equal(parseMoneyInput("-10", { signed: true }), -1_000);
+    assert.equal(parseMoneyInput("-1.000,50", { signed: true }), -100_050);
+    assert.equal(parseMoneyInput("-", { signed: true }), 0);
+    assert.equal(parseMoneyInput("10", { signed: true }), 1_000);
+  });
+
   it("rejects zero when positive is required", () => {
     assert.equal(parseMoneyInput("0", { positive: true }), null);
     assert.equal(parseMoneyInput("0"), 0);
+  });
+});
+
+describe("formatMoneyInput signed", () => {
+  it("preserves a leading minus while typing", () => {
+    assert.equal(formatMoneyInput("-", { signed: true }), "-");
+    assert.equal(formatMoneyInput("-1000", { signed: true }), "-1.000");
+    assert.equal(formatMoneyInput("-100,5", { signed: true }), "-100,5");
   });
 });
 
@@ -69,5 +84,17 @@ describe("moneyCentsToInput", () => {
     assert.equal(moneyCentsToInput(null), "");
     assert.equal(moneyCentsToInput(0), "");
     assert.equal(moneyCentsToInput(0, { allowZero: true }), "0");
+  });
+
+  it("can always include two fraction digits", () => {
+    assert.equal(
+      moneyCentsToInput(10_000_000, { alwaysFraction: true }),
+      "100.000,00",
+    );
+    assert.equal(moneyCentsToInput(1_010, { alwaysFraction: true }), "10,10");
+    assert.equal(
+      moneyCentsToInput(0, { allowZero: true, alwaysFraction: true }),
+      "0,00",
+    );
   });
 });

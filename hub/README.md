@@ -54,5 +54,6 @@ Copy to `~/Applications` and optionally add as a Login Item.
 ## Notes
 
 - Requires Docker Desktop (or compatible) for the compose stack.
-- Core API is started with `pnpm dev` from `repo_root`; PTY with `pnpm --filter @backsteros/desktop pty`.
+- Core API is started with `pnpm --filter @backsteros/server dev` from `repo_root`; PTY with `pnpm --filter @backsteros/desktop pty`.
+- On Core API start, Hub enables `tailscale serve --tcp=8788` so cloud-core can reach local-core over the tailnet only (`http://<mac-tailnet-ip>:8788`). Desktop keeps using `127.0.0.1:8788`. Serve is cleared on API stop.
 - Quitting the hub does **not** stop services — use **Stop** first if you want them down.

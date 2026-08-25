@@ -197,6 +197,14 @@ export function FinancePage() {
     handleOpenSpendPanel,
     handleCloseSpendPanel,
     handleSpendPanelMonthChange,
+    plannerEntries,
+    plannerLoading,
+    plannerError,
+    plannerPending,
+    createPlannerEntry,
+    updatePlannerEntry,
+    reorderPlannerEntries,
+    deletePlannerEntry,
   } = useFinanceCashflow({ client, navId });
 
   const {
@@ -401,6 +409,14 @@ export function FinancePage() {
         onOpenSpendPanel={handleOpenSpendPanel}
         onCloseSpendPanel={handleCloseSpendPanel}
         onSpendPanelMonthChange={handleSpendPanelMonthChange}
+        plannerEntries={plannerEntries}
+        plannerLoading={plannerLoading}
+        plannerPending={plannerPending}
+        plannerError={plannerError}
+        onCreatePlannerEntry={createPlannerEntry}
+        onUpdatePlannerEntry={updatePlannerEntry}
+        onReorderPlannerEntries={reorderPlannerEntries}
+        onDeletePlannerEntry={deletePlannerEntry}
       />
     );
   } else if (navId === "invoices") {

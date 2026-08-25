@@ -4,7 +4,9 @@ import { createApp } from "./app.js";
 
 const upstreamUrl = process.env.CORE_UPSTREAM_URL?.trim();
 if (!upstreamUrl) {
-  console.error("CORE_UPSTREAM_URL is required (Tailscale URL to core API, e.g. http://host:8788)");
+  console.error(
+    "CORE_UPSTREAM_URL is required (on VPS use http://127.0.0.1:8788 for cloud-core)",
+  );
   process.exit(1);
 }
 

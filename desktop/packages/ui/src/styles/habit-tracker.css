@@ -44,6 +44,17 @@
   opacity: 0.72;
 }
 
+/* Completed habits: green icon so done state is obvious at a glance. */
+.habit-side-panel-item.is-checked .habit-side-panel-item__icon,
+.habit-side-panel-item.is-checked .habit-side-panel-item__icon svg {
+  color: #3d9a5b !important;
+}
+
+.habit-side-panel-item.is-checked .app-side-panel-item-label {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  text-decoration: line-through;
+}
+
 .habit-tracker {
   display: flex;
   min-width: 0;

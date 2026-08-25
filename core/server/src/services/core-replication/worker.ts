@@ -9,9 +9,10 @@ import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
 import { getChangesSince } from "./sync.js";
 import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationApplyRequest, ReplicationChangesResponse } from "./types.js";
+import { syncVaultWithPeer } from "./vault-replication.js";
 
 const DEFAULT_INTERVAL_MS = 15_000;
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 100;
 
 function replicationHeaders(secret: string): HeadersInit {
@@ -123,12 +124,31 @@ export async function runCoreReplicationTick(): Promise<void> {
 
   const tables = await listActiveReplicatedTables();
   for (const table of tables) {
-    await pullTable(table);
-    await pushTable(table);
+    try {
+      await pullTable(table);
+      await pushTable(table);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`core replication failed on table ${table}: ${message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  if (config.role === "local") {
+    try {
+      await syncVaultWithPeer();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`core replication failed on vault: ${message}`, {
+        cause: error,
+      });
+    }
   }
 }
 
 let workerTimer: ReturnType<typeof setInterval> | null = null;
+let tickInFlight = false;
 
 export function startCoreReplicationWorker(intervalMs = DEFAULT_INTERVAL_MS): void {
   if (workerTimer || !getCoreReplicationConfig()) {
@@ -136,11 +156,19 @@ export function startCoreReplicationWorker(intervalMs = DEFAULT_INTERVAL_MS): vo
   }
 
   const tick = () => {
-    void runCoreReplicationTick().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("core replication tick failed", error);
-      appendOpsLog("error", "core replication tick failed", message);
-    });
+    if (tickInFlight) {
+      return;
+    }
+    tickInFlight = true;
+    void runCoreReplicationTick()
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("core replication tick failed", error);
+        appendOpsLog("error", "core replication tick failed", message);
+      })
+      .finally(() => {
+        tickInFlight = false;
+      });
   };
 
   tick();

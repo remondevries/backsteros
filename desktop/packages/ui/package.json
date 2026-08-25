@@ -47,6 +47,7 @@
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
     "@git-diff-view/react": "^0.1.7",
+    "@legendapp/list": "3.2.0",
     "@lezer/highlight": "^1.2.3",
     "@nivo/bar": "^0.99.0",
     "@nivo/core": "^0.99.0",

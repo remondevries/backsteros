@@ -32,7 +32,9 @@ function pkCursorPredicate(spec: TableSpec, since: ReplicationCursor): string {
       OR ("${updatedCol}" = $1::timestamptz AND "${pk}" > $2)
     )`;
   }
-  const pkExpr = pkCols.map((col) => `"${col}"`).join(" || char(0) || ");
+  const pkExpr = pkCols
+    .map((col) => `COALESCE("${col}"::text, '')`)
+    .join(" || '|' || ");
   return `(
     "${updatedCol}" > $1::timestamptz
     OR ("${updatedCol}" = $1::timestamptz AND (${pkExpr}) > $2)

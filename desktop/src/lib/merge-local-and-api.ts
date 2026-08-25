@@ -85,6 +85,36 @@ export function fillMissingLinksFromApi<
   });
 }
 
+function optionalTextMissing(value: unknown): boolean {
+  return value == null || (typeof value === "string" && value.trim() === "");
+}
+
+/**
+ * When list watches omit long-text columns (description / summary / context /
+ * notes / transcription), copy non-empty values from the API row.
+ */
+export function fillMissingLongTextFromApi<T extends { id: string }>(
+  mergedRows: T[],
+  apiRows: T[] | null | undefined,
+  fields: readonly (keyof T & string)[],
+): T[] {
+  if (!apiRows?.length || fields.length === 0) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    let next: T | null = null;
+    for (const field of fields) {
+      if (!optionalTextMissing(row[field])) continue;
+      const apiValue = api[field];
+      if (optionalTextMissing(apiValue)) continue;
+      if (!next) next = { ...row };
+      (next as Record<string, unknown>)[field] = apiValue;
+    }
+    return next ?? row;
+  });
+}
+
 function typeMissing(value: unknown): boolean {
   return value == null || value === "";
 }

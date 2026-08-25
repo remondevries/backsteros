@@ -5,19 +5,22 @@ import { CALENDAR_BUSY_TASK_LEGACY_SOURCE } from "./constants.js";
 export type ConflictDecision = "apply" | "skip";
 
 /**
- * Tie-break when both cores changed the same row.
- * - meeting_scheduling_settings: local-core wins (settings edited on laptop)
- * - meetings + calendar-busy tasks: cloud-core wins (portal / calendar source)
- * - api_keys: last-write-wins (caller compares updated_at)
+ * Tie-break when both cores changed the same row at the same timestamp.
+ * - meeting_scheduling_settings / workspace_settings: local-core wins
+ * - meetings: cloud-core wins (portal bookings)
+ * - everything else: accept incoming (last-writer via updated_at already tied)
  */
 export function preferIncomingOnConflict(
   table: ReplicatedTable,
   localRole: CoreReplicationRole,
 ): boolean {
-  if (table === "meeting_scheduling_settings") {
+  if (
+    table === "meeting_scheduling_settings" ||
+    table === "workspace_settings"
+  ) {
     return localRole === "cloud";
   }
-  if (table === "meetings" || table === "tasks") {
+  if (table === "meetings") {
     return localRole === "local";
   }
   return true;
@@ -38,7 +41,7 @@ export function shouldApplyByUpdatedAt(
   return preferIncomingOnConflict(table, localRole) ? "apply" : "skip";
 }
 
-/** SQL fragment appended to calendar-busy task replication queries. */
+/** @deprecated Busy-only filter removed; kept for tests / legacy callers. */
 export function calendarBusyTaskFilterSql(): string {
   return `legacy_source = '${CALENDAR_BUSY_TASK_LEGACY_SOURCE}'`;
 }

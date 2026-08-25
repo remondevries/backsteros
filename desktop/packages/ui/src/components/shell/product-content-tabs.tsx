@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 
 import { getNavigationItemIcon } from "../navigation/navigation-item-icon.js";
 import { SidePanelPlusIcon } from "./side-panel-plus-icon.js";
+import { ContentTabsTimer } from "./content-tabs-timer.js";
+import {
+  ProductHistoryToolbar,
+  type ProductHistoryToolbarProps,
+} from "./product-history-toolbar.js";
 import {
   resolveTabNavIconId,
   type ProductTab,
@@ -21,6 +26,11 @@ export type ProductContentTabsProps = {
   onOpenNewTab: () => void;
   /** Override default nav-family icons (e.g. document/letter glyphs on web). */
   renderTabIcon?: (tab: ProductTab) => ReactNode;
+  /**
+   * When the product sidebar is collapsed, render history controls here so
+   * recent / back / forward stay reachable next to the traffic lights.
+   */
+  historyToolbar?: ProductHistoryToolbarProps | null;
 };
 
 function DefaultTabIcon({ href }: { href: string }) {
@@ -46,76 +56,90 @@ export function ProductContentTabs({
   onCloseTab,
   onOpenNewTab,
   renderTabIcon,
+  historyToolbar = null,
 }: ProductContentTabsProps) {
   return (
-    <header className="content-tabs-bar" data-tauri-drag-region>
-      <div className="content-tabs-scroll">
-        <div className="content-tabs-list" role="tablist" aria-label="Open tabs">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTabId;
-            const showClose = tabs.length > 1;
+    <header className="content-tabs-bar-row" data-tauri-drag-region>
+      {historyToolbar ? (
+        <ProductHistoryToolbar
+          {...historyToolbar}
+          className="content-tabs-history-toolbar"
+        />
+      ) : null}
+      <div className="content-tabs-bar">
+        <div className="content-tabs-scroll">
+          <div
+            className="content-tabs-list"
+            role="tablist"
+            aria-label="Open tabs"
+          >
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              const showClose = tabs.length > 1;
 
-            return (
-              <span
-                key={tab.id}
-                role="tab"
-                tabIndex={-1}
-                aria-selected={isActive}
-                className={[
-                  "content-tab",
-                  isActive ? "content-tab-active" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onActivateTab(tab.id)}
-                onKeyDown={(event) => {
-                  if (isActivateKey(event)) {
-                    event.preventDefault();
-                    onActivateTab(tab.id);
-                  }
-                }}
-                title={tab.title}
-              >
-                <span className="content-tab-content">
-                  {renderTabIcon ? (
-                    renderTabIcon(tab)
-                  ) : (
-                    <DefaultTabIcon href={tab.href} />
-                  )}
-                  <span className="content-tab-label">{tab.title}</span>
+              return (
+                <span
+                  key={tab.id}
+                  role="tab"
+                  tabIndex={-1}
+                  aria-selected={isActive}
+                  className={[
+                    "content-tab",
+                    isActive ? "content-tab-active" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => onActivateTab(tab.id)}
+                  onKeyDown={(event) => {
+                    if (isActivateKey(event)) {
+                      event.preventDefault();
+                      onActivateTab(tab.id);
+                    }
+                  }}
+                  title={tab.title}
+                >
+                  <span className="content-tab-content">
+                    {renderTabIcon ? (
+                      renderTabIcon(tab)
+                    ) : (
+                      <DefaultTabIcon href={tab.href} />
+                    )}
+                    <span className="content-tab-label">{tab.title}</span>
+                  </span>
+                  {showClose ? (
+                    <span className="content-tab-close-fade" aria-hidden="true" />
+                  ) : null}
+                  {showClose ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="content-tab-close"
+                      aria-label={`Close ${tab.title}`}
+                      title={`Close ${tab.title}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCloseTab(tab.id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  ) : null}
                 </span>
-                {showClose ? (
-                  <span className="content-tab-close-fade" aria-hidden="true" />
-                ) : null}
-                {showClose ? (
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    className="content-tab-close"
-                    aria-label={`Close ${tab.title}`}
-                    title={`Close ${tab.title}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onCloseTab(tab.id);
-                    }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </span>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
-        <button
-          type="button"
-          className="content-tab-add"
-          aria-label="Open new tab"
-          onClick={onOpenNewTab}
-        >
-          <SidePanelPlusIcon />
-        </button>
+          <button
+            type="button"
+            className="content-tab-add"
+            aria-label="Open new tab"
+            onClick={onOpenNewTab}
+          >
+            <SidePanelPlusIcon />
+          </button>
+        </div>
       </div>
+      <ContentTabsTimer />
     </header>
   );
 }

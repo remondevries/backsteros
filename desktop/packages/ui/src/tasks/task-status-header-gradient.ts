@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 import { migrateLegacyTaskStatus, type TaskStatus } from "./task-status.js";
+import { resolveTaskStatusColor } from "./task-status-color.js";
 
 export type TaskStatusHeaderGradient = {
   from: string;
@@ -66,5 +67,17 @@ export function getTaskStatusHeaderGradientStyle(
     backgroundImage: formatTaskStatusHeaderGradientCss(
       getTaskStatusHeaderGradient(status),
     ),
+  };
+}
+
+/** Compact status-colored badge for timer pills / option IDs. */
+export function getTaskStatusIdBadgeStyle(
+  status: TaskStatus | string | null | undefined,
+): CSSProperties | undefined {
+  if (!status?.trim()) return undefined;
+  const color = resolveTaskStatusColor(migrateLegacyTaskStatus(status));
+  return {
+    background: `color-mix(in srgb, ${color} 22%, transparent)`,
+    color,
   };
 }

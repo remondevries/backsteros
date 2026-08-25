@@ -80,12 +80,18 @@ export type DesktopTaskLayoutProps = {
   viewScope?: AgentChatViewScope;
   /** Require a real working directory before mounting the agent pane. */
   requireWorkingDirectory?: boolean;
+  /**
+   * When false, ⇧[ is left for the shell content list panel (e.g. Inbox).
+   * Task routes without a list panel keep the default (toggle detail column).
+   */
+  detailColumnToggleShortcutEnabled?: boolean;
 };
 
 /**
  * Shared task layout: detail left (resizable), agent surface right.
  *
- * ⇧[ toggles the left task-detail column so the chat pane can go wider.
+ * ⇧[ toggles the left task-detail column so the chat pane can go wider
+ * (unless {@link detailColumnToggleShortcutEnabled} is false).
  * ] toggles the agent content panel so task details can grow.
  * ⌥- / ⌥= nudge the split (shrink left / shrink right) with a smooth grid transition.
  *
@@ -108,6 +114,7 @@ export function DesktopTaskLayout({
   preferWideTaskPanel = true,
   viewScope = "rail",
   requireWorkingDirectory = false,
+  detailColumnToggleShortcutEnabled = true,
 }: DesktopTaskLayoutProps) {
   const workingDirectory = requireWorkingDirectory
     ? normalizeWorkingDirectory(cwd)
@@ -281,6 +288,8 @@ export function DesktopTaskLayout({
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (isTaskDetailPanelToggleShortcut(event)) {
+        // Inbox keeps ⇧[ for the list side panel; don't steal it here.
+        if (!detailColumnToggleShortcutEnabled) return;
         if (!shouldHandleGlobalShortcut(event)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -310,12 +319,14 @@ export function DesktopTaskLayout({
       toggleAgentCollapsed();
     }
 
-    // Capture so we win over the global content-side-panel ⇧[ handler.
+    // Capture so we win over the global content-side-panel ⇧[ handler when
+    // this layout owns the shortcut (task routes without a list panel).
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
     agentCollapsed,
     detailCollapsed,
+    detailColumnToggleShortcutEnabled,
     nudgeDetailPanelWidth,
     toggleAgentCollapsed,
     toggleDetailCollapsed,

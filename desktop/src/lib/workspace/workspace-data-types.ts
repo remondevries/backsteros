@@ -4,6 +4,7 @@ import type {
   Contact as ApiContact,
   Letter as ApiLetter,
   Organization as ApiOrganization,
+  Project as ApiProject,
   Habit as ApiHabit,
   Task as ApiTask,
   TaskLink,
@@ -65,6 +66,10 @@ export type DesktopWorkspaceData = {
   taskDescriptions: Record<string, string>;
   taskLinks: Record<string, TaskLink[]>;
   letterBodies: Record<string, string>;
+  /** Full API task rows (includes description when REST hydrate filled it). */
+  taskDetails: Record<string, ApiTask>;
+  /** Full API project rows (includes summary/description when available). */
+  projectDetails: Record<string, ApiProject>;
   /** journalDate → document id for content load/save. */
   journalDocumentIdsByDate: Record<string, string>;
   contactDetails: Record<string, ApiContact>;
@@ -95,6 +100,7 @@ export type DesktopWorkspaceData = {
   createContact: (input: {
     name: string;
     organizationId?: string | null;
+    email?: string | null;
   }) => Promise<{ id: string; key: string }>;
   createProject: (input: {
     name: string;
@@ -174,6 +180,7 @@ export type DesktopWorkspaceData = {
     summary?: string | null;
     notes?: string | null;
     transcription?: string | null;
+    status?: string;
     startAt: string;
     endAt: string;
   }) => Promise<{ id: string; number: number }>;

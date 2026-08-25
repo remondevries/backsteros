@@ -20,12 +20,15 @@ import {
   countHabitDayOutcomes,
   collapseHabitItemsByHabitId,
   formatJournalEntryTitle,
+  getCalendarMeetingOverlayHref,
   getDocumentEditorBody,
   getTaskDueDateYmd,
   isHabitLinkedTask,
+  meetingsToCalendarEventsForDate,
   mergeJournalContent,
   tasksToCalendarEventsForDate,
   type JournalHabitDayItem,
+  type MeetingCalendarPatch,
   type TaskCalendarPatch,
 } from "@backsteros/ui";
 
@@ -501,18 +504,47 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
       Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
 
-  const events = useMemo(
-    () =>
-      tasksToCalendarEventsForDate(
-        workspace.allTasks.filter((task) => !isHabitLinkedTask(task)),
+  const events = useMemo(() => {
+    const habitIconById = new Map(
+      workspace.habits.map((habit) => [habit.id, habit.icon ?? null] as const),
+    );
+    const tasksWithHabitIcons = workspace.allTasks.map((task) => {
+      const habitId = task.habitId?.trim() || null;
+      if (!habitId) return task;
+      return {
+        ...task,
+        habitIcon: habitIconById.get(habitId) ?? null,
+      };
+    });
+    return [
+      ...tasksToCalendarEventsForDate(
+        tasksWithHabitIcons,
         dateSlug,
         calendarTimeZone,
       ),
-    [calendarTimeZone, dateSlug, workspace.allTasks],
-  );
+      ...meetingsToCalendarEventsForDate(
+        workspace.meetings,
+        dateSlug,
+        calendarTimeZone,
+      ),
+    ];
+  }, [
+    calendarTimeZone,
+    dateSlug,
+    workspace.allTasks,
+    workspace.habits,
+    workspace.meetings,
+  ]);
 
   const handleReschedule = (taskId: string, patch: TaskCalendarPatch) => {
     void workspace.patchTask(taskId, patch);
+  };
+
+  const handleMeetingReschedule = (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => {
+    void workspace.patchMeeting(meetingId, patch);
   };
 
   const handleTaskOpen = useCallback(
@@ -534,6 +566,13 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
     [location.pathname, navigate, workspace.allTasks, workspace.contacts],
   );
 
+  const handleMeetingOpen = useCallback(
+    (meetingId: string) => {
+      navigate(getCalendarMeetingOverlayHref(meetingId));
+    },
+    [navigate],
+  );
+
   if (!workspace.ready) {
     return (
       <div
@@ -548,7 +587,9 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
       dateSlug={dateSlug}
       events={events}
       onTaskReschedule={handleReschedule}
+      onMeetingReschedule={handleMeetingReschedule}
       onTaskOpen={handleTaskOpen}
+      onMeetingOpen={handleMeetingOpen}
     />
   );
 }

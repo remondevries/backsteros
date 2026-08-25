@@ -18,8 +18,9 @@ type Props = {
 };
 
 /**
- * iPad project overview meta — desktop Properties / Areas rows inside the
- * same bordered chip card used on phone (`DetailPropertiesInlineShell`).
+ * Project overview meta — desktop Properties / Areas rows (phone + iPad).
+ * Same bordered chip card chrome on both layouts so Type and other fields
+ * stay visible and tappable.
  */
 export function ProjectOverviewMetaRows({
   properties,

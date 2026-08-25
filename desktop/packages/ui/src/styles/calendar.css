@@ -9,6 +9,8 @@
   box-sizing: border-box;
   overflow: hidden;
   background: transparent;
+  /* Opaque grid lines — avoids brighter seams where FC cell borders overlap. */
+  --calendar-grid-border: color-mix(in srgb, var(--foreground) 14%, var(--background));
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: transparent;
   --fc-non-business-color: transparent;
@@ -27,6 +29,11 @@
   overflow: hidden;
 }
 
+.calendar-view-main:focus,
+.calendar-view-main:focus-visible {
+  outline: none;
+}
+
 .calendar-view-main > .fc {
   flex: 1;
   min-height: 0;
@@ -38,7 +45,7 @@
   flex-direction: column;
   min-height: 0;
   background: transparent;
-  --fc-border-color: var(--border);
+  --fc-border-color: var(--calendar-grid-border);
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: transparent;
   --fc-neutral-text-color: var(--muted);
@@ -68,26 +75,76 @@
     transparent
   );
   --fc-button-bg-color: var(--surface);
-  --fc-button-border-color: var(--border);
+  --fc-button-border-color: var(--calendar-grid-border);
   --fc-button-text-color: var(--foreground);
   --fc-button-hover-bg-color: color-mix(
     in srgb,
     var(--foreground) 8%,
     var(--surface)
   );
-  --fc-button-hover-border-color: var(--border);
+  --fc-button-hover-border-color: var(--calendar-grid-border);
   --fc-button-active-bg-color: color-mix(
     in srgb,
     var(--keyboard-nav-highlight-color) 28%,
     var(--surface)
   );
-  --fc-button-active-border-color: var(--border);
+  --fc-button-active-border-color: var(--calendar-grid-border);
   font-size: 0.8125rem;
   color: var(--foreground);
 }
 
+/* FullCalendar grid: solid 1px internal lines only (no outer frame).
+   Outer chrome comes from .context-panel (left divider) + .content-frame (right/bottom). */
 .calendar-view .fc .fc-scrollgrid {
   background: transparent;
+  border: none !important;
+}
+
+.calendar-view .fc .fc-scrollgrid-section > td {
+  border: none !important;
+}
+
+.calendar-view .fc .fc-scrollgrid table {
+  border: none !important;
+  border-collapse: collapse;
+}
+
+.calendar-view .fc .fc-scrollgrid td,
+.calendar-view .fc .fc-scrollgrid th,
+.calendar-view .fc .fc-timegrid-slot,
+.calendar-view .fc .fc-timegrid-slot-lane,
+.calendar-view .fc .fc-timegrid-col,
+.calendar-view .fc .fc-timegrid-axis,
+.calendar-view .fc .fc-daygrid-day,
+.calendar-view .fc .fc-col-header-cell,
+.calendar-view .fc .fc-list-day-cushion {
+  border-color: var(--calendar-grid-border);
+  border-style: solid;
+  /* Draw only trailing edges so the perimeter never doubles the chrome. */
+  border-width: 0 1px 1px 0;
+}
+
+/* Drop the trailing edges on the farthest right / bottom of the grid. */
+.calendar-view .fc .fc-col-header-cell:last-child,
+.calendar-view .fc .fc-timegrid-col:last-child,
+.calendar-view .fc .fc-daygrid-body tr > td:last-child,
+.calendar-view .fc .fc-daygrid-body tr > td:last-child .fc-daygrid-day,
+.calendar-view .fc .fc-list-table td:last-child,
+.calendar-view .fc .fc-list-table th:last-child {
+  border-right: none;
+}
+
+.calendar-view .fc .fc-timegrid-slots tr:last-child .fc-timegrid-slot,
+.calendar-view .fc .fc-timegrid-slots tr:last-child .fc-timegrid-slot-lane,
+.calendar-view .fc .fc-timegrid-slots tr:last-child td,
+.calendar-view .fc .fc-daygrid-body tr:last-child > td,
+.calendar-view .fc .fc-daygrid-body tr:last-child > td .fc-daygrid-day,
+.calendar-view .fc .fc-list-table tr:last-child td {
+  border-bottom: none;
+}
+
+.calendar-view .fc .fc-list-table {
+  border: none;
 }
 
 .calendar-view .fc .fc-view-harness,
@@ -104,7 +161,37 @@
 
 .calendar-view .fc .fc-header-toolbar {
   flex-shrink: 0;
-  margin: 8px 8px 0;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 12px 0;
+}
+
+.calendar-view .fc .fc-toolbar-chunk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendar-view .fc .fc-toolbar-chunk:empty {
+  display: none;
+}
+
+.calendar-view .fc .fc-toolbar-chunk:first-child {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.calendar-view .fc .fc-toolbar-chunk:last-child {
+  flex: none;
+  justify-content: flex-end;
+}
+
+.calendar-view .fc .fc-toolbar-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .calendar-view .fc .fc-view-harness {
@@ -114,11 +201,6 @@
 
 .calendar-view .fc .fc-view-harness-active {
   height: 100%;
-}
-
-.calendar-view .fc .fc-toolbar-title {
-  font-size: 0.9375rem;
-  font-weight: 600;
 }
 
 .calendar-view .fc .fc-button {
@@ -189,7 +271,8 @@
   border-radius: 4px;
   border-width: 1px;
   border-style: solid;
-  background-color: color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  --task-calendar-event-bg: var(--surface, var(--background));
+  background-color: var(--task-calendar-event-bg) !important;
   border-color: color-mix(in srgb, var(--foreground) 22%, transparent) !important;
 }
 
@@ -197,6 +280,159 @@
   color: var(--foreground);
   background: transparent !important;
   height: 100%;
+}
+
+.calendar-view .fc .fc-event.task-calendar-event.keyboard-nav-item-highlight,
+.calendar-view .fc .fc-list-event.keyboard-nav-item-highlight,
+.calendar-view .fc tr.fc-list-event.keyboard-nav-item-highlight,
+.calendar-view .fc .fc-event.task-calendar-event.keyboard-nav-item-highlight:focus,
+.calendar-view .fc .fc-event.task-calendar-event.keyboard-nav-item-highlight:focus-visible,
+.calendar-view .fc .fc-list-event.keyboard-nav-item-highlight:focus,
+.calendar-view .fc .fc-list-event.keyboard-nav-item-highlight:focus-visible {
+  --task-calendar-event-bg: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 22%,
+    var(--surface, var(--background))
+  );
+  background-color: var(--task-calendar-event-bg) !important;
+  border-color: var(--keyboard-nav-highlight-color, #ee7a47) !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  z-index: 8;
+}
+
+.calendar-view .fc .fc-timegrid-event-harness.keyboard-nav-item-highlight {
+  z-index: 12;
+}
+
+.calendar-view .fc .fc-list-event.keyboard-nav-item-highlight .fc-list-event-dot {
+  border-color: var(--keyboard-nav-highlight-color, #ee7a47);
+  background-color: var(--keyboard-nav-highlight-color, #ee7a47);
+}
+
+.calendar-view .fc .fc-popover .fc-daygrid-event.task-calendar-event.keyboard-nav-item-highlight,
+.calendar-view
+  .fc
+  .fc-popover
+  .fc-daygrid-event.task-calendar-event.keyboard-nav-item-highlight:focus,
+.calendar-view
+  .fc
+  .fc-popover
+  .fc-daygrid-event.task-calendar-event.keyboard-nav-item-highlight:focus-visible {
+  --task-calendar-event-bg: color-mix(
+    in srgb,
+    var(--keyboard-nav-highlight-color, #ee7a47) 22%,
+    var(--surface, var(--background))
+  );
+  background-color: var(--task-calendar-event-bg) !important;
+  border-color: var(--keyboard-nav-highlight-color, #ee7a47) !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  z-index: 2;
+}
+
+.calendar-view .fc .fc-daygrid-more-link.keyboard-nav-item-highlight,
+.calendar-view .fc .fc-daygrid-more-link.keyboard-nav-item-highlight:focus,
+.calendar-view .fc .fc-daygrid-more-link.keyboard-nav-item-highlight:focus-visible {
+  color: var(--keyboard-nav-highlight-color, #ee7a47) !important;
+  background: var(
+    --keyboard-nav-highlight-bg,
+    rgb(255 255 255 / 0.02)
+  ) !important;
+  outline: none !important;
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
+  border-radius: 4px;
+}
+
+.calendar-side-panel .app-side-panel-item.keyboard-nav-item-highlight,
+.calendar-side-panel .app-side-panel-item.keyboard-nav-item-highlight:hover,
+.calendar-side-panel .app-side-panel-item.keyboard-nav-item-highlight:focus,
+.calendar-side-panel .app-side-panel-item.keyboard-nav-item-highlight:focus-visible {
+  color: var(--foreground);
+}
+
+/* All-day / daygrid rows: solid fill so stacked tasks stay readable over grid lines. */
+.calendar-view .fc .fc-daygrid-event.task-calendar-event,
+.calendar-view .fc .fc-h-event.task-calendar-event {
+  --task-calendar-event-bg: var(--surface, var(--background));
+  background-color: var(--task-calendar-event-bg) !important;
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent) !important;
+}
+
+.calendar-view .fc .fc-daygrid-block-event.task-calendar-event {
+  margin-top: 1px;
+}
+
+.calendar-view .fc .fc-daygrid-event.task-calendar-event .fc-event-main,
+.calendar-view .fc .fc-h-event.task-calendar-event .fc-event-main {
+  background-color: inherit !important;
+}
+
+.calendar-view .fc .fc-daygrid-event.task-calendar-event .task-calendar-event__content {
+  padding: 2px 4px;
+}
+
+/* "+N more" popover — FC sets --fc-page-bg-color to transparent on .calendar-view .fc */
+.calendar-view .fc .fc-popover {
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--calendar-grid-border) !important;
+  background: color-mix(
+    in srgb,
+    var(--surface, var(--background)) 96%,
+    transparent
+  ) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.38);
+}
+
+.calendar-view .fc .fc-popover-header {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--calendar-grid-border);
+  background: color-mix(
+    in srgb,
+    var(--surface, var(--background)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.calendar-view .fc .fc-popover-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.calendar-view .fc .fc-popover-close {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.calendar-view .fc .fc-popover-body {
+  padding: 8px;
+  background: transparent;
+}
+
+.calendar-view .fc .fc-more-popover .fc-daygrid-event-harness {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  margin-top: 4px;
+}
+
+.calendar-view .fc .fc-more-popover .fc-daygrid-event-harness:first-child {
+  margin-top: 0;
+}
+
+.calendar-view .fc .fc-popover .fc-daygrid-event.task-calendar-event {
+  --task-calendar-event-bg: var(--surface, var(--background));
+  background-color: var(--task-calendar-event-bg) !important;
+  white-space: normal;
 }
 
 .task-calendar-event__content {
@@ -260,6 +496,18 @@
 }
 
 /* Journal day column: time slots only (no day header / all-day row) */
+.calendar-day-timeline {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.calendar-day-timeline-main {
+  min-height: 0;
+  flex: 1;
+}
+
 .calendar-day-timeline .fc .fc-col-header,
 .calendar-day-timeline .fc .fc-timegrid-divider {
   display: none;
@@ -287,7 +535,7 @@
 
 .calendar-day-timeline.calendar-view .fc .fc-timegrid-slot,
 .calendar-day-timeline.calendar-view .fc .fc-timegrid-slot-lane {
-  border-top: 0.5px solid var(--border);
+  border-top: 1px solid var(--calendar-grid-border);
   border-left: none;
   border-right: none;
 }
@@ -396,6 +644,25 @@
   width: 100%;
 }
 
+.calendar-tasks-side-panel-row--habit {
+  gap: 8px;
+}
+
+.calendar-tasks-side-panel-item--habit .habit-side-panel-item__leading {
+  /* Match habit tracker: icon/check share one 16×16 slot. */
+  color: var(--muted, #a0a0a0);
+}
+
+.calendar-tasks-side-panel-item--habit.is-checked .calendar-tasks-side-panel-title {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  text-decoration: line-through;
+}
+
+.calendar-tasks-side-panel-item--habit.is-checked .habit-side-panel-item__icon,
+.calendar-tasks-side-panel-item--habit.is-checked .habit-side-panel-item__icon svg {
+  color: #3d9a5b !important;
+}
+
 .calendar-tasks-side-panel-title {
   flex: 1;
   min-width: 0;
@@ -488,14 +755,15 @@
 
 .calendar-day-habits__icon {
   display: inline-flex;
-  color: #000;
+  color: #0d1117;
 }
 
 .calendar-day-habits__icon svg {
   display: block;
   width: 11px;
   height: 11px;
-  color: #000;
+  color: #0d1117;
+  fill: currentColor;
 }
 
 .calendar-view .fc .fc-col-header-cell .calendar-day-habits-slot {
@@ -517,6 +785,60 @@
   margin-top: 0;
 }
 
+.calendar-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.calendar-date-nav__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.calendar-date-nav__btn--arrow {
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+.calendar-date-nav__btn--today {
+  min-width: 52px;
+  font-weight: 500;
+  border: 1px solid var(--calendar-grid-border, var(--border));
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.calendar-date-nav__btn--arrow:hover:not(:disabled) {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.calendar-date-nav__btn--today:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.calendar-date-nav__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .calendar-meeting-detail-overlay {
   position: absolute;
   top: 0;
@@ -534,11 +856,40 @@
   overflow: hidden;
 }
 
+.calendar-meeting-detail-overlay--page {
+  width: 100%;
+  max-width: none;
+  box-shadow: none;
+}
+
 .calendar-meeting-detail-overlay .meeting-detail-view {
   max-width: none;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
+}
+
+.calendar-meeting-detail-overlay .meeting-detail-split,
+.calendar-meeting-detail-overlay .meeting-detail-split .inbox-detail-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+}
+
+.calendar-task-detail-overlay__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-task-detail-overlay .task-detail-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .calendar-page {
@@ -551,6 +902,47 @@
   overflow: hidden;
 }
 
+/* Match FloatingPillToggleDock inset: 16px from bottom + outer edge. */
+.calendar-side-panel {
+  position: relative;
+}
+
+.calendar-side-panel__footer {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.calendar-side-panel__footer > * {
+  pointer-events: auto;
+}
+
+.calendar-side-panel__footer .segmented-pill-toggle {
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--background) 72%, rgb(255 255 255 / 0.08));
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.calendar-side-panel > .app-content-side-panel-main {
+  overflow-y: auto;
+  /* Clear the absolutely positioned mode toggle. */
+  padding-bottom: 52px;
+}
+
+.calendar-view-mode-dock.content-view-mode-toggle {
+  right: 16px;
+  bottom: 16px;
+  left: auto;
+}
+
 .meeting-detail-view {
   display: flex;
   flex-direction: column;
@@ -559,12 +951,58 @@
 }
 
 .meeting-detail-view--panel {
+  position: relative;
   flex: 1;
   max-width: none;
   width: 100%;
   min-height: 0;
-  padding: 16px 20px 20px;
+  padding: 0;
+  gap: 0;
   box-sizing: border-box;
+  --meeting-panel-inset: 1rem;
+  --meeting-panel-inset-left: 1.25rem;
+}
+
+.meeting-detail-view--panel .meeting-detail-view__header {
+  flex-shrink: 0;
+  padding: 16px var(--meeting-panel-inset) 0 var(--meeting-panel-inset-left);
+}
+
+.meeting-detail-view--panel .meeting-properties-stacked {
+  flex-shrink: 0;
+  padding: 12px var(--meeting-panel-inset) 0 var(--meeting-panel-inset-left);
+}
+
+.meeting-detail-view__format-field {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.meeting-detail-view__format-field .property-dropdown {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.meeting-detail-view__format-field .property-dropdown-trigger__label {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.meeting-detail-view--panel .meeting-detail-view__content--page {
+  padding-right: var(--meeting-panel-inset);
+  padding-left: var(--meeting-panel-inset-left);
+}
+
+.meeting-detail-view--panel .meeting-detail-view__bottom-chrome {
+  right: var(--meeting-panel-inset);
+  left: var(--meeting-panel-inset-left);
+}
+
+.meeting-detail-view--panel .meeting-detail-view__bottom-chrome-inner {
+  max-width: none;
+  padding-inline: 0;
 }
 
 .meeting-detail-page {
@@ -573,10 +1011,35 @@
   min-height: 0;
   width: 100%;
   height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Calendar / inbox: lock the notes | properties split inside page-scroll. */
+.page-scroll:has(.meeting-detail-page),
+.bos-product-shell .page-scroll:has(.meeting-detail-page) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.meeting-detail-split.meeting-detail-page .detail-with-properties {
+  flex: 1;
+  min-height: 0;
+}
+
+.meeting-detail-split.meeting-detail-page .inbox-detail-layout,
+.meeting-detail-split.meeting-detail-page .detail-with-properties__main {
+  min-height: 0;
+  height: 100%;
+  flex: 1;
   overflow: hidden;
 }
 
 .meeting-detail-page__body {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -593,18 +1056,72 @@
   width: 100%;
   max-width: 800px;
   margin-inline: auto;
-  padding: 0 1rem 2.5rem;
+  padding: 0 1rem;
+  gap: 12px;
 }
 
-.meeting-detail-view__content--page .meeting-detail-view__editor-shell
+/* Shared notes editor chrome — narrow panel and expanded page. */
+.meeting-detail-view__content--page
+  .meeting-detail-view__editor-shell
   .content-markdown-view-layout {
   padding-bottom: 52px;
 }
 
+/* content--page supplies horizontal inset — avoid double column padding. */
+.meeting-detail-view__content--page .content-markdown-editor-column,
+.meeting-detail-view__content--page .content-markdown-preview-column,
 .meeting-detail-view__content--page
-  .meeting-detail-view__editor-shell
-  .content-view-mode-toggle {
-  right: 1rem;
+  .content-markdown-preview-column.content-markdown-preview-column--no-top {
+  max-width: none;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.meeting-detail-view__content--page .content-markdown-preview-column,
+.meeting-detail-view__content--page
+  .content-markdown-preview-column.content-markdown-preview-column--no-top {
+  padding-bottom: 0;
+}
+
+/* Pin expand/collapse + panel toggle to the overlay bottom (matches properties-rail dock). */
+.meeting-detail-view__bottom-chrome {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.meeting-detail-view__bottom-chrome-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+
+.meeting-detail-view__bottom-chrome-start,
+.meeting-detail-view__bottom-chrome-end {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.meeting-detail-view__bottom-chrome-end {
+  margin-left: auto;
+}
+
+.meeting-detail-view__bottom-chrome-toggle.content-view-mode-toggle {
+  position: static;
+  right: auto;
+  bottom: auto;
 }
 
 .meeting-detail-view__header {
@@ -622,6 +1139,14 @@
   min-width: 0;
 }
 
+.meeting-detail-view__header-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.meeting-detail-view__header-action,
 .meeting-detail-view__close {
   display: inline-flex;
   width: 28px;
@@ -636,7 +1161,36 @@
   cursor: pointer;
 }
 
+.meeting-detail-view__header-action:hover,
 .meeting-detail-view__close:hover {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.meeting-detail-view__overlay-chrome {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 0;
+  flex-shrink: 0;
+}
+
+.meeting-detail-view__layout-action {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.meeting-detail-view__layout-action:hover {
   color: var(--foreground);
   background: rgb(255 255 255 / 0.06);
 }
@@ -644,6 +1198,78 @@
 .meeting-detail-view .task-properties-inline {
   flex-shrink: 0;
   padding: 0 2px;
+}
+
+.meeting-properties-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.meeting-properties-stacked .entity-properties-section {
+  padding: 10px 8px;
+  gap: 8px;
+}
+
+.meeting-properties-stacked .entity-properties-section__body {
+  gap: 10px;
+}
+
+.meeting-properties-stacked .property-field-group {
+  gap: 4px;
+}
+
+.meeting-properties-stacked .property-field-group__label {
+  padding: 0;
+}
+
+.meeting-properties-stacked .property-dropdown,
+.meeting-properties-stacked .meeting-schedule-dropdown {
+  display: block;
+  width: 100%;
+}
+
+.meeting-properties-stacked .property-dropdown-trigger,
+.meeting-properties-stacked .property-dropdown-fallback {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px 4px 4px;
+  border-radius: 6px;
+  min-height: 24px;
+}
+
+.meeting-properties-stacked .property-dropdown-trigger__label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.meeting-properties-stacked__attendee-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.property-dropdown-trigger--stacked-row {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px 4px 4px;
+  border-radius: 6px;
+  min-height: 24px;
+}
+
+.property-dropdown-trigger--stacked-row .property-dropdown-trigger__label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.property-dropdown--stacked-row {
+  display: block;
+  width: 100%;
 }
 
 .meeting-detail-view__id {
@@ -703,6 +1329,12 @@
 
 .meeting-detail-view--panel .meeting-detail-view__content {
   min-height: 0;
+  padding-top: 12px;
+  padding-bottom: 52px;
+}
+
+.meeting-detail-page__body .meeting-detail-view__content--page {
+  padding-bottom: 52px;
 }
 
 .meeting-detail-view__tabs {
@@ -746,20 +1378,6 @@
   width: 100%;
 }
 
-.meeting-detail-view--panel
-  .meeting-detail-view__editor-shell
-  .content-markdown-view-layout {
-  max-width: 800px;
-  margin-inline: auto;
-  padding-bottom: 52px;
-}
-
-.meeting-detail-view--panel
-  .meeting-detail-view__editor-shell
-  .content-view-mode-toggle {
-  right: 0;
-}
-
 /* Calendar task click popover (Google Calendar–style) */
 
 .calendar-task-event-popover {
@@ -784,6 +1402,35 @@
   padding: 12px 12px 0;
 }
 
+.calendar-task-event-popover__header-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin: -4px -4px 0 0;
+}
+
+.calendar-task-event-popover__expand,
+.calendar-task-event-popover__close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.calendar-task-event-popover__expand:hover,
+.calendar-task-event-popover__close:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
 .calendar-task-event-popover__schedule {
   display: flex;
   align-items: center;
@@ -800,26 +1447,6 @@
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 
-.calendar-task-event-popover__close {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  margin: -4px -4px 0 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: color-mix(in srgb, var(--foreground) 55%, transparent);
-  cursor: pointer;
-}
-
-.calendar-task-event-popover__close:hover {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
 .calendar-task-event-popover__body {
   display: flex;
   flex-direction: column;
@@ -833,6 +1460,20 @@
   font-weight: 600;
   line-height: 1.3;
   color: var(--foreground);
+}
+
+.calendar-task-event-popover__title--action {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-task-event-popover__title--action:hover {
+  color: color-mix(in srgb, var(--foreground) 82%, var(--accent, #6ea8fe));
 }
 
 .calendar-task-event-popover__meta {
@@ -904,4 +1545,485 @@
 
 .calendar-task-event-popover__open:hover {
   background: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+/* Availability mode */
+
+.calendar-availability-view .calendar-availability-event,
+.calendar-availability-view .fc-event.calendar-availability-event {
+  --fc-event-bg-color: color-mix(in srgb, #3d9970 22%, var(--background));
+  --fc-event-border-color: color-mix(in srgb, #3d9970 45%, transparent);
+  --fc-event-text-color: var(--foreground);
+  border-radius: 6px;
+  opacity: 0.92;
+}
+
+/* Meetings calendar — booking availability hints (week/day time grid) */
+
+.calendar-view .fc .fc-timegrid-bg-harness .fc-bg-event.calendar-meetings-availability-marker,
+.calendar-view .fc-bg-event.calendar-meetings-availability-marker,
+.calendar-view .fc-event.calendar-meetings-availability-marker {
+  inset: 0;
+  width: auto !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-left: 2px solid #4a9a72 !important;
+  border-radius: 0;
+  opacity: 1 !important;
+  pointer-events: none;
+}
+
+.calendar-view .fc-bg-event.calendar-meetings-availability-marker .fc-event-main,
+.calendar-view .fc-bg-event.calendar-meetings-availability-marker .fc-event-main-frame,
+.calendar-view .fc-event.calendar-meetings-availability-marker .fc-event-main,
+.calendar-view .fc-event.calendar-meetings-availability-marker .fc-event-main-frame,
+.calendar-view .fc-bg-event.calendar-meetings-availability-marker .fc-event-title,
+.calendar-view .fc-bg-event.calendar-meetings-availability-marker .fc-event-time,
+.calendar-view .fc-event.calendar-meetings-availability-marker .fc-event-title,
+.calendar-view .fc-event.calendar-meetings-availability-marker .fc-event-time,
+.calendar-view .fc-event.calendar-meetings-availability-marker .task-calendar-event__content {
+  display: none !important;
+}
+
+.calendar-availability-side-panel-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-availability-day-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  transition: opacity 120ms ease;
+}
+
+.calendar-availability-day-row.is-off {
+  opacity: 0.45;
+}
+
+.calendar-availability-day-row__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.calendar-availability-day-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.calendar-availability-day-toggle:disabled {
+  cursor: default;
+}
+
+.calendar-availability-day-toggle__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.calendar-availability-day-toggle__switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+  transition: background 120ms ease;
+}
+
+.calendar-availability-day-toggle.is-on .calendar-availability-day-toggle__switch {
+  background: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+
+.calendar-availability-day-toggle:disabled .calendar-availability-day-toggle__switch {
+  opacity: 0.45;
+}
+
+.calendar-availability-day-toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 120ms ease;
+}
+
+.calendar-availability-day-toggle.is-on .calendar-availability-day-toggle__thumb {
+  transform: translateX(14px);
+}
+
+.calendar-availability-day-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.calendar-availability-day-row__unavailable {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.calendar-availability-day-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.calendar-availability-day-row__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  cursor: pointer;
+}
+
+.calendar-availability-day-row__icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.calendar-availability-day-row__icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.calendar-availability-slot-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 28px;
+  gap: 8px;
+  align-items: center;
+}
+
+.calendar-availability-slot-row__dash {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.calendar-availability-slot-row__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.calendar-availability-slot-row__remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+.calendar-availability-slot-row__remove:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.calendar-availability-time-pill {
+  display: block;
+  min-width: 0;
+}
+
+.calendar-availability-time-pill__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.calendar-availability-time-pill__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  text-align: center;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.calendar-availability-time-pill__input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.calendar-availability-time-pill__input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.calendar-availability-time-pill__input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+/* Legacy single-input styles kept for month popover edit mode */
+.calendar-availability-day-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-availability-time-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.calendar-availability-time-input:disabled {
+  opacity: 0.5;
+}
+
+.calendar-availability-time-separator {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.calendar-availability-day-popover {
+  position: fixed;
+  z-index: 1200;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.calendar-availability-day-popover__shell {
+  position: relative;
+}
+
+.calendar-availability-day-popover__actions {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.calendar-availability-day-popover__card {
+  border: 0.5px solid color-mix(in srgb, white 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, #1a1a1a 92%, transparent);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  padding: 12px 14px;
+}
+
+.calendar-availability-day-popover__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-availability-day-popover__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.calendar-availability-day-popover__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  cursor: pointer;
+}
+
+.calendar-availability-day-popover__close:hover {
+  background: color-mix(in srgb, white 8%, transparent);
+}
+
+.calendar-availability-day-popover__schedule {
+  margin: 8px 0 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.calendar-availability-day-popover__hint {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.calendar-availability-day-popover__edit {
+  margin-top: 8px;
+}
+
+.calendar-availability-day-popover__edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.calendar-availability-view .fc-daygrid-event {
+  cursor: pointer;
+}
+
+.calendar-availability-view .fc-daygrid-block-event.calendar-availability-event {
+  margin-top: 2px;
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+}
+
+.calendar-availability-view .fc-daygrid-day.fc-day-has-availability {
+  cursor: pointer;
+}
+
+/* Timetracking mode */
+.calendar-timetracking-side-panel .calendar-timetracking-month__weeks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.calendar-timetracking-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px 28px;
+  overflow: auto;
+}
+
+.calendar-timetracking-layout {
+  min-width: 0;
+}
+
+.calendar-timetracking-layout .journal-day-layout__main {
+  min-width: 0;
+}
+
+.calendar-timetracking-detail-panel__body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.calendar-timetracking-detail-panel__body .meeting-detail-view,
+.calendar-timetracking-detail-panel__body .task-detail-view,
+.calendar-timetracking-detail-panel__body .task-detail-page-overlay,
+.calendar-timetracking-detail-panel__body .desktop-task-layout {
+  height: 100%;
+  min-height: 0;
+}
+
+.calendar-timetracking-detail-panel__body .task-detail-page-overlay {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.calendar-timetracking-detail-panel__body .meeting-detail-view__overlay-chrome {
+  display: none;
+}
+
+.calendar-timetracking-view__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-timetracking-view__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.calendar-timetracking-view__subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.calendar-timetracking-view__subtitle-note {
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.calendar-timetracking-view__empty {
+  margin: 24px 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.calendar-timetracking-view__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar-timetracking-view__duration {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }

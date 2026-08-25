@@ -3,6 +3,10 @@
 import type { DragEvent, ReactNode } from "react";
 
 import type { GroupedListPointerAppendBind } from "../../list-nav/use-grouped-list-pointer-reorder.js";
+import {
+  keyboardNavItemClass,
+  keyboardNavItemProps,
+} from "../../list-nav/keyboard-nav-item.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 
 export type ProjectTypeGroupSectionListDrag = {
@@ -22,6 +26,21 @@ export type ProjectTypeGroupSectionProps = {
   title: string;
   collapsed: boolean;
   onToggle: () => void;
+  /**
+   * When set, the title label selects/activates independently; the chevron
+   * still expands/collapses via `onToggle`.
+   */
+  onTitleClick?: () => void;
+  /** Marks the title as the active selection (with `onTitleClick`). */
+  titleSelected?: boolean;
+  /** Optional keyboard-nav marker for j/k when the title is selectable. */
+  titleKeyboardItemId?: string;
+  titleKeyboardHighlighted?: boolean;
+  /**
+   * When false, omit the expand/collapse chevron (e.g. visibility is
+   * controlled elsewhere). Defaults to true.
+   */
+  showCollapseToggle?: boolean;
   children: ReactNode;
   /** Optional + control (Areas page create-in-group). */
   onAdd?: () => void;
@@ -82,6 +101,11 @@ export function ProjectTypeGroupSection({
   title,
   collapsed,
   onToggle,
+  onTitleClick,
+  titleSelected = false,
+  titleKeyboardItemId,
+  titleKeyboardHighlighted = false,
+  showCollapseToggle = true,
   children,
   onAdd,
   addActionLabel = "project",
@@ -108,6 +132,7 @@ export function ProjectTypeGroupSection({
   const isSelected = Boolean(
     selection && (selection.checked || selection.indeterminate),
   );
+  const titleSelectable = typeof onTitleClick === "function";
 
   function handleHeaderDragOver(event: DragEvent) {
     if (!listDrag || !listDrag.isActive(event.dataTransfer)) return;
@@ -125,6 +150,89 @@ export function ProjectTypeGroupSection({
     listDrag.onDrop(event.dataTransfer);
   }
 
+  const toggleIcon = (
+    <span className="project-type-subgroup__toggle" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path
+          d="M9 6l6 6-6 6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+
+  const selectControl = selection ? (
+    <span
+      className="project-type-subgroup__select"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <PolishedCheckbox
+        checked={selection.checked}
+        indeterminate={selection.indeterminate}
+        ariaLabel={selection.ariaLabel ?? `Select ${title}`}
+        onCheckedChange={(checked) => selection.onChange(checked)}
+      />
+    </span>
+  ) : null;
+
+  const headerInner = (
+    <>
+      {showCollapseToggle || selectControl ? (
+        <span className="project-type-subgroup__toggle-slot">
+          {showCollapseToggle ? (
+            titleSelectable ? (
+              <button
+                type="button"
+                className="project-type-subgroup__toggle-button"
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggle();
+                }}
+              >
+                {toggleIcon}
+              </button>
+            ) : (
+              toggleIcon
+            )
+          ) : null}
+          {selectControl}
+        </span>
+      ) : null}
+      {titleSelectable ? (
+        <button
+          type="button"
+          className={[
+            "project-type-subgroup__label",
+            "project-type-subgroup__label-button",
+            keyboardNavItemClass(titleKeyboardHighlighted),
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-current={titleSelected ? "true" : undefined}
+          {...(titleKeyboardItemId
+            ? keyboardNavItemProps(titleKeyboardItemId)
+            : {})}
+          onClick={(event) => {
+            event.stopPropagation();
+            onTitleClick();
+          }}
+        >
+          {title}
+        </button>
+      ) : (
+        <span className="project-type-subgroup__label">{title}</span>
+      )}
+      <span className="project-type-subgroup__rule" aria-hidden="true" />
+    </>
+  );
+
   return (
     <li className="project-type-subgroup" data-type-group={title}>
       <div
@@ -141,48 +249,28 @@ export function ProjectTypeGroupSection({
         onDrop={html5DragEnabled ? handleHeaderDrop : undefined}
         {...(pointerReorderAppend ?? {})}
       >
-        <button
-          type="button"
-          className="project-type-subgroup__header"
-          aria-expanded={!collapsed}
-          data-select={selectMode ? "true" : undefined}
-          data-selected={isSelected ? "true" : undefined}
-          onClick={onToggle}
-        >
-          <span className="project-type-subgroup__toggle-slot">
-            <span
-              className="project-type-subgroup__toggle"
-              aria-hidden="true"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                <path
-                  d="M9 6l6 6-6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            {selection ? (
-              <span
-                className="project-type-subgroup__select"
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-              >
-                <PolishedCheckbox
-                  checked={selection.checked}
-                  indeterminate={selection.indeterminate}
-                  ariaLabel={selection.ariaLabel ?? `Select ${title}`}
-                  onCheckedChange={(checked) => selection.onChange(checked)}
-                />
-              </span>
-            ) : null}
-          </span>
-          <span className="project-type-subgroup__label">{title}</span>
-          <span className="project-type-subgroup__rule" aria-hidden="true" />
-        </button>
+        {titleSelectable || !showCollapseToggle ? (
+          <div
+            className="project-type-subgroup__header"
+            aria-expanded={!collapsed}
+            data-select={selectMode ? "true" : undefined}
+            data-selected={isSelected || titleSelected ? "true" : undefined}
+            data-title-selectable={titleSelectable ? "true" : undefined}
+          >
+            {headerInner}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="project-type-subgroup__header"
+            aria-expanded={!collapsed}
+            data-select={selectMode ? "true" : undefined}
+            data-selected={isSelected ? "true" : undefined}
+            onClick={onToggle}
+          >
+            {headerInner}
+          </button>
+        )}
         {trailing ? (
           <div className="project-type-subgroup__trailing">{trailing}</div>
         ) : null}

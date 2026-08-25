@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 use tauri_plugin_opener::OpenerExt;
 
 use overlay::{
-    create_overlay_window, focus_main_window, hide_desktop_overlay, register_desktop_global_shortcuts,
+    focus_main_window, hide_desktop_overlay, register_desktop_global_shortcuts,
     resize_desktop_overlay, toggle_desktop_overlay_compose, toggle_desktop_overlay_palette,
     OverlayMode, OverlayState,
 };
@@ -478,7 +478,8 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init());
 
     #[cfg(target_os = "macos")]
     {
@@ -659,8 +660,8 @@ pub fn run() {
                 })
                 .build()?;
 
-            create_overlay_window(app)
-                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            // Overlay webview is created on first palette/compose overlay
+            // command — avoid a second SPA cold load during app setup.
 
             register_desktop_global_shortcuts(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;

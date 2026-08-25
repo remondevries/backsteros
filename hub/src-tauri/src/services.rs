@@ -350,6 +350,111 @@ fn docker_bin() -> PathBuf {
     which("docker").unwrap_or_else(|| PathBuf::from("docker"))
 }
 
+fn tailscale_bin() -> Option<PathBuf> {
+    which("tailscale").or_else(|| {
+        [
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+            "/usr/local/bin/tailscale",
+            "/opt/homebrew/bin/tailscale",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.is_file())
+    })
+}
+
+/// Expose local-core `:8788` on the Tailscale interface only (not LAN/public).
+/// Cloud-core replication peers `http://<mac-tailnet-ip>:8788`.
+fn enable_api_tailscale_serve() {
+    let Some(bin) = tailscale_bin() else {
+        append_log_line(
+            ServiceId::Api,
+            "tailscale not found — skipping serve for cloud-core replication",
+        );
+        return;
+    };
+    let mut cmd = Command::new(&bin);
+    ensure_path_env(&mut cmd);
+    let target = format!("tcp://127.0.0.1:{API_PORT}");
+    let output = cmd
+        .args(["serve", "--bg", &format!("--tcp={API_PORT}"), &target])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            append_log_line(
+                ServiceId::Api,
+                &format!(
+                    "tailscale serve --tcp={API_PORT} → {target} (tailnet only)"
+                ),
+            );
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            append_log_line(
+                ServiceId::Api,
+                &format!(
+                    "tailscale serve failed (status {}): {} {}",
+                    out.status,
+                    stdout.trim(),
+                    stderr.trim()
+                ),
+            );
+        }
+        Err(err) => {
+            append_log_line(
+                ServiceId::Api,
+                &format!("tailscale serve spawn error: {err}"),
+            );
+        }
+    }
+}
+
+fn disable_api_tailscale_serve() {
+    let Some(bin) = tailscale_bin() else {
+        return;
+    };
+    let mut cmd = Command::new(&bin);
+    ensure_path_env(&mut cmd);
+    let output = cmd
+        .args(["serve", &format!("--tcp={API_PORT}"), "off"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            append_log_line(
+                ServiceId::Api,
+                &format!("tailscale serve --tcp={API_PORT} off"),
+            );
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // Already off / no config is fine.
+            if stderr.to_lowercase().contains("no serve")
+                || stderr.to_lowercase().contains("not found")
+            {
+                return;
+            }
+            append_log_line(
+                ServiceId::Api,
+                &format!(
+                    "tailscale serve off warning: {}",
+                    stderr.trim()
+                ),
+            );
+        }
+        Err(err) => {
+            append_log_line(
+                ServiceId::Api,
+                &format!("tailscale serve off error: {err}"),
+            );
+        }
+    }
+}
+
 fn open_log(service: ServiceId) -> std::io::Result<File> {
     ensure_dirs()?;
     let path = logs_dir().join(format!("{}.log", service.as_str()));
@@ -763,6 +868,7 @@ fn stop_docker(repo_root: &Path) -> Result<String, String> {
 
 fn start_api(repo_root: &Path) -> Result<String, String> {
     if api_healthy() {
+        enable_api_tailscale_serve();
         return Ok("Core API already running".into());
     }
 
@@ -793,10 +899,14 @@ fn start_api(repo_root: &Path) -> Result<String, String> {
         .current_dir(repo_root)
         .env("FORCE_COLOR", "0");
     let pid = spawn_logged(ServiceId::Api, cmd)?;
+    // Tailscale TCP forward is config in the daemon (not a listen on :8788),
+    // so it is safe to enable before the API finishes binding.
+    enable_api_tailscale_serve();
     Ok(format!("Core API started (pid {pid})"))
 }
 
 fn stop_api() -> Result<String, String> {
+    disable_api_tailscale_serve();
     if let Some(pid) = get_pid(ServiceId::Api) {
         append_log_line(ServiceId::Api, &format!("stopping pid {pid}"));
         kill_pid_tree(pid);

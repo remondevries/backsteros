@@ -25,18 +25,24 @@ import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdo
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
+import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
+import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
 
 export type TaskPropertiesDisplayTask = {
   id: string;
   status: string;
   priority: number;
   dueDate?: number | Date | null;
+  dueEndDate?: number | Date | null;
   assigneeId?: string | null;
   assigneeName?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   agentCreatedAt?: number | Date | null;
   agentInboxApprovedAt?: number | Date | null;
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
 };
 
 export type TaskPropertiesDisplayProps = {
@@ -56,6 +62,8 @@ export type TaskPropertiesDisplayProps = {
   onCreateAssigneeFromQuery?: (query: string) => void;
   agentInboxPending?: boolean;
   onAgentInboxApprove?: () => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  timerSession?: TrackedTimerSessionMeta | null;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -82,6 +90,8 @@ export function TaskPropertiesDisplay({
   onCreateAssigneeFromQuery,
   agentInboxPending = false,
   onAgentInboxApprove,
+  onTrackedDurationSecondsChange,
+  timerSession = null,
 }: TaskPropertiesDisplayProps) {
   const disabled = task == null;
   const status = migrateLegacyTaskStatus(task?.status ?? "triage");
@@ -111,6 +121,20 @@ export function TaskPropertiesDisplay({
 
   return (
     <div className="task-detail-properties-scroll">
+      <div className="detail-properties-panel__timer">
+        <TrackedTimeField
+          variant="pill"
+          trackedDurationSeconds={task?.trackedDurationSeconds ?? null}
+          trackedMinutes={task?.trackedMinutes ?? null}
+          scheduleMinutes={trackedMinutesFromTaskSchedule(
+            toDate(task?.dueDate),
+            toDate(task?.dueEndDate),
+          )}
+          disabled={disabled}
+          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+          timerSession={timerSession}
+        />
+      </div>
       <div className="entity-properties-stack">
         <EntityPropertiesSection title="Properties">
           <PropertyDropdown

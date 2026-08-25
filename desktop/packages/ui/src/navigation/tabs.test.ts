@@ -8,6 +8,7 @@ import {
   refreshOpenTabTaskStatuses,
   syncActiveTabTaskMeta,
   syncActiveTabToPath,
+  buildProductTabHref,
 } from "../../dist/navigation/tabs.js";
 
 describe("syncActiveTabToPath", () => {
@@ -29,6 +30,43 @@ describe("syncActiveTabToPath", () => {
     const state = createDefaultTabsState("/projects");
     const next = syncActiveTabToPath(state, "/projects/bos");
     assert.equal(next.tabs[0]?.title, "Backsteros");
+  });
+
+  test("preserves calendar mode and view on the active tab href", () => {
+    clearPrimedTabTitles();
+    const state = createDefaultTabsState("/calendar");
+    const next = syncActiveTabToPath(
+      state,
+      "/calendar",
+      "?mode=timetracking&view=week&task=abc",
+    );
+    assert.equal(next.tabs[0]?.href, "/calendar?mode=timetracking&view=week");
+  });
+
+  test("updates calendar query in place without changing title", () => {
+    clearPrimedTabTitles();
+    const state = createDefaultTabsState("/calendar?mode=timetracking");
+    assert.equal(state.tabs[0]?.href, "/calendar?mode=timetracking");
+    const next = syncActiveTabToPath(
+      state,
+      "/calendar",
+      "?mode=availability&view=month",
+    );
+    assert.equal(
+      next.tabs[0]?.href,
+      "/calendar?mode=availability&view=month",
+    );
+    assert.equal(next.tabs[0]?.title, "Calendar");
+  });
+});
+
+describe("buildProductTabHref", () => {
+  test("keeps calendar chrome params and drops overlays", () => {
+    assert.equal(buildProductTabHref("/inbox", "?foo=1"), "/inbox");
+    assert.equal(
+      buildProductTabHref("/calendar", "?mode=timetracking&meeting=x&date=2026-03-25"),
+      "/calendar?mode=timetracking&date=2026-03-25",
+    );
   });
 });
 

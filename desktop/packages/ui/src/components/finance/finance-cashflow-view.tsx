@@ -1,17 +1,25 @@
 "use client";
 
 import type {
+  CashflowPlannerEntry,
+  CashflowPlannerEntryInput,
   FinanceSpendPanel,
   FinancialCategory,
   WorkspaceCashflow,
 } from "@backsteros/contracts";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
-import { useFinancePanelResize } from "../../finance/use-finance-panel-resize.js";
 import {
   CashflowIncomeYearChart,
   CashflowSpendYearChart,
 } from "./cashflow-spend-income-charts.js";
+import { CashflowPlannerScratchpad } from "./cashflow-planner-scratchpad.js";
 import { EntityDetailLayout } from "../entity/entity-detail-layout.js";
 import {
   asOfForMonthKey,
@@ -20,9 +28,14 @@ import {
 } from "./finance-month-navigator.js";
 import { FinanceSpendSidePanel } from "./finance-spend-side-panel.js";
 import { NetIncomeYearChart } from "./net-income-year-chart.js";
+import { ProjectsSidePanelIcon } from "../codebase/projects-side-panel-icon.js";
+import { ResizableSidePanel } from "../shell/resizable-side-panel.js";
+import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 
-const FINANCE_CASHFLOW_DETAIL_WIDTH_KEY =
-  "backsteros-desktop.finance-cashflow-detail-width";
+const FINANCE_CASHFLOW_PLANNER_WIDTH_KEY =
+  "backsteros-desktop.finance-cashflow-planner-width";
+const FINANCE_CASHFLOW_PLANNER_OPEN_KEY =
+  "backsteros-desktop.finance-cashflow-planner-open";
 
 export type FinanceCashflowViewProps = {
   cashflow: WorkspaceCashflow | null;
@@ -37,10 +50,40 @@ export type FinanceCashflowViewProps = {
   onOpenSpendPanel: (month?: string) => void;
   onCloseSpendPanel: () => void;
   onSpendPanelMonthChange: (month: string) => void;
+  plannerEntries?: CashflowPlannerEntry[];
+  plannerLoading?: boolean;
+  plannerPending?: boolean;
+  plannerError?: string | null;
+  onCreatePlannerEntry?: (
+    input?: Partial<CashflowPlannerEntryInput>,
+  ) => Promise<unknown>;
+  onUpdatePlannerEntry?: (
+    id: string,
+    patch: Partial<CashflowPlannerEntryInput>,
+  ) => Promise<unknown>;
+  onReorderPlannerEntries?: (
+    patches: Array<{ id: string; patch: Partial<CashflowPlannerEntryInput> }>,
+  ) => Promise<unknown>;
+  onDeletePlannerEntry?: (id: string) => Promise<unknown>;
 };
 
 function formatAsOfIso(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function readPlannerOpenPreference(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage.getItem(FINANCE_CASHFLOW_PLANNER_OPEN_KEY);
+  if (stored == null) return true;
+  return stored === "1" || stored === "true";
+}
+
+/** Plain ] toggles the right planner panel (same as journal day timeline). */
+function isPlannerPanelToggleShortcut(event: KeyboardEvent): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return false;
+  }
+  return event.key === "]" || event.code === "BracketRight";
 }
 
 function CashflowWidget({
@@ -117,6 +160,14 @@ export function FinanceCashflowView({
   onOpenSpendPanel,
   onCloseSpendPanel,
   onSpendPanelMonthChange,
+  plannerEntries = [],
+  plannerLoading = false,
+  plannerPending = false,
+  plannerError = null,
+  onCreatePlannerEntry,
+  onUpdatePlannerEntry,
+  onReorderPlannerEntries,
+  onDeletePlannerEntry,
 }: FinanceCashflowViewProps) {
   const latestMonth = localMonthKey();
   const resolvedMonth =
@@ -128,15 +179,58 @@ export function FinanceCashflowView({
   );
   const asOf = cashflow?.asOf ?? asOfFallback;
   const [spendOpen, setSpendOpen] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(readPlannerOpenPreference);
 
-  const {
-    containerRef,
-    detailPaneRef,
-    detailWidth,
-    isResized: detailResized,
-    beginResize: beginDetailResize,
-    resetWidth: resetDetailWidth,
-  } = useFinancePanelResize(FINANCE_CASHFLOW_DETAIL_WIDTH_KEY);
+  const hasPlanner =
+    Boolean(onCreatePlannerEntry) &&
+    Boolean(onUpdatePlannerEntry) &&
+    Boolean(onDeletePlannerEntry);
+
+  const panelCollapsed = hasPlanner && !plannerOpen && !spendOpen;
+  const panelExpanded = spendOpen || (hasPlanner && plannerOpen);
+
+  useEffect(() => {
+    if (!hasPlanner) return;
+    window.localStorage.setItem(
+      FINANCE_CASHFLOW_PLANNER_OPEN_KEY,
+      plannerOpen ? "1" : "0",
+    );
+  }, [hasPlanner, plannerOpen]);
+
+  const showPlanner = useCallback(() => {
+    setPlannerOpen(true);
+  }, []);
+
+  const hidePlanner = useCallback(() => {
+    if (spendOpen) {
+      setSpendOpen(false);
+      onCloseSpendPanel();
+    }
+    setPlannerOpen(false);
+  }, [onCloseSpendPanel, spendOpen]);
+
+  const togglePlanner = useCallback(() => {
+    if (spendOpen) {
+      setSpendOpen(false);
+      onCloseSpendPanel();
+      setPlannerOpen(true);
+      return;
+    }
+    setPlannerOpen((current) => !current);
+  }, [onCloseSpendPanel, spendOpen]);
+
+  useEffect(() => {
+    if (!hasPlanner) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!isPlannerPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      togglePlanner();
+    }
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [hasPlanner, togglePlanner]);
 
   useEffect(() => {
     if (!spendOpen) return;
@@ -153,6 +247,7 @@ export function FinanceCashflowView({
 
   const openSpend = () => {
     setSpendOpen(true);
+    setPlannerOpen(true);
     onOpenSpendPanel(resolvedMonth);
   };
 
@@ -161,132 +256,181 @@ export function FinanceCashflowView({
     onCloseSpendPanel();
   };
 
+  const charts = (
+    <div className="finance-cashflow-view">
+      <FinanceMonthNavigator
+        month={resolvedMonth}
+        latestMonth={latestMonth}
+        onChange={onChartMonthChange}
+        aria-label="Cash flow month"
+        className="finance-dashboard__month-nav"
+      />
+
+      {error ? <p className="finance-empty">{error}</p> : null}
+
+      <div className="finance-cashflow-view__body">
+        <div className="finance-cashflow-view__charts">
+          <div className="finance-cashflow-view__grid">
+            <CashflowWidget
+              title="Net Income"
+              className="finance-cashflow-view__widget--net-income"
+            >
+              {cashflow ? (
+                <NetIncomeYearChart
+                  key={resolvedMonth}
+                  year={cashflow.year}
+                  asOf={cashflow.asOf}
+                  months={cashflow.months}
+                  ytdNetCents={cashflow.ytdNetCents}
+                  priorYtdNetCents={cashflow.priorYtdNetCents}
+                  loading={loading}
+                  onMonthSelect={onChartMonthChange}
+                />
+              ) : (
+                <NetIncomeYearChart
+                  key={resolvedMonth}
+                  year={year}
+                  asOf={asOf}
+                  months={[]}
+                  ytdNetCents={0}
+                  priorYtdNetCents={0}
+                  loading={loading}
+                  onMonthSelect={onChartMonthChange}
+                />
+              )}
+            </CashflowWidget>
+
+            <CashflowWidget
+              title="Spending"
+              className="finance-cashflow-view__widget--half"
+              onOpen={openSpend}
+            >
+              <CashflowSpendYearChart
+                key={resolvedMonth}
+                year={year}
+                asOf={asOf}
+                categoryMonths={cashflow?.categoryMonths ?? []}
+                categories={categories}
+                ytdExpenseCents={cashflow?.ytdExpenseCents ?? 0}
+                priorYtdExpenseCents={cashflow?.priorYtdExpenseCents ?? 0}
+                loading={loading}
+                onMonthSelect={onChartMonthChange}
+              />
+            </CashflowWidget>
+
+            <CashflowWidget
+              title="Income"
+              className="finance-cashflow-view__widget--half"
+            >
+              <CashflowIncomeYearChart
+                key={resolvedMonth}
+                year={year}
+                asOf={asOf}
+                months={cashflow?.months ?? []}
+                ytdIncomeCents={cashflow?.ytdIncomeCents ?? 0}
+                priorYtdIncomeCents={cashflow?.priorYtdIncomeCents ?? 0}
+                loading={loading}
+                onMonthSelect={onChartMonthChange}
+              />
+            </CashflowWidget>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!hasPlanner && !spendOpen) {
+    return (
+      <EntityDetailLayout sectionLabel="Finance" title="Cash Flow">
+        <div className="finance-cashflow-shell">{charts}</div>
+      </EntityDetailLayout>
+    );
+  }
+
   return (
     <EntityDetailLayout sectionLabel="Finance" title="Cash Flow">
       <div
-        ref={containerRef}
         className={[
           "finance-cashflow-shell",
-          "finance-categories-view",
-          spendOpen ? "has-selection" : null,
-          detailWidth != null ? "is-detail-resized" : null,
+          "journal-day-layout",
+          "desktop-journal-day-layout",
+          panelCollapsed ? "is-calendar-collapsed" : null,
         ]
           .filter(Boolean)
           .join(" ")}
-        style={
-          detailWidth != null
-            ? ({ "--finance-cat-detail-w": `${detailWidth}px` } as CSSProperties)
-            : undefined
-        }
+        data-content-detail
+        data-detail-split
+        data-calendar-collapsed={panelCollapsed ? "true" : "false"}
       >
-        <div className="finance-categories-view__list-pane">
-          <div className="finance-cashflow-view">
-            <FinanceMonthNavigator
-              month={resolvedMonth}
-              latestMonth={latestMonth}
-              onChange={onChartMonthChange}
-              aria-label="Cash flow month"
-              className="finance-dashboard__month-nav"
-            />
+        <div className="journal-day-layout__main">{charts}</div>
 
-            {error ? <p className="finance-empty">{error}</p> : null}
-
-            <div className="finance-cashflow-view__grid">
-              <CashflowWidget
-                title="Net Income"
-                className="finance-cashflow-view__widget--net-income"
-              >
-                {cashflow ? (
-                  <NetIncomeYearChart
-                    key={resolvedMonth}
-                    year={cashflow.year}
-                    asOf={cashflow.asOf}
-                    months={cashflow.months}
-                    ytdNetCents={cashflow.ytdNetCents}
-                    priorYtdNetCents={cashflow.priorYtdNetCents}
-                    loading={loading}
-                    onMonthSelect={onChartMonthChange}
+        {panelCollapsed ? (
+          <aside
+            className="journal-day-layout__calendar is-collapsed"
+            aria-label="Planner"
+          >
+            <button
+              type="button"
+              className="desktop-terminal-strip"
+              title="Show planner (])"
+              aria-label="Show planner"
+              onClick={showPlanner}
+            >
+              <ProjectsSidePanelIcon size={16} collapsed rail="end" />
+            </button>
+          </aside>
+        ) : panelExpanded ? (
+          <ResizableSidePanel
+            storageKey={FINANCE_CASHFLOW_PLANNER_WIDTH_KEY}
+            defaultWidth={320}
+            minWidth={260}
+            maxWidth={640}
+            edge="start"
+            className="journal-day-layout__calendar finance-cashflow-planner-rail"
+          >
+            <div className="desktop-journal-day-layout__chrome">
+              <div className="desktop-agent-surface-tab-actions">
+                <button
+                  type="button"
+                  className="desktop-agent-surface-tab desktop-agent-surface-tab--icon"
+                  onClick={hidePlanner}
+                  title="Hide planner (])"
+                  aria-label="Hide planner"
+                >
+                  <ProjectsSidePanelIcon
+                    size={16}
+                    collapsed={false}
+                    rail="end"
                   />
-                ) : (
-                  <NetIncomeYearChart
-                    key={resolvedMonth}
-                    year={year}
-                    asOf={asOf}
-                    months={[]}
-                    ytdNetCents={0}
-                    priorYtdNetCents={0}
-                    loading={loading}
-                    onMonthSelect={onChartMonthChange}
-                  />
-                )}
-              </CashflowWidget>
-
-              <CashflowWidget
-                title="Spending"
-                className="finance-cashflow-view__widget--half"
-                onOpen={openSpend}
-              >
-                <CashflowSpendYearChart
-                  key={resolvedMonth}
-                  year={year}
-                  asOf={asOf}
-                  categoryMonths={cashflow?.categoryMonths ?? []}
-                  categories={categories}
-                  ytdExpenseCents={cashflow?.ytdExpenseCents ?? 0}
-                  priorYtdExpenseCents={cashflow?.priorYtdExpenseCents ?? 0}
-                  loading={loading}
-                  onMonthSelect={onChartMonthChange}
-                />
-              </CashflowWidget>
-
-              <CashflowWidget
-                title="Income"
-                className="finance-cashflow-view__widget--half"
-              >
-                <CashflowIncomeYearChart
-                  key={resolvedMonth}
-                  year={year}
-                  asOf={asOf}
-                  months={cashflow?.months ?? []}
-                  ytdIncomeCents={cashflow?.ytdIncomeCents ?? 0}
-                  priorYtdIncomeCents={cashflow?.priorYtdIncomeCents ?? 0}
-                  loading={loading}
-                  onMonthSelect={onChartMonthChange}
-                />
-              </CashflowWidget>
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-
-        {spendOpen ? (
-          <div
-            className="finance-categories-view__resize-handle"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize spend panel"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              beginDetailResize(event.clientX);
-            }}
-            onDoubleClick={resetDetailWidth}
-          />
+            <div className="desktop-journal-day-layout__calendar-body">
+              {spendOpen ? (
+                <FinanceSpendSidePanel
+                  panel={spendPanel}
+                  categories={categories}
+                  loading={spendPanelLoading}
+                  onClose={closeSpend}
+                  onSelectMonth={onSpendPanelMonthChange}
+                />
+              ) : (
+                <div className="finance-cashflow-planner-panel">
+                  <CashflowPlannerScratchpad
+                    entries={plannerEntries}
+                    loading={plannerLoading}
+                    pending={plannerPending}
+                    error={plannerError}
+                    onCreate={onCreatePlannerEntry!}
+                    onUpdate={onUpdatePlannerEntry!}
+                    onReorder={onReorderPlannerEntries}
+                    onDelete={onDeletePlannerEntry!}
+                  />
+                </div>
+              )}
+            </div>
+          </ResizableSidePanel>
         ) : null}
-
-        <div
-          ref={detailPaneRef}
-          className="finance-categories-view__detail-pane"
-          data-resized={detailResized ? "true" : undefined}
-        >
-          {spendOpen ? (
-            <FinanceSpendSidePanel
-              panel={spendPanel}
-              categories={categories}
-              loading={spendPanelLoading}
-              onClose={closeSpend}
-              onSelectMonth={onSpendPanelMonthChange}
-            />
-          ) : null}
-        </div>
       </div>
     </EntityDetailLayout>
   );

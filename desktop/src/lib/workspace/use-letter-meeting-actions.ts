@@ -89,6 +89,7 @@ export function useWorkspaceLetterMeetingActions({
       summary?: string | null;
       notes?: string | null;
       transcription?: string | null;
+      status?: string;
       startAt: string;
       endAt: string;
     }) => {
@@ -101,6 +102,7 @@ export function useWorkspaceLetterMeetingActions({
           summary: input.summary ?? null,
           notes: input.notes ?? null,
           transcription: input.transcription ?? null,
+          ...(input.status ? { status: input.status } : {}),
           startAt: input.startAt,
           endAt: input.endAt,
         }),

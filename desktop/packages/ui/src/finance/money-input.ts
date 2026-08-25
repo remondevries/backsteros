@@ -13,6 +13,7 @@ type NormalizedMoneyTyping = {
   integerDigits: string;
   fractionDigits: string;
   hasFractionSep: boolean;
+  negative: boolean;
 };
 
 /**
@@ -20,10 +21,27 @@ type NormalizedMoneyTyping = {
  * - `,` starts the decimal part (up to 2 digits)
  * - `.` is a thousand separator, except a single trailing `.xx` (1–2 digits)
  *   which is treated as a decimal for paste compatibility
+ * - Leading `-` is kept when `signed` is true
  */
-function normalizeMoneyTyping(raw: string): NormalizedMoneyTyping | null {
-  const cleaned = raw.replace(/[^\d.,]/g, "");
-  if (!cleaned) return null;
+function normalizeMoneyTyping(
+  raw: string,
+  options?: { signed?: boolean },
+): NormalizedMoneyTyping | null {
+  const trimmed = raw.trim();
+  const negative = options?.signed === true && trimmed.startsWith("-");
+  const cleaned = (negative ? trimmed.slice(1) : trimmed).replace(
+    /[^\d.,]/g,
+    "",
+  );
+  if (!cleaned && !negative) return null;
+  if (!cleaned && negative) {
+    return {
+      integerDigits: "",
+      fractionDigits: "",
+      hasFractionSep: false,
+      negative: true,
+    };
+  }
 
   const commaIdx = cleaned.lastIndexOf(",");
   if (commaIdx >= 0) {
@@ -32,7 +50,12 @@ function normalizeMoneyTyping(raw: string): NormalizedMoneyTyping | null {
       .slice(commaIdx + 1)
       .replace(/\D/g, "")
       .slice(0, 2);
-    return { integerDigits, fractionDigits, hasFractionSep: true };
+    return {
+      integerDigits,
+      fractionDigits,
+      hasFractionSep: true,
+      negative,
+    };
   }
 
   const dotCount = (cleaned.match(/\./g) ?? []).length;
@@ -46,6 +69,7 @@ function normalizeMoneyTyping(raw: string): NormalizedMoneyTyping | null {
         integerDigits: leftDigits,
         fractionDigits: rightDigits.slice(0, 2),
         hasFractionSep: true,
+        negative,
       };
     }
   }
@@ -54,36 +78,45 @@ function normalizeMoneyTyping(raw: string): NormalizedMoneyTyping | null {
     integerDigits: cleaned.replace(/\D/g, ""),
     fractionDigits: "",
     hasFractionSep: false,
+    negative,
   };
 }
 
 /** Format a raw amount string for display (e.g. `100000` → `100.000`). */
-export function formatMoneyInput(raw: string): string {
-  const normalized = normalizeMoneyTyping(raw);
+export function formatMoneyInput(
+  raw: string,
+  options?: { signed?: boolean },
+): string {
+  const normalized = normalizeMoneyTyping(raw, options);
   if (!normalized) return "";
 
-  const { integerDigits, fractionDigits, hasFractionSep } = normalized;
-  if (!integerDigits && !hasFractionSep) return "";
+  const { integerDigits, fractionDigits, hasFractionSep, negative } =
+    normalized;
+  if (!integerDigits && !hasFractionSep) {
+    return negative ? "-" : "";
+  }
 
   const grouped = groupThousands(integerDigits || "0");
-  if (hasFractionSep) {
-    return `${grouped},${fractionDigits}`;
-  }
-  return grouped;
+  const body = hasFractionSep ? `${grouped},${fractionDigits}` : grouped;
+  return negative ? `-${body}` : body;
 }
 
 /**
  * Parse a money input string to integer cents.
- * Empty → null. Negative → null. Zero is allowed unless `positive` is set.
+ * Empty → null. Negative → null unless `signed`. Zero is allowed unless
+ * `positive` is set.
  */
 export function parseMoneyInput(
   raw: string,
-  options?: { positive?: boolean },
+  options?: { positive?: boolean; signed?: boolean },
 ): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  let normalized = trimmed;
+  const negative = options?.signed === true && trimmed.startsWith("-");
+  let normalized = negative ? trimmed.slice(1).trim() : trimmed;
+  if (!normalized) return options?.signed ? 0 : null;
+
   if (normalized.includes(",")) {
     normalized = normalized.replace(/\./g, "").replace(",", ".");
   } else {
@@ -102,24 +135,42 @@ export function parseMoneyInput(
   const value = Number.parseFloat(normalized);
   if (!Number.isFinite(value) || value < 0) return null;
   if (options?.positive && value <= 0) return null;
-  return Math.round(value * 100);
+  const cents = Math.round(value * 100);
+  return negative ? -cents : cents;
 }
 
 /** Format stored cents for an editable money field. */
 export function moneyCentsToInput(
   cents: number | null | undefined,
-  options?: { allowZero?: boolean },
+  options?: {
+    allowZero?: boolean;
+    signed?: boolean;
+    /** Always include `,xx` (e.g. `100,00`) so list amounts line up. */
+    alwaysFraction?: boolean;
+  },
 ): string {
   if (cents == null) return "";
-  if (cents <= 0 && !options?.allowZero) return "";
-  if (cents === 0) return "0";
+  if (cents === 0) {
+    if (!options?.allowZero) return "";
+    return options?.alwaysFraction ? "0,00" : "0";
+  }
+  if (cents < 0 && !options?.signed) {
+    if (!options?.allowZero) return "";
+    return options?.alwaysFraction ? "0,00" : "0";
+  }
+  if (cents < 0 && !options?.allowZero) return "";
 
+  const negative = options?.signed === true && cents < 0;
   const euros = Math.abs(cents) / 100;
   const intPart = Math.floor(euros + Number.EPSILON);
   const frac = Math.round((euros - intPart) * 100);
   const grouped = groupThousands(String(intPart));
-  if (frac === 0) return grouped;
-  return `${grouped},${String(frac).padStart(2, "0")}`;
+  const fracPart = String(frac).padStart(2, "0");
+  const body =
+    options?.alwaysFraction || frac !== 0
+      ? `${grouped},${fracPart}`
+      : grouped;
+  return negative ? `-${body}` : body;
 }
 
 /**

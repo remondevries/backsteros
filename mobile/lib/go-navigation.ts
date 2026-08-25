@@ -7,6 +7,7 @@ export type GoNavigationHref =
   | "/journal"
   | "/knowledge"
   | "/tasks"
+  | "/calendar"
   | "/areas"
   | "/habits"
   | "/projects"
@@ -29,6 +30,7 @@ export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
   { id: "journal", letter: "j", label: "Journal", href: "/journal" },
   { id: "knowledge", letter: "k", label: "Knowledge Base", href: "/knowledge" },
   { id: "tasks", letter: "t", label: "Tasks", href: "/tasks" },
+  { id: "calendar", letter: "m", label: "Calendar", href: "/calendar" },
   { id: "areas", letter: "a", label: "Areas", href: "/areas" },
   { id: "habits", letter: "h", label: "Habit Tracker", href: "/habits" },
   { id: "projects", letter: "p", label: "Projects", href: "/projects" },

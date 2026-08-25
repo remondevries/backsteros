@@ -56,6 +56,11 @@ import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
+import {
+  OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
+  VirtualizedOverviewList,
+  type VirtualizedOverviewRow,
+} from "../../list-nav/virtualized-overview-list.js";
 import { TaskBoardCard } from "./task-board-card.js";
 import {
   TaskBulkEditBar,
@@ -70,6 +75,26 @@ import {
   TasksTodayHabitsChips,
   type HabitCheckChipItem,
 } from "./tasks-today-habits-chips.js";
+
+type TaskVirtualRow =
+  | (VirtualizedOverviewRow & {
+      kind: "habits";
+    })
+  | (VirtualizedOverviewRow & {
+      kind: "header";
+      status: TaskStatus;
+      label: string;
+      collapsed: boolean;
+    })
+  | (VirtualizedOverviewRow & {
+      kind: "create";
+      status: TaskStatus;
+    })
+  | (VirtualizedOverviewRow & {
+      kind: "task";
+      task: TaskItemRowTask;
+      status: TaskStatus;
+    });
 
 export type TasksOverviewViewProps = {
   tasks: TaskItemRowTask[];
@@ -431,7 +456,208 @@ export function TasksOverviewView({
     label: getTasksDueFilterLabel(value),
   }));
 
-  const listContent = (
+  const useVirtualList = filtered.length >= OVERVIEW_LIST_VIRTUALIZE_THRESHOLD;
+
+  const virtualRows = useMemo((): TaskVirtualRow[] => {
+    if (!useVirtualList) return [];
+    const rows: TaskVirtualRow[] = [];
+    for (const group of groups) {
+      const isCollapsed = collapsed.has(group.status);
+      if (filter === "today" && group.status === "triage") {
+        rows.push({
+          key: "habits",
+          kind: "habits",
+          estimatedSize: 48,
+        });
+      }
+      rows.push({
+        key: `header:${group.status}`,
+        kind: "header",
+        status: group.status,
+        label: group.label,
+        collapsed: isCollapsed,
+        estimatedSize: 36,
+      });
+      if (isCollapsed) continue;
+      if (addingToStatus === group.status && onCreateTask) {
+        rows.push({
+          key: `create:${group.status}`,
+          kind: "create",
+          status: group.status,
+          estimatedSize: 44,
+        });
+      }
+      for (const task of group.tasks) {
+        rows.push({
+          key: task.id,
+          kind: "task",
+          itemId: task.id,
+          task,
+          status: group.status,
+          estimatedSize: 36,
+        });
+      }
+    }
+    return rows;
+  }, [
+    addingToStatus,
+    collapsed,
+    filter,
+    groups,
+    onCreateTask,
+    useVirtualList,
+  ]);
+
+  const renderVirtualRow = useCallback(
+    (row: TaskVirtualRow) => {
+      if (row.kind === "habits") {
+        return (
+          <TasksTodayHabitsChips
+            items={todayHabits}
+            onToggle={onToggleTodayHabit}
+          />
+        );
+      }
+      if (row.kind === "header") {
+        return (
+          <StatusGroupSection
+            groupKey={row.status}
+            title={row.label}
+            collapsed={row.collapsed}
+            onToggle={() =>
+              setCollapsed((current) => {
+                const next = new Set(current);
+                if (next.has(row.status)) next.delete(row.status);
+                else next.add(row.status);
+                return next;
+              })
+            }
+            onAdd={
+              onCreateTask
+                ? () => {
+                    setCollapsed((current) => {
+                      const next = new Set(current);
+                      next.delete(row.status);
+                      return next;
+                    });
+                    setCreateError(null);
+                    setAddingToStatus(row.status);
+                  }
+                : undefined
+            }
+            pointerReorderAppend={
+              canReorder ? bindAppendZone(row.status) : null
+            }
+            showPointerAppendIndicator={
+              insertBeforeKey === taskGroupAppendOrderKey(row.status)
+            }
+          >
+            {null}
+          </StatusGroupSection>
+        );
+      }
+      if (row.kind === "create") {
+        return (
+          <li className="project-tasks-list__inline-add">
+            <AddInboxTaskInline
+              placeholder="Task title"
+              ariaLabel="Task title"
+              disabled={creating}
+              error={createError}
+              onCancel={() => {
+                setAddingToStatus(null);
+                setCreateError(null);
+              }}
+              onSubmit={async (title) => {
+                setCreating(true);
+                setCreateError(null);
+                try {
+                  const created = await onCreateTask?.({
+                    status: row.status,
+                    title,
+                  });
+                  setAddingToStatus(null);
+                  if (created?.id) onCreatedTask?.(created.id);
+                } catch (error) {
+                  setCreateError(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not create task.",
+                  );
+                } finally {
+                  setCreating(false);
+                }
+              }}
+            />
+          </li>
+        );
+      }
+      return (
+        <TaskItemRow
+          key={row.task.id}
+          task={row.task}
+          keyboardHighlighted={highlightedId === row.task.id}
+          onSelect={selectTask}
+          selected={isSelected(row.task.id)}
+          forceShowCheckbox={hasBulkSelection}
+          onToggleSelected={(taskId, _checked, event) =>
+            toggleSelected(taskId, Boolean(event.shiftKey))
+          }
+          showProject={showProject}
+          titleTrailing={renderTaskTitleTrailing?.(row.task)}
+          agentWorking={isTaskAgentWorking?.(row.task) ?? false}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+          onDueDateChange={handleDueDateChange}
+          onProjectChange={handleProjectChange}
+          projectOptions={projectOptions}
+          pointerReorderBind={
+            canReorder ? bindItem(row.task.id, row.status) : null
+          }
+          dragging={draggingItemId === row.task.id}
+          showDragInsertBefore={insertBeforeKey === taskOrderKey(row.task.id)}
+        />
+      );
+    },
+    [
+      bindAppendZone,
+      bindItem,
+      canReorder,
+      createError,
+      creating,
+      draggingItemId,
+      handleDueDateChange,
+      handlePriorityChange,
+      handleProjectChange,
+      handleStatusChange,
+      hasBulkSelection,
+      highlightedId,
+      insertBeforeKey,
+      isSelected,
+      isTaskAgentWorking,
+      onCreateTask,
+      onCreatedTask,
+      onToggleTodayHabit,
+      projectOptions,
+      renderTaskTitleTrailing,
+      selectTask,
+      showProject,
+      todayHabits,
+      toggleSelected,
+    ],
+  );
+
+  const listContent = useVirtualList ? (
+    <VirtualizedOverviewList
+      rows={virtualRows}
+      highlightedId={highlightedId}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
+      style={taskIdColumnStyle}
+      className={hasBulkSelection ? "has-bulk-selection" : undefined}
+      renderRow={renderVirtualRow}
+    />
+  ) : (
     <ul
       className={[
         "overview-grouped-list",

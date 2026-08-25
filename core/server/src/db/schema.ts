@@ -360,6 +360,10 @@ export const tasks = pgTable(
     agentInboxApprovedAt: timestamp("agent_inbox_approved_at", {
       withTimezone: true,
     }),
+    /** Manual / timer tracked duration (whole minutes; legacy). */
+    trackedMinutes: integer("tracked_minutes"),
+    /** Manual / timer tracked duration (whole seconds). */
+    trackedDurationSeconds: integer("tracked_duration_seconds"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -456,6 +460,10 @@ export const meetings = pgTable(
       .default(sql`'[]'::jsonb`),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    /** Manual / timer tracked duration (whole minutes; legacy). */
+    trackedMinutes: integer("tracked_minutes"),
+    /** Manual / timer tracked duration (whole seconds). */
+    trackedDurationSeconds: integer("tracked_duration_seconds"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -991,6 +999,31 @@ export const financialRecurrings = pgTable(
   ],
 );
 
+/** Hand-typed Cash Flow planning scratchpad — not linked to imports/recurrings. */
+export const cashflowPlannerEntries = pgTable(
+  "cashflow_planner_entries",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    entryType: text("entry_type").notNull().default("expense"),
+    name: text("name").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    dueDate: date("due_date", { mode: "string" }).notNull(),
+    groupLabel: text("group_label"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("cashflow_planner_entries_workspace_id_idx").on(table.workspaceId),
+    index("cashflow_planner_entries_deleted_at_idx").on(table.deletedAt),
+    index("cashflow_planner_entries_due_date_idx").on(table.dueDate),
+  ],
+);
+
 export const financialImportBatches = pgTable(
   "financial_import_batches",
   {
@@ -1184,6 +1217,7 @@ export type DbBankAccount = typeof bankAccounts.$inferSelect;
 export type DbFinancialCategory = typeof financialCategories.$inferSelect;
 export type DbFinancialGoal = typeof financialGoals.$inferSelect;
 export type DbFinancialRecurring = typeof financialRecurrings.$inferSelect;
+export type DbCashflowPlannerEntry = typeof cashflowPlannerEntries.$inferSelect;
 export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;
 export type DbFinancialTransaction = typeof financialTransactions.$inferSelect;
 export type DbEmailThread = typeof emailThreads.$inferSelect;

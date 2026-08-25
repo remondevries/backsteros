@@ -45,18 +45,26 @@ export async function setReplicationCursor(
   table: ReplicatedTable,
   cursor: ReplicationCursor,
 ): Promise<void> {
+  // Never move a cursor backwards — overlapping ticks / stalled bulk pushes
+  // must not clobber a newer tip after bootstrap or a concurrent tick.
+  const existing = await getReplicationCursor(table);
+  const next = maxCursor(existing, cursor);
+  if (compareCursor(next, existing) <= 0 && existing.rowId !== "") {
+    return;
+  }
+
   await db
     .insert(coreReplicationCursors)
     .values({
       tableName: table,
-      updatedAt: new Date(cursor.updatedAt),
-      rowId: cursor.rowId,
+      updatedAt: new Date(next.updatedAt),
+      rowId: next.rowId,
     })
     .onConflictDoUpdate({
       target: coreReplicationCursors.tableName,
       set: {
-        updatedAt: new Date(cursor.updatedAt),
-        rowId: cursor.rowId,
+        updatedAt: new Date(next.updatedAt),
+        rowId: next.rowId,
       },
     });
 }

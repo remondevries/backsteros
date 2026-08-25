@@ -19,6 +19,7 @@ import {
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
+  cashflowPlannerEntryInputSchema,
   letterInputSchema,
   organizationInputSchema,
 } from "@backsteros/contracts";
@@ -28,6 +29,7 @@ import {
   bankAccounts,
   documents,
   contacts,
+  cashflowPlannerEntries,
   financialCategories,
   financialGoals,
   financialRecurrings,
@@ -116,6 +118,8 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     completed_at: row.completedAt?.toISOString() ?? null,
     agent_created_at: row.agentCreatedAt?.toISOString() ?? null,
     agent_inbox_approved_at: row.agentInboxApprovedAt?.toISOString() ?? null,
+    tracked_minutes: row.trackedMinutes ?? null,
+    tracked_duration_seconds: row.trackedDurationSeconds ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -315,6 +319,13 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+/** Distinguish missing field (`undefined`) from clear (`null`). */
+function asNullableNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function asBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
   // PowerSync SQLite stores booleans as 0/1 integers.
@@ -440,6 +451,8 @@ const meetingKeys = {
   attendee_contact_ids: "attendeeContactIds",
   start_at: "startAt",
   end_at: "endAt",
+  tracked_minutes: "trackedMinutes",
+  tracked_duration_seconds: "trackedDurationSeconds",
   sort_order: "sortOrder",
 };
 const financialRecurringKeys = {
@@ -449,6 +462,14 @@ const financialRecurringKeys = {
   amount_cents: "amountCents",
   next_date: "nextDate",
   archived: "archived",
+  sort_order: "sortOrder",
+};
+const cashflowPlannerEntryKeys = {
+  entry_type: "entryType",
+  name: "name",
+  amount_cents: "amountCents",
+  due_date: "dueDate",
+  group_label: "groupLabel",
   sort_order: "sortOrder",
 };
 
@@ -522,6 +543,23 @@ function financialRecurringSnapshot(
   };
 }
 
+function cashflowPlannerEntrySnapshot(
+  row: typeof cashflowPlannerEntries.$inferSelect,
+) {
+  return {
+    id: row.id,
+    entry_type: row.entryType,
+    name: row.name,
+    amount_cents: row.amountCents,
+    due_date: row.dueDate,
+    group_label: row.groupLabel,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
 function habitSnapshot(row: typeof habits.$inferSelect) {
   return {
     id: row.id,
@@ -579,6 +617,8 @@ function meetingSnapshot(row: typeof meetings.$inferSelect) {
     attendee_contact_ids: JSON.stringify(attendeeIds),
     start_at: row.startAt.toISOString(),
     end_at: row.endAt.toISOString(),
+    tracked_minutes: row.trackedMinutes ?? null,
+    tracked_duration_seconds: row.trackedDurationSeconds ?? null,
     sort_order: row.sortOrder,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -664,6 +704,12 @@ function mapTaskUpsert(
       payload.agent_chat_id ?? payload.agentChatId,
     ),
     habitId: asNullableString(payload.habit_id ?? payload.habitId),
+    trackedMinutes: asNullableNumber(
+      payload.tracked_minutes ?? payload.trackedMinutes,
+    ),
+    trackedDurationSeconds: asNullableNumber(
+      payload.tracked_duration_seconds ?? payload.trackedDurationSeconds,
+    ),
   };
 }
 
@@ -1120,6 +1166,49 @@ export async function applySyncChange(
       return financialRecurringSnapshot(row);
     }
 
+    case "cashflow_planner_entry": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await financeService.deleteCashflowPlannerEntry(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? cashflowPlannerEntrySnapshot(row) : null;
+      }
+      const existing = await financeService.getCashflowPlannerEntryById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(
+        change.payload,
+        cashflowPlannerEntryKeys,
+      );
+      if (existing) {
+        const parsed = cashflowPlannerEntryInputSchema
+          .partial()
+          .safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_CASHFLOW_PLANNER_ENTRY");
+        const row = await financeService.updateCashflowPlannerEntry(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? cashflowPlannerEntrySnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = cashflowPlannerEntryInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_CASHFLOW_PLANNER_ENTRY");
+      const row = await financeService.createCashflowPlannerEntry(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return cashflowPlannerEntrySnapshot(row);
+    }
+
     case "habit": {
       if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
         const row = await habitService.deleteHabitRow(
@@ -1292,6 +1381,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "financial_goal";
     case "financial_recurrings":
       return "financial_recurring";
+    case "cashflow_planner_entries":
+      return "cashflow_planner_entry";
     case "habits":
       return "habit";
     case "meetings":

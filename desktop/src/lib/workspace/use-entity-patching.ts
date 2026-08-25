@@ -11,6 +11,7 @@ import type {
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
+import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 export type SoftDeletableTable =
@@ -261,14 +262,24 @@ export function useWorkspaceEntityPatching({
       values: Record<string, unknown>,
     ): Promise<{ number?: number } | void> => {
       const path = entityPatchPath(table, id);
+      const apiValues = values;
+      const localValues =
+        table === "tasks"
+          ? normalizeTaskPatchForLocalState(values)
+          : values;
 
       const applyTaskServerRow = async (row: ApiTask | null | undefined) => {
         if (!row || table !== "tasks") return;
         const serverValues: Record<string, unknown> = {
-          ...values,
+          ...localValues,
           ...(typeof row.number === "number" ? { number: row.number } : {}),
           ...(row.projectId !== undefined ? { projectId: row.projectId } : {}),
+          ...(row.agentInboxApprovedAt != null
+            ? { agentInboxApprovedAt: row.agentInboxApprovedAt }
+            : {}),
         };
+        delete serverValues.agentInboxApproved;
+        delete serverValues.acknowledgeInboxUpdate;
         applyApiTaskPatch(id, serverValues);
         // Scope moves renumber server-side; keep local SQLite in sync so the
         // display id / route slug match before PowerSync pull catches up.
@@ -332,13 +343,13 @@ export function useWorkspaceEntityPatching({
               | "organizations"
               | "documents",
             id,
-            toSnakeFields(values),
+            toSnakeFields(localValues),
           );
         } catch (error) {
           // Local SQLite may lag schema (e.g. new columns). Still hit REST.
           console.warn("[desktop] local metadata patch failed", error);
-          if (table === "tasks" && "dueEndDate" in values) {
-            const { dueEndDate: _dueEndDate, ...rest } = values;
+          if (table === "tasks" && "dueEndDate" in localValues) {
+            const { dueEndDate: _dueEndDate, ...rest } = localValues;
             if (Object.keys(rest).length > 0) {
               try {
                 await powerSync.patchMetadata("tasks", id, toSnakeFields(rest));
@@ -380,8 +391,8 @@ export function useWorkspaceEntityPatching({
         }
         if (table === "tasks") {
           // Optimistic so agentChatId / status show in lists before REST returns.
-          applyApiTaskPatch(id, values);
-          if (typeof values.status === "string") {
+          applyApiTaskPatch(id, localValues);
+          if (typeof localValues.status === "string") {
             nudgeDynamicIslandTasksRefresh();
           }
         }
@@ -392,24 +403,24 @@ export function useWorkspaceEntityPatching({
               ? await client.requestJson<ApiTask>(path, {
                   method: "PATCH",
                   headers: { "content-type": "application/json" },
-                  body: JSON.stringify(values),
+                  body: JSON.stringify(apiValues),
                 })
               : table === "meetings"
                 ? await client.requestJson<ApiMeeting>(path, {
                     method: "PATCH",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify(values),
+                    body: JSON.stringify(apiValues),
                   })
                 : await client.requestJson(path, {
                     method: "PATCH",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify(values),
+                    body: JSON.stringify(apiValues),
                   });
           if (table === "tasks") {
             await applyTaskServerRow(updated as ApiTask);
             // Re-fetch when links / agent chat binding change so merge can fill
             // local SQLite gaps (stale schema often omits new columns).
-            if ("links" in values || "agentChatId" in values) {
+            if ("links" in apiValues || "agentChatId" in apiValues) {
               void softRefreshApiTasks();
             }
             return typeof (updated as ApiTask)?.number === "number"
@@ -459,10 +470,10 @@ export function useWorkspaceEntityPatching({
         const updated = await client.requestJson<ApiTask>(path, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(values),
+          body: JSON.stringify(apiValues),
         });
         await applyTaskServerRow(updated);
-        if ("links" in values || "agentChatId" in values) {
+        if ("links" in apiValues || "agentChatId" in apiValues) {
           void softRefreshApiTasks();
         }
         return typeof updated?.number === "number"

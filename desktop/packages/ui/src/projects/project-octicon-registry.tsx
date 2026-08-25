@@ -390,16 +390,24 @@ import { AppleIcon } from "../components/icons/apple-icon.js";
 import { BelastingdienstIcon } from "../components/icons/belastingdienst-icon.js";
 import { CarIcon } from "../components/icons/car-icon.js";
 import { CartIcon } from "../components/icons/cart-icon.js";
+import { CreamIcon } from "../components/icons/cream-icon.js";
 import { GiftIcon } from "../components/icons/gift-icon.js";
 import { GymIcon } from "../components/icons/gym-icon.js";
+import { HangerIcon } from "../components/icons/hanger-icon.js";
+import { JournalIcon } from "../components/icons/journal-icon.js";
 import { LaptopIcon } from "../components/icons/laptop-icon.js";
 import { MercedesBenzIcon } from "../components/icons/mercedes-benz-icon.js";
+import { MobIcon } from "../components/icons/mob-icon.js";
 import { NetflixIcon } from "../components/icons/netflix-icon.js";
 import { PetIcon } from "../components/icons/pet-icon.js";
 import { PhoneIcon } from "../components/icons/phone-icon.js";
+import { RazorIcon } from "../components/icons/razor-icon.js";
+import { ShoeIcon } from "../components/icons/shoe-icon.js";
 import { ShopIcon } from "../components/icons/shop-icon.js";
 import { SpotifyIcon } from "../components/icons/spotify-icon.js";
 import { TerminalConsoleIcon } from "../components/icons/terminal-console-icon.js";
+import { ToothIcon } from "../components/icons/tooth-icon.js";
+import { WasherIcon } from "../components/icons/washer-icon.js";
 import { WaterIcon } from "../components/icons/water-icon.js";
 
 export type ProjectOcticonProps = SVGProps<SVGSVGElement> & {
@@ -487,6 +495,7 @@ const OCTICON_BY_KEY = {
   "copilot-warning": CopilotWarningIcon,
   "copy": CopyIcon,
   "cpu": CpuIcon,
+  "cream": CreamIcon,
   "credit-card": CreditCardIcon,
   "cross-reference": CrossReferenceIcon,
   "crosshairs": CrosshairsIcon,
@@ -584,6 +593,7 @@ const OCTICON_BY_KEY = {
   "graph-bar-vertical": GraphBarVerticalIcon,
   "graph-stacked-area": GraphStackedAreaIcon,
   "gym": GymIcon,
+  "hanger": HangerIcon,
   "hash": HashIcon,
   "heading": HeadingIcon,
   "heart": HeartIcon,
@@ -609,6 +619,7 @@ const OCTICON_BY_KEY = {
   "issue-tracks": IssueTracksIcon,
   "italic": ItalicIcon,
   "iterations": IterationsIcon,
+  "journal": JournalIcon,
   "kebab-horizontal": KebabHorizontalIcon,
   "key": KeyIcon,
   "key-asterisk": KeyAsteriskIcon,
@@ -638,6 +649,7 @@ const OCTICON_BY_KEY = {
   "milestone": MilestoneIcon,
   "minimize": MinimizeIcon,
   "mirror": MirrorIcon,
+  "mob": MobIcon,
   "moon": MoonIcon,
   "mortar-board": MortarBoardIcon,
   "move-to-bottom": MoveToBottomIcon,
@@ -687,6 +699,7 @@ const OCTICON_BY_KEY = {
   "question": QuestionIcon,
   "quote": QuoteIcon,
   "read": ReadIcon,
+  "razor": RazorIcon,
   "redo": RedoIcon,
   "rel-file-path": RelFilePathIcon,
   "reply": ReplyIcon,
@@ -718,6 +731,7 @@ const OCTICON_BY_KEY = {
   "shield-slash": ShieldSlashIcon,
   "shield-x": ShieldXIcon,
   "shop": ShopIcon,
+  "shoe": ShoeIcon,
   "sidebar-collapse": SidebarCollapseIcon,
   "sidebar-expand": SidebarExpandIcon,
   "sign-in": SignInIcon,
@@ -770,6 +784,7 @@ const OCTICON_BY_KEY = {
   "thumbsdown": ThumbsdownIcon,
   "thumbsup": ThumbsupIcon,
   "tools": ToolsIcon,
+  "tooth": ToothIcon,
   "tracked-by-closed-completed": TrackedByClosedCompletedIcon,
   "tracked-by-closed-not-planned": TrackedByClosedNotPlannedIcon,
   "trash": TrashIcon,
@@ -793,6 +808,7 @@ const OCTICON_BY_KEY = {
   "video": VideoIcon,
   "view-files": ViewFilesIcon,
   "vscode": VscodeIcon,
+  "washer": WasherIcon,
   "water": WaterIcon,
   "webhook": WebhookIcon,
   "workflow": WorkflowIcon,

@@ -41,6 +41,7 @@ import {
   TaskPropertiesDisplay,
   type TaskPropertiesDisplayTask,
 } from "./task-properties-display.js";
+import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { TaskLinkAttachments } from "./task-link-attachments.js";
@@ -123,6 +124,8 @@ export type TaskDetailViewProps = {
   onCreateAssigneeFromQuery?: (query: string) => void;
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
   onAgentInboxApprove?: () => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  timerSession?: TrackedTimerSessionMeta | null;
 };
 
 export function TaskDetailView({
@@ -156,6 +159,8 @@ export function TaskDetailView({
   projectNavigateHref,
   onCreateAssigneeFromQuery,
   onAgentInboxApprove,
+  onTrackedDurationSecondsChange,
+  timerSession = null,
 }: TaskDetailViewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [usePropertiesRail, setUsePropertiesRail] = useState(false);
@@ -464,6 +469,8 @@ export function TaskDetailView({
           onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
           agentInboxPending={agentInboxPending}
           onAgentInboxApprove={onAgentInboxApprove}
+          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+          timerSession={timerSession}
         />
       }
       dock={<FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>}

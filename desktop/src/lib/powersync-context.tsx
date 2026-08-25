@@ -499,6 +499,9 @@ export function useDesktopPowerSync() {
   return useContext(PowerSyncContext);
 }
 
+/** Debounce for rare Tauri watch remounts after sync (useWebWorker:false). */
+const POWER_SYNC_WATCH_REMOUNT_DEBOUNCE_MS = 2_000;
+
 export function usePowerSyncQuery<T>(
   sql: string | null,
   parameters: unknown[] = [],
@@ -506,9 +509,11 @@ export function usePowerSyncQuery<T>(
   const { database, ready, lastSyncedAt } = useDesktopPowerSync();
   const parameterKey = JSON.stringify(parameters);
   const queryKey = `${sql ?? ""}\0${parameterKey}`;
-  // Tauri uses useWebWorker:false; watched queries can miss remote apply
-  // notifications until remount. Restart the watch after each sync checkpoint.
+  // Tauri uses useWebWorker:false; watched queries can occasionally miss remote
+  // apply notifications. Keep watches alive across sync ticks — only bump a
+  // debounced remount epoch so we do not tear down all watches every checkpoint.
   const syncEpoch = lastSyncedAt?.getTime() ?? 0;
+  const [remountEpoch, setRemountEpoch] = useState(0);
   const [result, setResult] = useState<{
     database: PowerSyncDatabase;
     queryKey: string;
@@ -519,6 +524,14 @@ export function usePowerSyncQuery<T>(
     queryKey: string;
     error: Error;
   } | null>(null);
+
+  useEffect(() => {
+    if (!database || !ready || !sql || syncEpoch === 0) return;
+    const timeoutId = window.setTimeout(() => {
+      setRemountEpoch((current) => current + 1);
+    }, POWER_SYNC_WATCH_REMOUNT_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [database, ready, sql, syncEpoch]);
 
   useEffect(() => {
     if (!database || !ready || !sql) return;
@@ -552,7 +565,7 @@ export function usePowerSyncQuery<T>(
     return () => controller.abort();
     // parameters are keyed by their serialized stable values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database, parameterKey, ready, sql, syncEpoch]);
+  }, [database, parameterKey, ready, sql, remountEpoch]);
 
   const data =
     result?.database === database && result.queryKey === queryKey

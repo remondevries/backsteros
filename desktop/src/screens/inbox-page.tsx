@@ -34,6 +34,7 @@ import {
   buildEmailLinkOptions,
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
+import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 
 type MovedToProjectNotice = {
@@ -91,6 +92,7 @@ export function InboxPage() {
   const { itemId } = useParams<{ itemId?: string }>();
   const workspace = useDesktopWorkspaceData();
   const agentMail = useAgentMail();
+  const { unpinInboxListItem } = useInboxListSessionPin();
   const documentLinkOptions = useMemo(
     () => buildDocumentLinkOptions(workspace.documents),
     [workspace.documents],
@@ -309,6 +311,7 @@ export function InboxPage() {
         agentChatId={selectedTaskRecord?.agentChatId ?? null}
         taskStatus={selectedTaskRecord?.status ?? selectedTask.status}
         preferWideTaskPanel
+        detailColumnToggleShortcutEnabled={false}
         viewScope={project?.type === "codebase" ? "codebase" : "rail"}
         taskSummary={{
           number: selectedTask.number ?? 0,
@@ -361,6 +364,14 @@ export function InboxPage() {
             selectedTaskRecord?.agentInboxApprovedAt ??
             selectedTask.agentInboxApprovedAt ??
             null,
+          trackedMinutes:
+            selectedTaskRecord?.trackedMinutes ??
+            selectedTask.trackedMinutes ??
+            null,
+          trackedDurationSeconds:
+            selectedTaskRecord?.trackedDurationSeconds ??
+            selectedTask.trackedDurationSeconds ??
+            null,
           description:
             workspace.taskDescriptions[selectedTask.id] ??
             selectedTask.description ??
@@ -378,6 +389,22 @@ export function InboxPage() {
         }
         onPriorityChange={(next) => {
           void workspace.patchTask(selectedTask.id, { priority: next });
+        }}
+        onTrackedDurationSecondsChange={(seconds) => {
+          const trackedMinutes =
+            seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+          void workspace.patchTask(selectedTask.id, {
+            trackedDurationSeconds: seconds,
+            trackedMinutes,
+          });
+        }}
+        timerSession={{
+          kind: "task",
+          entityId: selectedTask.id,
+          title: selectedTask.title,
+          subtitle: getInboxItemDisplayId(selectedTask),
+          statusKey: selectedTaskRecord?.status ?? selectedTask.status,
+          href: location.pathname,
         }}
         onDueDateChange={(next) => {
           void workspace.patchTask(selectedTask.id, {
@@ -443,6 +470,7 @@ export function InboxPage() {
             workspace.inboxItems,
             selectedTask.id,
           );
+          unpinInboxListItem(selectedTask.id);
           void workspace.patchTask(selectedTask.id, {
             agentInboxApproved: true,
           });

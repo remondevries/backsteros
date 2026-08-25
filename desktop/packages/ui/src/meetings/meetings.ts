@@ -13,6 +13,15 @@ export function resolveMeetingAccentColor(
   return resolveTaskStatusColor("on_hold", undefined, { colorScheme });
 }
 
+/** Meeting list icon color by effective status (triage orange, else status color). */
+export function resolveMeetingListIconColor(
+  status: string | null | undefined,
+  options?: { colorScheme?: TaskStatusColorScheme },
+): string {
+  const statusKey = (status?.trim() || "ready_to_start").toLowerCase();
+  return resolveTaskStatusColor(statusKey, undefined, options);
+}
+
 export function formatMeetingDisplayId(meetingNumber: number): string {
   return `${MEETING_DISPLAY_KEY}-${meetingNumber}`;
 }
@@ -32,12 +41,19 @@ export type MeetingListItem = {
   notes?: string | null;
   transcription?: string | null;
   status?: string;
+  priority?: number;
   projectId?: string | null;
-  organizationId?: string | null;
-  attendeeContactIds?: string[];
+  projectKey?: string | null;
   projectName?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  organizationAvatarSrc?: string | null;
+  attendeeContactIds?: string[];
   startAt: number | Date | string;
   endAt: number | Date | string;
+  trackedMinutes?: number | null;
+  trackedDurationSeconds?: number | null;
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 export function getCalendarMeetingOverlayHref(meetingId: string): string {

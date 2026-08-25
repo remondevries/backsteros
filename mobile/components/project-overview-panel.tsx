@@ -1,5 +1,5 @@
 import type { Project } from "@backsteros/contracts";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -47,8 +47,6 @@ import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { DetailContentContainer } from "./detail-content-container";
-import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
-import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
@@ -106,18 +104,11 @@ type Props = {
   onNameChange?: (name: string) => void;
   onDescriptionLoaded?: (description: string) => void;
   /**
-   * `stacked` — phone chips + sheet (default).
-   * `wide` — iPad: desktop-style meta rows + constrained content measure.
+   * `stacked` — phone (default).
+   * `wide` — iPad: constrained content measure.
+   * Both layouts show the same desktop-parity property rows (incl. Type).
    */
   layout?: "stacked" | "wide";
-};
-
-type PropertyRow = {
-  key: string;
-  label: string;
-  value: string;
-  icon: ReactNode;
-  editable?: boolean;
 };
 
 type PickerKind =
@@ -507,139 +498,7 @@ export function ProjectOverviewPanel({
     project.organization_name?.trim() ||
     null;
 
-  const allPropertyRows: PropertyRow[] = [
-    {
-      key: "key",
-      label: "Key",
-      value: projectKey.trim() || "—",
-      icon: <ProjectIcon size={14} />,
-    },
-    {
-      key: "status",
-      label: "Status",
-      value: getProjectStatusLabel(status),
-      icon: <ProjectStatusIcon status={status} size={14} />,
-    },
-    {
-      key: "priority",
-      label: "Priority",
-      value: getTaskPriorityLabel(priority),
-      icon: <TaskPriorityIcon priority={priority} size={14} />,
-    },
-    {
-      key: "type",
-      label: "Type",
-      value: getProjectTypeLabel(projectType),
-      icon: projectTypeIcon(projectType, 14),
-    },
-    {
-      key: "organization",
-      label: "Organization",
-      value: organizationLabel || "No organization",
-      icon: <OrganizationIcon size={14} />,
-    },
-    {
-      key: "start",
-      label: "Start date",
-      value: startLabel ?? "No start date",
-      icon: <TaskDueDateIcon active={Boolean(startLabel)} size={14} />,
-    },
-    {
-      key: "due",
-      label: "Due date",
-      value: dueLabel ?? "No due date",
-      icon: <TaskDueDateIcon active={Boolean(dueLabel)} size={14} />,
-    },
-    {
-      key: "progress",
-      label: "Progress",
-      value: percentLabel,
-      icon: <ProjectProgressRing progress={progress} size={14} />,
-      editable: false,
-    },
-    {
-      key: "area",
-      label: "Area",
-      value: area ? PROJECT_AREA_LABELS[area] : "No area",
-      icon: <ProjectIcon size={14} />,
-    },
-    ...(nestedAreasForParent.length > 0
-      ? [
-          {
-            key: "areaId",
-            label: "Sub-area",
-            value: selectedSubArea?.name ?? "No sub-area",
-            icon: <ProjectIcon size={14} />,
-          } satisfies PropertyRow,
-        ]
-      : []),
-  ];
-
-  const propertyChips = [
-    {
-      key: "status",
-      label: getProjectStatusLabel(status),
-      icon: <ProjectStatusIcon status={status} size={12} />,
-    },
-    ...(projectKey.trim()
-      ? [
-          {
-            key: "key",
-            label: projectKey.trim(),
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(projectType !== "general"
-      ? [
-          {
-            key: "type",
-            label: getProjectTypeLabel(projectType),
-            icon: projectTypeIcon(projectType, 12),
-          },
-        ]
-      : []),
-    ...(organizationLabel
-      ? [
-          {
-            key: "organization",
-            label: organizationLabel,
-            icon: <OrganizationIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(area
-      ? [
-          {
-            key: "area",
-            label: PROJECT_AREA_LABELS[area],
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(selectedSubArea
-      ? [
-          {
-            key: "areaId",
-            label: selectedSubArea.name,
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(dueLabel
-      ? [
-          {
-            key: "due",
-            label: dueLabel,
-            icon: <TaskDueDateIcon active size={12} />,
-          },
-        ]
-      : []),
-  ];
-
   const useWide = layout === "wide";
-  /** Nested Modals only when phone chips sheet hosts pickers. */
-  const embedPropertySheets = !useWide;
 
   const metaProperties: ProjectMetaField[] = [
     {
@@ -702,22 +561,9 @@ export function ProjectOverviewPanel({
       : []),
   ];
 
-  const propertyEditor = (
-    <>
-      <DetailPropertyEditorRows
-        rows={allPropertyRows}
-        onPressRow={(key) => setPicker(key as PickerKind)}
-      />
-      {propertyError ? (
-        <Text style={[ui.error, { paddingTop: 8 }]}>{propertyError}</Text>
-      ) : null}
-    </>
-  );
-
   const propertySheets = (
     <>
       <PropertyTextSheet
-        embedded={embedPropertySheets}
         visible={picker === "key"}
         title="Project ID"
         value={projectKey}
@@ -740,7 +586,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "status"}
         title="Status"
         options={statusOptions}
@@ -753,7 +598,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "priority"}
         title="Priority"
         options={priorityOptions}
@@ -766,7 +610,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "type"}
         title="Type"
         options={typeOptions}
@@ -779,7 +622,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "organization"}
         title="Organization"
         options={organizationOptions}
@@ -792,7 +634,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "start"}
         title="Start date"
         options={dateOptions}
@@ -805,7 +646,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <DueDatePropertySheet
-        embedded={embedPropertySheets}
         visible={picker === "due"}
         title="Due date"
         selected={dueDate}
@@ -817,7 +657,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "area"}
         title="Area"
         options={areaOptions}
@@ -831,7 +670,6 @@ export function ProjectOverviewPanel({
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "areaId"}
         title="Sub-area"
         options={subAreaOptions}
@@ -876,29 +714,17 @@ export function ProjectOverviewPanel({
         />
       </View>
 
-      {useWide ? (
-        <>
-          <ProjectOverviewMetaRows
-            properties={metaProperties}
-            areas={metaAreas}
-            onPressField={(key) => setPicker(key as PickerKind)}
-          />
-          {propertyError ? (
-            <Text style={[ui.error, { paddingHorizontal: 16, paddingTop: 8 }]}>
-              {propertyError}
-            </Text>
-          ) : null}
-          {propertySheets}
-        </>
-      ) : (
-        <DetailPropertiesInlineShell
-          modalTitle="Project properties"
-          chips={propertyChips}
-          overlay={propertySheets}
-        >
-          {propertyEditor}
-        </DetailPropertiesInlineShell>
-      )}
+      <ProjectOverviewMetaRows
+        properties={metaProperties}
+        areas={metaAreas}
+        onPressField={(key) => setPicker(key as PickerKind)}
+      />
+      {propertyError ? (
+        <Text style={[ui.error, { paddingHorizontal: 16, paddingTop: 8 }]}>
+          {propertyError}
+        </Text>
+      ) : null}
+      {propertySheets}
 
       <Text style={ui.sectionHeader}>Description</Text>
       <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24 }}>

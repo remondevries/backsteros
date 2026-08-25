@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 
 import {
@@ -19,36 +20,89 @@ import {
 import { useDesktopWorkspaceData } from "./lib/workspace-data";
 import { AppShell } from "./shell/app-shell";
 import { DesktopOverlayRouteSync } from "./components/desktop-overlay-route-sync";
-import { AreasPage } from "./screens/areas-page";
-import { DevelopmentPage } from "./screens/development-page";
-import { ContactsPage } from "./screens/contacts-page";
 import { DesktopOverlayComposePage } from "./screens/desktop-overlay-compose-page";
 import { DesktopOverlayPalettePage } from "./screens/desktop-overlay-palette-page";
-import { EmailPage } from "./screens/email-page";
-import { InboxPage } from "./screens/inbox-page";
-import { HabitTrackerPage } from "./screens/habit-tracker-page";
-import { JournalPage } from "./screens/journal-page";
-import { KnowledgePage } from "./screens/knowledge-page";
-import { LettersPage } from "./screens/letters-page";
 import { NavigationTrailPage } from "./screens/navigation-trail-page";
 import { NotFoundPage } from "./screens/not-found-page";
-import { FinancePage } from "./screens/finance-page";
-import { OrganizationsPage } from "./screens/organizations-page";
-import { ProjectsPage } from "./screens/projects-page";
-import { SettingsPage } from "./screens/settings-page";
 import { SsoCallbackPage } from "./screens/sso-callback-page";
 import { OauthPopupDonePage } from "./screens/oauth-popup-done-page";
-import { CalendarPage } from "./screens/calendar-page";
-import { MeetingDetailPage } from "./screens/meeting-detail-page";
-import { TaskDetailPage } from "./screens/task-detail-page";
-import { TaskListPage } from "./screens/task-list-page";
+
+const InboxPage = lazy(() =>
+  import("./screens/inbox-page").then((m) => ({ default: m.InboxPage })),
+);
+const TaskListPage = lazy(() =>
+  import("./screens/task-list-page").then((m) => ({ default: m.TaskListPage })),
+);
+const AreasPage = lazy(() =>
+  import("./screens/areas-page").then((m) => ({ default: m.AreasPage })),
+);
+const DevelopmentPage = lazy(() =>
+  import("./screens/development-page").then((m) => ({
+    default: m.DevelopmentPage,
+  })),
+);
+const ContactsPage = lazy(() =>
+  import("./screens/contacts-page").then((m) => ({ default: m.ContactsPage })),
+);
+const EmailPage = lazy(() =>
+  import("./screens/email-page").then((m) => ({ default: m.EmailPage })),
+);
+const HabitTrackerPage = lazy(() =>
+  import("./screens/habit-tracker-page").then((m) => ({
+    default: m.HabitTrackerPage,
+  })),
+);
+const JournalPage = lazy(() =>
+  import("./screens/journal-page").then((m) => ({ default: m.JournalPage })),
+);
+const KnowledgePage = lazy(() =>
+  import("./screens/knowledge-page").then((m) => ({
+    default: m.KnowledgePage,
+  })),
+);
+const LettersPage = lazy(() =>
+  import("./screens/letters-page").then((m) => ({ default: m.LettersPage })),
+);
+const FinancePage = lazy(() =>
+  import("./screens/finance-page").then((m) => ({ default: m.FinancePage })),
+);
+const OrganizationsPage = lazy(() =>
+  import("./screens/organizations-page").then((m) => ({
+    default: m.OrganizationsPage,
+  })),
+);
+const ProjectsPage = lazy(() =>
+  import("./screens/projects-page").then((m) => ({ default: m.ProjectsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("./screens/settings-page").then((m) => ({ default: m.SettingsPage })),
+);
+const CalendarPage = lazy(() =>
+  import("./screens/calendar-page").then((m) => ({ default: m.CalendarPage })),
+);
+const MeetingDetailPage = lazy(() =>
+  import("./screens/meeting-detail-page").then((m) => ({
+    default: m.MeetingDetailPage,
+  })),
+);
+const TaskDetailPage = lazy(() =>
+  import("./screens/task-detail-page").then((m) => ({
+    default: m.TaskDetailPage,
+  })),
+);
+
+function RouteFallback() {
+  return <div className="app-route-loading" aria-busy="true" />;
+}
 
 function ShellLayout() {
   const location = useLocation();
   const trail = parseNavigationTrailPath(location.pathname);
   return (
     <AppShell>
-      {trail ? <NavigationTrailPage trail={trail} /> : <Outlet />}
+      <Suspense fallback={<RouteFallback />}>
+        {trail ? <NavigationTrailPage trail={trail} /> : <Outlet />}
+      </Suspense>
     </AppShell>
   );
 }

@@ -247,3 +247,286 @@
 .content-view-mode-toggle__inner {
   pointer-events: auto;
 }
+
+.detail-properties-panel__timer {
+  display: flex;
+  justify-content: flex-start;
+  margin: 0 0 12px;
+  padding: 0 2px;
+}
+
+.meeting-properties-stacked > .detail-properties-panel__timer,
+.task-detail-properties-scroll > .detail-properties-panel__timer {
+  flex-shrink: 0;
+}
+
+.tracked-time-pill-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.tracked-time-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.tracked-time-pill.is-running {
+  border-color: color-mix(in srgb, #7ee2a8 50%, transparent);
+  background: color-mix(in srgb, #7ee2a8 6%, transparent);
+  color: color-mix(in srgb, #7ee2a8 78%, transparent);
+}
+
+.tracked-time-pill__toggle {
+  display: inline-flex;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 20%, transparent);
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  line-height: 0;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
+}
+
+.tracked-time-pill__toggle-icon,
+.tracked-time-pill__toggle svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tracked-time-pill__toggle:hover:not(:disabled) {
+  transform: scale(1.04);
+}
+
+.tracked-time-pill__toggle:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.tracked-time-pill__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tracked-time-pill.is-running .tracked-time-pill__toggle {
+  background: color-mix(in srgb, #7ee2a8 22%, transparent);
+  color: color-mix(in srgb, #7ee2a8 82%, transparent);
+}
+
+.tracked-time-pill__time,
+.tracked-time-pill__input,
+.tracked-time-pill__value,
+.tracked-time-pill__digits {
+  box-sizing: content-box;
+  width: 8ch;
+  min-width: 8ch;
+  max-width: 8ch;
+  flex: 0 0 8ch;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0;
+  line-height: 1;
+  text-align: left;
+}
+
+.tracked-time-pill__time {
+  display: inline-flex;
+  align-items: center;
+  cursor: text;
+}
+
+.tracked-time-pill__value {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tracked-time-pill__time:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tracked-time-pill__input {
+  outline: none;
+  cursor: text;
+}
+
+.tracked-time-pill__digits {
+  display: grid;
+  grid-template-columns: 2ch 1ch 2ch 1ch 2ch;
+  align-items: center;
+  overflow: hidden;
+}
+
+.tracked-time-pill__part {
+  min-width: 0;
+  text-align: center;
+}
+
+.tracked-time-pill__sep {
+  padding: 0;
+  text-align: center;
+  opacity: 0.75;
+}
+
+.tracked-time-pill__part--seconds {
+  animation: tracked-time-seconds-pulse 1s ease-in-out infinite;
+}
+
+.tracked-time-pill__digits--live .tracked-time-pill__part--seconds {
+  animation: tracked-time-seconds-pulse 1s ease-in-out infinite;
+}
+
+.tracked-time-pill__hint {
+  font-size: 11px;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.tracked-time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tracked-time-field__row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.tracked-time-field__toggle {
+  display: inline-flex;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.06);
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+  line-height: 0;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.tracked-time-field__toggle svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tracked-time-field__toggle:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--foreground);
+}
+
+.tracked-time-field__toggle:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.tracked-time-field__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tracked-time-field.is-running .tracked-time-field__toggle {
+  background: color-mix(in srgb, #3dd68c 22%, transparent);
+  color: #7ee2a8;
+}
+
+.tracked-time-field__input,
+.tracked-time-field__live {
+  min-width: 0;
+  flex: 1;
+}
+
+.tracked-time-field__input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+  cursor: text;
+}
+
+.tracked-time-field__live {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  line-height: 1.375;
+}
+
+.tracked-time-field__live-head {
+  color: var(--foreground);
+}
+
+.tracked-time-field__seconds {
+  color: #7ee2a8;
+  animation: tracked-time-seconds-pulse 1s ease-in-out infinite;
+}
+
+@keyframes tracked-time-seconds-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tracked-time-field__input:disabled {
+  cursor: not-allowed;
+}
+
+.tracked-time-field__hint {
+  font-size: 11px;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.task-properties-inline__tracked-time .property-field-group__label {
+  display: none;
+}
+
+.task-properties-inline__tracked-time {
+  display: flex;
+  justify-content: flex-start;
+}

@@ -389,6 +389,10 @@ export const taskSchema = z.object({
   agentCreatedAt: z.string().datetime().nullable().optional(),
   /** User sign-off timestamp; clears Agents inbox subgroup. */
   agentInboxApprovedAt: z.string().datetime().nullable().optional(),
+  /** Manual / timer tracked duration (whole minutes; legacy). */
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  /** Manual / timer tracked duration (whole seconds). */
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -411,6 +415,8 @@ export const createTaskSchema = z.object({
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
   habitId: z.string().nullable().optional(),
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   /**
    * Who should be attributed on activity rows for this write.
    * `agent` also flags the task for the Agents inbox subgroup.
@@ -1016,6 +1022,36 @@ export const financialRecurringSchema = z.object({
   amountCents: z.number().int().nonnegative().nullable(),
   nextDate: calendarDateSchema.nullable(),
   archived: z.boolean(),
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+/** Cash Flow planning scratchpad row type. */
+export const cashflowPlannerEntryTypeSchema = z.enum(["expense", "income"]);
+
+export const cashflowPlannerEntryInputSchema = z.object({
+  entryType: cashflowPlannerEntryTypeSchema,
+  name: z.string().min(1).max(255),
+  /** Absolute amount in cents; sign comes from entryType. */
+  amountCents: z.number().int().nonnegative(),
+  /** Due / pay date (YYYY-MM-DD). */
+  dueDate: calendarDateSchema,
+  /** Optional free-text group label (e.g. Housing, Week 1). */
+  groupLabel: z.string().max(255).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+export const updateCashflowPlannerEntrySchema =
+  cashflowPlannerEntryInputSchema.partial();
+export const cashflowPlannerEntrySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  entryType: cashflowPlannerEntryTypeSchema,
+  name: z.string(),
+  amountCents: z.number().int().nonnegative(),
+  dueDate: calendarDateSchema,
+  groupLabel: z.string().nullable(),
   sortOrder: z.number().int(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
@@ -2090,6 +2126,8 @@ export const createMeetingSchema = z.object({
   attendeeContactIds: z.array(z.string()).optional(),
   startAt: isoDateSchema,
   endAt: isoDateSchema,
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const updateMeetingSchema = z
@@ -2104,6 +2142,8 @@ export const updateMeetingSchema = z
     attendeeContactIds: z.array(z.string()).optional(),
     startAt: isoDateSchema.optional(),
     endAt: isoDateSchema.optional(),
+    trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+    trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
@@ -2122,6 +2162,8 @@ export const meetingSchema = z.object({
   attendeeContactIds: z.array(z.string()),
   startAt: isoDateSchema,
   endAt: isoDateSchema,
+  trackedMinutes: z.number().int().nonnegative().nullable().optional(),
+  trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   sortOrder: z.number().int(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
@@ -2225,6 +2267,13 @@ export type FinancialGoalSavingMode = z.infer<
 export type FinancialRecurring = z.infer<typeof financialRecurringSchema>;
 export type FinancialRecurringInput = z.infer<
   typeof financialRecurringInputSchema
+>;
+export type CashflowPlannerEntryType = z.infer<
+  typeof cashflowPlannerEntryTypeSchema
+>;
+export type CashflowPlannerEntry = z.infer<typeof cashflowPlannerEntrySchema>;
+export type CashflowPlannerEntryInput = z.infer<
+  typeof cashflowPlannerEntryInputSchema
 >;
 export type FinancialImportDialect = z.infer<typeof financialImportDialectSchema>;
 export type FinancialImportBatch = z.infer<typeof financialImportBatchSchema>;

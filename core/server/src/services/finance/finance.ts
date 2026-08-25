@@ -18,6 +18,7 @@ import {
 
 import type {
   BankAccountInput,
+  CashflowPlannerEntryInput,
   FinancialAmountSign,
   FinancialCategoryInput,
   FinancialGoalInput,
@@ -29,6 +30,7 @@ import type {
 import { db } from "../../db/index.js";
 import {
   bankAccounts,
+  cashflowPlannerEntries,
   financialCategories,
   financialGoals,
   financialRecurrings,
@@ -1340,6 +1342,128 @@ export async function deleteFinancialRecurring(
         eq(financialRecurrings.workspaceId, workspaceId),
         eq(financialRecurrings.id, id),
         isNull(financialRecurrings.deletedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+function normalizeGroupLabel(
+  value: string | null | undefined,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function listCashflowPlannerEntries(workspaceId: string) {
+  return db
+    .select()
+    .from(cashflowPlannerEntries)
+    .where(
+      and(
+        eq(cashflowPlannerEntries.workspaceId, workspaceId),
+        isNull(cashflowPlannerEntries.deletedAt),
+      ),
+    )
+    .orderBy(
+      asc(cashflowPlannerEntries.dueDate),
+      asc(cashflowPlannerEntries.sortOrder),
+      asc(cashflowPlannerEntries.name),
+    );
+}
+
+export async function getCashflowPlannerEntryById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
+    .select()
+    .from(cashflowPlannerEntries)
+    .where(
+      and(
+        eq(cashflowPlannerEntries.workspaceId, workspaceId),
+        eq(cashflowPlannerEntries.id, id),
+        isNull(cashflowPlannerEntries.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function createCashflowPlannerEntry(
+  workspaceId: string,
+  input: CashflowPlannerEntryInput,
+  id = newId(),
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
+    .insert(cashflowPlannerEntries)
+    .values({
+      id,
+      workspaceId,
+      entryType: input.entryType,
+      name: input.name.trim(),
+      amountCents: Math.max(0, Math.trunc(input.amountCents)),
+      dueDate: input.dueDate,
+      groupLabel: normalizeGroupLabel(input.groupLabel) ?? null,
+      sortOrder: input.sortOrder ?? Date.now(),
+    })
+    .returning();
+  return row!;
+}
+
+export async function updateCashflowPlannerEntry(
+  workspaceId: string,
+  id: string,
+  input: Partial<CashflowPlannerEntryInput>,
+  executor: DbExecutor = db,
+) {
+  const existing = await getCashflowPlannerEntryById(workspaceId, id, executor);
+  if (!existing) return null;
+
+  const groupLabel = normalizeGroupLabel(input.groupLabel);
+
+  const [row] = await executor
+    .update(cashflowPlannerEntries)
+    .set({
+      ...(input.entryType !== undefined ? { entryType: input.entryType } : {}),
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.amountCents !== undefined
+        ? { amountCents: Math.max(0, Math.trunc(input.amountCents)) }
+        : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+      ...(groupLabel !== undefined ? { groupLabel } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(cashflowPlannerEntries.workspaceId, workspaceId),
+        eq(cashflowPlannerEntries.id, id),
+        isNull(cashflowPlannerEntries.deletedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+export async function deleteCashflowPlannerEntry(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const now = new Date();
+  const [row] = await executor
+    .update(cashflowPlannerEntries)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(cashflowPlannerEntries.workspaceId, workspaceId),
+        eq(cashflowPlannerEntries.id, id),
+        isNull(cashflowPlannerEntries.deletedAt),
       ),
     )
     .returning();

@@ -22,9 +22,11 @@ import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdo
 import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 
 export type MeetingPropertiesMeeting = {
   status: string;
+  priority?: number;
   startAt: Date | null;
   endAt: Date | null;
   projectKey?: string | null;
@@ -32,13 +34,17 @@ export type MeetingPropertiesMeeting = {
   organizationId?: string | null;
   organizationName?: string | null;
   attendeeContactIds: string[];
+  trackedDurationSeconds?: number | null;
+  trackedMinutes?: number | null;
 };
 
 export type MeetingPropertiesInlineChipsProps = {
   meeting: MeetingPropertiesMeeting | null;
   onStatusChange?: (status: TaskStatus) => void;
+  onPriorityChange?: (priority: number) => void;
   onStartChange?: (value: Date | null) => void;
   onEndChange?: (value: Date | null) => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
   onAttendeeContactIdsChange?: (contactIds: string[]) => void;
@@ -48,6 +54,7 @@ export type MeetingPropertiesInlineChipsProps = {
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateOrganizationFromQuery?: (query: string) => void;
   onCreateContactFromQuery?: (query: string) => void;
+  timerSession?: TrackedTimerSessionMeta | null;
   triggerVariant?: PropertyDropdownTriggerVariant;
 };
 

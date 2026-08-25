@@ -610,6 +610,8 @@ async function createTaskWithExecutor(
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
       habitId: input.habitId ?? null,
+      trackedMinutes: input.trackedMinutes ?? null,
+      trackedDurationSeconds: input.trackedDurationSeconds ?? null,
       completedAt: status === "completed" ? new Date() : null,
       agentCreatedAt: agentInbox ? new Date() : null,
     })
@@ -766,6 +768,8 @@ export async function updateTask(
       links: input.links,
       agentChatId: input.agentChatId,
       habitId: input.habitId,
+      trackedMinutes: input.trackedMinutes,
+      trackedDurationSeconds: input.trackedDurationSeconds,
       completedAt,
       agentInboxApprovedAt,
       updatedAt: new Date(),

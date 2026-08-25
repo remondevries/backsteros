@@ -39,6 +39,7 @@ export {
   formatTaskStatusHeaderGradientCss,
   getTaskStatusHeaderGradient,
   getTaskStatusHeaderGradientStyle,
+  getTaskStatusIdBadgeStyle,
   type TaskStatusHeaderGradient,
 } from "./tasks/task-status-header-gradient.js";
 
@@ -162,12 +163,25 @@ export {
   type ProductSidebarLinkComponent,
 } from "./components/shell/product-sidebar.js";
 
+export {
+  ProductHistoryToolbar,
+  type ProductHistoryToolbarProps,
+  type ProductHistoryRecentPage,
+} from "./components/shell/product-history-toolbar.js";
+
 export { SidePanelPlusIcon } from "./components/shell/side-panel-plus-icon.js";
 
 export {
   ProductContentTabs,
   type ProductContentTabsProps,
 } from "./components/shell/product-content-tabs.js";
+
+export { ContentTabsTimer } from "./components/shell/content-tabs-timer.js";
+
+export {
+  TrackedTimeField,
+  type TrackedTimeFieldProps,
+} from "./components/shared/tracked-time-field.js";
 
 export {
   ProductContentShell,
@@ -180,6 +194,12 @@ export {
 } from "./components/shell/product-app-shell.js";
 
 export {
+  TrackedTimerProvider,
+  useTrackedTimer,
+} from "./tracked-timer/tracked-timer-context.js";
+
+export {
+  buildProductTabHref,
   createProductTab,
   createDefaultTabsState,
   getTabTitleForHref,
@@ -275,6 +295,9 @@ export {
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
   emailBelongsInInbox,
+  meetingBelongsInInbox,
+  meetingInboxItemId,
+  parseMeetingInboxItemId,
   isEmailIncomingStatus,
   INBOX_ATTENTION_REAL_STATUSES,
   INBOX_ATTENTION_STATUS_ORDER,
@@ -283,8 +306,26 @@ export {
   type InboxEmailListItem,
   type InboxLetterListItem,
   type InboxListItem,
+  type InboxMeetingListItem,
   type InboxTaskListItem,
 } from "./inbox/inbox-items.js";
+
+export {
+  buildInboxTriageNotification,
+  buildInboxTriageEmailNotificationFromListItem,
+  buildInboxTriageMeetingNotificationHref,
+  buildInboxTriageTaskNotificationHref,
+  collectInboxTriageArrivals,
+  inboxTriageItemStableId,
+  snapshotInboxTriageKeys,
+} from "./inbox/inbox-triage-notifications.js";
+
+export {
+  buildInboxUpdatedNotification,
+  collectInboxUpdatedArrivals,
+  inboxUpdatedItemStableId,
+  snapshotInboxUpdatedKeys,
+} from "./inbox/inbox-updated-notifications.js";
 
 export {
   emailListItemIsSelected,
@@ -363,6 +404,7 @@ export {
   type EmailDraftBodyMode,
   useEmailDraftBodyModeShortcuts,
 } from "./components/email/email-draft-actions.js";
+export { useEmailBodyViewModeShortcuts } from "./email/use-email-body-view-mode-shortcuts.js";
 export {
   EmailDraftSignOffShell,
   type EmailDraftSignOffShellProps,
@@ -472,6 +514,7 @@ export {
   isTerminalCalendarTaskStatus,
   isHiddenCalendarTaskStatus,
   isHabitLinkedCalendarTask,
+  isTimedHabitCalendarTask,
   shouldIncludeTaskInCalendarUi,
   taskCalendarEventClassNames,
   taskCalendarEventColors,
@@ -481,9 +524,11 @@ export {
   tasksToCalendarEventsForDate,
   formatCalendarTaskScheduleLabel,
   calendarChangeToMeetingPatch,
+  calendarSelectionToMeetingRange,
   calendarEntityFromEvent,
   meetingToCalendarEvent,
   meetingsToCalendarEvents,
+  meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
   unscheduledCalendarTasks,
   type CalendarEventChange,
@@ -494,6 +539,127 @@ export {
   type TaskCalendarPatch,
 } from "./calendar/calendar-events.js";
 
+export {
+  CALENDAR_VIEW_MODE_OPTIONS,
+  CALENDAR_VIEW_MODE_PARAM,
+  DEFAULT_CALENDAR_VIEW_MODE,
+  buildCalendarViewHref,
+  calendarAvailabilityViewModes,
+  calendarViewModeToFcView,
+  calendarViewModes,
+  fcViewTypeToCalendarViewMode,
+  getCalendarViewModeLabel,
+  isCalendarViewMode,
+  parseCalendarViewModeParam,
+  readCalendarViewModeFromSearch,
+  withCalendarViewSearch,
+  CALENDAR_AVAILABILITY_VIEW_MODE_OPTIONS,
+  normalizeCalendarAvailabilityViewMode,
+  type CalendarAvailabilityViewMode,
+  type CalendarViewMode,
+} from "./calendar/calendar-view-modes.js";
+
+export {
+  CALENDAR_PAGE_MODE_OPTIONS,
+  CALENDAR_PAGE_MODE_PARAM,
+  DEFAULT_CALENDAR_PAGE_MODE,
+  buildCalendarPageHref,
+  calendarPageModes,
+  isCalendarPageMode,
+  parseCalendarPageModeParam,
+  readCalendarPageModeFromSearch,
+  resolveCalendarPageModeFromShortcutKey,
+  withCalendarPageSearch,
+  type CalendarPageMode,
+} from "./calendar/calendar-page-mode.js";
+
+export {
+  addWeekdaySlot,
+  formatSlotLabel,
+  formatTime12h,
+  formatWeekdaySlotsLabel,
+  patchWeekdayHoursEntry,
+  removeWeekdaySlot,
+  suggestNextSlot,
+  updateWeekdaySlot,
+} from "./calendar/calendar-availability-slots.js";
+
+export {
+  AVAILABILITY_EVENT_TYPE,
+  MEETINGS_AVAILABILITY_MARKER_TYPE,
+  WEEKDAY_LABELS,
+  calendarChangeToWeekdayHoursPatch,
+  calendarSelectionToWeekdayHoursPatch,
+  weekdayHoursToCalendarEvents,
+  weekdayHoursToMeetingAvailabilityMarkers,
+  weekdayLabel,
+  type AvailabilityCalendarEvent,
+  type MeetingsAvailabilityMarkerEvent,
+} from "./calendar/calendar-availability-events.js";
+
+export { buildCalendarBreadcrumbItems } from "./calendar/calendar-breadcrumb.js";
+
+export {
+  CALENDAR_TIMETRACKING_DATE_PARAM,
+  CALENDAR_TIMETRACKING_WEEK_PARAM,
+  CALENDAR_TIMETRACKING_MONTH_PARAM,
+  CALENDAR_TIMETRACKING_DETAIL_PANEL_WIDTH_KEY,
+  buildTimetrackingDayGroups,
+  formatTimetrackingPeriodLabel,
+  parseTimetrackingDateParam,
+  parseTimetrackingWeekParam,
+  parseTimetrackingMonthParam,
+  readTimetrackingDateFromSearch,
+  readTimetrackingPeriodFromSearch,
+  timetrackingPeriodIncludesYmd,
+  todayYmd,
+  type TimetrackingDayItem,
+  type TimetrackingMonthGroup,
+  type TimetrackingPeriod,
+  type TimetrackingWeekGroup,
+} from "./calendar/calendar-timetracking-days.js";
+
+export {
+  buildTimetrackingSidePanelKeyboardItemIds,
+  getSelectedTimetrackingSidePanelItemId,
+  parseTimetrackingEntryKeyboardItemId,
+  parseTimetrackingSidePanelItemId,
+  timetrackingEntryKeyboardItemId,
+  timetrackingSidePanelDayItemId,
+  timetrackingSidePanelMonthItemId,
+  timetrackingSidePanelWeekItemId,
+} from "./calendar/calendar-timetracking-keyboard.js";
+
+export {
+  collectTimetrackingEntries,
+  formatTimetrackingDuration,
+  formatTimetrackingLeadingStamp,
+  resolveTimetrackingGroupDateYmd,
+  sumTimetrackingDurationSeconds,
+  withLiveTimetrackingEntries,
+  type LiveTimetrackingSource,
+  type TimetrackingEntry,
+  type TimetrackingEntryKind,
+  type TimetrackingEntrySource,
+} from "./calendar/calendar-timetracking-entries.js";
+
+export {
+  CalendarTimetrackingSidePanelView,
+  type CalendarTimetrackingSidePanelViewProps,
+} from "./components/calendar/calendar-timetracking-side-panel-view.js";
+
+export {
+  CalendarTimetrackingView,
+  type CalendarTimetrackingViewProps,
+} from "./components/calendar/calendar-timetracking-view.js";
+
+export {
+  TimetrackingLeadingStamp,
+  type TimetrackingLeadingStampProps,
+} from "./components/calendar/timetracking-leading-stamp.js";
+
+export { TrackedTimeIcon, type TrackedTimeIconProps } from "./components/icons/tracked-time-icon.js";
+
 export { calendarTaskDragEventData, taskDueEpochAttribute } from "./calendar/calendar-task-drag.js";
 
 export {
@@ -502,9 +668,42 @@ export {
 } from "./calendar/use-calendar-external-task-drag.js";
 
 export {
+  resolveCalendarDateNavigationAction,
+  isCalendarDateNavigationPopoverOpen,
+  type CalendarDateNavigationAction,
+} from "./calendar/calendar-date-navigation-shortcuts.js";
+
+export {
+  useCalendarDateNavigationShortcuts,
+  type CalendarDateNavApi,
+} from "./calendar/use-calendar-date-navigation-shortcuts.js";
+
+export { useCalendarPageModeShortcuts } from "./calendar/use-calendar-page-mode-shortcuts.js";
+
+export {
+  CalendarDateNav,
+  type CalendarDateNavProps,
+} from "./components/calendar/calendar-date-nav.js";
+
+export {
   CalendarView,
   type CalendarViewProps,
 } from "./components/calendar/calendar-view.js";
+
+export {
+  CalendarAvailabilityDayPopover,
+  type CalendarAvailabilityDayPopoverProps,
+} from "./components/calendar/calendar-availability-day-popover.js";
+
+export {
+  CalendarAvailabilityView,
+  type CalendarAvailabilityViewProps,
+} from "./components/calendar/calendar-availability-view.js";
+
+export {
+  CalendarAvailabilitySidePanelView,
+  type CalendarAvailabilitySidePanelViewProps,
+} from "./components/calendar/calendar-availability-side-panel-view.js";
 
 export {
   CalendarTaskEventPopover,
@@ -531,8 +730,68 @@ export {
 } from "./calendar/calendar-day-habits.js";
 
 export {
+  CALENDAR_SIDE_PANEL_MEETING_PREFIX,
+  CALENDAR_SIDE_PANEL_TASK_PREFIX,
+  CALENDAR_SIDE_PANEL_HABIT_PREFIX,
+  buildCalendarSidePanelKeyboardItemIds,
+  calendarSidePanelMeetingItemId,
+  calendarSidePanelTaskItemId,
+  calendarSidePanelHabitItemId,
+  getSelectedCalendarSidePanelItemId,
+  parseCalendarSidePanelKeyboardItemId,
+} from "./calendar/calendar-side-panel-keyboard.js";
+
+export {
+  CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM,
+  parseCalendarMeetingOverlayLayout,
+  withCalendarMeetingSearch,
+  isCalendarMeetingsPanelPath,
+  formatMeetingBreadcrumbLabel,
+  resolveInboxSidebarIndicator,
+  buildTaskDueDatePatch,
+  type CalendarMeetingOverlayLayout,
+} from "./calendar/calendar-meeting-overlay.js";
+
+export {
+  buildCalendarDayColumnNavIds,
+  buildCalendarEventKeyboardGrid,
+  buildCalendarEventKeyboardGridForNavigation,
+  buildCalendarEventKeyboardGridFromDom,
+  flattenCalendarEventKeyboardGrid,
+  findOpenCalendarMorePopoverForDay,
+  findOpenCalendarMorePopoverYmd,
+  closeCalendarMorePopoverForDay,
+  getFirstPopoverAllDayEventId,
+  getSelectedCalendarGridEventId,
+  resolveCalendarGridKeyboardNextItemId,
+  CALENDAR_GRID_KEYBOARD_ITEM_ATTR,
+  CALENDAR_MORE_LINK_PREFIX,
+  calendarMoreLinkItemId,
+  parseCalendarMoreLinkItemId,
+} from "./calendar/calendar-grid-keyboard.js";
+
+export {
+  CALENDAR_TASK_OVERLAY_PARAM,
+  getCalendarTaskOverlayHref,
+  parseCalendarTaskOverlayId,
+} from "./calendar/calendar-task-overlay.js";
+
+export { useCalendarGridKeyboardNavigation } from "./calendar/use-calendar-grid-keyboard-navigation.js";
+
+export {
+  getCalendarMainKeyboardHighlightId,
+  setCalendarMainKeyboardHighlightId,
+  getCalendarSidePanelKeyboardHighlightId,
+  setCalendarSidePanelKeyboardHighlightId,
+  getCalendarKeyboardActiveZone,
+  setCalendarKeyboardActiveZone,
+  type CalendarKeyboardActiveZone,
+} from "./calendar/calendar-keyboard-session.js";
+
+export {
   CalendarTasksSidePanelView,
   type CalendarTasksSidePanelViewProps,
+  type CalendarSidePanelHabitItem,
 } from "./components/calendar/calendar-tasks-side-panel-view.js";
 
 export {
@@ -549,6 +808,7 @@ export {
   formatLocalYmd,
   parseYmdLocal,
   formatDueDateInputValue,
+  formatDueDateTimeStamp,
   shouldShowTaskDueDateUrgency,
   getTaskDueDateUrgency,
   formatTaskDueMetaLabel,
@@ -779,6 +1039,7 @@ export {
   formatMeetingDisplayId,
   parseMeetingDisplayId,
   resolveMeetingAccentColor,
+  resolveMeetingListIconColor,
   defaultNewMeetingTimes,
   getCalendarMeetingHref,
   getCalendarMeetingOverlayHref,
@@ -789,9 +1050,33 @@ export {
 } from "./meetings/meetings.js";
 
 export {
+  MANUAL_MEETING_STATUSES,
+  INCOMING_MEETING_STATUSES,
+  isManualMeetingStatus,
+  isIncomingMeetingStatus,
+  parseMeetingScheduleInstant,
+  deriveMeetingStatusForSchedule,
+  resolveMeetingEffectiveStatus,
+  isPastCompletedMeeting,
+  meetingStatusNeedsReconcile,
+} from "./meetings/meeting-status.js";
+
+export {
+  buildTaskListMeetingItem,
+  isMeetingTaskListItem,
+  getMeetingTaskListHref,
+  filterMeetingTaskRowsForProject,
+} from "./meetings/meeting-list-tasks.js";
+
+export {
   CalendarMeetingDetailOverlay,
   type CalendarMeetingDetailOverlayProps,
 } from "./components/calendar/calendar-meeting-detail-overlay.js";
+
+export {
+  CalendarTaskDetailOverlay,
+  type CalendarTaskDetailOverlayProps,
+} from "./components/calendar/calendar-task-detail-overlay.js";
 
 export {
   MeetingDetailView,
@@ -1009,6 +1294,11 @@ export {
   FinanceCashflowView,
   type FinanceCashflowViewProps,
 } from "./components/finance/finance-cashflow-view.js";
+
+export {
+  CashflowPlannerScratchpad,
+  type CashflowPlannerScratchpadProps,
+} from "./components/finance/cashflow-planner-scratchpad.js";
 
 export {
   FinanceSpendSidePanel,

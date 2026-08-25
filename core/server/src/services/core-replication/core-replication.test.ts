@@ -24,17 +24,16 @@ import {
 import { listReplicatedTableSpecs } from "./tables.js";
 
 describe("core-replication constants", () => {
-  it("live sync covers api_keys plus meetings stack", () => {
-    assert.deepEqual(REPLICATED_TABLES, [
-      "meeting_scheduling_settings",
-      "meetings",
-      "tasks",
-      "api_keys",
-    ]);
+  it("live sync covers full Tier A/B twin stack", () => {
+    assert.ok(REPLICATED_TABLES.includes("projects"));
+    assert.ok(REPLICATED_TABLES.includes("tasks"));
+    assert.ok(REPLICATED_TABLES.includes("documents"));
+    assert.ok(REPLICATED_TABLES.includes("contacts"));
+    assert.ok(REPLICATED_TABLES.includes("organizations"));
+    assert.ok(REPLICATED_TABLES.includes("api_keys"));
+    assert.ok(REPLICATED_TABLES.includes("financial_transactions"));
     assert.ok(BOOTSTRAP_TABLES.includes("workspaces"));
-    assert.ok(BOOTSTRAP_TABLES.includes("workspace_settings"));
-    assert.ok(BOOTSTRAP_TABLES.includes("entity_counters"));
-    assert.ok(BOOTSTRAP_TABLES.includes("api_keys"));
+    assert.ok(BOOTSTRAP_TABLES.includes("users"));
     for (const table of REPLICATED_TABLES) {
       assert.ok(BOOTSTRAP_TABLES.includes(table));
     }
@@ -44,11 +43,11 @@ describe("core-replication constants", () => {
     assert.equal(LEGACY_BOOTSTRAP_API_KEY_NAME, "Meetings");
   });
 
-  it("registers handlers for the full replicated stack", () => {
+  it("registers handlers for the full replicated stack without busy-only task filter", () => {
     const names = listReplicatedTableSpecs().map((spec) => spec.name);
     assert.deepEqual(names, [...REPLICATED_TABLES]);
     const tasks = listReplicatedTableSpecs().find((spec) => spec.name === "tasks");
-    assert.match(tasks?.whereSql ?? "", new RegExp(CALENDAR_BUSY_TASK_LEGACY_SOURCE));
+    assert.equal(tasks?.whereSql, undefined);
   });
 });
 
@@ -92,21 +91,29 @@ describe("core-replication security", () => {
     assert.equal(verifyReplicationSecret("a", "aa"), false);
   });
 
-  it("rejects binding 0.0.0.0 when replication is enabled", () => {
+  it("rejects binding 0.0.0.0 for local-core when replication is enabled", () => {
     assert.throws(
       () =>
         assertReplicationListenHost("0.0.0.0", {
           CORE_REPLICATION_PEER_URL: "http://127.0.0.1:8789",
           CORE_REPLICATION_SECRET: "secret",
+          CORE_REPLICATION_ROLE: "local",
         }),
       /bound to all interfaces/,
+    );
+    assert.doesNotThrow(() =>
+      assertReplicationListenHost("0.0.0.0", {
+        CORE_REPLICATION_PEER_URL: "http://127.0.0.1:8789",
+        CORE_REPLICATION_SECRET: "secret",
+        CORE_REPLICATION_ROLE: "cloud",
+      }),
     );
     assert.doesNotThrow(() => assertReplicationListenHost("127.0.0.1", {}));
   });
 });
 
 describe("core-replication rules", () => {
-  it("prefers local settings and cloud meetings/tasks on equal timestamps", () => {
+  it("prefers local settings and cloud meetings on equal timestamps", () => {
     const ts = new Date("2026-01-01T00:00:00.000Z");
     assert.equal(
       shouldApplyByUpdatedAt("meeting_scheduling_settings", "cloud", ts, ts),
@@ -121,7 +128,7 @@ describe("core-replication rules", () => {
     assert.equal(preferIncomingOnConflict("meetings", "local"), true);
   });
 
-  it("filters calendar-busy tasks", () => {
+  it("documents legacy calendar-busy helper", () => {
     assert.match(calendarBusyTaskFilterSql(), /calendar_busy/);
     assert.equal(
       isCalendarBusyTaskRow({ legacy_source: CALENDAR_BUSY_TASK_LEGACY_SOURCE }),

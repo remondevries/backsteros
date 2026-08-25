@@ -2,6 +2,7 @@ import { formatLocalYmd } from "../tasks/task-due-date.js";
 import { getTaskDueDateYmd } from "../tasks/tasks-due-filters.js";
 import { resolveTaskStatusColor } from "../tasks/task-status-color.js";
 import { migrateLegacyTaskStatus } from "../tasks/task-status.js";
+import { deriveMeetingStatusForSchedule, isPastCompletedMeeting } from "../meetings/meeting-status.js";
 
 /** Default block length when a task is dropped on a time slot. */
 export const DEFAULT_TIMED_TASK_DURATION_MINUTES = 60;
@@ -23,6 +24,14 @@ export function isHabitLinkedCalendarTask(task: CalendarTaskLike): boolean {
   return Boolean(task.habitId?.trim());
 }
 
+/** Habit day tasks only appear on the grid once given a timed start/end. */
+export function isTimedHabitCalendarTask(task: CalendarTaskLike): boolean {
+  if (!isHabitLinkedCalendarTask(task)) return false;
+  const start = toValidDate(task.dueDate);
+  const end = toValidDate(task.dueEndDate);
+  return Boolean(start && end && end.getTime() > start.getTime());
+}
+
 export type CalendarTaskLike = {
   id: string;
   title: string;
@@ -30,18 +39,28 @@ export type CalendarTaskLike = {
   dueDate: number | Date | null;
   /** End of a timed block; null/absent = all-day due date. */
   dueEndDate?: number | Date | null;
+  /** External update flag — green dot on status icons. */
+  inboxUpdatedAt?: number | Date | string | null;
   /** Email rows mixed into task lists — never scheduled from the calendar. */
-  listKind?: "task" | "email";
+  listKind?: "task" | "email" | "meeting";
   habitId?: string | null;
+  /** Habit icon when `habitId` is set (calendar event chrome). */
+  habitIcon?: string | null;
   projectName?: string | null;
 };
 
 export function shouldIncludeTaskInCalendarUi(task: CalendarTaskLike): boolean {
-  return (
-    task.listKind !== "email" &&
-    !isHabitLinkedCalendarTask(task) &&
-    !isHiddenCalendarTaskStatus(task.status)
-  );
+  if (
+    task.listKind === "email" ||
+    task.listKind === "meeting" ||
+    isHiddenCalendarTaskStatus(task.status)
+  ) {
+    return false;
+  }
+  if (isHabitLinkedCalendarTask(task)) {
+    return isTimedHabitCalendarTask(task);
+  }
+  return true;
 }
 
 export type TaskCalendarEvent = {
@@ -58,11 +77,17 @@ export type TaskCalendarEvent = {
         taskId: string;
         status: string;
         projectName?: string | null;
+        inboxUpdatedAt?: number | Date | string | null;
+        habitId?: string | null;
+        habitIcon?: string | null;
       }
     | {
         entityType: "meeting";
         meetingId: string;
         projectName?: string | null;
+        status?: string | null;
+        endAt?: string;
+        finished?: boolean;
       };
   /** Optional — timeline blocks use `.task-calendar-event` CSS instead. */
   backgroundColor?: string;
@@ -73,6 +98,7 @@ export type TaskCalendarEvent = {
 export type MeetingCalendarPatch = {
   startAt: string;
   endAt: string;
+  status: string;
 };
 
 export type MeetingCalendarLike = {
@@ -80,6 +106,7 @@ export type MeetingCalendarLike = {
   title: string;
   startAt: number | Date | string;
   endAt: number | Date | string;
+  status?: string | null;
   projectName?: string | null;
 };
 
@@ -116,8 +143,14 @@ export function isTerminalCalendarTaskStatus(status: string): boolean {
   return TERMINAL_CALENDAR_STATUSES.has(migrateLegacyTaskStatus(status));
 }
 
-export function taskCalendarEventClassNames(status: string): string[] {
+export function taskCalendarEventClassNames(
+  status: string,
+  options?: { habit?: boolean },
+): string[] {
   const classNames = ["task-calendar-event"];
+  if (options?.habit) {
+    classNames.push("habit-calendar-event");
+  }
   if (isTerminalCalendarTaskStatus(status)) {
     classNames.push("task-calendar-event-done");
   }
@@ -160,15 +193,21 @@ export function taskToCalendarEvent(
   const start = toValidDate(task.dueDate);
   if (!start) return null;
 
+  const habitId = task.habitId?.trim() || null;
   const base = {
     id: task.id,
-    title: task.title || "Untitled task",
-    classNames: taskCalendarEventClassNames(task.status),
+    title: task.title || (habitId ? "Untitled habit" : "Untitled task"),
+    classNames: taskCalendarEventClassNames(task.status, {
+      habit: Boolean(habitId),
+    }),
     extendedProps: {
       entityType: "task" as const,
       taskId: task.id,
       status: task.status,
       projectName: task.projectName?.trim() || null,
+      inboxUpdatedAt: task.inboxUpdatedAt ?? null,
+      habitId,
+      habitIcon: habitId ? (task.habitIcon ?? null) : null,
     },
   };
 
@@ -262,40 +301,66 @@ export function unscheduledCalendarTasks<T extends CalendarTaskLike>(
   );
 }
 
-export function meetingCalendarEventClassNames(): string[] {
-  return ["task-calendar-event", "meeting-calendar-event"];
+export function meetingCalendarEventClassNames(finished = false): string[] {
+  const classNames = ["task-calendar-event", "meeting-calendar-event"];
+  if (finished) {
+    classNames.push("meeting-calendar-event--finished");
+  }
+  return classNames;
 }
 
 export function meetingToCalendarEvent(
   meeting: MeetingCalendarLike,
+  now = new Date(),
 ): TaskCalendarEvent | null {
   const start = toValidDate(meeting.startAt);
   const end = toValidDate(meeting.endAt);
   if (!start || !end || end.getTime() <= start.getTime()) return null;
+  const finished = isPastCompletedMeeting(meeting, now);
   return {
     id: `meeting:${meeting.id}`,
     title: meeting.title || "Untitled meeting",
     start: start.toISOString(),
     end: end.toISOString(),
     allDay: false,
-    classNames: meetingCalendarEventClassNames(),
+    classNames: meetingCalendarEventClassNames(finished),
     extendedProps: {
       entityType: "meeting",
       meetingId: meeting.id,
       projectName: meeting.projectName?.trim() || null,
+      status: meeting.status ?? null,
+      endAt: end.toISOString(),
+      finished,
     },
   };
 }
 
 export function meetingsToCalendarEvents(
   meetings: MeetingCalendarLike[],
+  now = new Date(),
 ): TaskCalendarEvent[] {
   const events: TaskCalendarEvent[] = [];
   for (const meeting of meetings) {
-    const event = meetingToCalendarEvent(meeting);
+    const event = meetingToCalendarEvent(meeting, now);
     if (event) events.push(event);
   }
   return events;
+}
+
+/** Calendar events for meetings that start on a single local journal day. */
+export function meetingsToCalendarEventsForDate(
+  meetings: MeetingCalendarLike[],
+  dateSlug: string,
+  calendarTimeZone?: string,
+  now = new Date(),
+): TaskCalendarEvent[] {
+  return meetingsToCalendarEvents(
+    meetings.filter(
+      (meeting) =>
+        getTaskDueDateYmd(meeting.startAt, calendarTimeZone) === dateSlug,
+    ),
+    now,
+  );
 }
 
 export function calendarEntityFromEvent(event: {
@@ -318,7 +383,32 @@ export function calendarEntityFromEvent(event: {
 
 export function calendarChangeToMeetingPatch(
   change: CalendarEventChange,
+  now = new Date(),
 ): MeetingCalendarPatch | null {
+  const start = toValidDate(change.start);
+  if (!start) return null;
+  const end = toValidDate(change.end);
+  const effectiveEnd =
+    end && end.getTime() > start.getTime()
+      ? end
+      : new Date(
+          start.getTime() + DEFAULT_TIMED_TASK_DURATION_MINUTES * 60_000,
+        );
+  return {
+    startAt: start.toISOString(),
+    endAt: effectiveEnd.toISOString(),
+    status: deriveMeetingStatusForSchedule(start, effectiveEnd, now),
+  };
+}
+
+/**
+ * Drag-select on the time grid → meeting start/end for create.
+ * All-day selections are ignored (month / list); week/day use timed ranges.
+ */
+export function calendarSelectionToMeetingRange(
+  change: CalendarEventChange,
+): { startAt: string; endAt: string } | null {
+  if (change.allDay) return null;
   const start = toValidDate(change.start);
   if (!start) return null;
   const end = toValidDate(change.end);
@@ -338,10 +428,11 @@ export function calendarChangeToMeetingPatch(
 export function mergeCalendarGridEvents(
   tasks: CalendarTaskLike[],
   meetings: MeetingCalendarLike[],
+  now = new Date(),
 ): TaskCalendarEvent[] {
   return [
     ...tasksToCalendarEvents(tasks),
-    ...meetingsToCalendarEvents(meetings),
+    ...meetingsToCalendarEvents(meetings, now),
   ];
 }
 

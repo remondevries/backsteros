@@ -20,10 +20,13 @@ import {
 import { getNavigationItemIcon } from "../navigation/navigation-item-icon.js";
 import { DevelopmentAdeLogoIcon } from "../icons/development-ade-logo-icon.js";
 import {
+  ProductHistoryToolbar,
+  type ProductHistoryRecentPage,
+} from "./product-history-toolbar.js";
+import {
   SidebarAccountIcon,
   SidebarChevronIcon,
   SidebarComposeIcon,
-  SidebarHistoryClockIcon,
   SidebarLogoutIcon,
   SidebarSettingsIcon,
 } from "./sidebar-nav-icons.js";
@@ -37,13 +40,8 @@ export type ProductSidebarLinkComponent = ComponentType<{
   onClick?: () => void;
 }>;
 
-export type ProductSidebarRecentPage = {
-  id: string;
-  href: string;
-  title: string;
-  badge?: string;
-  icon?: ReactNode;
-};
+/** @deprecated Prefer {@link ProductHistoryRecentPage}. */
+export type ProductSidebarRecentPage = ProductHistoryRecentPage;
 
 export type ProductSidebarProps = {
   pathname: string;
@@ -71,35 +69,6 @@ export type ProductSidebarProps = {
   /** Bottom-left footer (e.g. Cursor credits). Replaces the old search button. */
   footer?: ReactNode;
 };
-
-function HistoryButton({
-  label,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className="app-side-panel-history-button"
-      aria-label={label}
-      title={label}
-      aria-disabled={disabled}
-      disabled={disabled}
-      onClick={() => {
-        if (disabled) return;
-        onClick?.();
-      }}
-    >
-      {children}
-    </button>
-  );
-}
 
 function NavLinks({
   activePathname,
@@ -171,31 +140,11 @@ export function ProductSidebar({
   inboxHasItems = false,
   footer,
 }: ProductSidebarProps) {
-  const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const historyMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const settingsHref = getDefaultSettingsHref();
   const closeProfileMenu = () => setProfileMenuOpen(false);
   const showAccountActions = Boolean(onAccount || onSignOut);
-
-  useEffect(() => {
-    if (!historyMenuOpen) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (!historyMenuRef.current?.contains(event.target as Node)) {
-        setHistoryMenuOpen(false);
-      }
-    }
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setHistoryMenuOpen(false);
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [historyMenuOpen]);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -217,82 +166,14 @@ export function ProductSidebar({
 
   return (
     <div className="sidebar-inner">
-      <div
-        className="app-side-panel-history-toolbar"
-        data-tauri-drag-region
-        ref={historyMenuRef}
-      >
-        <div className="app-side-panel-history-actions">
-          <div className="app-side-panel-history-recent">
-            <HistoryButton
-              label="Recent pages"
-              disabled={recentPages.length === 0 && !onSelectRecentPage}
-              onClick={() => setHistoryMenuOpen((open) => !open)}
-            >
-              <SidebarHistoryClockIcon />
-            </HistoryButton>
-
-            {historyMenuOpen ? (
-              <div
-                className="app-side-panel-history-menu"
-                role="menu"
-                aria-label="Recent pages"
-              >
-                {recentPages.length === 0 ? (
-                  <p className="app-side-panel-history-empty">
-                    No recent pages yet
-                  </p>
-                ) : (
-                  recentPages.map((page) => (
-                    <button
-                      key={page.id}
-                      type="button"
-                      className="app-side-panel-history-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        setHistoryMenuOpen(false);
-                        onSelectRecentPage?.(page.href);
-                      }}
-                    >
-                      <span className="app-side-panel-history-menu-badge">
-                        {page.badge ?? "Page"}
-                      </span>
-                      <span className="app-side-panel-history-menu-content">
-                        {page.icon ? (
-                          <span
-                            className="app-side-panel-history-entry-icon"
-                            aria-hidden="true"
-                          >
-                            {page.icon}
-                          </span>
-                        ) : null}
-                        <span className="app-side-panel-history-menu-title">
-                          {page.title}
-                        </span>
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <HistoryButton
-            label="Go back"
-            disabled={!canGoBack}
-            onClick={onBack}
-          >
-            <SidebarChevronIcon pointing="left" />
-          </HistoryButton>
-          <HistoryButton
-            label="Go forward"
-            disabled={!canGoForward}
-            onClick={onForward}
-          >
-            <SidebarChevronIcon pointing="right" />
-          </HistoryButton>
-        </div>
-      </div>
+      <ProductHistoryToolbar
+        onBack={onBack}
+        onForward={onForward}
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        recentPages={recentPages}
+        onSelectRecentPage={onSelectRecentPage}
+      />
 
       <div className="profile-row app-side-panel-profile-row">
         <div className="app-side-panel-profile" ref={profileMenuRef}>

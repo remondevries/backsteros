@@ -1,5 +1,6 @@
 import {
   createElement,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -23,6 +24,7 @@ import {
   mergeMentionCatalogs,
   ProductAppShell,
   ProductSidebar,
+  TrackedTimerProvider,
   ResizableContextPanel,
   SettingsSidePanelNavView,
   BreadcrumbChromeSkeleton,
@@ -47,19 +49,26 @@ import {
   getSelectedContactSlugFromPathname,
   getSelectedOrganizationSlugFromPathname,
   getTodayJournalDateSlug,
+  getTaskDueDateYmd,
   isContactSectionPath,
   isEmailPath,
-  getEmailComposeHref,
   isFinanceSectionPath,
   isInboxPath,
   isInboxPanelPath,
   isCalendarListPath,
+  isCalendarMeetingsPanelPath,
   defaultNewMeetingTimes,
+  withCalendarMeetingSearch,
   getCalendarMeetingOverlayHref,
+  readCalendarViewModeFromSearch,
+  readCalendarPageModeFromSearch,
   unscheduledCalendarTasks,
+  withCalendarViewSearch,
   buildInboxEmailListItem,
   emailBelongsInInbox,
   sortInboxItemsByAttentionStatus,
+  resolveInboxSidebarIndicator,
+  type CalendarSidePanelHabitItem,
   type InboxListItem,
   isJournalHabitsPath,
   isJournalSectionPath,
@@ -74,9 +83,7 @@ import {
   resolveHistoryEntryDisplay,
   shouldHandleGlobalShortcut,
   shouldShowContentSidePanel,
-  refreshOpenTabTaskStatuses,
   resolveProductTabTaskMeta,
-  syncActiveTabTaskMeta,
   syncActiveTabToPath,
   useBlockBrowserTabFocus,
   useChromeHeader,
@@ -98,6 +105,8 @@ import {
   useTaskPropertyDropdownShortcuts,
   useContentPreviewScrollShortcuts,
   COMPOSE_KNOWLEDGE_BASE_VALUE,
+  buildTaskDueDatePatch,
+  buildProductTabHref,
   createProductTab,
   primeTabTitle,
   type ProductSidebarRecentPage,
@@ -113,6 +122,7 @@ import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
 } from "../lib/task-link-picker-options";
+import { beginEmailComposeFromModal } from "../lib/email-compose-from-modal";
 import {
   isTaskAgentWorkingForUi,
   renderTaskAgentTitleTrailing,
@@ -129,11 +139,19 @@ import {
 } from "../lib/avatar-src";
 import { warmTodayJournalEntry } from "../lib/prefetch-workspace-content";
 import { JournalSelectionProvider } from "../lib/journal-selection-context";
+import { MeetingSchedulingSettingsProvider } from "../lib/use-meeting-scheduling-settings";
 import { buildMentionCatalogFromEmailMessages, buildMentionCatalogFromWorkspace } from "../lib/mention-catalog";
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
-import { useAgentAttentionNotifications } from "../lib/agent/use-agent-attention-notifications";
+import { useInboxTriageNotifications } from "../lib/inbox/use-inbox-triage-notifications";
+import { useInboxUpdatedNotifications } from "../lib/inbox/use-inbox-updated-notifications";
+import {
+  InboxListSessionProvider,
+  useInboxListSessionState,
+} from "../lib/inbox/inbox-list-session-context";
+import { buildInboxAttentionGroupOverrides } from "../lib/inbox/build-inbox-session-list";
+import { useInboxSessionList } from "../lib/inbox/use-inbox-session-list";
 import { useComposeGlobalShortcut } from "../lib/use-compose-global-shortcut";
 import { useCommandPaletteGlobalShortcut } from "../lib/use-command-palette-global-shortcut";
 import { useTauriWindowFullscreen } from "../lib/use-tauri-window-fullscreen";
@@ -149,16 +167,19 @@ import { DesktopClerkProfileBridge } from "./app-shell-clerk";
 import { DesktopClientLink, RouterLink } from "./app-shell-links";
 import {
   DesktopCalendarTasksSidePanel,
+  DesktopCalendarAvailabilitySidePanel,
+  DesktopCalendarTimetrackingSidePanel,
   DesktopContactsSidePanel,
   DesktopFinanceSidePanel,
   DesktopHabitSidePanel,
-  DesktopInboxSidePanel,
   DesktopJournalSidePanel,
   DesktopKnowledgeSidePanel,
   DesktopLettersSidePanel,
   DesktopOrganizationsSidePanel,
   DesktopProjectDocumentsSidePanel,
-} from "./app-shell-side-panels";
+} from "./app-shell-side-panels-lazy";
+import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
+import { AppShellTaskSideEffects } from "./app-shell-task-side-effects";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
 
 function AppShellInner({ children }: { children?: ReactNode }) {
@@ -171,20 +192,24 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
-  useAgentAttentionNotifications(workspace.allTasks);
   const settingsPage = isSettingsPath(location.pathname);
   const [tabsState, setTabsState] = useState<ProductTabsState>(() =>
-    loadTabsState(location.pathname),
+    loadTabsState(location.pathname, location.search),
   );
   // Sync the active tab href during render (not in an effect) so child
   // RegisterPageTitle effects run afterward and keep the real entity title.
   // Matching the legacy TabsProvider pattern avoids the child→parent effect
   // order that was overwriting project/task names with "Projects"/"Project".
-  const [tabsPathname, setTabsPathname] = useState(location.pathname);
-  if (location.pathname !== tabsPathname) {
-    setTabsPathname(location.pathname);
+  const tabsLocationKey = buildProductTabHref(
+    location.pathname,
+    location.search,
+  );
+  const [tabsSyncedLocationKey, setTabsSyncedLocationKey] =
+    useState(tabsLocationKey);
+  if (tabsLocationKey !== tabsSyncedLocationKey) {
+    setTabsSyncedLocationKey(tabsLocationKey);
     setTabsState((current) =>
-      syncActiveTabToPath(current, location.pathname),
+      syncActiveTabToPath(current, location.pathname, location.search),
     );
   }
   const [composeOpen, setComposeOpen] = useState(false);
@@ -517,6 +542,20 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     [organizationAvatarSrc, workspace.organizations],
   );
 
+  const calendarMeetings = useMemo(
+    () =>
+      workspace.meetings.map((meeting) =>
+        meeting.organizationId
+          ? {
+              ...meeting,
+              organizationAvatarSrc:
+                organizationAvatarSrc[meeting.organizationId] ?? null,
+            }
+          : meeting,
+      ),
+    [organizationAvatarSrc, workspace.meetings],
+  );
+
   const documentFoldersByTarget = useMemo(
     () =>
       buildDocumentFoldersByTarget(
@@ -549,37 +588,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   // Keep the active tab's task id/status so product tabs show status icons
   // (and working pulse) instead of the generic tasks glyph. Inbox stays on
   // the section glyph, so clear any leftover task meta there.
-  useEffect(() => {
-    if (isInboxPath(location.pathname)) {
-      setTabsState((current) =>
-        syncActiveTabTaskMeta(current, {
-          taskId: null,
-          taskStatus: null,
-        }),
-      );
-      return;
-    }
-    const meta = resolveProductTabTaskMeta(
-      { id: "active", href: location.pathname, title: "" },
-      workspace.allTasks,
-    );
-    setTabsState((current) =>
-      syncActiveTabTaskMeta(current, {
-        taskId: meta.taskId,
-        taskStatus: meta.taskStatus,
-      }),
-    );
-  }, [location.pathname, workspace.allTasks]);
-
-  // Background tabs: refresh stored status from live workspace data.
-  useEffect(() => {
-    const statusByTaskId = new Map(
-      workspace.allTasks.map((task) => [task.id, task.status] as const),
-    );
-    setTabsState((current) =>
-      refreshOpenTabTaskStatuses(current, statusByTaskId),
-    );
-  }, [workspace.allTasks]);
+  // Task-only subscriptions live in AppShellTaskSideEffects.
 
   useEffect(() => {
     const payload = JSON.stringify(tabsState);
@@ -622,11 +631,15 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       const tab = tabsState.tabs.find((entry) => entry.id === tabId);
       if (!tab) return;
       setTabsState((current) => ({ ...current, activeTabId: tabId }));
-      if (tab.href !== location.pathname) {
+      const currentHref = buildProductTabHref(
+        location.pathname,
+        location.search,
+      );
+      if (tab.href !== currentHref) {
         navigate(tab.href);
       }
     },
-    [location.pathname, navigate, tabsState.tabs],
+    [location.pathname, location.search, navigate, tabsState.tabs],
   );
 
   const closeTab = useCallback(
@@ -711,14 +724,27 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     panelUrl.search ||
     (panelPathname === pathname ? location.search : "");
   const agentMail = useAgentMail();
+  const inInboxPanel = isInboxPanelPath(panelPathname, panelSearch);
+  const { pinnedItems, sessionContextValue } =
+    useInboxListSessionState(inInboxPanel);
+  const inboxNotificationsReady = workspace.ready && !agentMail.loading;
 
-  const inboxItemsWithEmail = useMemo(() => {
+  const baseInboxItems = useMemo(() => {
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const workspaceInboxItems = workspace.inboxItems.map((item) => {
+      if (item.kind !== "meeting" || !item.organizationId) return item;
+      return {
+        ...item,
+        organizationAvatarSrc:
+          organizationAvatarSrc[item.organizationId] ?? null,
+      };
+    });
     const emailItems: InboxListItem[] = agentMail.messages
       .filter((item) =>
         emailBelongsInInbox({
           status: item.status,
           dueDate: item.dueDate,
+          inboxUpdatedAt: item.inboxUpdatedAt,
         }),
       )
       .map((item) => {
@@ -726,10 +752,12 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         return buildInboxEmailListItem({
         inboxId: item.inboxId,
         messageId: item.id,
+        draftId: item.kind === "draft" ? item.id : null,
         threadId: item.threadId,
         title: item.subject,
         from: item.from,
         status: item.status,
+        inboxUpdatedAt: item.inboxUpdatedAt,
         priority: item.priority,
         dueDate: item.dueDate,
         updatedAt: item.receivedAt,
@@ -739,6 +767,9 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         projectName: item.projectName,
         organizationId: item.organizationId,
         organizationName: item.organizationName,
+        organizationAvatarSrc: item.organizationId
+          ? organizationAvatarSrc[item.organizationId] ?? null
+          : null,
         contactId: item.contactId,
         contactName: item.contactName,
         emailThreadId: item.emailThreadId,
@@ -756,15 +787,39 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         });
       });
     return sortInboxItemsByAttentionStatus([
-      ...workspace.inboxItems,
+      ...workspaceInboxItems,
       ...emailItems,
     ]);
   }, [
     agentMail.mailboxes,
     agentMail.messages,
     contactAvatarSrc,
+    organizationAvatarSrc,
     workspace.inboxItems,
   ]);
+
+  const inboxItemsWithEmail = useInboxSessionList(
+    inInboxPanel,
+    inboxNotificationsReady,
+    baseInboxItems,
+    pinnedItems,
+  );
+
+  const inboxAttentionGroupOverrides = useMemo(
+    () => buildInboxAttentionGroupOverrides(pinnedItems),
+    [pinnedItems],
+  );
+
+  useInboxTriageNotifications(inboxItemsWithEmail);
+  useInboxUpdatedNotifications(
+    inboxItemsWithEmail,
+    inboxNotificationsReady,
+  );
+
+  const inboxSidebarIndicator = useMemo(
+    () => resolveInboxSidebarIndicator(inboxItemsWithEmail),
+    [inboxItemsWithEmail],
+  );
 
   const mentionCatalog = useMemo(() => {
     const base = buildMentionCatalogFromWorkspace(workspace);
@@ -947,58 +1002,70 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     [workspace.tasks],
   );
 
+  const calendarSidePanelHabits = useMemo((): CalendarSidePanelHabitItem[] => {
+    const todayYmd = getTodayJournalDateSlug();
+    const items: CalendarSidePanelHabitItem[] = [];
+    for (const habit of workspace.habits) {
+      const todayTask = workspace.allTasks.find((task) => {
+        if (task.habitId !== habit.id) return false;
+        return getTaskDueDateYmd(task.dueDate) === todayYmd;
+      });
+      if (!todayTask) continue;
+      items.push({
+        id: habit.id,
+        title: habit.title,
+        icon: habit.icon ?? null,
+        todayTaskId: todayTask.id,
+        todayTaskStatus: todayTask.status,
+        checked: todayTask.status === "completed",
+      });
+    }
+    items.sort((a, b) => {
+      if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    });
+    return items;
+  }, [workspace.allTasks, workspace.habits]);
+
   let sidePanelBody: ReactNode = null;
   if (showSidePanel) {
-    if (isInboxPanelPath(panelPathname, panelSearch)) {
+    if (inInboxPanel) {
       sidePanelBody = (
         <DesktopInboxSidePanel
           onNavigate={navigateTo}
           pathname={panelPathname}
           items={inboxItemsWithEmail}
+          attentionGroupOverrides={inboxAttentionGroupOverrides}
           loading={!workspace.ready && agentMail.loading}
           Link={RouterLink}
-          onCreateTask={(title) => workspace.createInboxTask({ title })}
-          onComposeEmail={() => navigateTo(getEmailComposeHref({ inboxList: true }))}
-          onCreatedTask={(taskId) => {
-            const item = inboxItemsWithEmail.find(
-              (entry) => entry.id === taskId && entry.kind === "task",
-            );
-            const taskTitle =
-              item && item.kind === "task" ? item.title : null;
-            if (item && item.kind === "task" && item.number != null) {
-              const href = getInboxTaskRouteHref({ number: item.number });
-              if (taskTitle) primeTabTitle(href, taskTitle);
-              navigate(href);
-              return;
-            }
-            const href = `/inbox/${taskId}`;
-            if (taskTitle) primeTabTitle(href, taskTitle);
-            navigate(href);
-          }}
           projectOptions={inboxProjectOptions}
           assigneeOptions={inboxAssigneeOptions}
           onPriorityChange={(itemId, priority) => {
             const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "meeting") return;
             if (item?.kind === "email") {
               void patchEmailThreadFromInbox(itemId, { priority });
               return;
             }
             void workspace.patchTask(itemId, { priority });
           }}
-          onDueDateChange={(itemId, dueDate) => {
+          onDueDateChange={(itemId, dueDate, dueEndDate) => {
             const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "meeting") return;
             if (item?.kind === "email") {
               void patchEmailThreadFromInbox(itemId, {
                 dueDate: dueDate ? dueDate.toISOString() : null,
               });
               return;
             }
-            void workspace.patchTask(itemId, {
-              dueDate: dueDate ? dueDate.toISOString() : null,
-            });
+            void workspace.patchTask(
+              itemId,
+              buildTaskDueDatePatch(dueDate, dueEndDate),
+            );
           }}
           onProjectChange={(itemId, projectKey) => {
             const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "meeting") return;
             const project = projectKey
               ? workspace.projects.find((entry) => entry.key === projectKey) ??
                 null
@@ -1022,6 +1089,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           }}
           onAssigneeChange={(itemId, assigneeId) => {
             const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+            if (item?.kind === "meeting") return;
             if (item?.kind === "email") {
               const assignee = assigneeId
                 ? workspace.contacts.find((entry) => entry.id === assigneeId) ??
@@ -1049,26 +1117,76 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           }}
         />
       );
-    } else if (isCalendarListPath(panelPathname)) {
-      sidePanelBody = (
-        <DesktopCalendarTasksSidePanel
-          meetings={workspace.meetings}
-          tasks={calendarSidePanelTasks}
-          loading={!workspace.ready}
-          onCreateMeeting={() => {
-            const { startAt, endAt } = defaultNewMeetingTimes();
-            void workspace
-              .createMeeting({ title: "New meeting", startAt, endAt })
-              .then((created) => {
-                navigateTo(getCalendarMeetingOverlayHref(created.id));
+    } else if (isCalendarMeetingsPanelPath(panelPathname)) {
+      const calendarViewMode = readCalendarViewModeFromSearch(location.search);
+      const calendarPageMode = readCalendarPageModeFromSearch(location.search);
+      if (
+        calendarPageMode === "availability" &&
+        isCalendarListPath(panelPathname)
+      ) {
+        sidePanelBody = <DesktopCalendarAvailabilitySidePanel />;
+      } else if (
+        calendarPageMode === "timetracking" &&
+        isCalendarListPath(panelPathname)
+      ) {
+        sidePanelBody = <DesktopCalendarTimetrackingSidePanel />;
+      } else {
+        sidePanelBody = (
+          <DesktopCalendarTasksSidePanel
+            pathname={panelPathname}
+            search={location.search}
+            meetings={calendarMeetings}
+            tasks={calendarSidePanelTasks}
+            habits={calendarSidePanelHabits}
+            loading={!workspace.ready}
+            panelVariant="calendar"
+            onCreateMeeting={() => {
+              const { startAt, endAt } = defaultNewMeetingTimes();
+              void workspace
+                .createMeeting({
+                  title: "New meeting",
+                  status: "triage",
+                  startAt,
+                  endAt,
+                })
+                .then((created) => {
+                  navigateTo(
+                    calendarPageMode === "calendar"
+                      ? getCalendarMeetingOverlayHref(
+                          created.id,
+                          calendarViewMode,
+                        )
+                      : withCalendarMeetingSearch(
+                          created.id,
+                          location.search,
+                        ),
+                  );
+                });
+            }}
+            onMeetingOpen={(meetingId) =>
+              navigateTo(
+                calendarPageMode === "calendar"
+                  ? getCalendarMeetingOverlayHref(meetingId, calendarViewMode)
+                  : withCalendarMeetingSearch(meetingId, location.search),
+              )
+            }
+            onTaskOpen={(taskId) =>
+              navigateTo(
+                withCalendarViewSearch(
+                  `/calendar/tasks/${taskId}`,
+                  location.search,
+                  calendarViewMode,
+                ),
+              )
+            }
+            onToggleHabit={(habit, checked) => {
+              void workspace.patchTask(habit.todayTaskId, {
+                status: checked ? "completed" : "ready_to_start",
               });
-          }}
-          onMeetingOpen={(meetingId) =>
-            navigateTo(getCalendarMeetingOverlayHref(meetingId))
-          }
-          onTaskOpen={(taskId) => navigateTo(`/calendar/tasks/${taskId}`)}
-        />
-      );
+            }}
+          />
+        );
+      }
     } else if (isJournalHabitsPath(panelPathname)) {
       sidePanelBody = (
         <DesktopHabitSidePanel
@@ -1361,13 +1479,13 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     showSidePanel && sidePanelBody ? (
       financeRail ? (
         <aside className="context-panel context-panel--rail">
-          {sidePanelBody}
+          <Suspense fallback={null}>{sidePanelBody}</Suspense>
         </aside>
       ) : (
         <ResizableContextPanel
           storageKey={getContentSidePanelWidthKey(panelPathname)}
         >
-          {sidePanelBody}
+          <Suspense fallback={null}>{sidePanelBody}</Suspense>
         </ResizableContextPanel>
       )
     ) : undefined;
@@ -1390,7 +1508,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
           canGoBack={history.canGoBack}
           canGoForward={history.canGoForward}
           footer={<CursorCreditsUsageBar />}
-          inboxHasItems={workspace.inboxItems.length > 0}
+          inboxIndicator={inboxSidebarIndicator}
           recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
             const display = resolveHistoryEntryDisplay(page.href, page.title);
             return {
@@ -1417,9 +1535,11 @@ function AppShellInner({ children }: { children?: ReactNode }) {
 
   return (
     <ClientLinkProvider Link={DesktopClientLink}>
+    <InboxListSessionProvider value={sessionContextValue}>
     <MentionNavigationProvider pathname={location.pathname}>
     <MentionCatalogProvider catalog={mentionCatalog}>
     <ListKeyboardNavigationProvider pathname={location.pathname}>
+      <AppShellTaskSideEffects setTabsState={setTabsState} />
       <DesktopOverlayMainNavigationListener />
       <ExternalOpenHrefListener />
       <RegisterPageTitleProvider
@@ -1429,6 +1549,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         updateActiveTabIcon={updateActiveTabIcon}
         updateActiveTabTitle={updateActiveTabTitle}
       >
+      <TrackedTimerProvider onNavigate={(href) => navigate(href)}>
       <ProductAppShell
         className={windowFullscreen ? "is-window-fullscreen" : undefined}
         sidebar={sidebar}
@@ -1438,11 +1559,45 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         onActivateTab={activateTab}
         onCloseTab={closeTab}
         onOpenNewTab={openNewTab}
+        historyToolbar={
+          sidebarCollapsed
+            ? {
+                onBack: history.goBack,
+                onForward: history.goForward,
+                canGoBack: history.canGoBack,
+                canGoForward: history.canGoForward,
+                recentPages: history.recentPages.map(
+                  (page): ProductSidebarRecentPage => {
+                    const display = resolveHistoryEntryDisplay(
+                      page.href,
+                      page.title,
+                    );
+                    return {
+                      id: page.href,
+                      href: page.href,
+                      title: display.title,
+                      badge: display.badgeLabel,
+                      icon: createElement(HistoryEntryIcon, {
+                        display,
+                        icon: page.icon,
+                      }),
+                    };
+                  },
+                ),
+                onSelectRecentPage: (href) =>
+                  history.navigateToHistoryEntry(href),
+              }
+            : null
+        }
         renderTabIcon={(tab) => {
           // Inbox tabs always keep the inbox glyph — status/working icons
           // are for task detail tabs elsewhere (projects, tasks, etc.).
           // Email tabs stay on the envelope until message entities exist.
           if (isInboxPath(tab.href)) {
+            const display = resolveHistoryEntryDisplay(tab.href, tab.title);
+            if (display.kind === "meeting") {
+              return createElement(HistoryEntryIcon, { display });
+            }
             return createElement(HistoryEntryIcon, {
               display: {
                 kind: "navigate",
@@ -1489,6 +1644,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       >
         {children}
       </ProductAppShell>
+      </TrackedTimerProvider>
       </RegisterPageTitleProvider>
       <CommandPaletteView
         navigate={(href) => navigate(href)}
@@ -1509,6 +1665,8 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         onNavigate={(href) => navigate(href)}
         documentLinkOptions={buildDocumentLinkOptions(workspace.documents)}
         emailLinkOptions={buildEmailLinkOptions(agentMail.messages)}
+        mailboxes={agentMail.mailboxes}
+        onCreateEmail={async (input) => beginEmailComposeFromModal(input)}
         onCreateTask={async (input) => {
           if (input.projectId) {
             const project = workspace.projects.find(
@@ -1586,6 +1744,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     </ListKeyboardNavigationProvider>
     </MentionCatalogProvider>
     </MentionNavigationProvider>
+    </InboxListSessionProvider>
     </ClientLinkProvider>
   );
 }
@@ -1596,7 +1755,9 @@ export function AppShell({ children }: { children?: ReactNode }) {
       <EntityHeaderActionsShell>
         <ChromeHeaderProvider>
           <JournalSelectionProvider>
-            <AppShellInner>{children}</AppShellInner>
+            <MeetingSchedulingSettingsProvider>
+              <AppShellInner>{children}</AppShellInner>
+            </MeetingSchedulingSettingsProvider>
           </JournalSelectionProvider>
         </ChromeHeaderProvider>
       </EntityHeaderActionsShell>

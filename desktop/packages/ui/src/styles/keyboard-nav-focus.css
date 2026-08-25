@@ -7,7 +7,15 @@
 .app-side-panel-tree-folder-row.keyboard-nav-item-highlight,
 .app-side-panel-tree-folder-row.keyboard-nav-item-highlight:hover,
 .app-side-panel-tree-folder-row.keyboard-nav-item-highlight:focus,
-.app-side-panel-tree-folder-row.keyboard-nav-item-highlight:focus-visible {
+.app-side-panel-tree-folder-row.keyboard-nav-item-highlight:focus-visible,
+button.side-panel-plain-group-label.keyboard-nav-item-highlight,
+button.side-panel-plain-group-label.keyboard-nav-item-highlight:hover,
+button.side-panel-plain-group-label.keyboard-nav-item-highlight:focus,
+button.side-panel-plain-group-label.keyboard-nav-item-highlight:focus-visible,
+.project-type-subgroup__label-button.keyboard-nav-item-highlight,
+.project-type-subgroup__label-button.keyboard-nav-item-highlight:hover,
+.project-type-subgroup__label-button.keyboard-nav-item-highlight:focus,
+.project-type-subgroup__label-button.keyboard-nav-item-highlight:focus-visible {
   outline: none !important;
   border-color: transparent !important;
   background: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
@@ -33,6 +41,60 @@
 .app-side-panel-item:focus,
 .app-side-panel-item:focus-visible {
   outline: none;
+}
+
+/*
+ * List rows / keyboard-nav markers: never show the browser's blue focus ring
+ * anywhere in the app. Actual keyboard position uses .keyboard-nav-item-highlight
+ * (orange inset) — not :focus / :focus-visible.
+ */
+.task-item-row:focus,
+.task-item-row:focus-visible,
+.task-item-row.keyboard-nav-list-item:focus,
+.task-item-row.keyboard-nav-list-item:focus-visible,
+.project-overview-row:focus,
+.project-overview-row:focus-visible,
+.keyboard-nav-list-item:focus,
+.keyboard-nav-list-item:focus-visible,
+[data-keyboard-nav-item]:focus,
+[data-keyboard-nav-item]:focus-visible,
+[data-keyboard-nav-item] [role="button"]:focus,
+[data-keyboard-nav-item] [role="button"]:focus-visible,
+[data-keyboard-nav-item] a:focus,
+[data-keyboard-nav-item] a:focus-visible,
+button[data-keyboard-nav-item]:focus,
+button[data-keyboard-nav-item]:focus-visible,
+a[data-keyboard-nav-item]:focus,
+a[data-keyboard-nav-item]:focus-visible,
+.finance-tx-row:focus,
+.finance-tx-row:focus-visible,
+.finance-tx-row__line:focus,
+.finance-tx-row__line:focus-visible,
+.finance-dashboard__list-row:focus,
+.finance-dashboard__list-row:focus-visible,
+.finance-categories-view__row-main:focus,
+.finance-categories-view__row-main:focus-visible,
+.finance-accounts-view__row-main:focus,
+.finance-accounts-view__row-main:focus-visible,
+.app-side-panel-tree-folder-row:focus,
+.app-side-panel-tree-folder-row:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
+/* Task / overview rows: orange inset when j/k-highlighted (even without list-item class). */
+.task-item-row.keyboard-nav-item-highlight,
+.task-item-row.keyboard-nav-item-highlight:hover,
+.task-item-row.keyboard-nav-item-highlight:focus,
+.task-item-row.keyboard-nav-item-highlight:focus-visible,
+.project-overview-row.keyboard-nav-item-highlight,
+.project-overview-row.keyboard-nav-item-highlight:hover,
+.project-overview-row.keyboard-nav-item-highlight:focus,
+.project-overview-row.keyboard-nav-item-highlight:focus-visible {
+  outline: none !important;
+  background-color: var(--keyboard-nav-highlight-bg, rgb(255 255 255 / 0.02));
+  box-shadow: inset 0 0 0 var(--keyboard-nav-highlight-width, 1px)
+    var(--keyboard-nav-highlight-color, #ee7a47);
 }
 
 /* Markdown preview links: j/k highlight while content zone is active. */
@@ -149,10 +211,40 @@ body[data-keyboard-nav-hover="suppressed"]
 .inbox-list-item-title-wrap {
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  /* Grow into the primary row — `0 1 auto` lets nested ellipsis collapse to ~1–2 chars. */
+  flex: 1;
   max-width: 100%;
   align-items: center;
   gap: 6px;
+}
+
+.inbox-list-item-title-wrap--stack,
+.email-side-panel-title-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.inbox-list-item-title-line {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+}
+
+.inbox-list-item-card-subtitle {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 
 .inbox-list-item-email-mark {

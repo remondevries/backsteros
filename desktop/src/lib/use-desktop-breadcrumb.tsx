@@ -34,6 +34,11 @@ export type UseDesktopSectionBreadcrumbOptions = {
    */
   trailingPanel?: ReactNode;
   className?: string;
+  /**
+   * When false, skip chrome registration (host already owns the trail —
+   * e.g. Timetracking / calendar task overlay).
+   */
+  enabled?: boolean;
 };
 
 /**
@@ -50,9 +55,10 @@ export function useDesktopSectionBreadcrumb(
   const actions = options?.actions;
   const trailingPanel = options?.trailingPanel;
   const className = options?.className;
+  const enabled = options?.enabled !== false;
 
   const header = useMemo(() => {
-    if (items.length === 0) return null;
+    if (!enabled || items.length === 0) return null;
     return (
       <ContentChromeHeader
         className={className}
@@ -69,7 +75,7 @@ export function useDesktopSectionBreadcrumb(
     );
     // itemsKey tracks label/href identity for the trail.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions, className, itemsKey, trailingPanel]);
+  }, [actions, className, enabled, itemsKey, trailingPanel]);
 
-  useRegisterChromeHeader(header);
+  useRegisterChromeHeader(enabled ? header : false);
 }

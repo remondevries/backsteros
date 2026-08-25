@@ -47,12 +47,15 @@ export function useChromeHeader() {
 /**
  * Register a chrome header for the current screen. Clears on unmount.
  * No-op when provider is absent (keeps presentational views host-agnostic).
+ * Pass `false` to skip registration entirely (nested overlays that must not
+ * clobber the host trail).
  */
-export function useRegisterChromeHeader(header: ReactNode) {
+export function useRegisterChromeHeader(header: ReactNode | false) {
   const context = useContext(ChromeHeaderContext);
 
   useLayoutEffect(() => {
     if (!context) return;
+    if (header === false) return;
     context.setHeader(header);
     return () => context.setHeader(null);
   }, [context, header]);

@@ -269,6 +269,16 @@ const financial_recurrings = new Table({
   ...commonDates,
 });
 
+const cashflow_planner_entries = new Table({
+  entry_type: column.text,
+  name: column.text,
+  amount_cents: column.integer,
+  due_date: column.text,
+  group_label: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
 const habits = new Table({
   title: column.text,
   icon: column.text,
@@ -295,6 +305,7 @@ export const appSchema = new Schema({
   financial_categories,
   financial_goals,
   financial_recurrings,
+  cashflow_planner_entries,
   habits,
 });
 

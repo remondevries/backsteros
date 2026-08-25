@@ -4,9 +4,24 @@
 
 | URL | Code | Purpose |
 | --- | --- | --- |
-| `http://127.0.0.1:8788` | `core/server/` | REST, sync upload, OpenAPI |
+| `http://127.0.0.1:8788` | `core/server/` | REST, sync upload, OpenAPI (desktop / you / PTY) |
 | `http://127.0.0.1:8080` | Docker PowerSync | Sync stream (or Tailscale MagicDNS `:8080`) |
 | Desktop / mobile shells | `desktop/`, `mobile/` | UI only — talk to local core |
+
+## Always-on agents (laptop may be offline)
+
+| URL | Purpose |
+| --- | --- |
+| `https://agent.backsteros.com` | Public agents HTTPS door → **cloud-core** on the VPS |
+| `http://100.117.142.79:8788` | Cloud-core on Tailscale (same data twin) |
+
+Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale
+`:8788`). Do **not** point them at the Mac (`100.94.74.107` / MagicDNS) — that
+dies when the laptop sleeps. Same `sk_live_…` keys work on cloud (replicated).
+Desktop / PTY stay on local-core `127.0.0.1:8788`.
+
+On the VPS, `backsteros-agents` must set `CORE_UPSTREAM_URL=http://127.0.0.1:8788`
+(cloud-core loopback), **not** the Mac Tailscale URL.
 
 Cloud product hosts (`backsteros.com/app`, `service.backsteros.com`) belonged to
 v1 / early hosting experiments and are **not** part of active v2.

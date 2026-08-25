@@ -83,10 +83,17 @@ export function assertReplicationListenHost(
     return;
   }
   const normalized = host.trim().toLowerCase();
-  if (normalized === "0.0.0.0" || normalized === "::") {
-    throw new Error(
-      "CORE_REPLICATION is enabled but the server is bound to all interfaces. " +
-        "Set HOST=127.0.0.1 (or a Tailscale address) so /internal/core-replication routes are not public.",
-    );
+  if (normalized !== "0.0.0.0" && normalized !== "::") {
+    return;
   }
+  // Cloud-core in Docker must bind 0.0.0.0 for compose networking; restrict
+  // exposure via host publish rules / firewall, not the Node listen address.
+  const role = env.CORE_REPLICATION_ROLE?.trim().toLowerCase();
+  if (role === "cloud") {
+    return;
+  }
+  throw new Error(
+    "CORE_REPLICATION is enabled but the server is bound to all interfaces. " +
+      "Set HOST=127.0.0.1 (or a Tailscale address) so /internal/core-replication routes are not public.",
+  );
 }

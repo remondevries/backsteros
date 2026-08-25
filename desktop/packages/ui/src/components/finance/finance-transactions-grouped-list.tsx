@@ -37,6 +37,12 @@ import {
   txDescription,
 } from "./finance-transactions-helpers.js";
 
+/**
+ * Finance transaction rows use CSS `content-visibility: auto` (see
+ * tasks-projects-overview.css) so large month/week trees skip off-screen
+ * paint while keeping DOM markers for keyboard navigation.
+ */
+
 function groupSelectionState(
   ids: string[],
   selectedIds: Set<string>,

@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 
 use tauri::{
-    App, AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri::window::Color;
 
@@ -210,6 +210,7 @@ fn push_overlay_frontend_route(
 }
 
 fn show_desktop_overlay(app: &AppHandle, mode: OverlayMode, path: &str) -> Result<(), String> {
+    ensure_overlay_window(app)?;
     let overlay = app
         .get_webview_window("overlay")
         .ok_or("BacksterOS overlay window is missing")?;
@@ -236,7 +237,7 @@ fn show_desktop_overlay(app: &AppHandle, mode: OverlayMode, path: &str) -> Resul
         // Client-side route change — keep the React/Clerk tree alive.
         push_overlay_frontend_route(&overlay, path, ctx)?;
     } else {
-        // Cold load only (should be rare after create_overlay_window).
+        // First show / cold navigate after lazy window create.
         let target_url = overlay_url_with_context(&base_url, path, ctx)?;
         overlay
             .navigate(target_url)
@@ -259,8 +260,14 @@ const APP_WEBVIEW_DATA_STORE_ID: [u8; 16] = [
     0x6d, 0x41, 0xc0, 0x01,
 ];
 
-pub fn create_overlay_window(app: &App) -> Result<(), String> {
-    let base_url = app_web_base_url(app.handle())?;
+/// Create the overlay webview on first use (not during app setup) so cold start
+/// does not pay for a second SPA load.
+pub fn ensure_overlay_window(app: &AppHandle) -> Result<(), String> {
+    if app.get_webview_window("overlay").is_some() {
+        return Ok(());
+    }
+
+    let base_url = app_web_base_url(app)?;
     let url = parse_app_url(&base_url, OVERLAY_PALETTE_PATH)?;
     let mut builder = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::External(url))
         .title("")
@@ -350,9 +357,9 @@ pub fn register_desktop_global_shortcuts(
 
 #[tauri::command]
 pub fn resize_desktop_overlay(app: AppHandle, height: f64) -> Result<(), String> {
-    let overlay = app
-        .get_webview_window("overlay")
-        .ok_or("BacksterOS overlay window is missing")?;
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return Ok(());
+    };
 
     let mode = *app
         .state::<OverlayState>()
@@ -368,9 +375,10 @@ pub fn resize_desktop_overlay(app: AppHandle, height: f64) -> Result<(), String>
 
 #[tauri::command]
 pub fn hide_desktop_overlay(app: AppHandle) -> Result<(), String> {
-    let overlay = app
-        .get_webview_window("overlay")
-        .ok_or("BacksterOS overlay window is missing")?;
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        // Lazy-created; nothing to hide on cold start.
+        return Ok(());
+    };
 
     hide_overlay_window(&app, &overlay)?;
     *app

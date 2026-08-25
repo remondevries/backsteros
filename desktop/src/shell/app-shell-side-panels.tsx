@@ -8,24 +8,30 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   ContactsSidePanelView,
   CalendarTasksSidePanelView,
+  CalendarAvailabilitySidePanelView,
+  CalendarTimetrackingSidePanelView,
+  CALENDAR_PAGE_MODE_OPTIONS,
+  CALENDAR_PAGE_MODE_PARAM,
+  CALENDAR_TIMETRACKING_DATE_PARAM,
+  CALENDAR_TIMETRACKING_WEEK_PARAM,
+  CALENDAR_TIMETRACKING_MONTH_PARAM,
+  ContentSidePanelEmpty,
+  ContentSidePanelHeader,
   FinanceSidePanelNavView,
   HabitSidePanelView,
-  InboxSidePanelView,
   JournalSidePanelView,
   KnowledgeSidePanelView,
   LettersSidePanelView,
   OrganizationsSidePanelView,
   ProjectDocumentsSidePanelView,
+  type CalendarSidePanelHabitItem,
   contactMatchesSlug,
-  findInboxItemBySlugOrId,
   getContactSidePanelHref,
-  getInboxAttentionKeyboardItemIds,
-  getInboxItemHref,
   getHabitTrackerHref,
   HABIT_TRACKER_ALL_ID,
   getJournalHref,
@@ -33,7 +39,6 @@ import {
   getLettersHref,
   getOrganizationSidePanelHref,
   getSelectedContactSlugFromPathname,
-  getSelectedInboxSlugFromPathname,
   getSelectedHabitIdFromPathname,
   getSelectedJournalDateFromPathname,
   getSelectedKnowledgeSlugFromPathname,
@@ -54,8 +59,17 @@ import {
   isValidJournalDateSlug,
   letterMatchesSlug,
   organizationMatchesSlug,
-  parseEmailMessagePath,
   parseFolderNavId,
+  buildCalendarSidePanelKeyboardItemIds,
+  getSelectedCalendarSidePanelItemId,
+  getCalendarSidePanelKeyboardHighlightId,
+  parseCalendarSidePanelKeyboardItemId,
+  readTimetrackingPeriodFromSearch,
+  buildTimetrackingDayGroups,
+  buildTimetrackingSidePanelKeyboardItemIds,
+  getSelectedTimetrackingSidePanelItemId,
+  parseTimetrackingSidePanelItemId,
+  setCalendarSidePanelKeyboardHighlightId,
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
@@ -64,17 +78,16 @@ import {
   type FinanceAccountGroupId,
   type FinanceSidePanelNavViewProps,
   type HabitSidePanelViewProps,
-  type InboxSidePanelViewProps,
   type JournalSidePanelViewProps,
   type KnowledgeSidePanelViewProps,
   type LettersSidePanelViewProps,
   type OrganizationsSidePanelViewProps,
   type ProjectDocumentsSidePanelViewProps,
+  SegmentedPillToggle,
 } from "@backsteros/ui";
 import type { BankAccount } from "@backsteros/contracts";
 
 import { useDesktopApi } from "../lib/api-context";
-import { prefetchEmailMessageDetail } from "../lib/email-message-detail-cache";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   prefetchJournalEntryContent,
@@ -82,54 +95,94 @@ import {
   prefetchLetterAttachments,
 } from "../lib/prefetch-workspace-content";
 import { useJournalSelection } from "../lib/journal-selection-context";
+import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
+import { useCalendarPageModeControls } from "../lib/use-calendar-page-mode";
+import { useDesktopSidePanelListNav } from "../lib/use-desktop-side-panel-list-nav";
 import { useDesktopResource } from "../lib/use-desktop-resource";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { RouterLink } from "./app-shell-links";
 
 type SidePanelNavProps = { onNavigate: (href: string) => void };
 
-export function DesktopInboxSidePanel({
-  onNavigate,
-  ...viewProps
-}: Omit<
-  InboxSidePanelViewProps,
-  | "highlightedId"
-  | "listRef"
-  | "listContainerProps"
-  | "collapsedGroups"
-  | "onToggleGroup"
-> &
-  SidePanelNavProps) {
+export { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
+
+export function DesktopCalendarTasksSidePanel({
+  pathname,
+  search,
+  meetings,
+  tasks,
+  habits = [],
+  loading,
+  onCreateMeeting,
+  onMeetingOpen,
+  onTaskOpen,
+  onToggleHabit,
+  panelVariant = "calendar",
+}: {
+  pathname: string;
+  search: string;
+  meetings: ReturnType<typeof useDesktopWorkspaceData>["meetings"];
+  tasks: ReturnType<typeof unscheduledCalendarTasks>;
+  habits?: CalendarSidePanelHabitItem[];
+  loading?: boolean;
+  panelVariant?: "calendar" | "meetings";
+  onCreateMeeting: () => void;
+  onMeetingOpen: (meetingId: string) => void;
+  onTaskOpen: (taskId: string) => void;
+  onToggleHabit?: (
+    habit: CalendarSidePanelHabitItem,
+    checked: boolean,
+  ) => void;
+}) {
+  const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
   const listRef = useRef<HTMLElement>(null);
-  const { pathname, items, groupByAttentionStatus = false } = viewProps;
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
+  const [inboxCollapsed, setInboxCollapsed] = useState(false);
+  const [meetingsCollapsed, setMeetingsCollapsed] = useState(false);
+  const [tasksCollapsed, setTasksCollapsed] = useState(false);
+  const [habitsCollapsed, setHabitsCollapsed] = useState(false);
+  const selectedItemId = getSelectedCalendarSidePanelItemId(pathname, search);
+  const itemIds = useMemo(
+    () =>
+      buildCalendarSidePanelKeyboardItemIds({
+        meetings,
+        tasks,
+        habits,
+        inboxCollapsed,
+        meetingsCollapsed,
+        habitsCollapsed,
+        tasksCollapsed,
+      }),
+    [
+      meetings,
+      habits,
+      inboxCollapsed,
+      meetingsCollapsed,
+      habitsCollapsed,
+      tasks,
+      tasksCollapsed,
+    ],
   );
-  const selectedSlug = getSelectedInboxSlugFromPathname(pathname);
-  const emailPath = parseEmailMessagePath(pathname);
-  const selectedId = emailPath
-    ? (items.find(
-        (entry) =>
-          entry.kind === "email" &&
-          entry.inboxId === emailPath.inboxId &&
-          entry.messageId === emailPath.messageId,
-      )?.id ?? null)
-    : selectedSlug
-      ? (findInboxItemBySlugOrId(items, selectedSlug)?.id ?? null)
-      : null;
-  const itemIds = useMemo(() => {
-    if (groupByAttentionStatus) {
-      return getInboxAttentionKeyboardItemIds(items, collapsedGroups);
-    }
-    return items.map((item) => item.id);
-  }, [collapsedGroups, groupByAttentionStatus, items]);
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
-    selectedId,
+    selectedId: selectedItemId,
+    defaultHighlightedId:
+      selectedItemId == null
+        ? getCalendarSidePanelKeyboardHighlightId()
+        : null,
     onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getInboxItemHref(item, items));
+      setCalendarSidePanelKeyboardHighlightId(itemId);
+      const parsed = parseCalendarSidePanelKeyboardItemId(itemId);
+      if (!parsed) return;
+      if (parsed.kind === "meeting") {
+        onMeetingOpen(parsed.entityId);
+        return;
+      }
+      if (parsed.kind === "habit") {
+        // Habits stay in-panel (checkbox / drag) — no overlay.
+        return;
+      }
+      onTaskOpen(parsed.entityId);
     },
     zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
     enabled: itemIds.length > 0,
@@ -138,56 +191,184 @@ export function DesktopInboxSidePanel({
     LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
   );
 
-  const { client } = useDesktopApi();
   useEffect(() => {
-    const item = items.find((entry) => entry.id === highlightedId);
-    if (item?.kind === "email") {
-      prefetchEmailMessageDetail(client, item.inboxId, item.messageId);
+    if (highlightedId) {
+      setCalendarSidePanelKeyboardHighlightId(highlightedId);
     }
-  }, [client, highlightedId, items]);
+  }, [highlightedId]);
 
-  return (
-    <InboxSidePanelView
-      {...viewProps}
-      collapsedGroups={collapsedGroups}
-      onToggleGroup={(status) => {
-        setCollapsedGroups((current) => {
-          const next = new Set(current);
-          if (next.has(status)) next.delete(status);
-          else next.add(status);
-          return next;
-        });
-      }}
-      listRef={listRef}
-      listContainerProps={listContainerProps}
-      highlightedId={highlightedId}
-    />
-  );
-}
-
-export function DesktopCalendarTasksSidePanel({
-  meetings,
-  tasks,
-  loading,
-  onCreateMeeting,
-  onMeetingOpen,
-  onTaskOpen,
-}: {
-  meetings: ReturnType<typeof useDesktopWorkspaceData>["meetings"];
-  tasks: ReturnType<typeof unscheduledCalendarTasks>;
-  loading?: boolean;
-  onCreateMeeting: () => void;
-  onMeetingOpen: (meetingId: string) => void;
-  onTaskOpen: (taskId: string) => void;
-}) {
   return (
     <CalendarTasksSidePanelView
       meetings={meetings}
       tasks={tasks}
+      habits={habits}
       loading={loading}
+      panelVariant={panelVariant}
+      pageMode={pageMode}
+      onPageModeChange={handlePageModeChange}
       onCreateMeeting={onCreateMeeting}
       onMeetingOpen={onMeetingOpen}
       onTaskOpen={onTaskOpen}
+      onToggleHabit={onToggleHabit}
+      selectedItemId={selectedItemId}
+      highlightedId={highlightedId}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
+      inboxCollapsed={inboxCollapsed}
+      onToggleInboxGroup={() => {
+        setInboxCollapsed((value) => !value);
+      }}
+      meetingsCollapsed={meetingsCollapsed}
+      onToggleMeetingsGroup={() => {
+        setMeetingsCollapsed((value) => !value);
+      }}
+      habitsCollapsed={habitsCollapsed}
+      onToggleHabitsGroup={() => {
+        setHabitsCollapsed((value) => !value);
+      }}
+      tasksCollapsed={tasksCollapsed}
+      onToggleTasksGroup={() => {
+        setTasksCollapsed((value) => !value);
+      }}
+    />
+  );
+}
+
+export function DesktopCalendarAvailabilitySidePanel() {
+  const { settings, loading, setWeekdayHours } = useMeetingSchedulingSettings();
+  const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
+
+  if (!settings) {
+    return (
+      <div className="app-content-side-panel calendar-side-panel calendar-availability-side-panel">
+        <ContentSidePanelHeader title="Availability" />
+        <div className="app-content-side-panel-main">
+          <ContentSidePanelEmpty>
+            {loading ? "Loading availability…" : "Unable to load availability settings."}
+          </ContentSidePanelEmpty>
+        </div>
+        <div className="calendar-side-panel__footer">
+          <SegmentedPillToggle
+            value={pageMode}
+            options={CALENDAR_PAGE_MODE_OPTIONS}
+            onChange={handlePageModeChange}
+            ariaLabel="Calendar page mode"
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <CalendarAvailabilitySidePanelView
+      weekdayHours={settings.weekdayHours}
+      loading={loading}
+      pageMode={pageMode}
+      onPageModeChange={handlePageModeChange}
+      onWeekdayHoursChange={setWeekdayHours}
+    />
+  );
+}
+
+export function DesktopCalendarTimetrackingSidePanel() {
+  const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const period = readTimetrackingPeriodFromSearch(
+    `?${searchParams.toString()}`,
+    { fallbackToday: true },
+  );
+  const monthGroups = useMemo(
+    () => buildTimetrackingDayGroups({ monthsBack: 3 }),
+    [],
+  );
+  const [collapsedWeeks, setCollapsedWeeks] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const itemIds = useMemo(
+    () => buildTimetrackingSidePanelKeyboardItemIds(monthGroups, collapsedWeeks),
+    [collapsedWeeks, monthGroups],
+  );
+  const selectedId = getSelectedTimetrackingSidePanelItemId(period);
+
+  const setTimetrackingParams = (
+    updater: (next: URLSearchParams) => void,
+  ) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set(CALENDAR_PAGE_MODE_PARAM, "timetracking");
+        next.delete(CALENDAR_TIMETRACKING_DATE_PARAM);
+        next.delete(CALENDAR_TIMETRACKING_WEEK_PARAM);
+        next.delete(CALENDAR_TIMETRACKING_MONTH_PARAM);
+        updater(next);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds,
+      selectedId,
+      onNavigate: (itemId) => {
+        const parsed = parseTimetrackingSidePanelItemId(itemId);
+        if (!parsed) return;
+        if (parsed.kind === "day") {
+          setTimetrackingParams((next) => {
+            next.set(CALENDAR_TIMETRACKING_DATE_PARAM, parsed.ymd);
+          });
+          return;
+        }
+        if (parsed.kind === "week") {
+          for (const month of monthGroups) {
+            const week = month.weeks.find(
+              (entry) => entry.weekKey === parsed.weekKey,
+            );
+            if (!week) continue;
+            setTimetrackingParams((next) => {
+              next.set(CALENDAR_TIMETRACKING_WEEK_PARAM, week.weekKey);
+            });
+            return;
+          }
+          return;
+        }
+        for (const month of monthGroups) {
+          if (month.monthKey !== parsed.monthKey) continue;
+          setTimetrackingParams((next) => {
+            next.set(CALENDAR_TIMETRACKING_MONTH_PARAM, month.monthKey);
+          });
+          return;
+        }
+      },
+      enabled: itemIds.length > 0,
+    });
+
+  return (
+    <CalendarTimetrackingSidePanelView
+      pageMode={pageMode}
+      onPageModeChange={handlePageModeChange}
+      period={period}
+      monthGroups={monthGroups}
+      collapsedWeeks={collapsedWeeks}
+      onCollapsedWeeksChange={setCollapsedWeeks}
+      highlightedId={highlightedId}
+      listRef={listRef}
+      listContainerProps={listContainerProps}
+      onSelectDay={(ymd) => {
+        setTimetrackingParams((next) => {
+          next.set(CALENDAR_TIMETRACKING_DATE_PARAM, ymd);
+        });
+      }}
+      onSelectWeek={(weekKey) => {
+        setTimetrackingParams((next) => {
+          next.set(CALENDAR_TIMETRACKING_WEEK_PARAM, weekKey);
+        });
+      }}
+      onSelectMonth={(monthKey) => {
+        setTimetrackingParams((next) => {
+          next.set(CALENDAR_TIMETRACKING_MONTH_PARAM, monthKey);
+        });
+      }}
     />
   );
 }
@@ -200,12 +381,9 @@ export function DesktopJournalSidePanel({
   "highlightedId" | "listRef" | "listContainerProps" | "Link"
 > &
   SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
   const { client } = useDesktopApi();
   const { selectDate } = useJournalSelection();
   const workspace = useDesktopWorkspaceData();
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
   const resource = useDesktopResource<{
     documents: Array<{ journalDate?: string | null }>;
   }>((client) => client.requestJson("/api/v1/documents?type=journal"));
@@ -228,18 +406,6 @@ export function DesktopJournalSidePanel({
   const documentIdByDateRef = useRef(workspace.journalDocumentIdsByDate);
   documentIdByDateRef.current = workspace.journalDocumentIdsByDate;
 
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (dateSlug) => {
-      selectDate(dateSlug);
-      onNavigate(getJournalHref(dateSlug));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-
   // Stable like Knowledge: only `[client]` — the date→id map is read via ref so
   // workspace re-renders don't re-fire prefetch on every j/k highlight.
   const prefetchItemId = useCallback(
@@ -252,9 +418,17 @@ export function DesktopJournalSidePanel({
     [client],
   );
 
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds,
+      selectedId,
+      onNavigate: (dateSlug) => {
+        selectDate(dateSlug);
+        onNavigate(getJournalHref(dateSlug));
+      },
+      enabled: items.length > 0,
+      prefetchItemId,
+    });
 
   const PrefetchLink = useMemo(() => {
     return function JournalPrefetchLink({
@@ -299,9 +473,6 @@ export function DesktopJournalSidePanel({
     };
   }, [prefetchItemId, selectDate]);
 
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
   return (
     <JournalSidePanelView
       {...viewProps}
@@ -310,31 +481,6 @@ export function DesktopJournalSidePanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
-      createTodayDisabled={isCreating}
-      createTodayError={createError}
-      onCreateToday={() => {
-        const todaySlug = getTodayJournalDateSlug();
-        setIsCreating(true);
-        setCreateError(null);
-        selectDate(todaySlug);
-        void (async () => {
-          try {
-            await client.requestJson(
-              `/api/v1/journal/${encodeURIComponent(todaySlug)}`,
-            );
-            resource.reload();
-            onNavigate(getJournalHref(todaySlug));
-          } catch (error) {
-            setCreateError(
-              error instanceof Error
-                ? error.message
-                : "Could not open today's journal.",
-            );
-          } finally {
-            setIsCreating(false);
-          }
-        })();
-      }}
     />
   );
 }
@@ -477,7 +623,6 @@ export function DesktopKnowledgeSidePanel({
   | "Link"
 > &
   SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
   const [navItemIds, setNavItemIds] = useState<string[]>([]);
   const { client } = useDesktopApi();
@@ -500,26 +645,22 @@ export function DesktopKnowledgeSidePanel({
     [client],
   );
 
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: navItemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const folderId = parseFolderNavId(itemId);
-      if (folderId !== null) {
-        folderActivateRef.current(folderId);
-        return;
-      }
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getKnowledgeHref(item.path ?? item.id));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: navItemIds.length > 0,
-  });
-
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds: navItemIds,
+      selectedId,
+      onNavigate: (itemId) => {
+        const folderId = parseFolderNavId(itemId);
+        if (folderId !== null) {
+          folderActivateRef.current(folderId);
+          return;
+        }
+        const item = items.find((entry) => entry.id === itemId);
+        if (item) onNavigate(getKnowledgeHref(item.path ?? item.id));
+      },
+      enabled: navItemIds.length > 0,
+      prefetchItemId,
+    });
 
   const PrefetchLink = useMemo(() => {
     return function KnowledgePrefetchLink({
@@ -560,9 +701,6 @@ export function DesktopKnowledgeSidePanel({
     };
   }, [client, items]);
 
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
   return (
     <KnowledgeSidePanelView
       {...viewProps}
@@ -585,7 +723,6 @@ export function DesktopLettersSidePanel({
   "highlightedId" | "listRef" | "listContainerProps" | "Link"
 > &
   SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
   const { client } = useDesktopApi();
   const { pathname, items } = viewProps;
   const resolveHref =
@@ -595,21 +732,24 @@ export function DesktopLettersSidePanel({
     ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)
     : null;
 
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: items.map((item) => item.id),
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(resolveHref(item));
+  const prefetchItemId = useCallback(
+    (itemId: string) => {
+      prefetchLetterAttachments(client, itemId);
     },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
+    [client],
+  );
 
-  useEffect(() => {
-    if (highlightedId) prefetchLetterAttachments(client, highlightedId);
-  }, [client, highlightedId]);
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds: items.map((item) => item.id),
+      selectedId,
+      onNavigate: (itemId) => {
+        const item = items.find((entry) => entry.id === itemId);
+        if (item) onNavigate(resolveHref(item));
+      },
+      enabled: items.length > 0,
+      prefetchItemId,
+    });
 
   const PrefetchLink = useMemo(() => {
     return function LetterPrefetchLink({
@@ -644,9 +784,6 @@ export function DesktopLettersSidePanel({
     };
   }, [client, items, resolveHref]);
 
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
   return (
     <LettersSidePanelView
       {...viewProps}
@@ -676,7 +813,6 @@ export function DesktopProjectDocumentsSidePanel({
   SidePanelNavProps & {
     getDocumentHref: (pathOrId: string) => string;
   }) {
-  const listRef = useRef<HTMLElement>(null);
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
   const [navItemIds, setNavItemIds] = useState<string[]>([]);
   const { client } = useDesktopApi();
@@ -699,26 +835,22 @@ export function DesktopProjectDocumentsSidePanel({
     [client],
   );
 
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds: navItemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const folderId = parseFolderNavId(itemId);
-      if (folderId !== null) {
-        folderActivateRef.current(folderId);
-        return;
-      }
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) onNavigate(getDocumentHref(item.path ?? item.id));
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: navItemIds.length > 0,
-  });
-
-  useEffect(() => {
-    if (highlightedId) prefetchItemId(highlightedId);
-  }, [highlightedId, prefetchItemId]);
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds: navItemIds,
+      selectedId,
+      onNavigate: (itemId) => {
+        const folderId = parseFolderNavId(itemId);
+        if (folderId !== null) {
+          folderActivateRef.current(folderId);
+          return;
+        }
+        const item = items.find((entry) => entry.id === itemId);
+        if (item) onNavigate(getDocumentHref(item.path ?? item.id));
+      },
+      enabled: navItemIds.length > 0,
+      prefetchItemId,
+    });
 
   const PrefetchLink = useMemo(() => {
     return function ProjectDocPrefetchLink({
@@ -756,9 +888,6 @@ export function DesktopProjectDocumentsSidePanel({
     };
   }, [client, getDocumentHref, items]);
 
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
   return (
     <ProjectDocumentsSidePanelView
       {...viewProps}
@@ -781,7 +910,6 @@ export function DesktopContactsSidePanel({
   "highlightedId" | "listRef" | "listContainerProps"
 > &
   SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
   const { pathname, items } = viewProps;
   const selectedSlug = getSelectedContactSlugFromPathname(pathname);
   const selectedId = selectedSlug
@@ -791,27 +919,23 @@ export function DesktopContactsSidePanel({
   const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>
     entries.map((item) => item.id),
   );
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) {
-        onNavigate(
-          getContactSidePanelHref(
-            getUniqueListItemRouteParam(item, items),
-            pathname,
-          ),
-        );
-      }
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds,
+      selectedId,
+      onNavigate: (itemId) => {
+        const item = items.find((entry) => entry.id === itemId);
+        if (item) {
+          onNavigate(
+            getContactSidePanelHref(
+              getUniqueListItemRouteParam(item, items),
+              pathname,
+            ),
+          );
+        }
+      },
+      enabled: items.length > 0,
+    });
   return (
     <ContactsSidePanelView
       {...viewProps}
@@ -830,7 +954,6 @@ export function DesktopOrganizationsSidePanel({
   "highlightedId" | "listRef" | "listContainerProps"
 > &
   SidePanelNavProps) {
-  const listRef = useRef<HTMLElement>(null);
   const { pathname, items } = viewProps;
   const selectedSlug = getSelectedOrganizationSlugFromPathname(pathname);
   const selectedId = selectedSlug
@@ -841,27 +964,23 @@ export function DesktopOrganizationsSidePanel({
   const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>
     entries.map((item) => item.id),
   );
-  const { highlightedId } = useListKeyboardNavigation({
-    containerRef: listRef,
-    itemIds,
-    selectedId,
-    onNavigate: (itemId) => {
-      const item = items.find((entry) => entry.id === itemId);
-      if (item) {
-        onNavigate(
-          getOrganizationSidePanelHref(
-            getUniqueListItemRouteParam(item, items),
-            pathname,
-          ),
-        );
-      }
-    },
-    zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: items.length > 0,
-  });
-  const listContainerProps = useListKeyboardNavigationContainerProps(
-    LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-  );
+  const { listRef, highlightedId, listContainerProps } =
+    useDesktopSidePanelListNav({
+      itemIds,
+      selectedId,
+      onNavigate: (itemId) => {
+        const item = items.find((entry) => entry.id === itemId);
+        if (item) {
+          onNavigate(
+            getOrganizationSidePanelHref(
+              getUniqueListItemRouteParam(item, items),
+              pathname,
+            ),
+          );
+        }
+      },
+      enabled: items.length > 0,
+    });
   return (
     <OrganizationsSidePanelView
       {...viewProps}

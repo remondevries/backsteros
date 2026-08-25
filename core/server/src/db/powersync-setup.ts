@@ -10,13 +10,6 @@ if (!connectionString) {
   process.exit(1);
 }
 
-if (!rolePassword || rolePassword.length < 16) {
-  console.error(
-    "POWERSYNC_DB_PASSWORD is required (min 16 characters) to create powersync_role",
-  );
-  process.exit(1);
-}
-
 if (rolePassword === "powersync") {
   console.error("POWERSYNC_DB_PASSWORD must not be the weak default 'powersync'");
   process.exit(1);
@@ -30,6 +23,44 @@ function quoteLiteral(value: string): string {
 }
 
 const publicationTableList = POWERSYNC_PUBLICATION_TABLES.join(", ");
+
+async function roleExists(): Promise<boolean> {
+  const [row] = await sql<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_roles WHERE rolname = 'powersync_role'
+    ) AS exists
+  `;
+  return Boolean(row?.exists);
+}
+
+async function ensureRole() {
+  const exists = await roleExists();
+
+  if (!rolePassword || rolePassword.length < 16) {
+    if (exists) {
+      console.log(
+        "POWERSYNC_DB_PASSWORD unset — keeping existing powersync_role password; updating publication + grants only.",
+      );
+      return;
+    }
+    console.error(
+      "POWERSYNC_DB_PASSWORD is required (min 16 characters) to create powersync_role",
+    );
+    process.exit(1);
+  }
+
+  const passwordSql = quoteLiteral(rolePassword);
+  if (!exists) {
+    await sql.unsafe(
+      `CREATE ROLE powersync_role WITH REPLICATION BYPASSRLS LOGIN PASSWORD ${passwordSql}`,
+    );
+    console.log("Created role powersync_role.");
+    return;
+  }
+
+  await sql.unsafe(`ALTER ROLE powersync_role WITH PASSWORD ${passwordSql}`);
+  console.log("Updated password for existing powersync_role.");
+}
 
 async function ensureGrants() {
   await sql`GRANT USAGE ON SCHEMA public TO powersync_role`;
@@ -99,26 +130,7 @@ async function verify() {
 }
 
 async function main() {
-  const passwordSql = quoteLiteral(rolePassword!);
-  try {
-    await sql.unsafe(
-      `CREATE ROLE powersync_role WITH REPLICATION BYPASSRLS LOGIN PASSWORD ${passwordSql}`,
-    );
-    console.log("Created role powersync_role.");
-  } catch (error) {
-    const code =
-      error && typeof error === "object" && "code" in error
-        ? String(error.code)
-        : "";
-    if (code !== "42710") {
-      throw error;
-    }
-    await sql.unsafe(
-      `ALTER ROLE powersync_role WITH PASSWORD ${passwordSql}`,
-    );
-    console.log("Updated password for existing powersync_role.");
-  }
-
+  await ensureRole();
   await ensureGrants();
   await ensurePublication();
   // Re-grant after publication in case new tables were created after role setup.

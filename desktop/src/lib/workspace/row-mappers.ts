@@ -112,6 +112,8 @@ export function mapTask(
     habitId: task.habitId ?? null,
     agentCreatedAt: asEpoch(task.agentCreatedAt),
     agentInboxApprovedAt: asEpoch(task.agentInboxApprovedAt),
+    trackedMinutes: task.trackedMinutes ?? null,
+    trackedDurationSeconds: task.trackedDurationSeconds ?? null,
   };
 }
 
@@ -201,6 +203,8 @@ export function mapMeeting(
     attendeeContactIds,
     startAt: meeting.startAt,
     endAt: meeting.endAt,
+    trackedMinutes: meeting.trackedMinutes ?? null,
+    trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
   };
 }
 

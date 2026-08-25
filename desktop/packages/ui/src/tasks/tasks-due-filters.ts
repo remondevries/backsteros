@@ -165,8 +165,6 @@ export function taskDueDateMatchesFilter(
  * Filter tasks by due-date window.
  * Completed / canceled / duplicated stay when their due date matches — except
  * on Overdue, which only shows still-open late tasks.
- * Email rows are always shown in the Tasks list (they are triaged by status,
- * not by the due-date pills). Overdue still hides completed/canceled mail.
  */
 export function filterTasksByDueFilter<
   T extends {
@@ -176,12 +174,6 @@ export function filterTasksByDueFilter<
   },
 >(tasks: readonly T[], filter: TasksDueFilter, referenceDate?: Date): T[] {
   return tasks.filter((task) => {
-    if (task.listKind === "email") {
-      if (filter === "overdue" && isInactiveTaskStatus(task.status)) {
-        return false;
-      }
-      return true;
-    }
     if (filter === "overdue" && isInactiveTaskStatus(task.status)) {
       return false;
     }

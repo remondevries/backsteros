@@ -34,6 +34,7 @@ export function buildCalendarDayHabitsByDate(
     if (!ymd) continue;
 
     const list = byDate.get(ymd) ?? [];
+    if (task.status !== "completed") continue;
     list.push({
       habitId: habit.id,
       taskId: task.id,

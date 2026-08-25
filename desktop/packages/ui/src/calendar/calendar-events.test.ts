@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   DEFAULT_TIMED_TASK_DURATION_MINUTES,
+  calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
   taskCalendarEventClassNames,
   taskCalendarEventColors,
@@ -11,6 +12,7 @@ import {
   tasksToCalendarEvents,
   formatCalendarTaskScheduleLabel,
   meetingToCalendarEvent,
+  meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
   unscheduledCalendarTasks,
 } from "../../dist/calendar/calendar-events.js";
@@ -105,13 +107,37 @@ test("taskCalendarEventClassNames flags terminal statuses", () => {
   ]);
 });
 
-test("tasksToCalendarEvents skips habit-linked day tasks", () => {
+test("tasksToCalendarEvents skips all-day habit-linked day tasks", () => {
   const due = new Date(2026, 7, 24);
   const events = tasksToCalendarEvents([
     { ...baseTask, id: "habit", dueDate: due, habitId: "habit-1" },
     { ...baseTask, id: "task", dueDate: due },
   ]);
   assert.deepEqual(events.map((event) => event.id), ["task"]);
+});
+
+test("tasksToCalendarEvents includes timed habit-linked blocks", () => {
+  const start = new Date(2026, 7, 24, 9, 0);
+  const end = new Date(2026, 7, 24, 10, 0);
+  const events = tasksToCalendarEvents([
+    {
+      ...baseTask,
+      id: "habit",
+      dueDate: start,
+      dueEndDate: end,
+      habitId: "habit-1",
+      habitIcon: "flame",
+    },
+  ]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.id, "habit");
+  assert.equal(events[0]?.allDay, false);
+  assert.ok(events[0]?.classNames.includes("habit-calendar-event"));
+  assert.equal(events[0]?.extendedProps.entityType, "task");
+  if (events[0]?.extendedProps.entityType === "task") {
+    assert.equal(events[0].extendedProps.habitId, "habit-1");
+    assert.equal(events[0].extendedProps.habitIcon, "flame");
+  }
 });
 
 test("tasksToCalendarEvents skips email rows, undated tasks, and hidden statuses", () => {
@@ -211,6 +237,45 @@ test("formatCalendarTaskScheduleLabel formats all-day and timed schedules", () =
   assert.match(timed!, /10/);
 });
 
+test("calendarChangeToMeetingPatch derives status from schedule", () => {
+  const now = new Date("2026-08-23T12:00:00.000Z");
+  const futureStart = new Date("2026-08-23T14:00:00.000Z");
+  const futureEnd = new Date("2026-08-23T15:00:00.000Z");
+  const futurePatch = calendarChangeToMeetingPatch(
+    {
+      start: futureStart,
+      end: futureEnd,
+      allDay: false,
+    },
+    now,
+  );
+  assert.equal(futurePatch?.status, "on_hold");
+
+  const liveStart = new Date("2026-08-23T11:30:00.000Z");
+  const liveEnd = new Date("2026-08-23T12:30:00.000Z");
+  const livePatch = calendarChangeToMeetingPatch(
+    {
+      start: liveStart,
+      end: liveEnd,
+      allDay: false,
+    },
+    now,
+  );
+  assert.equal(livePatch?.status, "in_progress");
+
+  const pastStart = new Date("2026-08-23T09:00:00.000Z");
+  const pastEnd = new Date("2026-08-23T10:00:00.000Z");
+  const pastPatch = calendarChangeToMeetingPatch(
+    {
+      start: pastStart,
+      end: pastEnd,
+      allDay: false,
+    },
+    now,
+  );
+  assert.equal(pastPatch?.status, "completed");
+});
+
 test("meetingToCalendarEvent maps timed meetings", () => {
   const start = new Date(2026, 7, 24, 9, 0);
   const end = new Date(2026, 7, 24, 10, 0);
@@ -224,6 +289,44 @@ test("meetingToCalendarEvent maps timed meetings", () => {
   assert.equal(event.id, "meeting:m-1");
   assert.equal(event.extendedProps.entityType, "meeting");
   assert.equal(event.extendedProps.meetingId, "m-1");
+  assert.equal(event.extendedProps.finished, false);
+});
+
+test("meetingToCalendarEvent marks past completed meetings as finished", () => {
+  const start = new Date("2026-08-23T14:00:00.000Z");
+  const end = new Date("2026-08-23T15:00:00.000Z");
+  const now = new Date("2026-08-23T16:00:00.000Z");
+  const event = meetingToCalendarEvent(
+    {
+      id: "m-2",
+      title: "Retro",
+      startAt: start,
+      endAt: end,
+      status: "completed",
+    },
+    now,
+  );
+  assert.ok(event);
+  assert.equal(event.extendedProps.finished, true);
+  assert.ok(event.classNames?.includes("meeting-calendar-event--finished"));
+});
+
+test("meetingsToCalendarEventsForDate keeps meetings that start on the day", () => {
+  const dayStart = new Date(2026, 7, 25, 9, 0);
+  const dayEnd = new Date(2026, 7, 25, 10, 0);
+  const otherStart = new Date(2026, 7, 26, 9, 0);
+  const otherEnd = new Date(2026, 7, 26, 10, 0);
+  const events = meetingsToCalendarEventsForDate(
+    [
+      { id: "today", title: "Today", startAt: dayStart, endAt: dayEnd },
+      { id: "tomorrow", title: "Tomorrow", startAt: otherStart, endAt: otherEnd },
+    ],
+    "2026-08-25",
+  );
+  assert.deepEqual(
+    events.map((event) => event.extendedProps.meetingId),
+    ["today"],
+  );
 });
 
 test("mergeCalendarGridEvents includes tasks and meetings", () => {

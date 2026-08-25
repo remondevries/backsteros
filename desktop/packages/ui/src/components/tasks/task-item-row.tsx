@@ -14,6 +14,14 @@ import type { GroupedListPointerItemBind } from "../../list-nav/use-grouped-list
 import { resolveInboxEmailIconColor } from "../../inbox/inbox-items.js";
 import { formatEmailDisplayId } from "../../email/email-display-id.js";
 import { iconSvgColorStyle } from "../../entity/icon-color.js";
+import {
+  formatMeetingDisplayId,
+  resolveMeetingListIconColor,
+} from "../../meetings/meetings.js";
+import {
+  formatDueDateInputValue,
+  formatDueDateTimeStamp,
+} from "../../tasks/task-due-date.js";
 import { getTaskDisplayId } from "../../tasks/task-display-id.js";
 import {
   taskDueEpochAttribute,
@@ -78,11 +86,13 @@ export type TaskItemRowTask = {
   agentCreatedAt?: number | null;
   /** User sign-off; clears Agents inbox subgroup. */
   agentInboxApprovedAt?: number | null;
+  trackedMinutes?: number | null;
+  trackedDurationSeconds?: number | null;
   /**
-   * Email threads rendered as task rows (Tasks / project lists).
-   * Not a Postgres task — metadata lives on `email_threads`.
+   * Non-task rows rendered with the same list chrome as tasks.
+   * Email metadata lives on `email_threads`; meetings on `meetings`.
    */
-  listKind?: "task" | "email";
+  listKind?: "task" | "email" | "meeting";
   emailInboxId?: string | null;
   emailMessageId?: string | null;
   emailThreadId?: string | null;
@@ -94,6 +104,11 @@ export type TaskItemRowTask = {
   emailMailboxAvatarSrc?: string | null;
   emailNumber?: number | null;
   emailDisplayId?: string | null;
+  /** Meeting display id (`M-n`) when `listKind` is `"meeting"`. */
+  meetingDisplayId?: string | null;
+  /** Meeting schedule chip label when `listKind` is `"meeting"`. */
+  meetingScheduleLabel?: string | null;
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 export type TaskItemRowProps = {
@@ -110,6 +125,11 @@ export type TaskItemRowProps = {
    * even when the row is not hovered or focused.
    */
   forceShowCheckbox?: boolean;
+  /**
+   * When false, omit the leading multi-select checkbox slot entirely
+   * (e.g. Timetracking list). Default true.
+   */
+  showCheckbox?: boolean;
   /** Toggle multi-select; receives the originating event for shift-range later. */
   onToggleSelected?: (
     taskId: string,
@@ -117,19 +137,44 @@ export type TaskItemRowProps = {
     event: MouseEvent<HTMLButtonElement>,
   ) => void;
   showDueMeta?: boolean;
+  /**
+   * Where the due-date control sits.
+   * `trailing` (default) = right-side properties cluster.
+   * `leading` = left slot that normally holds priority (priority is hidden).
+   */
+  dueDatePlacement?: "trailing" | "leading";
+  /** Due-date trigger label: relative (Today), `YYYY-MM-DD`, or `YYYY-MM-DD @ HH:MM:SS`. */
+  dueDateLabelFormat?: "relative" | "ymd" | "ymd-time";
+  /** When false, hide priority control. Default true (ignored when due is `leading`). */
+  showPriority?: boolean;
+  /**
+   * `default` = priority/due → id → status → title.
+   * `timetracking` = leading datetime → status/type icon → id → title
+   *   (remaining chips on the right).
+   */
+  chromeOrder?: "default" | "timetracking";
+  /** Extra content first in the right-side properties cluster (e.g. tracked duration). */
+  trailingMeta?: ReactNode;
+  /**
+   * When set, replaces the leading due/datetime label (e.g. Timetracking
+   * date · stopwatch · tracked duration).
+   */
+  leadingStamp?: ReactNode;
   /** When false, hide project chip (e.g. project tasks screen). Default true. */
   showProject?: boolean;
   /** When false, hide assignee control. Default true when options are provided. */
   showAssignee?: boolean;
   /** Overlay stacked on the assignee avatar (e.g. agent-session badge). */
   assigneeAccessory?: ReactNode;
-  /** Shown after the title (e.g. agent bound badge). */
+  /** Shown after the title (e.g. agent bound badge), or in a fixed slot when align is set. */
   titleTrailing?: ReactNode;
   /**
    * `inline` (default) = immediately after the title text.
    * `end` = flush right in the title area.
+   * `before-status` = between the task id and the status/type icon (column-aligned).
+   * `after-status` = between the status/type icon and the title (icon → trailing → title).
    */
-  titleTrailingAlign?: "inline" | "end";
+  titleTrailingAlign?: "inline" | "end" | "before-status" | "after-status";
   /** When true, status icon becomes the agent-working pulse. */
   agentWorking?: boolean;
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
@@ -185,8 +230,15 @@ function TaskItemRowComponent({
   onSelect,
   selected = false,
   forceShowCheckbox = false,
+  showCheckbox = true,
   onToggleSelected,
   showDueMeta = true,
+  dueDatePlacement = "trailing",
+  dueDateLabelFormat = "relative",
+  showPriority = true,
+  chromeOrder = "default",
+  trailingMeta = null,
+  leadingStamp = null,
   showProject = true,
   showAssignee = true,
   assigneeAccessory = null,
@@ -223,6 +275,7 @@ function TaskItemRowComponent({
   );
   const status = migrateLegacyTaskStatus(task.status);
   const isEmail = task.listKind === "email";
+  const isMeeting = task.listKind === "meeting";
   const colorScheme = useSyncExternalStore(
     subscribeToPreferredColorScheme,
     getPreferredColorSchemeSnapshot,
@@ -234,12 +287,34 @@ function TaskItemRowComponent({
       resolveInboxEmailIconColor(task.status, { colorScheme }),
     );
   }, [colorScheme, isEmail, task.status]);
+  const meetingIconStyle = useMemo(() => {
+    if (!isMeeting) return undefined;
+    return iconSvgColorStyle(
+      resolveMeetingListIconColor(task.status, { colorScheme }),
+    );
+  }, [colorScheme, isMeeting, task.status]);
+  const meetingDisplayId =
+    task.meetingDisplayId?.trim() ||
+    (isMeeting ? formatMeetingDisplayId(task.number) : null);
+  const meetingScheduleLabel = task.meetingScheduleLabel?.trim() || null;
+  const hasLeadingStamp = leadingStamp != null && leadingStamp !== false;
+  const dueLeadingLabel =
+    dueDateLabelFormat === "ymd-time"
+      ? formatDueDateTimeStamp(task.dueDate)
+      : formatDueDateInputValue(task.dueDate);
+  const leadingDue =
+    dueDatePlacement === "leading" ||
+    chromeOrder === "timetracking" ||
+    hasLeadingStamp;
+  const showLeadingPriority = showPriority && !leadingDue;
+  const showTrailingDue = showDueMeta && !leadingDue && !hasLeadingStamp;
+  const iconBeforeId = chromeOrder === "timetracking";
   const statusOptions = TASK_ROW_STATUS_OPTIONS;
   const priorityOptions = TASK_ROW_PRIORITY_OPTIONS;
 
   const projectChip =
     showProject ? (
-      projectOptions.length > 0 && onProjectChange ? (
+      projectOptions.length > 0 && onProjectChange && !isMeeting ? (
         <span
           className="task-item-row__project"
           onMouseDown={stopFieldEvent}
@@ -297,7 +372,10 @@ function TaskItemRowComponent({
     ) : null;
 
   const assigneeChip =
-    showAssignee && assigneeOptions.length > 0 && onAssigneeChange ? (
+    showAssignee &&
+    !isMeeting &&
+    assigneeOptions.length > 0 &&
+    onAssigneeChange ? (
       <span
         className="task-item-row__assignee"
         onMouseDown={stopFieldEvent}
@@ -424,120 +502,200 @@ function TaskItemRowComponent({
         onDragEnd={canHtml5Drag ? onDragEnd : undefined}
         {...(pointerReorderBind ?? {})}
       >
-        <span
-          className="task-item-row__check"
-          onClick={stopFieldEvent}
-          onKeyDown={stopFieldEvent}
-        >
-          <PolishedCheckbox
-            checked={selected}
-            ariaLabel={`Select ${task.title}`}
-            onCheckedChange={(checked, event) => {
-              onToggleSelected?.(task.id, checked, event);
-            }}
-          />
-        </span>
-
-        <span
-          className="task-item-row__priority"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
-        >
-          <DeferredSearchableDropdown
-            value={String(task.priority)}
-            options={priorityOptions}
-            onChange={(next) => onPriorityChange?.(task.id, Number(next))}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-            taskPropertyDropdownId="priority"
-            className="task-item-row__dropdown"
-            panelAlign="start"
-            panelWidth={280}
-            renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className="task-item-row__icon-trigger"
-                title={getTaskPriorityLabel(task.priority)}
-                tabIndex={-1}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-                onMouseDown={stopFieldEvent}
-                onClick={(event) => {
-                  stopFieldEvent(event);
-                  onToggle();
-                }}
-              >
-                <TaskPriorityIcon priority={task.priority} size={14} />
-              </button>
-            )}
-          />
-        </span>
-
-        {isEmail ? (
-          <span className="task-item-row__id">
-            {task.emailDisplayId?.trim() ||
-              (task.emailNumber != null
-                ? formatEmailDisplayId(task.emailNumber)
-                : "")}
+        {showCheckbox ? (
+          <span
+            className="task-item-row__check"
+            onClick={stopFieldEvent}
+            onKeyDown={stopFieldEvent}
+          >
+            <PolishedCheckbox
+              checked={selected}
+              ariaLabel={`Select ${task.title}`}
+              onCheckedChange={(checked, event) => {
+                onToggleSelected?.(task.id, checked, event);
+              }}
+            />
           </span>
-        ) : displayId ? (
-          <span className="task-item-row__id">{displayId}</span>
         ) : null}
 
-        <span
-          className="task-item-row__status"
-          onMouseDown={stopFieldEvent}
-          onClick={stopFieldEvent}
-        >
-          <DeferredSearchableDropdown
-            value={status}
-            options={statusOptions}
-            onChange={(next) => onStatusChange?.(task.id, next)}
-            searchPlaceholder="Change status…"
-            searchShortcutLabel="S"
-            ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
-            taskPropertyDropdownId="status"
-            className="task-item-row__dropdown"
-            panelAlign="start"
-            panelWidth={280}
-            renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-              <button
-                type="button"
-                id={triggerId}
-                className="task-item-row__icon-trigger"
-                title={isEmail ? "Email" : getTaskStatusLabel(status)}
-                tabIndex={-1}
-                disabled={disabled}
-                aria-haspopup="listbox"
-                aria-expanded={open}
-                aria-label={`Change status: ${getTaskStatusLabel(status)}`}
-                onMouseDown={stopFieldEvent}
-                onClick={(event) => {
-                  stopFieldEvent(event);
-                  onToggle();
-                }}
+        {leadingDue && showDueMeta ? (
+          <span
+            className="task-item-row__priority task-item-row__due-leading"
+            onMouseDown={stopFieldEvent}
+            onClick={stopFieldEvent}
+          >
+            {hasLeadingStamp ? (
+              leadingStamp
+            ) : chromeOrder === "timetracking" || isMeeting || !onDueDateChange ? (
+              <span
+                className="task-item-row__due-ymd"
+                title={dueLeadingLabel || undefined}
               >
-                {isEmail ? (
-                  <InboxItemTypeIcon
-                    kind="email"
-                    size={14}
-                    style={emailIconStyle}
-                  />
-                ) : (
-                  <TaskStatusIcon
-                    status={status}
-                    size={14}
-                    working={agentWorking}
-                  />
-                )}
-              </button>
+                {dueLeadingLabel || "—"}
+              </span>
+            ) : (
+              <DeferredTaskDueDateDropdown
+                dueDate={task.dueDate}
+                status={task.status}
+                variant="list"
+                labelFormat={dueDateLabelFormat}
+                showIcon={false}
+                noDueDateLabel="—"
+                onDueDateChange={(next) => onDueDateChange?.(task.id, next)}
+              />
             )}
-          />
-        </span>
+          </span>
+        ) : showLeadingPriority ? (
+          <span
+            className="task-item-row__priority"
+            onMouseDown={stopFieldEvent}
+            onClick={stopFieldEvent}
+          >
+            {isMeeting && !onPriorityChange ? (
+              <span
+                className="task-item-row__icon-trigger"
+                title={getTaskPriorityLabel(task.priority)}
+                aria-label={getTaskPriorityLabel(task.priority)}
+              >
+                <TaskPriorityIcon priority={task.priority} size={14} />
+              </span>
+            ) : (
+              <DeferredSearchableDropdown
+                value={String(task.priority)}
+                options={priorityOptions}
+                onChange={(next) => onPriorityChange?.(task.id, Number(next))}
+                searchPlaceholder="Change priority…"
+                searchShortcutLabel="P"
+                ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
+                taskPropertyDropdownId="priority"
+                className="task-item-row__dropdown"
+                panelAlign="start"
+                panelWidth={280}
+                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className="task-item-row__icon-trigger"
+                    title={getTaskPriorityLabel(task.priority)}
+                    tabIndex={-1}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
+                    onMouseDown={stopFieldEvent}
+                    onClick={(event) => {
+                      stopFieldEvent(event);
+                      onToggle();
+                    }}
+                  >
+                    <TaskPriorityIcon priority={task.priority} size={14} />
+                  </button>
+                )}
+              />
+            )}
+          </span>
+        ) : null}
+
+        {(() => {
+          const idSlot = isEmail ? (
+            <span className="task-item-row__id">
+              {task.emailDisplayId?.trim() ||
+                (task.emailNumber != null
+                  ? formatEmailDisplayId(task.emailNumber)
+                  : "")}
+            </span>
+          ) : isMeeting && meetingDisplayId ? (
+            <span className="task-item-row__id">{meetingDisplayId}</span>
+          ) : displayId ? (
+            <span className="task-item-row__id">{displayId}</span>
+          ) : null;
+
+          const statusSlot = (
+            <span
+              className="task-item-row__status"
+              onMouseDown={stopFieldEvent}
+              onClick={stopFieldEvent}
+            >
+              {isMeeting ? (
+                <span
+                  className="task-item-row__icon-trigger"
+                  title="Meeting"
+                  aria-label="Meeting"
+                >
+                  <InboxItemTypeIcon
+                    kind="meeting"
+                    size={14}
+                    style={meetingIconStyle}
+                  />
+                </span>
+              ) : (
+                <DeferredSearchableDropdown
+                  value={status}
+                  options={statusOptions}
+                  onChange={(next) => onStatusChange?.(task.id, next)}
+                  searchPlaceholder="Change status…"
+                  searchShortcutLabel="S"
+                  ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
+                  taskPropertyDropdownId="status"
+                  className="task-item-row__dropdown"
+                  panelAlign="start"
+                  panelWidth={280}
+                  renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                    <button
+                      type="button"
+                      id={triggerId}
+                      className="task-item-row__icon-trigger"
+                      title={isEmail ? "Email" : getTaskStatusLabel(status)}
+                      tabIndex={-1}
+                      disabled={disabled}
+                      aria-haspopup="listbox"
+                      aria-expanded={open}
+                      aria-label={`Change status: ${getTaskStatusLabel(status)}`}
+                      onMouseDown={stopFieldEvent}
+                      onClick={(event) => {
+                        stopFieldEvent(event);
+                        onToggle();
+                      }}
+                    >
+                      {isEmail ? (
+                        <InboxItemTypeIcon
+                          kind="email"
+                          size={14}
+                          style={emailIconStyle}
+                        />
+                      ) : (
+                        <TaskStatusIcon
+                          status={status}
+                          size={14}
+                          working={agentWorking}
+                        />
+                      )}
+                    </button>
+                  )}
+                />
+              )}
+            </span>
+          );
+
+          return iconBeforeId ? (
+            <>
+              {statusSlot}
+              {idSlot}
+            </>
+          ) : (
+            <>
+              {idSlot}
+              {titleTrailing && titleTrailingAlign === "before-status" ? (
+                <span className="task-item-row__id-trailing">{titleTrailing}</span>
+              ) : null}
+              {statusSlot}
+            </>
+          );
+        })()}
+
+        {titleTrailing && titleTrailingAlign === "after-status" ? (
+          <span className="task-item-row__status-trailing">{titleTrailing}</span>
+        ) : null}
 
         <span
           className={`task-item-row__title-wrap${
@@ -558,7 +716,9 @@ function TaskItemRowComponent({
               {task.emailPartyLabel}
             </span>
           ) : null}
-          {titleTrailing ? (
+          {titleTrailing &&
+          titleTrailingAlign !== "before-status" &&
+          titleTrailingAlign !== "after-status" ? (
             <span className="task-item-row__title-trailing">
               {titleTrailing}
             </span>
@@ -566,19 +726,34 @@ function TaskItemRowComponent({
         </span>
 
         <span className="task-item-row__properties">
-          {showDueMeta ? (
-            <span
-              className="task-item-row__due"
-              onMouseDown={stopFieldEvent}
-              onClick={stopFieldEvent}
-            >
-              <DeferredTaskDueDateDropdown
-                dueDate={task.dueDate}
-                status={task.status}
-                variant="list"
-                onDueDateChange={(next) => onDueDateChange?.(task.id, next)}
-              />
-            </span>
+          {trailingMeta ? (
+            <span className="task-item-row__trailing-meta">{trailingMeta}</span>
+          ) : null}
+          {showTrailingDue ? (
+            isMeeting ? (
+              meetingScheduleLabel ? (
+                <span
+                  className="task-item-row__due task-item-row__schedule"
+                  title={meetingScheduleLabel}
+                >
+                  {meetingScheduleLabel}
+                </span>
+              ) : null
+            ) : (
+              <span
+                className="task-item-row__due"
+                onMouseDown={stopFieldEvent}
+                onClick={stopFieldEvent}
+              >
+                <DeferredTaskDueDateDropdown
+                  dueDate={task.dueDate}
+                  status={task.status}
+                  variant="list"
+                  labelFormat={dueDateLabelFormat}
+                  onDueDateChange={(next) => onDueDateChange?.(task.id, next)}
+                />
+              </span>
+            )
           ) : null}
           {projectChip}
           {assigneeChip}

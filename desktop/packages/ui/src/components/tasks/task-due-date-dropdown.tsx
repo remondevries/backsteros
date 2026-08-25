@@ -22,6 +22,7 @@ import {
 } from "../../tasks/task-due-date-dropdown.js";
 import {
   formatDueDateInputValue,
+  formatDueDateTimeStamp,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
   parseDueDateInputValue,
@@ -59,12 +60,22 @@ export type TaskDueDateDropdownProps = {
   taskPropertyDropdownId?: TaskPropertyDropdownId | null;
   /** When false, list/property triggers omit the calendar icon (Next list/board). */
   showIcon?: boolean;
+  /**
+   * `relative` (default) = Today / Tomorrow / etc.
+   * `ymd` = always `YYYY-MM-DD`.
+   * `ymd-time` = always `YYYY-MM-DD @ HH:MM:SS` (local).
+   */
+  labelFormat?: "relative" | "ymd" | "ymd-time";
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
   triggerVariant?: import("../dropdowns/property-dropdown.js").PropertyDropdownTriggerVariant;
   /** Open the panel on mount (used by deferred list-row mounts). */
   defaultOpen?: boolean;
   /** Placement for the initial `defaultOpen` (deferred shortcut opens). */
   defaultOpenPlacement?: "anchored" | "center";
+  /** Tab from the open search field (e.g. move focus to the next row field). */
+  onTabFromSearch?: () => void;
+  /** Shift+Tab from the open search field. */
+  onShiftTabFromSearch?: () => void;
 };
 
 function stopFieldEvent(event: SyntheticEvent) {
@@ -88,9 +99,12 @@ export function TaskDueDateDropdown({
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId,
   showIcon = true,
+  labelFormat = "relative",
   triggerVariant = "default",
   defaultOpen = false,
   defaultOpenPlacement,
+  onTabFromSearch,
+  onShiftTabFromSearch,
 }: TaskDueDateDropdownProps) {
   const resolvedTaskPropertyDropdownId =
     taskPropertyDropdownId === undefined ? "dueDate" : taskPropertyDropdownId;
@@ -119,7 +133,11 @@ export function TaskDueDateDropdown({
   );
   const selectedValue = taskDueDateDropdownValue(ymdValue || null);
   const displayLabel = ymdValue
-    ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+    ? labelFormat === "ymd-time"
+      ? formatDueDateTimeStamp(dueDate) || ymdValue
+      : labelFormat === "ymd"
+        ? ymdValue
+        : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
     : noDueDateLabel;
   const hasDueDate = Boolean(ymdValue);
   const dueDateUrgency = useMemo(
@@ -218,6 +236,8 @@ export function TaskDueDateDropdown({
           triggerVariant={triggerVariant}
           onQuerySubmit={handleQuerySubmit}
           queryPreviewLabel={handleQueryPreview}
+          onTabFromSearch={onTabFromSearch}
+          onShiftTabFromSearch={onShiftTabFromSearch}
         />
         {calendarPopover}
       </div>
@@ -242,6 +262,8 @@ export function TaskDueDateDropdown({
         defaultOpenPlacement={defaultOpenPlacement}
         onQuerySubmit={handleQuerySubmit}
         queryPreviewLabel={handleQueryPreview}
+        onTabFromSearch={onTabFromSearch}
+        onShiftTabFromSearch={onShiftTabFromSearch}
         renderTrigger={({ open, disabled: isDisabled, triggerId, onToggle }) =>
           variant === "icon" ? (
             <button

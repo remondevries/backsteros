@@ -48,6 +48,11 @@ export type TaskDetailPageProps = {
   taskRouteParam?: string;
   backHref?: string;
   breadcrumbItems?: { label: string; href?: string }[];
+  /**
+   * Embed in a host panel (calendar overlay / Timetracking rail):
+   * render task + properties only — no DesktopTaskLayout agent split.
+   */
+  overlayMode?: boolean;
 };
 
 function taskMatchesRouteParam(
@@ -103,6 +108,7 @@ export function TaskDetailPage({
   taskRouteParam,
   backHref: backHrefProp,
   breadcrumbItems: breadcrumbItemsProp,
+  overlayMode = false,
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -342,7 +348,9 @@ export function TaskDetailPage({
       : [{ label: "Tasks", href: backHref }];
   }, [backHref, breadcrumbItemsProp, dueFilter, taskLabel]);
 
-  useDesktopSectionBreadcrumb(breadcrumbItems);
+  useDesktopSectionBreadcrumb(breadcrumbItems, { enabled: !overlayMode });
+
+
 
   const handleDeleteTask = useCallback(async () => {
     if (!base) {
@@ -420,6 +428,14 @@ export function TaskDetailPage({
   };
   const patchPriority = (next: number) => {
     void workspace.patchTask(task.id, { priority: next });
+  };
+  const patchTrackedDurationSeconds = (seconds: number | null) => {
+    const trackedMinutes =
+      seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+    void workspace.patchTask(task.id, {
+      trackedDurationSeconds: seconds,
+      trackedMinutes,
+    });
   };
   const patchDueDate = (next: Date | null) => {
     void workspace.patchTask(task.id, {
@@ -551,44 +567,7 @@ export function TaskDetailPage({
     />
   );
 
-  return (
-    <>
-      <RegisterPageTitle title={task.title} />
-      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
-      <RegisterEntityDeleteAction
-        entityLabel={deleteEntityLabel}
-        onDelete={handleDeleteTask}
-      />
-      <DesktopTaskLayout
-        taskId={task.id}
-        projectId={project?.id ?? null}
-        projectLabel={project?.name ?? task.projectName ?? "Task"}
-        taskDisplayId={task.displayId ?? null}
-        cwd={
-          isCodebaseTask
-            ? workingDirectory
-            : workingDirectory?.trim() || "~"
-        }
-        agentChatId={base?.agentChatId ?? null}
-        taskStatus={task.status}
-        taskSummary={taskAgentSummary}
-        patchTaskValues={async (values) => {
-          await workspace.patchTask(task.id, values);
-        }}
-        autoStartOnReadyToStart={isCodebaseTask}
-        preferWideTaskPanel={!isCodebaseTask}
-        viewScope={isCodebaseTask ? "codebase" : "rail"}
-        requireWorkingDirectory={isCodebaseTask}
-        onWorkingDirectoryChange={
-          isCodebaseTask && project
-            ? async (directory) => {
-                await workspace.patchProject(project.id, {
-                  localWorkingDirectory: directory,
-                });
-              }
-            : undefined
-        }
-      >
+  const detailView = (
         <TaskDetailView
           task={task}
           spellcheckHighlight={spellcheckHighlight}
@@ -599,6 +578,15 @@ export function TaskDetailPage({
           }
           onStatusChange={patchStatus}
           onPriorityChange={patchPriority}
+          onTrackedDurationSecondsChange={patchTrackedDurationSeconds}
+          timerSession={{
+            kind: "task",
+            entityId: task.id,
+            title: task.title,
+            subtitle: task.displayId ?? null,
+            statusKey: task.status,
+            href: location.pathname,
+          }}
           onDueDateChange={patchDueDate}
           onAssigneeChange={patchAssignee}
           onProjectChange={patchProjectKey}
@@ -626,7 +614,52 @@ export function TaskDetailPage({
           }}
           belowDescription={({ mode }) => activityPanel(mode === "preview")}
         />
-      </DesktopTaskLayout>
+  );
+
+  return (
+    <>
+      <RegisterPageTitle title={task.title} />
+      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
+      <RegisterEntityDeleteAction
+        entityLabel={deleteEntityLabel}
+        onDelete={handleDeleteTask}
+      />
+      {overlayMode ? (
+        <div className="task-detail-page-overlay">{detailView}</div>
+      ) : (
+        <DesktopTaskLayout
+          taskId={task.id}
+          projectId={project?.id ?? null}
+          projectLabel={project?.name ?? task.projectName ?? "Task"}
+          taskDisplayId={task.displayId ?? null}
+          cwd={
+            isCodebaseTask
+              ? workingDirectory
+              : workingDirectory?.trim() || "~"
+          }
+          agentChatId={base?.agentChatId ?? null}
+          taskStatus={task.status}
+          taskSummary={taskAgentSummary}
+          patchTaskValues={async (values) => {
+            await workspace.patchTask(task.id, values);
+          }}
+          autoStartOnReadyToStart={isCodebaseTask}
+          preferWideTaskPanel={!isCodebaseTask}
+          viewScope={isCodebaseTask ? "codebase" : "rail"}
+          requireWorkingDirectory={isCodebaseTask}
+          onWorkingDirectoryChange={
+            isCodebaseTask && project
+              ? async (directory) => {
+                  await workspace.patchProject(project.id, {
+                    localWorkingDirectory: directory,
+                  });
+                }
+              : undefined
+          }
+        >
+          {detailView}
+        </DesktopTaskLayout>
+      )}
     </>
   );
 }

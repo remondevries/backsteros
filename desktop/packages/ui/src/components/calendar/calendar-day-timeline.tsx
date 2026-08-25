@@ -17,8 +17,10 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 
 import { parseYmdLocal, formatLocalYmd } from "../../tasks/task-due-date.js";
 import {
+  calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
   calendarEntityFromEvent,
+  type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
 } from "../../calendar/calendar-events.js";
@@ -36,8 +38,13 @@ export type CalendarDayTimelineProps = {
     taskId: string,
     patch: TaskCalendarPatch,
   ) => void | Promise<void>;
+  onMeetingReschedule?: (
+    meetingId: string,
+    patch: MeetingCalendarPatch,
+  ) => void | Promise<void>;
   resolveTask?: (taskId: string) => CalendarTaskPopoverTask | null | undefined;
   onTaskOpen?: (taskId: string) => void;
+  onMeetingOpen?: (meetingId: string) => void;
 };
 
 type OpenPopoverState = {
@@ -45,19 +52,14 @@ type OpenPopoverState = {
   anchorRect: DOMRect;
 };
 
-function taskIdFromEvent(event: {
-  id: string;
-  extendedProps: Record<string, unknown>;
-}): string {
-  return calendarEntityFromEvent(event).entityId;
-}
-
 export function CalendarDayTimeline({
   dateSlug,
   events,
   onTaskReschedule,
+  onMeetingReschedule,
   resolveTask,
   onTaskOpen,
+  onMeetingOpen,
 }: CalendarDayTimelineProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const calendarApiRef = useRef<CalendarApi | null>(null);
@@ -100,62 +102,90 @@ export function CalendarDayTimeline({
     closePopover();
   };
 
-  const handleEventDrop = (info: EventDropArg) => {
-    closePopover();
-    const patch = calendarChangeToTaskPatch({
-      start: info.event.start,
-      end: info.event.end,
-      allDay: info.event.allDay,
-    });
-    if (!patch) {
-      info.revert();
+  const applyScheduleChange = (
+    event: {
+      id: string;
+      start: Date | null;
+      end: Date | null;
+      allDay: boolean;
+      extendedProps: Record<string, unknown>;
+    },
+    revert: () => void,
+  ) => {
+    const entity = calendarEntityFromEvent(event);
+    if (entity.entityType === "meeting") {
+      const patch = calendarChangeToMeetingPatch({
+        start: event.start,
+        end: event.end,
+        allDay: event.allDay,
+      });
+      if (!patch || !onMeetingReschedule) {
+        revert();
+        return;
+      }
+      onMeetingReschedule(entity.entityId, patch);
       return;
     }
-    onTaskReschedule(taskIdFromEvent(info.event), patch);
+    const patch = calendarChangeToTaskPatch({
+      start: event.start,
+      end: event.end,
+      allDay: event.allDay,
+    });
+    if (!patch) {
+      revert();
+      return;
+    }
+    onTaskReschedule(entity.entityId, patch);
+  };
+
+  const handleEventDrop = (info: EventDropArg) => {
+    closePopover();
+    applyScheduleChange(info.event, () => info.revert());
   };
 
   const handleEventResize = (info: EventResizeDoneArg) => {
     closePopover();
-    const patch = calendarChangeToTaskPatch({
-      start: info.event.start,
-      end: info.event.end,
-      allDay: info.event.allDay,
-    });
-    if (!patch) {
-      info.revert();
-      return;
-    }
-    onTaskReschedule(taskIdFromEvent(info.event), patch);
+    applyScheduleChange(info.event, () => info.revert());
   };
 
   const handleEventReceive = (info: EventReceiveArg) => {
     closePopover();
-    const taskId = taskIdFromEvent(info.event);
+    const entity = calendarEntityFromEvent(info.event);
+    if (entity.entityType === "meeting") {
+      info.revert();
+      return;
+    }
     const patch = calendarChangeToTaskPatch({
       start: info.event.start,
       end: info.event.end,
       allDay: info.event.allDay,
     });
-    if (!patch || !taskId) {
+    if (!patch || !entity.entityId) {
       info.revert();
       return;
     }
-    void Promise.resolve(onTaskReschedule(taskId, patch)).finally(() => {
-      info.revert();
-    });
+    void Promise.resolve(onTaskReschedule(entity.entityId, patch)).finally(
+      () => {
+        info.revert();
+      },
+    );
   };
 
   const handleEventClick = (info: EventClickArg) => {
     info.jsEvent.preventDefault();
-    const taskId = taskIdFromEvent(info.event);
+    const entity = calendarEntityFromEvent(info.event);
+    if (entity.entityType === "meeting") {
+      onMeetingOpen?.(entity.entityId);
+      return;
+    }
     if (resolveTask) {
-      const task = resolveTask(taskId);
+      const task = resolveTask(entity.entityId);
       if (task) {
         setOpenPopover({ task, anchorRect: info.el.getBoundingClientRect() });
         return;
       }
     }
-    onTaskOpen?.(taskId);
+    onTaskOpen?.(entity.entityId);
   };
 
   const popoverTask =

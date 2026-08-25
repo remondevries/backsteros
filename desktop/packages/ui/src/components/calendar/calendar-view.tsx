@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+
+import type {
+  MeetingWeekdayHoursEntry,
+} from "@backsteros/contracts";
 
 import type {
   CalendarApi,
+  DateSelectArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
@@ -18,6 +23,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 
 import {
+  CALENDAR_HEADER_TOOLBAR,
   CALENDAR_VIEW_MODE_OPTIONS,
   calendarViewModeToFcView,
   fcViewTypeToCalendarViewMode,
@@ -27,10 +33,16 @@ import {
   calendarChangeToMeetingPatch,
   calendarChangeToTaskPatch,
   calendarEntityFromEvent,
+  calendarSelectionToMeetingRange,
   type MeetingCalendarPatch,
   type TaskCalendarEvent,
   type TaskCalendarPatch,
 } from "../../calendar/calendar-events.js";
+import {
+  isMeetingsAvailabilityGridView,
+  MEETINGS_AVAILABILITY_MARKER_TYPE,
+  weekdayHoursToMeetingAvailabilityMarkers,
+} from "../../calendar/calendar-availability-events.js";
 import {
   CalendarMeetingEventPopover,
   type CalendarMeetingPopoverMeeting,
@@ -44,6 +56,9 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { CalendarHabitIconItem } from "./calendar-habits-icon-row.js";
 import { useCalendarDayHabitMounts } from "./use-calendar-day-habit-mounts.js";
+import { useCalendarGridKeyboardNavigation } from "../../calendar/use-calendar-grid-keyboard-navigation.js";
+import { CALENDAR_GRID_KEYBOARD_ITEM_ATTR } from "../../calendar/calendar-grid-keyboard.js";
+import { useListDismissDetailShortcut } from "../../list-nav/use-list-clear-selection-shortcut.js";
 
 export type CalendarViewProps = {
   events: TaskCalendarEvent[];
@@ -55,6 +70,13 @@ export type CalendarViewProps = {
     meetingId: string,
     patch: MeetingCalendarPatch,
   ) => void | Promise<void>;
+  /**
+   * Drag-select on week/day time grid → create a Triage meeting for that range.
+   */
+  onCreateMeetingFromSelect?: (range: {
+    startAt: string;
+    endAt: string;
+  }) => void | Promise<void>;
   /** When set, clicking a calendar task opens an anchored detail popover. */
   resolveTask?: (taskId: string) => CalendarTaskPopoverTask | null | undefined;
   /** When set, clicking a calendar meeting opens an anchored detail popover. */
@@ -62,7 +84,7 @@ export type CalendarViewProps = {
     meetingId: string,
   ) => CalendarMeetingPopoverMeeting | null | undefined;
   onTaskOpen?: (taskId: string) => void;
-  /** Opens the full-height meeting panel (side panel list, popover footer). */
+  /** Opens the meeting detail overlay (narrow panel by default). */
   onMeetingOpen?: (meetingId: string) => void;
   /** Habit day tasks keyed by local `YYYY-MM-DD` (shown above each day's events). */
   dayHabitsByDate?: ReadonlyMap<string, readonly CalendarHabitIconItem[]>;
@@ -70,6 +92,17 @@ export type CalendarViewProps = {
     item: CalendarHabitIconItem,
     completed: boolean,
   ) => void;
+  viewMode?: CalendarViewMode;
+  onViewModeChange?: (mode: CalendarViewMode) => void;
+  /** Booking availability windows (thin markers in week/day time grid). */
+  bookingAvailability?: {
+    weekdayHours: MeetingWeekdayHoursEntry[];
+    timezone: string;
+  };
+  onCalendarApi?: (api: CalendarApi | null) => void;
+  onRangeTitleChange?: (title: string) => void;
+  selectedGridEventId?: string | null;
+  keyboardNavigationEnabled?: boolean;
 };
 
 type OpenTaskPopoverState = {
@@ -94,20 +127,36 @@ export function CalendarView({
   events,
   onTaskReschedule,
   onMeetingReschedule,
+  onCreateMeetingFromSelect,
   resolveTask,
   resolveMeeting,
   onTaskOpen,
   onMeetingOpen,
   dayHabitsByDate,
   onToggleDayHabit,
+  viewMode: controlledViewMode,
+  onViewModeChange,
+  bookingAvailability,
+  onCalendarApi,
+  onRangeTitleChange,
+  selectedGridEventId = null,
+  keyboardNavigationEnabled = true,
 }: CalendarViewProps) {
   const mainRef = useRef<HTMLDivElement>(null);
   const calendarApiRef = useRef<CalendarApi | null>(null);
-  const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
+  const [uncontrolledViewMode, setUncontrolledViewMode] =
+    useState<CalendarViewMode>("week");
+  const viewMode = controlledViewMode ?? uncontrolledViewMode;
+  const isControlled = controlledViewMode !== undefined;
   const [openTaskPopover, setOpenTaskPopover] =
     useState<OpenTaskPopoverState | null>(null);
   const [openMeetingPopover, setOpenMeetingPopover] =
     useState<OpenMeetingPopoverState | null>(null);
+  const [visibleRange, setVisibleRange] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
+  const [activeGridView, setActiveGridView] = useState<string | null>(null);
   const fixedMirrorParent =
     typeof document !== "undefined" ? document.body : undefined;
 
@@ -118,6 +167,146 @@ export function CalendarView({
     dayHeaderWillUnmount,
     syncListDayHabits,
   } = useCalendarDayHabitMounts(dayHabitsByDate ?? new Map(), onToggleDayHabit);
+
+  const availabilityMarkers = useMemo(() => {
+    if (!bookingAvailability || !visibleRange || !activeGridView) return [];
+    if (!isMeetingsAvailabilityGridView(activeGridView)) return [];
+    return weekdayHoursToMeetingAvailabilityMarkers({
+      weekdayHours: bookingAvailability.weekdayHours,
+      timezone: bookingAvailability.timezone,
+      rangeStart: visibleRange.start,
+      rangeEnd: visibleRange.end,
+    });
+  }, [activeGridView, bookingAvailability, visibleRange]);
+
+  const calendarEvents = useMemo(
+    () => [...availabilityMarkers, ...events],
+    [availabilityMarkers, events],
+  );
+
+  const closePopovers = useCallback(() => {
+    setOpenTaskPopover(null);
+    setOpenMeetingPopover(null);
+  }, []);
+
+  const calendarEntityPopoverOpen =
+    openTaskPopover != null || openMeetingPopover != null;
+
+  useListDismissDetailShortcut({
+    enabled: calendarEntityPopoverOpen,
+    onDismiss: closePopovers,
+  });
+
+  const openCalendarEvent = useCallback(
+    (eventId: string, anchorRect: DOMRect) => {
+      const event = events.find((entry) => entry.id === eventId);
+      if (!event) return;
+
+      const habitId =
+        event.extendedProps.entityType === "task"
+          ? event.extendedProps.habitId
+          : null;
+      if (typeof habitId === "string" && habitId.trim()) {
+        return;
+      }
+
+      const entity = calendarEntityFromEvent({
+        id: event.id,
+        extendedProps: event.extendedProps,
+      });
+
+      if (entity.entityType === "meeting") {
+        if (resolveMeeting) {
+          const meeting = resolveMeeting(entity.entityId);
+          if (meeting) {
+            closePopovers();
+            setOpenMeetingPopover({ meeting, anchorRect });
+            return;
+          }
+        }
+        onMeetingOpen?.(entity.entityId);
+        return;
+      }
+
+      if (resolveTask) {
+        const task = resolveTask(entity.entityId);
+        if (task) {
+          closePopovers();
+          setOpenTaskPopover({ task, anchorRect });
+          return;
+        }
+      }
+      onTaskOpen?.(entity.entityId);
+    },
+    [
+      closePopovers,
+      events,
+      onMeetingOpen,
+      onTaskOpen,
+      resolveMeeting,
+      resolveTask,
+    ],
+  );
+
+  const handleKeyboardActivateEvent = useCallback(
+    (eventId: string) => {
+      const event = events.find((entry) => entry.id === eventId);
+      if (!event) return;
+
+      const entity = calendarEntityFromEvent({
+        id: event.id,
+        extendedProps: event.extendedProps,
+      });
+
+      if (entity.entityType === "meeting") {
+        if (
+          openMeetingPopover?.meeting.id === entity.entityId &&
+          onMeetingOpen
+        ) {
+          closePopovers();
+          onMeetingOpen(entity.entityId);
+          return;
+        }
+      } else if (openTaskPopover?.task.id === entity.entityId && onTaskOpen) {
+        closePopovers();
+        onTaskOpen(entity.entityId);
+        return;
+      }
+
+      const container = mainRef.current;
+      const anchorEl =
+        container?.querySelector<HTMLElement>(
+          `[${CALENDAR_GRID_KEYBOARD_ITEM_ATTR}="${CSS.escape(eventId)}"]`,
+        ) ??
+        document.body.querySelector<HTMLElement>(
+          `[${CALENDAR_GRID_KEYBOARD_ITEM_ATTR}="${CSS.escape(eventId)}"]`,
+        );
+      openCalendarEvent(eventId, anchorEl?.getBoundingClientRect() ?? new DOMRect());
+    },
+    [
+      closePopovers,
+      events,
+      onMeetingOpen,
+      onTaskOpen,
+      openCalendarEvent,
+      openMeetingPopover,
+      openTaskPopover,
+    ],
+  );
+
+  const {
+    listContainerProps: gridListContainerProps,
+    handleEventDidMount,
+    handleEventWillUnmount,
+  } = useCalendarGridKeyboardNavigation({
+    containerRef: mainRef,
+    events,
+    visibleRange,
+    viewMode,
+    selectedEventId: selectedGridEventId,
+    enabled: keyboardNavigationEnabled && !calendarEntityPopoverOpen,
+    onActivateEvent: handleKeyboardActivateEvent,
+  });
 
   useEffect(() => {
     if (viewMode !== "list") return;
@@ -134,13 +323,32 @@ export function CalendarView({
     return () => observer.disconnect();
   }, []);
 
-  const closePopovers = () => {
-    setOpenTaskPopover(null);
-    setOpenMeetingPopover(null);
+  useEffect(() => () => onCalendarApi?.(null), [onCalendarApi]);
+
+  useEffect(() => {
+    const api = calendarApiRef.current;
+    if (!api) return;
+    const fcView = calendarViewModeToFcView(viewMode);
+    if (api.view.type !== fcView) {
+      api.changeView(fcView);
+    }
+  }, [viewMode]);
+
+  const updateViewMode = (mode: CalendarViewMode) => {
+    if (!isControlled) {
+      setUncontrolledViewMode(mode);
+    }
+    onViewModeChange?.(mode);
   };
 
   const handleDatesSet = (info: DatesSetArg) => {
-    setViewMode(fcViewTypeToCalendarViewMode(info.view.type));
+    setVisibleRange({ start: info.start, end: info.end });
+    setActiveGridView(info.view.type);
+    onRangeTitleChange?.(info.view.title);
+    const mode = fcViewTypeToCalendarViewMode(info.view.type);
+    if (mode !== viewMode) {
+      updateViewMode(mode);
+    }
     closePopovers();
     if (info.view.type === "listWeek") {
       requestAnimationFrame(() => syncListDayHabits(mainRef.current));
@@ -151,7 +359,7 @@ export function CalendarView({
     const api = calendarApiRef.current;
     if (!api) return;
     api.changeView(calendarViewModeToFcView(mode));
-    setViewMode(mode);
+    updateViewMode(mode);
     closePopovers();
   };
 
@@ -233,36 +441,40 @@ export function CalendarView({
     });
   };
 
-  const handleEventClick = (info: EventClickArg) => {
-    info.jsEvent.preventDefault();
-    const entity = calendarEntityFromEvent(info.event);
-    if (entity.entityType === "meeting") {
-      if (resolveMeeting) {
-        const meeting = resolveMeeting(entity.entityId);
-        if (meeting) {
-          closePopovers();
-          setOpenMeetingPopover({
-            meeting,
-            anchorRect: info.el.getBoundingClientRect(),
-          });
-          return;
-        }
-      }
-      onMeetingOpen?.(entity.entityId);
+  const selectEnabled =
+    Boolean(onCreateMeetingFromSelect) &&
+    (viewMode === "week" || viewMode === "day");
+
+  const handleDateSelect = (info: DateSelectArg) => {
+    if (!onCreateMeetingFromSelect) {
+      info.view.calendar.unselect();
       return;
     }
-    if (resolveTask) {
-      const task = resolveTask(entity.entityId);
-      if (task) {
-        closePopovers();
-        setOpenTaskPopover({
-          task,
-          anchorRect: info.el.getBoundingClientRect(),
-        });
-        return;
-      }
+    const range = calendarSelectionToMeetingRange({
+      start: info.start,
+      end: info.end,
+      allDay: info.allDay,
+    });
+    info.view.calendar.unselect();
+    if (!range) return;
+    closePopovers();
+    void Promise.resolve(onCreateMeetingFromSelect(range));
+  };
+
+  const handleEventClick = (info: EventClickArg) => {
+    if (
+      info.event.extendedProps.entityType === MEETINGS_AVAILABILITY_MARKER_TYPE ||
+      info.event.display === "background"
+    ) {
+      return;
     }
-    onTaskOpen?.(entity.entityId);
+    // Habit blocks are not meeting/task detail surfaces — no popover / overlay.
+    const habitId = info.event.extendedProps.habitId;
+    if (typeof habitId === "string" && habitId.trim()) {
+      return;
+    }
+    info.jsEvent.preventDefault();
+    openCalendarEvent(info.event.id, info.el.getBoundingClientRect());
   };
 
   const popoverTask =
@@ -278,10 +490,16 @@ export function CalendarView({
 
   return (
     <div className="calendar-view" data-calendar-view>
-      <div className="calendar-view-main" ref={mainRef}>
+      <div
+        className="calendar-view-main"
+        ref={mainRef}
+        {...gridListContainerProps}
+      >
         <FullCalendar
           ref={(instance) => {
-            calendarApiRef.current = instance?.getApi() ?? null;
+            const api = instance?.getApi() ?? null;
+            calendarApiRef.current = api;
+            onCalendarApi?.(api);
           }}
           plugins={[
             dayGridPlugin,
@@ -289,12 +507,8 @@ export function CalendarView({
             listPlugin,
             interactionPlugin,
           ]}
-          initialView="timeGridWeek"
-          headerToolbar={{
-            left: "prev,next today",
-            center: "title",
-            right: "",
-          }}
+          initialView={calendarViewModeToFcView(viewMode)}
+          headerToolbar={CALENDAR_HEADER_TOOLBAR}
           height="100%"
           expandRows
           firstDay={1}
@@ -308,13 +522,18 @@ export function CalendarView({
           eventDurationEditable
           eventResizableFromStart
           droppable
-          events={events}
+          selectable={selectEnabled}
+          selectMirror={selectEnabled}
+          select={selectEnabled ? handleDateSelect : undefined}
+          events={calendarEvents}
           datesSet={handleDatesSet}
           eventDrop={handleEventDrop}
           eventResize={handleEventResize}
           eventReceive={handleEventReceive}
           eventClick={handleEventClick}
           eventContent={renderCalendarTaskEventContent}
+          eventDidMount={handleEventDidMount}
+          eventWillUnmount={handleEventWillUnmount}
           dayCellDidMount={dayCellDidMount}
           dayCellWillUnmount={dayCellWillUnmount}
           dayHeaderDidMount={dayHeaderDidMount}

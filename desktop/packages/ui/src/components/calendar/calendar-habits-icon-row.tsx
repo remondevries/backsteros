@@ -1,6 +1,7 @@
 "use client";
 
 import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
+import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 
 export type CalendarHabitIconItem = {
@@ -57,9 +58,13 @@ export function CalendarHabitsIconRow({
             >
               <span className="calendar-day-habits__icon" aria-hidden="true">
                 {item.icon ? (
-                  <ProjectOcticon icon={item.icon} size={12} />
+                  <ProjectOcticon
+                    icon={item.icon}
+                    size={12}
+                    style={{ color: "#0d1117" }}
+                  />
                 ) : (
-                  <ProjectOcticon icon="dot-fill" size={12} />
+                  <DefaultProjectIcon size={12} style={{ color: "#0d1117" }} />
                 )}
               </span>
             </button>

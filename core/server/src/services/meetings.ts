@@ -84,6 +84,8 @@ export function toMeeting(row: DbMeeting): Meeting {
     attendeeContactIds: attendeeIds,
     startAt: row.startAt.toISOString(),
     endAt: row.endAt.toISOString(),
+    trackedMinutes: row.trackedMinutes ?? null,
+    trackedDurationSeconds: row.trackedDurationSeconds ?? null,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -163,6 +165,8 @@ export async function createMeetingRow(
       projectId: input.projectId ?? null,
       organizationId: input.organizationId ?? null,
       attendeeContactIds: input.attendeeContactIds ?? [],
+      trackedMinutes: input.trackedMinutes ?? null,
+      trackedDurationSeconds: input.trackedDurationSeconds ?? null,
       startAt,
       endAt,
       sortOrder: Date.now(),
@@ -216,6 +220,12 @@ export async function updateMeeting(
         : {}),
       ...(input.attendeeContactIds !== undefined
         ? { attendeeContactIds: input.attendeeContactIds }
+        : {}),
+      ...(input.trackedMinutes !== undefined
+        ? { trackedMinutes: input.trackedMinutes }
+        : {}),
+      ...(input.trackedDurationSeconds !== undefined
+        ? { trackedDurationSeconds: input.trackedDurationSeconds }
         : {}),
       startAt,
       endAt,

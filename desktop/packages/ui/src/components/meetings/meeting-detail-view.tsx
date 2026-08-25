@@ -17,9 +17,11 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { PropertyDropdownTriggerVariant } from "../dropdowns/property-dropdown.js";
+import { CollapseLayoutIcon } from "../icons/collapse-layout-icon.js";
+import { ExpandLayoutIcon } from "../icons/expand-layout-icon.js";
 import {
-  MeetingPropertiesDisplay,
-} from "./meeting-properties-display.js";
+  MeetingPropertiesStacked,
+} from "./meeting-properties-stacked.js";
 import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
@@ -157,6 +159,9 @@ export type MeetingDetailViewProps = {
   onProjectChange?: (projectKey: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
   onAttendeeContactIdsChange?: (contactIds: string[]) => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  onPriorityChange?: (priority: number) => void;
+  timerSession?: MeetingPropertiesInlineChipsProps["timerSession"];
   onFieldActivate?: (field: string) => void;
   organizationOptions?: MeetingPropertiesInlineChipsProps["organizationOptions"];
   contactOptions?: MeetingPropertiesInlineChipsProps["contactOptions"];
@@ -167,6 +172,10 @@ export type MeetingDetailViewProps = {
   propertyTriggerVariant?: PropertyDropdownTriggerVariant;
   /** Panel overlay — close control beside the title. */
   onClose?: () => void;
+  /** Expand narrow calendar panel to full-width page layout. */
+  onExpand?: () => void;
+  /** Collapse full-width page layout back to the narrow panel. */
+  onCollapse?: () => void;
 };
 
 export function MeetingDetailView({
@@ -186,6 +195,9 @@ export function MeetingDetailView({
   onProjectChange,
   onOrganizationChange,
   onAttendeeContactIdsChange,
+  onTrackedDurationSecondsChange,
+  onPriorityChange,
+  timerSession = null,
   onFieldActivate,
   organizationOptions,
   contactOptions,
@@ -195,6 +207,8 @@ export function MeetingDetailView({
   layout = "panel",
   propertyTriggerVariant,
   onClose,
+  onExpand,
+  onCollapse,
 }: MeetingDetailViewProps) {
   const [activeTab, setActiveTab] = useState<MeetingContentTab>("summary");
   const [dockToggle, setDockToggle] = useState<ReactNode>(null);
@@ -226,8 +240,10 @@ export function MeetingDetailView({
   const propertiesProps = {
     meeting,
     onStatusChange,
+    onPriorityChange,
     onStartChange,
     onEndChange,
+    onTrackedDurationSecondsChange,
     onProjectChange,
     onOrganizationChange,
     onAttendeeContactIdsChange,
@@ -237,6 +253,7 @@ export function MeetingDetailView({
     projectOptions,
     onCreateOrganizationFromQuery,
     onCreateContactFromQuery,
+    timerSession,
   };
 
   const contentTabs = (
@@ -263,6 +280,29 @@ export function MeetingDetailView({
     </div>
   );
 
+  const layoutAction =
+    onExpand != null ? (
+      <button
+        type="button"
+        className="meeting-detail-view__layout-action"
+        onClick={onExpand}
+        aria-label="Expand meeting"
+        title="Expand"
+      >
+        <ExpandLayoutIcon size={14} />
+      </button>
+    ) : onCollapse != null ? (
+      <button
+        type="button"
+        className="meeting-detail-view__layout-action"
+        onClick={onCollapse}
+        aria-label="Collapse meeting"
+        title="Collapse"
+      >
+        <CollapseLayoutIcon size={14} />
+      </button>
+    ) : null;
+
   const contentEditor = (
     <div
       className="meeting-detail-view__editor-shell"
@@ -275,16 +315,51 @@ export function MeetingDetailView({
         value={tabValue}
         ariaLabel={tabAriaLabel}
         onSave={onTabSave}
-        dockToggle={layout === "page"}
-        onToggleDock={layout === "page" ? setDockToggle : undefined}
+        dockToggle
+        onToggleDock={setDockToggle}
       />
     </div>
   );
 
+  const bottomChrome =
+    layoutAction || (layout === "panel" && dockToggle) ? (
+      <div
+        className={`meeting-detail-view__bottom-chrome${
+          layout === "page"
+            ? " meeting-detail-view__bottom-chrome--page-main"
+            : ""
+        }`}
+      >
+        <div className="meeting-detail-view__bottom-chrome-inner">
+          <div className="meeting-detail-view__bottom-chrome-start">
+            {layoutAction}
+          </div>
+          {layout === "panel" && dockToggle ? (
+            <div className="meeting-detail-view__bottom-chrome-end">
+              <FloatingPillToggleDock className="meeting-detail-view__bottom-chrome-toggle">
+                {dockToggle}
+              </FloatingPillToggleDock>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    ) : null;
+
+  const closeAction = onClose ? (
+    <button
+      type="button"
+      className="meeting-detail-view__header-action"
+      onClick={onClose}
+      aria-label="Close meeting panel"
+    >
+      <XIcon size={14} />
+    </button>
+  ) : null;
+
   if (layout === "page") {
     return (
       <div
-        className="meeting-detail-split"
+        className="meeting-detail-split meeting-detail-page"
         data-content-detail
         data-detail-split=""
         data-meeting-detail-layout="page"
@@ -294,6 +369,13 @@ export function MeetingDetailView({
           main={
             <div className="inbox-detail-layout">
               <div className="inbox-detail-body inbox-detail-body--document meeting-detail-page__body">
+                {closeAction ? (
+                  <div className="meeting-detail-view__overlay-chrome">
+                    <div className="meeting-detail-view__header-actions">
+                      {closeAction}
+                    </div>
+                  </div>
+                ) : null}
                 <ContentDetailTitleHeader>
                   <p className="content-detail-display-id">{displayId}</p>
                   <OverviewNameEditor
@@ -309,10 +391,11 @@ export function MeetingDetailView({
                   {contentTabs}
                   {contentEditor}
                 </div>
+                {bottomChrome}
               </div>
             </div>
           }
-          properties={<MeetingPropertiesDisplay {...propertiesProps} />}
+          properties={<MeetingPropertiesStacked {...propertiesProps} />}
           dock={
             dockToggle ? (
               <FloatingPillToggleDock>{dockToggle}</FloatingPillToggleDock>
@@ -331,15 +414,10 @@ export function MeetingDetailView({
       <header className="meeting-detail-view__header">
         <div className="meeting-detail-view__id-row">
           <span className="meeting-detail-view__id">{displayId}</span>
-          {onClose ? (
-            <button
-              type="button"
-              className="meeting-detail-view__close"
-              onClick={onClose}
-              aria-label="Close meeting panel"
-            >
-              <XIcon size={14} />
-            </button>
+          {closeAction ? (
+            <div className="meeting-detail-view__header-actions">
+              {closeAction}
+            </div>
           ) : null}
         </div>
         <input
@@ -355,10 +433,11 @@ export function MeetingDetailView({
         {...propertiesProps}
         triggerVariant={triggerVariant}
       />
-      <div className="meeting-detail-view__content">
+      <div className="meeting-detail-view__content meeting-detail-view__content--page">
         {contentTabs}
         {contentEditor}
       </div>
+      {bottomChrome}
     </div>
   );
 }

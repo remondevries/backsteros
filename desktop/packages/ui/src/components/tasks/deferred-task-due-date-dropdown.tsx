@@ -14,6 +14,7 @@ import {
 } from "../../dropdowns/searchable-dropdown-open-placement.js";
 import {
   formatDueDateInputValue,
+  formatDueDateTimeStamp,
   formatTaskDueMetaLabel,
   getTaskDueDateUrgency,
 } from "../../tasks/task-due-date.js";
@@ -43,7 +44,11 @@ export function DeferredTaskDueDateDropdown(props: TaskDueDateDropdownProps) {
 
   const ymdValue = formatDueDateInputValue(props.dueDate);
   const displayLabel = ymdValue
-    ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+    ? props.labelFormat === "ymd-time"
+      ? formatDueDateTimeStamp(props.dueDate) || ymdValue
+      : props.labelFormat === "ymd"
+        ? ymdValue
+        : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
     : (props.noDueDateLabel ?? "No due date");
   const hasDueDate = Boolean(ymdValue);
   const dueDateUrgency = useMemo(

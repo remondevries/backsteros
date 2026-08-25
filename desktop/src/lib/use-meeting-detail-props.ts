@@ -30,6 +30,8 @@ export function useMeetingDetailViewProps(
   | "onProjectChange"
   | "onOrganizationChange"
   | "onAttendeeContactIdsChange"
+  | "onTrackedDurationSecondsChange"
+  | "timerSession"
   | "organizationOptions"
   | "contactOptions"
   | "projectOptions"
@@ -99,6 +101,8 @@ export function useMeetingDetailViewProps(
       organizationId: meeting.organizationId ?? null,
       organizationName: organization?.name ?? null,
       attendeeContactIds: meeting.attendeeContactIds ?? [],
+      trackedMinutes: meeting.trackedMinutes ?? null,
+      trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
     };
   }, [meeting, workspace.organizations, workspace.projects]);
 
@@ -125,6 +129,24 @@ export function useMeetingDetailViewProps(
     onAttendeeContactIdsChange: (contactIds) => {
       patchMeeting({ attendeeContactIds: contactIds });
     },
+    onTrackedDurationSecondsChange: (seconds) => {
+      const trackedMinutes =
+        seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+      patchMeeting({
+        trackedDurationSeconds: seconds,
+        trackedMinutes,
+      });
+    },
+    timerSession: meeting
+      ? {
+          kind: "meeting" as const,
+          entityId: meeting.id,
+          title: meeting.title,
+          subtitle: meeting.number != null ? `M-${meeting.number}` : null,
+          statusKey: meeting.status ?? null,
+          href: `/calendar/meetings/${meeting.id}`,
+        }
+      : null,
     organizationOptions,
     contactOptions,
     projectOptions,

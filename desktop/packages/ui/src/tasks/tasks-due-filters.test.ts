@@ -57,7 +57,7 @@ test("filterTasksByDueFilter overdue keeps open past-due tasks only", () => {
   );
 });
 
-test("filterTasksByDueFilter keeps email rows on every due pill", () => {
+test("filterTasksByDueFilter applies due pills to email rows", () => {
   const wednesday = new Date(2026, 6, 22, 12, 0, 0); // Wed Jul 22, 2026
   const tasks = [
     { id: "email-open", dueDate: null, status: "triage", listKind: "email" },
@@ -79,27 +79,34 @@ test("filterTasksByDueFilter keeps email rows on every due pill", () => {
       status: "completed",
       listKind: "email",
     },
+    {
+      id: "email-overdue",
+      dueDate: "2026-07-20",
+      status: "on_hold",
+      listKind: "email",
+    },
   ];
 
-  for (const filter of [
-    "today",
-    "tomorrow",
-    "this-week",
-    "next-week",
-  ] as const) {
-    assert.deepEqual(
-      filterTasksByDueFilter(tasks, filter, wednesday)
-        .map((task) => task.id)
-        .sort(),
-      ["email-dated", "email-later", "email-open"],
-      filter,
-    );
-  }
-
   assert.deepEqual(
-    filterTasksByDueFilter(tasks, "overdue", wednesday)
+    filterTasksByDueFilter(tasks, "today", wednesday).map((task) => task.id),
+    ["email-dated"],
+  );
+  assert.deepEqual(
+    filterTasksByDueFilter(tasks, "tomorrow", wednesday).map((task) => task.id),
+    [],
+  );
+  assert.deepEqual(
+    filterTasksByDueFilter(tasks, "this-week", wednesday)
       .map((task) => task.id)
       .sort(),
-    ["email-dated", "email-later", "email-open"],
+    ["email-dated", "email-done", "email-overdue"],
+  );
+  assert.deepEqual(
+    filterTasksByDueFilter(tasks, "next-week", wednesday).map((task) => task.id),
+    ["email-later"],
+  );
+  assert.deepEqual(
+    filterTasksByDueFilter(tasks, "overdue", wednesday).map((task) => task.id),
+    ["email-overdue"],
   );
 });

@@ -186,6 +186,9 @@ importers:
       '@tauri-apps/plugin-fs':
         specifier: ^2.5.1
         version: 2.5.1
+      '@tauri-apps/plugin-notification':
+        specifier: ^2.3.3
+        version: 2.3.3
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.4
@@ -325,6 +328,9 @@ importers:
       '@git-diff-view/react':
         specifier: ^0.1.7
         version: 0.1.7(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@legendapp/list':
+        specifier: 3.2.0
+        version: 3.2.0(react-dom@19.1.0(react@19.1.0))(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.10)(bufferutil@4.1.0)(react@19.1.0)(supports-color@8.1.1))(react@19.1.0)
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
@@ -4043,6 +4049,9 @@ packages:
 
   '@tauri-apps/plugin-fs@2.5.1':
     resolution: {integrity: sha512-9Lz+Jopp6QyeEWhlpkMx4R/+P9HgR+AVAI4vOZhlT8Xaymtz8iVI/Ov984/XTqgJz/5gz5NretqPB/XEMS3NhQ==}
+
+  '@tauri-apps/plugin-notification@2.3.3':
+    resolution: {integrity: sha512-Zw+ZH18RJb41G4NrfHgIuofJiymusqN+q8fGUIIV7vyCH+5sSn5coqRv/MWB9qETsUs97vmU045q7OyseCV3Qg==}
 
   '@tauri-apps/plugin-opener@2.5.4':
     resolution: {integrity: sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==}
@@ -9964,6 +9973,14 @@ snapshots:
       react-dom: 19.1.0(react@19.1.0)
       react-native: 0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.10)(bufferutil@4.1.0)(react@19.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
 
+  '@legendapp/list@3.2.0(react-dom@19.1.0(react@19.1.0))(react-native@0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.10)(bufferutil@4.1.0)(react@19.1.0)(supports-color@8.1.1))(react@19.1.0)':
+    dependencies:
+      react: 19.1.0
+      use-sync-external-store: 1.6.0(react@19.1.0)
+    optionalDependencies:
+      react-dom: 19.1.0(react@19.1.0)
+      react-native: 0.86.0(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.10)(bufferutil@4.1.0)(react@19.1.0)(supports-color@8.1.1)
+
   '@lexical/clipboard@0.41.0':
     dependencies:
       '@lexical/html': 0.41.0
@@ -12152,6 +12169,10 @@ snapshots:
       '@tauri-apps/api': 2.11.1
 
   '@tauri-apps/plugin-fs@2.5.1':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+
+  '@tauri-apps/plugin-notification@2.3.3':
     dependencies:
       '@tauri-apps/api': 2.11.1
 

@@ -2,6 +2,7 @@ import type {
   ApiKey,
   Area,
   BankAccount,
+  CashflowPlannerEntry,
   Document,
   FinancialCategory,
   FinancialGoal,
@@ -19,6 +20,7 @@ import type {
   DbApiKey,
   DbArea,
   DbBankAccount,
+  DbCashflowPlannerEntry,
   DbDocument,
   DbFinancialCategory,
   DbFinancialGoal,
@@ -91,6 +93,8 @@ export function toTask(row: DbTask): Task {
     completedAt: toIso(row.completedAt),
     agentCreatedAt: toIso(row.agentCreatedAt),
     agentInboxApprovedAt: toIso(row.agentInboxApprovedAt),
+    trackedMinutes: row.trackedMinutes ?? null,
+    trackedDurationSeconds: row.trackedDurationSeconds ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: toIso(row.deletedAt),
@@ -329,6 +333,28 @@ export function toFinancialRecurring(
     amountCents,
     nextDate: row.nextDate ?? null,
     archived: Boolean(row.archived),
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    deletedAt: toIso(row.deletedAt),
+  };
+}
+
+export function toCashflowPlannerEntry(
+  row: DbCashflowPlannerEntry,
+): CashflowPlannerEntry {
+  const entryType =
+    row.entryType === "income" || row.entryType === "expense"
+      ? row.entryType
+      : "expense";
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    entryType,
+    name: row.name,
+    amountCents: Math.max(0, row.amountCents ?? 0),
+    dueDate: row.dueDate,
+    groupLabel: row.groupLabel ?? null,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

@@ -29,6 +29,17 @@ export function TaskListPriorityLabel({ priority }: { priority: number }) {
   );
 }
 
+/** Icon-only priority mark for dense list cards (inbox / meetings). */
+export function TaskListPriorityMark({ priority }: { priority: number }) {
+  const label = getTaskPriorityLabel(priority);
+
+  return (
+    <span className="bos-property-label bos-property-label--icon-only" title={label}>
+      <TaskPriorityIcon priority={priority} size={14} />
+    </span>
+  );
+}
+
 export function TaskListDueDateLabel({
   dueDate,
   status,

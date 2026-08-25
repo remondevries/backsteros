@@ -75,7 +75,7 @@ export type ProjectTasksWorkbenchViewProps = {
   /** Overlay stacked on the list-row assignee avatar (e.g. agent badge). */
   renderAssigneeAccessory?: (task: TaskItemRowTask) => ReactNode;
   /** `inline` = right after the title; `end` = flush right in the title area. */
-  titleTrailingAlign?: "inline" | "end";
+  titleTrailingAlign?: "inline" | "end" | "before-status" | "after-status";
   showDueMeta?: boolean;
   /** Create a task in a status group (Next AddTaskInline). */
   onCreateTask?: (input: {

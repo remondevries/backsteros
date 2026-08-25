@@ -15,6 +15,29 @@
   color: color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 
+button.side-panel-plain-group-label {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-align: left;
+}
+
+button.side-panel-plain-group-label:hover {
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+}
+
+button.side-panel-plain-group-label[aria-current="true"] {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
 .side-panel-item-stack {
   display: flex;
   min-width: 0;
@@ -656,6 +679,46 @@
 
 .project-type-subgroup__label {
   flex-shrink: 0;
+}
+
+.project-type-subgroup__toggle-button {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
+}
+
+.project-type-subgroup__label-button {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.project-type-subgroup__label-button[aria-current="true"] {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.project-type-subgroup__header[data-title-selectable="true"][aria-expanded="true"]
+  .project-type-subgroup__toggle
+  svg {
+  transform: rotate(90deg);
 }
 
 .project-type-subgroup__rule {

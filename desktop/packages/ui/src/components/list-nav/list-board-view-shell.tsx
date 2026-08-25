@@ -13,6 +13,8 @@ export type ListBoardView = "list" | "board";
 export type SegmentedPillToggleOption<T extends string> = {
   value: T;
   label: string;
+  /** Optional digit/key hint for the button tooltip. */
+  shortcut?: string;
 };
 
 type IndicatorStyle = {
@@ -132,6 +134,11 @@ export function SegmentedPillToggle<T extends string>({
             className={`segmented-pill-toggle-btn${active ? " is-active" : ""}`}
             aria-pressed={active}
             disabled={disabled}
+            title={
+              option.shortcut
+                ? `${option.label} (${option.shortcut})`
+                : option.label
+            }
             onClick={() => onChange(option.value)}
           >
             {option.label}

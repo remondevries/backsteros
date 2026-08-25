@@ -12,6 +12,7 @@ export const SYNC_ENTITIES = [
   "financial_category",
   "financial_goal",
   "financial_recurring",
+  "cashflow_planner_entry",
   "habit",
   "meeting",
 ] as const;
@@ -32,6 +33,7 @@ export const POWERSYNC_TABLES = [
   "financial_categories",
   "financial_goals",
   "financial_recurrings",
+  "cashflow_planner_entries",
   "habits",
   "meetings",
 ] as const;

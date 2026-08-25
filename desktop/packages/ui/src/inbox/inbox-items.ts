@@ -116,10 +116,33 @@ export type InboxEmailListItem = {
   mailboxAvatarSrc?: string | null;
 };
 
+/** Meeting shown in the Inbox / calendar side-panel list. */
+export type InboxMeetingListItem = {
+  kind: "meeting";
+  id: string;
+  title: string;
+  number: number;
+  status: string;
+  priority: number;
+  startAt: number | Date | string;
+  endAt: number | Date | string;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  projectIcon?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  organizationAvatarSrc?: string | null;
+  scheduleLabel?: string | null;
+  inboxUpdatedAt?: number | Date | string | null;
+  updatedAt?: number;
+};
+
 export type InboxListItem =
   | InboxTaskListItem
   | InboxLetterListItem
-  | InboxEmailListItem;
+  | InboxEmailListItem
+  | InboxMeetingListItem;
 
 /** Stable inbox list id for an email thread row. */
 export function emailInboxItemId(
@@ -129,6 +152,21 @@ export function emailInboxItemId(
 ): string {
   const threadKey = threadId?.trim() || messageId.trim();
   return `email:${inboxId}:${threadKey}`;
+}
+
+const MEETING_INBOX_ITEM_PREFIX = "meeting:";
+
+/** Stable inbox / side-panel id for a meeting row. */
+export function meetingInboxItemId(meetingId: string): string {
+  return `${MEETING_INBOX_ITEM_PREFIX}${meetingId.trim()}`;
+}
+
+/** Extract the meeting UUID from a `meeting:…` inbox list id. */
+export function parseMeetingInboxItemId(itemId: string): string | null {
+  const trimmed = itemId.trim();
+  if (!trimmed.startsWith(MEETING_INBOX_ITEM_PREFIX)) return null;
+  const id = trimmed.slice(MEETING_INBOX_ITEM_PREFIX.length).trim();
+  return id || null;
 }
 
 export function encodeTaskSlug(contextKey: string, taskNumber: number): string {
@@ -620,6 +658,19 @@ export function emailBelongsInInbox(
     },
     referenceDate,
   );
+}
+
+/**
+ * Whether a meeting belongs in the Inbox list (calendar side panel "inbox"
+ * section). Incoming / triage bookings stay here until reviewed; scheduled
+ * workflow states live under the calendar list instead.
+ */
+export function meetingBelongsInInbox(input: {
+  status?: string | null;
+}): boolean {
+  const trimmed = input.status?.trim();
+  if (!trimmed) return false;
+  return migrateLegacyTaskStatus(trimmed) === "triage";
 }
 
 /** Inbox email icon color: triage orange when untriaged, else the status color. */

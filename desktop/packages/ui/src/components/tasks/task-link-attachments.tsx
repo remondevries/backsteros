@@ -19,6 +19,7 @@ import {
 } from "../../tasks/task-link-add-shortcut.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 
 const MAX_TASK_LINKS = 20;
@@ -203,7 +204,7 @@ function TaskLinkFavicon({ url }: { url: string }) {
 
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
-    return <ProjectOcticon icon="mail" size={16} />;
+    return <EmailNavIcon size={16} />;
   }
   if (isAppDocumentTaskLinkUrl(url)) {
     return <ProjectOcticon icon="file" size={16} />;

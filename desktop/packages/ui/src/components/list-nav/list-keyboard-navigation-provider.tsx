@@ -924,6 +924,36 @@ export function useListKeyboardNavigation({
 
   const highlightedIdRef = useLatestRef(resolvedHighlight);
 
+  // Opening a detail clears the orange j/k highlight but leaves DOM focus on
+  // the row — which paints the browser's blue focus ring and looks "focused"
+  // even when attention is in the detail pane. Blur the row; keep the list
+  // container focused so j/k still works without a misleading ring.
+  useEffect(() => {
+    if (selectedId == null || activeZone !== zone) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const blurRowFocus = () => {
+      const active = document.activeElement;
+      if (
+        !(active instanceof HTMLElement) ||
+        !container.contains(active) ||
+        !active.closest(`[${KEYBOARD_NAV_ITEM_ATTR}]`)
+      ) {
+        return;
+      }
+      active.blur();
+      if (document.activeElement === active || document.activeElement === document.body) {
+        container.focus({ preventScroll: true });
+      }
+    };
+
+    blurRowFocus();
+    // j/k focus is scheduled in rAF; catch that too after Enter/open.
+    const raf = requestAnimationFrame(blurRowFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [activeZone, containerRef, selectedId, zone]);
+
   useEffect(() => {
     if (!enabled || itemIds.length === 0) {
       return;

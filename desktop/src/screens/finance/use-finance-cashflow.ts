@@ -1,10 +1,17 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import type {
+  CashflowPlannerEntry,
+  CashflowPlannerEntryInput,
   FinanceSpendPanel,
   WorkspaceCashflow,
 } from "@backsteros/contracts";
 import type { FinanceNavId } from "@backsteros/ui";
 import { useCallback, useEffect, useState } from "react";
+
+function todayYmd(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 export function useFinanceCashflow({
   client,
@@ -27,6 +34,13 @@ export function useFinanceCashflow({
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  const [plannerEntries, setPlannerEntries] = useState<CashflowPlannerEntry[]>(
+    [],
+  );
+  const [plannerLoading, setPlannerLoading] = useState(false);
+  const [plannerError, setPlannerError] = useState<string | null>(null);
+  const [plannerPending, setPlannerPending] = useState(false);
 
   const handleCashflowMonthChange = useCallback((month: string) => {
     setCashflowChartMonth(month);
@@ -70,6 +84,180 @@ export function useFinanceCashflow({
       cancelled = true;
     };
   }, [cashflowChartMonth, client, navId]);
+
+  const refreshPlannerEntries = useCallback(async () => {
+    setPlannerLoading(true);
+    setPlannerError(null);
+    try {
+      const body = await client.requestJson<{
+        entries: CashflowPlannerEntry[];
+      }>("/api/v1/cashflow-planner-entries");
+      setPlannerEntries(body.entries);
+    } catch (error) {
+      setPlannerEntries([]);
+      setPlannerError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load planning scratchpad",
+      );
+    } finally {
+      setPlannerLoading(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    if (navId !== "cashflow") return;
+    void refreshPlannerEntries();
+  }, [navId, refreshPlannerEntries]);
+
+  const createPlannerEntry = useCallback(
+    async (input?: Partial<CashflowPlannerEntryInput>) => {
+      setPlannerPending(true);
+      setPlannerError(null);
+      try {
+        const created = await client.requestJson<CashflowPlannerEntry>(
+          "/api/v1/cashflow-planner-entries",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              entryType: input?.entryType ?? "expense",
+              name: input?.name ?? "New row",
+              amountCents: input?.amountCents ?? 0,
+              dueDate: input?.dueDate ?? todayYmd(),
+              groupLabel: input?.groupLabel ?? null,
+              ...(input?.sortOrder !== undefined
+                ? { sortOrder: input.sortOrder }
+                : {}),
+            } satisfies CashflowPlannerEntryInput),
+          },
+        );
+        setPlannerEntries((rows) =>
+          [...rows, created].sort((a, b) => {
+            if (a.sortOrder !== b.sortOrder) {
+              return a.sortOrder - b.sortOrder;
+            }
+            return a.name.localeCompare(b.name);
+          }),
+        );
+        return created;
+      } catch (error) {
+        setPlannerError(
+          error instanceof Error ? error.message : "Failed to add row",
+        );
+        return null;
+      } finally {
+        setPlannerPending(false);
+      }
+    },
+    [client],
+  );
+
+  const updatePlannerEntry = useCallback(
+    async (id: string, patch: Partial<CashflowPlannerEntryInput>) => {
+      setPlannerPending(true);
+      setPlannerError(null);
+      try {
+        const updated = await client.requestJson<CashflowPlannerEntry>(
+          `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(patch),
+          },
+        );
+        setPlannerEntries((rows) =>
+          rows
+            .map((row) => (row.id === updated.id ? updated : row))
+            .sort((a, b) => {
+              if (a.sortOrder !== b.sortOrder) {
+                return a.sortOrder - b.sortOrder;
+              }
+              return a.name.localeCompare(b.name);
+            }),
+        );
+        return updated;
+      } catch (error) {
+        setPlannerError(
+          error instanceof Error ? error.message : "Failed to update row",
+        );
+        return null;
+      } finally {
+        setPlannerPending(false);
+      }
+    },
+    [client],
+  );
+
+  const reorderPlannerEntries = useCallback(
+    async (
+      patches: Array<{ id: string; patch: Partial<CashflowPlannerEntryInput> }>,
+    ) => {
+      if (patches.length === 0) return;
+      setPlannerError(null);
+      const byId = new Map(patches.map((entry) => [entry.id, entry.patch]));
+      setPlannerEntries((rows) =>
+        rows
+          .map((row) => {
+            const patch = byId.get(row.id);
+            if (!patch) return row;
+            return {
+              ...row,
+              ...patch,
+              updatedAt: new Date().toISOString(),
+            };
+          })
+          .sort((a, b) => {
+            if (a.sortOrder !== b.sortOrder) {
+              return a.sortOrder - b.sortOrder;
+            }
+            return a.name.localeCompare(b.name);
+          }),
+      );
+
+      try {
+        await Promise.all(
+          patches.map(({ id, patch }) =>
+            client.requestJson<CashflowPlannerEntry>(
+              `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(patch),
+              },
+            ),
+          ),
+        );
+      } catch (error) {
+        setPlannerError(
+          error instanceof Error ? error.message : "Failed to reorder rows",
+        );
+        void refreshPlannerEntries();
+      }
+    },
+    [client, refreshPlannerEntries],
+  );
+
+  const deletePlannerEntry = useCallback(
+    async (id: string) => {
+      setPlannerPending(true);
+      setPlannerError(null);
+      try {
+        await client.requestJson(
+          `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
+        setPlannerEntries((rows) => rows.filter((row) => row.id !== id));
+      } catch (error) {
+        setPlannerError(
+          error instanceof Error ? error.message : "Failed to remove row",
+        );
+      } finally {
+        setPlannerPending(false);
+      }
+    },
+    [client],
+  );
 
   const fetchSpendPanel = useCallback(
     async (month: string) => {
@@ -131,5 +319,13 @@ export function useFinanceCashflow({
     handleOpenSpendPanel,
     handleCloseSpendPanel,
     handleSpendPanelMonthChange,
+    plannerEntries,
+    plannerLoading,
+    plannerError,
+    plannerPending,
+    createPlannerEntry,
+    updatePlannerEntry,
+    reorderPlannerEntries,
+    deletePlannerEntry,
   };
 }

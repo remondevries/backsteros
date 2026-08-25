@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-backsteros}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-backsteros}
+    volumes:
+      - cloud_core_pg:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-backsteros}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backsteros:
+    image: backsteros-cloud:latest
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-8788}
+      HOST: ${HOST:-0.0.0.0}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-backsteros}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-backsteros}
+      CORE_REPLICATION_ROLE: ${CORE_REPLICATION_ROLE:-cloud}
+      CORE_REPLICATION_PEER_URL: ${CORE_REPLICATION_PEER_URL:-}
+      CORE_REPLICATION_SECRET: ${CORE_REPLICATION_SECRET:?set CORE_REPLICATION_SECRET}
+      CORE_REPLICATION_WORKSPACE_IDS: ${CORE_REPLICATION_WORKSPACE_IDS:-}
+      CORE_REPLICATION_INTERVAL_MS: ${CORE_REPLICATION_INTERVAL_MS:-15000}
+      BACKSTEROS_VAULT_PATH: ${BACKSTEROS_VAULT_PATH:-/data/vault}
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN:-}
+      POWERSYNC_JWT_SECRET: ${POWERSYNC_JWT_SECRET:?set POWERSYNC_JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:8788}
+    ports:
+      - "8788:8788"
+    volumes:
+      - cloud_vault:/data/vault
+
+volumes:
+  cloud_core_pg:
+  cloud_vault:

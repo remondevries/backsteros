@@ -114,12 +114,14 @@ export function useFinanceCoreData({
     }
   }, [client]);
 
+  // Refresh core finance catalogs on mount / client change only — not on every
+  // finance route slug (dashboard ↔ cashflow ↔ account) to avoid redundant fetches.
   useEffect(() => {
     void refreshAccounts().catch(() => setAccounts([]));
     void refreshCategories().catch(() => setCategories([]));
     void refreshGoals().catch(() => setGoals([]));
     void refreshRecurrings().catch(() => setRecurrings([]));
-  }, [refreshAccounts, refreshCategories, refreshGoals, refreshRecurrings, slug]);
+  }, [refreshAccounts, refreshCategories, refreshGoals, refreshRecurrings]);
 
   useEffect(() => {
     if (slug) return;

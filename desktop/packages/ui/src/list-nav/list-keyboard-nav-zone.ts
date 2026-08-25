@@ -45,10 +45,23 @@ export function getDefaultListKeyboardNavZone(
   return "sidepanel";
 }
 
-/** Journal / Finance keep j/k on the side panel until the user presses Tab. */
+/** Journal / Finance / Calendar Timetracking keep j/k on the side panel until the user presses Tab. */
 export function shouldAutoSwitchJkToMainList(pathname: string): boolean {
   const path = pathname.replace(/\/+$/, "") || "/";
-  return !isJournalSectionPath(path) && !isFinanceSectionPath(path);
+  if (isJournalSectionPath(path) || isFinanceSectionPath(path)) {
+    return false;
+  }
+  if (path === "/calendar" || path.startsWith("/calendar/")) {
+    if (typeof document !== "undefined") {
+      const mode = document
+        .querySelector("[data-calendar-page-mode]")
+        ?.getAttribute("data-calendar-page-mode");
+      if (mode === "timetracking") {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 export function shouldHandleListKeyboardZoneTab(event: KeyboardEvent): boolean {

@@ -24,13 +24,23 @@
   padding-top: 0;
 }
 
-.bos-product-shell .content-tabs-bar {
+.bos-product-shell .content-tabs-bar,
+.bos-product-shell .content-tabs-bar-row {
   cursor: default;
   transition: padding-left 180ms ease;
 }
 
-.bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
+.bos-product-shell.is-sidebar-collapsed .content-tabs-bar-row {
   padding-left: var(--bos-traffic-light-inset);
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
+  /* Row carries the traffic-light inset; history + tabs share that space. */
+  padding-left: 0;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-history-toolbar {
+  padding-left: 0;
 }
 
 /* Native fullscreen hides traffic lights — use the same 8px gutter as the
@@ -44,15 +54,29 @@
   padding-left: var(--bos-fullscreen-chrome-inset);
 }
 
-.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
+  .content-tabs-bar-row {
   box-sizing: border-box;
   height: calc(44px + var(--bos-fullscreen-chrome-inset));
   padding: var(--bos-fullscreen-chrome-inset) var(--bos-fullscreen-chrome-inset)
     0;
 }
 
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {
+  height: 44px;
+  padding-left: 0;
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
+  .content-tabs-history-toolbar {
+  padding-left: 0;
+}
+
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
   .content-tabs-bar
+  .content-tab,
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
+  .content-tabs-bar-row
   .content-tab {
   margin-top: 0;
   margin-bottom: 0;
@@ -78,4 +102,10 @@
 .bos-product-shell [data-tauri-drag-region] [role="tab"],
 .bos-product-shell [data-tauri-drag-region] [role="menuitem"] {
   -webkit-app-region: no-drag;
+}
+
+.app-route-loading {
+  flex: 1;
+  min-height: 120px;
+  background: transparent;
 }

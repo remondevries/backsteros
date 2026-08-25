@@ -49,6 +49,30 @@ export function formatDueDateInputValue(
   return formatLocalYmd(date);
 }
 
+/**
+ * Local schedule stamp for dense lists: `YYYY-MM-DD @ HH:MM:SS`.
+ */
+export function formatDueDateTimeStamp(
+  dueDate: Date | number | string | null | undefined,
+): string {
+  if (dueDate == null) return "";
+
+  const date =
+    dueDate instanceof Date
+      ? dueDate
+      : typeof dueDate === "number"
+        ? new Date(dueDate)
+        : new Date(dueDate);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const ymd = formatLocalYmd(date);
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${ymd} @ ${hh}:${mm}:${ss}`;
+}
+
 export function parseDueDateInputValue(ymd: string): Date | null {
   return parseYmdLocal(ymd.trim().slice(0, 10));
 }

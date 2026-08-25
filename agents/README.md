@@ -1,61 +1,71 @@
 # BacksterOS Agents (VPS door)
 
-Small HTTPS-facing proxy deployed on a VPS so **Grok Bot agents** (Sander and others) can reach BacksterOS **core** over the public internet. Core stays on Remon's local computer; this service is a **door**, not a second BacksterOS.
+Small HTTPS-facing proxy on the VPS so **always-on agents** (Grok Bot, etc.) can
+reach BacksterOS **cloud-core** over the public internet — even when the laptop
+is asleep.
 
 ```text
-iOS / desktop  --localhost or Tailscale-->  core (:8788)
-Grok Bot       --HTTPS + scoped API key-->  VPS agents  --Tailscale-->  core
-AgentMail      --HTTPS webhook---------->  VPS agents  --Tailscale-->  core
+Always-on agents  --HTTPS + scoped API key-->  VPS agents door
+                                              --> cloud-core (:8788 on VPS)
+
+You / desktop / PTY  --localhost------------>  local-core (:8788 on Mac)
 ```
 
-- Same Postgres and write pipeline as core — requests are forwarded, not reimplemented.
-- Auth is unchanged for agent traffic: `Authorization: Bearer sk_live_…` keys issued by core.
-- AgentMail webhooks use Svix signatures (no Bearer key); core verifies `whsec_…` and notifies open shells.
-- iOS and desktop **do not** use this service for day-to-day API calls (they talk to core directly).
+This service is a **door**, not a second BacksterOS. Requests are forwarded;
+auth stays `Authorization: Bearer sk_live_…` (keys are replicated to cloud).
 
-## AgentMail inbound webhooks
+iOS and desktop **do not** use this door for day-to-day API calls.
 
-Register (or let core auto-register when `AGENTS_PUBLIC_URL` is set) a webhook that POSTs to:
+## Why cloud-core (not Mac Tailscale)
 
-```text
-https://<agents-host>/api/v1/webhooks/agentmail
+Pointing `CORE_UPSTREAM_URL` at the Mac (MagicDNS / `100.x`) breaks agents when
+the laptop sleeps. Production on the VPS must use **local cloud-core**:
+
+```bash
+CORE_UPSTREAM_URL=http://127.0.0.1:8788
 ```
 
-Core then emits `email.updated` over `GET /api/v1/email/events` so desktop/iOS refetch `GET /api/v1/email/messages`. This door only forwards the webhook — it does **not** fan out to devices.
+Public base URL for agents: `https://agent.backsteros.com/api/v1`.
 
 ## Allowed traffic
 
-All `/api/v1/*` routes are forwarded. Core enforces API key scopes (except the AgentMail webhook route, which is Svix-authenticated).
+All `/api/v1/*` routes are forwarded. Core enforces API key scopes (except the
+AgentMail webhook route, which is Svix-authenticated).
 
 Blocked at the door (never forwarded):
 
 - PowerSync / sync / ops
-- PTY sidecar (`/agent-pty`)
+- PTY sidecar (`/agent-pty`) — PTY stays local-only
 - API key admin (`/api-keys`)
 
-Attach a **contact** to each agent’s API key in Settings so comments and activity show that person.
+Attach a **contact** to each agent’s API key in Settings so comments and
+activity show that person.
 
-## Prerequisites
+## AgentMail inbound webhooks
 
-1. **Core** running on the local computer (`hub` → Start all, or `pnpm dev` in `core/server`).
-2. **Tailscale** on the VPS and on the machine running core, same tailnet.
-3. One **API key per agent** from core Settings, with a contact attached so activity is attributed to that person.
+Register (or let core auto-register when `AGENTS_PUBLIC_URL` is set) a webhook
+that POSTs to:
 
-Note the core MagicDNS name or `100.x` address, e.g. `http://macbook.tail1234.ts.net:8788`.
+```text
+https://agent.backsteros.com/api/v1/webhooks/agentmail
+```
+
+Core emits `email.updated` over `GET /api/v1/email/events` so desktop/iOS
+refetch messages. This door only forwards the webhook.
 
 ## Configure
 
 ```bash
 cd agents
 cp env.example .env
-# edit CORE_UPSTREAM_URL
+# edit CORE_UPSTREAM_URL — on VPS use http://127.0.0.1:8788
 ```
 
 | Variable | Description |
 | --- | --- |
-| `CORE_UPSTREAM_URL` | Tailscale URL to core (required), no trailing slash |
+| `CORE_UPSTREAM_URL` | Core API origin (required), no trailing slash. VPS: `http://127.0.0.1:8788` |
 | `PORT` | Listen port (default `3080`) |
-| `LISTEN_HOST` | Bind address (default `127.0.0.1`; Caddy on the VPS terminates TLS and proxies locally) |
+| `LISTEN_HOST` | Bind address (default `127.0.0.1`) |
 | `REQUEST_TIMEOUT_MS` | Upstream timeout (default `120000`) |
 
 ## Run locally (dev)
@@ -69,30 +79,19 @@ pnpm --filter @backsteros/agents dev
 
 Health: `GET http://127.0.0.1:3080/health`
 
-## Deploy on a VPS
+## Deploy on the VPS
 
-### 1. Tailscale
-
-Install Tailscale on the VPS and approve it on the tailnet. Confirm core is reachable:
-
-```bash
-curl -sS "http://YOUR-CORE-HOST:8788/health"
-```
-
-### 2. Run the proxy
-
-Build and run with systemd (or Docker). Example unit:
+1. Cloud-core container listening on `127.0.0.1:8788` (see `deploy/cloud/`).
+2. Build and run the proxy (systemd unit `backsteros-agents.service`):
 
 ```ini
 [Unit]
 Description=BacksterOS agents proxy
-After=network-online.target tailscaled.service
+After=network-online.target
 
 [Service]
-WorkingDirectory=/opt/backsteros/agents
-Environment=CORE_UPSTREAM_URL=http://YOUR-CORE-HOST:8788
-Environment=PORT=3080
-Environment=LISTEN_HOST=127.0.0.1
+WorkingDirectory=/srv/backsteros/agents
+EnvironmentFile=/srv/backsteros/agents/.env
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 
@@ -100,38 +99,28 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-Deploy steps on the VPS:
+`.env` on the VPS:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm --filter @backsteros/agents build
-pnpm --filter @backsteros/agents start
+CORE_UPSTREAM_URL=http://127.0.0.1:8788
+PORT=3080
+LISTEN_HOST=127.0.0.1
 ```
 
-Bind to `127.0.0.1` and terminate TLS in front (recommended).
-
-### 3. HTTPS (Caddy example)
-
-```caddy
-agents.example.com {
-  reverse_proxy 127.0.0.1:3080
-}
-```
-
-Point Grok Bot at `https://agents.example.com/api/v1/…` with the Bearer key.
+nginx terminates TLS for `agent.backsteros.com` → `127.0.0.1:3080`.
 
 ## Verify
 
 ```bash
-# Through the VPS public URL:
-curl -sS -H "Authorization: Bearer sk_live_…" \
-  "https://agents.example.com/api/v1/tasks?limit=1"
+# Door health (proxy itself)
+curl -sS "https://agent.backsteros.com/health"
 
-# Blocked route (expect 403 from proxy, not core):
-curl -sS -o /dev/null -w "%{http_code}\n" \
-  -H "Authorization: Bearer sk_live_…" \
-  "https://agents.example.com/api/v1/letters/LETTER_ID/pdf"
-# → 403
+# Through the door into cloud-core (expect 200 with a valid key)
+curl -sS -H "Authorization: Bearer sk_live_…" \
+  "https://agent.backsteros.com/api/v1/tasks?limit=1"
+
+# Confirm upstream is cloud, not Mac: on the VPS,
+# docker logs cloud-backsteros-1 --since 1m | grep '/api/v1/'
 ```
 
 ## Tests

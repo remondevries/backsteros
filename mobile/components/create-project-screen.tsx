@@ -1,6 +1,6 @@
 import type { Project } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { isPadDevice } from "../lib/device";
@@ -44,8 +44,6 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { TextInput } from "./app-text-input";
 import { DetailContentContainer } from "./detail-content-container";
-import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
-import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
@@ -77,14 +75,6 @@ type PickerKind =
   | "area"
   | "areaId"
   | null;
-
-type EditableProperty = {
-  key: string;
-  label: string;
-  value: string;
-  icon: ReactNode;
-  editable?: boolean;
-};
 
 type NamedOptionRow = { id: string; name: string | null };
 
@@ -314,136 +304,6 @@ export function CreateProjectScreen() {
   const resolvedKey = projectKey.trim() || projectKeyFromName(name);
   const percentLabel = "0%";
 
-  const allPropertyRows: EditableProperty[] = [
-    {
-      key: "key",
-      label: "Key",
-      value: resolvedKey || "—",
-      icon: <ProjectIcon size={14} />,
-    },
-    {
-      key: "status",
-      label: "Status",
-      value: getProjectStatusLabel(status),
-      icon: <ProjectStatusIcon status={status} size={14} />,
-    },
-    {
-      key: "priority",
-      label: "Priority",
-      value: getTaskPriorityLabel(priority),
-      icon: <TaskPriorityIcon priority={priority} size={14} />,
-    },
-    {
-      key: "type",
-      label: "Type",
-      value: getProjectTypeLabel(projectType),
-      icon: projectTypeIcon(projectType, 14),
-    },
-    {
-      key: "organization",
-      label: "Organization",
-      value: organizationLabel || "No organization",
-      icon: <OrganizationIcon size={14} />,
-    },
-    {
-      key: "start",
-      label: "Start date",
-      value: startLabel ?? "No start date",
-      icon: <TaskDueDateIcon active={Boolean(startLabel)} size={14} />,
-    },
-    {
-      key: "due",
-      label: "Due date",
-      value: dueLabel ?? "No due date",
-      icon: <TaskDueDateIcon active={Boolean(dueLabel)} size={14} />,
-    },
-    {
-      key: "progress",
-      label: "Progress",
-      value: percentLabel,
-      icon: <ProjectProgressRing progress={EMPTY_PROGRESS} size={14} />,
-      editable: false,
-    },
-    {
-      key: "area",
-      label: "Area",
-      value: area ? PROJECT_AREA_LABELS[area] : "No area",
-      icon: <ProjectIcon size={14} />,
-    },
-    ...(nestedAreasForParent.length > 0
-      ? [
-          {
-            key: "areaId",
-            label: "Sub-area",
-            value: selectedSubArea?.name ?? "No sub-area",
-            icon: <ProjectIcon size={14} />,
-          } satisfies EditableProperty,
-        ]
-      : []),
-  ];
-
-  const propertyChips = [
-    {
-      key: "status",
-      label: getProjectStatusLabel(status),
-      icon: <ProjectStatusIcon status={status} size={12} />,
-    },
-    ...(resolvedKey
-      ? [
-          {
-            key: "key",
-            label: resolvedKey,
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(projectType !== "general"
-      ? [
-          {
-            key: "type",
-            label: getProjectTypeLabel(projectType),
-            icon: projectTypeIcon(projectType, 12),
-          },
-        ]
-      : []),
-    ...(organizationLabel
-      ? [
-          {
-            key: "organization",
-            label: organizationLabel,
-            icon: <OrganizationIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(area
-      ? [
-          {
-            key: "area",
-            label: PROJECT_AREA_LABELS[area],
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(selectedSubArea
-      ? [
-          {
-            key: "areaId",
-            label: selectedSubArea.name,
-            icon: <ProjectIcon size={12} />,
-          },
-        ]
-      : []),
-    ...(dueLabel
-      ? [
-          {
-            key: "due",
-            label: dueLabel,
-            icon: <TaskDueDateIcon active size={12} />,
-          },
-        ]
-      : []),
-  ];
-
   const metaProperties: ProjectMetaField[] = [
     {
       key: "key",
@@ -505,7 +365,6 @@ export function CreateProjectScreen() {
       : []),
   ];
 
-  const embedPropertySheets = !useWide;
   const canCreate = name.trim().length > 0 && !saving;
 
   async function onCreate() {
@@ -546,7 +405,6 @@ export function CreateProjectScreen() {
   const propertySheets = (
     <>
       <PropertyTextSheet
-        embedded={embedPropertySheets}
         visible={picker === "key"}
         title="Project ID"
         value={resolvedKey}
@@ -563,7 +421,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "status"}
         title="Status"
         options={statusOptions}
@@ -575,7 +432,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "priority"}
         title="Priority"
         options={priorityOptions}
@@ -587,7 +443,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "type"}
         title="Type"
         options={typeOptions}
@@ -599,7 +454,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "organization"}
         title="Organization"
         options={organizationOptions}
@@ -611,7 +465,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "start"}
         title="Start date"
         options={dateOptions}
@@ -623,7 +476,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <DueDatePropertySheet
-        embedded={embedPropertySheets}
         visible={picker === "due"}
         title="Due date"
         selected={dueDate}
@@ -634,7 +486,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "area"}
         title="Area"
         options={areaOptions}
@@ -647,7 +498,6 @@ export function CreateProjectScreen() {
         onClose={() => setPicker(null)}
       />
       <PropertyOptionSheet
-        embedded={embedPropertySheets}
         visible={picker === "areaId"}
         title="Sub-area"
         options={subAreaOptions}
@@ -692,41 +542,21 @@ export function CreateProjectScreen() {
               returnKeyType="next"
               style={styles.titleInput}
             />
-            {useWide ? (
-              <TextInput
-                value={summary}
-                onChangeText={setSummary}
-                placeholder="Add a short summary…"
-                placeholderTextColor="rgba(237, 237, 237, 0.35)"
-                style={styles.summaryInput}
-              />
-            ) : null}
+            <TextInput
+              value={summary}
+              onChangeText={setSummary}
+              placeholder="Add a short summary…"
+              placeholderTextColor="rgba(237, 237, 237, 0.35)"
+              style={styles.summaryInput}
+            />
           </View>
 
-          {useWide ? (
-            <>
-              <ProjectOverviewMetaRows
-                properties={metaProperties}
-                areas={metaAreas}
-                onPressField={(key) => setPicker(key as PickerKind)}
-              />
-              {propertySheets}
-            </>
-          ) : (
-            <DetailPropertiesInlineShell
-              modalTitle="Project properties"
-              chips={propertyChips}
-              overlay={propertySheets}
-            >
-              <DetailPropertyEditorRows
-                rows={allPropertyRows}
-                onPressRow={(key) => {
-                  if (key === "progress") return;
-                  setPicker(key as PickerKind);
-                }}
-              />
-            </DetailPropertiesInlineShell>
-          )}
+          <ProjectOverviewMetaRows
+            properties={metaProperties}
+            areas={metaAreas}
+            onPressField={(key) => setPicker(key as PickerKind)}
+          />
+          {propertySheets}
 
           <Text style={ui.sectionHeader}>Description</Text>
           <View

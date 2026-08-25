@@ -27,6 +27,7 @@ import {
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
+  cashflowPlannerEntryInputSchema,
   listFinancialTransactionsQuerySchema,
   projectFsCreateEntrySchema,
   projectFsWriteFileSchema,
@@ -40,6 +41,7 @@ import {
   updateFinancialCategorySchema,
   updateFinancialGoalSchema,
   updateFinancialRecurringSchema,
+  updateCashflowPlannerEntrySchema,
   updateFinancialTransactionSchema,
   updateMoneybirdSettingsSchema,
   updateAgentMailSettingsSchema,
@@ -66,6 +68,7 @@ import {
   toFinancialCategory,
   toFinancialGoal,
   toFinancialRecurring,
+  toCashflowPlannerEntry,
   toFinancialImportBatch,
   toFinancialTransaction,
   toProject,
@@ -3875,6 +3878,55 @@ export function registerApiRoutes(app: Hono) {
     return row
       ? c.body(null, 204)
       : c.json(notFound("Financial recurring"), 404);
+  });
+
+  app.get("/api/v1/cashflow-planner-entries", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    const rows = await financeService.listCashflowPlannerEntries(
+      auth.workspaceId,
+    );
+    return c.json({ entries: rows.map(toCashflowPlannerEntry) });
+  });
+  app.post(
+    "/api/v1/cashflow-planner-entries",
+    zValidator("json", cashflowPlannerEntryInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.createCashflowPlannerEntry(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(toCashflowPlannerEntry(row), 201);
+    },
+  );
+  app.patch(
+    "/api/v1/cashflow-planner-entries/:id",
+    zValidator("json", updateCashflowPlannerEntrySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      const row = await financeService.updateCashflowPlannerEntry(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row
+        ? c.json(toCashflowPlannerEntry(row))
+        : c.json(notFound("Cashflow planner entry"), 404);
+    },
+  );
+  app.delete("/api/v1/cashflow-planner-entries/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+    const row = await financeService.deleteCashflowPlannerEntry(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row
+      ? c.body(null, 204)
+      : c.json(notFound("Cashflow planner entry"), 404);
   });
 
   const toListTransactionFilters = (

@@ -1,0 +1,23 @@
+# Client portal on backsteros server (nginx terminates TLS on host).
+# Env file: client-portal.env (not committed) — copy from client.lemo-design.com/.kamal/deploy-secrets
+#
+# BACKSTEROS_API_URL must use the cloud-core Docker service name (not 127.0.0.1 —
+# the portal container is on a separate network from the host loopback).
+
+services:
+  portal:
+    image: ghcr.io/lemo-design/client-lemo-design-portal:${PORTAL_IMAGE_TAG:-latest}
+    container_name: client-lemo-design-portal
+    restart: unless-stopped
+    env_file:
+      - client-portal.env
+    ports:
+      - "127.0.0.1:3010:3000"
+    networks:
+      - default
+      - cloud
+
+networks:
+  cloud:
+    external: true
+    name: cloud_default

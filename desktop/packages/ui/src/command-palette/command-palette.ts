@@ -167,6 +167,13 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     href: "/knowledge",
   },
   { id: "tasks", letter: "t", hint: "G T", label: "Tasks", href: "/tasks" },
+  {
+    id: "calendar",
+    letter: "m",
+    hint: "G M",
+    label: "Calendar",
+    href: "/calendar",
+  },
   { id: "areas", letter: "a", hint: "G A", label: "Areas", href: "/areas" },
   {
     id: "projects",

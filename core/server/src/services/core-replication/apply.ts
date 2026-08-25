@@ -3,10 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { db, sqlClient } from "../../db/index.js";
 import {
   apiKeys,
-  contacts,
   entityCounters,
-  tasks,
   users,
+  contacts,
   workspaceSettings,
   workspaces,
 } from "../../db/schema.js";
@@ -93,8 +92,15 @@ async function applyGenericRow(
 
   const columns = Object.keys(row).filter((key) => row[key] !== undefined);
   const colList = columns.map((col) => `"${col}"`).join(", ");
-  const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
-  const values = columns.map((col) => row[col]);
+  // postgres.js cannot bind plain JS arrays/objects as query params (they
+  // come from row_to_json / JSON transport for jsonb columns). Serialize and
+  // cast; text[] columns use dedicated apply paths (e.g. api_keys).
+  const placeholders = columns
+    .map((col, index) =>
+      isJsonBindValue(row[col]) ? `$${index + 1}::jsonb` : `$${index + 1}`,
+    )
+    .join(", ");
+  const values = columns.map((col) => serializeBindValue(row[col]));
   const pkConflict = spec.pk.map((col) => `"${col}"`).join(", ");
   const setClause = columns
     .filter((col) => !spec.pk.includes(col))
@@ -110,6 +116,22 @@ async function applyGenericRow(
   `;
   await sqlClient.unsafe(query, values as never[]);
   return "applied";
+}
+
+function isJsonBindValue(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !(value instanceof Date) &&
+    !Buffer.isBuffer(value)
+  );
+}
+
+function serializeBindValue(value: unknown): unknown {
+  if (isJsonBindValue(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
 }
 
 async function applyEntityCounterRow(
@@ -263,7 +285,7 @@ async function applyWorkspaceSettingsRow(
     .limit(1);
 
   const decision = shouldApplyByUpdatedAt(
-    "meeting_scheduling_settings",
+    "workspace_settings",
     localRole,
     remoteUpdatedAt,
     existing?.updatedAt ?? null,
@@ -289,78 +311,6 @@ async function applyWorkspaceSettingsRow(
   return "applied";
 }
 
-async function applyTaskRow(
-  row: ReplicationRow,
-  localRole: CoreReplicationRole,
-): Promise<"applied" | "skipped"> {
-  const remoteUpdatedAt = new Date(String(row.updated_at));
-  const id = String(row.id);
-  const [existing] = await db
-    .select({ updatedAt: tasks.updatedAt })
-    .from(tasks)
-    .where(eq(tasks.id, id))
-    .limit(1);
-
-  const decision = shouldApplyByUpdatedAt(
-    "tasks",
-    localRole,
-    remoteUpdatedAt,
-    existing?.updatedAt ?? null,
-  );
-  if (decision === "skip") {
-    return "skipped";
-  }
-
-  await db
-    .insert(tasks)
-    .values({
-      id,
-      workspaceId: String(row.workspace_id),
-      projectId: row.project_id ? String(row.project_id) : null,
-      contactId: row.contact_id ? String(row.contact_id) : null,
-      assigneeId: row.assignee_id ? String(row.assignee_id) : null,
-      number: Number(row.number),
-      title: String(row.title),
-      description: row.description ? String(row.description) : null,
-      status: String(row.status ?? "ready_to_start"),
-      priority: Number(row.priority ?? 0),
-      sortOrder: Number(row.sort_order ?? 0),
-      dueDate: row.due_date ? new Date(String(row.due_date)) : null,
-      triagedAt: row.triaged_at ? new Date(String(row.triaged_at)) : null,
-      inbox: Boolean(row.inbox),
-      links: (row.links ?? []) as { id: string; url: string; createdAt: string }[],
-      agentChatId: row.agent_chat_id ? String(row.agent_chat_id) : null,
-      habitId: row.habit_id ? String(row.habit_id) : null,
-      legacySource: row.legacy_source ? String(row.legacy_source) : null,
-      completedAt: row.completed_at ? new Date(String(row.completed_at)) : null,
-      agentCreatedAt: row.agent_created_at
-        ? new Date(String(row.agent_created_at))
-        : null,
-      agentInboxApprovedAt: row.agent_inbox_approved_at
-        ? new Date(String(row.agent_inbox_approved_at))
-        : null,
-      createdAt: new Date(String(row.created_at)),
-      updatedAt: remoteUpdatedAt,
-      deletedAt: row.deleted_at ? new Date(String(row.deleted_at)) : null,
-    })
-    .onConflictDoUpdate({
-      target: tasks.id,
-      set: {
-        title: String(row.title),
-        description: row.description ? String(row.description) : null,
-        status: String(row.status ?? "ready_to_start"),
-        priority: Number(row.priority ?? 0),
-        sortOrder: Number(row.sort_order ?? 0),
-        dueDate: row.due_date ? new Date(String(row.due_date)) : null,
-        legacySource: row.legacy_source ? String(row.legacy_source) : null,
-        updatedAt: remoteUpdatedAt,
-        deletedAt: row.deleted_at ? new Date(String(row.deleted_at)) : null,
-      },
-    });
-
-  return "applied";
-}
-
 async function applyRow(
   table: KnownTable,
   row: ReplicationRow,
@@ -381,8 +331,6 @@ async function applyRow(
       return applyEntityCounterRow(row);
     case "api_keys":
       return applyApiKeyRow(row, localRole);
-    case "tasks":
-      return applyTaskRow(row, localRole);
     default:
       return applyGenericRow(spec, row, localRole);
   }

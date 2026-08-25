@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Area as ApiArea,
   Contact as ApiContact,
@@ -15,6 +15,9 @@ import type { BacksterosApiClient } from "@backsteros/api-client";
 import { createRequestAbortSignal } from "../request-timeout";
 import { preservePendingApiRows } from "../merge-local-and-api";
 import type { WorkspacePowerSync } from "./workspace-data-types";
+
+/** Soft-revalidate REST lists at most this often after sync checkpoints. */
+const REST_SOFT_REVALIDATE_DEBOUNCE_MS = 3_000;
 
 /**
  * REST-hydrated row caches for the workspace snapshot, plus the settle flags
@@ -81,34 +84,49 @@ export function useWorkspaceApiRows({
   }, [authenticated]);
 
   const syncEpoch = powerSync.lastSyncedAt?.getTime() ?? 0;
+  const hasHydratedOnceRef = useRef(false);
+  const softRevalidateTimerRef = useRef<number | null>(null);
 
   // Always hydrate lists from REST when signed in. PowerSync remains the
   // primary merge source once local rows exist, but packaged desktop builds
   // can be "ready" with an empty SQLite if the sync stream never connects
   // (e.g. Tailscale PowerSync endpoint from WKWebView) — without this, Projects
   // / Tasks / Inbox stay empty even though core has data.
+  //
+  // Wave 1: tasks / inbox / projects → flips restHydrateSettled early.
+  // Wave 2: remaining entities via requestIdleCallback so cold start is not a
+  // 10-endpoint storm. Later sync checkpoints → debounced soft revalidate.
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated) {
+      hasHydratedOnceRef.current = false;
+      return;
+    }
+
     let cancelled = false;
+    let wave2IdleId: number | null = null;
+    let wave2TimeoutId: number | null = null;
     const signal = createRequestAbortSignal();
-    const markHydrated = () => {
-      setApiDocuments((current) => current ?? []);
+
+    const markWave1Hydrated = () => {
       setApiTasks((current) => current ?? []);
       setApiInboxTasks((current) => current ?? []);
       setApiProjects((current) => current ?? []);
+    };
+
+    const markWave2Hydrated = () => {
+      setApiDocuments((current) => current ?? []);
       setApiAreas((current) => current ?? []);
       setApiOrganizations((current) => current ?? []);
       setApiContacts((current) => current ?? []);
       setApiLetters((current) => current ?? []);
       setApiHabits((current) => current ?? []);
+      setApiMeetings((current) => current ?? []);
     };
-    void (async () => {
+
+    const runWave2 = async () => {
       try {
         const [
           documentsBody,
-          tasksBody,
-          inboxTasksBody,
-          projectsBody,
           areasBody,
           orgsBody,
           contactsBody,
@@ -118,13 +136,6 @@ export function useWorkspaceApiRows({
             "/api/v1/documents",
             { signal },
           ),
-          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks", { signal }),
-          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox", {
-            signal,
-          }),
-          client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects", {
-            signal,
-          }),
           client.requestJson<{ areas: ApiArea[] }>("/api/v1/areas", { signal }),
           client.requestJson<{ organizations: ApiOrganization[] }>(
             "/api/v1/organizations",
@@ -139,9 +150,6 @@ export function useWorkspaceApiRows({
         ]);
         if (cancelled) return;
         setApiDocuments(documentsBody.documents);
-        setApiTasks(tasksBody.tasks);
-        setApiInboxTasks(inboxTasksBody.tasks);
-        setApiProjects(projectsBody.projects);
         setApiAreas(areasBody.areas);
         setApiOrganizations(orgsBody.organizations);
         setApiContacts(contactsBody.contacts);
@@ -150,7 +158,7 @@ export function useWorkspaceApiRows({
         );
       } catch {
         if (cancelled) return;
-        markHydrated();
+        markWave2Hydrated();
       }
 
       try {
@@ -160,10 +168,9 @@ export function useWorkspaceApiRows({
         );
         if (cancelled) return;
         setApiHabits(habitsBody.habits);
-        const meetingsBody = await client.requestJson<{ meetings: ApiMeeting[] }>(
-          "/api/v1/meetings",
-          { signal },
-        );
+        const meetingsBody = await client.requestJson<{
+          meetings: ApiMeeting[];
+        }>("/api/v1/meetings", { signal });
         if (cancelled) return;
         setApiMeetings(meetingsBody.meetings);
         const tasksAfterHabits = await client.requestJson<{
@@ -177,13 +184,85 @@ export function useWorkspaceApiRows({
         setApiMeetings((current) => current ?? []);
       } finally {
         if (!cancelled) {
-          markHydrated();
-          setRestHydrateSettled(true);
+          markWave2Hydrated();
         }
       }
-    })();
+    };
+
+    const scheduleWave2 = () => {
+      const start = () => {
+        if (cancelled) return;
+        void runWave2();
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        wave2IdleId = window.requestIdleCallback(start, { timeout: 1_500 });
+      } else {
+        wave2TimeoutId = window.setTimeout(start, 0);
+      }
+    };
+
+    const runHydrate = async () => {
+      try {
+        const [tasksBody, inboxTasksBody, projectsBody] = await Promise.all([
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks", { signal }),
+          client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks/inbox", {
+            signal,
+          }),
+          client.requestJson<{ projects: ApiProject[] }>("/api/v1/projects", {
+            signal,
+          }),
+        ]);
+        if (cancelled) return;
+        setApiTasks(tasksBody.tasks);
+        setApiInboxTasks(inboxTasksBody.tasks);
+        setApiProjects(projectsBody.projects);
+      } catch {
+        if (cancelled) return;
+        markWave1Hydrated();
+      } finally {
+        if (!cancelled) {
+          markWave1Hydrated();
+          setRestHydrateSettled(true);
+          hasHydratedOnceRef.current = true;
+          scheduleWave2();
+        }
+      }
+    };
+
+    const clearWave2Schedule = () => {
+      if (wave2IdleId != null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(wave2IdleId);
+        wave2IdleId = null;
+      }
+      if (wave2TimeoutId != null) {
+        window.clearTimeout(wave2TimeoutId);
+        wave2TimeoutId = null;
+      }
+    };
+
+    if (!hasHydratedOnceRef.current) {
+      void runHydrate();
+      return () => {
+        cancelled = true;
+        clearWave2Schedule();
+      };
+    }
+
+    if (softRevalidateTimerRef.current != null) {
+      window.clearTimeout(softRevalidateTimerRef.current);
+    }
+    softRevalidateTimerRef.current = window.setTimeout(() => {
+      softRevalidateTimerRef.current = null;
+      void runHydrate();
+    }, REST_SOFT_REVALIDATE_DEBOUNCE_MS);
+
     return () => {
       cancelled = true;
+      clearWave2Schedule();
+      if (softRevalidateTimerRef.current != null) {
+        window.clearTimeout(softRevalidateTimerRef.current);
+        softRevalidateTimerRef.current = null;
+      }
     };
   }, [authenticated, client, syncEpoch]);
 

@@ -7,7 +7,8 @@
 
 .inbox-list-item-title {
   min-width: 0;
-  flex: 0 1 auto;
+  /* Match `.app-side-panel-item-label` so the title consumes remaining row width. */
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -142,12 +143,6 @@
 .email-side-panel-concept-label {
   color: rgb(196 160 70);
   font-weight: 600;
-}
-
-.email-side-panel-title-stack {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
 }
 
 .email-side-panel-primary--with-stack {

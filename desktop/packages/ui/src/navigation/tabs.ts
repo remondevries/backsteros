@@ -32,6 +32,41 @@ export function normalizeTabHref(href: string): string {
   return path!.replace(/\/+$/, "") || "/";
 }
 
+/**
+ * Query keys worth keeping on a product tab when returning to Calendar.
+ * Ephemeral overlay ids (`task`, `meeting`) are intentionally omitted.
+ */
+const CALENDAR_TAB_SEARCH_KEYS = [
+  "mode",
+  "view",
+  "date",
+  "week",
+  "month",
+] as const;
+
+/**
+ * Build the href stored on a product tab. Most routes are pathname-only;
+ * `/calendar` keeps mode / view / Timetracking period so tab switches restore
+ * Calendar vs Timetracking vs Availability.
+ */
+export function buildProductTabHref(pathname: string, search = ""): string {
+  const path = normalizeTabHref(pathname);
+  if (path !== "/calendar") {
+    return path;
+  }
+
+  const params = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  const next = new URLSearchParams();
+  for (const key of CALENDAR_TAB_SEARCH_KEYS) {
+    const value = params.get(key)?.trim();
+    if (value) next.set(key, value);
+  }
+  const query = next.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 /** Display slugs like `in-8` / `abc-12` — OK as interim tab labels. */
 function isDisplayEntitySlug(segment: string): boolean {
   return /^[a-z][a-z0-9]*-\d+$/i.test(segment);
@@ -126,14 +161,17 @@ export function resolveTabNavIconId(
 }
 
 export function createProductTab(href: string, title?: string): ProductTab {
-  const normalized = normalizeTabHref(href);
+  const path = normalizeTabHref(href);
+  const queryIndex = href.indexOf("?");
+  const search = queryIndex >= 0 ? href.slice(queryIndex) : "";
+  const storedHref = buildProductTabHref(path, search);
   return {
     id:
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    href: normalized,
-    title: title ?? getTabTitleForHref(normalized),
+    href: storedHref,
+    title: title ?? getTabTitleForHref(path),
   };
 }
 
@@ -145,24 +183,37 @@ export function createDefaultTabsState(pathname: string): ProductTabsState {
 export function syncActiveTabToPath(
   state: ProductTabsState,
   pathname: string,
+  search = "",
 ): ProductTabsState {
-  const normalized = normalizeTabHref(pathname);
+  const pathOnly = normalizeTabHref(pathname);
+  const href = buildProductTabHref(pathname, search);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   if (!activeTab) {
     return state;
   }
 
+  const activePath = normalizeTabHref(activeTab.href);
+
   // Same path: still apply a primed entity title so a tab that was left on a
   // generic "Projects"/"Project" label catches up when the name is known.
-  if (activeTab.href === normalized) {
-    const primed = getPrimedTabTitle(normalized);
-    if (!primed || activeTab.title === primed) {
+  // Also refresh calendar query (mode/view/period) when it changes in-place.
+  if (activePath === pathOnly) {
+    const primed = getPrimedTabTitle(pathOnly);
+    const hrefChanged = activeTab.href !== href;
+    const titleChanged = Boolean(primed && activeTab.title !== primed);
+    if (!hrefChanged && !titleChanged) {
       return state;
     }
     return {
       ...state,
       tabs: state.tabs.map((tab) =>
-        tab.id === state.activeTabId ? { ...tab, title: primed } : tab,
+        tab.id === state.activeTabId
+          ? {
+              ...tab,
+              href,
+              title: primed && titleChanged ? primed : tab.title,
+            }
+          : tab,
       ),
     };
   }
@@ -173,8 +224,8 @@ export function syncActiveTabToPath(
       tab.id === state.activeTabId
         ? {
             ...tab,
-            href: normalized,
-            title: getTabTitleForHref(normalized),
+            href,
+            title: getTabTitleForHref(pathOnly),
             icon: undefined,
             // Cleared until the shell resolves live task meta for the new route.
             taskId: undefined,
