@@ -1,6 +1,6 @@
 import Svg, { Path } from "react-native-svg";
 
-import type { MobileFinanceSectionId } from "../lib/finance-sections";
+import type { MobileFinanceSectionId } from "../../lib/finance-sections";
 
 type IconProps = {
   color: string;

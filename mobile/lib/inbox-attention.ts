@@ -195,10 +195,18 @@ export function pickIdAfterRemoving(
 }
 
 /** Flat visual order matching attention-grouped inbox sections. */
-export function flattenInboxAttentionOrder<T extends { id: string }>(
-  rows: readonly T[],
-  referenceDate: Date = new Date(),
-): T[] {
+export function flattenInboxAttentionOrder<
+  T extends {
+    id: string;
+    inbox?: boolean | number | null;
+    status?: string | null;
+    due_date?: string | null;
+    agent_created_at?: string | null;
+    agentCreatedAt?: string | number | null;
+    agent_inbox_approved_at?: string | null;
+    agentInboxApprovedAt?: string | number | null;
+  },
+>(rows: readonly T[], referenceDate: Date = new Date()): T[] {
   return groupInboxRowsByAttentionStatus(rows, referenceDate).flatMap(
     (group) => group.data,
   );
