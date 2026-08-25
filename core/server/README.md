@@ -55,6 +55,22 @@ Workspace Cursor API keys live in `workspace_integration_secrets` (not PowerSync
 Configure via `GET`/`PATCH /api/v1/settings/cursor` and run rewrite with
 `POST /api/v1/ai/spellcheck` (uses `@cursor/sdk` on the server).
 
+## Core replication (local ↔ cloud)
+
+When pairing a laptop core with a VPS cloud-core, set `CORE_REPLICATION_*` on **both**
+sides. The peer URL must reach the **other core** over Tailscale or localhost — not
+`https://agent.backsteros.com` (the agents HTTPS door blocks `/internal/*`).
+
+Cloud-core must bind `HOST=127.0.0.1` or a Tailscale address (not `0.0.0.0`) while
+replication is enabled. One-time pairing:
+
+```bash
+pnpm --filter @backsteros/server replication:bootstrap
+```
+
+Live sync covers `meeting_scheduling_settings`, `meetings`, calendar-busy `tasks`,
+and `api_keys` (same `sk_live_` hash rows on both cores).
+
 ## Local vault (Obsidian-style)
 
 Markdown bodies and letter PDFs are stored on disk under a vault root — not

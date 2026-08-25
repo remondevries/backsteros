@@ -1,41 +1,33 @@
-import type { ReplicatedTable } from "./constants.js";
-
 export type ReplicationCursor = {
   updatedAt: string;
   rowId: string;
 };
 
-export type ApiKeyReplicationRow = {
-  id: string;
-  workspaceId: string;
-  userId: string | null;
-  name: string;
-  prefix: string;
-  keyHash: string;
-  scopes: string[];
-  contactId: string | null;
-  createdAt: string;
-  revokedAt: string | null;
-  updatedAt: string;
-};
+/** Generic replicated row — snake_case keys match Postgres columns. */
+export type ReplicationRow = Record<string, unknown>;
 
 export type ReplicationChange = {
-  table: ReplicatedTable;
-  row: ApiKeyReplicationRow;
+  table: string;
+  row: ReplicationRow;
 };
 
 export type ReplicationChangesResponse = {
-  table: ReplicatedTable;
+  table: string;
   changes: ReplicationChange[];
   cursor: ReplicationCursor;
 };
 
 export type ReplicationApplyRequest = {
-  table: ReplicatedTable;
+  table: string;
   changes: ReplicationChange[];
 };
 
 export type ReplicationApplyResponse = {
   applied: number;
   skipped: number;
+};
+
+export type BootstrapResponse = {
+  table: string;
+  changes: ReplicationChange[];
 };

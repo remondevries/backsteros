@@ -1,18 +1,17 @@
 /**
  * One-shot bootstrap: copy BOOTSTRAP_TABLES rows from the peer core into this
- * database. Run on both sides once when pairing local-core and cloud-core.
- *
- * Previously only the Meetings portal key was copied; api_keys now replicates
- * all rows and stays in lockstep via the live worker (REPLICATED_TABLES).
+ * database. Peer must be the other core directly (Tailscale / localhost) — not
+ * the agents HTTPS door.
  */
 import { getCoreReplicationConfig } from "../services/core-replication/config.js";
 import { BOOTSTRAP_TABLES } from "../services/core-replication/constants.js";
-import { bootstrapTableFromPeer } from "../services/core-replication/sync.js";
-import { isImplementedReplicatedTable } from "../services/core-replication/tables.js";
+import { bootstrapTableFromPeer } from "../services/core-replication/apply.js";
+import { listActiveBootstrapTables } from "../services/core-replication/fetch.js";
+import { tableExists } from "../services/core-replication/cursors.js";
 import type { ReplicationChange } from "../services/core-replication/types.js";
 
 async function fetchPeerBootstrapRows(
-  table: (typeof BOOTSTRAP_TABLES)[number],
+  table: string,
 ): Promise<ReplicationChange[]> {
   const config = getCoreReplicationConfig();
   if (!config) {
@@ -21,8 +20,8 @@ async function fetchPeerBootstrapRows(
     );
   }
 
-  if (!isImplementedReplicatedTable(table)) {
-    console.log(`skip ${table} (no handler in this core build)`);
+  if (!(await tableExists(table))) {
+    console.log(`skip ${table} (table not present on this core)`);
     return [];
   }
 
@@ -46,19 +45,18 @@ async function main() {
   const config = getCoreReplicationConfig();
   if (!config) {
     console.error(
-      "Set CORE_REPLICATION_PEER_URL and CORE_REPLICATION_SECRET before running bootstrap.",
+      "Set CORE_REPLICATION_PEER_URL (other core Tailscale/localhost URL — not agent.backsteros.com) " +
+        "and CORE_REPLICATION_SECRET before running bootstrap.",
     );
     process.exit(1);
   }
 
   console.log(`Bootstrapping from peer ${config.peerUrl} (${config.role})`);
 
-  for (const table of BOOTSTRAP_TABLES) {
-    if (!isImplementedReplicatedTable(table)) {
-      console.log(`skip ${table} (not implemented on this core)`);
-      continue;
-    }
+  const activeTables = await listActiveBootstrapTables();
+  const ordered = BOOTSTRAP_TABLES.filter((table) => activeTables.includes(table));
 
+  for (const table of ordered) {
     const changes = await fetchPeerBootstrapRows(table);
     const result = await bootstrapTableFromPeer(table, changes);
     console.log(
