@@ -19,6 +19,7 @@
     "db:powersync-verify": "tsx --env-file=.env src/db/powersync-verify.ts",
     "db:powersync-token": "tsx --env-file=.env src/db/powersync-token.ts",
     "db:seed": "tsx --env-file=.env src/db/seed.ts",
+    "replication:bootstrap": "tsx --env-file=.env src/scripts/replication-bootstrap.ts",
     "postinstall": "node ./scripts/whoop/build-totem.mjs"
   },
   "dependencies": {
