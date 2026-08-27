@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+} from "@tanstack/react-router";
 
 import {
   RegisterEntityDeleteAction,
@@ -30,6 +34,7 @@ import {
   type TaskSpellcheckAppliedPayload,
 } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -43,6 +48,7 @@ import {
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { parseTaskLinks } from "../lib/workspace/row-mappers";
 
 export type TaskDetailPageProps = {
   taskRouteParam?: string;
@@ -64,8 +70,7 @@ function taskMatchesRouteParam(
     contactId?: string | null;
     contactKey?: string | null;
   },
-  routeParam: string | undefined,
-): boolean {
+  routeParam: string | undefined): boolean {
   if (!routeParam) return false;
   if (entry.id === routeParam) return true;
 
@@ -76,8 +81,7 @@ function taskMatchesRouteParam(
       projectId: entry.projectId,
       contactId: entry.contactId,
     },
-    entry.projectKey ?? entry.contactKey,
-  );
+    entry.projectKey ?? entry.contactKey);
   if (displayId?.toLowerCase() === normalized) return true;
 
   const slug = getInboxTaskRouteSlugForTask({
@@ -112,11 +116,13 @@ export function TaskDetailPage({
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { taskId, taskSlug, dueFilter: dueFilterParam } = useParams<{
+  const { taskId, taskSlug, dueFilter: dueFilterParam } = useParams({
+    strict: false,
+  }) as {
     taskId?: string;
     taskSlug?: string;
     dueFilter?: string;
-  }>();
+  };
   const routeParam = taskRouteParam ?? taskSlug ?? taskId;
   const dueFilter: TasksDueFilter | null =
     dueFilterParam && isTasksDueFilter(dueFilterParam) ? dueFilterParam : null;
@@ -128,12 +134,10 @@ export function TaskDetailPage({
   const agentMail = useAgentMail();
   const documentLinkOptions = useMemo(
     () => buildDocumentLinkOptions(documents),
-    [documents],
-  );
+    [documents]);
   const emailLinkOptions = useMemo(
     () => buildEmailLinkOptions(agentMail.messages),
-    [agentMail.messages],
-  );
+    [agentMail.messages]);
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
   const spellcheckNonceRef = useRef(0);
@@ -144,12 +148,10 @@ export function TaskDetailPage({
     (payload: TaskSpellcheckAppliedPayload) => {
       const titleSegments = buildSpellcheckSegments(
         payload.beforeTitle,
-        payload.afterTitle,
-      );
+        payload.afterTitle);
       const descriptionSegments = buildSpellcheckSegments(
         payload.beforeDescription,
-        payload.afterDescription,
-      );
+        payload.afterDescription);
       if (
         !spellcheckHasChanges(titleSegments) &&
         !spellcheckHasChanges(descriptionSegments)
@@ -166,8 +168,7 @@ export function TaskDetailPage({
         nonce: spellcheckNonceRef.current,
       });
     },
-    [],
-  );
+    []);
 
   const matchedByRoute =
     allTasks.find((entry) => {
@@ -179,8 +180,7 @@ export function TaskDetailPage({
           ...entry,
           contactKey: contact?.key ?? null,
         },
-        routeParam,
-      );
+        routeParam);
     }) ?? null;
 
   if (matchedByRoute) {
@@ -196,8 +196,7 @@ export function TaskDetailPage({
   useEnsureProjectVault(base?.projectId);
 
   const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
-    base?.id ?? "",
-  );
+    base?.id ?? "");
 
   const applySpellcheckComposition = useCallback(
     async (session: TaskSpellcheckHighlight) => {
@@ -207,8 +206,7 @@ export function TaskDetailPage({
         description: composeSpellcheckText(session.descriptionSegments),
       });
     },
-    [base, workspace],
-  );
+    [base, workspace]);
 
   const onToggleSpellcheckTitleSegment = useCallback(
     (segmentId: string) => {
@@ -218,15 +216,13 @@ export function TaskDetailPage({
           ...current,
           titleSegments: toggleSpellcheckSegment(
             current.titleSegments,
-            segmentId,
-          ),
+            segmentId),
         };
         void applySpellcheckComposition(next);
         return next;
       });
     },
-    [applySpellcheckComposition],
-  );
+    [applySpellcheckComposition]);
 
   const onToggleSpellcheckDescriptionSegment = useCallback(
     (segmentId: string) => {
@@ -236,15 +232,13 @@ export function TaskDetailPage({
           ...current,
           descriptionSegments: toggleSpellcheckSegment(
             current.descriptionSegments,
-            segmentId,
-          ),
+            segmentId),
         };
         void applySpellcheckComposition(next);
         return next;
       });
     },
-    [applySpellcheckComposition],
-  );
+    [applySpellcheckComposition]);
 
   const onSpellcheckReset = useCallback(() => {
     const session = spellcheckHighlight;
@@ -273,10 +267,8 @@ export function TaskDetailPage({
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
-        withAvatarSrc(contacts, contactAvatarSrc),
-      ),
-    [contactAvatarSrc, contacts],
-  );
+        withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts]);
 
   const projectOptions = useMemo(
     () =>
@@ -286,10 +278,8 @@ export function TaskDetailPage({
           name: project.name,
           icon: project.icon,
           type: project.type,
-        })),
-      ),
-    [projects],
-  );
+        }))),
+    [projects]);
 
   const task = useMemo(() => {
     if (!base) return null;
@@ -306,16 +296,15 @@ export function TaskDetailPage({
       projectKey: resolvedProjectKey,
       projectName: project?.name ?? base.projectName ?? null,
       description: workspace.taskDescriptions[base.id] ?? "",
-      links: workspace.taskLinks[base.id] ?? [],
+      links: parseTaskLinks(workspace.taskDetails[base.id]?.links),
       displayId: getTaskDisplayId(
         {
           number: base.number,
           projectId: base.projectId,
         },
-        base.projectKey,
-      ),
+        base.projectKey),
     };
-  }, [base, contacts, projects, workspace.taskDescriptions, workspace.taskLinks]);
+  }, [base, contacts, projects, workspace.taskDescriptions, workspace.taskDetails]);
 
   const taskLabel = task
     ? task.displayId
@@ -358,7 +347,7 @@ export function TaskDetailPage({
     }
     try {
       await workspace.softDeleteTask(base.id);
-      navigate(backHref, { replace: true });
+      navigateToHref(navigate, backHref, { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -380,14 +369,14 @@ export function TaskDetailPage({
       const contact = base.contactId
         ? (contacts.find((entry) => entry.id === base.contactId) ?? null)
         : null;
-      navigate(
+      navigateToHref(
+        navigate,
         resolveDuplicatedTaskHref({
           id: created.id,
           number: created.number,
           projectKey: project?.key ?? base.projectKey ?? null,
           contactKey: contact?.key ?? null,
-        }),
-      );
+        }));
       return { ok: true as const };
     } catch (error) {
       return {
@@ -406,7 +395,7 @@ export function TaskDetailPage({
       <div className="inbox-detail-layout">
         <div className="inbox-detail-empty">
           <p>Task not found.</p>
-          <button type="button" onClick={() => navigate(backHref)}>
+          <button type="button" onClick={() => navigateToHref(navigate, backHref)}>
             Back to tasks
           </button>
         </div>
@@ -452,8 +441,7 @@ export function TaskDetailPage({
       : null;
     const nextOrganization = nextProject?.organizationId
       ? (organizations.find(
-          (entry) => entry.id === nextProject.organizationId,
-        ) ?? null)
+          (entry) => entry.id === nextProject.organizationId) ?? null)
       : null;
     const redirectBase = {
       taskId: task.id,
@@ -465,8 +453,7 @@ export function TaskDetailPage({
           ? String(
               nextOrganization.number ??
                 nextOrganization.key ??
-                nextOrganization.id,
-            )
+                nextOrganization.id)
           : null
         : undefined,
     } as const;
@@ -480,7 +467,7 @@ export function TaskDetailPage({
       routeLeaf: nextProject ? "task-id" : "display-slug",
     });
     if (interimPath !== location.pathname) {
-      navigate(interimPath, { replace: true });
+      navigateToHref(navigate, interimPath, { replace: true });
     }
 
     void workspace
@@ -497,7 +484,9 @@ export function TaskDetailPage({
           routeLeaf: "display-slug",
         });
         if (prettyPath !== interimPath) {
-          navigate(prettyPath, { replace: true });
+          navigateToHref(navigate, prettyPath, {
+            replace: true,
+          });
         }
       });
   };
@@ -544,8 +533,7 @@ export function TaskDetailPage({
           number: base?.number ?? task.number ?? null,
           projectId: project?.id ?? base?.projectId ?? null,
         },
-        task.projectKey,
-      ),
+        task.projectKey),
     workingDirectory,
   };
 
@@ -595,7 +583,7 @@ export function TaskDetailPage({
           documentLinkOptions={documentLinkOptions}
           emailLinkOptions={emailLinkOptions}
           onNavigateLink={(href) => {
-            navigate(href);
+            navigateToHref(navigate, href);
           }}
           onUploadImages={onUploadImages}
           resolveImageSrc={resolveImageSrc}

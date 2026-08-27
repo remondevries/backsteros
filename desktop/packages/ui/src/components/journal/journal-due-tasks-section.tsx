@@ -27,6 +27,7 @@ import {
   type TaskItemRowTask,
 } from "../tasks/task-item-row.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { isHabitLinkedTask } from "../../journal/journal-day-tasks.js";
 
 export type JournalDayListMode = "tasks" | "habits";
 
@@ -37,7 +38,16 @@ const JOURNAL_DAY_LIST_OPTIONS = [
 
 export type JournalDueTasksSectionProps = {
   dateSlug: string;
+  /**
+   * Workspace tasks. Used for column-width defaults and, unless `dueTasks` is
+   * provided, filtered to this journal date.
+   */
   tasks: TaskItemRowTask[];
+  /**
+   * Prefiltered non-habit tasks due on this date. When set, skips re-scanning
+   * `tasks` with timezone YMD conversion.
+   */
+  dueTasks?: TaskItemRowTask[];
   /** Habit day instances due on this journal date (shown under the Habits tab). */
   habits?: readonly JournalHabitDayItem[];
   isLoading?: boolean;
@@ -53,12 +63,7 @@ export type JournalDueTasksSectionProps = {
   taskIdColumnCh?: number;
 };
 
-/** Habit day instances are synced as tasks but shown separately on journal days. */
-export function isHabitLinkedTask(task: {
-  habitId?: string | null;
-}): boolean {
-  return Boolean(task.habitId && String(task.habitId).trim());
-}
+export { isHabitLinkedTask } from "../../journal/journal-day-tasks.js";
 
 /** Tasks whose due calendar date matches the journal entry `YYYY-MM-DD`. */
 export function filterTasksDueOnJournalDate<
@@ -72,6 +77,7 @@ export function filterTasksDueOnJournalDate<
 export function JournalDueTasksSection({
   dateSlug,
   tasks: allTasks,
+  dueTasks: dueTasksProp,
   habits = [],
   isLoading = false,
   calendarTimeZone,
@@ -83,12 +89,13 @@ export function JournalDueTasksSection({
   const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
   const tasks = useMemo(
     () =>
+      dueTasksProp ??
       filterTasksDueOnJournalDate(
         allTasks,
         dateSlug,
         calendarTimeZone,
       ).filter((task) => !isHabitLinkedTask(task)),
-    [allTasks, calendarTimeZone, dateSlug],
+    [allTasks, calendarTimeZone, dateSlug, dueTasksProp],
   );
   const taskIdColumnCh = useMemo(
     () => taskIdColumnChProp ?? computeTaskDisplayIdColumnCh(allTasks),

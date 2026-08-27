@@ -314,7 +314,15 @@ export function useAgentSendControls({
       appendMessage("user", text || "(image)", undefined, { images });
       schedulePersistLiveTurnTimeline();
       if (autoMarkInProgress) {
-        void markTaskInProgressForAgent(client, taskId);
+        void markTaskInProgressForAgent(
+          client,
+          taskId,
+          patchTaskValues
+            ? async (_id, values) => {
+                await patchTaskValues(values);
+              }
+            : undefined,
+        );
       }
       const imagePayload = images
         .filter((image) => image.dataBase64)

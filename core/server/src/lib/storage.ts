@@ -65,8 +65,16 @@ function envVaultPath(): string | null {
   return value || null;
 }
 
+/** cloud-core must use BACKSTEROS_VAULT_PATH — never a laptop path replicated via settings. */
+export function isCloudCoreVaultHost(): boolean {
+  return process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud";
+}
+
 /** True when a local vault path is configured (cache or env). */
 export function isStorageConfigured(): boolean {
+  if (isCloudCoreVaultHost()) {
+    return Boolean(envVaultPath());
+  }
   return Boolean(vaultPathCache || envVaultPath());
 }
 
@@ -78,6 +86,16 @@ export function isSpacesConfigured(): boolean {
 export async function resolveVaultPath(
   settingsVaultPath?: string | null,
 ): Promise<string> {
+  if (isCloudCoreVaultHost()) {
+    const envPath = envVaultPath();
+    if (!envPath) {
+      throw new Error("STORAGE_NOT_CONFIGURED");
+    }
+    const resolved = path.resolve(envPath);
+    vaultPathCache = resolved;
+    return resolved;
+  }
+
   const fromSettings = settingsVaultPath?.trim() || null;
   const resolved = fromSettings || vaultPathCache || envVaultPath();
   if (!resolved) {

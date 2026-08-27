@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 
+import { FinanceChartBoundary } from "./finance-chart-boundary";
 import { CashflowIncomeYearChart } from "./cashflow-income-year-chart";
 import { CashflowSpendYearChart } from "./cashflow-spend-year-chart";
 import { FinanceCard } from "./finance-card";
@@ -48,6 +49,7 @@ export function FinanceCashflowPane() {
 
   const netCard = (
     <FinanceCard title="Net Income">
+      <FinanceChartBoundary>
       <NetIncomeYearChart
         year={year}
         asOf={asOf}
@@ -57,11 +59,13 @@ export function FinanceCashflowPane() {
         loading={cashflow.loading}
         height={isPad ? 240 : 200}
       />
+      </FinanceChartBoundary>
     </FinanceCard>
   );
 
   const spendCard = (
     <FinanceCard title="Spending">
+      <FinanceChartBoundary>
       <CashflowSpendYearChart
         year={year}
         asOf={asOf}
@@ -72,11 +76,13 @@ export function FinanceCashflowPane() {
         loading={cashflow.loading}
         height={isPad ? 210 : 180}
       />
+      </FinanceChartBoundary>
     </FinanceCard>
   );
 
   const incomeCard = (
     <FinanceCard title="Income">
+      <FinanceChartBoundary>
       <CashflowIncomeYearChart
         year={year}
         asOf={asOf}
@@ -86,6 +92,7 @@ export function FinanceCashflowPane() {
         loading={cashflow.loading}
         height={isPad ? 210 : 180}
       />
+      </FinanceChartBoundary>
     </FinanceCard>
   );
 

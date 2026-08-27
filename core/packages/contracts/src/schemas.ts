@@ -1952,6 +1952,8 @@ const syncDocumentSchema = z.record(z.unknown());
 export const syncBootstrapSchema = z.object({
   schema_version: z.number().int(),
   cursor: z.number().int(),
+  /** Alias of `cursor` — Linear-style lastSyncId on this core. */
+  last_sync_id: z.number().int().optional(),
   spaces_configured: z.boolean(),
   snapshot: z.object({
     projects: z.array(syncProjectSchema),
@@ -1962,6 +1964,8 @@ export const syncBootstrapSchema = z.object({
 export const syncPullSchema = z.object({
   schema_version: z.number().int(),
   cursor: z.number().int(),
+  /** Alias of `cursor` — Linear-style lastSyncId on this core. */
+  last_sync_id: z.number().int().optional(),
   has_more: z.boolean(),
   events: z.array(
     z.object({
@@ -1979,6 +1983,7 @@ export const syncPullSchema = z.object({
 export const syncPushResponseSchema = z.object({
   schema_version: z.number().int(),
   cursor: z.number().int(),
+  last_sync_id: z.number().int().optional(),
   accepted_mutation_ids: z.array(z.string()),
 });
 export const powerSyncCredentialsSchema = z.object({
@@ -2126,6 +2131,7 @@ export const createMeetingSchema = z.object({
   attendeeContactIds: z.array(z.string()).optional(),
   startAt: isoDateSchema,
   endAt: isoDateSchema,
+  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
 });
@@ -2142,6 +2148,7 @@ export const updateMeetingSchema = z
     attendeeContactIds: z.array(z.string()).optional(),
     startAt: isoDateSchema.optional(),
     endAt: isoDateSchema.optional(),
+    format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
     trackedMinutes: z.number().int().nonnegative().nullable().optional(),
     trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   })
@@ -2162,6 +2169,7 @@ export const meetingSchema = z.object({
   attendeeContactIds: z.array(z.string()),
   startAt: isoDateSchema,
   endAt: isoDateSchema,
+  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   sortOrder: z.number().int(),
@@ -2173,6 +2181,79 @@ export const meetingSchema = z.object({
 export type Meeting = z.infer<typeof meetingSchema>;
 export type CreateMeetingInput = z.infer<typeof createMeetingSchema>;
 export type UpdateMeetingInput = z.infer<typeof updateMeetingSchema>;
+
+export const meetingWeekdayHoursSlotSchema = z.object({
+  start: z.string().min(1).max(8),
+  end: z.string().min(1).max(8),
+});
+export type MeetingWeekdayHoursSlot = z.infer<typeof meetingWeekdayHoursSlotSchema>;
+
+export const meetingWeekdayHoursEntrySchema = z.object({
+  weekday: z.number().int().min(1).max(7),
+  enabled: z.boolean(),
+  slots: z.array(meetingWeekdayHoursSlotSchema).min(1).max(12),
+});
+export type MeetingWeekdayHoursEntry = z.infer<
+  typeof meetingWeekdayHoursEntrySchema
+>;
+
+export const meetingSchedulingSettingsSchema = z.object({
+  label: z.string(),
+  timezone: z.string(),
+  weekdayHours: z.array(meetingWeekdayHoursEntrySchema),
+  durationsMinutes: z.array(z.union([z.literal(30), z.literal(60)])),
+  minNoticeMinutes: z.number().int().nonnegative(),
+  bufferMinutes: z.number().int().nonnegative(),
+  horizonDays: z.number().int().positive(),
+  enabled: z.boolean(),
+});
+export type MeetingSchedulingSettings = z.infer<
+  typeof meetingSchedulingSettingsSchema
+>;
+
+export const updateMeetingSchedulingSettingsSchema = z.object({
+  label: z.string().max(200).optional(),
+  timezone: z.string().min(1).max(128).optional(),
+  weekdayHours: z.array(meetingWeekdayHoursEntrySchema).min(1).max(7).optional(),
+  durationsMinutes: z.array(z.union([z.literal(30), z.literal(60)])).optional(),
+  minNoticeMinutes: z.number().int().nonnegative().optional(),
+  bufferMinutes: z.number().int().nonnegative().optional(),
+  horizonDays: z.number().int().positive().max(365).optional(),
+  enabled: z.boolean().optional(),
+});
+export type UpdateMeetingSchedulingSettingsInput = z.infer<
+  typeof updateMeetingSchedulingSettingsSchema
+>;
+
+export const meetingSlotSchema = z.object({
+  startAt: isoDateSchema,
+  endAt: isoDateSchema,
+  durationMinutes: z.union([z.literal(30), z.literal(60)]),
+});
+export type MeetingSlot = z.infer<typeof meetingSlotSchema>;
+
+export const listMeetingSlotsQuerySchema = z.object({
+  from: isoDateSchema,
+  to: isoDateSchema,
+  durationMinutes: z.coerce
+    .number()
+    .pipe(z.union([z.literal(30), z.literal(60)])),
+});
+
+export const createMeetingBookingSchema = z.object({
+  startAt: isoDateSchema,
+  endAt: isoDateSchema,
+  durationMinutes: z.union([z.literal(30), z.literal(60)]),
+  bookerEmail: z.string().email().max(320),
+  bookerFirstName: z.string().max(120).optional(),
+  bookerLastName: z.string().max(120).optional(),
+  note: z.string().max(5000).optional(),
+  portalUserId: z.string().max(128).optional(),
+  format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
+});
+export type CreateMeetingBookingInput = z.infer<
+  typeof createMeetingBookingSchema
+>;
 
 export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;

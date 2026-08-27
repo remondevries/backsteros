@@ -28,7 +28,8 @@ import {
 } from "../../calendar/calendar-task-drag.js";
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
+import { stopFieldEvent } from "../../shared/stop-field-event.js";
+import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
@@ -48,6 +49,7 @@ import { AssigneeListMark } from "./assignee-list-mark.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dropdown.js";
 import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
+import { TaskListPropertyFields } from "./task-list-property-fields.js";
 import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
@@ -201,23 +203,12 @@ export type TaskItemRowProps = {
   dragging?: boolean;
 };
 
-function stopFieldEvent(event: SyntheticEvent) {
-  event.stopPropagation();
-}
-
 const TASK_ROW_STATUS_OPTIONS: SearchableDropdownOption<TaskStatus>[] =
   TASK_STATUS_ORDER.map((value) => ({
     value,
     label: getTaskStatusLabel(value),
     searchTerms: value.replaceAll("_", " "),
     icon: <TaskStatusIcon status={value} size={18} />,
-  }));
-
-const TASK_ROW_PRIORITY_OPTIONS: SearchableDropdownOption<string>[] =
-  TASK_PRIORITY_ORDER.map((value) => ({
-    value: String(value),
-    label: getTaskPriorityLabel(value),
-    icon: <TaskPriorityIcon priority={value} size={18} />,
   }));
 
 /**
@@ -310,7 +301,6 @@ function TaskItemRowComponent({
   const showTrailingDue = showDueMeta && !leadingDue && !hasLeadingStamp;
   const iconBeforeId = chromeOrder === "timetracking";
   const statusOptions = TASK_ROW_STATUS_OPTIONS;
-  const priorityOptions = TASK_ROW_PRIORITY_OPTIONS;
 
   const projectChip =
     showProject ? (
@@ -560,37 +550,12 @@ function TaskItemRowComponent({
                 <TaskPriorityIcon priority={task.priority} size={14} />
               </span>
             ) : (
-              <DeferredSearchableDropdown
-                value={String(task.priority)}
-                options={priorityOptions}
-                onChange={(next) => onPriorityChange?.(task.id, Number(next))}
-                searchPlaceholder="Change priority…"
-                searchShortcutLabel="P"
-                ariaLabel={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-                taskPropertyDropdownId="priority"
-                className="task-item-row__dropdown"
-                panelAlign="start"
-                panelWidth={280}
-                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-                  <button
-                    type="button"
-                    id={triggerId}
-                    className="task-item-row__icon-trigger"
-                    title={getTaskPriorityLabel(task.priority)}
-                    tabIndex={-1}
-                    disabled={disabled}
-                    aria-haspopup="listbox"
-                    aria-expanded={open}
-                    aria-label={`Change priority: ${getTaskPriorityLabel(task.priority)}`}
-                    onMouseDown={stopFieldEvent}
-                    onClick={(event) => {
-                      stopFieldEvent(event);
-                      onToggle();
-                    }}
-                  >
-                    <TaskPriorityIcon priority={task.priority} size={14} />
-                  </button>
-                )}
+              <TaskListPropertyFields
+                entityId={task.id}
+                priority={task.priority}
+                showDue={false}
+                onPriorityChange={onPriorityChange}
+                fieldClassName="task-item-row__dropdown"
               />
             )}
           </span>

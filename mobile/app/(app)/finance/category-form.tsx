@@ -15,18 +15,20 @@ import {
 
 import { TabStackHeaderTextButton } from "../../../lib/tab-stack-options";
 import {
-  createFinancialCategory,
-  updateFinancialCategory,
-} from "../../../lib/finance-api";
+  createFinancialCategoryViaPowerSyncOrApi,
+  updateFinancialCategoryViaPowerSyncOrApi,
+} from "../../../lib/finance-mutations";
 import { colors, spacing } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 import { useFinanceCategories } from "../../../lib/use-finance-categories";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../../../lib/powersync-context";
 
 export default function FinanceCategoryFormScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const categories = useFinanceCategories();
   const editing = categories.rows.find((row) => row.id === id) ?? null;
@@ -60,12 +62,17 @@ export default function FinanceCategoryFormScreen() {
     try {
       const trimmedName = name.trim();
       if (editing) {
-        await updateFinancialCategory(client, editing.id, {
-          name: trimmedName,
-          parentId,
-        });
+        await updateFinancialCategoryViaPowerSyncOrApi(
+          client,
+          powerSync,
+          editing.id,
+          {
+            name: trimmedName,
+            parentId,
+          },
+        );
       } else {
-        await createFinancialCategory(client, {
+        await createFinancialCategoryViaPowerSyncOrApi(client, powerSync, {
           name: trimmedName,
           parentId,
         });

@@ -300,6 +300,20 @@ const meetings = new Table({
   ...commonDates,
 });
 
+const task_comments = new Table(
+  {
+    task_id: column.text,
+    parent_comment_id: column.text,
+    author_user_id: column.text,
+    author_contact_id: column.text,
+    author_email: column.text,
+    body: column.text,
+    resolved_at: column.text,
+    ...commonDates,
+  },
+  { indexes: { task: ["task_id"], parent: ["parent_comment_id"] } },
+);
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -318,6 +332,7 @@ export const appSchema = new Schema({
   cashflow_planner_entries,
   habits,
   meetings,
+  task_comments,
 });
 
 export type UploadEntry = {

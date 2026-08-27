@@ -1,21 +1,22 @@
 import type { Contact } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
 import { groupItemsByAlphaLetter } from "../lib/alpha-group";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import { matchesListSearch } from "../lib/list-search";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
@@ -27,6 +28,7 @@ import { useSyncedOrRest } from "../lib/use-synced-or-rest";
 import { EntityListAvatar } from "./entity-list-avatar";
 import { ContentPageTitle } from "./content-page-title";
 import { ListSearchField } from "./list-search-field";
+import { BacksterGroupedList } from "./lists/index";
 
 export type ContactListRow = {
   id: string;
@@ -43,6 +45,7 @@ type SyncedContactRow = {
 };
 
 type Section = {
+  key: string;
   title: string;
   data: ContactListRow[];
 };
@@ -165,10 +168,16 @@ export function ContactsListPane({
   const sections = useMemo<Section[]>(
     () =>
       groupItemsByAlphaLetter(rows).map(([letter, entries]) => ({
+        key: letter,
         title: letter,
         data: entries,
       })),
     [rows],
+  );
+
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () => flattenGroupedSections(sections),
+    [sections],
   );
 
   useEffect(() => {
@@ -212,7 +221,7 @@ export function ContactsListPane({
     [isPad, onPressRowProp, router],
   );
 
-  const listRef = useRef<SectionList<ContactListRow, Section>>(null);
+  const listRef = useRef<FlashListRef<FlatGroupedRow<ContactListRow>>>(null);
   const itemIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
@@ -225,11 +234,11 @@ export function ContactsListPane({
     },
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -267,32 +276,23 @@ export function ContactsListPane({
           placeholder="Search contacts"
         />
       ) : null}
-      <SectionList
+      <BacksterGroupedList
         ref={listRef}
-        style={ui.screen}
-        sections={sections as SectionListData<ContactListRow, Section>[]}
-        keyExtractor={(item) => item.id}
-        stickySectionHeadersEnabled={isPad}
-        keyboardShouldPersistTaps="handled"
+        sections={sections}
+        stickySectionHeaders={isPad}
+        highlightedId={highlightedId}
+        estimatedItemSize={56}
+        estimatedHeaderSize={32}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
         onScrollEndDrag={search.onScrollEndDrag}
         scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefreshing}
-            onRefresh={() => {
-              void reload();
-            }}
-            tintColor={colors.muted}
-            colors={[colors.muted]}
-          />
-        }
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+        refreshing={pullRefreshing}
+        onRefresh={() => {
+          void reload();
         }}
-        ListHeaderComponent={
+        listHeader={
           pageTitle ? (
             <ContentPageTitle
               title={pageTitle}
@@ -301,17 +301,14 @@ export function ContactsListPane({
             />
           ) : null
         }
-        ListEmptyComponent={
-          <Text style={ui.empty}>
-            {search.query.trim() ? "No matching contacts." : "No contacts yet."}
-          </Text>
+        emptyText={
+          search.query.trim() ? "No matching contacts." : "No contacts yet."
         }
-        renderSectionHeader={({ section }) => (
+        renderSectionHeader={(section) => (
           <Text style={ui.sectionHeader}>{section.title}</Text>
         )}
-        renderItem={({ item }) => {
+        renderItem={(item, { highlighted }) => {
           const avatarSrc = avatarSrcById[item.id] ?? null;
-          const highlighted = highlightedId === item.id;
           const selected = pathSelectedId === item.id;
           return (
             <Pressable

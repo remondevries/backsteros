@@ -1,4 +1,5 @@
 import type { Task } from "@backsteros/contracts";
+import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
 import { useUser } from "@clerk/clerk-expo";
 import { useNavigation } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -23,7 +24,8 @@ import {
 } from "../lib/inbox-attention";
 import { readAgentSurfaceTabs } from "../lib/agent/agent-surface-tabs";
 import { isPadDevice } from "../lib/device";
-import { projectDetailHref } from "../lib/detail-href";
+import { projectDetailHref, taskDetailHref } from "../lib/detail-href";
+import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import {
@@ -47,11 +49,12 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../lib/task-status";
-import { TASK_LIST_SELECT } from "../lib/task-list-query";
+import { CONTACTS_SQL, INBOX_NAV_SQL, PROJECTS_SQL } from "./tasks/detail/task-detail-sql";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
+import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useTaskDetail } from "../lib/use-task-detail";
 import { PhoneTaskSurfacesSlide } from "./agent/surfaces/phone-task-surfaces-slide";
@@ -63,6 +66,7 @@ import {
 import { CodebaseTaskLayout } from "./codebase/codebase-task-layout";
 import { ContactAvatarIcon } from "./contact-avatar-icon";
 import { ContactPersonIcon } from "./contact-person-icon";
+import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
@@ -78,6 +82,7 @@ import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
 import { TextInput } from "./app-text-input";
+import { TrackedTimeField } from "./tracked-time-field";
 
 type Props = {
   taskId: string | undefined;
@@ -87,6 +92,7 @@ type PickerKind =
   | "status"
   | "priority"
   | "due"
+  | "dueEnd"
   | "assignee"
   | "project"
   | null;
@@ -96,37 +102,6 @@ type NamedOptionRow = { id: string; name: string | null };
 type ContactOptionRow = NamedOptionRow & {
   avatar_storage_key?: string | null;
 };
-
-const PROJECTS_SQL = `SELECT id, name FROM projects
-  WHERE deleted_at IS NULL
-  ORDER BY name COLLATE NOCASE ASC`;
-
-const CONTACTS_SQL = `SELECT id, name, avatar_storage_key FROM contacts
-  WHERE deleted_at IS NULL
-  ORDER BY name COLLATE NOCASE ASC`;
-
-/** Lightweight inbox snapshot for Approve neighbor selection. */
-const INBOX_NAV_SQL = `${TASK_LIST_SELECT}
- WHERE t.deleted_at IS NULL AND (
-   t.inbox = 1
-   OR (
-     t.agent_created_at IS NOT NULL
-     AND t.agent_inbox_approved_at IS NULL
-   )
-   OR (
-     t.status IN ('on_hold', 'in_review')
-     AND (
-       t.due_date IS NULL
-       OR date(t.due_date) <= date('now', 'localtime')
-     )
-   )
-   OR (
-     t.due_date IS NOT NULL
-     AND date(t.due_date) < date('now', 'localtime')
-     AND t.status NOT IN ('completed', 'canceled', 'duplicated')
-   )
- )
- ORDER BY t.sort_order ASC, t.updated_at DESC`;
 
 type InboxNavRow = {
   id: string;
@@ -152,6 +127,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   const { user } = useUser();
 
   const client = useMobileApiClient();
+  const { confirmAndDelete, navigateBack } = useEntitySoftDelete();
   const inInboxRoute = (segments as string[]).includes("inbox");
   const inPadInboxSplit = isPadDevice() && inInboxRoute;
 
@@ -162,11 +138,12 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const currentUser = useMemo(
     () => ({
+      userId: user?.id?.trim() || null,
       email:
         user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase() || null,
       imageUrl: user?.imageUrl?.trim() || null,
     }),
-    [user?.imageUrl, user?.primaryEmailAddress?.emailAddress],
+    [user?.id, user?.imageUrl, user?.primaryEmailAddress?.emailAddress],
   );
 
   const { task, loading, error, retry, isCodebaseTask } = useTaskDetail(taskId);
@@ -188,6 +165,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   const [status, setStatus] = useState<TaskStatus>("triage");
   const [priority, setPriority] = useState(0);
   const [dueDate, setDueDate] = useState<string | null>(null);
+  const [dueEndDate, setDueEndDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind>(null);
@@ -292,6 +270,7 @@ export function TaskDetailScreen({ taskId }: Props) {
     setStatus(asTaskStatus(task.status));
     setPriority(task.priority);
     setDueDate(task.due_date);
+    setDueEndDate(task.due_end_date ?? null);
     setAssigneeId(task.assignee_id);
     setProjectId(task.project_id);
   }, [task]);
@@ -357,21 +336,14 @@ export function TaskDetailScreen({ taskId }: Props) {
     setLocalTitle(trimmedTitle);
     setLocalDescription(nextDescription);
     try {
-      if (powerSync.ready) {
-        await powerSync.patchTask(task.id, {
-          title: trimmedTitle,
-          description: nextDescription,
-        });
-      }
-      void client
-        .requestJson<Task>(`/api/v1/tasks/${encodeURIComponent(task.id)}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(patchBody),
-        })
-        .catch(() => {
-          /* optimistic UI already updated */
-        });
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "tasks",
+        task.id,
+        patchBody,
+        { title: trimmedTitle, description: nextDescription },
+      );
     } catch (reason) {
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save task.",
@@ -393,35 +365,34 @@ export function TaskDetailScreen({ taskId }: Props) {
     const sqliteValues: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (key === "dueDate") sqliteValues.due_date = value;
+      else if (key === "dueEndDate") sqliteValues.due_end_date = value;
       else if (key === "assigneeId") sqliteValues.assignee_id = value;
       else if (key === "projectId") sqliteValues.project_id = value;
       else if (key === "agentInboxApproved") {
         if (value === true) {
           sqliteValues.agent_inbox_approved_at = new Date().toISOString();
         }
-      } else if (key === "inbox") sqliteValues.inbox = value ? 1 : 0;
-      else sqliteValues[key] = value;
+      }       else if (key === "inbox") sqliteValues.inbox = value ? 1 : 0;
+      else if (key === "trackedDurationSeconds") {
+        sqliteValues.tracked_duration_seconds = value;
+      } else sqliteValues[key] = value;
     }
     applyTaskRowOverride(task.id, {
       ...taskPatchToRowFields(values),
       ...taskPatchToRowFields(rowExtras ?? {}),
     });
     try {
-      if (powerSync.ready) {
-        await powerSync.patchTask(task.id, sqliteValues);
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "tasks",
+        task.id,
+        values,
+        sqliteValues,
+      );
+      if (typeof values.status === "string") {
+        setActivityFeedRevision((current) => current + 1);
       }
-      void client
-        .requestJson<Task>(`/api/v1/tasks/${encodeURIComponent(task.id)}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(values),
-        })
-        .then(() => {
-          setActivityFeedRevision((current) => current + 1);
-        })
-        .catch(() => {
-          /* optimistic UI already updated */
-        });
     } catch (reason) {
       setPropertyError(
         reason instanceof Error
@@ -436,19 +407,20 @@ export function TaskDetailScreen({ taskId }: Props) {
       if (!task) return;
       setLocalAgentChatId(chatId);
       applyTaskRowOverride(task.id, { agent_chat_id: chatId });
-      if (powerSync.ready) {
-        await powerSync.patchTask(task.id, { agent_chat_id: chatId });
-      }
-      await client.requestJson<Task>(
-        `/api/v1/tasks/${encodeURIComponent(task.id)}`,
+      const apiValues = {
+        agentChatId: chatId,
+        activityActor: "agent",
+        ...(chatId ? { status: "in_progress" } : {}),
+      };
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "tasks",
+        task.id,
+        apiValues,
         {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            agentChatId: chatId,
-            activityActor: "agent",
-            ...(chatId ? { status: "in_progress" } : {}),
-          }),
+          agent_chat_id: chatId,
+          ...(chatId ? { status: "in_progress" } : {}),
         },
       );
       setActivityFeedRevision((current) => current + 1);
@@ -515,6 +487,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   );
 
   const dueLabel = formatTaskDueMetaLabel(dueDate);
+  const dueEndLabel = formatTaskDueMetaLabel(dueEndDate);
   const selectedAssignee = contacts.find((entry) => entry.id === assigneeId);
   const selectedProject = projects.find((entry) => entry.id === projectId);
   const assigneeLabel =
@@ -548,6 +521,12 @@ export function TaskDetailScreen({ taskId }: Props) {
       label: "Due date",
       value: dueLabel ?? "No due date",
       icon: <TaskDueDateIcon active={Boolean(dueLabel)} size={14} />,
+    },
+    {
+      key: "dueEnd",
+      label: "Due end",
+      value: dueEndLabel ?? "No end date",
+      icon: <TaskDueDateIcon active={Boolean(dueEndLabel)} size={14} />,
     },
     {
       key: "assignee",
@@ -620,6 +599,54 @@ export function TaskDetailScreen({ taskId }: Props) {
     (phoneTabsController?.state.tabs.length ??
       readAgentSurfaceTabs(taskId).tabs.length) > 0;
 
+  const afterTaskDelete = useCallback(() => {
+    if (!task) {
+      navigateBack();
+      return;
+    }
+    if (inInboxRoute) {
+      const orderedIds = flattenInboxAttentionOrder(
+        inboxNavRows.filter((row) =>
+          taskBelongsInInbox({
+            inbox: row.inbox,
+            status: row.status,
+            due_date: row.due_date,
+            agent_created_at: row.agent_created_at,
+            agent_inbox_approved_at: row.agent_inbox_approved_at,
+          }),
+        ),
+      ).map((row) => row.id);
+      const nextId = pickIdAfterRemoving(orderedIds, task.id);
+      if (nextId) {
+        router.replace(`/(app)/inbox/${nextId}`);
+        return;
+      }
+      router.replace("/(app)/inbox");
+      return;
+    }
+    navigateBack();
+  }, [inInboxRoute, inboxNavRows, navigateBack, router, task]);
+
+  const onDeleteTask = useCallback(() => {
+    if (!taskId || !task) return;
+    confirmAndDelete(
+      "tasks",
+      taskId,
+      draftTitle.trim() ||
+        localTitle?.trim() ||
+        task.title?.trim() ||
+        "Untitled",
+      { onDeleted: afterTaskDelete },
+    );
+  }, [
+    afterTaskDelete,
+    confirmAndDelete,
+    draftTitle,
+    localTitle,
+    task,
+    taskId,
+  ]);
+
   const detailScreenOptions = useMemo(() => {
     const base = {
       // iPad: solid black canvas (not `embedded` surface). Only the left task
@@ -673,29 +700,33 @@ export function TaskDetailScreen({ taskId }: Props) {
         );
       },
       headerRight: (): ReactNode => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Show surfaces"
-          accessibilityState={{ expanded: false }}
-          hitSlop={8}
-          onPress={togglePhoneSurfaces}
-          style={({ pressed }) => [
-            styles.headerToggle,
-            pressed ? { opacity: 0.55 } : null,
-          ]}
-        >
-          <ProjectsSidePanelIcon
-            size={18}
-            rail="end"
-            collapsed={false}
-            color={colors.foreground}
-          />
-          <SurfacesActivePulseDot visible={phoneHasOpenSurfaceTabs} />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <DetailHeaderDeleteButton onDelete={onDeleteTask} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Show surfaces"
+            accessibilityState={{ expanded: false }}
+            hitSlop={8}
+            onPress={togglePhoneSurfaces}
+            style={({ pressed }) => [
+              styles.headerToggle,
+              pressed ? { opacity: 0.55 } : null,
+            ]}
+          >
+            <ProjectsSidePanelIcon
+              size={18}
+              rail="end"
+              collapsed={false}
+              color={colors.foreground}
+            />
+            <SurfacesActivePulseDot visible={phoneHasOpenSurfaceTabs} />
+          </Pressable>
+        </View>
       ),
     };
   }, [
     navigation,
+    onDeleteTask,
     phoneHasOpenSurfaceTabs,
     router,
     togglePhoneSurfaces,
@@ -838,6 +869,18 @@ export function TaskDetailScreen({ taskId }: Props) {
         }}
         onClose={() => setPicker(null)}
       />
+      <DueDatePropertySheet
+        embedded={embedPropertySheets}
+        visible={picker === "dueEnd"}
+        title="Due end"
+        selected={dueEndDate}
+        onSelect={(value) => {
+          setDueEndDate(value);
+          setPicker(null);
+          void patchProperty({ dueEndDate: value });
+        }}
+        onClose={() => setPicker(null)}
+      />
       <PropertyOptionSheet
         embedded={embedPropertySheets}
         visible={picker === "assignee"}
@@ -932,6 +975,7 @@ export function TaskDetailScreen({ taskId }: Props) {
               <ProjectsSidePanelIcon size={18} color={colors.foreground} />
             </Pressable>
           ) : null}
+          <DetailHeaderDeleteButton onDelete={onDeleteTask} />
         </View>
       ) : null}
       {movedToProject ? (
@@ -997,6 +1041,28 @@ export function TaskDetailScreen({ taskId }: Props) {
       keepEndVisibleWhileTyping
     >
       {titleDescriptionEditors}
+
+      {task ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          <TrackedTimeField
+            variant="pill"
+            trackedDurationSeconds={task.tracked_duration_seconds ?? null}
+            trackedMinutes={task.tracked_minutes ?? null}
+            scheduleMinutes={trackedMinutesFromTaskSchedule(dueDate, dueEndDate)}
+            timerSession={{
+              kind: "task",
+              entityId: task.id,
+              title: draftTitle.trim() || task.title?.trim() || "Untitled task",
+              subtitle: task.display_id ?? null,
+              statusKey: status,
+              href: taskDetailHref(task.id),
+            }}
+            onTrackedDurationSecondsChange={(seconds) => {
+              void patchProperty({ trackedDurationSeconds: seconds });
+            }}
+          />
+        </View>
+      ) : null}
 
       <DetailPropertiesInlineShell
         modalTitle="Task properties"

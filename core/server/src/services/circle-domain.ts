@@ -437,16 +437,25 @@ export function listAreas(workspaceId: string) {
     .orderBy(areas.sortOrder, areas.name);
 }
 
-export async function createArea(workspaceId: string, input: AreaInput) {
-  const [row] = await db
+export async function createArea(
+  workspaceId: string,
+  input: AreaInput,
+  id = newId(),
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .insert(areas)
-    .values({ id: newId(), workspaceId, ...input })
+    .values({ id, workspaceId, ...input })
     .returning();
   return row!;
 }
 
-export async function getAreaById(workspaceId: string, id: string) {
-  const [row] = await db
+export async function getAreaById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .select()
     .from(areas)
     .where(and(eq(areas.workspaceId, workspaceId), eq(areas.id, id), isNull(areas.deletedAt)))
@@ -454,8 +463,13 @@ export async function getAreaById(workspaceId: string, id: string) {
   return row ?? null;
 }
 
-export async function updateArea(workspaceId: string, id: string, input: Partial<AreaInput>) {
-  const [row] = await db
+export async function updateArea(
+  workspaceId: string,
+  id: string,
+  input: Partial<AreaInput>,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .update(areas)
     .set({ ...input, updatedAt: new Date() })
     .where(and(eq(areas.workspaceId, workspaceId), eq(areas.id, id), isNull(areas.deletedAt)))
@@ -463,8 +477,12 @@ export async function updateArea(workspaceId: string, id: string, input: Partial
   return row ?? null;
 }
 
-export async function deleteArea(workspaceId: string, id: string) {
-  const [row] = await db
+export async function deleteArea(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .update(areas)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(areas.workspaceId, workspaceId), eq(areas.id, id), isNull(areas.deletedAt)))
@@ -1125,12 +1143,40 @@ export async function updateSettings(
   executor: DbExecutor = db,
 ) {
   const current = await getSettings(workspaceId, executor);
+  let next: Record<string, unknown> = { ...current, ...patch };
+  // Cloud must never persist a peer Mac vaultPath (or any machine-local key).
+  if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    const { vaultPath: _ignored, ...rest } = next;
+    next = rest;
+  }
   const [row] = await executor
     .insert(workspaceSettings)
-    .values({ workspaceId, settings: { ...current, ...patch } })
+    .values({ workspaceId, settings: next })
     .onConflictDoUpdate({
       target: workspaceSettings.workspaceId,
-      set: { settings: { ...current, ...patch }, updatedAt: new Date() },
+      set: { settings: next, updatedAt: new Date() },
+    })
+    .returning();
+  return row!.settings;
+}
+
+/** Replace settings JSON wholesale (used to scrub machine-local keys). */
+export async function replaceSettings(
+  workspaceId: string,
+  settings: Record<string, unknown>,
+  executor: DbExecutor = db,
+) {
+  let next = { ...settings };
+  if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+    const { vaultPath: _ignored, ...rest } = next;
+    next = rest;
+  }
+  const [row] = await executor
+    .insert(workspaceSettings)
+    .values({ workspaceId, settings: next })
+    .onConflictDoUpdate({
+      target: workspaceSettings.workspaceId,
+      set: { settings: next, updatedAt: new Date() },
     })
     .returning();
   return row!.settings;

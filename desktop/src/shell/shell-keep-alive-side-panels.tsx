@@ -1,0 +1,1077 @@
+import { useCallback, useMemo, type ReactNode } from "react";
+
+import { primeTabTitle } from "@backsteros/ui/shell";
+import {
+  buildAssigneeDropdownOptions,
+  buildProjectDropdownOptions,
+  getTaskDueDateYmd,
+  buildTaskDueDatePatch,
+} from "@backsteros/ui/tasks";
+import {
+  buildInboxEmailListItem,
+  emailBelongsInInbox,
+  isInboxPath,
+  sortInboxItemsByAttentionStatus,
+  type InboxListItem,
+} from "@backsteros/ui/inbox";
+import {
+  isCalendarListPath,
+  defaultNewMeetingTimes,
+  withCalendarMeetingSearch,
+  getCalendarMeetingOverlayHref,
+  readCalendarViewModeFromSearch,
+  readCalendarPageModeFromSearch,
+  unscheduledCalendarTasks,
+  withCalendarViewSearch,
+  type CalendarSidePanelHabitItem,
+} from "@backsteros/ui/calendar";
+import { getFirstInboxItemHref } from "@backsteros/ui";
+import {
+  getContactsHref,
+  getKnowledgeHref,
+  getKnowledgeV2Href,
+  getLettersHref,
+  getLettersV2Href,
+  getOrganizationsHref,
+  getProjectRouteParamFromPathname,
+  getProjectRouteScopeFromPathname,
+  getScopedProjectDocumentHref,
+  getScopedProjectLetterHref,
+  getTodayJournalDateSlug,
+  isProjectLettersSectionPath,
+} from "@backsteros/ui/navigation";
+
+import { useDesktopApi } from "../lib/api-context";
+import { useAgentMail } from "../lib/agentmail-context";
+import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
+import { firstKnowledgeHref, firstLetterHref } from "../lib/section-entry-hrefs";
+import { buildMailboxByIdMap } from "../lib/email-list-tasks";
+import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
+import { renderTaskAgentTitleTrailing } from "../lib/agent/agent-list-indicators";
+import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
+import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "../lib/avatar-src";
+import { buildInboxAttentionGroupOverrides } from "../lib/inbox/build-inbox-session-list";
+import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
+import { useInboxSessionList } from "../lib/inbox/use-inbox-session-list";
+import { useInboxTriageNotifications } from "../lib/inbox/use-inbox-triage-notifications";
+import { useInboxUpdatedNotifications } from "../lib/inbox/use-inbox-updated-notifications";
+import {
+  useKeepAliveAfterPaint,
+  useKeepAliveFrozen,
+  useShellLocation,
+} from "../lib/shell-route-keep-alive";
+import type { PendingPageSurface as Surface } from "../lib/pending-navigation-routes";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceDocuments,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
+import {
+  DesktopCalendarTasksSidePanel,
+  DesktopCalendarAvailabilitySidePanel,
+  DesktopCalendarTimetrackingSidePanel,
+  DesktopContactsSidePanel,
+  DesktopHabitSidePanel,
+  DesktopJournalSidePanel,
+  DesktopKnowledgeSidePanel,
+  DesktopLettersSidePanel,
+  DesktopOrganizationsSidePanel,
+  DesktopProjectDocumentsSidePanel,
+} from "./app-shell-side-panels-lazy";
+import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
+import { RouterLink } from "./app-shell-links";
+import { handleDocumentTreeReorder } from "./document-tree-reorder";
+import { ENABLE_JOURNAL_ENTRIES_SIDE_PANEL } from "../lib/journal-cpu-bisect";
+
+const NO_ENTITIES: [] = [];
+
+type PanelNav = (href: string) => void;
+
+export function keepAliveSidePanelTree(
+  surface: Surface,
+  onNavigate: PanelNav,
+  pathname = "",
+): ReactNode {
+  switch (surface) {
+    case "inbox":
+      return <InboxKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "calendar":
+      return <CalendarKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "journal-day":
+      // TEMP: journal CPU bisect — restore via ENABLE_JOURNAL_ENTRIES_SIDE_PANEL.
+      return ENABLE_JOURNAL_ENTRIES_SIDE_PANEL ? (
+        <JournalKeepAliveSidePanel onNavigate={onNavigate} />
+      ) : null;
+    case "journal-habits":
+      return <HabitsKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "habits-v2":
+      return <HabitsV2KeepAliveSidePanel onNavigate={onNavigate} />;
+    case "knowledge":
+      return <KnowledgeKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "knowledge-v2":
+      return <KnowledgeV2KeepAliveSidePanel onNavigate={onNavigate} />;
+    case "projects": {
+      const parts = pathname.split("/").filter(Boolean);
+      if (parts.length < 2) return null;
+      return <ProjectKeepAliveSidePanel onNavigate={onNavigate} />;
+    }
+    case "contacts":
+      return <ContactsKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "organizations":
+      return <OrganizationsKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "letters":
+      return <LettersKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "letters-v2":
+      return <LettersV2KeepAliveSidePanel onNavigate={onNavigate} />;
+    case "tasks-list":
+      return null;
+    case "journal-v2":
+      return (
+        <JournalV2KeepAliveSidePanel onNavigate={onNavigate} />
+      );
+    default:
+      return null;
+  }
+}
+
+export function InboxKeepAliveSidePanel({ onNavigate }: { onNavigate: PanelNav }) {
+  const painted = useKeepAliveAfterPaint();
+  const { pathname } = useShellLocation();
+  const { inboxItems } = useDesktopWorkspaceMeta();
+  if (!painted) {
+    return (
+      <DesktopInboxSidePanel
+        onNavigate={onNavigate}
+        pathname={panePathnameWithFirstItem(
+          pathname,
+          getFirstInboxItemHref(inboxItems),
+          pathname.startsWith("/inbox/") || pathname.startsWith("/email/"),
+        )}
+        items={inboxItems}
+        loading={false}
+        Link={RouterLink}
+        groupByAttentionStatus
+      />
+    );
+  }
+  return <InboxKeepAliveSidePanelLive onNavigate={onNavigate} />;
+}
+
+function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
+  const frozen = useKeepAliveFrozen();
+  const { pathname } = useShellLocation();
+  const { client } = useDesktopApi();
+  const { ready, inboxItems } = useDesktopWorkspaceMeta();
+  const { projects } = useDesktopWorkspaceProjects();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const agentStatus = useDesktopAgentStatusOptional();
+  const agentMail = useAgentMail();
+  const { pinnedItems } = useInboxListSessionPin();
+
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    frozen ? NO_ENTITIES : contacts,
+  );
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    frozen ? NO_ENTITIES : organizations,
+  );
+
+  const composeContacts = useMemo(
+    () => (frozen ? [] : withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts, frozen],
+  );
+
+  const inboxNotificationsReady = ready;
+  const inboxNotificationsActive = !frozen && isInboxPath(pathname);
+
+  const baseInboxItems = useMemo(() => {
+    const workspaceInboxItems = inboxItems.map((item) => {
+      if (item.kind !== "meeting" || !item.organizationId) return item;
+      return {
+        ...item,
+        organizationAvatarSrc:
+          organizationAvatarSrc[item.organizationId] ?? null,
+      };
+    });
+
+    if (frozen) {
+      return sortInboxItemsByAttentionStatus(workspaceInboxItems);
+    }
+
+    const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
+    const emailItems: InboxListItem[] = agentMail.messages
+      .filter((item) =>
+        emailBelongsInInbox({
+          status: item.status,
+          dueDate: item.dueDate,
+          inboxUpdatedAt: item.inboxUpdatedAt,
+        }),
+      )
+      .map((item) => {
+        const mailbox = mailboxById.get(item.inboxId) ?? null;
+        return buildInboxEmailListItem({
+          inboxId: item.inboxId,
+          messageId: item.id,
+          draftId: item.kind === "draft" ? item.id : null,
+          threadId: item.threadId,
+          title: item.subject,
+          from: item.from,
+          status: item.status,
+          inboxUpdatedAt: item.inboxUpdatedAt,
+          priority: item.priority,
+          dueDate: item.dueDate,
+          updatedAt: item.receivedAt,
+          assigneeId: item.assigneeId,
+          projectId: item.projectId,
+          projectKey: item.projectKey,
+          projectName: item.projectName,
+          organizationId: item.organizationId,
+          organizationName: item.organizationName,
+          organizationAvatarSrc: item.organizationId
+            ? organizationAvatarSrc[item.organizationId] ?? null
+            : null,
+          contactId: item.contactId,
+          contactName: item.contactName,
+          emailThreadId: item.emailThreadId,
+          number: item.number,
+          displayId: item.displayId,
+          mailboxLabel: mailbox
+            ? mailbox.contactName?.trim() ||
+              mailbox.displayName?.trim() ||
+              mailbox.email ||
+              mailbox.inboxId
+            : null,
+          mailboxAvatarSrc: mailbox?.contactId
+            ? contactAvatarSrc[mailbox.contactId] ?? null
+            : null,
+        });
+      });
+    return sortInboxItemsByAttentionStatus([
+      ...workspaceInboxItems,
+      ...emailItems,
+    ]);
+  }, [
+    agentMail.mailboxes,
+    agentMail.messages,
+    contactAvatarSrc,
+    frozen,
+    inboxItems,
+    organizationAvatarSrc,
+  ]);
+
+  const inboxItemsWithEmail = useInboxSessionList(
+    !frozen,
+    inboxNotificationsReady,
+    baseInboxItems,
+    pinnedItems,
+  );
+
+  const inboxAttentionGroupOverrides = useMemo(
+    () => buildInboxAttentionGroupOverrides(pinnedItems),
+    [pinnedItems],
+  );
+
+  useInboxTriageNotifications(inboxItemsWithEmail, inboxNotificationsActive);
+  useInboxUpdatedNotifications(
+    inboxItemsWithEmail,
+    inboxNotificationsReady,
+    inboxNotificationsActive,
+  );
+
+  const patchEmailThreadFromInbox = useCallback(
+    (
+      itemId: string,
+      patch: {
+        status?: string;
+        priority?: number;
+        dueDate?: string | null;
+        projectId?: string | null;
+        assigneeId?: string | null;
+      },
+      listExtras?: {
+        projectName?: string | null;
+        projectKey?: string | null;
+        assigneeName?: string | null;
+      },
+    ) => {
+      const item = inboxItemsWithEmail.find(
+        (entry) => entry.id === itemId && entry.kind === "email",
+      );
+      if (!item || item.kind !== "email") return;
+      const threadKey = item.threadId?.trim() || item.messageId;
+      dispatchEmailListPatch({
+        inboxId: item.inboxId,
+        messageId: item.messageId,
+        threadId: item.threadId ?? null,
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+        ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+        ...(patch.projectId !== undefined
+          ? { projectId: patch.projectId }
+          : {}),
+        ...(patch.assigneeId !== undefined
+          ? { assigneeId: patch.assigneeId }
+          : {}),
+        ...(listExtras?.projectName !== undefined
+          ? { projectName: listExtras.projectName }
+          : {}),
+        ...(listExtras?.projectKey !== undefined
+          ? { projectKey: listExtras.projectKey }
+          : {}),
+        ...(listExtras?.assigneeName !== undefined
+          ? { assigneeName: listExtras.assigneeName }
+          : {}),
+      });
+      void client
+        .requestJson(
+          `/api/v1/email/inboxes/${encodeURIComponent(item.inboxId)}/threads/${encodeURIComponent(threadKey)}/metadata`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          },
+        )
+        .catch((error) => {
+          console.warn("[inbox] email metadata patch failed:", error);
+        });
+    },
+    [client, inboxItemsWithEmail],
+  );
+
+  const inboxProjectOptions = useMemo(
+    () =>
+      buildProjectDropdownOptions(
+        projects.map((project) => ({
+          key: project.key,
+          name: project.name,
+          icon: project.icon,
+          type: project.type,
+        })),
+        { includeNone: true },
+      ),
+    [projects],
+  );
+
+  const inboxAssigneeOptions = useMemo(
+    () => buildAssigneeDropdownOptions(composeContacts),
+    [composeContacts],
+  );
+
+  const allTasksById = useMemo(() => {
+    const map = new Map<string, (typeof allTasks)[number]>();
+    for (const task of allTasks) {
+      map.set(task.id, task);
+    }
+    return map;
+  }, [allTasks]);
+
+  return (
+    <DesktopInboxSidePanel
+      onNavigate={onNavigate}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        getFirstInboxItemHref(inboxItemsWithEmail),
+        pathname.startsWith("/inbox/") || pathname.startsWith("/email/"),
+      )}
+      items={inboxItemsWithEmail}
+      attentionGroupOverrides={inboxAttentionGroupOverrides}
+      loading={!ready && inboxItems.length === 0}
+      Link={RouterLink}
+      projectOptions={inboxProjectOptions}
+      assigneeOptions={inboxAssigneeOptions}
+      onPriorityChange={(itemId, priority) => {
+        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+        if (item?.kind === "meeting") return;
+        if (item?.kind === "email") {
+          void patchEmailThreadFromInbox(itemId, { priority });
+          return;
+        }
+        void workspaceActions.patchTask(itemId, { priority });
+      }}
+      onDueDateChange={(itemId, dueDate, dueEndDate) => {
+        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+        if (item?.kind === "meeting") return;
+        if (item?.kind === "email") {
+          void patchEmailThreadFromInbox(itemId, {
+            dueDate: dueDate ? dueDate.toISOString() : null,
+          });
+          return;
+        }
+        void workspaceActions.patchTask(
+          itemId,
+          buildTaskDueDatePatch(dueDate, dueEndDate),
+        );
+      }}
+      onProjectChange={(itemId, projectKey) => {
+        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+        if (item?.kind === "meeting") return;
+        const project = projectKey
+          ? (projects.find((entry) => entry.key === projectKey) ?? null)
+          : null;
+        if (item?.kind === "email") {
+          void patchEmailThreadFromInbox(
+            itemId,
+            { projectId: project?.id ?? null },
+            {
+              projectName: project?.name ?? null,
+              projectKey: project?.key ?? null,
+            },
+          );
+          return;
+        }
+        void workspaceActions.patchTask(itemId, {
+          projectId: project?.id ?? null,
+          inbox: !project,
+          ...(project ? {} : { status: "triage" }),
+        });
+      }}
+      onAssigneeChange={(itemId, assigneeId) => {
+        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+        if (item?.kind === "meeting") return;
+        if (item?.kind === "email") {
+          const assignee = assigneeId
+            ? (contacts.find((entry) => entry.id === assigneeId) ?? null)
+            : null;
+          void patchEmailThreadFromInbox(
+            itemId,
+            { assigneeId },
+            { assigneeName: assignee?.name ?? null },
+          );
+          return;
+        }
+        void workspaceActions.patchTask(itemId, { assigneeId });
+      }}
+      groupByAttentionStatus
+      renderTitleTrailing={(item) => {
+        if (item.kind !== "task") return null;
+        const task = allTasksById.get(item.id);
+        return renderTaskAgentTitleTrailing({
+          taskId: item.id,
+          agentChatId: task?.agentChatId,
+          taskStatus: task?.status,
+          agentStatus,
+        });
+      }}
+    />
+  );
+}
+
+export function CalendarKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const frozen = useKeepAliveFrozen();
+  const { pathname, searchStr } = useShellLocation();
+  const search = searchStr ?? "";
+  const { ready, habits, meetings } = useDesktopWorkspaceMeta();
+  const { tasks, allTasks } = useDesktopWorkspaceTasks();
+  const { organizations } = useDesktopWorkspacePeople();
+  const workspaceActions = useDesktopWorkspaceActions();
+
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    frozen ? NO_ENTITIES : organizations,
+  );
+
+  const calendarMeetings = useMemo(
+    () =>
+      frozen
+        ? meetings
+        : meetings.map((meeting) =>
+            meeting.organizationId
+              ? {
+                  ...meeting,
+                  organizationAvatarSrc:
+                    organizationAvatarSrc[meeting.organizationId] ?? null,
+                }
+              : meeting,
+          ),
+    [frozen, meetings, organizationAvatarSrc],
+  );
+
+  const calendarSidePanelTasks = useMemo(
+    () => unscheduledCalendarTasks(tasks),
+    [tasks],
+  );
+
+  const calendarSidePanelHabits = useMemo((): CalendarSidePanelHabitItem[] => {
+    const todayYmd = getTodayJournalDateSlug();
+    const items: CalendarSidePanelHabitItem[] = [];
+    for (const habit of habits) {
+      const todayTask = allTasks.find((task) => {
+        if (task.habitId !== habit.id) return false;
+        return getTaskDueDateYmd(task.dueDate) === todayYmd;
+      });
+      if (!todayTask) continue;
+      items.push({
+        id: habit.id,
+        title: habit.title,
+        icon: habit.icon ?? null,
+        todayTaskId: todayTask.id,
+        todayTaskStatus: todayTask.status,
+        checked: todayTask.status === "completed",
+      });
+    }
+    items.sort((a, b) => {
+      if (a.checked !== b.checked) return a.checked ? 1 : -1;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    });
+    return items;
+  }, [allTasks, habits]);
+
+  const calendarViewMode = readCalendarViewModeFromSearch(search);
+  const calendarPageMode = readCalendarPageModeFromSearch(search);
+
+  if (
+    calendarPageMode === "availability" &&
+    isCalendarListPath(pathname)
+  ) {
+    return <DesktopCalendarAvailabilitySidePanel />;
+  }
+  if (
+    calendarPageMode === "timetracking" &&
+    isCalendarListPath(pathname)
+  ) {
+    return <DesktopCalendarTimetrackingSidePanel />;
+  }
+
+  return (
+    <DesktopCalendarTasksSidePanel
+      pathname={pathname}
+      search={search}
+      meetings={calendarMeetings}
+      tasks={calendarSidePanelTasks}
+      habits={calendarSidePanelHabits}
+      loading={!ready}
+      panelVariant="calendar"
+      onCreateMeeting={() => {
+        const { startAt, endAt } = defaultNewMeetingTimes();
+        void workspaceActions
+          .createMeeting({
+            title: "New meeting",
+            status: "triage",
+            startAt,
+            endAt,
+          })
+          .then((created) => {
+            onNavigate(
+              calendarPageMode === "calendar"
+                ? getCalendarMeetingOverlayHref(created.id, calendarViewMode)
+                : withCalendarMeetingSearch(created.id, search),
+            );
+          });
+      }}
+      onMeetingOpen={(meetingId) =>
+        onNavigate(
+          calendarPageMode === "calendar"
+            ? getCalendarMeetingOverlayHref(meetingId, calendarViewMode)
+            : withCalendarMeetingSearch(meetingId, search),
+        )
+      }
+      onTaskOpen={(taskId) =>
+        onNavigate(
+          withCalendarViewSearch(
+            `/calendar/tasks/${taskId}`,
+            search,
+            calendarViewMode,
+          ),
+        )
+      }
+      onToggleHabit={(habit, checked) => {
+        void workspaceActions.patchTask(habit.todayTaskId, {
+          status: checked ? "completed" : "ready_to_start",
+        });
+      }}
+    />
+  );
+}
+
+export function JournalKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { journalItems } = useDesktopWorkspaceDocuments();
+  return (
+    <DesktopJournalSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      items={journalItems}
+    />
+  );
+}
+
+/** Journal v2: same date list, links stay on `/journal-v2/...`. */
+export function JournalV2KeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { journalItems } = useDesktopWorkspaceDocuments();
+  return (
+    <DesktopJournalSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      items={journalItems}
+      variant="journal-v2"
+    />
+  );
+}
+
+export function HabitsKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  return (
+    <DesktopHabitSidePanel onNavigate={onNavigate} pathname={pathname} />
+  );
+}
+
+export function HabitsV2KeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  return (
+    <DesktopHabitSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      variant="habits-v2"
+    />
+  );
+}
+
+export function KnowledgeKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { ready } = useDesktopWorkspaceMeta();
+  const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
+  const workspaceActions = useDesktopWorkspaceActions();
+
+  return (
+    <DesktopKnowledgeSidePanel
+      onNavigate={onNavigate}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstKnowledgeHref(knowledgeDocuments),
+        pathname.startsWith("/knowledge/"),
+      )}
+      items={knowledgeDocuments}
+      loading={!ready}
+      onAdd={(parentFolderId) => {
+        void workspaceActions
+          .createKnowledgeDocument({
+            title: "Untitled",
+            parentId: parentFolderId,
+          })
+          .then((created) => {
+            onNavigate(getKnowledgeHref(created.path || created.id));
+          });
+      }}
+      onCreateFolder={async ({ title, parentId }) => {
+        try {
+          await workspaceActions.createKnowledgeFolder({ title, parentId });
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not create folder.",
+          };
+        }
+      }}
+      onRename={(id, title) => workspaceActions.renameDocument(id, title)}
+      onDelete={(id) => workspaceActions.deleteDocument(id)}
+      onReorderTreeItem={(request) =>
+        handleDocumentTreeReorder(
+          request,
+          knowledgeDocuments.map((item) => ({
+            id: item.id,
+            title: item.title,
+            path: item.path ?? item.id,
+            kind: item.kind === "folder" ? "folder" : "document",
+            parentId: item.parentId ?? null,
+            sortOrder: item.sortOrder ?? 0,
+            icon: item.icon ?? null,
+          })),
+          workspaceActions,
+        )
+      }
+    />
+  );
+}
+
+export function KnowledgeV2KeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { ready } = useDesktopWorkspaceMeta();
+  const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const firstHref = (() => {
+    const href = firstKnowledgeHref(knowledgeDocuments);
+    if (!href) return null;
+    if (href === "/knowledge") return "/knowledge-v2";
+    return href.replace(/^\/knowledge\//, "/knowledge-v2/");
+  })();
+
+  return (
+    <DesktopKnowledgeSidePanel
+      onNavigate={onNavigate}
+      variant="knowledge-v2"
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstHref,
+        pathname.startsWith("/knowledge-v2/"),
+      )}
+      items={knowledgeDocuments}
+      loading={!ready}
+      onAdd={(parentFolderId) => {
+        void workspaceActions
+          .createKnowledgeDocument({
+            title: "Untitled",
+            parentId: parentFolderId,
+          })
+          .then((created) => {
+            onNavigate(getKnowledgeV2Href(created.path || created.id));
+          });
+      }}
+      onCreateFolder={async ({ title, parentId }) => {
+        try {
+          await workspaceActions.createKnowledgeFolder({ title, parentId });
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not create folder.",
+          };
+        }
+      }}
+      onRename={(id, title) => workspaceActions.renameDocument(id, title)}
+      onDelete={(id) => workspaceActions.deleteDocument(id)}
+      onReorderTreeItem={(request) =>
+        handleDocumentTreeReorder(
+          request,
+          knowledgeDocuments.map((item) => ({
+            id: item.id,
+            title: item.title,
+            path: item.path ?? item.id,
+            kind: item.kind === "folder" ? "folder" : "document",
+            parentId: item.parentId ?? null,
+            sortOrder: item.sortOrder ?? 0,
+            icon: item.icon ?? null,
+          })),
+          workspaceActions,
+        )
+      }
+    />
+  );
+}
+
+export function ProjectKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { ready } = useDesktopWorkspaceMeta();
+  const { projectDocuments } = useDesktopWorkspaceDocuments();
+  const { letters, projects } = useDesktopWorkspaceProjects();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const projectRouteParam = getProjectRouteParamFromPathname(pathname);
+  const projectRouteScope = getProjectRouteScopeFromPathname(pathname);
+  const activeProject = projectRouteParam
+    ? (projects.find(
+        (project) =>
+          project.id === projectRouteParam ||
+          project.key.toLowerCase() === projectRouteParam.toLowerCase(),
+      ) ?? null)
+    : null;
+
+  const projectDocumentsForPanel = useMemo(() => {
+    if (!activeProject) return [];
+    return projectDocuments.filter(
+      (document) => document.projectId === activeProject.id,
+    );
+  }, [activeProject, projectDocuments]);
+
+  const projectLettersForPanel = useMemo(() => {
+    if (!activeProject) return [];
+    return letters.filter(
+      (letter) =>
+        letter.projectId === activeProject.id ||
+        (letter.projectKey &&
+          letter.projectKey.toLowerCase() === activeProject.key.toLowerCase()),
+    );
+  }, [activeProject, letters]);
+
+  if (!activeProject) return null;
+  const projectKey = activeProject.key;
+
+  if (isProjectLettersSectionPath(pathname)) {
+    return (
+      <DesktopLettersSidePanel
+        onNavigate={onNavigate}
+        pathname={pathname}
+        items={projectLettersForPanel}
+        loading={!ready}
+        getLetterHref={(letter) =>
+          getScopedProjectLetterHref(projectKey, letter.number, projectRouteScope)
+        }
+        onAdd={() => {
+          void workspaceActions
+            .createLetter({
+              title: "New letter",
+              projectId: activeProject.id,
+            })
+            .then((created) => {
+              if (created.number == null) return;
+              const href = getScopedProjectLetterHref(
+                projectKey,
+                created.number,
+                projectRouteScope,
+              );
+              primeTabTitle(href, "New letter");
+              onNavigate(href);
+            });
+        }}
+      />
+    );
+  }
+
+  return (
+    <DesktopProjectDocumentsSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      items={projectDocumentsForPanel}
+      getDocumentHref={(pathOrId) =>
+        getScopedProjectDocumentHref(projectKey, pathOrId, projectRouteScope)
+      }
+      onAdd={(parentFolderId) => {
+        void workspaceActions
+          .createProjectDocument({
+            projectId: activeProject.id,
+            title: "Untitled",
+            parentId: parentFolderId,
+          })
+          .then((created) => {
+            onNavigate(
+              getScopedProjectDocumentHref(
+                projectKey,
+                created.path || created.id,
+                projectRouteScope,
+              ),
+            );
+          });
+      }}
+      onCreateFolder={async ({ title, parentId }) => {
+        try {
+          await workspaceActions.createProjectFolder({
+            projectId: activeProject.id,
+            title,
+            parentId,
+          });
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Could not create folder.",
+          };
+        }
+      }}
+      onRename={(id, title) => workspaceActions.renameDocument(id, title)}
+      onDelete={(id) => workspaceActions.deleteDocument(id)}
+      onReorderTreeItem={(request) =>
+        handleDocumentTreeReorder(
+          request,
+          projectDocumentsForPanel.map((item) => ({
+            id: item.id,
+            title: item.title,
+            path: item.path ?? item.id,
+            kind: item.kind === "folder" ? "folder" : "document",
+            parentId: item.parentId ?? null,
+            sortOrder: item.sortOrder ?? 0,
+            icon: item.icon ?? null,
+          })),
+          workspaceActions,
+        )
+      }
+    />
+  );
+}
+
+export function ContactsKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const frozen = useKeepAliveFrozen();
+  const { pathname } = useShellLocation();
+  const { contacts } = useDesktopWorkspacePeople();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    frozen ? NO_ENTITIES : contacts,
+  );
+  const items = useMemo(
+    () => (frozen ? contacts : withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts, frozen],
+  );
+
+  return (
+    <DesktopContactsSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      items={items}
+      Link={RouterLink}
+      onAdd={() => {
+        void workspaceActions
+          .createContact({ name: "New contact" })
+          .then((created) => {
+            onNavigate(getContactsHref(created.id));
+          });
+      }}
+    />
+  );
+}
+
+export function OrganizationsKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const frozen = useKeepAliveFrozen();
+  const { pathname } = useShellLocation();
+  const { organizations } = useDesktopWorkspacePeople();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    frozen ? NO_ENTITIES : organizations,
+  );
+  const items = useMemo(
+    () =>
+      frozen
+        ? organizations
+        : withAvatarSrc(organizations, organizationAvatarSrc),
+    [frozen, organizationAvatarSrc, organizations],
+  );
+
+  return (
+    <DesktopOrganizationsSidePanel
+      onNavigate={onNavigate}
+      pathname={pathname}
+      items={items}
+      Link={RouterLink}
+      onAdd={() => {
+        void workspaceActions
+          .createOrganization({ name: "New organization" })
+          .then((created) => {
+            onNavigate(getOrganizationsHref(created.id));
+          });
+      }}
+    />
+  );
+}
+
+export function LettersKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { ready } = useDesktopWorkspaceMeta();
+  const { letters } = useDesktopWorkspaceProjects();
+  const workspaceActions = useDesktopWorkspaceActions();
+
+  return (
+    <DesktopLettersSidePanel
+      onNavigate={onNavigate}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstLetterHref(letters),
+        pathname.startsWith("/letters/"),
+      )}
+      items={letters}
+      loading={!ready}
+      onAdd={() => {
+        void workspaceActions
+          .createLetter({ title: "New letter" })
+          .then((created) => {
+            if (created.number == null) return;
+            const href = getLettersHref(created.number);
+            primeTabTitle(href, "New letter");
+            onNavigate(href);
+          });
+      }}
+    />
+  );
+}
+
+export function LettersV2KeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const { pathname } = useShellLocation();
+  const { ready } = useDesktopWorkspaceMeta();
+  const { letters } = useDesktopWorkspaceProjects();
+  const workspaceActions = useDesktopWorkspaceActions();
+  const firstHref = (() => {
+    const href = firstLetterHref(letters);
+    if (!href) return null;
+    if (href === "/letters") return "/letters-v2";
+    return href.replace(/^\/letters\//, "/letters-v2/");
+  })();
+
+  return (
+    <DesktopLettersSidePanel
+      onNavigate={onNavigate}
+      title="Letters"
+      getLetterHref={(letter) => getLettersV2Href(letter.number)}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstHref,
+        pathname.startsWith("/letters-v2/"),
+      )}
+      items={letters}
+      loading={!ready}
+      onAdd={() => {
+        void workspaceActions
+          .createLetter({ title: "New letter" })
+          .then((created) => {
+            if (created.number == null) return;
+            const href = getLettersV2Href(created.number);
+            primeTabTitle(href, "New letter");
+            onNavigate(href);
+          });
+      }}
+    />
+  );
+}

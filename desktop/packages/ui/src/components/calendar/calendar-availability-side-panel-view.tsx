@@ -9,10 +9,7 @@ import type {
 } from "@backsteros/contracts";
 
 import { weekdayLabel } from "../../calendar/calendar-availability-events.js";
-import {
-  CALENDAR_PAGE_MODE_OPTIONS,
-  type CalendarPageMode,
-} from "../../calendar/calendar-page-mode.js";
+import { type CalendarPageMode } from "../../calendar/calendar-page-mode.js";
 import {
   addWeekdaySlot,
   patchWeekdayHoursEntry,
@@ -22,7 +19,7 @@ import {
 } from "../../calendar/calendar-availability-slots.js";
 import { openNativeDatePicker } from "../../dropdowns/native-date-picker.js";
 import { ContentSidePanelHeader } from "../content/content-side-panel-header.js";
-import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { CalendarSidePanelModeFooter } from "./calendar-side-panel-mode-footer.js";
 
 export type CalendarAvailabilitySidePanelViewProps = {
   weekdayHours: MeetingWeekdayHoursEntry[];
@@ -230,14 +227,10 @@ export function CalendarAvailabilitySidePanelView({
           </div>
         ))}
       </div>
-      <div className="calendar-side-panel__footer">
-        <SegmentedPillToggle
-          value={pageMode}
-          options={CALENDAR_PAGE_MODE_OPTIONS}
-          onChange={onPageModeChange}
-          ariaLabel="Calendar page mode"
-        />
-      </div>
+      <CalendarSidePanelModeFooter
+        pageMode={pageMode}
+        onPageModeChange={onPageModeChange}
+      />
     </div>
   );
 }

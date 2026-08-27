@@ -4,7 +4,11 @@ import { useCallback } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { taskDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import {
+  TASKS_LIST_BOARD_STORAGE_KEY,
+  useListBoardView,
+} from "../lib/list-board-view";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -15,6 +19,8 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSyncedOrRest } from "../lib/use-synced-or-rest";
+import { ListBoardToggle } from "./list-board-toggle";
+import { TaskBoardPane } from "./list-board/task-board-pane";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 
 type SyncedTaskRow = GroupedTaskRow & {
@@ -38,19 +44,20 @@ const TASKS_SQL = `${TASK_LIST_SELECT}
 export function ProjectTasksPanel({ projectId }: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
+  const { view: boardView, toggleView: toggleBoardView } = useListBoardView(
+    TASKS_LIST_BOARD_STORAGE_KEY,
+  );
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const { rows, loading, error, pullRefreshing, reload } =
@@ -58,6 +65,7 @@ export function ProjectTasksPanel({ projectId }: Props) {
       sql: TASKS_SQL,
       params: [projectId],
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
+      fillTaskFieldsFromRest: true,
       fetchRest: async () => {
         try {
           const [tasksBody, projectsBody, contactsBody] = await Promise.all([
@@ -109,20 +117,37 @@ export function ProjectTasksPanel({ projectId }: Props) {
   }
 
   return (
-    <GroupedTaskList
-      rows={rows}
-      emptyText="No tasks in this project."
-      refreshing={pullRefreshing}
-      onRefresh={() => {
-        void reload();
-      }}
-      onPressRow={onPressRow}
-      onAddToStatus={(status) => {
-        router.push({
-          pathname: "/create/task",
-          params: { projectId, status },
-        });
-      }}
-    />
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "flex-end",
+          paddingHorizontal: 16,
+          paddingTop: 8,
+          paddingBottom: 4,
+        }}
+      >
+        <ListBoardToggle view={boardView} onToggle={toggleBoardView} />
+      </View>
+      {boardView === "board" ? (
+        <TaskBoardPane rows={rows} onPressRow={onPressRow} />
+      ) : (
+        <GroupedTaskList
+          rows={rows}
+          emptyText="No tasks in this project."
+          refreshing={pullRefreshing}
+          onRefresh={() => {
+            void reload();
+          }}
+          onPressRow={onPressRow}
+          onAddToStatus={(status) => {
+            router.push({
+              pathname: "/create/task",
+              params: { projectId, status },
+            });
+          }}
+        />
+      )}
+    </View>
   );
 }

@@ -18,10 +18,10 @@ import {
 import { newId } from "../lib/crypto.js";
 import {
   createMeetingRow,
-  EXTERNAL_MEETING_BOOKING_STATUS,
   formatMeetingDisplayId,
   toMeeting,
 } from "./meetings.js";
+import { EXTERNAL_MEETING_BOOKING_STATUS } from "./meetings-status.js";
 import {
   DEFAULT_WEEKDAY_HOURS,
   normalizeWeekdayHours,
@@ -31,7 +31,6 @@ import {
   intervalsOverlap,
   type TimeInterval,
 } from "./meeting-scheduling-slots.js";
-import { enqueueReplicationRow } from "./core-replication/apply.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -90,13 +89,6 @@ export async function getOrCreateSchedulingSettings(
       },
     })
     .returning();
-  if (row) {
-    await enqueueReplicationRow({
-      table: "meeting_scheduling_settings",
-      row,
-      executor,
-    });
-  }
   return toPublicSettings(row!);
 }
 
@@ -150,13 +142,6 @@ export async function updateSchedulingSettings(
     })
     .where(eq(meetingSchedulingSettings.workspaceId, workspaceId))
     .returning();
-  if (row) {
-    await enqueueReplicationRow({
-      table: "meeting_scheduling_settings",
-      row,
-      executor,
-    });
-  }
   return toPublicSettings(row!);
 }
 

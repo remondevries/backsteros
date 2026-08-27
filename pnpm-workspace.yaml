@@ -9,6 +9,7 @@ packages:
 allowBuilds:
   '@clerk/shared': true
   '@journeyapps/wa-sqlite': true
+  '@shopify/react-native-skia': true
   '@swc/core': true
   browser-tabs-lock: true
   bufferutil: true
@@ -19,6 +20,32 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   utf-8-validate: true
+minimumReleaseAgeExclude:
+  - '@expo/image-utils@0.8.17'
+  - '@expo/require-utils@55.0.8'
+  - expo-application@55.0.19
+  - expo-device@55.0.21
+  - expo-notifications@55.0.27
+  - '@expo/cli@55.0.36'
+  - '@expo/config@55.0.21'
+  - '@expo/local-build-cache-provider@55.0.16'
+  - '@expo/metro-config@55.0.27'
+  - '@expo/prebuild-config@55.0.22'
+  - babel-preset-expo@55.0.25
+  - expo-asset@55.0.20
+  - expo-file-system@55.0.26
+  - expo-modules-autolinking@55.0.27
+  - expo@55.0.30
+  - expo-blur@55.0.18
+  - expo-build-properties@55.0.18
+  - expo-crypto@55.0.19
+  - expo-dev-client@55.0.39
+  - expo-dev-launcher@55.0.40
+  - expo-dev-menu@55.0.34
+  - expo-document-picker@55.0.17
+  - expo-manifests@55.0.21
+  - expo-secure-store@55.0.18
+  - expo-web-browser@55.0.20
 # Single React for Expo mobile (SDK 54) — clerk can otherwise pull a second React.
 overrides:
   react: 19.1.0

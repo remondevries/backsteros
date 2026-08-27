@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import {
   isBlockingModalOpen,
   isContentEditModeActive,
+  useCommandPaletteRuntimeRefs,
 } from "@backsteros/ui";
 
 export const COMPOSE_GLOBAL_SHORTCUT = "CmdOrCtrl+Alt+C";
@@ -28,20 +29,20 @@ export function isComposeGlobalShortcut(
  */
 export function useComposeGlobalShortcut({
   enabled = true,
-  commandPaletteOpen = false,
   onCompose,
 }: {
   enabled?: boolean;
-  commandPaletteOpen?: boolean;
   onCompose: () => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) {
+      if (openRef.current) {
         return;
       }
 
@@ -64,5 +65,5 @@ export function useComposeGlobalShortcut({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled, onCompose]);
+  }, [enabled, onCompose, openRef]);
 }

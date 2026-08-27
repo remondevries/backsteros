@@ -118,7 +118,6 @@ export function useInboxTriageNotifications(): void {
           due_date: row.due_date,
           agent_created_at: row.agent_created_at,
           agent_inbox_approved_at: row.agent_inbox_approved_at,
-          inbox_updated_at: row.inbox_updated_at,
         })
       ) {
         continue;
@@ -131,7 +130,6 @@ export function useInboxTriageNotifications(): void {
           due_date: row.due_date,
           agent_created_at: row.agent_created_at,
           agent_inbox_approved_at: row.agent_inbox_approved_at,
-          inbox_updated_at: row.inbox_updated_at,
         },
         build: () =>
           buildInboxTriageTaskNotification({

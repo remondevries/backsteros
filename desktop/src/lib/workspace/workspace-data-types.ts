@@ -64,9 +64,8 @@ export type DesktopWorkspaceData = {
   projectSummaries: Record<string, string>;
   projectDescriptions: Record<string, string>;
   taskDescriptions: Record<string, string>;
-  taskLinks: Record<string, TaskLink[]>;
   letterBodies: Record<string, string>;
-  /** Full API task rows (includes description when REST hydrate filled it). */
+  /** Full API task rows (includes description / links when REST hydrate filled them). */
   taskDetails: Record<string, ApiTask>;
   /** Full API project rows (includes summary/description when available). */
   projectDetails: Record<string, ApiProject>;

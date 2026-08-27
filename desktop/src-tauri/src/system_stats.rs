@@ -4,12 +4,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "linux")]
 use std::fs;
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Clone, Copy)]
 struct CpuSample {
@@ -17,7 +18,7 @@ struct CpuSample {
     total: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryStats {
     pub total: u64,
@@ -25,7 +26,7 @@ pub struct MemoryStats {
     pub free: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiskStats {
     pub path: String,
@@ -34,7 +35,7 @@ pub struct DiskStats {
     pub free: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemStats {
     pub cpu_percent: Option<f64>,
@@ -336,20 +337,69 @@ fn read_disk(path: &Path) -> Option<DiskStats> {
     })
 }
 
-#[tauri::command]
-pub fn system_stats(path: Option<String>) -> SystemStats {
-    let disk_path = path
-        .as_deref()
-        .map(str::trim)
+pub const SYSTEM_STATS_UPDATE_EVENT: &str = "system-stats-update";
+
+const WATCH_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Shared disk path for the background status-bar emitter.
+pub struct SystemStatsDiskPath(pub Mutex<PathBuf>);
+
+fn resolve_disk_path(path: Option<&str>) -> PathBuf {
+    path.map(str::trim)
         .filter(|p| !p.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(home_dir);
+        .unwrap_or_else(home_dir)
+}
 
+fn collect_system_stats(disk_path: &Path) -> SystemStats {
     SystemStats {
         cpu_percent: cpu_usage_percent(),
         load_average: load_average(),
         memory: read_memory(),
-        disk: read_disk(&disk_path),
+        disk: read_disk(disk_path),
         sampled_at: now_ms(),
     }
+}
+
+/// One-shot sample (ad-hoc reads / immediate paint before the first watch tick).
+#[tauri::command]
+pub fn system_stats(path: Option<String>) -> SystemStats {
+    let disk_path = resolve_disk_path(path.as_deref());
+    collect_system_stats(&disk_path)
+}
+
+/// Update the disk path used by the background `system-stats-update` emitter.
+#[tauri::command]
+pub fn set_system_stats_disk_path(
+    state: State<'_, SystemStatsDiskPath>,
+    path: Option<String>,
+) -> Result<(), String> {
+    let next = resolve_disk_path(path.as_deref());
+    let mut guard = state
+        .0
+        .lock()
+        .map_err(|_| "system stats disk path lock poisoned".to_string())?;
+    *guard = next;
+    Ok(())
+}
+
+/// Emit `system-stats-update` to the main window every 2s (status bar push).
+pub fn start_system_stats_watch(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Prime CPU delta so the first emitted sample has a meaningful percent.
+        let _ = cpu_usage_percent();
+        loop {
+            std::thread::sleep(WATCH_INTERVAL);
+
+            let disk_path = app
+                .try_state::<SystemStatsDiskPath>()
+                .and_then(|state| state.0.lock().ok().map(|g| g.clone()))
+                .unwrap_or_else(home_dir);
+
+            let stats = collect_system_stats(&disk_path);
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.emit(SYSTEM_STATS_UPDATE_EVENT, &stats);
+            }
+        }
+    });
 }

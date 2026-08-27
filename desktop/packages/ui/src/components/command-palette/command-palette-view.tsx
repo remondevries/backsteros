@@ -34,6 +34,8 @@ import {
   financeGoNavigationItemSearchValue,
   type FinanceGoNavigationItem,
 } from "../../finance/finance-nav.js";
+import { clearGoFinanceChord } from "../../finance/go-finance-chord-gate.js";
+import { clearGoLeaderSequence } from "../../shortcuts/go-leader-sequence-gate.js";
 import { navigation } from "../../navigation/navigation.js";
 import { isCommandPaletteToggleKey } from "../../command-palette/command-palette-toggle-key.js";
 import {
@@ -43,6 +45,7 @@ import {
 import { FinanceSectionNavIcon } from "../finance/finance-side-panel-nav-view.js";
 import { NavigationItemIcon } from "../navigation/navigation-item-icon.js";
 import { SearchNavIcon } from "../shell/sidebar-nav-icons.js";
+import { afterNextPaint } from "../../timing/after-next-paint.js";
 
 /** Native desktop menus (Tauri) dispatch this when ⌘K / Ctrl+K is pressed. */
 export const TOGGLE_COMMAND_PALETTE_EVENT = "backsteros:toggle-command-palette";
@@ -263,7 +266,7 @@ export function CommandPaletteView({
         input.focus();
       }
       attempts += 1;
-      if (attempts < 5) {
+      if (attempts < 2) {
         frame = requestAnimationFrame(focusInput);
       }
     };
@@ -303,6 +306,8 @@ export function CommandPaletteView({
 
       event.preventDefault();
       event.stopImmediatePropagation();
+      clearGoLeaderSequence();
+      clearGoFinanceChord();
       setOpen(false);
     }
 
@@ -310,6 +315,24 @@ export function CommandPaletteView({
     return () =>
       window.removeEventListener("keydown", handleLeaderBackspace, true);
   }, [open, openGo, setOpen]);
+
+  // Always allow Escape to dismiss — cmdk can miss it when leader-nav modes are active.
+  useEffect(() => {
+    if (!open) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      clearGoLeaderSequence();
+      clearGoFinanceChord();
+      setOpen(false);
+    }
+
+    window.addEventListener("keydown", handleEscape, true);
+    return () => window.removeEventListener("keydown", handleEscape, true);
+  }, [mode, open, setOpen]);
 
   useEffect(() => {
     if (!open || isLeaderNavMode) return;
@@ -404,8 +427,18 @@ export function CommandPaletteView({
   const showContextBreadcrumb = !isLeaderNavMode && contextBreadcrumb.length > 0;
 
   function closeAndNavigate(href: string) {
-    setOpen(false);
+    clearGoLeaderSequence();
+    clearGoFinanceChord();
+    if (isGoMode) {
+      setOpen(false);
+      navigate(href);
+      return;
+    }
     navigate(href);
+    // Search-select: unmount after paint so cmdk teardown does not win the frame.
+    afterNextPaint(() => {
+      setOpen(false);
+    });
   }
 
   /** `f ` (or lone `f` + Tab) scopes into Finance go destinations. */

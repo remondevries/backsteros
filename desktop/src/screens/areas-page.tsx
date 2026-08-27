@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   AreasOverviewView,
-  ProjectsListSkeleton,
   RegisterPageTitle,
   primeTabTitle,
   projectAreaReorderPatches,
@@ -12,10 +11,12 @@ import {
   type ProjectOverviewRowProject,
 } from "@backsteros/ui";
 
+import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import { type ProjectLocationState } from "../lib/project-type-cache";
+import { navigateToHref } from "../router/navigate-href";
 
 type WorkspaceProject = ProjectOverviewRowProject & {
   organizationId?: string | null;
@@ -48,6 +49,8 @@ export function AreasPage() {
     [agentStatus?.workingTaskIds, workspace.allTasks],
   );
 
+  useDesktopSectionBreadcrumb([{ label: "Areas" }]);
+
   const areas = useMemo<NestedAreaRef[]>(
     () =>
       workspace.areas.map((area) => ({
@@ -63,15 +66,6 @@ export function AreasPage() {
       })),
     [workspace.areas],
   );
-
-  if (!workspace.ready) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-        <RegisterPageTitle title="Areas" />
-        <ProjectsListSkeleton />
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -90,7 +84,7 @@ export function AreasPage() {
             from: "areas",
             ...(match?.type ? { projectType: match.type } : {}),
           };
-          navigate(href, { state });
+          navigateToHref(navigate, href, { state });
         }}
         onStatusChange={(projectId, status) => {
           setProjectOverlay((current) => ({

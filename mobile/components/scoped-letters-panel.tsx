@@ -1,26 +1,29 @@
 import type { Letter } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { letterDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import { formatLetterDisplayId } from "../lib/letter-display-id";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import { groupTasksByStatus } from "../lib/task-status";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSyncedOrRest } from "../lib/use-synced-or-rest";
+import { BacksterGroupedList } from "./lists/index";
 import { TaskStatusIcon } from "./task-status-icon";
 
 type LetterRow = {
@@ -35,6 +38,7 @@ type LetterRow = {
 };
 
 type Section = {
+  key: string;
   title: string;
   status: string;
   data: LetterRow[];
@@ -60,19 +64,17 @@ function scopeColumn(kind: Scope["kind"]): string {
 export function ScopedLettersPanel({ scope, emptyText }: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const column = scopeColumn(scope.kind);
@@ -123,6 +125,7 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
   const sections = useMemo<Section[]>(
     () =>
       groupTasksByStatus(rows).map((group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: group.tasks,
@@ -130,7 +133,12 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
     [rows],
   );
 
-  const listRef = useRef<SectionList<LetterRow, Section>>(null);
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () => flattenGroupedSections(sections),
+    [sections],
+  );
+
+  const listRef = useRef<FlashListRef<FlatGroupedRow<LetterRow>>>(null);
   const itemIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
@@ -146,11 +154,11 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
     onActivate: openLetter,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -173,27 +181,24 @@ export function ScopedLettersPanel({ scope, emptyText }: Props) {
   }
 
   return (
-    <SectionList
+    <BacksterGroupedList
       ref={listRef}
-      style={ui.screen}
-      sections={sections as SectionListData<LetterRow, Section>[]}
-      keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={false}
-      keyboardShouldPersistTaps="handled"
+      sections={sections}
+      highlightedId={highlightedId}
+      estimatedItemSize={56}
+      estimatedHeaderSize={32}
       refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-      ListEmptyComponent={<Text style={ui.empty}>{emptyText}</Text>}
-      renderSectionHeader={({ section }) => (
+      emptyText={emptyText}
+      renderSectionHeader={(section) => (
         <Text style={ui.sectionHeader}>{section.title}</Text>
       )}
-      renderItem={({ item }) => {
+      renderItem={(item, { highlighted }) => {
         const title = item.title?.trim() || "Untitled";
         const displayId =
           item.number != null ? formatLetterDisplayId(item.number) : null;
-        const highlighted = highlightedId === item.id;
         return (
           <Pressable
             accessibilityRole="button"

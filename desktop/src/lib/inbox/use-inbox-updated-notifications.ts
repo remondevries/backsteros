@@ -14,12 +14,13 @@ import { showNativeInboxTriageNotification } from "./native-notifications";
 export function useInboxUpdatedNotifications(
   items: readonly InboxListItem[],
   ready = true,
+  enabled = true,
 ) {
   const previousKeysRef = useRef<Set<string>>(new Set());
   const seededRef = useRef(false);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!enabled || !ready) return;
 
     const currentKeys = snapshotInboxUpdatedKeys(items);
 
@@ -39,5 +40,5 @@ export function useInboxUpdatedNotifications(
     for (const notification of arrivals) {
       void showNativeInboxTriageNotification(notification);
     }
-  }, [items, ready]);
+  }, [enabled, items, ready]);
 }

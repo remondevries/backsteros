@@ -350,3 +350,103 @@ export async function deleteTaskComment(
 
   return true;
 }
+
+export async function getTaskCommentRow(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
+    .select()
+    .from(taskComments)
+    .where(
+      and(eq(taskComments.workspaceId, workspaceId), eq(taskComments.id, id)),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function createTaskCommentRow(
+  workspaceId: string,
+  id: string,
+  input: {
+    taskId: string;
+    body: string;
+    parentCommentId?: string | null;
+    authorUserId?: string | null;
+    authorContactId?: string | null;
+    authorEmail?: string | null;
+  },
+  executor: DbExecutor = db,
+) {
+  const [task] = await executor
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.id, input.taskId),
+        eq(tasks.workspaceId, workspaceId),
+        isNull(tasks.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!task) return null;
+
+  const parentCommentId = input.parentCommentId?.trim() || null;
+  if (parentCommentId) {
+    const [parent] = await executor
+      .select({
+        id: taskComments.id,
+        parentCommentId: taskComments.parentCommentId,
+      })
+      .from(taskComments)
+      .where(
+        and(
+          eq(taskComments.id, parentCommentId),
+          eq(taskComments.taskId, input.taskId),
+          eq(taskComments.workspaceId, workspaceId),
+          isNull(taskComments.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!parent || parent.parentCommentId != null) return null;
+  }
+
+  const body = input.body.trim();
+  if (!body) return null;
+
+  const [row] = await executor
+    .insert(taskComments)
+    .values({
+      id,
+      workspaceId,
+      taskId: input.taskId,
+      parentCommentId,
+      authorUserId: input.authorUserId ?? null,
+      authorContactId: input.authorContactId ?? null,
+      authorEmail: input.authorEmail?.trim() || null,
+      body,
+    })
+    .returning();
+
+  return row ?? null;
+}
+
+export async function softDeleteTaskCommentRow(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const existing = await getTaskCommentRow(workspaceId, id, executor);
+  if (!existing || existing.deletedAt) return null;
+
+  const ok = await deleteTaskComment(
+    workspaceId,
+    existing.taskId,
+    id,
+    executor,
+  );
+  if (!ok) return null;
+
+  return getTaskCommentRow(workspaceId, id, executor);
+}

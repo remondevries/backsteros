@@ -10,10 +10,8 @@ import {
 } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
-import {
-  GroupedTaskList,
-  type GroupedTaskRow,
-} from "../../../components/grouped-task-list";
+import { GroupedTaskList, type GroupedTaskRow } from "../../../components/grouped-task-list";
+import { TaskBoardPane } from "../../../components/list-board/task-board-pane";
 import type { HabitCheckChipItem } from "../../../components/tasks-today-habits-chips";
 import { TasksHeader } from "../../../components/tasks-header";
 import {
@@ -26,15 +24,20 @@ import {
   emailPartyLabel,
   resolveEmailListItemStatus,
 } from "../../../lib/email-list";
-import { getMobileEnvironment } from "../../../lib/env";
+import { useMobileCoreApiUrl } from "../../../lib/api-url-context";
 import { listHabits, recordHabitDay } from "../../../lib/habits/api";
 import { getTaskDueDateYmd } from "../../../lib/habits/dates";
 import { getTodayJournalDateSlug } from "../../../lib/journal";
+import {
+  TASKS_LIST_BOARD_STORAGE_KEY,
+  useListBoardView,
+} from "../../../lib/list-board-view";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
   withDisplayId,
 } from "../../../lib/map-task-row";
+import { fillMissingTaskFieldsFromApi } from "../../../lib/merge-task-fields";
 import { useMobilePowerSync } from "../../../lib/powersync-context";
 import { TASK_LIST_SELECT } from "../../../lib/task-list-query";
 import {
@@ -82,12 +85,15 @@ const HABIT_TASKS_SQL = `SELECT id, habit_id, title, status, due_date FROM tasks
 export default function TasksScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
   const powerSync = useMobilePowerSync();
   const [dueFilter, setDueFilterState] = useState<TasksDueFilter>(
     getRememberedTasksDueFilter,
   );
   const client = useMobileApiClient();
+  const { view: boardView, toggleView: toggleBoardView } = useListBoardView(
+    TASKS_LIST_BOARD_STORAGE_KEY,
+  );
 
   const setDueFilter = useCallback((filter: TasksDueFilter) => {
     rememberTasksDueFilter(filter);
@@ -110,10 +116,15 @@ export default function TasksScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       header: () => (
-        <TasksHeader dueFilter={dueFilter} onDueFilterChange={setDueFilter} />
+        <TasksHeader
+          dueFilter={dueFilter}
+          onDueFilterChange={setDueFilter}
+          boardView={boardView}
+          onBoardViewToggle={toggleBoardView}
+        />
       ),
     });
-  }, [dueFilter, navigation, setDueFilter]);
+  }, [boardView, dueFilter, navigation, setDueFilter, toggleBoardView]);
 
   const { data: syncedTasks, isLoading: syncLoading } = useLocalQuery<
     GroupedTaskRow & {
@@ -192,22 +203,26 @@ export default function TasksScreen() {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       setRestError(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     } finally {
       endReload(userPull);
     }
-  }, [apiUrl, beginReload, client, endReload, markHydrated, refreshHabitRollover]);
+  }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated, refreshHabitRollover]);
 
   useRestListHydration(reloadRest);
 
-  const allRows = resolveSyncedOrRestRows({
-    localRows,
-    restRows,
-    connected: powerSync.connected,
-  });
+  const allRows = useMemo(() => {
+    const rows = resolveSyncedOrRestRows({
+      localRows,
+      restRows,
+      connected: powerSync.connected,
+    });
+    if (powerSync.connected && localRows.length > 0 && restRows != null) {
+      return fillMissingTaskFieldsFromApi(rows, restRows);
+    }
+    return rows;
+  }, [localRows, powerSync.connected, restRows]);
 
   // Email thread rows alongside tasks — desktop Tasks page parity. The due
   // filter applies the same way (emails without a due date show under All).
@@ -366,6 +381,10 @@ export default function TasksScreen() {
         <Text style={ui.error}>{error}</Text>
       </View>
     );
+  }
+
+  if (boardView === "board") {
+    return <TaskBoardPane rows={rows} onPressRow={onPressRow} />;
   }
 
   return (

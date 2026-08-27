@@ -1,5 +1,4 @@
-import { useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useMemo } from "react";
 
 import {
   HabitTrackerView,
@@ -8,45 +7,52 @@ import {
   type HabitGridInstance,
 } from "@backsteros/ui";
 
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { writeHabitGridInstances } from "../lib/habit-instances-cache";
+import { useShellParams } from "../lib/shell-route-keep-alive";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
 
 export function HabitTrackerPage() {
-  const { habitId } = useParams<{ habitId?: string }>();
-  const workspace = useDesktopWorkspaceData();
+  const { habitId } = useShellParams() as { habitId?: string };
+  return <HabitTrackerPageLive habitId={habitId} />;
+}
+
+function HabitTrackerPageLive({ habitId }: { habitId?: string }) {
+  const { habits } = useDesktopWorkspaceMeta();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const { projects: workspaceProjects } = useDesktopWorkspaceProjects();
+  const workspace = useDesktopWorkspaceActions();
   const todayYmd = getTodayJournalDateSlug();
   const habit = habitId
-    ? (workspace.habits.find((entry) => entry.id === habitId) ?? null)
+    ? (habits.find((entry) => entry.id === habitId) ?? null)
     : null;
 
   const habitTitleById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const entry of workspace.habits) {
+    for (const entry of habits) {
       map.set(entry.id, entry.title);
     }
     return map;
-  }, [workspace.habits]);
+  }, [habits]);
 
   const projects = useMemo(
     () =>
-      workspace.projects.map((project) => ({
+      workspaceProjects.map((project) => ({
         id: project.id,
         name: project.name,
         icon: project.icon,
         type: project.type,
       })),
-    [workspace.projects],
+    [workspaceProjects],
   );
 
-  useEffect(() => {
-    void workspace.reloadHabits().catch(() => {
-      // Side panel still shows whatever we already have.
-    });
-  }, [workspace.reloadHabits]);
-
   const instances: HabitGridInstance[] = useMemo(() => {
-    return workspace.allTasks.flatMap((task) => {
+    const next = allTasks.flatMap((task) => {
       if (!task.habitId) return [];
-      if (habit && task.habitId !== habit.id) return [];
       const dueYmd = getTaskDueDateYmd(task.dueDate);
       if (!dueYmd) return [];
       return [
@@ -58,7 +64,11 @@ export function HabitTrackerPage() {
         },
       ];
     });
-  }, [habit, habitTitleById, workspace.allTasks]);
+    writeHabitGridInstances(next);
+    if (!habit) return next;
+    const habitTitle = habit.title;
+    return next.filter((entry) => entry.title === habitTitle);
+  }, [allTasks, habit, habitTitleById]);
 
   return (
     <HabitTrackerView

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   AvatarUpload,
@@ -34,8 +34,15 @@ import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
 } from "../lib/avatar-upload";
+import { firstContactRouteParam } from "../lib/section-entry-hrefs";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { navigateToHref } from "../router/navigate-href";
 
 function contactSlug(contact: {
   number?: number | null;
@@ -46,8 +53,7 @@ function contactSlug(contact: {
 }
 
 function normalizeContactSocialAccounts(
-  raw: unknown,
-): { platform: string; url: string }[] {
+  raw: unknown): { platform: string; url: string }[] {
   let accounts: unknown = raw ?? [];
   if (typeof accounts === "string") {
     try {
@@ -63,8 +69,7 @@ function normalizeContactSocialAccounts(
         entry != null &&
         typeof entry === "object" &&
         "platform" in entry &&
-        "url" in entry,
-    )
+        "url" in entry)
     .map((entry) => ({
       platform: String(entry.platform ?? ""),
       url: String(entry.url ?? ""),
@@ -82,30 +87,46 @@ export function ContactsPage({
   organizationRouteParam,
   organizationName,
 }: ContactsPageProps = {}) {
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (
+      to: string,
+      options?: { replace?: boolean; state?: unknown },
+    ) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate]);
+  const keepAliveActive = useKeepAliveActive();
   const { slug, contactSlug: contactSlugParam, section: sectionParam } =
-    useParams<{
+    useShellParams() as {
       slug?: string;
       contactSlug?: string;
       section?: string;
-    }>();
-  const routeSlug = contactSlugParam ?? slug;
+    };
+  const routedSlug = contactSlugParam ?? slug;
   const routeScope = useMemo<ContactRouteScope>(
     () =>
       organizationRouteParam
         ? { kind: "organization", organizationRouteParam }
         : { kind: "standalone" },
-    [organizationRouteParam],
-  );
+    [organizationRouteParam]);
   const contactsListHref = getScopedContactsListHref(routeScope);
   const workspace = useDesktopWorkspaceData();
+  const keepAliveFrozen = useKeepAliveFrozen();
   const { client } = useDesktopApi();
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
   const contacts = workspace.contacts;
   const { organizations, allTasks: tasks, letters } = workspace;
-  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    keepAliveFrozen ? [] : contacts);
+  const firstSlug =
+    !routedSlug && !organizationRouteParam
+      ? firstContactRouteParam(contacts)
+      : null;
+  const routeSlug = routedSlug ?? firstSlug ?? undefined;
 
   const selected = routeSlug
     ? contacts.find((contact) => contactMatchesSlug(contact, routeSlug)) ??
@@ -130,29 +151,36 @@ export function ContactsPage({
   }, [selected?.id]);
 
   useEffect(() => {
-    if (routeSlug || organizationRouteParam) return;
+    if (!keepAliveActive) return;
+    if (routedSlug || organizationRouteParam) return;
     // Match side-panel alpha order (not API/sort_order).
     const first =
       groupItemsByAlphaLetter(contacts).flatMap(([, entries]) => entries)[0] ??
       null;
     if (first) {
       const routeParam = getUniqueListItemRouteParam(first, contacts);
-      navigate(
-        getScopedContactSectionHref(routeParam, "overview"),
-        { replace: true },
-      );
+      navigate(getScopedContactSectionHref(routeParam, "overview"), {
+        replace: true,
+      });
     }
-  }, [contacts, navigate, organizationRouteParam, routeSlug]);
+  }, [contacts, keepAliveActive, navigate, organizationRouteParam, routedSlug]);
 
   useEffect(() => {
+    if (!keepAliveActive) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (sectionParam === "overview" || !isContactSectionId(sectionParam)) {
       navigate(
         getScopedContactSectionHref(selectedSlugValue, "overview", routeScope),
-        { replace: true },
-      );
+        { replace: true });
     }
-  }, [navigate, routeScope, sectionParam, selected, selectedSlugValue]);
+  }, [
+    keepAliveActive,
+    navigate,
+    routeScope,
+    sectionParam,
+    selected,
+    selectedSlugValue,
+  ]);
 
   useDesktopSectionBreadcrumb(
     selected
@@ -163,15 +191,13 @@ export function ContactsPage({
               label: organizationName,
               href: getOrganizationSectionHref(
                 organizationRouteParam,
-                "overview",
-              ),
+                "overview"),
             },
             {
               label: "Contacts",
               href: getOrganizationSectionHref(
                 organizationRouteParam,
-                "contacts",
-              ),
+                "contacts"),
             },
             {
               label: selected.name,
@@ -181,8 +207,7 @@ export function ContactsPage({
                   : getScopedContactSectionHref(
                       selectedSlugValue,
                       "overview",
-                      routeScope,
-                    ),
+                      routeScope),
             },
             ...(sectionLabel ? [{ label: sectionLabel }] : []),
           ]
@@ -196,18 +221,16 @@ export function ContactsPage({
                   : getScopedContactSectionHref(
                       selectedSlugValue,
                       "overview",
-                      routeScope,
-                    ),
+                      routeScope),
             },
             ...(sectionLabel ? [{ label: sectionLabel }] : []),
           ]
       : [{ label: "Contacts" }],
-  );
+    { enabled: keepAliveActive });
 
   const organizationOptions = useMemo(
     () => organizations.map((org) => ({ id: org.id, name: org.name })),
-    [organizations],
-  );
+    [organizations]);
 
   const handleDeleteContact = useCallback(async () => {
     if (!selected) {
@@ -246,15 +269,6 @@ export function ContactsPage({
   }
 
   if (!selected || !selectedSlugValue) {
-    if (!workspace.ready) {
-      return (
-        <EntityDetailLayout
-          sectionLabel="Contacts"
-          title={null}
-          resolving
-        />
-      );
-    }
     return (
       <EntityDetailLayout
         sectionLabel="Contacts"
@@ -300,9 +314,7 @@ export function ContactsPage({
                   number: task.number,
                   projectKey: task.projectKey,
                   contactKey,
-                },
-              ),
-            );
+                }));
           }}
           onStatusChange={(taskId, status: TaskStatus) => {
             void workspace.patchTask(taskId, { status });
@@ -342,9 +354,7 @@ export function ContactsPage({
               getScopedContactLetterHref(
                 contactRouteSlug,
                 letter.number,
-                routeScope,
-              ),
-            )
+                routeScope))
           }
           onStatusChange={(letterId, status: TaskStatus) => {
             void workspace.patchLetter(letterId, { status });
@@ -363,8 +373,7 @@ export function ContactsPage({
               params.set("organizationId", contact.organizationId);
             }
             navigate(
-              `${getScopedContactLetterHref(contactRouteSlug, "new", routeScope)}?${params.toString()}`,
-            );
+              `${getScopedContactLetterHref(contactRouteSlug, "new", routeScope)}?${params.toString()}`);
           }}
         />
       );
@@ -375,12 +384,16 @@ export function ContactsPage({
 
   return (
     <>
-      <RegisterPageTitle title={contact.name} />
-      {activeSection === "overview" ? (
-        <RegisterEntityDeleteAction
-          entityLabel={`contact "${contact.name}"`}
-          onDelete={handleDeleteContact}
-        />
+      {keepAliveActive ? (
+        <>
+          <RegisterPageTitle title={contact.name} />
+          {activeSection === "overview" ? (
+            <RegisterEntityDeleteAction
+              entityLabel={`contact "${contact.name}"`}
+              onDelete={handleDeleteContact}
+            />
+          ) : null}
+        </>
       ) : null}
       <ContactDetailView
         contact={{
@@ -399,8 +412,7 @@ export function ContactsPage({
           organizationName: contact.organizationName,
           summary: details?.summary ?? null,
           socialAccounts: normalizeContactSocialAccounts(
-            details?.socialAccounts,
-          ),
+            details?.socialAccounts),
         }}
         organizationOptions={organizationOptions}
         section={activeSection}
@@ -425,8 +437,7 @@ export function ContactsPage({
                 client,
                 "contact",
                 contact.id,
-                file,
-              );
+                file);
               if (result.ok) {
                 const url = URL.createObjectURL(file);
                 setAvatarOverride((current) => {
@@ -440,8 +451,7 @@ export function ContactsPage({
               const result = await removeDesktopAvatar(
                 client,
                 "contact",
-                contact.id,
-              );
+                contact.id);
               if (result.ok) {
                 setAvatarOverride((current) => {
                   if (current) URL.revokeObjectURL(current);

@@ -56,7 +56,9 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-image",
       "./plugins/with-fmt-xcode-format.js",
+      "./plugins/with-internal-expo-import.js",
       "expo-web-browser",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
@@ -70,7 +72,8 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "reactCompiler": true
     }
   }
 }

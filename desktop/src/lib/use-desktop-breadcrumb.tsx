@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link } from "@tanstack/react-router";
+import type { NavigateOptions } from "@tanstack/react-router";
 
 import {
   ContentBreadcrumb,
@@ -19,9 +20,9 @@ function ChromeLink({
   children: ReactNode;
 }) {
   return (
-    <NavLink to={to} className={className}>
+    <Link to={to as NavigateOptions["to"]} className={className}>
       {children as never}
-    </NavLink>
+    </Link>
   );
 }
 

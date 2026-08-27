@@ -1,10 +1,8 @@
 import { useRouter } from "expo-router";
 
 import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
-import {
-  TabStackHeader,
-  TabStackHeaderPlusButton,
-} from "../lib/tab-stack-options";
+import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
+import { SectionListHeader } from "./section-list-header";
 
 export function OrganizationsHeaderPlus({
   chrome = "plain",
@@ -28,10 +26,10 @@ export function OrganizationsHeader({
   onToggleCollapse?: () => void;
 } = {}) {
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Organizations"
-      leadingActions={<OrganizationsHeaderPlus chrome="glass" />}
-      trailingActions={
+      plusControl={<OrganizationsHeaderPlus chrome="glass" />}
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}

@@ -54,7 +54,7 @@ import {
   shouldYieldListKeyboardEscapeToShortcutStack,
 } from "../../list-nav/use-list-clear-selection-shortcut.js";
 import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
-import { useCommandPalette } from "../command-palette/command-palette-context.js";
+import { useCommandPaletteRuntimeRefs } from "../command-palette/command-palette-context.js";
 
 function shouldHandleListKeyboardEscape(
   event: KeyboardEvent,
@@ -626,10 +626,12 @@ function ListKeyboardNavigationGlobalListener({
     options?: ApplyListKeyboardNavZoneOptions,
   ) => void;
 }) {
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { openRef } = useCommandPaletteRuntimeRefs();
+  const commandPaletteOpenRef = openRef;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      const commandPaletteOpen = commandPaletteOpenRef.current ?? false;
       if (commandPaletteOpen) {
         return;
       }
@@ -848,7 +850,7 @@ function ListKeyboardNavigationGlobalListener({
   }, [
     activeZoneRef,
     applyActiveZone,
-    commandPaletteOpen,
+    commandPaletteOpenRef,
     escapeReturnsToSidepanelRef,
     pathnameRef,
     preferSidepanelForJkRef,

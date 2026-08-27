@@ -1,5 +1,7 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
+import { letterPdfUploadErrorMessage } from "./letter-pdf-load-error";
+
 export async function uploadLetterPdfFile(
   client: BacksterosApiClient,
   letterId: string,
@@ -38,7 +40,7 @@ export async function uploadLetterPdfFile(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Could not upload PDF.",
+      error: letterPdfUploadErrorMessage(error),
     };
   }
 }

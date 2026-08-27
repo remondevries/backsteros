@@ -45,7 +45,7 @@ export type NavigationItem = {
 
 export const navigation: NavigationItem[] = [
   { href: "/inbox", label: "Inbox", icon: "inbox", section: "primary" },
-  { href: "/journal", label: "Journal", icon: "journal", section: "primary" },
+  { href: "/journal-v2", label: "Journal", icon: "journal", section: "primary" },
   {
     href: "/calendar",
     label: "Calendar",
@@ -53,7 +53,7 @@ export const navigation: NavigationItem[] = [
     section: "primary",
   },
   {
-    href: "/journal/habits",
+    href: "/habits-v2",
     label: "Habit Tracker",
     icon: "habits",
     section: "primary",
@@ -73,12 +73,17 @@ export const navigation: NavigationItem[] = [
     section: "workspace",
   },
   {
-    href: "/knowledge",
+    href: "/knowledge-v2",
     label: "Knowledge Base",
     icon: "knowledge",
     section: "workspace",
   },
-  { href: "/letters", label: "Letters", icon: "letters", section: "workspace" },
+  {
+    href: "/letters-v2",
+    label: "Letters",
+    icon: "letters",
+    section: "workspace",
+  },
   { href: "/finance", label: "Finance", icon: "finance", section: "workspace" },
   { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   {

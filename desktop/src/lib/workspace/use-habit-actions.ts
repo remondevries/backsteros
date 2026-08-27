@@ -1,7 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { Habit as ApiHabit, Task as ApiTask } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
+import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 /** Habit CRUD plus per-day completion recording. */
@@ -11,6 +12,7 @@ export function useWorkspaceHabitActions({
   powerSync,
   toSnakeFields,
   softRefreshApiTasks,
+  rawHabits,
   setApiHabits,
   setApiTasks,
 }: {
@@ -19,11 +21,17 @@ export function useWorkspaceHabitActions({
   powerSync: WorkspacePowerSync;
   toSnakeFields: (values: Record<string, unknown>) => Record<string, unknown>;
   softRefreshApiTasks: () => Promise<void>;
+  rawHabits: ApiHabit[];
   setApiHabits: ApiRowsSetter<ApiHabit>;
   setApiTasks: ApiRowsSetter<ApiTask>;
 }) {
+  const rawHabitsRef = useRef(rawHabits);
+  rawHabitsRef.current = rawHabits;
   const reloadHabits = useCallback(async () => {
     if (!authenticated) return [];
+    if (shouldSkipRestEntityWrite(powerSync)) {
+      return rawHabitsRef.current;
+    }
     const body = await client.requestJson<{ habits: ApiHabit[] }>(
       "/api/v1/habits",
     );
@@ -33,13 +41,48 @@ export function useWorkspaceHabitActions({
     setApiHabits(body.habits);
     setApiTasks(tasksBody.tasks);
     return body.habits;
-  }, [authenticated, client, setApiHabits, setApiTasks]);
+  }, [authenticated, client, powerSync, setApiHabits, setApiTasks]);
 
   const createHabit = useCallback(
     async (input: { title: string; icon?: string | null }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Habit title is required.");
       if (!authenticated) throw new Error("Sign in to create habits.");
+
+      if (shouldSkipRestEntityWrite(powerSync) && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const habit = {
+          id,
+          title,
+          icon: input.icon ?? null,
+          cadence: "daily",
+          sortOrder: Date.now(),
+          createdAt: now,
+          updatedAt: now,
+        } as ApiHabit;
+        setApiHabits((rows) => {
+          if (!rows) return [habit];
+          if (rows.some((entry) => entry.id === habit.id)) return rows;
+          return [habit, ...rows];
+        });
+        void powerSync
+          .createMetadata(
+            "habits",
+            toSnakeFields({
+              title: habit.title,
+              icon: habit.icon,
+              cadence: habit.cadence,
+              sortOrder: habit.sortOrder,
+            }),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local habit create failed", error);
+          });
+        return habit;
+      }
+
       const habit = await client.requestJson<ApiHabit>("/api/v1/habits", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -130,6 +173,22 @@ export function useWorkspaceHabitActions({
       },
     ) => {
       if (!authenticated) throw new Error("Sign in to update habits.");
+
+      if (shouldSkipRestEntityWrite(powerSync) && powerSync.patchMetadata) {
+        await powerSync.patchMetadata("habits", id, toSnakeFields(input));
+        const now = new Date().toISOString();
+        const existing = rawHabits.find((entry) => entry.id === id);
+        if (!existing) {
+          throw new Error("Habit not found.");
+        }
+        const habit = { ...existing, ...input, updatedAt: now } as ApiHabit;
+        setApiHabits((rows) => {
+          if (!rows) return [habit];
+          return rows.map((entry) => (entry.id === habit.id ? habit : entry));
+        });
+        return habit;
+      }
+
       const habit = await client.requestJson<ApiHabit>(
         `/api/v1/habits/${encodeURIComponent(id)}`,
         {
@@ -170,6 +229,7 @@ export function useWorkspaceHabitActions({
       authenticated,
       client,
       powerSync,
+      rawHabits,
       reloadHabits,
       setApiHabits,
       softRefreshApiTasks,
@@ -183,6 +243,49 @@ export function useWorkspaceHabitActions({
       input: { dueYmd: string; status: "completed" | "canceled" },
     ) => {
       if (!authenticated) throw new Error("Sign in to record habit days.");
+
+      const habit = rawHabits.find((entry) => entry.id === habitId);
+      if (
+        shouldSkipRestEntityWrite(powerSync) &&
+        powerSync.patchMetadata &&
+        habit?.todayTaskId
+      ) {
+        const completedAt =
+          input.status === "completed" ? new Date().toISOString() : null;
+        const status = input.status === "completed" ? "completed" : "canceled";
+        await powerSync.patchMetadata("tasks", habit.todayTaskId, {
+          status,
+          completed_at: completedAt,
+          due_date: input.dueYmd,
+          habit_id: habitId,
+        });
+        setApiTasks((rows) => {
+          if (!rows) return rows;
+          return rows.map((entry) =>
+            entry.id === habit.todayTaskId
+              ? ({
+                  ...entry,
+                  status,
+                  completedAt,
+                  dueDate: input.dueYmd,
+                  habitId,
+                  updatedAt: new Date().toISOString(),
+                } as ApiTask)
+              : entry,
+          );
+        });
+        const existingTask =
+          rawHabits.find((entry) => entry.id === habitId) ?? habit;
+        return {
+          id: habit.todayTaskId,
+          title: existingTask.title,
+          status,
+          completedAt,
+          dueDate: input.dueYmd,
+          habitId,
+        } as ApiTask;
+      }
+
       const task = await client.requestJson<ApiTask>(
         `/api/v1/habits/${encodeURIComponent(habitId)}/days`,
         {
@@ -232,7 +335,15 @@ export function useWorkspaceHabitActions({
       await reloadHabits();
       return task;
     },
-    [authenticated, client, powerSync, reloadHabits, setApiTasks, toSnakeFields],
+    [
+      authenticated,
+      client,
+      powerSync,
+      rawHabits,
+      reloadHabits,
+      setApiTasks,
+      toSnakeFields,
+    ],
   );
 
   return { reloadHabits, createHabit, updateHabit, recordHabitDay };

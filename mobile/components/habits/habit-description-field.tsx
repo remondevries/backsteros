@@ -78,7 +78,7 @@ export function HabitDescriptionField({
         onPress={expand}
         accessibilityRole="button"
         accessibilityLabel="Show full habit description"
-        style={styles.wrap}
+        style={[styles.wrap, centered ? styles.wrapCentered : null]}
       >
         <Text
           style={[styles.body, textAlignStyle]}
@@ -94,7 +94,7 @@ export function HabitDescriptionField({
   if (!onChange) {
     if (!hasText) return null;
     return (
-      <View style={styles.wrap}>
+      <View style={[styles.wrap, centered ? styles.wrapCentered : null]}>
         <Text style={[styles.body, textAlignStyle]}>{trimmed}</Text>
       </View>
     );
@@ -112,7 +112,7 @@ export function HabitDescriptionField({
         }}
         accessibilityRole="button"
         accessibilityLabel="Edit habit description"
-        style={styles.wrap}
+        style={[styles.wrap, centered ? styles.wrapCentered : null]}
       >
         <Text style={[styles.body, textAlignStyle]}>{trimmed}</Text>
       </Pressable>
@@ -120,7 +120,7 @@ export function HabitDescriptionField({
   }
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, centered ? styles.wrapCentered : null]}>
       <TextInput
         ref={inputRef}
         value={draft}
@@ -162,6 +162,9 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     width: "100%",
     marginTop: 2,
+  },
+  wrapCentered: {
+    alignItems: "center",
   },
   body: {
     color: colors.foreground,

@@ -20,11 +20,14 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FullWindowOverlay } from "react-native-screens";
 
-import { useTabBarVisibility } from "../lib/tab-bar-visibility";
+import { CALENDAR_PAGE_MODE_OPTIONS } from "../lib/calendar/calendar-page-mode";
 import { isPadDevice } from "../lib/device";
+import { useTabBarVisibility } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
+import { useCalendarPageMode } from "../lib/use-calendar-page-mode";
+import { PrimerOcticon } from "./primer-octicon";
 import {
-  AreasNavIcon,
+  CalendarNavIcon,
   FinanceNavIcon,
   HabitsNavIcon,
   KnowledgeBaseNavIcon,
@@ -36,7 +39,6 @@ import {
 import { ContactPersonIcon } from "./contact-person-icon";
 import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
-import { TerminalConsoleIcon } from "./terminal-console-icon";
 
 const ICON_SIZE = 22;
 const PILL_HEIGHT = 56;
@@ -44,35 +46,31 @@ const SIDE_INSET = 16;
 const PILL_GAP = 10;
 const HIGHLIGHT_INSET = 4;
 const COMPOSE_ROUTE = "compose";
-/** iPhone: Inbox → Journal → Tasks → More. */
-const PHONE_PRIMARY_ROUTES = ["inbox", "journal", "tasks"] as const;
+/** iPhone: Inbox → Journal → Calendar → Tasks → More. */
+const PHONE_PRIMARY_ROUTES = ["inbox", "journal", "calendar", "tasks"] as const;
 /**
  * iPad: promote workspace destinations into the tray (extra width).
- * Areas takes the former Projects slot; Development sits beside it;
- * Projects lives in More.
+ * Projects takes the former Areas slot (includes codebase projects).
  */
 const IPAD_PRIMARY_ROUTES = [
   "inbox",
   "email",
   "journal",
+  "calendar",
   "tasks",
-  "areas",
-  "development",
+  "projects",
   "letters",
   "finance",
   "knowledge",
 ] as const;
 const IPAD_MORE_SECTION_ROUTES = new Set([
   "habits",
-  "projects",
   "contacts",
   "organizations",
 ]);
 const PHONE_MORE_SECTION_ROUTES = new Set([
   "habits",
-  "areas",
   "projects",
-  "development",
   "letters",
   "finance",
   "knowledge",
@@ -89,6 +87,7 @@ const MORE_SECTION_ROUTES = IS_IPAD
   : PHONE_MORE_SECTION_ROUTES;
 /** Primary icons + trailing More button. */
 const PRIMARY_SLOT_COUNT = PRIMARY_ROUTE_NAMES.length + 1;
+const CALENDAR_PRIMARY_INDEX = PRIMARY_ROUTE_NAMES.indexOf("calendar");
 const ROW_MAX_WIDTH = IS_IPAD ? 760 : 480;
 
 const VISIBILITY_MS = 220;
@@ -190,6 +189,7 @@ function TabItem({
   navigation,
   compact,
   onPressExtra,
+  onPressOverride,
 }: {
   route: TabRoute;
   focused: boolean;
@@ -197,6 +197,7 @@ function TabItem({
   navigation: FloatingTabBarProps["navigation"];
   compact?: boolean;
   onPressExtra?: () => void;
+  onPressOverride?: () => void;
 }) {
   const router = useRouter();
   const color = focused ? colors.foreground : colors.muted;
@@ -204,6 +205,10 @@ function TabItem({
     options.tabBarAccessibilityLabel ?? options.title ?? route.name;
 
   const onPress = () => {
+    if (onPressOverride) {
+      onPressOverride();
+      return;
+    }
     onPressExtra?.();
     const event = navigation.emit({
       type: "tabPress",
@@ -239,8 +244,8 @@ function TabItem({
  * Floating pill tab bar rendered in a FullWindowOverlay on iOS so nested
  * native stacks cannot steal hits from the JS tab bar layer.
  *
- * Phone primary: Inbox → Journal → Tasks → More.
- * iPad primary: + Areas, Development, Letters, Knowledge (More: Projects + people/settings).
+ * Phone primary: Inbox → Journal → Calendar → Tasks → More.
+ * iPad primary: + Projects, Letters, Knowledge (More: people/settings).
  * Compose is a separate pill.
  */
 export function FloatingTabBar({
@@ -252,8 +257,10 @@ export function FloatingTabBar({
   const router = useRouter();
   const { hidden } = useTabBarVisibility();
   const [moreOpen, setMoreOpen] = useState(false);
-  const [moreMounted, setMoreMounted] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [menuMounted, setMenuMounted] = useState(false);
   const [hasSlotWidth, setHasSlotWidth] = useState(false);
+  const [overflowMenuWidth, setOverflowMenuWidth] = useState(0);
   // RN Modal can detach FullWindowOverlay on iOS — remount when becoming visible again.
   const [overlayEpoch, setOverlayEpoch] = useState(0);
   const wasHiddenRef = useRef(hidden);
@@ -261,14 +268,17 @@ export function FloatingTabBar({
   const bottom = IS_IPAD ? 0 : Math.max(insets.bottom, 10);
 
   const visibility = useSharedValue(hidden ? 0 : 1);
-  const moreProgress = useSharedValue(0);
+  const menuProgress = useSharedValue(0);
   const slotWidth = useSharedValue(0);
   const highlightIndex = useSharedValue(0);
   const highlightOpacity = useSharedValue(1);
   const composeHighlight = useSharedValue(0);
 
+  const { setMode: setCalendarPageMode } = useCalendarPageMode();
+  const overlayOpen = moreOpen || calendarOpen;
   const activeRouteName = state.routes[state.index]?.name ?? "";
   const moreSectionActive = MORE_SECTION_ROUTES.has(activeRouteName);
+  const calendarRouteActive = activeRouteName === "calendar";
 
   const primaryRoutes = useMemo(() => {
     const byName = new Map(
@@ -290,11 +300,15 @@ export function FloatingTabBar({
 
   const focusedPrimaryIndex = useMemo(() => {
     if (moreOpen || moreSectionActive) return PRIMARY_SLOT_COUNT - 1;
+    if (calendarOpen && CALENDAR_PRIMARY_INDEX >= 0) {
+      return CALENDAR_PRIMARY_INDEX;
+    }
     const idx = primaryRoutes.findIndex(
       ({ index }) => state.index === index,
     );
     return idx;
   }, [
+    calendarOpen,
     moreOpen,
     moreSectionActive,
     primaryRoutes,
@@ -306,11 +320,13 @@ export function FloatingTabBar({
 
   useEffect(() => {
     setMoreOpen(false);
+    setCalendarOpen(false);
   }, [activeRouteName]);
 
   useEffect(() => {
     if (hidden) {
       setMoreOpen(false);
+      setCalendarOpen(false);
     } else if (wasHiddenRef.current) {
       setOverlayEpoch((epoch) => epoch + 1);
     }
@@ -322,21 +338,21 @@ export function FloatingTabBar({
   }, [hidden, visibility]);
 
   useEffect(() => {
-    if (moreOpen) {
-      setMoreMounted(true);
-      moreProgress.value = withSpring(1, MORE_MENU_SPRING);
+    if (overlayOpen) {
+      setMenuMounted(true);
+      menuProgress.value = withSpring(1, MORE_MENU_SPRING);
       return;
     }
-    moreProgress.value = withTiming(
+    menuProgress.value = withTiming(
       0,
       { duration: MORE_MENU_CLOSE_MS, easing: VISIBILITY_EASING },
       (finished) => {
         if (finished) {
-          runOnJS(setMoreMounted)(false);
+          runOnJS(setMenuMounted)(false);
         }
       },
     );
-  }, [moreOpen, moreProgress]);
+  }, [menuProgress, overlayOpen]);
 
   useEffect(() => {
     if (focusedPrimaryIndex >= 0) {
@@ -367,12 +383,12 @@ export function FloatingTabBar({
     // No phone Email entry — email lives in Inbox there (desktop parity);
     // the iPad tray shows Email as a primary route.
     const overflow: MoreMenuItem[] = [];
-    if (!PRIMARY_ROUTES.has("areas")) {
+    if (!PRIMARY_ROUTES.has("calendar")) {
       overflow.push({
-        key: "areas",
-        label: "Areas",
-        onPress: () => go("areas"),
-        icon: (color) => <AreasNavIcon color={color} size={18} />,
+        key: "calendar",
+        label: "Calendar",
+        onPress: () => go("calendar"),
+        icon: (color) => <CalendarNavIcon color={color} size={18} />,
       });
     }
     overflow.push({
@@ -387,14 +403,6 @@ export function FloatingTabBar({
         label: "Projects",
         onPress: () => go("projects"),
         icon: (color) => <ProjectIcon size={18} color={color} />,
-      });
-    }
-    if (!PRIMARY_ROUTES.has("development")) {
-      overflow.push({
-        key: "development",
-        label: "Development",
-        onPress: () => go("development"),
-        icon: (color) => <TerminalConsoleIcon color={color} size={18} />,
       });
     }
     if (!PRIMARY_ROUTES.has("letters")) {
@@ -450,12 +458,12 @@ export function FloatingTabBar({
   }));
 
   const moreScrimStyle = useAnimatedStyle(() => ({
-    opacity: moreProgress.value,
+    opacity: menuProgress.value,
   }));
 
   const moreMenuStyle = useAnimatedStyle(() => ({
-    opacity: moreProgress.value,
-    transform: [{ translateY: (1 - moreProgress.value) * 12 }],
+    opacity: menuProgress.value,
+    transform: [{ translateY: (1 - menuProgress.value) * 12 }],
   }));
 
   const highlightStyle = useAnimatedStyle(() => {
@@ -490,21 +498,38 @@ export function FloatingTabBar({
     }
   };
 
-  const closeMore = () => setMoreOpen(false);
+  const closeMenus = () => {
+    setMoreOpen(false);
+    setCalendarOpen(false);
+  };
+
+  const onOverflowMenuSize = (event: LayoutChangeEvent) => {
+    const next = Math.round(event.nativeEvent.layout.width);
+    if (next > 0 && next !== overflowMenuWidth) {
+      setOverflowMenuWidth(next);
+    }
+  };
+
+  const menuPillStyle = [
+    styles.moreMenuPill,
+    overflowMenuWidth > 0 ? { width: overflowMenuWidth } : null,
+  ];
 
   const bar = (
     <Animated.View
       pointerEvents={hidden ? "none" : "box-none"}
       style={[styles.host, { paddingBottom: bottom }, hostAnimatedStyle]}
     >
-      {moreMounted ? (
+      {menuMounted ? (
         <Animated.View
-          pointerEvents={moreOpen ? "auto" : "none"}
+          pointerEvents={overlayOpen ? "auto" : "none"}
           style={[styles.dismissScrim, moreScrimStyle]}
         >
           <Pressable
-            accessibilityLabel="Dismiss more menu"
-            onPress={closeMore}
+            accessibilityLabel={
+              calendarOpen ? "Dismiss calendar menu" : "Dismiss more menu"
+            }
+            onPress={closeMenus}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
@@ -512,15 +537,31 @@ export function FloatingTabBar({
 
       <View style={styles.row} pointerEvents="box-none">
         <View style={styles.primaryWrap} pointerEvents="box-none">
-          {moreMounted ? (
+          <View
+            pointerEvents="none"
+            style={styles.menuWidthSizer}
+            onLayout={onOverflowMenuSize}
+          >
+            <View style={styles.moreMenuList}>
+              {moreItems.map((item) => (
+                <View key={item.key} style={styles.moreMenuItem}>
+                  <View style={styles.moreMenuItemIcon}>
+                    {item.icon(colors.muted)}
+                  </View>
+                  <Text style={styles.moreMenuItemLabel}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          {menuMounted && moreOpen ? (
             <Animated.View
-              pointerEvents={moreOpen ? "box-none" : "none"}
+              pointerEvents="box-none"
               style={[styles.moreMenuHost, moreMenuStyle]}
             >
               <BlurPill
                 fixedHeight={false}
                 cornerRadius={16}
-                style={styles.moreMenuPill}
+                style={menuPillStyle}
               >
                 <View style={styles.moreMenuList}>
                   {moreItems.map((item) => (
@@ -529,7 +570,7 @@ export function FloatingTabBar({
                       accessibilityRole="menuitem"
                       accessibilityLabel={item.label}
                       onPress={() => {
-                        closeMore();
+                        closeMenus();
                         item.onPress();
                       }}
                       style={({ pressed }) => [
@@ -548,6 +589,57 @@ export function FloatingTabBar({
             </Animated.View>
           ) : null}
 
+          {menuMounted && calendarOpen ? (
+            <Animated.View
+              pointerEvents="box-none"
+              style={[styles.moreMenuHost, moreMenuStyle]}
+            >
+              <BlurPill
+                fixedHeight={false}
+                cornerRadius={16}
+                style={menuPillStyle}
+              >
+                <View style={styles.moreMenuList}>
+                  {CALENDAR_PAGE_MODE_OPTIONS.map((option) => {
+                    const iconName =
+                      option.value === "timetracking"
+                        ? "stopwatch"
+                        : option.value === "availability"
+                          ? "clock"
+                          : "calendar";
+                    return (
+                      <Pressable
+                        key={option.value}
+                        accessibilityRole="menuitem"
+                        accessibilityLabel={option.label}
+                        onPress={() => {
+                          setCalendarPageMode(option.value);
+                          closeMenus();
+                          router.navigate("/calendar");
+                        }}
+                        style={({ pressed }) => [
+                          styles.moreMenuItem,
+                          pressed ? styles.moreMenuItemPressed : null,
+                        ]}
+                      >
+                        <View style={styles.moreMenuItemIcon}>
+                          <PrimerOcticon
+                            name={iconName}
+                            size={18}
+                            color={colors.muted}
+                          />
+                        </View>
+                        <Text style={styles.moreMenuItemLabel}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </BlurPill>
+            </Animated.View>
+          ) : null}
+
           <BlurPill style={styles.mainPill}>
             <View style={styles.hitLayer} onLayout={onHitLayerLayout}>
               {hasSlotWidth ? (
@@ -560,10 +652,22 @@ export function FloatingTabBar({
                 <TabItem
                   key={route.key}
                   route={route}
-                  focused={state.index === index}
+                  focused={
+                    route.name === "calendar"
+                      ? calendarRouteActive || calendarOpen
+                      : state.index === index
+                  }
                   options={descriptors[route.key].options}
                   navigation={navigation}
-                  onPressExtra={closeMore}
+                  onPressExtra={closeMenus}
+                  onPressOverride={
+                    route.name === "calendar"
+                      ? () => {
+                          setMoreOpen(false);
+                          setCalendarOpen((open) => !open);
+                        }
+                      : undefined
+                  }
                 />
               ))}
               <Pressable
@@ -573,7 +677,10 @@ export function FloatingTabBar({
                   expanded: moreOpen,
                   selected: moreSectionActive,
                 }}
-                onPress={() => setMoreOpen((open) => !open)}
+                onPress={() => {
+                  setCalendarOpen(false);
+                  setMoreOpen((open) => !open);
+                }}
                 hitSlop={8}
                 style={styles.item}
               >
@@ -601,7 +708,7 @@ export function FloatingTabBar({
               focused={composeFocused}
               options={descriptors[composeEntry.route.key].options}
               navigation={navigation}
-              onPressExtra={closeMore}
+              onPressExtra={closeMenus}
               compact
             />
           </BlurPill>
@@ -655,11 +762,16 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: PILL_HEIGHT + 10,
     zIndex: 3,
-    // Hug menu content — don’t stretch to the full primary pill width.
     alignItems: "flex-end",
   },
   moreMenuPill: {
     alignSelf: "flex-end",
+  },
+  menuWidthSizer: {
+    position: "absolute",
+    opacity: 0,
+    left: 0,
+    bottom: 0,
   },
   moreMenuList: {
     zIndex: 2,

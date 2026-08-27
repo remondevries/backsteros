@@ -69,6 +69,10 @@ Cloud Kamal / nginx / Neon deployments are retired.
 | **Expo** (`backsteros-mobile`) | Native product UI — same API/sync, **not** the desktop framework, not admin |
 | **Browser** | `backsteros.com/app` and `backsteros.com/admin` |
 
+Desktop routing uses **TanStack Router** (`@tanstack/react-router`). Typed search params cover tasks (`due` / `view`) and calendar page mode. Product URLs are unchanged from this doc; only the router implementation moved off `react-router-dom`.
+
+**Shared logic (not shared UI):** Pure helpers shared by desktop and mobile live under `@backsteros/contracts` (e.g. `client-logic/task-due-date.ts`). Inventory and extraction backlog: [`docs/14-client-logic-inventory.md`](14-client-logic-inventory.md). Do not share React components or CSS between `mobile/` and `desktop/`.
+
 Optional: Tauri could open `/admin` (or the web app) in the system browser for
 ops — not embedded in the product shell v1.
 

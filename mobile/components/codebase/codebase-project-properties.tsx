@@ -1,4 +1,3 @@
-import type { Project } from "@backsteros/contracts";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -35,6 +34,8 @@ import {
   isValidProjectKey,
   normalizeProjectKey,
 } from "../../lib/project-key";
+import { patchEntityViaPowerSyncOrApi } from "../../lib/entity-mutations";
+import { useSyncedAreas } from "../../lib/areas-data";
 import { useMobilePowerSync } from "../../lib/powersync-context";
 import { formatTaskDueMetaLabel } from "../../lib/task-due-date";
 import {
@@ -80,13 +81,6 @@ type ProjectRow = {
 
 type NamedOptionRow = { id: string; name: string | null };
 
-type AreaRow = {
-  id: string;
-  name: string | null;
-  parent: string | null;
-  sort_order: number | null;
-};
-
 type TaskProgressRow = {
   project_id: string | null;
   status: string | null;
@@ -120,10 +114,6 @@ const DETAIL_SQL = `SELECT
 const ORGANIZATIONS_SQL = `SELECT id, name FROM organizations
   WHERE deleted_at IS NULL
   ORDER BY name COLLATE NOCASE ASC`;
-
-const AREAS_SQL = `SELECT id, name, parent, sort_order FROM areas
-  WHERE deleted_at IS NULL
-  ORDER BY sort_order ASC, name COLLATE NOCASE ASC`;
 
 const TASK_PROGRESS_SQL = `SELECT project_id, status FROM tasks
        WHERE deleted_at IS NULL
@@ -177,7 +167,7 @@ export function CodebaseProjectProperties({
   );
   const { data: syncedOrganizations } =
     useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
-  const { data: syncedAreas } = useLocalQuery<AreaRow>(AREAS_SQL);
+  const { rows: syncedAreas } = useSyncedAreas();
   const { data: syncedTaskRows } = useLocalQuery<TaskProgressRow>(
     TASK_PROGRESS_SQL,
     [projectId],
@@ -263,30 +253,14 @@ export function CodebaseProjectProperties({
       else sqliteValues[key] = value;
     }
     try {
-      if (powerSync.ready) {
-        await powerSync.patchProject(projectId, sqliteValues);
-        void client
-          .requestJson<Project>(
-            `/api/v1/projects/${encodeURIComponent(projectId)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(values),
-            },
-          )
-          .catch(() => {
-            /* local already updated */
-          });
-      } else {
-        await client.requestJson<Project>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(values),
-          },
-        );
-      }
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "projects",
+        projectId,
+        values,
+        sqliteValues,
+      );
       return true;
     } catch (reason) {
       setError(
@@ -379,10 +353,7 @@ export function CodebaseProjectProperties({
   );
 
   const subAreas = useMemo(
-    () =>
-      (syncedAreas ?? []).filter(
-        (entry) => area != null && entry.parent === area,
-      ),
+    () => syncedAreas.filter((entry) => area != null && entry.parent === area),
     [area, syncedAreas],
   );
 
@@ -391,7 +362,7 @@ export function CodebaseProjectProperties({
       { value: NONE_AREA, label: "No sub-area" },
       ...subAreas.map((entry) => ({
         value: entry.id,
-        label: entry.name?.trim() || "Untitled",
+        label: entry.name,
       })),
     ],
     [subAreas],

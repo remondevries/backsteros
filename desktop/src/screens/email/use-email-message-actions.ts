@@ -5,7 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 import type {
   AgentMailDraftDetail,
   AgentMailMessageDetail,
@@ -23,6 +23,7 @@ import { discardEmailMessageDetailCache } from "../../lib/email-message-detail-c
 import { dispatchEmailListRemove } from "../../lib/use-agentmail-mailboxes";
 
 import { requestMailboxReload } from "./email-page-helpers";
+import { navigateToHref } from "../../router/navigate-href";
 
 export function useEmailMessageActions({
   inboxId,
@@ -52,7 +53,13 @@ export function useEmailMessageActions({
   ) => string;
 }) {
   const { client } = useDesktopApi();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
 
   const leaveMessageAfterRemoval = useCallback(() => {
     setMessage(null);

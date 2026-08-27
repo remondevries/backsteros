@@ -18,7 +18,10 @@ import {
   type PendingAccountAvatar,
 } from "./finance-account-editor";
 import { uploadAvatarFromUri } from "../../lib/avatar-upload";
-import { createBankAccount, updateBankAccount } from "../../lib/finance-api";
+import {
+  createBankAccountViaPowerSyncOrApi,
+  updateBankAccountViaPowerSyncOrApi,
+} from "../../lib/finance-mutations";
 import { colors, spacing } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 import {
@@ -26,6 +29,7 @@ import {
   useFinanceAccounts,
 } from "../../lib/use-finance-accounts";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../../lib/powersync-context";
 
 function keyFromName(name: string): string {
   return name
@@ -52,6 +56,7 @@ export function FinanceAccountSettingsModal({
 }: Props) {
   const insets = useSafeAreaInsets();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const accounts = useFinanceAccounts();
   const editing = accounts.rows.find((row) => row.id === accountId) ?? null;
   const avatarSrcById = useFinanceAccountAvatarSrcMap(
@@ -99,20 +104,24 @@ export function FinanceAccountSettingsModal({
     try {
       const trimmedName = values.name.trim();
       if (editing) {
-        await updateBankAccount(client, editing.id, {
+        await updateBankAccountViaPowerSyncOrApi(client, powerSync, editing.id, {
           name: trimmedName,
           type: values.type as never,
           ibanOrMask: values.ibanOrMask.trim() || null,
           currency: values.currency.trim().toUpperCase() || "EUR",
         });
       } else {
-        const created = await createBankAccount(client, {
-          key: keyFromName(trimmedName) || `account-${Date.now()}`,
-          name: trimmedName,
-          type: values.type as never,
-          ibanOrMask: values.ibanOrMask.trim() || null,
-          currency: values.currency.trim().toUpperCase() || "EUR",
-        });
+        const created = await createBankAccountViaPowerSyncOrApi(
+          client,
+          powerSync,
+          {
+            key: keyFromName(trimmedName) || `account-${Date.now()}`,
+            name: trimmedName,
+            type: values.type as never,
+            ibanOrMask: values.ibanOrMask.trim() || null,
+            currency: values.currency.trim().toUpperCase() || "EUR",
+          },
+        );
         if (pendingAvatar) {
           await uploadAvatarFromUri(
             client,

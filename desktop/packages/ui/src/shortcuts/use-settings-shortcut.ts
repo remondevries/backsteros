@@ -2,11 +2,13 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { getDefaultSettingsHref } from "../navigation/settings.js";
 import {
   isBlockingModalOpen,
   shouldHandleGlobalShortcut,
 } from "./shortcut-guards.js";
+import { afterNextPaint } from "../timing/after-next-paint.js";
 
 const SETTINGS_SHORTCUT_KEY = ",";
 
@@ -21,15 +23,15 @@ function isSettingsShortcutKey(
  */
 export function useSettingsShortcut({
   enabled = true,
-  commandPaletteOpen = false,
   closePalette,
   onNavigate,
 }: {
   enabled?: boolean;
-  commandPaletteOpen?: boolean;
   closePalette: () => void;
   onNavigate: (href: string) => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -43,16 +45,17 @@ export function useSettingsShortcut({
       if (!shouldHandleGlobalShortcut(event)) {
         return;
       }
+      const commandPaletteOpen = openRef.current ?? false;
       if (isBlockingModalOpen() && !commandPaletteOpen) {
         return;
       }
 
       event.preventDefault();
-      closePalette();
       onNavigate(getDefaultSettingsHref());
+      afterNextPaint(() => closePalette());
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closePalette, commandPaletteOpen, enabled, onNavigate]);
+  }, [closePalette, enabled, onNavigate, openRef]);
 }

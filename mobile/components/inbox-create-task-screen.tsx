@@ -1,4 +1,3 @@
-import type { Task } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter, useSegments } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -30,6 +29,8 @@ import {
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
+import { createTaskViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
@@ -120,6 +121,7 @@ export function InboxCreateTaskScreen() {
     return projectIdParam ? "ready_to_start" : "triage";
   }, [projectIdParam, statusParam]);
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
   const { data: syncedContacts } = useLocalQuery<NamedOptionRow>(CONTACTS_SQL);
@@ -305,21 +307,17 @@ export function InboxCreateTaskScreen() {
     setSaving(true);
     setError(null);
     try {
-      const created = await client.requestJson<Task>("/api/v1/tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: trimmedTitle,
-          description: description.trim() || undefined,
-          status,
-          priority,
-          dueDate,
-          assigneeId,
-          contactId: contactIdParam || null,
-          projectId,
-          inbox: !projectId && !contactIdParam,
-          sortOrder: Date.now(),
-        }),
+      const created = await createTaskViaPowerSyncOrApi(client, powerSync, {
+        title: trimmedTitle,
+        description: description.trim() || undefined,
+        status,
+        priority,
+        dueDate,
+        assigneeId,
+        contactId: contactIdParam || null,
+        projectId,
+        inbox: !projectId && !contactIdParam,
+        sortOrder: Date.now(),
       });
       // Stay inside `(app)` when create was opened from a tab — replacing onto
       // root `/task/:id` can unmount the tab navigator (floating nav disappears).

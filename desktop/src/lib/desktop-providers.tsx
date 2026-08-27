@@ -1,6 +1,6 @@
 import { ClerkProvider, useAuth, useClerk } from "@clerk/clerk-react";
 import { createClerkTokenProvider } from "@backsteros/api-client";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./tauri-invoke-instrumentation";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { ApiProvider } from "./api-context";

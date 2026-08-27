@@ -69,3 +69,32 @@ export function findSectionListLocation(
   }
   return null;
 }
+
+export {
+  findFlatGroupedRowIndex,
+} from "./lists/flatten-grouped-sections";
+
+type FlashListScrollTarget = {
+  scrollToIndex: (opts: {
+    index: number;
+    animated?: boolean;
+    viewPosition?: number;
+  }) => void;
+};
+
+/** Scroll a FlashList grouped row into view (j/k highlight parity). */
+export function scrollFlashListToItemId(
+  list: FlashListScrollTarget | null | undefined,
+  rowIndexByItemId: ReadonlyMap<string, number>,
+  itemId: string,
+  viewPosition = 0.35,
+): void {
+  if (!list || !itemId) return;
+  const index = rowIndexByItemId.get(itemId);
+  if (index == null) return;
+  try {
+    list.scrollToIndex({ index, animated: true, viewPosition });
+  } catch {
+    // List may not be laid out yet.
+  }
+}

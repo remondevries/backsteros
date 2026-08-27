@@ -1,6 +1,8 @@
+import { useNavigation } from "@react-navigation/native";
+import { useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 
-import { EmailHeaderPlus } from "../../../components/email-header";
+import { EmailHeader } from "../../../components/email-header";
 import { EmailListPane } from "../../../components/email-list-pane";
 import { isPadDevice } from "../../../lib/device";
 import { ui } from "../../../lib/ui";
@@ -11,7 +13,17 @@ import { ui } from "../../../lib/ui";
  * auto-opens the first email (desktop side-panel parity).
  */
 export default function EmailScreen() {
-  if (isPadDevice()) {
+  const navigation = useNavigation();
+  const isPad = isPadDevice();
+
+  useLayoutEffect(() => {
+    if (isPad) return;
+    navigation.setOptions({
+      header: () => <EmailHeader />,
+    });
+  }, [isPad, navigation]);
+
+  if (isPad) {
     return (
       <View style={styles.empty}>
         <Text style={ui.empty}>Select an email from the list.</Text>
@@ -19,13 +31,7 @@ export default function EmailScreen() {
     );
   }
 
-  return (
-    <EmailListPane
-      pageTitle="Email"
-      pageTitleSafeArea
-      pageTitleTrailing={<EmailHeaderPlus chrome="glass" />}
-    />
-  );
+  return <EmailListPane />;
 }
 
 const styles = {

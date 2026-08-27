@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useHideTabBar } from "../lib/tab-bar-visibility";
+import { letterPdfLoadErrorMessage } from "../lib/letter-pdf-load-error";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 
@@ -137,9 +138,7 @@ export function LetterPdfViewerModal({
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(
-            reason instanceof Error ? reason.message : "Could not load PDF.",
-          );
+          setError(letterPdfLoadErrorMessage(reason));
         }
       })
       .finally(() => {

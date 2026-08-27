@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import {
   DEFAULT_GO_NAVIGATION_ITEMS,
   type GoNavigationItem,
@@ -23,6 +24,7 @@ import {
   shouldHandleGlobalShortcut,
 } from "../shortcuts/shortcut-guards.js";
 import { shouldYieldGoNavigationToFinanceTxGoal } from "../tasks/task-property-dropdown-keys.js";
+import { afterNextPaint } from "../timing/after-next-paint.js";
 
 function findGoItemByLetter(
   letter: string,
@@ -38,8 +40,6 @@ function findGoItemByLetter(
  */
 export function useNavigationShortcuts({
   enabled = true,
-  commandPaletteOpen = false,
-  commandPaletteMode = "all",
   goItems = DEFAULT_GO_NAVIGATION_ITEMS,
   openGo,
   openFinanceGo,
@@ -47,22 +47,21 @@ export function useNavigationShortcuts({
   onNavigate,
 }: {
   enabled?: boolean;
-  commandPaletteOpen?: boolean;
-  commandPaletteMode?: string;
   goItems?: GoNavigationItem[];
   openGo: () => void;
   openFinanceGo: () => void;
   closePalette: () => void;
   onNavigate: (href: string) => void;
 }) {
+  const { openRef, modeRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
-    if (!commandPaletteOpen) {
-      clearGoFinanceChord();
-    }
-
     function handleKeyDown(event: KeyboardEvent) {
+      const commandPaletteOpen = openRef.current ?? false;
+      const commandPaletteMode = modeRef.current ?? "search";
+
       if (isBlockingModalOpen() && !commandPaletteOpen) {
         return;
       }
@@ -72,6 +71,42 @@ export function useNavigationShortcuts({
       }
 
       const key = event.key.toLowerCase();
+
+      if (key === "g" && !event.shiftKey && !commandPaletteOpen) {
+        if (!shouldYieldGoNavigationToFinanceTxGoal()) {
+          event.preventDefault();
+          clearFinanceLeaderSequence();
+          clearGoFinanceChord();
+          registerGoLeaderKeyPress();
+          openGo();
+          return;
+        }
+      }
+
+      // G then letter — handle before shouldHandleGlobalShortcut so fast chords
+      // work while focus is still in an editor (T arrives before palette focus).
+      if (isGoLeaderSequencePending()) {
+        const leaderBinding = findGoItemByLetter(key, goItems);
+        if (leaderBinding) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearGoLeaderSequence();
+          clearGoFinanceChord();
+          if (leaderBinding.id === "finance") {
+            registerGoFinanceChord(leaderBinding.href, () => {
+              onNavigate(leaderBinding.href);
+              afterNextPaint(() => closePalette());
+            });
+            return;
+          }
+          closePalette();
+          onNavigate(leaderBinding.href);
+          return;
+        }
+        if (key !== "g") {
+          clearGoLeaderSequence();
+        }
+      }
 
       // G F then Space → Finance go context (before the navigate timeout).
       if (
@@ -112,47 +147,14 @@ export function useNavigationShortcuts({
         return;
       }
 
-      if (key === "g" && !event.shiftKey) {
-        if (commandPaletteOpen) {
-          return;
+      if (key === "g" && !event.shiftKey && commandPaletteOpen) {
+        if (commandPaletteMode !== "go") {
+          event.preventDefault();
+          registerGoLeaderKeyPress();
+          openGo();
         }
-        // Finance tx detail owns plain G for the goal dropdown.
-        if (shouldYieldGoNavigationToFinanceTxGoal()) {
-          return;
-        }
-        event.preventDefault();
-        clearFinanceLeaderSequence();
-        clearGoFinanceChord();
-        registerGoLeaderKeyPress();
-        openGo();
         return;
       }
-
-      if (!isGoLeaderSequencePending()) {
-        return;
-      }
-
-      const binding = findGoItemByLetter(key, goItems);
-      clearGoLeaderSequence();
-
-      if (!binding) {
-        return;
-      }
-
-      event.preventDefault();
-
-      // G F: wait for Space (context) or timeout (navigate to Finance).
-      if (binding.id === "finance") {
-        registerGoFinanceChord(binding.href, () => {
-          closePalette();
-          onNavigate(binding.href);
-        });
-        return;
-      }
-
-      clearGoFinanceChord();
-      closePalette();
-      onNavigate(binding.href);
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
@@ -162,12 +164,12 @@ export function useNavigationShortcuts({
     };
   }, [
     closePalette,
-    commandPaletteMode,
-    commandPaletteOpen,
     enabled,
     goItems,
+    modeRef,
     onNavigate,
     openFinanceGo,
     openGo,
+    openRef,
   ]);
 }

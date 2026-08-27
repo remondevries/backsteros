@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   AgentMailMessage,
   AgentMailSettings,
@@ -211,17 +218,19 @@ export function useAgentMailMailboxes(
       );
       if (signal.aborted || generation !== reloadGenerationRef.current) return;
       if (!mountedRef.current) return;
-      setApiKeyConfigured(body.apiKeyConfigured);
-      setMailboxes(
-        (body.inboxes ?? []).map((inbox) => ({
-          inboxId: inbox.inboxId,
-          email: inbox.email,
-          displayName: inbox.displayName,
-          contactId: inbox.contactId ?? null,
-          contactName: inbox.contactName ?? null,
-        })),
-      );
-      if (!silent) setLoading(false);
+      startTransition(() => {
+        setApiKeyConfigured(body.apiKeyConfigured);
+        setMailboxes(
+          (body.inboxes ?? []).map((inbox) => ({
+            inboxId: inbox.inboxId,
+            email: inbox.email,
+            displayName: inbox.displayName,
+            contactId: inbox.contactId ?? null,
+            contactName: inbox.contactName ?? null,
+          })),
+        );
+        if (!silent) setLoading(false);
+      });
       if (!body.apiKeyConfigured || (body.inboxes ?? []).length === 0) {
         setMessages([]);
         setMessagesLoading(false);
@@ -237,13 +246,15 @@ export function useAgentMailMailboxes(
           return;
         }
         if (!mountedRef.current) return;
-        setMessages(
-          collapseEmailListItemsByThread(
-            (listed.messages ?? [])
-              .map(toListItem)
-              .filter((item): item is EmailListItem => item != null),
-          ),
-        );
+        startTransition(() => {
+          setMessages(
+            collapseEmailListItemsByThread(
+              (listed.messages ?? [])
+                .map(toListItem)
+                .filter((item): item is EmailListItem => item != null),
+            ),
+          );
+        });
       } catch {
         if (signal.aborted || generation !== reloadGenerationRef.current) {
           return;

@@ -1,31 +1,36 @@
 import type { Project } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { projectDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
+import type { ListBoardView } from "../lib/list-board-view";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import {
   aggregateTaskProgressByProjectId,
   formatProjectTaskProgressPercent,
   type ProjectTaskProgress,
 } from "../lib/project-progress-ring";
 import { groupProjectsByStatus } from "../lib/project-status";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSyncedOrRest } from "../lib/use-synced-or-rest";
+import { BacksterGroupedList } from "./lists/index";
+import { ProjectBoardPane } from "./list-board/project-board-pane";
 import { ProjectProgressRing } from "./project-progress-ring";
 import { ProjectStatusIcon } from "./project-status-icon";
 
@@ -42,6 +47,7 @@ type TaskProgressRow = {
 };
 
 type Section = {
+  key: string;
   title: string;
   status: string;
   data: ProjectRow[];
@@ -49,6 +55,7 @@ type Section = {
 
 type Props = {
   organizationId: string;
+  boardView?: ListBoardView;
 };
 
 const EMPTY_PROGRESS: ProjectTaskProgress = { total: 0, completed: 0 };
@@ -66,22 +73,23 @@ const PROGRESS_SQL = `SELECT t.project_id, t.status
    AND p.organization_id = ?`;
 
 /** Projects linked to an organization — grouped by project status. */
-export function OrganizationProjectsPanel({ organizationId }: Props) {
+export function OrganizationProjectsPanel({
+  organizationId,
+  boardView = "list",
+}: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const { rows, loading, error, useRest, pullRefreshing, reload } =
@@ -120,6 +128,7 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
   const sections = useMemo<Section[]>(
     () =>
       groupProjectsByStatus(rows).map((group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: group.projects,
@@ -127,7 +136,12 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
     [rows],
   );
 
-  const listRef = useRef<SectionList<ProjectRow, Section>>(null);
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () => flattenGroupedSections(sections),
+    [sections],
+  );
+
+  const listRef = useRef<FlashListRef<FlatGroupedRow<ProjectRow>>>(null);
   const itemIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
@@ -143,11 +157,11 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
     onActivate: openProject,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -169,30 +183,34 @@ export function OrganizationProjectsPanel({ organizationId }: Props) {
     return <Text style={ui.error}>{error}</Text>;
   }
 
+  if (boardView === "board") {
+    return (
+      <ProjectBoardPane
+        rows={rows}
+        onPressRow={(row) => router.push(projectDetailHref(row.id))}
+      />
+    );
+  }
+
   return (
-    <SectionList
+    <BacksterGroupedList
       ref={listRef}
-      style={ui.screen}
-      sections={sections as SectionListData<ProjectRow, Section>[]}
-      keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={false}
-      keyboardShouldPersistTaps="handled"
+      sections={sections}
+      highlightedId={highlightedId}
+      estimatedItemSize={56}
+      estimatedHeaderSize={32}
       refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-      ListEmptyComponent={
-        <Text style={ui.empty}>No projects linked to this organization.</Text>
-      }
-      renderSectionHeader={({ section }) => (
+      emptyText="No projects linked to this organization."
+      renderSectionHeader={(section) => (
         <Text style={ui.sectionHeader}>{section.title}</Text>
       )}
-      renderItem={({ item }) => {
+      renderItem={(item, { highlighted }) => {
         const title = item.name?.trim() || "Untitled";
         const progress = progressByProjectId[item.id] ?? EMPTY_PROGRESS;
         const percentLabel = formatProjectTaskProgressPercent(progress);
-        const highlighted = highlightedId === item.id;
         return (
           <Pressable
             accessibilityRole="button"

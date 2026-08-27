@@ -1,4 +1,3 @@
-import type { Document } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -8,21 +7,14 @@ import {
   View,
 } from "react-native";
 
+import { createFolderViaPowerSyncOrApi } from "../lib/document-create";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TextInput } from "./app-text-input";
-
-function folderPathFromTitle(title: string): string {
-  const slug =
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "folder";
-  return `${slug}-${Date.now().toString(36)}`;
-}
 
 /** Create a knowledge (or project) folder. */
 export function CreateFolderScreen() {
@@ -43,6 +35,7 @@ export function CreateFolderScreen() {
     typeParam === "project" && projectId ? "project" : "knowledge";
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -56,27 +49,11 @@ export function CreateFolderScreen() {
     setSaving(true);
     setError(null);
     try {
-      await client.requestJson<Document>("/api/v1/documents", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          documentType === "project"
-            ? {
-                type: "project",
-                projectId,
-                kind: "folder",
-                title: trimmedTitle,
-                path: folderPathFromTitle(trimmedTitle),
-                parentId: parentId || undefined,
-              }
-            : {
-                type: "knowledge",
-                kind: "folder",
-                title: trimmedTitle,
-                path: folderPathFromTitle(trimmedTitle),
-                parentId: parentId || undefined,
-              },
-        ),
+      await createFolderViaPowerSyncOrApi(client, powerSync, {
+        type: documentType,
+        title: trimmedTitle,
+        projectId: documentType === "project" ? projectId : null,
+        parentId: parentId ?? null,
       });
       if (router.canGoBack()) router.back();
       else router.replace("/(app)/knowledge");

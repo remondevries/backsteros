@@ -1,21 +1,41 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
+import { getTodayJournalDateSlug } from "@backsteros/ui";
 
 import { prefetchDocumentContent } from "./document-content-cache";
+import { prefetchLetterAttachments } from "./letter-attachment-cache";
+import { createPersistedSessionLruCache } from "./session-lru-cache";
 import { prefetchWhoopDaySnapshot } from "./whoop";
+
+export {
+  firstKnowledgeDocumentIdForWarm,
+  firstLetterIdForWarm,
+} from "./warm-workspace-detail-ids";
 
 export { prefetchLetterAttachments } from "./letter-attachment-cache";
 
 /**
  * Prefetch helpers for side-panel hover / keyboard highlight.
  * Metadata stays on PowerSync; Tier D markdown bodies / letter attachment
- * lists are warmed into a bounded session cache (not bulk-synced).
+ * lists are warmed into a bounded persisted LRU (not bulk-synced).
  */
 
 const journalEnsureInflight = new Map<string, Promise<string | null>>();
-const journalDocumentIdByDate = new Map<string, string>();
+const journalDocumentIdByDate = createPersistedSessionLruCache<string>({
+  limit: 90,
+  storageKey: "backsteros:journal-ids-v1",
+});
 
 export function peekJournalDocumentId(dateSlug: string): string | null {
-  return journalDocumentIdByDate.get(dateSlug) ?? null;
+  return journalDocumentIdByDate.peek(dateSlug);
+}
+
+export function rememberJournalDocumentId(
+  dateSlug: string,
+  documentId: string,
+): void {
+  const id = documentId.trim();
+  if (!dateSlug.trim() || !id) return;
+  journalDocumentIdByDate.set(dateSlug, id);
 }
 
 /** Ensure a journal day exists and return its document id (deduped). */
@@ -23,7 +43,7 @@ export function ensureJournalDocumentId(
   client: BacksterosApiClient,
   dateSlug: string,
 ): Promise<string | null> {
-  const cachedId = journalDocumentIdByDate.get(dateSlug);
+  const cachedId = journalDocumentIdByDate.peek(dateSlug);
   if (cachedId) return Promise.resolve(cachedId);
 
   const existing = journalEnsureInflight.get(dateSlug);
@@ -34,7 +54,7 @@ export function ensureJournalDocumentId(
       `/api/v1/journal/${encodeURIComponent(dateSlug)}`,
     )
     .then((document) => {
-      journalDocumentIdByDate.set(dateSlug, document.id);
+      rememberJournalDocumentId(dateSlug, document.id);
       return document.id;
     })
     .catch(() => null)
@@ -59,12 +79,36 @@ export function warmTodayJournalEntry(
 ): void {
   prefetchWhoopDaySnapshot(input.dateSlug);
   if (input.documentId) {
+    rememberJournalDocumentId(input.dateSlug, input.documentId);
     prefetchDocumentContent(client, input.documentId);
     return;
   }
   void ensureJournalDocumentId(client, input.dateSlug).then((documentId) => {
     if (documentId) prefetchDocumentContent(client, documentId);
   });
+}
+
+/**
+ * Idle boot warm for the three on-demand detail surfaces so the first
+ * click paints from local cache the same way Tasks does.
+ */
+export function warmWorkspaceDetailCaches(
+  client: BacksterosApiClient,
+  input: {
+    todayJournal: {
+      dateSlug?: string;
+      documentId?: string | null;
+    };
+    firstKnowledgeDocumentId?: string | null;
+    firstLetterId?: string | null;
+  },
+): void {
+  warmTodayJournalEntry(client, {
+    dateSlug: input.todayJournal.dateSlug ?? getTodayJournalDateSlug(),
+    documentId: input.todayJournal.documentId,
+  });
+  prefetchDocumentContent(client, input.firstKnowledgeDocumentId);
+  prefetchLetterAttachments(client, input.firstLetterId);
 }
 
 /**

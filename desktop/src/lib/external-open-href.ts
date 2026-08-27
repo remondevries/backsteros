@@ -79,14 +79,15 @@ export function startExternalOpenHrefWatcher(
   const tick = async () => {
     if (stopped) return;
     try {
-      const { homeDir, join } = await import("@tauri-apps/api/path");
-      const { readTextFile } = await import("@tauri-apps/plugin-fs");
-      const home = await homeDir();
-      const homePath = await join(home, OPEN_HREF_RELATIVE_PATH);
+      const { BaseDirectory, readTextFile } = await import(
+        "@tauri-apps/plugin-fs"
+      );
 
       let raw = "";
       try {
-        raw = await readTextFile(homePath);
+        raw = await readTextFile(OPEN_HREF_RELATIVE_PATH, {
+          baseDir: BaseDirectory.Home,
+        });
       } catch {
         try {
           raw = await readTextFile(OPEN_HREF_TMP_PATH);

@@ -1,10 +1,8 @@
 import { useRouter } from "expo-router";
 
 import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
-import {
-  TabStackHeader,
-  TabStackHeaderPlusButton,
-} from "../lib/tab-stack-options";
+import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
+import { SectionListHeader } from "./section-list-header";
 
 /** Native stack `headerRight` — plain so iOS liquid glass wraps once. */
 export function EmailHeaderPlus({
@@ -23,17 +21,17 @@ export function EmailHeaderPlus({
   );
 }
 
-/** iPad list-pane header (outside the detail stack). */
+/** List header — phone stack or iPad list pane. */
 export function EmailHeader({
   onToggleCollapse,
 }: {
   onToggleCollapse?: () => void;
 } = {}) {
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Email"
-      leadingActions={<EmailHeaderPlus chrome="glass" />}
-      trailingActions={
+      plusControl={<EmailHeaderPlus chrome="glass" />}
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}

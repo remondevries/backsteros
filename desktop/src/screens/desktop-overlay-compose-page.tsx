@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation } from "@tanstack/react-router";
 import { ComposeModal } from "@backsteros/ui";
 
 import {
@@ -20,7 +20,14 @@ import { DesktopOverlayRoot } from "../shell/desktop-overlay-root";
 
 function ComposeOverlayController() {
   const { client } = useDesktopApi();
-  const [searchParams] = useSearchParams();
+  const { searchStr } = useLocation();
+  const searchParams = useMemo(
+    () =>
+      new URLSearchParams(
+        searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+      ),
+    [searchStr],
+  );
   const [open, setOpen] = useState(true);
   const [context, setContext] = useState<ComposeOverlayContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);

@@ -66,8 +66,36 @@ export function useWorkspaceTaskActions({
         projectId: null,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      // API-first so the task has a durable id + number before navigation
-      // (PowerSync-only creates raced the query and showed "Task not found").
+      // Linear-shaped: one write path. When PowerSync is ready, local create +
+      // upload only — no REST dual-write.
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const task = {
+          id,
+          number: null,
+          ...body,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiTask;
+        setApiTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+        setApiInboxTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+        void powerSync
+          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
+          .catch((error) => {
+            console.warn("[desktop] local inbox task create failed", error);
+          });
+        return { id: task.id, number: null };
+      }
+
       let task: ApiTask;
       try {
         task = await client.requestJson<ApiTask>("/api/v1/tasks", {
@@ -103,17 +131,6 @@ export function useWorkspaceTaskActions({
         if (rows.some((entry) => entry.id === task.id)) return rows;
         return [task, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "tasks",
-            toSnakeFields({ ...body, number: task.number }),
-            task.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
       return { id: task.id, number: task.number ?? null };
     },
     [
@@ -155,7 +172,30 @@ export function useWorkspaceTaskActions({
         inbox: false,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      // API-first — same rationale as createInboxTask / createLetter.
+      // Linear-shaped: PowerSync-ready → local create only (no REST dual-write).
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const task = {
+          id,
+          number: null,
+          ...body,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiTask;
+        setApiTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+        void powerSync
+          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
+          .catch((error) => {
+            console.warn("[desktop] local project task create failed", error);
+          });
+        return { id: task.id, number: null };
+      }
+
       let task: ApiTask;
       try {
         task = await client.requestJson<ApiTask>("/api/v1/tasks", {
@@ -185,17 +225,6 @@ export function useWorkspaceTaskActions({
         if (rows.some((entry) => entry.id === task.id)) return rows;
         return [task, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "tasks",
-            toSnakeFields({ ...body, number: task.number }),
-            task.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
       return { id: task.id, number: task.number ?? null };
     },
     [authenticated, client, powerSync, setApiTasks, toSnakeFields],
@@ -203,6 +232,36 @@ export function useWorkspaceTaskActions({
 
   const createTaskFromBody = useCallback(
     async (body: Record<string, unknown>) => {
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const task = {
+          id,
+          number: null,
+          ...body,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiTask;
+        setApiTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+        if (task.inbox) {
+          setApiInboxTasks((rows) => {
+            if (!rows) return [task];
+            if (rows.some((entry) => entry.id === task.id)) return rows;
+            return [task, ...rows];
+          });
+        }
+        void powerSync
+          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
+          .catch((error) => {
+            console.warn("[desktop] local task create failed", error);
+          });
+        return task;
+      }
+
       let task: ApiTask;
       try {
         task = await client.requestJson<ApiTask>("/api/v1/tasks", {
@@ -239,17 +298,6 @@ export function useWorkspaceTaskActions({
           if (rows.some((entry) => entry.id === task.id)) return rows;
           return [task, ...rows];
         });
-      }
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "tasks",
-            toSnakeFields({ ...body, number: task.number }),
-            task.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
       }
       return task;
     },
@@ -311,18 +359,6 @@ export function useWorkspaceTaskActions({
       const name = source.name.trim();
       if (!name) throw new Error("Project name is required.");
 
-      const existingKeys = rawProjects.map((project) => project.key);
-      const keyCandidates = [
-        allocateUniqueProjectKey(source.key, existingKeys),
-        ...Array.from({ length: 12 }, (_, index) =>
-          allocateUniqueProjectKey(
-            `${source.key}${index + 2}`,
-            existingKeys,
-          ),
-        ),
-      ];
-      const uniqueCandidates = [...new Set(keyCandidates)];
-
       const bodyBase = {
         name: `${name} copy`,
         ...(source.summary?.trim() ? { summary: source.summary.trim() } : {}),
@@ -342,60 +378,109 @@ export function useWorkspaceTaskActions({
         sortOrder: -Date.now(),
       };
 
-      let project: ApiProject | null = null;
-      let lastError: unknown = null;
-      for (const key of uniqueCandidates) {
-        try {
-          project = await client.requestJson<ApiProject>("/api/v1/projects", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ ...bodyBase, key }),
+      let createdProject: ApiProject;
+
+      if (powerSync.ready && powerSync.createMetadata) {
+        const existingKeys = rawProjects.map((project) => project.key);
+        const keyCandidates = [
+          allocateUniqueProjectKey(source.key, existingKeys),
+          ...Array.from({ length: 12 }, (_, index) =>
+            allocateUniqueProjectKey(
+              `${source.key}${index + 2}`,
+              existingKeys,
+            ),
+          ),
+        ];
+        const uniqueCandidates = [...new Set(keyCandidates)];
+        const projectId = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const key = uniqueCandidates[0] ?? allocateUniqueProjectKey(source.key, existingKeys);
+        createdProject = {
+          id: projectId,
+          key,
+          name: bodyBase.name,
+          summary: source.summary ?? null,
+          description: source.description ?? null,
+          organizationId: bodyBase.organizationId,
+          areaId: bodyBase.areaId,
+          area: bodyBase.area,
+          startDate: bodyBase.startDate,
+          dueDate: bodyBase.dueDate,
+          icon: bodyBase.icon,
+          color: bodyBase.color,
+          type: bodyBase.type,
+          status: bodyBase.status,
+          priority: bodyBase.priority,
+          sortOrder: bodyBase.sortOrder,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiProject;
+        void powerSync
+          .createMetadata(
+            "projects",
+            toSnakeFields({
+              key: createdProject.key,
+              name: createdProject.name,
+              status: createdProject.status,
+              area: bodyBase.area ?? null,
+              sortOrder: bodyBase.sortOrder,
+              organizationId: createdProject.organizationId ?? null,
+              ...(createdProject.type ? { type: createdProject.type } : {}),
+            }),
+            createdProject.id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local duplicate project create failed", error);
           });
-          break;
-        } catch (error) {
-          lastError = error;
-          const isKeyConflict =
-            error instanceof Error &&
-            (error.message.toLowerCase().includes("project key") ||
-              ("code" in error &&
-                (error as { code?: string }).code === "project_key_exists"));
-          if (!isKeyConflict) {
-            throw error;
+      } else {
+        const uniqueCandidates = [
+          allocateUniqueProjectKey(source.key, rawProjects.map((project) => project.key)),
+          ...Array.from({ length: 12 }, (_, index) =>
+            allocateUniqueProjectKey(
+              `${source.key}${index + 2}`,
+              rawProjects.map((project) => project.key),
+            ),
+          ),
+        ];
+        const dedupedKeys = [...new Set(uniqueCandidates)];
+
+        let project: ApiProject | null = null;
+        let lastError: unknown = null;
+        const existingKeys = rawProjects.map((project) => project.key);
+        for (const key of dedupedKeys) {
+          try {
+            project = await client.requestJson<ApiProject>("/api/v1/projects", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ ...bodyBase, key }),
+            });
+            break;
+          } catch (error) {
+            lastError = error;
+            const isKeyConflict =
+              error instanceof Error &&
+              (error.message.toLowerCase().includes("project key") ||
+                ("code" in error &&
+                  (error as { code?: string }).code === "project_key_exists"));
+            if (!isKeyConflict) {
+              throw error;
+            }
+            existingKeys.push(key);
           }
-          existingKeys.push(key);
         }
+        if (!project) {
+          throw lastError instanceof Error
+            ? lastError
+            : new Error("Failed to duplicate project.");
+        }
+        createdProject = project;
       }
-      if (!project) {
-        throw lastError instanceof Error
-          ? lastError
-          : new Error("Failed to duplicate project.");
-      }
-      const createdProject = project;
 
       setApiProjects((rows) => {
         if (!rows) return [createdProject];
         if (rows.some((entry) => entry.id === createdProject.id)) return rows;
         return [createdProject, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "projects",
-            toSnakeFields({
-              key: createdProject.key,
-              name: createdProject.name,
-              status: createdProject.status,
-              area: createdProject.area ?? null,
-              sortOrder: bodyBase.sortOrder,
-              organizationId: createdProject.organizationId ?? null,
-              ...(createdProject.type ? { type: createdProject.type } : {}),
-            }),
-            createdProject.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
 
       if (options?.includeTasks) {
         const sourceTasks = [...rawTasks, ...rawInboxTasks]
@@ -406,7 +491,6 @@ export function useWorkspaceTaskActions({
             return (a.number ?? 0) - (b.number ?? 0);
           });
 
-        // Deduplicate by id (task may appear in both lists).
         const seen = new Set<string>();
         let sortBase = Date.now();
         for (const sourceTask of sourceTasks) {

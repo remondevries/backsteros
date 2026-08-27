@@ -10,12 +10,14 @@ import {
 
 import { FinanceAccountAvatar } from "./finance-account-avatar";
 import {
+  patchAvatarMetadataLocally,
   pickAvatarImage,
   uploadAvatarFromUri,
 } from "../../lib/avatar-upload";
 import { colors, spacing } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../../lib/powersync-context";
 
 export const BANK_ACCOUNT_TYPE_OPTIONS = [
   { value: "bank_account", label: "Bank account" },
@@ -64,6 +66,7 @@ export function FinanceAccountEditor({
   autoFocusName = false,
 }: Props) {
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const [picking, setPicking] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -103,6 +106,12 @@ export function FinanceAccountEditor({
           return;
         }
         setLocalOverride(picked.uri);
+        await patchAvatarMetadataLocally(
+          powerSync,
+          "bank_account",
+          accountId,
+          result.avatar,
+        ).catch(() => {});
         onAvatarUploaded?.();
       } else {
         setLocalOverride(picked.uri);

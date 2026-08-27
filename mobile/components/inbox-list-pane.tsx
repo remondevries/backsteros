@@ -1,4 +1,8 @@
 import type { Contact, Project, Task } from "@backsteros/contracts";
+import {
+  meetingBelongsInInbox,
+  meetingInboxItemId,
+} from "@backsteros/contracts";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -6,18 +10,20 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { useAgentMail } from "../lib/agentmail-context";
 import { isPadDevice } from "../lib/device";
 import { formatEmailDisplayId } from "../lib/email-display-id";
+import { formatMeetingDisplayId } from "../lib/meeting-display-id";
 import {
   emailBelongsInInbox,
   emailPartyLabel,
   resolveEmailListItemStatus,
 } from "../lib/email-list";
-import { getMobileEnvironment } from "../lib/env";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import { taskBelongsInInbox } from "../lib/inbox-attention";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
   withDisplayId,
 } from "../lib/map-task-row";
+import { fillMissingTaskFieldsFromApi } from "../lib/merge-task-fields";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
@@ -68,6 +74,43 @@ type Props = {
   autoSelectFirst?: boolean;
 };
 
+type InboxMeetingSyncedRow = {
+  id: string;
+  number: number | null;
+  title: string | null;
+  status: string | null;
+  start_at: string | null;
+  project_id: string | null;
+  organization_id: string | null;
+  project_name?: string | null;
+  project_key?: string | null;
+  project_icon?: string | null;
+  project_type?: string | null;
+  organization_name?: string | null;
+};
+
+const INBOX_MEETINGS_SQL = `
+SELECT
+  m.id,
+  m.number,
+  m.title,
+  m.status,
+  m.start_at,
+  m.project_id,
+  m.organization_id,
+  p.name AS project_name,
+  p.key AS project_key,
+  p.icon AS project_icon,
+  p.type AS project_type,
+  o.name AS organization_name
+FROM meetings m
+LEFT JOIN projects p ON p.id = m.project_id AND p.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = m.organization_id AND o.deleted_at IS NULL
+WHERE m.deleted_at IS NULL
+  AND m.status = 'triage'
+ORDER BY m.start_at ASC, m.updated_at DESC
+`;
+
 type InboxSyncedRow = GroupedTaskRow & {
   number?: number | null;
   project_id?: string | null;
@@ -89,7 +132,7 @@ export function InboxListPane({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
   const isPad = isPadDevice();
@@ -124,6 +167,9 @@ export function InboxListPane({
      )
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
+
+  const { data: syncedMeetings, isLoading: meetingsSyncLoading } =
+    useLocalQuery<InboxMeetingSyncedRow>(INBOX_MEETINGS_SQL);
 
   const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
@@ -184,23 +230,27 @@ export function InboxListPane({
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       setRestError(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
       // Keep prior REST snapshot on transient failures.
     } finally {
       endReload(userPull);
     }
-  }, [apiUrl, beginReload, client, endReload, markHydrated]);
+  }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated]);
 
   useRestListHydration(reloadRest);
 
-  const taskRows = resolveSyncedOrRestRows({
-    localRows,
-    restRows,
-    connected: powerSync.connected,
-  });
+  const taskRows = useMemo(() => {
+    const rows = resolveSyncedOrRestRows({
+      localRows,
+      restRows,
+      connected: powerSync.connected,
+    });
+    if (powerSync.connected && localRows.length > 0 && restRows != null) {
+      return fillMissingTaskFieldsFromApi(rows, restRows);
+    }
+    return rows;
+  }, [localRows, powerSync.connected, restRows]);
 
   // Email thread rows alongside tasks — desktop inbox parity.
   const { messages: emailMessages } = useAgentMail();
@@ -229,9 +279,30 @@ export function InboxListPane({
     [emailMessages],
   );
 
+  const meetingRows = useMemo<GroupedTaskRow[]>(
+    () =>
+      (syncedMeetings ?? [])
+        .filter((row) => meetingBelongsInInbox({ status: row.status }))
+        .map((row) => ({
+          id: meetingInboxItemId(row.id),
+          title: row.title?.trim() || "Untitled meeting",
+          status: row.status,
+          priority: 0,
+          due_date: row.start_at,
+          project_name: row.project_name ?? null,
+          project_key: row.project_key ?? null,
+          project_icon: row.project_icon ?? null,
+          project_type: row.project_type ?? null,
+          display_id: formatMeetingDisplayId(row.number),
+          item_type: "meeting" as const,
+          meeting_id: row.id,
+        })),
+    [syncedMeetings],
+  );
+
   const rows = useMemo(
-    () => [...taskRows, ...emailRows],
-    [emailRows, taskRows],
+    () => [...taskRows, ...emailRows, ...meetingRows],
+    [emailRows, meetingRows, taskRows],
   );
 
   const waitingForSync =
@@ -239,10 +310,12 @@ export function InboxListPane({
     restRows == null &&
     (powerSync.status === "connecting" ||
       powerSync.status === "idle" ||
-      syncLoading);
+      syncLoading ||
+      meetingsSyncLoading);
 
   const loading =
-    rows.length === 0 && (restLoading || waitingForSync || syncLoading);
+    rows.length === 0 &&
+    (restLoading || waitingForSync || syncLoading || meetingsSyncLoading);
   const error =
     rows.length === 0 && restError && !powerSync.connected ? restError : null;
 
@@ -256,9 +329,13 @@ export function InboxListPane({
     // Journal) clears pathSelectedId and this effect replace()s back to inbox.
     if (!normalized.startsWith("/inbox")) return;
     if (normalized.endsWith("/inbox/new") || normalized === "/inbox/new") return;
-    // Auto-select the first task row; email rows are selectable manually.
-    const first = rows.find((row) => row.item_type !== "email");
+    const first = rows[0];
     if (!first) return;
+    if (first.item_type === "email") return;
+    if (first.item_type === "meeting" && first.meeting_id) {
+      router.replace(`/meeting/${encodeURIComponent(first.meeting_id)}`);
+      return;
+    }
     router.replace(`/(app)/inbox/${first.id}`);
   }, [
     autoSelectFirst,
@@ -273,6 +350,10 @@ export function InboxListPane({
 
   const onPressRow = useCallback(
     (row: GroupedTaskRow) => {
+      if (row.item_type === "meeting" && row.meeting_id) {
+        router.push(`/meeting/${encodeURIComponent(row.meeting_id)}`);
+        return;
+      }
       if (row.item_type === "email" && row.email_inbox_id && row.email_message_id) {
         // Open inside the Inbox stack — desktop shows email in the inbox pane.
         const href =

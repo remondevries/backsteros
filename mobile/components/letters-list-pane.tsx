@@ -1,22 +1,23 @@
 import type { Letter } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
 import { formatLetterDisplayId } from "../lib/letter-display-id";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import { matchesListSearch } from "../lib/list-search";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { groupTasksByStatus } from "../lib/task-status";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -28,6 +29,7 @@ import { useSyncedOrRest } from "../lib/use-synced-or-rest";
 import { LetterIcon } from "./letter-icon";
 import { ContentPageTitle } from "./content-page-title";
 import { ListSearchField } from "./list-search-field";
+import { BacksterGroupedList } from "./lists/index";
 import {
   StatusGroupHeader,
   statusGroupEmptySectionFooter,
@@ -43,6 +45,7 @@ export type LetterListRow = {
 };
 
 type Section = {
+  key: string;
   title: string;
   status: string;
   data: LetterListRow[];
@@ -136,6 +139,7 @@ export function LettersListPane({
   const sections = useMemo<Section[]>(
     () =>
       groupTasksByStatus(rows).map((group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: group.tasks,
@@ -162,6 +166,14 @@ export function LettersListPane({
           : section,
       ),
     [collapsed, sections],
+  );
+
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () =>
+      flattenGroupedSections(visibleSections, {
+        includeEmptyFooter: (section) => section.data.length === 0,
+      }),
+    [visibleSections],
   );
 
   useEffect(() => {
@@ -202,7 +214,7 @@ export function LettersListPane({
     [isPad, onPressRowProp, router],
   );
 
-  const listRef = useRef<SectionList<LetterListRow, Section>>(null);
+  const listRef = useRef<FlashListRef<FlatGroupedRow<LetterListRow>>>(null);
   const itemIds = useMemo(
     () =>
       visibleSections.flatMap((section) => section.data.map((row) => row.id)),
@@ -216,11 +228,11 @@ export function LettersListPane({
     },
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(visibleSections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -258,32 +270,23 @@ export function LettersListPane({
           placeholder="Search letters"
         />
       ) : null}
-      <SectionList
+      <BacksterGroupedList
         ref={listRef}
-        style={ui.screen}
-        sections={visibleSections as SectionListData<LetterListRow, Section>[]}
-        keyExtractor={(item) => item.id}
-        stickySectionHeadersEnabled={isPad}
-        keyboardShouldPersistTaps="handled"
+        sections={visibleSections}
+        stickySectionHeaders={isPad}
+        highlightedId={highlightedId}
+        estimatedItemSize={56}
+        estimatedHeaderSize={44}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
         onScrollEndDrag={search.onScrollEndDrag}
         scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefreshing}
-            onRefresh={() => {
-              void reload();
-            }}
-            tintColor={colors.muted}
-            colors={[colors.muted]}
-          />
-        }
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+        refreshing={pullRefreshing}
+        onRefresh={() => {
+          void reload();
         }}
-        ListHeaderComponent={
+        listHeader={
           pageTitle ? (
             <ContentPageTitle
               title={pageTitle}
@@ -292,37 +295,37 @@ export function LettersListPane({
             />
           ) : null
         }
-        ListEmptyComponent={
-          <Text style={ui.empty}>
-            {search.query.trim()
-              ? "No matching letters."
-              : "No letters yet. Use the plus button to upload one."}
-          </Text>
+        emptyText={
+          search.query.trim()
+            ? "No matching letters."
+            : "No letters yet. Use the plus button to upload one."
         }
-        renderSectionHeader={({ section }) => (
+        renderSectionHeader={(section) => (
           <StatusGroupHeader
             title={section.title}
             icon={
               <TaskStatusIcon
                 status={
-                  section.status === "overdue" ? "on_hold" : section.status
+                  section.key === "overdue" ? "on_hold" : section.key
                 }
                 size={14}
               />
             }
-            gradient={getTaskStatusHeaderGradient(section.status)}
-            collapsed={collapsed.has(section.status)}
-            onToggle={() => toggleStatus(section.status)}
+            gradient={getTaskStatusHeaderGradient(section.key)}
+            collapsed={collapsed.has(section.key)}
+            onToggle={() => toggleStatus(section.key)}
           />
         )}
-        renderSectionFooter={({ section }) =>
-          statusGroupEmptySectionFooter(visibleSections, section)
+        renderSectionFooter={(section) =>
+          statusGroupEmptySectionFooter(sections, {
+            ...section,
+            status: section.key,
+          })
         }
-        renderItem={({ item }) => {
+        renderItem={(item, { highlighted }) => {
           const title = item.title?.trim() || "Untitled";
           const displayId =
             item.number != null ? formatLetterDisplayId(item.number) : null;
-          const highlighted = highlightedId === item.id;
           const selected = pathSelectedId === item.id;
           return (
             <Pressable

@@ -232,6 +232,10 @@ export function registerSyncRoutes(app: Hono) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json({ error: "Project not found", code: "not_found" }, 404);
         }
+        console.error(
+          "[powersync/write] batch failed",
+          error instanceof Error ? error.message : error,
+        );
         throw error;
       }
     },

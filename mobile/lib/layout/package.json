@@ -1,0 +1,6 @@
+{
+  "name": "@backsteros/mobile-layout",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts"
+}

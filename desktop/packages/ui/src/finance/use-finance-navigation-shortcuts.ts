@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isFinanceSectionPath } from "../navigation/entity-routes.js";
 import {
   DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
@@ -17,6 +18,7 @@ import {
   isBlockingModalOpen,
   shouldHandleGlobalShortcut,
 } from "../shortcuts/shortcut-guards.js";
+import { afterNextPaint } from "../timing/after-next-paint.js";
 
 function findFinanceGoItemByLetter(
   letter: string,
@@ -32,8 +34,6 @@ function findFinanceGoItemByLetter(
 export function useFinanceNavigationShortcuts({
   enabled = true,
   pathname,
-  commandPaletteOpen = false,
-  commandPaletteMode = "search",
   financeGoItems = DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
   openFinanceGo,
   closePalette,
@@ -41,13 +41,13 @@ export function useFinanceNavigationShortcuts({
 }: {
   enabled?: boolean;
   pathname: string;
-  commandPaletteOpen?: boolean;
-  commandPaletteMode?: string;
   financeGoItems?: readonly FinanceGoNavigationItem[];
   openFinanceGo: () => void;
   closePalette: () => void;
   onNavigate: (href: string) => void;
 }) {
+  const { openRef, modeRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -55,6 +55,9 @@ export function useFinanceNavigationShortcuts({
       if (!isFinanceSectionPath(pathname)) {
         return;
       }
+
+      const commandPaletteOpen = openRef.current ?? false;
+      const commandPaletteMode = modeRef.current ?? "search";
 
       if (isBlockingModalOpen() && !commandPaletteOpen) {
         return;
@@ -98,20 +101,20 @@ export function useFinanceNavigationShortcuts({
       }
 
       event.preventDefault();
-      closePalette();
       onNavigate(binding.href);
+      afterNextPaint(() => closePalette());
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
     closePalette,
-    commandPaletteMode,
-    commandPaletteOpen,
     enabled,
     financeGoItems,
+    modeRef,
     onNavigate,
     openFinanceGo,
+    openRef,
     pathname,
   ]);
 }

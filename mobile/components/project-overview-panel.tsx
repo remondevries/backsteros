@@ -1,4 +1,3 @@
-import type { Project } from "@backsteros/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +32,8 @@ import {
   isValidProjectKey,
   normalizeProjectKey,
 } from "../lib/project-key";
+import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useSyncedAreas } from "../lib/areas-data";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import {
   endOfLocalDayIso,
@@ -51,7 +52,6 @@ import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { OrganizationIcon } from "./organization-icon";
 import { ProjectIcon } from "./project-icon";
-import { ProjectOverviewIcon } from "./project-overview-icon";
 import {
   ProjectOverviewMetaRows,
   type ProjectMetaField,
@@ -131,10 +131,6 @@ const ORGANIZATIONS_SQL = `SELECT id, name FROM organizations
   WHERE deleted_at IS NULL
   ORDER BY name COLLATE NOCASE ASC`;
 
-const AREAS_SQL = `SELECT id, name, parent, sort_order FROM areas
-  WHERE deleted_at IS NULL
-  ORDER BY sort_order ASC, name COLLATE NOCASE ASC`;
-
 const DETAIL_SQL = `SELECT
          p.id,
          p.key,
@@ -180,7 +176,7 @@ function dueIsoForOffset(daysFromToday: number): string {
   return endOfLocalDayIso(date);
 }
 
-/** Project overview — always-editable name / summary / description (desktop parity). */
+/** Project overview — editable summary / description; title lives in the shell header. */
 export function ProjectOverviewPanel({
   projectId,
   onNameChange,
@@ -204,7 +200,7 @@ export function ProjectOverviewPanel({
   );
   const { data: syncedOrganizations } =
     useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
-  const { data: syncedAreas } = useLocalQuery<AreaRow>(AREAS_SQL);
+  const { rows: syncedAreas } = useSyncedAreas();
 
   const [status, setStatus] = useState<ProjectStatus>("backlog");
   const [priority, setPriority] = useState(0);
@@ -217,7 +213,6 @@ export function ProjectOverviewPanel({
   const [areaId, setAreaId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
-  const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [description, setDescription] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -260,12 +255,15 @@ export function ProjectOverviewPanel({
     if (!project) return;
     if (hydratedIdRef.current === projectId) return;
     hydratedIdRef.current = projectId;
-    const nextName = project.name?.trim() || "";
-    setName(nextName);
     setSummary(project.summary ?? "");
     setDescription(project.description ?? "");
-    onNameChangeRef.current?.(nextName || "Untitled");
+    onNameChangeRef.current?.(project.name?.trim() || "Untitled");
   }, [project, projectId]);
+
+  useEffect(() => {
+    if (!project) return;
+    onNameChangeRef.current?.(project.name?.trim() || "Untitled");
+  }, [project?.name, project]);
 
   async function patchProperty(values: Record<string, unknown>): Promise<boolean> {
     if (!project) return false;
@@ -279,30 +277,14 @@ export function ProjectOverviewPanel({
       else sqliteValues[key] = value;
     }
     try {
-      if (powerSync.ready) {
-        await powerSync.patchProject(project.id, sqliteValues);
-        void client
-          .requestJson<Project>(
-            `/api/v1/projects/${encodeURIComponent(project.id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(values),
-            },
-          )
-          .catch(() => {
-            /* local already updated */
-          });
-      } else {
-        await client.requestJson<Project>(
-          `/api/v1/projects/${encodeURIComponent(project.id)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(values),
-          },
-        );
-      }
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "projects",
+        project.id,
+        values,
+        sqliteValues,
+      );
       return true;
     } catch (reason) {
       const message =
@@ -429,11 +411,11 @@ export function ProjectOverviewPanel({
 
   const nestedAreasForParent = useMemo(
     () =>
-      (syncedAreas ?? [])
-        .filter((entry) => asProjectArea(entry.parent) === area)
+      syncedAreas
+        .filter((entry) => entry.parent === area)
         .map((entry) => ({
           id: entry.id,
-          name: entry.name?.trim() || "Untitled",
+          name: entry.name,
         })),
     [area, syncedAreas],
   );
@@ -686,24 +668,7 @@ export function ProjectOverviewPanel({
 
   const overviewBody = (
     <>
-      <View style={styles.overviewHeader}>
-        <ProjectOverviewIcon icon={project.icon} type={projectType} />
-        <TextInput
-          value={name}
-          onChangeText={setName}
-          onBlur={() => {
-            const trimmed = name.trim();
-            if (!trimmed) {
-              setName(project.name?.trim() || "");
-              return;
-            }
-            void persistText({ name: trimmed });
-          }}
-          placeholder="Project name"
-          placeholderTextColor={colors.muted}
-          returnKeyType="next"
-          style={styles.titleInput}
-        />
+      <View style={styles.summaryHeader}>
         <TextInput
           value={summary}
           onChangeText={setSummary}
@@ -762,28 +727,11 @@ export function ProjectOverviewPanel({
 }
 
 const styles = StyleSheet.create({
-  /** Parity with desktop `.project-detail__header`. */
-  overviewHeader: {
+  summaryHeader: {
     width: "100%",
-    gap: 8,
     paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 0,
-  },
-  title: {
-    color: colors.foreground,
-    fontSize: 22,
-    fontWeight: "600",
-    letterSpacing: -0.02 * 22,
-    lineHeight: 28,
-  },
-  titleInput: {
-    color: colors.foreground,
-    fontSize: 22,
-    fontWeight: "600",
-    letterSpacing: -0.02 * 22,
-    lineHeight: 28,
-    paddingVertical: 0,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   summary: {
     color: "rgba(237, 237, 237, 0.65)",

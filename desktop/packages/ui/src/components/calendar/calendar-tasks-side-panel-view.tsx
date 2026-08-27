@@ -11,10 +11,8 @@ import {
   calendarSidePanelTaskItemId,
   partitionCalendarSidePanelMeetings,
 } from "../../calendar/calendar-side-panel-keyboard.js";
-import {
-  CALENDAR_PAGE_MODE_OPTIONS,
-  type CalendarPageMode,
-} from "../../calendar/calendar-page-mode.js";
+import { type CalendarPageMode } from "../../calendar/calendar-page-mode.js";
+import { CalendarSidePanelModeFooter } from "./calendar-side-panel-mode-footer.js";
 import { type MeetingListItem } from "../../meetings/meetings.js";
 import {
   meetingEpochAttribute,
@@ -30,7 +28,6 @@ import { ProjectOcticon } from "../projects/project-octicon.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
-import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import {
   buildMeetingListItemCardData,
@@ -205,14 +202,10 @@ export function CalendarTasksSidePanelView({
       listRef={listRef}
       listContainerProps={listContainerProps}
       afterMain={
-        <div className="calendar-side-panel__footer">
-          <SegmentedPillToggle
-            value={pageMode}
-            options={CALENDAR_PAGE_MODE_OPTIONS}
-            onChange={onPageModeChange}
-            ariaLabel="Calendar page mode"
-          />
-        </div>
+        <CalendarSidePanelModeFooter
+          pageMode={pageMode}
+          onPageModeChange={onPageModeChange}
+        />
       }
     >
       {hasInboxMeetings ? (

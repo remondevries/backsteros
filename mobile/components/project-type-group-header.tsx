@@ -1,21 +1,23 @@
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { colors } from "../lib/theme";
 import { ChevronRightIcon } from "./chevron-right-icon";
+import { MoreHorizontalIcon } from "./more-horizontal-icon";
 import { PlusIcon } from "./plus-icon";
 
 type Props = {
   title: string;
   collapsed?: boolean;
   onToggle?: () => void;
-  /**
-   * Optional + on the right — desktop `.project-type-subgroup__add`
-   * (e.g. add into this type / attention group).
-   */
+  /** Optional + on the right — desktop `.project-type-subgroup__add` */
   onAdd?: () => void;
   addActionLabel?: string;
-  /** Optional trailing control when `onAdd` is not enough. */
+  /** Nested custom area — rename via ⋯ menu. */
+  onRename?: () => void;
+  /** Nested custom area — delete via ⋯ menu. */
+  onDelete?: () => void;
+  /** Optional trailing control when `onAdd` / area menu are not enough. */
   trailing?: ReactNode;
   /**
    * Extra top gap when headers are not sticky. Keep false for sticky headers.
@@ -33,9 +35,33 @@ export function ProjectTypeGroupHeader({
   onToggle,
   onAdd,
   addActionLabel = "item",
+  onRename,
+  onDelete,
   trailing,
   spaced = false,
 }: Props) {
+  const showAreaMenu = Boolean(onRename || onDelete);
+
+  function openAreaMenu() {
+    const buttons: Array<{
+      text: string;
+      style?: "cancel" | "destructive" | "default";
+      onPress?: () => void;
+    }> = [];
+    if (onRename) {
+      buttons.push({ text: "Rename", onPress: onRename });
+    }
+    if (onDelete) {
+      buttons.push({
+        text: "Delete",
+        style: "destructive",
+        onPress: onDelete,
+      });
+    }
+    buttons.push({ text: "Cancel", style: "cancel" });
+    Alert.alert(title, undefined, buttons);
+  }
+
   const mainContent = (
     <>
       <View
@@ -66,6 +92,19 @@ export function ProjectTypeGroupHeader({
       ]}
     >
       <PlusIcon size={12} color={colors.muted} />
+    </Pressable>
+  ) : showAreaMenu ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Area actions for ${title}`}
+      hitSlop={8}
+      onPress={openAreaMenu}
+      style={({ pressed }) => [
+        styles.addButton,
+        pressed ? styles.addButtonPressed : null,
+      ]}
+    >
+      <MoreHorizontalIcon size={14} color={colors.muted} />
     </Pressable>
   ) : (
     trailing

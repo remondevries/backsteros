@@ -1,73 +1,57 @@
 import { useRouter } from "expo-router";
-import { Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
+import type { ListBoardView } from "../lib/list-board-view";
 import {
   getTasksDueFilterLabel,
   TASKS_DUE_FILTERS,
   type TasksDueFilter,
 } from "../lib/tasks-due-filters";
-import { colors, spacing } from "../lib/theme";
+import { ListBoardToggle } from "./list-board-toggle";
 import { PillNav } from "./pill-nav";
+import { SectionListHeader } from "./section-list-header";
 
 type Props = {
   dueFilter: TasksDueFilter;
   onDueFilterChange: (filter: TasksDueFilter) => void;
+  boardView?: ListBoardView;
+  onBoardViewToggle?: () => void;
 };
 
-export function TasksHeader({ dueFilter, onDueFilterChange }: Props) {
-  const insets = useSafeAreaInsets();
+export function TasksHeader({
+  dueFilter,
+  onDueFilterChange,
+  boardView,
+  onBoardViewToggle,
+}: Props) {
   const router = useRouter();
 
   return (
-    <View
-      style={{
-        paddingTop: insets.top + 8,
-        backgroundColor: colors.background,
-      }}
-    >
-      <View
-        style={{
-          paddingHorizontal: spacing.screenX,
-          paddingBottom: 10,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Text
-          numberOfLines={1}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            color: colors.foreground,
-            fontWeight: "600",
-            fontSize: 22,
-          }}
-        >
-          Tasks
-        </Text>
-        <TabStackHeaderPlusButton
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/tasks/new",
-              params: { dueFilter },
-            })
-          }
-          accessibilityLabel="Create task"
+    <SectionListHeader
+      title="Tasks"
+      showGlobalSearch
+      onPressPlus={() =>
+        router.push({
+          pathname: "/(app)/tasks/new",
+          params: { dueFilter },
+        })
+      }
+      plusAccessibilityLabel="Create task"
+      trailingControl={
+        boardView && onBoardViewToggle ? (
+          <ListBoardToggle view={boardView} onToggle={onBoardViewToggle} />
+        ) : null
+      }
+      below={
+        <PillNav
+          accessibilityLabel="Due date filter"
+          value={dueFilter}
+          onChange={onDueFilterChange}
+          items={TASKS_DUE_FILTERS.map((value) => ({
+            value,
+            label: getTasksDueFilterLabel(value),
+          }))}
         />
-      </View>
-      <PillNav
-        accessibilityLabel="Due date filter"
-        value={dueFilter}
-        onChange={onDueFilterChange}
-        items={TASKS_DUE_FILTERS.map((value) => ({
-          value,
-          label: getTasksDueFilterLabel(value),
-        }))}
-      />
-    </View>
+      }
+    />
   );
 }

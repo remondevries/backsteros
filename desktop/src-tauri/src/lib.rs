@@ -491,6 +491,7 @@ pub fn run() {
             whoop::whoop_status,
             whoop::whoop_fetch_day,
             system_stats::system_stats,
+            system_stats::set_system_stats_disk_path,
             cursor_usage::cursor_usage,
             close_oauth_windows,
             hide_desktop_overlay,
@@ -519,6 +520,13 @@ pub fn run() {
         })
         .setup(|app| {
             app.manage(OverlayState(Mutex::new(OverlayMode::None)));
+            app.manage(system_stats::SystemStatsDiskPath(Mutex::new(
+                std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::path::PathBuf::from(".")),
+            )));
+            system_stats::start_system_stats_watch(app.handle().clone());
 
             install_app_menu(app)?;
 

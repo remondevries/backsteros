@@ -22,9 +22,13 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import type { NavigateFunction } from "react-router-dom";
-
 import { accountSlug } from "./finance-page-helpers";
+
+/** String-href navigate used by finance page hooks (Phase 5c). */
+export type FinanceHrefNavigate = (
+  to: string,
+  options?: { replace?: boolean; state?: unknown },
+) => void;
 
 export function useFinanceTransactions({
   client,
@@ -41,7 +45,7 @@ export function useFinanceTransactions({
   setRecurringMetrics,
 }: {
   client: BacksterosApiClient;
-  navigate: NavigateFunction;
+  navigate: FinanceHrefNavigate;
   accounts: BankAccount[];
   allAccountsSelected: boolean;
   selected: BankAccount | null;

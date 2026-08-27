@@ -11,7 +11,7 @@ import {
 } from "../../list-nav/keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
-import { useCommandPalette } from "../command-palette/command-palette-context.js";
+import { useCommandPaletteRuntimeRefs } from "../command-palette/command-palette-context.js";
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import {
   useListKeyboardNavigation,
@@ -127,7 +127,7 @@ export function PullRequestDetailPane({
   hotkeysEnabled = false,
   onSelectedFilenameChange,
 }: PullRequestDetailPaneProps) {
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { openRef } = useCommandPaletteRuntimeRefs();
   const { clearHighlights, setActiveZone } = useListKeyboardNavigationZone();
   const [pullRequest, setPullRequest] =
     useState<GithubPullRequest>(initialPullRequest);
@@ -294,7 +294,7 @@ export function PullRequestDetailPane({
     if (!hotkeysEnabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) return;
+      if (openRef.current) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
       }
@@ -317,7 +317,7 @@ export function PullRequestDetailPane({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, hotkeysEnabled, selectDetailTab]);
+  }, [hotkeysEnabled, openRef, selectDetailTab]);
 
   useEffect(() => {
     if (!hotkeysEnabled) {

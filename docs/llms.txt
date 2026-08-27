@@ -16,7 +16,10 @@
 - [docs/01-architecture.md](01-architecture.md): System diagram, repos, auth, write pipeline
 - [docs/02-tech-stack.md](02-tech-stack.md): Tool choices — Expo, Tauri, Postgres, PowerSync, Meilisearch, Hono
 - [docs/03-data-model.md](03-data-model.md): Sync tiers A/B/C/D, entities, version fields
-- [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API
+- [docs/04-api-and-sync.md](04-api-and-sync.md): REST v1, sync bootstrap/pull/push, live documents, agent API (dual-hydrate **deprecated** — see 16)
+- [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, desktop as cache, kill dual-hydrate
+- [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
+- [docs/15-tauri-ipc-profiling.md](15-tauri-ipc-profiling.md): Desktop invoke/event inventory, batching gate, system-stats watch
 - [docs/05-clients.md](05-clients.md): Clients (v1-oriented; see also 12)
 - [docs/11-urls-and-routing.md](11-urls-and-routing.md): /app vs /admin, reverse proxy
 - [docs/06-storage-and-search.md](06-storage-and-search.md): B2/R2, Meilisearch, PDF/markdown layout
@@ -25,6 +28,7 @@
 - [docs/09-phased-build-plan.md](09-phased-build-plan.md): Implementation phases 0–9
 - [docs/10-decisions-log.md](10-decisions-log.md): ADRs
 - [docs/12-v2-local-computer.md](12-v2-local-computer.md): v2 local-computer core + Expo/Tauri shells
+- [docs/13-hybrid-cloud-local-core.md](13-hybrid-cloud-local-core.md): Hybrid local/cloud cores (superseded direction → 16)
 
 ## Task routing (quick)
 
@@ -32,9 +36,9 @@
 | --- | --- |
 | Starting implementation | 00-vision, 12-v2-local-computer, 09-phased-build-plan |
 | API routes / OpenAPI | 04-api-and-sync, 03-data-model, 02-tech-stack |
-| PowerSync / offline | 03-data-model, 04-api-and-sync, 07-performance |
-| Expo mobile | 05-clients, 07-performance, 04-api-and-sync, 12-v2-local-computer |
-| Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020) |
+| PowerSync / offline | 03-data-model, **16-linear-shaped-sync**, 04-api-and-sync, 07-performance |
+| Expo mobile | 05-clients, 07-performance, 04-api-and-sync, 12-v2-local-computer, 14-client-logic-inventory |
+| Tauri desktop | 05-clients, 07-performance, 10-decisions-log (ADR-019, ADR-020), **16-linear-shaped-sync**, 15-tauri-ipc-profiling |
 | PDFs / markdown / search | 06-storage-and-search, 03-data-model |
 | Changing stack choices | 10-decisions-log, 02-tech-stack |
 

@@ -1,4 +1,3 @@
-import type { Letter } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -18,6 +17,8 @@ import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { createLetterViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import {
   FLOATING_PDF_DOCK_CLEARANCE,
@@ -48,6 +49,7 @@ export function CreateLetterScreen() {
     : params.organizationId;
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const [title, setTitle] = useState("");
   const [context, setContext] = useState("");
@@ -94,18 +96,14 @@ export function CreateLetterScreen() {
     setSaving(true);
     setError(null);
     try {
-      const created = await client.requestJson<Letter>("/api/v1/letters", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: trimmedTitle,
-          projectId: projectId || null,
-          contactId: contactId || null,
-          organizationId: organizationId || null,
-          context: context.trim() || null,
-          status: "triage",
-          sortOrder: -Date.now(),
-        }),
+      const created = await createLetterViaPowerSyncOrApi(client, powerSync, {
+        title: trimmedTitle,
+        projectId: projectId || null,
+        contactId: contactId || null,
+        organizationId: organizationId || null,
+        context: context.trim() || null,
+        status: "triage",
+        sortOrder: -Date.now(),
       });
 
       if (pdf) {

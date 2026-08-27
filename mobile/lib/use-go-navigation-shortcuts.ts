@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useCallback } from "react";
 import { TextInput } from "react-native";
 
@@ -64,7 +64,7 @@ export function useGoNavigationShortcuts(enabled = true) {
       clearGoLeaderSequence();
       if (!binding) return;
 
-      router.navigate(binding.href);
+      router.navigate(binding.href as Href);
     },
     [active, router],
   );

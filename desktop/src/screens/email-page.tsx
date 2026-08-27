@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "@tanstack/react-router";
 import {
   EmailDraftActions,
   RegisterPageTitle,
@@ -29,11 +29,11 @@ import { useEmailThreadMetadata } from "./email/use-email-thread-metadata";
 import { useEmailThreadView } from "./email/use-email-thread-view";
 
 export function EmailPage() {
-  const params = useParams<{
+  const params = useParams({ strict: false }) as {
     inboxId?: string;
     messageId?: string;
     draftId?: string;
-  }>();
+  };
   const location = useLocation();
   const locationPath = location.pathname;
   const isCompose = isEmailComposePath(locationPath);
@@ -46,9 +46,9 @@ export function EmailPage() {
     (targetInboxId: string, targetMessageId: string) =>
       preserveEmailInboxListContext(
         getEmailItemHref(targetInboxId, targetMessageId),
-        location.search,
+        location.searchStr,
       ),
-    [location.search],
+    [location.searchStr],
   );
   // Shared Provider owns list fetch + SSE; detail only needs mailboxes.
   const agentMail = useAgentMail();
@@ -196,7 +196,7 @@ export function EmailPage() {
         (draftId ? "Reply concept" : "Email");
 
   const breadcrumbItems = useMemo(() => {
-    const listContext = getEmailListContext(location.search);
+    const listContext = getEmailListContext(location.searchStr);
     const currentLabel = isCompose
       ? composeSubject.trim() || "Compose"
       : title;
@@ -244,7 +244,7 @@ export function EmailPage() {
   }, [
     composeSubject,
     isCompose,
-    location.search,
+    location.searchStr,
     message?.threadMetadata?.projectId,
     message?.threadMetadata?.projectName,
     projectKey,
@@ -291,7 +291,11 @@ export function EmailPage() {
           <p>Select a message</p>
           <p className="inbox-detail-empty-hint">
             Incoming mail from the inboxes in{" "}
-            <Link className="inbox-moved-banner__link" to="/settings/email">
+            <Link
+              className="inbox-moved-banner__link"
+              to="/settings/$tab"
+              params={{ tab: "email" }}
+            >
               Settings → E-mail
             </Link>{" "}
             appears in the left panel.

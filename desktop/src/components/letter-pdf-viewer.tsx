@@ -10,6 +10,12 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  LOCAL_CORE_PDF_OFFLINE_MESSAGE,
+  letterPdfLoadErrorMessage,
+} from "../lib/letter-pdf-load-error";
+import { useLocalCoreHealth } from "../lib/use-local-core-health";
+import { shouldAttemptLetterPdfFetch } from "../lib/workspace/powersync-write-path";
 import "./letter-pdf-viewer.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -232,6 +238,7 @@ export function LetterPdfPreview({
   revision?: number;
 }) {
   const { client } = useDesktopApi();
+  const localCoreReachable = useLocalCoreHealth();
   const [pdf, setPdf] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -240,14 +247,22 @@ export function LetterPdfPreview({
     setPdf(null);
     setError(null);
 
+    if (!useApi) {
+      setError("No PDF available");
+      return () => controller.abort();
+    }
+
+    if (localCoreReachable === false) {
+      setError(LOCAL_CORE_PDF_OFFLINE_MESSAGE);
+      return () => controller.abort();
+    }
+
+    if (!shouldAttemptLetterPdfFetch(localCoreReachable, useApi)) {
+      return () => controller.abort();
+    }
+
     void (async () => {
       try {
-        if (!useApi) {
-          if (!controller.signal.aborted) {
-            setError("No PDF available");
-          }
-          return;
-        }
         const blob = attachmentId
           ? await client.downloadLetterAttachment(letterId, attachmentId)
           : await client.downloadLetterPdf(letterId);
@@ -257,15 +272,13 @@ export function LetterPdfPreview({
       } catch (reason) {
         if (!controller.signal.aborted) {
           setPdf(null);
-          setError(
-            reason instanceof Error ? reason.message : "Could not load PDF",
-          );
+          setError(letterPdfLoadErrorMessage(reason));
         }
       }
     })();
 
     return () => controller.abort();
-  }, [attachmentId, client, letterId, revision, useApi]);
+  }, [attachmentId, client, letterId, localCoreReachable, revision, useApi]);
 
   if (error && !pdf) {
     return (

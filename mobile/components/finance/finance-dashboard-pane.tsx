@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { FinanceChartBoundary } from "./finance-chart-boundary";
 import { AssetsDebtChart } from "./assets-debt-chart";
 import { FinanceCard } from "./finance-card";
 import { IncomeExpenseDailyChart } from "./income-expense-daily-chart";
@@ -190,10 +191,12 @@ export function FinanceDashboardPane({ onReviewAll }: Props) {
 
   const monthlySpending = (
     <FinanceCard title="Monthly spending">
+      <FinanceChartBoundary>
       <IncomeExpenseDailyChart
         points={dashboard.monthIncomeExpensePoints}
         loading={dashboard.monthChartLoading}
       />
+      </FinanceChartBoundary>
     </FinanceCard>
   );
 
@@ -321,7 +324,9 @@ export function FinanceDashboardPane({ onReviewAll }: Props) {
               Debt {formatCents(dashboard.assetsDebt.debtCents)}
             </Text>
           ) : null}
+          <FinanceChartBoundary>
           <AssetsDebtChart points={assetsPoints} />
+          </FinanceChartBoundary>
         </>
       ) : (
         <Text style={styles.emptyText}>Loading…</Text>

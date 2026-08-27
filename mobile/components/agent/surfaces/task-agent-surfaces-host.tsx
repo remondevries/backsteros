@@ -16,6 +16,7 @@ import {
   type AgentSurfaceTabsState,
 } from "../../../lib/agent/agent-surface-tabs";
 import { CodebaseTaskAgentPane } from "../codebase-task-agent-pane";
+import { FeatureErrorBoundary } from "../../feature-error-boundary";
 import { AgentSurfaceBrowserPane } from "./agent-surface-browser-pane";
 import { AgentSurfaceCollapsedStrip } from "./agent-surface-collapsed-strip";
 import { AgentSurfaceDiffPane } from "./agent-surface-diff-pane";
@@ -273,6 +274,7 @@ export function TaskAgentSurfacesHost({
   })();
 
   return (
+    <FeatureErrorBoundary title="Agent surfaces">
     <View style={styles.root} accessibilityLabel="Task surfaces">
       {collapsed && onExpand ? (
         <AgentSurfaceCollapsedStrip
@@ -354,6 +356,7 @@ export function TaskAgentSurfacesHost({
         </View>
       </View>
     </View>
+    </FeatureErrorBoundary>
   );
 }
 

@@ -3,7 +3,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -24,7 +23,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Rect } from "react-native-svg";
 import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 
@@ -66,6 +65,10 @@ import {
 import { colors, spacing } from "../../lib/theme";
 import { isPadDevice } from "../../lib/device";
 import { TextInput } from "../app-text-input";
+import {
+  CONTENT_HEADER_FADE_HEIGHT,
+  ContentHeaderFade,
+} from "../content-header-fade";
 import { DetailContentContainer } from "../detail-content-container";
 import { DueDatePropertySheet } from "../due-date-property-sheet";
 import { EntityIconPickerSheet } from "../entity-icon-picker-sheet";
@@ -88,7 +91,7 @@ type ControlPicker = "cadence" | "project" | "sort" | "nextDue" | null;
 export type HabitDayRecordStatus = "completed" | "canceled";
 const HABIT_GREEN = "#3d9a5b";
 const HABIT_RED = "#c44a4a";
-const HEADER_FADE_HEIGHT = 40;
+const HEADER_FADE_HEIGHT = CONTENT_HEADER_FADE_HEIGHT;
 const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
 /** months paddingLeft + paddingRight — keep in sync with styles.months */
 const MONTHS_INSET = spacing.screenX + 28 + spacing.screenX;
@@ -109,13 +112,6 @@ function commitGridWidth(
   cachedHabitGridWidth = next;
   setGridWidth((current) => (current === next ? current : next));
 }
-
-/** Desktop `.habit-tracker__fade` — content softens under the sticky header. */
-const HEADER_FADE_STOPS = [
-  { offset: "0%", opacity: 1 },
-  { offset: "45%", opacity: 0.7 },
-  { offset: "100%", opacity: 0 },
-] as const;
 
 function HabitHeatTooltipCard({
   ymd,
@@ -147,47 +143,6 @@ function HabitHeatTooltipCard({
           </View>
         ))}
       </View>
-    </View>
-  );
-}
-
-function HabitHeaderFade({ color }: { color: string }) {
-  const reactId = useId().replace(/:/g, "");
-  const gradientId = `habit-header-fade-${reactId}`;
-  const [width, setWidth] = useState(0);
-
-  return (
-    <View
-      pointerEvents="none"
-      style={styles.headerFadeFill}
-      onLayout={(event) => {
-        const next = Math.round(event.nativeEvent.layout.width);
-        if (next > 0 && next !== width) setWidth(next);
-      }}
-    >
-      {width > 0 ? (
-        <Svg width={width} height={HEADER_FADE_HEIGHT}>
-          <Defs>
-            <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              {HEADER_FADE_STOPS.map((stop) => (
-                <Stop
-                  key={stop.offset}
-                  offset={stop.offset}
-                  stopColor={color}
-                  stopOpacity={stop.opacity}
-                />
-              ))}
-            </LinearGradient>
-          </Defs>
-          <Rect
-            x={0}
-            y={0}
-            width={width}
-            height={HEADER_FADE_HEIGHT}
-            fill={`url(#${gradientId})`}
-          />
-        </Svg>
-      ) : null}
     </View>
   );
 }
@@ -386,6 +341,10 @@ export function HabitTrackerPane({
   const router = useRouter();
   const currentYear = Number(todayYmd.slice(0, 4)) || new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
+
+  useEffect(() => {
+    if (year > currentYear) setYear(currentYear);
+  }, [currentYear, year]);
   const [sort, setSort] = useState<HabitSortGranularity>("monthly");
   const [titleDraft, setTitleDraft] = useState(habit?.title ?? "");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -625,25 +584,24 @@ export function HabitTrackerPane({
 
   const phoneNavHeader = !isPad ? (
     <HabitDetailNavHeader
-      year={year}
-      maxYear={currentYear + 25}
-      onYearChange={setYear}
       onBack={handleBack}
-      sortControl={
-        <Chip
-          icon={
-            <PrimerOcticon
-              name="sort-desc"
-              size={12}
-              color={colors.muted}
-            />
-          }
-          label={getHabitSortLabel(sort)}
-          onPress={() => setControlPicker("sort")}
-        />
-      }
+      title={habit?.title ?? "All"}
+      icon={habit?.icon}
+      year={year}
+      maxYear={currentYear}
+      onYearChange={setYear}
     />
   ) : null;
+
+  const sortChip = (
+    <Chip
+      icon={
+        <PrimerOcticon name="sort-desc" size={12} color={colors.muted} />
+      }
+      label={getHabitSortLabel(sort)}
+      onPress={() => setControlPicker("sort")}
+    />
+  );
 
   const columns = sort === "yearly" ? 14 : 7;
   const gap = sort === "yearly" ? 4 : 8;
@@ -808,9 +766,9 @@ export function HabitTrackerPane({
           {headerHeight > 0 ? (
             <View
               pointerEvents="none"
-              style={[styles.headerFade, { top: headerHeight }]}
+              style={[styles.headerFade, { top: headerHeight - 1 }]}
             >
-              <HabitHeaderFade color={colors.background} />
+              <ContentHeaderFade color={colors.background} />
             </View>
           ) : null}
           <ScrollView
@@ -829,159 +787,143 @@ export function HabitTrackerPane({
             setHeaderHeight((current) => (current === next ? current : next));
           }}
         >
-          <View
-            style={[styles.headerTop, !isPad ? styles.headerTopPhone : null]}
-          >
-            <View
-              style={[styles.heading, !isPad ? styles.headingPhone : null]}
-            >
-              {habit ? (
-                <>
-                  {onIconChange ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Change icon for ${habit.title}`}
-                      onPress={() => setIconPickerOpen(true)}
-                      hitSlop={8}
-                    >
-                      <ProjectOverviewIcon icon={habit.icon} size={16} />
-                    </Pressable>
-                  ) : (
-                    <ProjectOverviewIcon icon={habit.icon} size={16} />
-                  )}
-                  {onTitleChange ? (
-                    <TextInput
-                      value={titleDraft}
-                      onChangeText={setTitleDraft}
-                      onBlur={commitTitle}
-                      onSubmitEditing={commitTitle}
-                      returnKeyType="done"
-                      blurOnSubmit
-                      placeholder="Habit name"
-                      placeholderTextColor={colors.muted}
-                      accessibilityLabel="Habit name"
-                      style={[
-                        styles.title,
-                        styles.titleInput,
-                        !isPad ? styles.titlePhone : null,
-                      ]}
-                    />
-                  ) : (
-                    <Text
-                      style={[styles.title, !isPad ? styles.titlePhone : null]}
-                      numberOfLines={2}
-                    >
-                      {habit.title}
-                    </Text>
-                  )}
-                  <Text
-                    style={[styles.counts, !isPad ? styles.countsPhone : null]}
-                  >
-                    {counts.completed} completed · {counts.canceled} missed
-                  </Text>
-                  <HabitDescriptionField
-                    value={habit.description}
-                    collapseToOneLine={!isPad}
-                    centered={!isPad}
-                    onChange={onDescriptionChange}
-                  />
-                </>
-              ) : (
-                <Text
-                  style={[styles.title, !isPad ? styles.titlePhone : null]}
-                >
-                  All
-                </Text>
-              )}
-            </View>
-            {isPad ? (
-              <YearNavigator
-                year={year}
-                onChange={setYear}
-                maxYear={currentYear + 25}
-              />
-            ) : null}
-          </View>
           {habit || isPad ? (
             <View
-              style={[styles.controls, !isPad ? styles.controlsPhone : null]}
+              style={[styles.headerTop, !isPad ? styles.headerTopPhone : null]}
             >
               <View
-                style={[
-                  styles.controlsLeft,
-                  !isPad ? styles.controlsLeftPhone : null,
-                ]}
+                style={[styles.heading, !isPad ? styles.headingPhone : null]}
               >
                 {habit ? (
                   <>
-                    <Chip
-                      icon={
-                        <PrimerOcticon
-                          name="sync"
-                          size={12}
-                          color={colors.muted}
-                        />
-                      }
-                      label={getHabitCadenceLabel(cadence ?? "daily")}
-                      onPress={
-                        onCadenceChange
-                          ? () => setControlPicker("cadence")
-                          : undefined
-                      }
-                    />
-                    <Chip
-                      icon={<TaskDueDateIcon active size={12} />}
-                      label={
-                        formatTaskDueMetaLabel(nextDueYmd) ?? nextDueYmd
-                      }
-                      onPress={
-                        onNextDueChange
-                          ? () => setControlPicker("nextDue")
-                          : undefined
-                      }
-                    />
-                    <Chip
-                      icon={
-                        selectedProject ? (
-                          <ProjectOcticon
-                            icon={selectedProject.icon}
-                            type={selectedProject.type}
-                            size={14}
-                            color={colors.muted}
+                    {isPad ? (
+                      <>
+                        {onIconChange ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Change icon for ${habit.title}`}
+                            onPress={() => setIconPickerOpen(true)}
+                            hitSlop={8}
+                          >
+                            <ProjectOverviewIcon icon={habit.icon} size={16} />
+                          </Pressable>
+                        ) : (
+                          <ProjectOverviewIcon icon={habit.icon} size={16} />
+                        )}
+                        {onTitleChange ? (
+                          <TextInput
+                            value={titleDraft}
+                            onChangeText={setTitleDraft}
+                            onBlur={commitTitle}
+                            onSubmitEditing={commitTitle}
+                            returnKeyType="done"
+                            blurOnSubmit
+                            placeholder="Habit name"
+                            placeholderTextColor={colors.muted}
+                            accessibilityLabel="Habit name"
+                            style={[styles.title, styles.titleInput]}
                           />
                         ) : (
-                          <ProjectOcticon
-                            icon={null}
-                            size={14}
-                            color={colors.muted}
-                          />
-                        )
-                      }
-                      label={selectedProject?.name ?? "Health"}
-                      onPress={
-                        onProjectChange && projects.length > 0
-                          ? () => setControlPicker("project")
-                          : undefined
-                      }
+                          <Text style={styles.title} numberOfLines={2}>
+                            {habit.title}
+                          </Text>
+                        )}
+                      </>
+                    ) : null}
+                    <Text
+                      style={[
+                        styles.counts,
+                        !isPad ? styles.countsPhone : null,
+                      ]}
+                    >
+                      {counts.completed} completed · {counts.canceled} missed
+                    </Text>
+                    <HabitDescriptionField
+                      value={habit.description}
+                      collapseToOneLine={!isPad}
+                      centered={!isPad}
+                      onChange={onDescriptionChange}
                     />
                   </>
-                ) : null}
+                ) : (
+                  <Text style={styles.title}>All</Text>
+                )}
               </View>
               {isPad ? (
-                <Chip
-                  icon={
-                    <PrimerOcticon
-                      name="sort-desc"
-                      size={12}
-                      color={colors.muted}
-                    />
-                  }
-                  label={getHabitSortLabel(sort)}
-                  onPress={() => setControlPicker("sort")}
+                <YearNavigator
+                  year={year}
+                  onChange={setYear}
+                  maxYear={currentYear}
                 />
               ) : null}
             </View>
           ) : null}
+          <View
+            style={[styles.controls, !isPad ? styles.controlsPhone : null]}
+          >
+            <View
+              style={[
+                styles.controlsLeft,
+                !isPad ? styles.controlsLeftPhone : null,
+              ]}
+            >
+              {habit ? (
+                <>
+                  <Chip
+                    icon={
+                      <PrimerOcticon
+                        name="sync"
+                        size={12}
+                        color={colors.muted}
+                      />
+                    }
+                    label={getHabitCadenceLabel(cadence ?? "daily")}
+                    onPress={
+                      onCadenceChange
+                        ? () => setControlPicker("cadence")
+                        : undefined
+                    }
+                  />
+                  <Chip
+                    icon={<TaskDueDateIcon active size={12} />}
+                    label={
+                      formatTaskDueMetaLabel(nextDueYmd) ?? nextDueYmd
+                    }
+                    onPress={
+                      onNextDueChange
+                        ? () => setControlPicker("nextDue")
+                        : undefined
+                    }
+                  />
+                  <Chip
+                    icon={
+                      selectedProject ? (
+                        <ProjectOcticon
+                          icon={selectedProject.icon}
+                          type={selectedProject.type}
+                          size={14}
+                          color={colors.muted}
+                        />
+                      ) : (
+                        <ProjectOcticon
+                          icon={null}
+                          size={14}
+                          color={colors.muted}
+                        />
+                      )
+                    }
+                    label={selectedProject?.name ?? "Health"}
+                    onPress={
+                      onProjectChange && projects.length > 0
+                        ? () => setControlPicker("project")
+                        : undefined
+                    }
+                  />
+                </>
+              ) : null}
+              {sortChip}
+            </View>
+          </View>
         </View>
 
         <View style={styles.months} onLayout={onMonthsLayout}>
@@ -1365,9 +1307,6 @@ const styles = StyleSheet.create({
     zIndex: 4,
     height: HEADER_FADE_HEIGHT,
   },
-  headerFadeFill: {
-    flex: 1,
-  },
   header: {
     flexDirection: "column",
     paddingHorizontal: spacing.screenX,
@@ -1378,9 +1317,12 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   headerPhone: {
+    paddingTop: 12,
     paddingLeft: spacing.screenX,
     paddingRight: spacing.screenX,
     alignItems: "center",
+    alignSelf: "stretch",
+    width: "100%",
   },
   headerTop: {
     flexDirection: "row",
@@ -1389,6 +1331,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   headerTopPhone: {
+    alignSelf: "stretch",
     width: "100%",
     justifyContent: "center",
   },
@@ -1401,6 +1344,7 @@ const styles = StyleSheet.create({
   },
   headingPhone: {
     flex: 0,
+    alignSelf: "stretch",
     width: "100%",
     alignItems: "center",
     gap: 6,
@@ -1425,6 +1369,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   countsPhone: {
+    alignSelf: "stretch",
+    width: "100%",
     textAlign: "center",
   },
   controls: {

@@ -4,7 +4,7 @@ export type MentionChipLayout = "inline" | "block";
 
 /** List / heading / quote markers that open a markdown line. */
 const STRUCTURAL_LINE_PREFIX_RE =
-  /^(?:\s*)(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s?)/;
+  /^(?:\s*)(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/;
 
 function isMarkdownSegment(
   segment: MentionSegment | undefined,
@@ -35,7 +35,7 @@ export function splitTrailingStructuralPrefix(content: string): {
   prefix: string;
 } | null {
   const match = content.match(
-    /(?:^|\n)([ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+\.[ \t]+|>[ \t]?))$/,
+    /(?:^|\n)([ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|>[ \t]?))$/,
   );
   if (!match || match.index == null) {
     return null;
@@ -63,7 +63,7 @@ export function matchListItemOpener(content: string): {
   textAfterMarker: string;
 } | null {
   const match = content.match(
-    /^(\n*)([ \t]*)([-*+]|\d+\.)([ \t]+)([^\n]*)$/,
+    /^(\n*)([ \t]*)([-*+]|\d+[.)])([ \t]+)([^\n]*)$/,
   );
   if (!match) {
     return null;
@@ -71,7 +71,7 @@ export function matchListItemOpener(content: string): {
 
   return {
     leadingNewlines: match[1] ?? "",
-    ordered: /^\d+\.$/.test(match[3] ?? ""),
+    ordered: /^\d+[.)]$/.test(match[3] ?? ""),
     textAfterMarker: match[5] ?? "",
   };
 }

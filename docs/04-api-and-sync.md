@@ -155,3 +155,42 @@ Client writes locally → PowerSync queue → `uploadData` callback on API → s
 ## Circle API reference
 
 Legacy endpoints documented in `~/code/circle.remondevries.com/AGENTS.md` (`/api/v1`, `/api/mobile/v1/sync/*`). BacksterOS unifies mobile and web sync into one protocol.
+
+## Desktop / mobile dual-hydrate (REST + PowerSync) — **deprecated**
+
+> **Revoked as product strategy.** Target is Linear-shaped sync: local SQLite reads, optimistic mutations, server total order — see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md). Dual-hydrate (`mergeLocalAndApiByUpdatedAt`) is being removed from desktop; do not extend it.
+
+Historical context (why it existed): packaged desktop could report PowerSync `ready` with empty SQLite when the download stream never connected (WKWebView + Tailscale). REST list hydrate filled Projects/Tasks/Inbox from Postgres as a rescue. That rescue is **not** the long-term design.
+
+### Legacy wave table (being retired)
+
+| Wave | Entities | When |
+| --- | --- | --- |
+| 1 | Tasks, inbox tasks, projects | Immediately on auth — flips `restHydrateSettled` |
+| 2 | Documents, areas, orgs, contacts, letters, habits, meetings | `requestIdleCallback` (or timeout fallback) after wave 1 |
+
+Former implementation: [`desktop/src/lib/workspace/use-workspace-api-rows.ts`](../desktop/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts). Mobile still mirrors via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) until a follow-up.
+
+### Merge rules
+
+- Winner: newer `updatedAt` (see [`desktop/src/lib/merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts)).
+- `preservePendingApiRows` keeps optimistic creates that have not landed in SQLite yet.
+- Column fillers (`fillMissingLinksFromApi`, long text, due dates, …) copy API fields when local won on timestamp but still omits a column (stale schema / partial sync).
+
+### Failure modes
+
+| Local SQLite | REST | UX |
+| --- | --- | --- |
+| Empty | OK | Lists fill from REST; `source` may still flip to `powersync` once any watch returns |
+| OK | Fail | PowerSync-only; soft revalidate retries later |
+| Both stale | — | User sees last merged snapshot; next sync/hydrate refreshes |
+
+### Debugging
+
+- `workspace.source` — `"powersync"` once a local tasks watch has rows, else `"empty"`
+- `workspace.ready` — combines PowerSync readiness, REST settle, and a **12s** `queriesGracePeriodExpired` so cold start is not blocked forever on a hung watch
+- Prefer React Profiler on a single task status patch when changing merge or watch code
+
+### Client logic sharing
+
+Mirrored pure helpers (due filters, inbox attention, …) are inventoried in [`docs/14-client-logic-inventory.md`](14-client-logic-inventory.md). Extract to `@backsteros/contracts` — never share visual UI between mobile and desktop.

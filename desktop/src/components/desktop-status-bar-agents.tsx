@@ -1,10 +1,11 @@
-import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { memo, useMemo } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { getInboxTaskRouteHref, getTaskDisplayId } from "@backsteros/ui";
 
 import type { StatusBarAgentItem } from "../lib/agent/agent-activity";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDesktopWorkspaceTasks } from "../lib/workspace-data";
+import { navigateToHref } from "../router/navigate-href";
 import {
   StatusBarHoverMenu,
   type StatusBarHoverItem,
@@ -26,15 +27,15 @@ function activityLabel(activity: StatusBarAgentItem["activity"]): string {
 /**
  * Active agents for the bottom status bar (Development status-bar port).
  */
-export function DesktopStatusBarAgents() {
+export const DesktopStatusBarAgents = memo(function DesktopStatusBarAgents() {
   const navigate = useNavigate();
-  const workspace = useDesktopWorkspaceData();
+  const { allTasks } = useDesktopWorkspaceTasks();
   const { summary, statusItems } = useDesktopAgentStatus();
 
   const labelsByTaskId = useMemo(() => {
     const map: Record<string, string> = {};
     for (const item of statusItems) {
-      const task = workspace.allTasks.find((entry) => entry.id === item.taskId);
+      const task = allTasks.find((entry) => entry.id === item.taskId);
       if (!task) {
         map[item.taskId] = item.projectLabel;
         continue;
@@ -54,11 +55,11 @@ export function DesktopStatusBarAgents() {
           : displayId || title || item.taskId.slice(0, 8);
     }
     return map;
-  }, [statusItems, workspace.allTasks]);
+  }, [allTasks, statusItems]);
 
   const menuItems = useMemo((): StatusBarHoverItem[] => {
     return statusItems.map((item) => {
-      const task = workspace.allTasks.find((entry) => entry.id === item.taskId);
+      const task = allTasks.find((entry) => entry.id === item.taskId);
       return {
         id: item.taskId,
         title: labelsByTaskId[item.taskId] ?? item.projectLabel,
@@ -66,7 +67,8 @@ export function DesktopStatusBarAgents() {
         meta: activityLabel(item.activity),
         onSelect: () => {
           if (task?.number != null) {
-            navigate(
+            navigateToHref(
+              navigate,
               getInboxTaskRouteHref({
                 number: task.number,
                 projectKey: task.projectKey,
@@ -75,11 +77,11 @@ export function DesktopStatusBarAgents() {
             );
             return;
           }
-          navigate(`/tasks/${item.taskId}`);
+          navigateToHref(navigate, `/tasks/${item.taskId}`);
         },
       };
     });
-  }, [labelsByTaskId, navigate, statusItems, workspace.allTasks]);
+  }, [allTasks, labelsByTaskId, navigate, statusItems]);
 
   const detailParts: string[] = [];
   if (summary.working > 0) detailParts.push(`${summary.working} working`);
@@ -111,4 +113,4 @@ export function DesktopStatusBarAgents() {
       dot={<span className={dotClass} aria-hidden="true" />}
     />
   );
-}
+});

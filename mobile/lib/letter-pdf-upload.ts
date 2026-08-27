@@ -1,6 +1,11 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import { File } from "expo-file-system";
 
+import {
+  letterPdfDeleteErrorMessage,
+  letterPdfUploadErrorMessage,
+} from "./letter-pdf-load-error";
+
 export type PickedLetterPdf = {
   uri: string;
   name: string;
@@ -86,7 +91,24 @@ export async function uploadLetterPdfFromUri(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Could not upload PDF.",
+      error: letterPdfUploadErrorMessage(error),
+    };
+  }
+}
+
+/** Delete a letter PDF attachment — Tier D; requires Mac local-core. */
+export async function deleteLetterPdfAttachment(
+  client: BacksterosApiClient,
+  letterId: string,
+  attachmentId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await client.deleteLetterAttachment(letterId, attachmentId);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: letterPdfDeleteErrorMessage(error),
     };
   }
 }

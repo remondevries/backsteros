@@ -35,7 +35,7 @@ function HeaderBackChevron({
   );
 }
 
-function HeaderPlusGlyph({
+export function HeaderPlusGlyph({
   color = colors.foreground,
   size = 18,
 }: {

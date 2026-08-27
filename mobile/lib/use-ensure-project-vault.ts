@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { ensureProjectVault } from "./ensure-project-vault";
+import { patchEntityViaPowerSyncOrApi } from "./entity-mutations";
 import { useMobileApiClient } from "./use-mobile-api-client";
 import { useMobilePowerSync } from "./powersync-context";
 
@@ -11,7 +12,6 @@ import { useMobilePowerSync } from "./powersync-context";
 export function useEnsureProjectVault(projectId: string | null | undefined) {
   const client = useMobileApiClient();
   const powerSync = useMobilePowerSync();
-  const patchProject = powerSync.patchProject;
 
   useEffect(() => {
     const id = projectId?.trim();
@@ -26,9 +26,14 @@ export function useEnsureProjectVault(projectId: string | null | undefined) {
         ensured.localWorkingDirectory?.trim()
       ) {
         try {
-          await patchProject(id, {
-            localWorkingDirectory: ensured.localWorkingDirectory,
-          });
+          await patchEntityViaPowerSyncOrApi(
+            client,
+            powerSync,
+            "projects",
+            id,
+            { localWorkingDirectory: ensured.localWorkingDirectory },
+            { local_working_directory: ensured.localWorkingDirectory },
+          );
         } catch {
           // Best-effort — folder still exists on the core machine.
         }
@@ -38,5 +43,5 @@ export function useEnsureProjectVault(projectId: string | null | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [client, patchProject, projectId]);
+  }, [client, powerSync, projectId]);
 }

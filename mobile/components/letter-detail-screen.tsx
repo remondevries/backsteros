@@ -28,9 +28,11 @@ import {
 } from "../lib/letter-detail-model";
 import { formatLetterDisplayId } from "../lib/letter-display-id";
 import {
+  deleteLetterPdfAttachment,
   pickLetterPdf,
   uploadLetterPdfFromUri,
 } from "../lib/letter-pdf-upload";
+import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
@@ -44,8 +46,10 @@ import {
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
+import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { ContactPersonIcon } from "./contact-person-icon";
+import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import {
@@ -90,6 +94,7 @@ export function LetterDetailScreen({ letterId }: Props) {
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
   const segments = useSegments();
+  const { confirmAndDelete } = useEntitySoftDelete();
   const inPadLettersSplit =
     isPadDevice() && (segments as string[]).includes("letters");
 
@@ -209,39 +214,20 @@ export function LetterDetailScreen({ letterId }: Props) {
     setSaving(true);
     setSaveError(null);
     try {
-      if (powerSync.ready) {
-        await powerSync.patchLetter(letter.id, {
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "letters",
+        letter.id,
+        {
           title: trimmedTitle,
           context: nextContext,
-        });
-        void client
-          .requestJson<Letter>(
-            `/api/v1/letters/${encodeURIComponent(letter.id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                title: trimmedTitle,
-                context: nextContext,
-              }),
-            },
-          )
-          .catch(() => {
-            /* local already updated */
-          });
-      } else {
-        await client.requestJson<Letter>(
-          `/api/v1/letters/${encodeURIComponent(letter.id)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: trimmedTitle,
-              context: nextContext,
-            }),
-          },
-        );
-      }
+        },
+        {
+          title: trimmedTitle,
+          context: nextContext,
+        },
+      );
     } catch (reason) {
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save letter.",
@@ -264,30 +250,14 @@ export function LetterDetailScreen({ letterId }: Props) {
       else sqliteValues[key] = value;
     }
     try {
-      if (powerSync.ready) {
-        await powerSync.patchLetter(letter.id, sqliteValues);
-        void client
-          .requestJson<Letter>(
-            `/api/v1/letters/${encodeURIComponent(letter.id)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(values),
-            },
-          )
-          .catch(() => {
-            /* local already updated */
-          });
-      } else {
-        await client.requestJson<Letter>(
-          `/api/v1/letters/${encodeURIComponent(letter.id)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(values),
-          },
-        );
-      }
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "letters",
+        letter.id,
+        values,
+        sqliteValues,
+      );
     } catch (reason) {
       setPropertyError(
         reason instanceof Error
@@ -468,18 +438,13 @@ export function LetterDetailScreen({ letterId }: Props) {
       return { ok: false, error: "Letter is required." };
     }
     try {
-      if (powerSync.ready) {
-        await powerSync.patchLetter(letter.id, {
-          original_filename: nextFilename,
-        });
-      }
-      await client.requestJson<Letter>(
-        `/api/v1/letters/${encodeURIComponent(letter.id)}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ originalFilename: nextFilename }),
-        },
+      await patchEntityViaPowerSyncOrApi(
+        client,
+        powerSync,
+        "letters",
+        letter.id,
+        { originalFilename: nextFilename },
+        { original_filename: nextFilename },
       );
       return { ok: true };
     } catch (reason) {
@@ -497,21 +462,20 @@ export function LetterDetailScreen({ letterId }: Props) {
     if (!letterId) {
       return { ok: false, error: "Letter is required." };
     }
-    try {
-      await client.deleteLetterAttachment(letterId, attachmentId);
-      if (pdfAttachmentId === attachmentId) {
-        setPdfOpen(false);
-        setPdfAttachmentId(null);
-      }
-      await reloadAttachments();
-      return { ok: true };
-    } catch (reason) {
-      return {
-        ok: false,
-        error:
-          reason instanceof Error ? reason.message : "Could not delete PDF.",
-      };
+    const result = await deleteLetterPdfAttachment(
+      client,
+      letterId,
+      attachmentId,
+    );
+    if (!result.ok) {
+      return result;
     }
+    if (pdfAttachmentId === attachmentId) {
+      setPdfOpen(false);
+      setPdfAttachmentId(null);
+    }
+    await reloadAttachments();
+    return { ok: true };
   }
 
   if (loading) {
@@ -542,6 +506,15 @@ export function LetterDetailScreen({ letterId }: Props) {
 
   const displayId =
     letter.number != null ? formatLetterDisplayId(letter.number) : null;
+
+  function onDeleteLetter() {
+    confirmAndDelete(
+      "letters",
+      letterId,
+      draftTitle.trim() || letter.title?.trim() || "Untitled",
+    );
+  }
+
   const receivedLabel = formatTaskDueMetaLabel(receivedDate);
   const dueLabel = formatTaskDueMetaLabel(dueDate);
 
@@ -754,6 +727,9 @@ export function LetterDetailScreen({ letterId }: Props) {
           ...tabDetailScreenOptions({ embedded: isPadDevice() }),
           title: "",
           ...(inPadLettersSplit ? { headerBackVisible: false } : null),
+          headerRight: () => (
+            <DetailHeaderDeleteButton onDelete={onDeleteLetter} />
+          ),
         }}
       />
       <KeyboardAwareScrollView

@@ -10,7 +10,6 @@ import {
 export function useEmailBodyViewMode(options?: {
   shortcutsEnabled?: boolean;
   pathname?: string;
-  commandPaletteOpen?: boolean;
 }) {
   const [bodyViewMode, setBodyViewMode] = useState<EmailThreadBodyViewMode>(
     () => readEmailThreadBodyViewMode(),
@@ -30,7 +29,6 @@ export function useEmailBodyViewMode(options?: {
     onBodyViewModeChange: handleBodyViewModeChange,
     enabled: options?.shortcutsEnabled ?? false,
     pathname: options?.pathname,
-    commandPaletteOpen: options?.commandPaletteOpen,
   });
 
   return {

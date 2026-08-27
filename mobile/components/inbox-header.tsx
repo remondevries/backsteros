@@ -1,10 +1,8 @@
 import { useRouter } from "expo-router";
 
-import {
-  TabStackHeader,
-  TabStackHeaderPlusButton,
-} from "../lib/tab-stack-options";
 import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
+import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
+import { SectionListHeader } from "./section-list-header";
 
 /** Native stack `headerRight` — plain so iOS liquid glass wraps once. */
 export function InboxHeaderPlus({
@@ -30,10 +28,10 @@ export function InboxHeader({
   onToggleCollapse?: () => void;
 } = {}) {
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Inbox"
-      leadingActions={<InboxHeaderPlus chrome="glass" />}
-      trailingActions={
+      plusControl={<InboxHeaderPlus chrome="glass" />}
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}

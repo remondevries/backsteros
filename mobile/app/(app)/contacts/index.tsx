@@ -1,6 +1,8 @@
+import { useNavigation } from "@react-navigation/native";
+import { useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 
-import { ContactsHeaderPlus } from "../../../components/contacts-header";
+import { ContactsHeader } from "../../../components/contacts-header";
 import { ContactsListPane } from "../../../components/contacts-list-pane";
 import { isPadDevice } from "../../../lib/device";
 import { ui } from "../../../lib/ui";
@@ -10,7 +12,17 @@ import { ui } from "../../../lib/ui";
  * iPad: detail pane placeholder — list lives in the layout.
  */
 export default function ContactsScreen() {
-  if (isPadDevice()) {
+  const navigation = useNavigation();
+  const isPad = isPadDevice();
+
+  useLayoutEffect(() => {
+    if (isPad) return;
+    navigation.setOptions({
+      header: () => <ContactsHeader />,
+    });
+  }, [isPad, navigation]);
+
+  if (isPad) {
     return (
       <View style={styles.empty}>
         <Text style={ui.empty}>Select a contact from the list.</Text>
@@ -18,13 +30,7 @@ export default function ContactsScreen() {
     );
   }
 
-  return (
-    <ContactsListPane
-      pageTitle="Contacts"
-      pageTitleSafeArea
-      pageTitleTrailing={<ContactsHeaderPlus chrome="glass" />}
-    />
-  );
+  return <ContactsListPane />;
 }
 
 const styles = {

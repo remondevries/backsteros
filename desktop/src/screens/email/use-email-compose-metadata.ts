@@ -3,7 +3,7 @@ import {
   resolveContactEmailForAddress,
 } from "@backsteros/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "@tanstack/react-router";
 import { migrateLegacyTaskStatus, type TaskStatus } from "@backsteros/ui";
 
 import { useDesktopApi } from "../../lib/api-context";
@@ -114,7 +114,7 @@ export function useEmailComposeMetadata({
       setAssigneeId(defaults.assigneeId.trim());
     }
     patchEmailComposeSession({ threadDefaults: null });
-  }, [location.key]);
+  }, [location.pathname, location.searchStr]);
 
   useEffect(() => {
     const draftId = composeDraftId?.trim();

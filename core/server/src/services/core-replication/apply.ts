@@ -14,11 +14,16 @@ import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import {
-  setReplicationCursor,
+  setReplicationCursorsAfterBootstrap,
   tableExists,
   toIso,
 } from "./cursors.js";
-import { shouldApplyByUpdatedAt } from "./rules.js";
+import { mergeWorkspaceSettingsForRole } from "./machine-local-settings.js";
+import {
+  documentContentMetaFromRow,
+  shouldApplyByUpdatedAt,
+  shouldApplyDocumentRow,
+} from "./rules.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import type {
   ReplicationApplyResponse,
@@ -69,6 +74,61 @@ async function readLocalUpdatedAt(
   return new Date(result[0].updated_at);
 }
 
+async function readLocalDocumentMeta(
+  row: ReplicationRow,
+): Promise<{
+  updatedAt: Date;
+  byteSize: number;
+  contentVersion: number;
+} | null> {
+  if (!(await tableExists("documents"))) {
+    return null;
+  }
+  const id = String(row.id);
+  const result = await sqlClient.unsafe(
+    `SELECT updated_at, byte_size, content_version FROM documents WHERE id = $1 LIMIT 1`,
+    [id],
+  ) as {
+    updated_at: Date | string;
+    byte_size: number | string | null;
+    content_version: number | string | null;
+  }[];
+  if (!result[0]) return null;
+  return {
+    updatedAt: new Date(result[0].updated_at),
+    byteSize: Number(result[0].byte_size ?? 0),
+    contentVersion: Number(result[0].content_version ?? 0),
+  };
+}
+
+async function applyDocumentsRow(
+  row: ReplicationRow,
+  localRole: CoreReplicationRole,
+): Promise<"applied" | "skipped"> {
+  const spec = getTableSpec("documents");
+  if (!spec || !(await tableExists("documents"))) {
+    return "skipped";
+  }
+
+  const remoteUpdatedAt = new Date(String(row[spec.updatedAtColumn]));
+  const local = await readLocalDocumentMeta(row);
+  const decision = shouldApplyDocumentRow(
+    localRole,
+    remoteUpdatedAt,
+    local?.updatedAt ?? null,
+    documentContentMetaFromRow(row),
+    local
+      ? { byteSize: local.byteSize, contentVersion: local.contentVersion }
+      : null,
+  );
+  if (decision === "skip") {
+    return "skipped";
+  }
+
+  // JS already applied document conflict rules; do not re-gate on updated_at.
+  return applyGenericRowUnchecked(spec, row, { enforceUpdatedAtGate: false });
+}
+
 async function applyGenericRow(
   spec: TableSpec,
   row: ReplicationRow,
@@ -76,6 +136,10 @@ async function applyGenericRow(
 ): Promise<"applied" | "skipped"> {
   if (!(await tableExists(spec.name))) {
     return "skipped";
+  }
+
+  if (spec.name === "documents") {
+    return applyDocumentsRow(row, localRole);
   }
 
   const remoteUpdatedAt = new Date(String(row[spec.updatedAtColumn]));
@@ -90,6 +154,14 @@ async function applyGenericRow(
     return "skipped";
   }
 
+  return applyGenericRowUnchecked(spec, row);
+}
+
+async function applyGenericRowUnchecked(
+  spec: TableSpec,
+  row: ReplicationRow,
+  options?: { enforceUpdatedAtGate?: boolean },
+): Promise<"applied" | "skipped"> {
   const columns = Object.keys(row).filter((key) => row[key] !== undefined);
   const colList = columns.map((col) => `"${col}"`).join(", ");
   // postgres.js cannot bind plain JS arrays/objects as query params (they
@@ -107,15 +179,32 @@ async function applyGenericRow(
     .map((col) => `"${col}" = EXCLUDED."${col}"`)
     .join(", ");
 
+  // Generic tables keep an updated_at SQL gate. Documents already decided via
+  // shouldApplyDocumentRow (content_version / empty-body) — do not let a
+  // stricter updated_at WHERE no-op while we report "applied".
+  const enforceUpdatedAtGate = options?.enforceUpdatedAtGate !== false;
+  const whereClause = enforceUpdatedAtGate
+    ? `WHERE "${spec.name}"."${spec.updatedAtColumn}" <= EXCLUDED."${spec.updatedAtColumn}"`
+    : "";
+
   const query = `
     INSERT INTO "${spec.name}" (${colList})
     VALUES (${placeholders})
     ON CONFLICT (${pkConflict}) DO UPDATE
     SET ${setClause}
-    WHERE "${spec.name}"."${spec.updatedAtColumn}" <= EXCLUDED."${spec.updatedAtColumn}"
+    ${whereClause}
   `;
-  await sqlClient.unsafe(query, values as never[]);
-  return "applied";
+  const result = await sqlClient.unsafe(query, values as never[]);
+  const rowCount =
+    typeof result === "object" &&
+    result !== null &&
+    "count" in result &&
+    typeof (result as { count?: unknown }).count === "number"
+      ? (result as { count: number }).count
+      : Array.isArray(result)
+        ? result.length
+        : 0;
+  return rowCount > 0 ? "applied" : "skipped";
 }
 
 function isJsonBindValue(value: unknown): boolean {
@@ -279,7 +368,10 @@ async function applyWorkspaceSettingsRow(
   const remoteUpdatedAt = new Date(String(row.updated_at));
   const workspaceId = String(row.workspace_id);
   const [existing] = await db
-    .select({ updatedAt: workspaceSettings.updatedAt })
+    .select({
+      updatedAt: workspaceSettings.updatedAt,
+      settings: workspaceSettings.settings,
+    })
     .from(workspaceSettings)
     .where(eq(workspaceSettings.workspaceId, workspaceId))
     .limit(1);
@@ -294,17 +386,23 @@ async function applyWorkspaceSettingsRow(
     return "skipped";
   }
 
+  const settings = mergeWorkspaceSettingsForRole(
+    (row.settings ?? {}) as Record<string, unknown>,
+    (existing?.settings ?? null) as Record<string, unknown> | null,
+    localRole,
+  );
+
   await db
     .insert(workspaceSettings)
     .values({
       workspaceId,
-      settings: (row.settings ?? {}) as Record<string, unknown>,
+      settings,
       updatedAt: remoteUpdatedAt,
     })
     .onConflictDoUpdate({
       target: workspaceSettings.workspaceId,
       set: {
-        settings: (row.settings ?? {}) as Record<string, unknown>,
+        settings,
         updatedAt: remoteUpdatedAt,
       },
     });
@@ -368,7 +466,7 @@ export async function bootstrapTableFromPeer(
     (REPLICATED_TABLES as readonly string[]).includes(spec.name)
   ) {
     const last = changes[changes.length - 1]!;
-    await setReplicationCursor(spec.name as ReplicatedTable, {
+    await setReplicationCursorsAfterBootstrap(spec.name as ReplicatedTable, {
       updatedAt: toIso(last.row[spec.updatedAtColumn] as string | Date),
       rowId: rowIdFromPk(last.row, spec.pk),
     });

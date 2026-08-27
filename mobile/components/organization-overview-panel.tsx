@@ -1,12 +1,13 @@
-import type { Organization } from "@backsteros/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import {
   pickAvatarImage,
+  patchAvatarMetadataLocally,
   uploadAvatarFromUri,
 } from "../lib/avatar-upload";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
+import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
@@ -169,28 +170,14 @@ export function OrganizationOverviewPanel({
       if (Object.keys(apiBody).length === 0) return;
 
       try {
-        if (powerSync.ready) {
-          await powerSync.patchOrganization(organizationId, sqliteValues);
-          void client
-            .requestJson<Organization>(
-              `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(apiBody),
-              },
-            )
-            .catch(() => {});
-        } else {
-          await client.requestJson<Organization>(
-            `/api/v1/organizations/${encodeURIComponent(organizationId)}`,
-            {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(apiBody),
-            },
-          );
-        }
+        await patchEntityViaPowerSyncOrApi(
+          client,
+          powerSync,
+          "organizations",
+          organizationId,
+          apiBody,
+          sqliteValues,
+        );
         if (patch.name !== undefined) {
           onNameChangeRef.current?.(patch.name.trim() || "Untitled");
         }
@@ -231,14 +218,12 @@ export function OrganizationOverviewPanel({
       }
       setAvatarOverride(picked.uri);
       setAvatarStorageKeyOverride(result.avatar.storageKey);
-      if (powerSync.ready) {
-        void powerSync
-          .patchOrganization(organizationId, {
-            avatar_storage_key: result.avatar.storageKey,
-            avatar_content_type: result.avatar.contentType,
-          })
-          .catch(() => {});
-      }
+      await patchAvatarMetadataLocally(
+        powerSync,
+        "organization",
+        organizationId,
+        result.avatar,
+      ).catch(() => {});
     } catch (reason) {
       setAvatarError(
         reason instanceof Error ? reason.message : "Could not update photo.",

@@ -1,5 +1,13 @@
 import { migrateLegacyTaskStatus } from "./task-status.js";
 
+export {
+  formatLocalYmd,
+  getTaskDueDateYmd,
+  parseYmdLocal,
+} from "@backsteros/contracts";
+
+import { formatLocalYmd, parseYmdLocal } from "@backsteros/contracts";
+
 const MONTH_NAMES = [
   "Jan",
   "Feb",
@@ -14,23 +22,6 @@ const MONTH_NAMES = [
   "Nov",
   "Dec",
 ] as const;
-
-export function formatLocalYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-export function parseYmdLocal(ymd: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return new Date(year, month - 1, day);
-}
 
 export function formatDueDateInputValue(
   dueDate: Date | number | string | null | undefined,

@@ -7,6 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "expo-router";
+
+import { isPadDevice } from "./device";
+import { shouldHideTabBarForPathname } from "./tab-bar-detail-routes";
 
 type TabBarVisibilityContextValue = {
   hidden: boolean;
@@ -71,4 +75,13 @@ export function useHideTabBar(hidden: boolean) {
     acquireHide();
     return () => releaseHide();
   }, [hidden, acquireHide, releaseHide]);
+}
+
+/** Hide the tab bar on phone detail/create routes (see tab-bar-detail-routes). */
+export function TabBarDetailRouteHider() {
+  const pathname = usePathname();
+  const hide =
+    !isPadDevice() && shouldHideTabBarForPathname(pathname ?? "/");
+  useHideTabBar(hide);
+  return null;
 }

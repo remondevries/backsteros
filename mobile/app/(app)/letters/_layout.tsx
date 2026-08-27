@@ -37,7 +37,6 @@ export default function LettersLayout() {
         <Stack.Screen
           name="index"
           options={{
-            headerShown: false,
             contentStyle: { backgroundColor: colors.background },
           }}
         />

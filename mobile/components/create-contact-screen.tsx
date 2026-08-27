@@ -1,4 +1,3 @@
-import type { Contact } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -11,6 +10,8 @@ import {
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { createContactViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TextInput } from "./app-text-input";
@@ -25,6 +26,7 @@ export function CreateContactScreen() {
     : params.organizationId;
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -38,14 +40,10 @@ export function CreateContactScreen() {
     setSaving(true);
     setError(null);
     try {
-      await client.requestJson<Contact>("/api/v1/contacts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          organizationId: organizationId || null,
-          sortOrder: -Date.now(),
-        }),
+      await createContactViaPowerSyncOrApi(client, powerSync, {
+        name: trimmed,
+        organizationId: organizationId || null,
+        sortOrder: -Date.now(),
       });
       if (router.canGoBack()) router.back();
       else router.replace("/(app)/contacts");

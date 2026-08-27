@@ -757,3 +757,375 @@
     width: 100%;
   }
 }
+
+/* Opaque main-pane shell for route-pending navigation */
+.main-pane-skeleton-shell {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  background: var(--background, var(--card, #0a0a0a));
+}
+
+.inbox-list-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.inbox-list-skeleton__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(100%, 240px);
+}
+
+.inbox-list-skeleton__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.inbox-list-skeleton__line {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.inbox-list-skeleton__line--title {
+  width: 72%;
+}
+
+.inbox-list-skeleton__line--meta {
+  width: 48%;
+  opacity: 0.7;
+}
+
+.areas-list-skeleton__filter {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+  padding-inline: 0.25rem;
+}
+
+.areas-list-skeleton__filter-pill {
+  width: 5rem;
+  height: 28px;
+  border-radius: 999px;
+}
+
+.areas-list-skeleton__filter-pill--sm {
+  width: 3.5rem;
+}
+
+.calendar-grid-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.calendar-grid-skeleton__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.calendar-grid-skeleton__nav {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+}
+
+.calendar-grid-skeleton__title {
+  width: 8rem;
+  height: 1.25rem;
+  border-radius: 6px;
+}
+
+.calendar-grid-skeleton__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.calendar-grid-skeleton__weekday {
+  height: 0.75rem;
+  border-radius: 4px;
+}
+
+.calendar-grid-skeleton__grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.calendar-grid-skeleton__cell {
+  min-height: 4rem;
+  border-radius: 8px;
+}
+
+.finance-section-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.finance-section-skeleton__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.finance-section-skeleton__card {
+  height: 5rem;
+  border-radius: 10px;
+}
+
+.finance-section-skeleton__table {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.finance-section-skeleton__row {
+  height: 2.25rem;
+  border-radius: 8px;
+}
+
+.email-thread-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+}
+
+.email-thread-skeleton__subject {
+  width: min(62%, 420px);
+  height: 1.5rem;
+  border-radius: 8px;
+}
+
+.email-thread-skeleton__meta {
+  width: min(38%, 240px);
+  height: 0.75rem;
+  border-radius: 6px;
+}
+
+.email-thread-skeleton__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.email-thread-skeleton__line {
+  width: 88%;
+  height: 0.75rem;
+  border-radius: 6px;
+}
+
+.email-thread-skeleton__line--medium {
+  width: 64%;
+}
+
+.email-thread-skeleton__line--short {
+  width: 42%;
+}
+
+.settings-section-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem 1rem;
+}
+
+.settings-section-skeleton__title {
+  width: min(40%, 220px);
+  height: 1.25rem;
+  border-radius: 8px;
+}
+
+.settings-section-skeleton__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-section-skeleton__block {
+  width: 100%;
+  height: 3rem;
+  border-radius: 10px;
+}
+
+.contact-hub-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+}
+
+.contact-hub-skeleton__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.contact-hub-skeleton__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+}
+
+.contact-hub-skeleton__title {
+  width: min(50%, 280px);
+  height: 1.5rem;
+  border-radius: 8px;
+}
+
+.contact-hub-skeleton__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.contact-hub-skeleton__tab {
+  width: 4.5rem;
+  height: 1.75rem;
+  border-radius: 999px;
+}
+
+.contact-hub-skeleton__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.contact-hub-skeleton__row {
+  width: 100%;
+  height: 2.5rem;
+  border-radius: 8px;
+}
+
+.codebase-workbench-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.codebase-workbench-skeleton__tree {
+  width: 240px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-right: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  padding: 0.75rem 0.5rem;
+}
+
+.codebase-workbench-skeleton__tree-row {
+  width: 100%;
+  height: 1.25rem;
+  border-radius: 4px;
+}
+
+.codebase-workbench-skeleton__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem;
+}
+
+.codebase-workbench-skeleton__toolbar {
+  width: 100%;
+  height: 2rem;
+  border-radius: 8px;
+}
+
+.codebase-workbench-skeleton__line {
+  width: 92%;
+  height: 0.75rem;
+  border-radius: 6px;
+}
+
+.journal-habits-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+}
+
+.journal-habits-skeleton__title {
+  width: min(36%, 200px);
+  height: 1.25rem;
+  border-radius: 8px;
+}
+
+.journal-habits-skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.journal-habits-skeleton__cell {
+  height: 4.5rem;
+  border-radius: 10px;
+}
+
+.generic-route-fallback-skeleton {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem 1rem;
+}
+
+.generic-route-fallback-skeleton__title {
+  width: min(42%, 240px);
+  height: 1.25rem;
+  border-radius: 8px;
+}
+
+.generic-route-fallback-skeleton__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.generic-route-fallback-skeleton__line {
+  height: 0.75rem;
+  border-radius: 6px;
+}
+
+.generic-route-fallback-skeleton__line--wide {
+  width: 88%;
+}
+
+.generic-route-fallback-skeleton__line--medium {
+  width: 58%;
+}

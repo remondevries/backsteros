@@ -1,46 +1,73 @@
 /**
- * Lazy wrappers for non-default side panels so AppShell's initial parse does
- * not pull finance/calendar/knowledge/… panel code. Inbox stays a static
- * import from `app-shell-inbox-side-panel` (default route).
+ * Lazy side-panel entry points — one async chunk per domain so opening
+ * Calendar does not download Finance/Journal panel code.
  *
- * All of these resolve to the same async chunk on first non-inbox panel use.
+ * Inbox stays eager via `app-shell-inbox-side-panel` (default cold-start route).
  */
-import { lazy, type ComponentType } from "react";
+import { lazy } from "react";
 
-function lazyPanel(exportName: string) {
-  return lazy(async () => {
-    const mod = (await import("./app-shell-side-panels")) as unknown as Record<
-      string,
-      ComponentType<any>
-    >;
-    const Component = mod[exportName];
-    if (!Component) {
-      throw new Error(`Missing side panel export: ${exportName}`);
-    }
-    return { default: Component };
-  });
-}
+export const DesktopCalendarTasksSidePanel = lazy(() =>
+  import("./side-panels/calendar-tasks-side-panel").then((m) => ({
+    default: m.DesktopCalendarTasksSidePanel,
+  })),
+);
 
-export const DesktopCalendarTasksSidePanel = lazyPanel(
-  "DesktopCalendarTasksSidePanel",
+export const DesktopCalendarAvailabilitySidePanel = lazy(() =>
+  import("./side-panels/calendar-availability-side-panel").then((m) => ({
+    default: m.DesktopCalendarAvailabilitySidePanel,
+  })),
 );
-export const DesktopCalendarAvailabilitySidePanel = lazyPanel(
-  "DesktopCalendarAvailabilitySidePanel",
+
+export const DesktopCalendarTimetrackingSidePanel = lazy(() =>
+  import("./side-panels/calendar-timetracking-side-panel").then((m) => ({
+    default: m.DesktopCalendarTimetrackingSidePanel,
+  })),
 );
-export const DesktopCalendarTimetrackingSidePanel = lazyPanel(
-  "DesktopCalendarTimetrackingSidePanel",
+
+export const DesktopContactsSidePanel = lazy(() =>
+  import("./side-panels/contacts-side-panel").then((m) => ({
+    default: m.DesktopContactsSidePanel,
+  })),
 );
-export const DesktopContactsSidePanel = lazyPanel("DesktopContactsSidePanel");
-export const DesktopFinanceSidePanel = lazyPanel("DesktopFinanceSidePanel");
-export const DesktopHabitSidePanel = lazyPanel("DesktopHabitSidePanel");
-export const DesktopJournalSidePanel = lazyPanel("DesktopJournalSidePanel");
-export const DesktopKnowledgeSidePanel = lazyPanel(
-  "DesktopKnowledgeSidePanel",
+
+export const DesktopFinanceSidePanel = lazy(() =>
+  import("./side-panels/finance-side-panel").then((m) => ({
+    default: m.DesktopFinanceSidePanel,
+  })),
 );
-export const DesktopLettersSidePanel = lazyPanel("DesktopLettersSidePanel");
-export const DesktopOrganizationsSidePanel = lazyPanel(
-  "DesktopOrganizationsSidePanel",
+
+export const DesktopHabitSidePanel = lazy(() =>
+  import("./side-panels/habit-side-panel").then((m) => ({
+    default: m.DesktopHabitSidePanel,
+  })),
 );
-export const DesktopProjectDocumentsSidePanel = lazyPanel(
-  "DesktopProjectDocumentsSidePanel",
+
+export const DesktopJournalSidePanel = lazy(() =>
+  import("./side-panels/journal-side-panel").then((m) => ({
+    default: m.DesktopJournalSidePanel,
+  })),
+);
+
+export const DesktopKnowledgeSidePanel = lazy(() =>
+  import("./side-panels/knowledge-side-panel").then((m) => ({
+    default: m.DesktopKnowledgeSidePanel,
+  })),
+);
+
+export const DesktopLettersSidePanel = lazy(() =>
+  import("./side-panels/letters-side-panel").then((m) => ({
+    default: m.DesktopLettersSidePanel,
+  })),
+);
+
+export const DesktopOrganizationsSidePanel = lazy(() =>
+  import("./side-panels/organizations-side-panel").then((m) => ({
+    default: m.DesktopOrganizationsSidePanel,
+  })),
+);
+
+export const DesktopProjectDocumentsSidePanel = lazy(() =>
+  import("./side-panels/project-documents-side-panel").then((m) => ({
+    default: m.DesktopProjectDocumentsSidePanel,
+  })),
 );

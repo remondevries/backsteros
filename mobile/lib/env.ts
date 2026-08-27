@@ -1,29 +1,42 @@
 import Constants from "expo-constants";
 
+function readPublicEnv(key: string): string | undefined {
+  const fromProcess = (
+    globalThis as { process?: { env?: Record<string, string> } }
+  ).process?.env?.[key];
+  if (fromProcess?.trim()) return fromProcess.trim();
+  const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string>;
+  const fromExtra = extra[key];
+  return fromExtra?.trim() || undefined;
+}
+
+function normalizeApiUrl(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, "");
+}
+
 /**
  * Expo inlines `EXPO_PUBLIC_*` at bundle time. Prefer that; fall back to
  * `app.json` → `extra` when present.
  */
 export function getMobileEnvironment() {
-  const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string>;
-  // Metro replaces these at build time when set in the environment / .env
-  const apiFromPublic = (globalThis as { process?: { env?: Record<string, string> } })
-    .process?.env?.EXPO_PUBLIC_API_URL;
-  const clerkFromPublic = (
-    globalThis as { process?: { env?: Record<string, string> } }
-  ).process?.env?.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
-  const apiUrl = (
-    apiFromPublic ||
-    extra.EXPO_PUBLIC_API_URL ||
-    "http://127.0.0.1:8788"
-  ).replace(/\/+$/, "");
-
+  const localApiUrl =
+    normalizeApiUrl(readPublicEnv("EXPO_PUBLIC_API_URL")) ??
+    "http://127.0.0.1:8788";
+  const cloudApiUrl = normalizeApiUrl(
+    readPublicEnv("EXPO_PUBLIC_CLOUD_API_URL"),
+  );
   const clerkPublishableKey =
-    clerkFromPublic || extra.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || "";
+    readPublicEnv("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY") ?? "";
 
   return {
-    apiUrl,
+    /** Preferred local-core URL (Tailscale / loopback). */
+    localApiUrl,
+    /** Always-on cloud-core fallback for REST when local is offline. */
+    cloudApiUrl,
+    /** @deprecated Use `localApiUrl` or `useMobileCoreApiUrl().activeApiUrl`. */
+    apiUrl: localApiUrl,
     clerkPublishableKey,
   };
 }

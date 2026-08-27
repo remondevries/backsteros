@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useMemo, useRef } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
-  TasksListSkeleton,
   TasksOverviewView,
-  TASKS_LIST_BOARD_STORAGE_KEY,
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
   buildTasksDueHref,
@@ -14,15 +12,17 @@ import {
   getTaskDueDateYmd,
   getTodayJournalDateSlug,
   isHabitLinkedTask,
-  parseListBoardViewFromLocation,
-  parseTasksDueFilterFromLocation,
   parseYmdLocal,
   persistListBoardView,
   primeTabTitle,
   taskReorderPatches,
   collapseHabitItemsByHabitId,
+  TASKS_LIST_BOARD_STORAGE_KEY,
   type HabitCheckChipItem,
 } from "@backsteros/ui";
+
+import { navigateToHref } from "../router/navigate-href";
+import { useTasksRouteSearch } from "../router/use-tasks-route-search";
 
 import {
   useDesktopAvatarSrcMap,
@@ -42,88 +42,96 @@ import {
   patchEmailTaskListItem,
 } from "../lib/email-list-tasks";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useKeepAliveActive, useKeepAliveFrozen } from "../lib/shell-route-keep-alive";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
 
 export function TaskListPage() {
+  return <TaskListPageBody />;
+}
+
+const NO_ENTITIES: [] = [];
+const NO_EMAIL_ROWS: ReturnType<typeof mapEmailMessagesToTaskRows> = [];
+
+function TaskListPageBody() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const workspace = useDesktopWorkspaceData();
+  const { tasks, allTasks } = useDesktopWorkspaceTasks();
+  const { projects } = useDesktopWorkspaceProjects();
+  const { contacts } = useDesktopWorkspacePeople();
+  const { habits } = useDesktopWorkspaceMeta();
+  const workspace = useDesktopWorkspaceActions();
   const agentStatus = useDesktopAgentStatusOptional();
   const agentMail = useAgentMail();
   const { client } = useDesktopApi();
 
-  useDesktopSectionBreadcrumb([{ label: "Tasks" }]);
+  const keepAliveActive = useKeepAliveActive();
+  const keepAliveFrozen = useKeepAliveFrozen();
+  useDesktopSectionBreadcrumb([{ label: "Tasks" }], {
+    enabled: keepAliveActive,
+  });
 
-  useEffect(() => {
-    void workspace.reloadHabits().catch(() => {
-      // Chips still render from whatever tasks we already have.
-    });
-  }, [workspace.reloadHabits]);
-
-  const dueFilter =
-    parseTasksDueFilterFromLocation(location.pathname, location.search) ??
-    undefined;
-
-  const view = useMemo(
-    () =>
-      parseListBoardViewFromLocation(
-        location.pathname,
-        location.search,
-        TASKS_LIST_BOARD_STORAGE_KEY,
-      ),
-    [location.pathname, location.search],
-  );
+  const { dueFilter, view } = useTasksRouteSearch();
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    workspace.contacts,
+    keepAliveFrozen ? NO_ENTITIES : contacts,
   );
 
   const projectOptions = useMemo(
-    () => buildProjectDropdownOptions(workspace.projects),
-    [workspace.projects],
+    () => buildProjectDropdownOptions(projects),
+    [projects],
   );
 
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
+        keepAliveFrozen ? contacts : withAvatarSrc(contacts, contactAvatarSrc),
       ),
-    [contactAvatarSrc, workspace.contacts],
+    [contactAvatarSrc, contacts, keepAliveFrozen],
   );
 
   const emailMailboxes = useMemo(
     () =>
-      agentMail.mailboxes.map((mailbox) => ({
-        ...mailbox,
-        avatarSrc: mailbox.contactId
-          ? contactAvatarSrc[mailbox.contactId] ?? null
-          : null,
-      })),
-    [agentMail.mailboxes, contactAvatarSrc],
+      keepAliveFrozen
+        ? []
+        : agentMail.mailboxes.map((mailbox) => ({
+            ...mailbox,
+            avatarSrc: mailbox.contactId
+              ? contactAvatarSrc[mailbox.contactId] ?? null
+              : null,
+          })),
+    [agentMail.mailboxes, contactAvatarSrc, keepAliveFrozen],
   );
 
   const emailTaskRows = useMemo(
-    () => mapEmailMessagesToTaskRows(agentMail.messages, emailMailboxes),
-    [agentMail.messages, emailMailboxes],
+    () =>
+      keepAliveFrozen
+        ? NO_EMAIL_ROWS
+        : mapEmailMessagesToTaskRows(agentMail.messages, emailMailboxes),
+    [agentMail.messages, emailMailboxes, keepAliveFrozen],
   );
 
   const tasksWithEmails = useMemo(
-    () => [...workspace.tasks, ...emailTaskRows],
-    [emailTaskRows, workspace.tasks],
+    () => [...tasks, ...emailTaskRows],
+    [emailTaskRows, tasks],
   );
 
   const taskIdColumnCh = useMemo(
-    () => computeTaskDisplayIdColumnCh(workspace.allTasks),
-    [workspace.allTasks],
+    () => computeTaskDisplayIdColumnCh(allTasks),
+    [allTasks],
   );
 
   const todayHabits = useMemo((): HabitCheckChipItem[] => {
     const todayYmd = getTodayJournalDateSlug();
     const habitById = new Map(
-      workspace.habits.map((habit) => [habit.id, habit] as const),
+      habits.map((habit) => [habit.id, habit] as const),
     );
-    const items = workspace.allTasks
+    const items = allTasks
       .filter(
         (task) =>
           isHabitLinkedTask(task) &&
@@ -149,7 +157,7 @@ export function TaskListPage() {
       })
       .map(({ sortOrder: _sortOrder, ...item }) => item);
     return collapseHabitItemsByHabitId(items);
-  }, [workspace.allTasks, workspace.habits]);
+  }, [allTasks, habits]);
 
   const pendingCreatedTaskTitleRef = useRef<string | null>(null);
 
@@ -162,7 +170,7 @@ export function TaskListPage() {
     if (emailHref) {
       const title = task?.title || titleHint?.trim() || null;
       if (title) primeTabTitle(emailHref, title);
-      navigate(emailHref);
+      navigateToHref(navigate, emailHref);
       return;
     }
     const due = dueFilter ?? "today";
@@ -170,11 +178,11 @@ export function TaskListPage() {
       const href = `/tasks/${due}/${id}`;
       const title = titleHint?.trim();
       if (title) primeTabTitle(href, title);
-      navigate(href);
+      navigateToHref(navigate, href);
       return;
     }
     const contact = task.contactId
-      ? workspace.contacts.find((entry) => entry.id === task.contactId)
+      ? contacts.find((entry) => entry.id === task.contactId)
       : null;
     const slug = getInboxTaskRouteSlugForTask({
       number: task.number,
@@ -184,16 +192,8 @@ export function TaskListPage() {
     const href = `/tasks/${due}/${slug}`;
     const title = task.title || titleHint?.trim() || null;
     if (title) primeTabTitle(href, title);
-    navigate(href);
+    navigateToHref(navigate, href);
   };
-
-  if (!workspace.ready) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-        <TasksListSkeleton />
-      </div>
-    );
-  }
 
   return (
     <TasksOverviewView
@@ -209,12 +209,13 @@ export function TaskListPage() {
       taskIdColumnCh={taskIdColumnCh}
       filter={dueFilter}
       onFilterChange={(filter) => {
-        navigate(buildTasksDueHref(filter, view));
+        navigateToHref(navigate, buildTasksDueHref(filter, view));
       }}
       view={view}
       onViewChange={(nextView) => {
         persistListBoardView(nextView, TASKS_LIST_BOARD_STORAGE_KEY);
-        navigate(
+        navigateToHref(
+          navigate,
           buildTasksDueHref(
             dueFilter ?? "today",
             nextView,
@@ -252,7 +253,7 @@ export function TaskListPage() {
       }}
       onProjectChange={(taskId, projectKey) => {
         const project = projectKey
-          ? workspace.projects.find((entry) => entry.key === projectKey) ?? null
+          ? projects.find((entry) => entry.key === projectKey) ?? null
           : null;
         const task = findListTask(taskId);
         if (task && isEmailTaskListItem(task)) {
@@ -275,7 +276,7 @@ export function TaskListPage() {
         const task = findListTask(taskId);
         if (task && isEmailTaskListItem(task)) {
           const assignee = assigneeId
-            ? workspace.contacts.find((entry) => entry.id === assigneeId) ??
+            ? contacts.find((entry) => entry.id === assigneeId) ??
               null
             : null;
           void patchEmailTaskListItem(

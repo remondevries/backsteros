@@ -41,7 +41,10 @@ export function mapInboxTriageHrefToMobileRoute(href: string): string {
     }
   }
   if (href.startsWith("/calendar/meetings/")) {
-    return "/(app)/inbox";
+    const match = href.match(/^\/calendar\/meetings\/([^/?]+)/);
+    if (match?.[1]) {
+      return `/meeting/${encodeURIComponent(match[1])}`;
+    }
   }
   if (href.startsWith("/inbox/")) {
     const slug = href.slice("/inbox/".length).split("?")[0];
@@ -91,10 +94,10 @@ export async function registerMobilePushNotifications(input: {
   const token = tokenResult.data?.trim();
   if (!token) return null;
 
-  const { apiUrl, cloudApiUrl } = getMobileEnvironment();
+  const { localApiUrl, cloudApiUrl } = getMobileEnvironment();
   await registerPushTokenWithApi(client, token);
 
-  if (cloudApiUrl && cloudApiUrl !== apiUrl) {
+  if (cloudApiUrl && cloudApiUrl !== localApiUrl) {
     try {
       const cloudClient = createApiClient({
         baseUrl: cloudApiUrl,

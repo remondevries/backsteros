@@ -70,8 +70,12 @@ export function getFirstLetterInListOrder<T extends LetterListItem>(
 }
 
 export function getLettersHref(letterNumber?: number | null): string {
-  if (letterNumber == null) return "/letters";
-  return `/letters/${LETTER_DISPLAY_KEY.toLowerCase()}-${letterNumber}`;
+  if (letterNumber == null) return "/letters-v2";
+  return `/letters-v2/${LETTER_DISPLAY_KEY.toLowerCase()}-${letterNumber}`;
+}
+
+export function getLettersV2Href(letterNumber?: number | null): string {
+  return getLettersHref(letterNumber);
 }
 
 export function getSelectedLetterSlugFromPathname(
@@ -91,6 +95,12 @@ export function getSelectedLetterSlugFromPathname(
     const slug = decodeURIComponent(contactMatch[1]);
     if (slug === "new" || slug === "compose") return null;
     return slug;
+  }
+
+  if (pathname.startsWith("/letters-v2/")) {
+    const slug = pathname.slice("/letters-v2/".length).split("/")[0];
+    if (!slug || slug === "new" || slug === "compose") return null;
+    return decodeURIComponent(slug);
   }
 
   if (!pathname.startsWith("/letters/")) return null;
@@ -120,7 +130,15 @@ export function parseLetterSlug(slug: string): number | null {
 }
 
 export function isLettersSectionPath(pathname: string): boolean {
-  return pathname === "/letters" || pathname.startsWith("/letters/");
+  return (
+    pathname === "/letters" ||
+    pathname.startsWith("/letters/") ||
+    isLettersV2SectionPath(pathname)
+  );
+}
+
+export function isLettersV2SectionPath(pathname: string): boolean {
+  return pathname === "/letters-v2" || pathname.startsWith("/letters-v2/");
 }
 
 function isLetterComposePath(pathname: string): boolean {

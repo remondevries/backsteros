@@ -6,8 +6,9 @@ import {
   HeaderPlusMenuButton,
 } from "./header-plus-menu-button";
 import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
-import { TabStackHeader } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
+import { CommandPaletteSearchButton } from "./command-palette/command-palette-search-button";
+import { SectionListHeader } from "./section-list-header";
 
 /** Plus menu — folder / document create for Knowledge Base. */
 export function KnowledgeHeaderPlus() {
@@ -49,10 +50,11 @@ export function KnowledgeHeader({
   onToggleCollapse?: () => void;
 } = {}) {
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Knowledge Base"
-      leadingActions={<KnowledgeHeaderPlus />}
-      trailingActions={
+      showGlobalSearch
+      plusControl={<KnowledgeHeaderPlus />}
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}

@@ -1,9 +1,9 @@
 import type { Document } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -11,14 +11,13 @@ import {
 } from "react-native";
 
 import { isPadDevice } from "../lib/device";
-import { getMobileEnvironment } from "../lib/env";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import {
   formatJournalEntryTitle,
   formatJournalSidePanelLabel,
   getTodayJournalDateSlug,
 } from "../lib/journal";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
@@ -28,6 +27,7 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
 import { useRestListHydration } from "../lib/use-rest-list-hydration";
 import { useRestReloadFlags } from "../lib/use-rest-reload-flags";
+import { BacksterFlashList } from "./lists/index";
 
 export type JournalListRow = {
   id: string;
@@ -76,7 +76,7 @@ export function JournalListPane({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
   const isPad = isPadDevice();
@@ -121,14 +121,12 @@ export function JournalListPane({
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       setRestError(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     } finally {
       endReload(userPull);
     }
-  }, [apiUrl, beginReload, client, endReload, markHydrated]);
+  }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated]);
 
   useRestListHydration(reloadRest);
 
@@ -189,7 +187,7 @@ export function JournalListPane({
     [isPad, onPressRowProp, router],
   );
 
-  const listRef = useRef<FlatList<JournalListRow>>(null);
+  const listRef = useRef<FlashListRef<JournalListRow>>(null);
   const itemIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const { highlightedId } = useListJkNavigation({
     itemIds,
@@ -233,17 +231,15 @@ export function JournalListPane({
   }
 
   return (
-    <FlatList
+    <BacksterFlashList
       ref={listRef}
-      style={ui.screen}
       data={rows}
+      estimatedItemSize={40}
       keyExtractor={(item) => item.id}
       refreshing={pullRefreshing}
       onRefresh={() => {
         void onRefresh();
       }}
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-      onScrollToIndexFailed={() => {}}
       ListHeaderComponent={
         createTodayError ? (
           <Text style={[ui.error, { paddingHorizontal: 16 }]}>

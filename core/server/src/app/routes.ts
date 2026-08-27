@@ -116,6 +116,7 @@ import {
 } from "../services/cursor-spellcheck.js";
 import * as habitService from "../services/habits.js";
 import * as meetingService from "../services/meetings.js";
+import * as meetingSchedulingService from "../services/meeting-scheduling.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
@@ -123,7 +124,38 @@ import * as taskActivityService from "../services/task-activities.js";
 import * as taskCommentService from "../services/task-comments.js";
 import * as taskImageService from "../services/task-images.js";
 import * as taskProjectService from "../services/tasks-projects.js";
+import {
+  recordAreaRestSyncEvent,
+  recordBankAccountRestSyncEvent,
+  recordCashflowPlannerRestSyncEvent,
+  recordContactRestSyncEvent,
+  recordFinancialCategoryRestSyncEvent,
+  recordFinancialGoalRestSyncEvent,
+  recordFinancialRecurringRestSyncEvent,
+  recordHabitRestSyncEvent,
+  recordLetterRestSyncEvent,
+  recordMeetingRestSyncEvent,
+  recordOrganizationRestSyncEvent,
+  recordProjectRestSyncEvent,
+  recordTaskCommentRestSyncEvent,
+  recordTaskRestSyncEvent,
+  recordWorkspaceSettingRestSyncEvent,
+} from "../services/sync.js";
+import { newId } from "../lib/crypto.js";
 import { writeActorFromAuth } from "../lib/write-actor.js";
+import {
+  buildAreaRestPayload,
+  buildContactRestPayload,
+  buildLetterRestPayload,
+  buildMeetingRestPayload,
+  buildOrganizationRestPayload,
+  buildProjectRestPayload,
+  buildTaskRestPayload,
+  commitRestEntityWrite,
+  commitRestEntityWriteBatch,
+  isRestLeaderFirstWrite,
+} from "../services/rest-leader-write.js";
+import { commitDocumentContentLeaderFirst } from "../services/core-replication/leader-mutations.js";
 import * as vaultSettingsService from "../services/vault-settings.js";
 import * as whoopService from "../services/whoop.js";
 
@@ -175,6 +207,25 @@ const areaSchema = z.object({
   icon: z.string().max(128).nullable().optional(),
   color: z.string().max(64).nullable().optional(),
   sortOrder: z.number().int().optional(),
+});
+const meetingWeekdayHoursSlotSchema = z.object({
+  start: z.string().min(1).max(8),
+  end: z.string().min(1).max(8),
+});
+const meetingWeekdayHoursEntrySchema = z.object({
+  weekday: z.number().int().min(1).max(7),
+  enabled: z.boolean(),
+  slots: z.array(meetingWeekdayHoursSlotSchema).min(1).max(12),
+});
+const updateMeetingSchedulingSettingsSchema = z.object({
+  label: z.string().max(200).optional(),
+  timezone: z.string().min(1).max(128).optional(),
+  weekdayHours: z.array(meetingWeekdayHoursEntrySchema).min(1).max(7).optional(),
+  durationsMinutes: z.array(z.union([z.literal(30), z.literal(60)])).optional(),
+  minNoticeMinutes: z.number().int().nonnegative().optional(),
+  bufferMinutes: z.number().int().nonnegative().optional(),
+  horizonDays: z.number().int().positive().max(365).optional(),
+  enabled: z.boolean().optional(),
 });
 const letterSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
@@ -327,10 +378,30 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
+        const body = c.req.valid("json");
+        if (isRestLeaderFirstWrite()) {
+          const projectId = newId();
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "project",
+            entityId: projectId,
+            operation: "upsert",
+            payload: buildProjectRestPayload(projectId, body),
+          });
+          const row = await taskProjectService.getProjectById(
+            auth.workspaceId,
+            projectId,
+          );
+          if (!row) {
+            throw new Error("PROJECT_CREATE_FAILED");
+          }
+          return c.json(toProject(row), 201);
+        }
         const row = await taskProjectService.createProject(
           auth.workspaceId,
-          c.req.valid("json"),
+          body,
         );
+        await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toProject(row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
@@ -366,14 +437,38 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
+        const projectId = c.req.param("id");
+        const patch = c.req.valid("json");
+        if (isRestLeaderFirstWrite()) {
+          const existing = await taskProjectService.getProjectById(
+            auth.workspaceId,
+            projectId,
+          );
+          if (!existing) {
+            return c.json(notFound("Project"), 404);
+          }
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "project",
+            entityId: projectId,
+            operation: "upsert",
+            payload: buildProjectRestPayload(projectId, patch),
+          });
+          const row = await taskProjectService.getProjectById(
+            auth.workspaceId,
+            projectId,
+          );
+          return c.json(toProject(row!));
+        }
         const row = await taskProjectService.updateProject(
           auth.workspaceId,
-          c.req.param("id"),
-          c.req.valid("json"),
+          projectId,
+          patch,
         );
         if (!row) {
           return c.json(notFound("Project"), 404);
         }
+        await recordProjectRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toProject(row));
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_KEY_EXISTS") {
@@ -418,14 +513,32 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
+    const projectId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await taskProjectService.getProjectById(
+        auth.workspaceId,
+        projectId,
+      );
+      if (!existing) {
+        return c.json(notFound("Project"), 404);
+      }
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "project",
+        entityId: projectId,
+        operation: "delete",
+        payload: { id: projectId },
+      });
+      return c.body(null, 204);
+    }
     const row = await taskProjectService.deleteProject(
       auth.workspaceId,
-      c.req.param("id"),
+      projectId,
     );
     if (!row) {
       return c.json(notFound("Project"), 404);
     }
-
+    await recordProjectRestSyncEvent(auth.workspaceId, row, "delete");
     return c.body(null, 204);
   });
 
@@ -1404,6 +1517,7 @@ export function registerApiRoutes(app: Hono) {
         writeActorFromAuth(auth, body.activityActor),
       );
       if (!row) return c.json(notFound("Task"), 404);
+      await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toTaskComment(row), 201);
     },
   );
@@ -1423,6 +1537,7 @@ export function registerApiRoutes(app: Hono) {
         c.req.valid("json"),
       );
       if (!row) return c.json(notFound("Comment"), 404);
+      await recordTaskCommentRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toTaskComment(row));
     },
   );
@@ -1432,12 +1547,28 @@ export function registerApiRoutes(app: Hono) {
     if (!requireScope("tasks:write")(auth)) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
+    const commentId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+    const existing = await taskCommentService.getTaskCommentRow(
+      auth.workspaceId,
+      commentId,
+    );
+    if (!existing || existing.taskId !== taskId) {
+      return c.json(notFound("Comment"), 404);
+    }
     const ok = await taskCommentService.deleteTaskComment(
       auth.workspaceId,
-      c.req.param("taskId"),
-      c.req.param("id"),
+      taskId,
+      commentId,
     );
     if (!ok) return c.json(notFound("Comment"), 404);
+    const deleted = await taskCommentService.getTaskCommentRow(
+      auth.workspaceId,
+      commentId,
+    );
+    if (deleted) {
+      await recordTaskCommentRestSyncEvent(auth.workspaceId, deleted, "delete");
+    }
     return c.body(null, 204);
   });
 
@@ -1453,6 +1584,24 @@ export function registerApiRoutes(app: Hono) {
       try {
         const body = c.req.valid("json");
         const { activityActor, ...createInput } = body;
+        if (isRestLeaderFirstWrite()) {
+          const taskId = newId();
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "task",
+            entityId: taskId,
+            operation: "upsert",
+            payload: buildTaskRestPayload(taskId, createInput),
+          });
+          const row = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (!row) {
+            throw new Error("TASK_CREATE_FAILED");
+          }
+          return c.json(toTask(row), 201);
+        }
         const row = await taskProjectService.createTask(
           auth.workspaceId,
           createInput,
@@ -1461,6 +1610,7 @@ export function registerApiRoutes(app: Hono) {
           writeActorFromAuth(auth, activityActor),
           { authKind: auth.kind },
         );
+        await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toTask(row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -1492,9 +1642,34 @@ export function registerApiRoutes(app: Hono) {
       try {
         const body = c.req.valid("json");
         const { activityActor, agentInboxApproved, ...patch } = body;
+        const taskId = c.req.param("id");
+        if (isRestLeaderFirstWrite()) {
+          const existing = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          if (!existing) {
+            return c.json(notFound("Task"), 404);
+          }
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "task",
+            entityId: taskId,
+            operation: "upsert",
+            payload: buildTaskRestPayload(taskId, patch, {
+              agentInboxApproved,
+              allowAgentInboxApproval: auth.kind === "clerk",
+            }),
+          });
+          const row = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            taskId,
+          );
+          return c.json(toTask(row!));
+        }
         const row = await taskProjectService.updateTask(
           auth.workspaceId,
-          c.req.param("id"),
+          taskId,
           { ...patch, agentInboxApproved },
           undefined,
           writeActorFromAuth(auth, activityActor),
@@ -1503,6 +1678,7 @@ export function registerApiRoutes(app: Hono) {
         if (!row) {
           return c.json(notFound("Task"), 404);
         }
+        await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toTask(row));
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -1519,14 +1695,32 @@ export function registerApiRoutes(app: Hono) {
       return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
     }
 
+    const taskId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await taskProjectService.getTaskById(
+        auth.workspaceId,
+        taskId,
+      );
+      if (!existing) {
+        return c.json(notFound("Task"), 404);
+      }
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "task",
+        entityId: taskId,
+        operation: "delete",
+        payload: { id: taskId },
+      });
+      return c.body(null, 204);
+    }
     const row = await taskProjectService.deleteTask(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
     );
     if (!row) {
       return c.json(notFound("Task"), 404);
     }
-
+    await recordTaskRestSyncEvent(auth.workspaceId, row, "delete");
     return c.body(null, 204);
   });
 
@@ -1769,17 +1963,44 @@ export function registerApiRoutes(app: Hono) {
       }
 
       try {
+        const body = c.req.valid("json");
+        const documentId = c.req.param("id");
+
+        if (isRestLeaderFirstWrite()) {
+          const result = await commitDocumentContentLeaderFirst({
+            workspaceId: auth.workspaceId,
+            documentId,
+            content: body.content,
+            ifMatchVersion: body.ifMatchVersion,
+          });
+          const row = await documentService.getDocumentById(
+            auth.workspaceId,
+            documentId,
+          );
+          if (!row) {
+            return c.json(notFound("Document"), 404);
+          }
+          return c.json({
+            content: body.content,
+            contentType: row.contentType,
+            contentVersion: result.contentVersion,
+            byteSize: result.byteSize,
+            checksum: row.checksum,
+            updatedAt: row.updatedAt.toISOString(),
+          });
+        }
+
         const row = await documentService.updateDocumentContent(
           auth.workspaceId,
-          c.req.param("id"),
-          c.req.valid("json"),
+          documentId,
+          body,
         );
         if (!row) {
           return c.json(notFound("Document"), 404);
         }
 
         return c.json({
-          content: c.req.valid("json").content,
+          content: body.content,
           contentType: row.contentType,
           contentVersion: row.contentVersion,
           byteSize: row.byteSize,
@@ -1792,6 +2013,15 @@ export function registerApiRoutes(app: Hono) {
             {
               error: "Document content version conflict",
               code: "content_version_conflict",
+            },
+            409,
+          );
+        }
+        if (error instanceof Error && error.message === "EMPTY_BODY_OVER_NONEMPTY") {
+          return c.json(
+            {
+              error: "Refusing to overwrite non-empty document with empty body",
+              code: "empty_body_over_nonempty",
             },
             409,
           );
@@ -1819,12 +2049,36 @@ export function registerApiRoutes(app: Hono) {
     if (!ids.success || !patch.success) {
       return c.json({ error: "Invalid batch update", code: "bad_request" }, 400);
     }
-    const rows = await taskProjectService.batchUpdateTasks(
-      auth.workspaceId,
-      ids.data.ids,
-      patch.data,
-      writeActorFromAuth(auth),
-    );
+    const rows = await (async () => {
+      if (isRestLeaderFirstWrite()) {
+        await commitRestEntityWriteBatch({
+          workspaceId: auth.workspaceId,
+          changes: ids.data.ids.map((id) => ({
+            entity: "task" as const,
+            entityId: id,
+            operation: "upsert" as const,
+            payload: buildTaskRestPayload(id, patch.data),
+          })),
+        });
+        const loaded = await Promise.all(
+          ids.data.ids.map((id) =>
+            taskProjectService.getTaskById(auth.workspaceId, id),
+          ),
+        );
+        return loaded.filter((row): row is NonNullable<typeof row> => row != null);
+      }
+      return taskProjectService.batchUpdateTasks(
+        auth.workspaceId,
+        ids.data.ids,
+        patch.data,
+        writeActorFromAuth(auth),
+      );
+    })();
+    if (!isRestLeaderFirstWrite()) {
+      for (const row of rows) {
+        await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+      }
+    }
     return c.json({ tasks: rows.map(toTask) });
   });
 
@@ -1834,10 +2088,32 @@ export function registerApiRoutes(app: Hono) {
     async (c) => {
       const auth = getAuth(c);
       if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
-      const rows = await taskProjectService.reorderTasks(
-        auth.workspaceId,
-        c.req.valid("json").orderedIds,
-      );
+      const orderedIds = c.req.valid("json").orderedIds;
+      const rows = await (async () => {
+        if (isRestLeaderFirstWrite()) {
+          await commitRestEntityWriteBatch({
+            workspaceId: auth.workspaceId,
+            changes: orderedIds.map((id, index) => ({
+              entity: "task" as const,
+              entityId: id,
+              operation: "upsert" as const,
+              payload: buildTaskRestPayload(id, { sortOrder: index }),
+            })),
+          });
+          const loaded = await Promise.all(
+            orderedIds.map((id) =>
+              taskProjectService.getTaskById(auth.workspaceId, id),
+            ),
+          );
+          return loaded.filter((row): row is NonNullable<typeof row> => row != null);
+        }
+        return taskProjectService.reorderTasks(auth.workspaceId, orderedIds);
+      })();
+      if (!isRestLeaderFirstWrite()) {
+        for (const row of rows) {
+          await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
+        }
+      }
       return c.json({ tasks: rows.map(toTask) });
     },
   );
@@ -1845,16 +2121,34 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/tasks/:id/move", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const taskId = c.req.param("id");
     const parsed = z.object({ projectId: z.string().nullable() }).safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid projectId", code: "bad_request" }, 400);
+    if (isRestLeaderFirstWrite()) {
+      const existing = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      if (!existing) return c.json(notFound("Task"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "task",
+        entityId: taskId,
+        operation: "upsert",
+        payload: buildTaskRestPayload(taskId, {
+          projectId: parsed.data.projectId,
+          inbox: parsed.data.projectId === null,
+        }),
+      });
+      const row = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      return c.json(toTask(row!));
+    }
     const row = await taskProjectService.updateTask(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       { projectId: parsed.data.projectId, inbox: parsed.data.projectId === null },
       undefined,
       writeActorFromAuth(auth),
     );
     if (!row) return c.json(notFound("Task"), 404);
+    await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
     return c.json(toTask(row));
   });
 
@@ -1865,9 +2159,28 @@ export function registerApiRoutes(app: Hono) {
       .object({ projectId: z.string().nullable().optional(), status: z.string().optional() })
       .safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid triage data", code: "bad_request" }, 400);
+    const taskId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      if (!existing) return c.json(notFound("Task"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "task",
+        entityId: taskId,
+        operation: "upsert",
+        payload: buildTaskRestPayload(taskId, {
+          projectId: parsed.data.projectId,
+          status: parsed.data.status,
+          triagedAt: new Date().toISOString(),
+          inbox: false,
+        }),
+      });
+      const row = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+      return c.json(toTask(row!));
+    }
     const row = await taskProjectService.updateTask(
       auth.workspaceId,
-      c.req.param("id"),
+      taskId,
       {
         projectId: parsed.data.projectId,
         status: parsed.data.status as never,
@@ -1878,6 +2191,7 @@ export function registerApiRoutes(app: Hono) {
       writeActorFromAuth(auth),
     );
     if (!row) return c.json(notFound("Task"), 404);
+    await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
     return c.json(toTask(row));
   });
 
@@ -1921,6 +2235,10 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      const dbRow = await habitService.getHabitRow(auth.workspaceId, row.id);
+      if (dbRow) {
+        await recordHabitRestSyncEvent(auth.workspaceId, dbRow, "upsert");
+      }
       return c.json(row, 201);
     },
   );
@@ -1937,7 +2255,12 @@ export function registerApiRoutes(app: Hono) {
           c.req.param("id"),
           c.req.valid("json"),
         );
-        return row ? c.json(row) : c.json(notFound("Habit"), 404);
+        if (!row) return c.json(notFound("Habit"), 404);
+        const dbRow = await habitService.getHabitRow(auth.workspaceId, row.id);
+        if (dbRow) {
+          await recordHabitRestSyncEvent(auth.workspaceId, dbRow, "upsert");
+        }
+        return c.json(row);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
@@ -2021,10 +2344,37 @@ export function registerApiRoutes(app: Hono) {
       const auth = getAuth(c);
       if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
       try {
+        const body = c.req.valid("json");
+        if (isRestLeaderFirstWrite()) {
+          const meetingId = newId();
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "meeting",
+            entityId: meetingId,
+            operation: "upsert",
+            payload: buildMeetingRestPayload(meetingId, body),
+          });
+          const dbRow = await meetingService.getMeetingRow(
+            auth.workspaceId,
+            meetingId,
+          );
+          if (!dbRow) {
+            throw new Error("MEETING_CREATE_FAILED");
+          }
+          const row = await meetingService.getMeetingById(auth.workspaceId, meetingId);
+          return c.json(row, 201);
+        }
         const row = await meetingService.createMeeting(
           auth.workspaceId,
-          c.req.valid("json"),
+          body,
         );
+        const dbRow = await meetingService.getMeetingRow(
+          auth.workspaceId,
+          row.id,
+        );
+        if (dbRow) {
+          await recordMeetingRestSyncEvent(auth.workspaceId, dbRow, "upsert");
+        }
         return c.json(row, 201);
       } catch (error) {
         if (
@@ -2054,12 +2404,38 @@ export function registerApiRoutes(app: Hono) {
       const auth = getAuth(c);
       if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
       try {
+        const meetingId = c.req.param("id");
+        const patch = c.req.valid("json");
+        if (isRestLeaderFirstWrite()) {
+          const existing = await meetingService.getMeetingRow(
+            auth.workspaceId,
+            meetingId,
+          );
+          if (!existing) return c.json(notFound("Meeting"), 404);
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "meeting",
+            entityId: meetingId,
+            operation: "upsert",
+            payload: buildMeetingRestPayload(meetingId, patch),
+          });
+          const row = await meetingService.getMeetingById(auth.workspaceId, meetingId);
+          return c.json(row);
+        }
         const row = await meetingService.updateMeeting(
           auth.workspaceId,
-          c.req.param("id"),
-          c.req.valid("json"),
+          meetingId,
+          patch,
         );
-        return row ? c.json(row) : c.json(notFound("Meeting"), 404);
+        if (!row) return c.json(notFound("Meeting"), 404);
+        const dbRow = await meetingService.getMeetingRow(
+          auth.workspaceId,
+          row.id,
+        );
+        if (dbRow) {
+          await recordMeetingRestSyncEvent(auth.workspaceId, dbRow, "upsert");
+        }
+        return c.json(row);
       } catch (error) {
         if (
           error instanceof Error &&
@@ -2084,13 +2460,55 @@ export function registerApiRoutes(app: Hono) {
   app.delete("/api/v1/meetings/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
-    const ok = await meetingService.deleteMeeting(
+    const meetingId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await meetingService.getMeetingRow(
+        auth.workspaceId,
+        meetingId,
+      );
+      if (!existing) return c.json(notFound("Meeting"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "meeting",
+        entityId: meetingId,
+        operation: "delete",
+        payload: { id: meetingId },
+      });
+      return c.body(null, 204);
+    }
+    const dbRow = await meetingService.deleteMeetingRow(
       auth.workspaceId,
-      c.req.param("id"),
+      meetingId,
     );
-    if (!ok) return c.json(notFound("Meeting"), 404);
+    if (!dbRow) return c.json(notFound("Meeting"), 404);
+    await recordMeetingRestSyncEvent(auth.workspaceId, dbRow, "delete");
     return c.body(null, 204);
   });
+
+  app.get("/api/v1/meeting-scheduling/settings", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await meetingSchedulingService.getOrCreateSchedulingSettings(
+        auth.workspaceId,
+      ),
+    );
+  });
+
+  app.patch(
+    "/api/v1/meeting-scheduling/settings",
+    zValidator("json", updateMeetingSchedulingSettingsSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+      return c.json(
+        await meetingSchedulingService.updateSchedulingSettings(
+          auth.workspaceId,
+          c.req.valid("json"),
+        ),
+      );
+    },
+  );
 
   app.get("/api/v1/whoop/status", async (c) => {
     const auth = getAuth(c);
@@ -2156,19 +2574,79 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/organizations", zValidator("json", organizationSchema), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
-    return c.json(await circleService.createOrganization(auth.workspaceId, c.req.valid("json")), 201);
+    const body = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const organizationId = newId();
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "organization",
+        entityId: organizationId,
+        operation: "upsert",
+        payload: buildOrganizationRestPayload(organizationId, body),
+      });
+      const row = await circleService.getOrganizationById(
+        auth.workspaceId,
+        organizationId,
+      );
+      if (!row) return c.json({ error: "Organization create failed", code: "internal" }, 500);
+      return c.json(row, 201);
+    }
+    const row = await circleService.createOrganization(auth.workspaceId, body);
+    await recordOrganizationRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row, 201);
   });
   app.patch("/api/v1/organizations/:id", zValidator("json", organizationSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
-    const row = await circleService.updateOrganization(auth.workspaceId, c.req.param("id"), c.req.valid("json"));
-    return row ? c.json(row) : c.json(notFound("Organization"), 404);
+    const organizationId = c.req.param("id");
+    const patch = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getOrganizationById(
+        auth.workspaceId,
+        organizationId,
+      );
+      if (!existing) return c.json(notFound("Organization"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "organization",
+        entityId: organizationId,
+        operation: "upsert",
+        payload: buildOrganizationRestPayload(organizationId, patch),
+      });
+      const row = await circleService.getOrganizationById(
+        auth.workspaceId,
+        organizationId,
+      );
+      return c.json(row);
+    }
+    const row = await circleService.updateOrganization(auth.workspaceId, organizationId, patch);
+    if (!row) return c.json(notFound("Organization"), 404);
+    await recordOrganizationRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row);
   });
   app.delete("/api/v1/organizations/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
-    const row = await circleService.deleteOrganization(auth.workspaceId, c.req.param("id"));
-    return row ? c.body(null, 204) : c.json(notFound("Organization"), 404);
+    const organizationId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getOrganizationById(
+        auth.workspaceId,
+        organizationId,
+      );
+      if (!existing) return c.json(notFound("Organization"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "organization",
+        entityId: organizationId,
+        operation: "delete",
+        payload: { id: organizationId },
+      });
+      return c.body(null, 204);
+    }
+    const row = await circleService.deleteOrganization(auth.workspaceId, organizationId);
+    if (!row) return c.json(notFound("Organization"), 404);
+    await recordOrganizationRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/contacts", async (c) => {
@@ -2194,19 +2672,67 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/contacts", zValidator("json", contactSchema), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    return c.json(await circleService.createContact(auth.workspaceId, c.req.valid("json")), 201);
+    const body = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const contactId = newId();
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "contact",
+        entityId: contactId,
+        operation: "upsert",
+        payload: buildContactRestPayload(contactId, body),
+      });
+      const row = await circleService.getContactById(auth.workspaceId, contactId);
+      if (!row) return c.json({ error: "Contact create failed", code: "internal" }, 500);
+      return c.json(row, 201);
+    }
+    const row = await circleService.createContact(auth.workspaceId, body);
+    await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row, 201);
   });
   app.patch("/api/v1/contacts/:id", zValidator("json", contactSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const row = await circleService.updateContact(auth.workspaceId, c.req.param("id"), c.req.valid("json"));
-    return row ? c.json(row) : c.json(notFound("Contact"), 404);
+    const contactId = c.req.param("id");
+    const patch = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getContactById(auth.workspaceId, contactId);
+      if (!existing) return c.json(notFound("Contact"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "contact",
+        entityId: contactId,
+        operation: "upsert",
+        payload: buildContactRestPayload(contactId, patch),
+      });
+      const row = await circleService.getContactById(auth.workspaceId, contactId);
+      return c.json(row);
+    }
+    const row = await circleService.updateContact(auth.workspaceId, contactId, patch);
+    if (!row) return c.json(notFound("Contact"), 404);
+    await recordContactRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row);
   });
   app.delete("/api/v1/contacts/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
-    const row = await circleService.deleteContact(auth.workspaceId, c.req.param("id"));
-    return row ? c.body(null, 204) : c.json(notFound("Contact"), 404);
+    const contactId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getContactById(auth.workspaceId, contactId);
+      if (!existing) return c.json(notFound("Contact"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "contact",
+        entityId: contactId,
+        operation: "delete",
+        payload: { id: contactId },
+      });
+      return c.body(null, 204);
+    }
+    const row = await circleService.deleteContact(auth.workspaceId, contactId);
+    if (!row) return c.json(notFound("Contact"), 404);
+    await recordContactRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/areas", async (c) => {
@@ -2224,19 +2750,69 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/areas", zValidator("json", areaSchema), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "projects:write")) return c.json(forbidden(), 403);
-    return c.json(toArea(await circleService.createArea(auth.workspaceId, c.req.valid("json"))), 201);
+    const body = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const areaId = newId();
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "area",
+        entityId: areaId,
+        operation: "upsert",
+        payload: buildAreaRestPayload(areaId, body),
+      });
+      const row = await circleService.getAreaById(auth.workspaceId, areaId);
+      if (!row) {
+        return c.json({ error: "Area create failed", code: "internal" }, 500);
+      }
+      return c.json(toArea(row), 201);
+    }
+    const row = await circleService.createArea(auth.workspaceId, body);
+    await recordAreaRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(toArea(row), 201);
   });
   app.patch("/api/v1/areas/:id", zValidator("json", areaSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "projects:write")) return c.json(forbidden(), 403);
-    const row = await circleService.updateArea(auth.workspaceId, c.req.param("id"), c.req.valid("json"));
-    return row ? c.json(toArea(row)) : c.json(notFound("Area"), 404);
+    const areaId = c.req.param("id");
+    const patch = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getAreaById(auth.workspaceId, areaId);
+      if (!existing) return c.json(notFound("Area"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "area",
+        entityId: areaId,
+        operation: "upsert",
+        payload: buildAreaRestPayload(areaId, patch),
+      });
+      const row = await circleService.getAreaById(auth.workspaceId, areaId);
+      return row ? c.json(toArea(row)) : c.json(notFound("Area"), 404);
+    }
+    const row = await circleService.updateArea(auth.workspaceId, areaId, patch);
+    if (!row) return c.json(notFound("Area"), 404);
+    await recordAreaRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(toArea(row));
   });
   app.delete("/api/v1/areas/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "projects:write")) return c.json(forbidden(), 403);
-    const row = await circleService.deleteArea(auth.workspaceId, c.req.param("id"));
-    return row ? c.body(null, 204) : c.json(notFound("Area"), 404);
+    const areaId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getAreaById(auth.workspaceId, areaId);
+      if (!existing) return c.json(notFound("Area"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "area",
+        entityId: areaId,
+        operation: "delete",
+        payload: { id: areaId, deleted_at: new Date().toISOString() },
+      });
+      return c.body(null, 204);
+    }
+    const row = await circleService.deleteArea(auth.workspaceId, areaId);
+    if (!row) return c.json(notFound("Area"), 404);
+    await recordAreaRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/letters", async (c) => {
@@ -2270,19 +2846,67 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/letters", zValidator("json", letterSchema), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
-    return c.json(await circleService.createLetter(auth.workspaceId, c.req.valid("json")), 201);
+    const body = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const letterId = newId();
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "letter",
+        entityId: letterId,
+        operation: "upsert",
+        payload: buildLetterRestPayload(letterId, body),
+      });
+      const row = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (!row) return c.json({ error: "Letter create failed", code: "internal" }, 500);
+      return c.json(row, 201);
+    }
+    const row = await circleService.createLetter(auth.workspaceId, body);
+    await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row, 201);
   });
   app.patch("/api/v1/letters/:id", zValidator("json", letterSchema.partial()), async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
-    const row = await circleService.updateLetter(auth.workspaceId, c.req.param("id"), c.req.valid("json"));
-    return row ? c.json(row) : c.json(notFound("Letter"), 404);
+    const letterId = c.req.param("id");
+    const patch = c.req.valid("json");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (!existing) return c.json(notFound("Letter"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "letter",
+        entityId: letterId,
+        operation: "upsert",
+        payload: buildLetterRestPayload(letterId, patch),
+      });
+      const row = await circleService.getLetterById(auth.workspaceId, letterId);
+      return c.json(row);
+    }
+    const row = await circleService.updateLetter(auth.workspaceId, letterId, patch);
+    if (!row) return c.json(notFound("Letter"), 404);
+    await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row);
   });
   app.delete("/api/v1/letters/:id", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
-    const row = await circleService.deleteLetter(auth.workspaceId, c.req.param("id"));
-    return row ? c.body(null, 204) : c.json(notFound("Letter"), 404);
+    const letterId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (!existing) return c.json(notFound("Letter"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "letter",
+        entityId: letterId,
+        operation: "delete",
+        payload: { id: letterId },
+      });
+      return c.body(null, 204);
+    }
+    const row = await circleService.deleteLetter(auth.workspaceId, letterId);
+    if (!row) return c.json(notFound("Letter"), 404);
+    await recordLetterRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
   app.post("/api/v1/letters/:id/triage", async (c) => {
     const auth = getAuth(c);
@@ -2295,12 +2919,37 @@ export function registerApiRoutes(app: Hono) {
       dueDate: true,
     }).partial().safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid triage data", code: "bad_request" }, 400);
-    const row = await circleService.triageLetter(auth.workspaceId, c.req.param("id"), parsed.data);
-    return row ? c.json(row) : c.json(notFound("Letter"), 404);
+    const letterId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await circleService.getLetterById(auth.workspaceId, letterId);
+      if (!existing) return c.json(notFound("Letter"), 404);
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "letter",
+        entityId: letterId,
+        operation: "upsert",
+        payload: buildLetterRestPayload(letterId, parsed.data),
+      });
+      const row = await circleService.getLetterById(auth.workspaceId, letterId);
+      return c.json(row);
+    }
+    const row = await circleService.triageLetter(auth.workspaceId, letterId, parsed.data);
+    if (!row) return c.json(notFound("Letter"), 404);
+    await recordLetterRestSyncEvent(auth.workspaceId, row, "upsert");
+    return c.json(row);
   });
   app.put("/api/v1/letters/:id/pdf", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Letter PDFs can only be stored on local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) {
       return c.json({ error: "PDF must be between 1 byte and 25 MB", code: "bad_request" }, 400);
@@ -2316,6 +2965,15 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/letters/:id/pdf", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Letter PDFs are only available from local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
     const result = await circleService.getLetterPdf(auth.workspaceId, c.req.param("id"));
     if (!result) return c.json(notFound("PDF"), 404);
     c.header("Content-Type", result.row.contentType);
@@ -2336,6 +2994,15 @@ export function registerApiRoutes(app: Hono) {
   app.post("/api/v1/letters/:id/attachments", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:write")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Letter PDFs can only be stored on local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) {
       return c.json({ error: "PDF must be between 1 byte and 25 MB", code: "bad_request" }, 400);
@@ -2382,6 +3049,15 @@ export function registerApiRoutes(app: Hono) {
   app.get("/api/v1/letters/:id/attachments/:attachmentId", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "letters:read")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Letter PDFs are only available from local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
     const result = await circleService.getLetterAttachment(
       auth.workspaceId,
       c.req.param("id"),
@@ -2531,6 +3207,15 @@ export function registerApiRoutes(app: Hono) {
         error instanceof Error ? error.message : "Could not set vault path";
       if (message === "VAULT_PATH_REQUIRED") {
         return c.json({ error: "Vault path is required", code: "bad_request" }, 400);
+      }
+      if (message === "VAULT_PATH_CLOUD_FORBIDDEN") {
+        return c.json(
+          {
+            error: "vaultPath is machine-local and cannot be set on cloud-core",
+            code: "vault_path_cloud_forbidden",
+          },
+          400,
+        );
       }
       return c.json(
         {
@@ -3481,14 +4166,17 @@ export function registerApiRoutes(app: Hono) {
     const parsed = z.record(z.unknown()).safeParse(await c.req.json());
     if (!parsed.success) return c.json({ error: "Invalid settings", code: "bad_request" }, 400);
     const sanitized = sanitizeWorkspaceSettings(parsed.data);
-    return c.json({
-      settings: sanitizeWorkspaceSettings(
-        (await circleService.updateSettings(
-          auth.workspaceId,
-          sanitized,
-        )) as Record<string, unknown>,
-      ),
-    });
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      delete sanitized.vaultPath;
+    }
+    const settings = sanitizeWorkspaceSettings(
+      (await circleService.updateSettings(
+        auth.workspaceId,
+        sanitized,
+      )) as Record<string, unknown>,
+    );
+    await recordWorkspaceSettingRestSyncEvent(auth.workspaceId, settings);
+    return c.json({ settings });
   });
 
   app.get("/api/v1/mentions", async (c) => {
@@ -3699,6 +4387,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      await recordBankAccountRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toBankAccount(row), 201);
     },
   );
@@ -3713,9 +4402,9 @@ export function registerApiRoutes(app: Hono) {
         c.req.param("id"),
         c.req.valid("json"),
       );
-      return row
-        ? c.json(toBankAccount(row))
-        : c.json(notFound("Bank account"), 404);
+      if (!row) return c.json(notFound("Bank account"), 404);
+      await recordBankAccountRestSyncEvent(auth.workspaceId, row, "upsert");
+      return c.json(toBankAccount(row));
     },
   );
   app.delete("/api/v1/bank-accounts/:id", async (c) => {
@@ -3725,7 +4414,9 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
     );
-    return row ? c.body(null, 204) : c.json(notFound("Bank account"), 404);
+    if (!row) return c.json(notFound("Bank account"), 404);
+    await recordBankAccountRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/financial-categories", async (c) => {
@@ -3744,6 +4435,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toFinancialCategory(row), 201);
     },
   );
@@ -3758,9 +4450,9 @@ export function registerApiRoutes(app: Hono) {
         c.req.param("id"),
         c.req.valid("json"),
       );
-      return row
-        ? c.json(toFinancialCategory(row))
-        : c.json(notFound("Financial category"), 404);
+      if (!row) return c.json(notFound("Financial category"), 404);
+      await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "upsert");
+      return c.json(toFinancialCategory(row));
     },
   );
   app.delete("/api/v1/financial-categories/:id", async (c) => {
@@ -3770,9 +4462,9 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
     );
-    return row
-      ? c.body(null, 204)
-      : c.json(notFound("Financial category"), 404);
+    if (!row) return c.json(notFound("Financial category"), 404);
+    await recordFinancialCategoryRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/financial-goals", async (c) => {
@@ -3798,6 +4490,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      await recordFinancialGoalRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toFinancialGoal(row, 0), 201);
     },
   );
@@ -3814,6 +4507,7 @@ export function registerApiRoutes(app: Hono) {
         c.req.valid("json"),
       );
       if (!row) return c.json(notFound("Financial goal"), 404);
+      await recordFinancialGoalRestSyncEvent(auth.workspaceId, row, "upsert");
       const savedCents = await financeService.getGoalSavedCents(
         auth.workspaceId,
         id,
@@ -3828,9 +4522,9 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
     );
-    return row
-      ? c.body(null, 204)
-      : c.json(notFound("Financial goal"), 404);
+    if (!row) return c.json(notFound("Financial goal"), 404);
+    await recordFinancialGoalRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/financial-recurrings", async (c) => {
@@ -3849,6 +4543,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      await recordFinancialRecurringRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toFinancialRecurring(row), 201);
     },
   );
@@ -3863,9 +4558,9 @@ export function registerApiRoutes(app: Hono) {
         c.req.param("id"),
         c.req.valid("json"),
       );
-      return row
-        ? c.json(toFinancialRecurring(row))
-        : c.json(notFound("Financial recurring"), 404);
+      if (!row) return c.json(notFound("Financial recurring"), 404);
+      await recordFinancialRecurringRestSyncEvent(auth.workspaceId, row, "upsert");
+      return c.json(toFinancialRecurring(row));
     },
   );
   app.delete("/api/v1/financial-recurrings/:id", async (c) => {
@@ -3875,9 +4570,9 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
     );
-    return row
-      ? c.body(null, 204)
-      : c.json(notFound("Financial recurring"), 404);
+    if (!row) return c.json(notFound("Financial recurring"), 404);
+    await recordFinancialRecurringRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   app.get("/api/v1/cashflow-planner-entries", async (c) => {
@@ -3898,6 +4593,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json"),
       );
+      await recordCashflowPlannerRestSyncEvent(auth.workspaceId, row, "upsert");
       return c.json(toCashflowPlannerEntry(row), 201);
     },
   );
@@ -3912,9 +4608,9 @@ export function registerApiRoutes(app: Hono) {
         c.req.param("id"),
         c.req.valid("json"),
       );
-      return row
-        ? c.json(toCashflowPlannerEntry(row))
-        : c.json(notFound("Cashflow planner entry"), 404);
+      if (!row) return c.json(notFound("Cashflow planner entry"), 404);
+      await recordCashflowPlannerRestSyncEvent(auth.workspaceId, row, "upsert");
+      return c.json(toCashflowPlannerEntry(row));
     },
   );
   app.delete("/api/v1/cashflow-planner-entries/:id", async (c) => {
@@ -3924,9 +4620,9 @@ export function registerApiRoutes(app: Hono) {
       auth.workspaceId,
       c.req.param("id"),
     );
-    return row
-      ? c.body(null, 204)
-      : c.json(notFound("Cashflow planner entry"), 404);
+    if (!row) return c.json(notFound("Cashflow planner entry"), 404);
+    await recordCashflowPlannerRestSyncEvent(auth.workspaceId, row, "delete");
+    return c.body(null, 204);
   });
 
   const toListTransactionFilters = (

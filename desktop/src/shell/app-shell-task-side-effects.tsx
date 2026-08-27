@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "@tanstack/react-router";
 import {
   isInboxPath,
   refreshOpenTabTaskStatuses,

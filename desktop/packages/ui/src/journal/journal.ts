@@ -45,18 +45,20 @@ export function parseJournalDateSlug(value: string): Date | null {
   return new Date(year!, month! - 1, day);
 }
 
+const JOURNAL_ENTRY_TITLE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
 export function formatJournalEntryTitle(dateSlug: string): string {
   const date = parseJournalDateSlug(dateSlug);
   if (!date) {
     return dateSlug;
   }
 
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return JOURNAL_ENTRY_TITLE_FORMATTER.format(date);
 }
 
 /** Side-panel / file-style label — always the canonical `YYYY-MM-DD` slug. */
@@ -66,22 +68,47 @@ export function formatJournalSidePanelLabel(dateSlug: string): string {
 
 export function getJournalHref(dateSlug?: string): string {
   if (!dateSlug) {
-    return "/journal";
+    return "/journal-v2";
   }
 
-  return `/journal/${dateSlug}`;
+  return `/journal-v2/${dateSlug}`;
+}
+
+export function getJournalV2Href(dateSlug?: string): string {
+  return getJournalHref(dateSlug);
 }
 
 export function getSelectedJournalDateFromPathname(
   pathname: string,
 ): string | undefined {
-  const match = pathname.match(/^\/journal\/([^/]+)(?:\/|$)/);
+  return (
+    getSelectedJournalV2DateFromPathname(pathname) ??
+    (() => {
+      const match = pathname.match(/^\/journal\/([^/]+)(?:\/|$)/);
+      if (!match) {
+        return undefined;
+      }
+
+      const slug = decodeURIComponent(match[1]!);
+      if (isJournalReservedSlug(slug) || !isValidJournalDateSlug(slug)) {
+        return undefined;
+      }
+
+      return slug;
+    })()
+  );
+}
+
+export function getSelectedJournalV2DateFromPathname(
+  pathname: string,
+): string | undefined {
+  const match = pathname.match(/^\/journal-v2\/([^/]+)(?:\/|$)/);
   if (!match) {
     return undefined;
   }
 
   const slug = decodeURIComponent(match[1]!);
-  if (isJournalReservedSlug(slug) || !isValidJournalDateSlug(slug)) {
+  if (!isValidJournalDateSlug(slug)) {
     return undefined;
   }
 

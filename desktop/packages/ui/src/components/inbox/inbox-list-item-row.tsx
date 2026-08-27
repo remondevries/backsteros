@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, ReactNode, SyntheticEvent } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { memo, useMemo, useSyncExternalStore } from "react";
 
 import {
@@ -14,7 +14,6 @@ import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
 } from "../../tasks/task-status-color.js";
-import { getTaskPriorityLabel, TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
 import {
   DROPDOWN_NONE_VALUE,
@@ -26,13 +25,9 @@ import { ProjectOcticon } from "../projects/project-octicon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { DeferredTaskDueDateDropdown } from "../tasks/deferred-task-due-date-dropdown.js";
-import {
-  TaskListDueDateLabel,
-  TaskListPriorityLabel,
-} from "../tasks/task-list-property-label.js";
-import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
+import { TaskListPropertyFields } from "../tasks/task-list-property-fields.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { stopFieldEvent } from "../../shared/stop-field-event.js";
 import { Tooltip } from "../shared/tooltip.js";
 
 export type InboxListItemLinkComponent = ComponentType<{
@@ -61,11 +56,6 @@ export type InboxListItemRowProps = {
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
 };
-
-function stopFieldEvent(event: SyntheticEvent) {
-  event.preventDefault();
-  event.stopPropagation();
-}
 
 function ProjectMeta({
   projectName,
@@ -105,16 +95,6 @@ export function InboxListItemRowComponent({
   onProjectChange,
   onAssigneeChange,
 }: InboxListItemRowProps) {
-  const priorityOptions = useMemo(
-    () =>
-      TASK_PRIORITY_ORDER.map((value) => ({
-        value: String(value),
-        label: getTaskPriorityLabel(value),
-        icon: <TaskPriorityIcon priority={value} size={14} />,
-      })),
-    [],
-  );
-
   if (minimized) {
     const displayId = getInboxItemDisplayId(item);
     return (
@@ -182,14 +162,16 @@ export function InboxListItemRowComponent({
   const hasProjectMeta = Boolean(
     item.projectId || item.projectName || item.projectKey,
   );
-  const hasDueMeta = item.dueDate != null;
+  const dueDate = item.kind === "meeting" ? null : item.dueDate;
+  const assigneeId = item.kind === "meeting" ? null : item.assigneeId;
+  const hasDueMeta = dueDate != null;
   const canEditAssignee =
     assigneeOptions.length > 0 && Boolean(onAssigneeChange);
-  const showAssignee = canEditAssignee || Boolean(item.assigneeId);
+  const showAssignee = canEditAssignee || Boolean(assigneeId);
   const assigneeOption = assigneeOptions.find(
-    (entry) => entry.value === (item.assigneeId ?? DROPDOWN_NONE_VALUE),
+    (entry) => entry.value === (assigneeId ?? DROPDOWN_NONE_VALUE),
   );
-  const assigneeLabel = item.assigneeId
+  const assigneeLabel = assigneeId
     ? (assigneeOption?.label ?? "Assigned")
     : "Unassigned";
 
@@ -237,61 +219,15 @@ export function InboxListItemRowComponent({
           </span>
         </div>
         <div className="app-side-panel-item-row-meta app-side-panel-item-row-meta-inbox inbox-list-item-card-layer">
-          {onPriorityChange ? (
-            <span className="inbox-list-item-field">
-              <DeferredSearchableDropdown
-                value={String(item.priority)}
-                options={priorityOptions}
-                onChange={(next) => onPriorityChange(item.id, Number(next))}
-                searchPlaceholder="Change priority…"
-                searchShortcutLabel="P"
-                ariaLabel={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
-                taskPropertyDropdownId="priority"
-                panelAlign="start"
-                panelWidth={280}
-                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
-                  <button
-                    type="button"
-                    id={triggerId}
-                    className="task-item-row__icon-trigger"
-                    title={getTaskPriorityLabel(item.priority)}
-                    tabIndex={-1}
-                    disabled={disabled}
-                    aria-haspopup="listbox"
-                    aria-expanded={open}
-                    aria-label={`Change priority: ${getTaskPriorityLabel(item.priority)}`}
-                    onMouseDown={stopFieldEvent}
-                    onClick={(event) => {
-                      stopFieldEvent(event);
-                      onToggle();
-                    }}
-                  >
-                    <TaskPriorityIcon priority={item.priority} size={14} />
-                  </button>
-                )}
-              />
-            </span>
-          ) : (
-            <TaskListPriorityLabel priority={item.priority} />
-          )}
-          {hasDueMeta ? (
-            onDueDateChange ? (
-              <span className="inbox-list-item-field">
-                <DeferredTaskDueDateDropdown
-                  dueDate={item.dueDate}
-                  status={item.status}
-                  variant="list"
-                  showIcon={false}
-                  onDueDateChange={(next) => onDueDateChange(item.id, next)}
-                />
-              </span>
-            ) : (
-              <TaskListDueDateLabel
-                dueDate={new Date(item.dueDate!)}
-                status={item.status}
-              />
-            )
-          ) : null}
+          <TaskListPropertyFields
+            entityId={item.id}
+            priority={item.priority}
+            dueDate={dueDate}
+            status={item.status}
+            showDue={hasDueMeta}
+            onPriorityChange={onPriorityChange}
+            onDueDateChange={onDueDateChange}
+          />
           {hasProjectMeta ? (
             projectOptions.length > 0 && onProjectChange ? (
               <span className="inbox-list-item-field">
@@ -350,7 +286,7 @@ export function InboxListItemRowComponent({
             <span className="inbox-list-item-assignee inbox-list-item-field">
               {canEditAssignee ? (
                 <DeferredSearchableDropdown
-                  value={item.assigneeId ?? DROPDOWN_NONE_VALUE}
+                  value={assigneeId ?? DROPDOWN_NONE_VALUE}
                   options={assigneeOptions}
                   onChange={(next) =>
                     onAssigneeChange!(
@@ -388,7 +324,7 @@ export function InboxListItemRowComponent({
                           <AssigneeListMark
                             label={assigneeLabel}
                             avatarSrc={assigneeOption?.avatarSrc}
-                            unassigned={!item.assigneeId}
+                            unassigned={!assigneeId}
                             size={18}
                           />
                         </span>
@@ -406,7 +342,7 @@ export function InboxListItemRowComponent({
                       <AssigneeListMark
                         label={assigneeLabel}
                         avatarSrc={assigneeOption?.avatarSrc}
-                        unassigned={!item.assigneeId}
+                        unassigned={!assigneeId}
                         size={18}
                       />
                     </span>

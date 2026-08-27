@@ -1,8 +1,9 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import { startExternalOpenHrefWatcher } from "../lib/external-open-href";
 import { isTauriRuntime } from "../lib/whoop";
+import { navigateToHref } from "../router/navigate-href";
 
 const OPEN_HREF_EVENT = "external-open-href";
 const OPEN_HREF_DOM_EVENT = "backsteros:external-open-href";
@@ -23,7 +24,7 @@ export function ExternalOpenHrefListener() {
     const openHref = (href: string) => {
       const next = href.trim();
       if (!isAppHref(next)) return;
-      navigate(next);
+      navigateToHref(navigate, next);
       void (async () => {
         try {
           const { getCurrentWindow } = await import("@tauri-apps/api/window");

@@ -1,15 +1,19 @@
-import type { ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PadSidePanelCollapseButton } from "../../lib/pad-side-panel-collapse";
 import {
-  TabStackHeader,
+  HEADER_ACTION_SIZE,
   TabStackHeaderBackButton,
+  TabStackHeaderIconButton,
   TabStackHeaderPlusButton,
 } from "../../lib/tab-stack-options";
-import { colors, spacing } from "../../lib/theme";
-import { YearNavigator } from "../finance/year-navigator";
+import { colors } from "../../lib/theme";
+import { FilterIcon } from "../filter-icon";
+import { ProjectOcticon } from "../project-octicon";
+import { SectionListHeader } from "../section-list-header";
+import { HabitYearFilterMenu } from "./habit-year-filter-menu";
 
 export function HabitsHeaderPlus({
   onPress,
@@ -43,16 +47,17 @@ export function HabitsHeader({
   backgroundColor?: string;
 } = {}) {
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Habit Tracker"
-      includeSafeArea={includeSafeArea}
+      showGlobalSearch
+      includeTopSafeArea={includeSafeArea}
       backgroundColor={backgroundColor}
-      leadingActions={
+      plusControl={
         onAdd ? (
           <HabitsHeaderPlus chrome="glass" onPress={onAdd} />
         ) : null
       }
-      trailingActions={
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}
@@ -65,53 +70,84 @@ export function HabitsHeader({
 }
 
 /**
- * Phone habit detail chrome — back | sort (center) | year.
- * Custom `header` so trailing controls are not wrapped in liquid-glass.
+ * Phone habit detail chrome — back | icon + name | year filter (same 36×36 as back).
  */
 export function HabitDetailNavHeader({
+  onBack,
+  title,
+  icon,
   year,
   maxYear,
   onYearChange,
-  onBack,
-  sortControl,
 }: {
-  year: number;
-  maxYear: number;
-  onYearChange: (year: number) => void;
   onBack: () => void;
-  /** Centered sort control (chip). */
-  sortControl?: ReactNode;
+  title?: string;
+  icon?: string | null;
+  year?: number;
+  maxYear?: number;
+  onYearChange?: (year: number) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [yearMenuOpen, setYearMenuOpen] = useState(false);
+  const displayTitle = (title ?? "").trim() || "Habit";
+  const showTitle = title != null;
+  const showIcon = showTitle && title !== "All";
+  const canFilterYear = year != null && onYearChange != null;
+  const yearCap = maxYear ?? (year ?? new Date().getFullYear());
 
   return (
     <View
       style={[
         styles.detailNav,
         {
-          paddingTop: insets.top,
+          paddingTop: Math.max(insets.top, 8),
           backgroundColor: colors.background,
         },
       ]}
     >
       <View style={styles.detailNavRow}>
-        <View style={styles.detailNavSide}>
-          <TabStackHeaderBackButton onPress={onBack} />
-        </View>
-        {sortControl ? (
-          <View style={styles.detailNavCenter} pointerEvents="box-none">
-            {sortControl}
+        <TabStackHeaderBackButton onPress={onBack} />
+        {showTitle ? (
+          <View style={styles.detailNavTitle} pointerEvents="none">
+            {showIcon ? (
+              <ProjectOcticon
+                icon={icon}
+                size={14}
+                color={colors.foreground}
+              />
+            ) : null}
+            <Text
+              accessibilityRole="header"
+              numberOfLines={1}
+              style={styles.detailNavTitleText}
+            >
+              {displayTitle}
+            </Text>
           </View>
-        ) : null}
-        <View style={[styles.detailNavSide, styles.detailNavSideEnd]}>
-          <YearNavigator
-            year={year}
-            onChange={onYearChange}
-            maxYear={maxYear}
+        ) : (
+          <View style={styles.detailNavTitle} />
+        )}
+        {canFilterYear ? (
+          <TabStackHeaderIconButton
             chrome="plain"
-          />
-        </View>
+            accessibilityLabel={`Filter year, ${year}`}
+            onPress={() => setYearMenuOpen((open) => !open)}
+          >
+            <FilterIcon color={colors.foreground} size={20} />
+          </TabStackHeaderIconButton>
+        ) : (
+          <View style={styles.detailNavRightSpacer} />
+        )}
       </View>
+      {canFilterYear ? (
+        <HabitYearFilterMenu
+          visible={yearMenuOpen}
+          year={year}
+          maxYear={yearCap}
+          onSelect={onYearChange}
+          onClose={() => setYearMenuOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -121,24 +157,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   detailNavRow: {
-    height: 44,
-    paddingHorizontal: spacing.screenX,
+    minHeight: 44,
+    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 4,
   },
-  detailNavSide: {
-    zIndex: 1,
-    minWidth: 72,
+  detailNavTitle: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: "row",
-    alignItems: "center",
-  },
-  detailNavSideEnd: {
-    justifyContent: "flex-end",
-  },
-  detailNavCenter: {
-    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  detailNavTitleText: {
+    flexShrink: 1,
+    minWidth: 0,
+    color: colors.foreground,
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.34,
+    textAlign: "center",
+  },
+  detailNavRightSpacer: {
+    width: HEADER_ACTION_SIZE,
+    flexShrink: 0,
   },
 });

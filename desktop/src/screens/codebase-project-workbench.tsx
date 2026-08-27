@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type {
   GithubCommit,
   GithubPullRequest,
@@ -32,6 +32,7 @@ import {
 import { resolvePanelResizeShortcut } from "../lib/task-panel-resize-shortcut";
 import { fetchGithubConnectionStatus } from "../lib/github-oauth";
 import { projectFs } from "../lib/project-fs";
+import { navigateToHref } from "../router/navigate-href";
 
 export type CodebaseWorkbenchProject = {
   id: string;
@@ -125,7 +126,13 @@ export function CodebaseProjectWorkbench({
   docsPanel,
   fs = projectFs,
 }: Props) {
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const { client } = useDesktopApi();
   const requestJson = useCallback(
     <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
@@ -546,8 +553,10 @@ export function CodebaseProjectWorkbench({
               <p>GitHub is not connected.</p>
               {githubStatus.reason ? <p>{githubStatus.reason}</p> : null}
               <p>
-                <Link to="/settings/github">Connect GitHub in Settings</Link> to
-                browse commits and pull requests.
+                <Link to="/settings/$tab" params={{ tab: "github" }}>
+                  Connect GitHub in Settings
+                </Link>{" "}
+                to browse commits and pull requests.
               </p>
               <p>
                 <button

@@ -1,15 +1,7 @@
 "use client";
 
 import { XIcon } from "@primer/octicons-react";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useId } from "react";
 import { createPortal } from "react-dom";
 
 import { formatCalendarTaskScheduleLabel } from "../../calendar/calendar-events.js";
@@ -23,10 +15,12 @@ import { TaskDueDateIcon } from "../tasks/task-due-date-icon.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { resolveTaskStatusColor } from "../../tasks/task-status-color.js";
+import {
+  previewCalendarPopoverDescription,
+  useCalendarEventPopoverPosition,
+} from "./calendar-event-popover-shell.js";
 
 const PANEL_WIDTH = 360;
-const PANEL_GAP = 10;
-const VIEWPORT_PADDING = 12;
 
 export type CalendarTaskPopoverTask = {
   id: string;
@@ -50,40 +44,6 @@ export type CalendarTaskEventPopoverProps = {
   onOpenTask?: (taskId: string) => void;
 };
 
-function previewDescription(value: string | null | undefined): string | null {
-  if (!value?.trim()) return null;
-  const plain = value
-    .replace(/^#+\s*/gm, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[*_`~]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!plain) return null;
-  return plain.length > 220 ? `${plain.slice(0, 217)}…` : plain;
-}
-
-function positionPanel(
-  anchorRect: DOMRect,
-  panelWidth: number,
-  panelHeight: number,
-): { top: number; left: number } {
-  const maxLeft = window.innerWidth - panelWidth - VIEWPORT_PADDING;
-  let left = anchorRect.right + PANEL_GAP;
-  if (left > maxLeft) {
-    left = anchorRect.left - panelWidth - PANEL_GAP;
-  }
-  left = Math.max(VIEWPORT_PADDING, Math.min(left, maxLeft));
-
-  let top = anchorRect.top;
-  const maxTop = window.innerHeight - panelHeight - VIEWPORT_PADDING;
-  if (top > maxTop) {
-    top = maxTop;
-  }
-  top = Math.max(VIEWPORT_PADDING, top);
-
-  return { top, left };
-}
-
 export function CalendarTaskEventPopover({
   open,
   task,
@@ -91,70 +51,14 @@ export function CalendarTaskEventPopover({
   onClose,
   onOpenTask,
 }: CalendarTaskEventPopoverProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>({
-    visibility: "hidden",
+  const { panelRef, panelStyle } = useCalendarEventPopoverPosition({
+    open,
+    anchorRect,
+    onClose,
+    panelWidth: PANEL_WIDTH,
+    contentKey: task?.id ?? null,
   });
-
-  const updatePosition = useCallback(() => {
-    if (!anchorRect) return;
-    const panelHeight = panelRef.current?.offsetHeight ?? 280;
-    const { top, left } = positionPanel(
-      anchorRect,
-      PANEL_WIDTH,
-      panelHeight,
-    );
-    setPanelStyle({
-      top: `${top}px`,
-      left: `${left}px`,
-      width: `${PANEL_WIDTH}px`,
-      visibility: "visible",
-    });
-  }, [anchorRect]);
-
-  useLayoutEffect(() => {
-    if (!open || !anchorRect) {
-      setPanelStyle({ visibility: "hidden" });
-      return;
-    }
-    updatePosition();
-    const frame = window.requestAnimationFrame(() => updatePosition());
-    return () => window.cancelAnimationFrame(frame);
-  }, [anchorRect, open, task?.id, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (panelRef.current?.contains(target)) return;
-      onClose();
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    }
-
-    function handleReposition() {
-      updatePosition();
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", handleReposition);
-    window.addEventListener("scroll", handleReposition, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", handleReposition);
-      window.removeEventListener("scroll", handleReposition, true);
-    };
-  }, [onClose, open, updatePosition]);
 
   if (!open || !task || !anchorRect || typeof document === "undefined") {
     return null;
@@ -171,7 +75,7 @@ export function CalendarTaskEventPopover({
     task.dueDate,
     task.dueEndDate,
   );
-  const descriptionPreview = previewDescription(task.description);
+  const descriptionPreview = previewCalendarPopoverDescription(task.description);
   const statusLabel = getTaskStatusLabel(migrateLegacyTaskStatus(task.status));
   const priorityLabel = getTaskPriorityLabel(task.priority);
   const statusAccentColor = resolveTaskStatusColor(

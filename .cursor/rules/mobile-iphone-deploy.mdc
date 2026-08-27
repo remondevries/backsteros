@@ -1,0 +1,35 @@
+---
+description: Agent owns installing/launching the iOS app on Remon's physical iPhone
+globs: mobile/**
+alwaysApply: false
+---
+
+# Mobile iPhone deploy (agent-owned)
+
+When working on the Expo iOS app, **the agent installs and launches it** on the unlocked physical iPhone. Do not ask the user to run `ios:device` / `expo run:ios`.
+
+## Device
+
+- Name: `iPhone` (iPhone 15 Pro)
+- UDID: `00008130-001964C814F2001C`
+- Core Device id: `3428980A-96B2-5B59-8E31-21BB9B0A8A08`
+- Team for automatic signing: `L95JGSJJV3`
+- Keep `mobile/ios/BacksterOSv2/BacksterOSv2.entitlements` empty (push entitlement blocks signing)
+
+## Commands
+
+```bash
+# Prefer this — sets Tailscale Metro host from mobile/.env
+cd mobile && node ./scripts/with-packager-hostname.mjs pnpm exec expo run:ios --device "iPhone"
+```
+
+Equivalent: `pnpm --filter @backsteros/mobile ios:device` (same wrapper).
+
+Metro must stay up after install (`macbook.tailc7e057.ts.net:8081`). If the phone cannot tap the server row, it can enter `http://macbook.tailc7e057.ts.net:8081` manually. Phone + Mac need Tailscale (or same LAN).
+
+## When to rebuild vs reload
+
+- JS/TS/TSX-only polish: keep Metro running; Fast Refresh is enough. Re-run `expo run:ios --device "iPhone"` if Metro died or the app is missing.
+- Native / prebuild / entitlements / pods: rebuild and reinstall with the command above.
+
+If the phone is locked or the developer tunnel is down, ask the user to unlock it and retry the install yourself.

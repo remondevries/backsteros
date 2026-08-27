@@ -38,11 +38,28 @@ export function getSelectedProjectDocumentPathFromPathname(
   return decodeURIComponent(match[1]!);
 }
 
-/** Selected document path from `/knowledge/:slug`. */
+/** Selected document path from `/knowledge-v2/:slug` (or legacy `/knowledge/:slug`). */
 export function getSelectedKnowledgeDocumentPathFromPathname(
   pathname: string,
 ): string | undefined {
-  const match = pathname.match(/^\/knowledge\/(.+)$/);
+  return (
+    getSelectedKnowledgeV2DocumentPathFromPathname(pathname) ??
+    (() => {
+      const match = pathname.match(/^\/knowledge\/(.+)$/);
+      if (!match) {
+        return undefined;
+      }
+
+      return decodeURIComponent(match[1]!);
+    })()
+  );
+}
+
+/** Selected document path from `/knowledge-v2/:slug`. */
+export function getSelectedKnowledgeV2DocumentPathFromPathname(
+  pathname: string,
+): string | undefined {
+  const match = pathname.match(/^\/knowledge-v2\/(.+)$/);
   if (!match) {
     return undefined;
   }

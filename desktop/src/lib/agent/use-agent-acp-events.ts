@@ -650,7 +650,19 @@ export function useAgentAcpEvents(options: UseAgentAcpEventsOptions): void {
       openRef.current.delete(id);
       republishWorkingMarks();
       try {
-        socket.close();
+        // Avoid "closed before connection established" noise when React Strict
+        // Mode tears down the effect while the socket is still CONNECTING.
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        } else if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => {
+            try {
+              socket.close();
+            } catch {
+              /* ignore */
+            }
+          };
+        }
       } catch {
         /* ignore */
       }

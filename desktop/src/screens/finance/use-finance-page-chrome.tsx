@@ -51,6 +51,7 @@ export function useFinancePageChrome({
   setCsvFile,
   setImportAccountId,
   setImportOpen,
+  enabled = true,
 }: Pick<
   FinanceMoneybirdInvoicesData,
   "moneybirdInvoicesLoading" | "loadMoneybirdInvoicesPage"
@@ -77,6 +78,7 @@ export function useFinancePageChrome({
     setTransactionsChrome: Dispatch<
       SetStateAction<FinanceTransactionsChromeState | null>
     >;
+    enabled?: boolean;
   }) {
   const chromeActions = useMemo(() => {
     if (navId === "invoices") {
@@ -437,6 +439,7 @@ export function useFinancePageChrome({
                 ? transactionsTrailingPanel
                 : null,
     className: chromeClassName,
+    enabled,
   });
 
   useEffect(() => {

@@ -1,8 +1,8 @@
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,6 +12,7 @@ import {
 
 import { MonthNavigator } from "./month-navigator";
 import { ContentPageTitle } from "../content-page-title";
+import { BacksterFlashList } from "../lists/index";
 import { fetchWorkspaceCashflow } from "../../lib/finance-api";
 import {
   buildCategoryTree,
@@ -20,7 +21,6 @@ import {
 } from "../../lib/finance-categories";
 import { rememberFinanceSection } from "../../lib/finance-section-memory";
 import { currentMonthKey, formatCents } from "../../lib/finance-format";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
 import { TabStackHeaderPlusButton } from "../../lib/tab-stack-options";
 import { colors, spacing } from "../../lib/theme";
 import { ui } from "../../lib/ui";
@@ -92,7 +92,7 @@ export function FinanceCategoriesPane() {
     return flattened;
   }, [categories.rows, spentByCategoryId]);
 
-  const listRef = useRef<FlatList<CategoryListRow>>(null);
+  const listRef = useRef<FlashListRef<CategoryListRow>>(null);
   const itemIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const openCategory = useCallback(
     (id: string) => {
@@ -132,13 +132,12 @@ export function FinanceCategoriesPane() {
 
   return (
     <View style={ui.screen}>
-      <FlatList
+      <BacksterFlashList
         ref={listRef}
-        style={ui.screen}
         data={rows}
+        estimatedItemSize={48}
         keyExtractor={(item) => item.id}
         alwaysBounceVertical
-        onScrollToIndexFailed={() => {}}
         refreshControl={
           <RefreshControl
             refreshing={categories.pullRefreshing}
@@ -150,7 +149,6 @@ export function FinanceCategoriesPane() {
             colors={[colors.muted]}
           />
         }
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
         ListHeaderComponent={
           <View>
             <ContentPageTitle

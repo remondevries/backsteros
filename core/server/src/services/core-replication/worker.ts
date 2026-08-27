@@ -9,6 +9,7 @@ import { getReplicationCursor, setReplicationCursor } from "./cursors.js";
 import { getChangesSince } from "./sync.js";
 import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationApplyRequest, ReplicationChangesResponse } from "./types.js";
+import { pullPeerSyncEvents } from "./sync-event-replication.js";
 import { syncVaultWithPeer } from "./vault-replication.js";
 
 const DEFAULT_INTERVAL_MS = 15_000;
@@ -26,7 +27,9 @@ async function pullTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
-  const cursor = await getReplicationCursor(table);
+  // Pull watermark is independent of push — advancing peer tip must not
+  // skip local rows that are still older than the peer tip.
+  const cursor = await getReplicationCursor(table, "pull");
   const url = new URL(`${config.peerUrl}/internal/core-replication/changes`);
   url.searchParams.set("table", table);
   url.searchParams.set("since", cursor.updatedAt);
@@ -53,7 +56,7 @@ async function pullTable(table: ReplicatedTable) {
     }
 
     const result = await applyRemoteChanges(table, payload.changes);
-    await setReplicationCursor(table, payload.cursor);
+    await setReplicationCursor(table, payload.cursor, "pull");
     appendOpsLog(
       "info",
       `core replication pull ${table}`,
@@ -68,7 +71,7 @@ async function pushTable(table: ReplicatedTable) {
   const config = getCoreReplicationConfig();
   if (!config) return;
 
-  let cursor = await getReplicationCursor(table);
+  let cursor = await getReplicationCursor(table, "push");
   let pushed = 0;
 
   for (;;) {
@@ -99,7 +102,7 @@ async function pushTable(table: ReplicatedTable) {
 
       pushed += changes.length;
       cursor = nextCursor;
-      await setReplicationCursor(table, cursor);
+      await setReplicationCursor(table, cursor, "push");
 
       if (changes.length < PAGE_SIZE) {
         break;
@@ -121,6 +124,17 @@ async function pushTable(table: ReplicatedTable) {
 export async function runCoreReplicationTick(): Promise<void> {
   const config = getCoreReplicationConfig();
   if (!config) return;
+
+  // Linear-shaped: local-core applies peer sync_events in cursor order before
+  // table LWW catch-up. Cloud is the leader clock; do not pull this feed as cloud.
+  try {
+    await pullPeerSyncEvents();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`core replication failed on sync-events: ${message}`, {
+      cause: error,
+    });
+  }
 
   const tables = await listActiveReplicatedTables();
   for (const table of tables) {

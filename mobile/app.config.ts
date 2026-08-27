@@ -34,6 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     ...(typeof config.extra === "object" && config.extra ? config.extra : {}),
     EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL ?? "",
+    EXPO_PUBLIC_CLOUD_API_URL: process.env.EXPO_PUBLIC_CLOUD_API_URL ?? "",
     EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:
       process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "",
     EXPO_PUBLIC_SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN ?? "",

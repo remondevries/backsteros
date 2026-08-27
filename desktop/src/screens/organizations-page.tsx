@@ -9,7 +9,7 @@ import type {
   Organization as ApiOrganization,
 } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   AvatarUpload,
@@ -56,11 +56,19 @@ import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
 } from "../lib/avatar-upload";
+import { firstOrganizationRouteParam } from "../lib/section-entry-hrefs";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellLocation,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { type ProjectLocationState } from "../lib/project-type-cache";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
+import { navigateToHref } from "../router/navigate-href";
 
 type MoneybirdInvoicesListResponse = {
   invoices: MoneybirdSalesInvoiceSummary[];
@@ -82,8 +90,7 @@ async function fetchAllOrganizationTransactions(
   client: {
     requestJson: <T>(path: string) => Promise<T>;
   },
-  organizationId: string,
-): Promise<FinancialTransaction[]> {
+  organizationId: string): Promise<FinancialTransaction[]> {
   const rows: FinancialTransaction[] = [];
   let cursor: string | null = null;
   do {
@@ -103,21 +110,37 @@ async function fetchAllOrganizationTransactions(
 }
 
 export function OrganizationsPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { slug, section: sectionParam } = useParams<{
+  return <OrganizationsPageBody />;
+}
+
+function OrganizationsPageBody() {
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (
+      to: string,
+      options?: { replace?: boolean; state?: unknown },
+    ) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate]);
+  const location = useShellLocation();
+  const keepAliveActive = useKeepAliveActive();
+  const keepAliveFrozen = useKeepAliveFrozen();
+  const { slug: routedSlug, section: sectionParam } = useShellParams() as {
     slug?: string;
     section?: string;
-  }>();
+  };
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
   const { organizations, projects, letters, contacts } = workspace;
+  const slug = routedSlug ?? firstOrganizationRouteParam(organizations) ?? undefined;
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
-    organizations,
-  );
-  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+    keepAliveFrozen ? [] : organizations);
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    keepAliveFrozen ? [] : contacts);
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
@@ -130,11 +153,9 @@ export function OrganizationsPage() {
     () =>
       parseListBoardViewFromLocation(
         location.pathname,
-        location.search,
-        PROJECTS_LIST_BOARD_STORAGE_KEY,
-      ),
-    [location.pathname, location.search],
-  );
+        location.searchStr,
+        PROJECTS_LIST_BOARD_STORAGE_KEY),
+    [location.pathname, location.searchStr]);
 
   useEffect(() => {
     setAvatarOverride(undefined);
@@ -163,8 +184,7 @@ export function OrganizationsPage() {
   >([]);
 
   const [orgInvoices, setOrgInvoices] = useState<MoneybirdSalesInvoiceSummary[]>(
-    [],
-  );
+    []);
   const [orgInvoicesLoading, setOrgInvoicesLoading] = useState(false);
   const [orgInvoicesError, setOrgInvoicesError] = useState<string | null>(null);
   const [orgInvoicesConnected, setOrgInvoicesConnected] = useState(false);
@@ -172,8 +192,7 @@ export function OrganizationsPage() {
   const [orgInvoicesTotalPages, setOrgInvoicesTotalPages] = useState(1);
   const [orgInvoicesHasMore, setOrgInvoicesHasMore] = useState(false);
   const [orgInvoicesYear, setOrgInvoicesYear] = useState(() =>
-    localCalendarYear(),
-  );
+    localCalendarYear());
   const [orgInvoiceStatusIds, setOrgInvoiceStatusIds] = useState<string[]>([]);
   const [selectedOrgInvoiceId, setSelectedOrgInvoiceId] = useState<
     string | null
@@ -191,8 +210,7 @@ export function OrganizationsPage() {
         hasTransactions,
         hasInvoices,
       }),
-    [hasInvoices, hasTransactions],
-  );
+    [hasInvoices, hasTransactions]);
 
   const sectionLabel =
     activeSection === "overview"
@@ -213,8 +231,7 @@ export function OrganizationsPage() {
 
   const accountAvatarSrcById = useDesktopAvatarSrcMap(
     "bank_account",
-    financeAccounts,
-  );
+    financeAccounts);
 
   const orgListItem = useMemo(() => {
     if (!selected) return null;
@@ -228,19 +245,22 @@ export function OrganizationsPage() {
   }, [moneybirdContactId, selected]);
 
   useEffect(() => {
-    if (slug) return;
+    if (!keepAliveActive) return;
+    if (routedSlug) return;
     // Match side-panel alpha order (not API/sort_order).
     const first =
       groupItemsByAlphaLetter(organizations).flatMap(
-        ([, entries]) => entries,
-      )[0] ?? null;
+        ([, entries]) => entries)[0] ?? null;
     if (first) {
       const routeParam = getUniqueListItemRouteParam(first, organizations);
-      navigate(getOrganizationsHref(routeParam), { replace: true });
+      navigate(getOrganizationsHref(routeParam), {
+        replace: true,
+      });
     }
-  }, [navigate, organizations, slug]);
+  }, [keepAliveActive, navigate, organizations, routedSlug]);
 
   useEffect(() => {
+    if (!keepAliveActive) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (
       sectionParam === "overview" ||
@@ -250,9 +270,10 @@ export function OrganizationsPage() {
         replace: true,
       });
     }
-  }, [navigate, sectionParam, selected, selectedSlugValue]);
+  }, [keepAliveActive, navigate, sectionParam, selected, selectedSlugValue]);
 
   useEffect(() => {
+    if (!keepAliveActive) return;
     if (!selected || !financeProbeReady || !selectedSlugValue) return;
     const visibleIds = new Set(visibleSections.map((entry) => entry.id));
     if (!visibleIds.has(activeSection)) {
@@ -263,6 +284,7 @@ export function OrganizationsPage() {
   }, [
     activeSection,
     financeProbeReady,
+    keepAliveActive,
     navigate,
     selected,
     selectedSlugValue,
@@ -291,8 +313,7 @@ export function OrganizationsPage() {
             `/api/v1/transactions?${new URLSearchParams({
               organizationId: selected.id,
               limit: "1",
-            })}`,
-          ),
+            })}`),
           contactId
             ? client
                 .requestJson<MoneybirdInvoicesListResponse>(
@@ -300,16 +321,14 @@ export function OrganizationsPage() {
                     page: "1",
                     perPage: "1",
                     filter: buildMoneybirdContactInvoicesFilter(contactId),
-                  })}`,
-                )
+                  })}`)
                 .catch(() => null)
             : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setHasTransactions(txProbe.transactions.length > 0);
         setHasInvoices(
-          Boolean(invoiceProbe && invoiceProbe.invoices.length > 0),
-        );
+          Boolean(invoiceProbe && invoiceProbe.invoices.length > 0));
         setOrgInvoicesConnected(invoiceProbe != null);
       } catch {
         if (cancelled) return;
@@ -334,17 +353,13 @@ export function OrganizationsPage() {
           await Promise.all([
             fetchAllOrganizationTransactions(client, selected.id),
             client.requestJson<{ categories: FinancialCategory[] }>(
-              "/api/v1/financial-categories",
-            ),
+              "/api/v1/financial-categories"),
             client.requestJson<{ bankAccounts: BankAccount[] }>(
-              "/api/v1/bank-accounts",
-            ),
+              "/api/v1/bank-accounts"),
             client.requestJson<{ goals: FinancialGoal[] }>(
-              "/api/v1/financial-goals",
-            ),
+              "/api/v1/financial-goals"),
             client.requestJson<{ recurrings: FinancialRecurring[] }>(
-              "/api/v1/financial-recurrings",
-            ),
+              "/api/v1/financial-recurrings"),
           ]);
         if (cancelled) return;
         setOrgTransactions(transactions);
@@ -376,15 +391,13 @@ export function OrganizationsPage() {
         const filter = buildMoneybirdInvoicesFilter(
           orgInvoicesYear,
           orgInvoiceStatusIds,
-          { contactId: moneybirdContactId },
-        );
+          { contactId: moneybirdContactId });
         const body = await client.requestJson<MoneybirdInvoicesListResponse>(
           `/api/v1/finance/moneybird/invoices?${new URLSearchParams({
             page: String(orgInvoicesPage),
             perPage: "50",
             filter,
-          })}`,
-        );
+          })}`);
         if (cancelled) return;
         setOrgInvoices(body.invoices);
         setOrgInvoicesPage(body.page);
@@ -399,8 +412,7 @@ export function OrganizationsPage() {
         setOrgInvoicesError(
           error instanceof Error
             ? error.message
-            : "Failed to load Moneybird invoices",
-        );
+            : "Failed to load Moneybird invoices");
       } finally {
         if (!cancelled) setOrgInvoicesLoading(false);
       }
@@ -435,8 +447,7 @@ export function OrganizationsPage() {
     void (async () => {
       try {
         const detail = await client.requestJson<MoneybirdSalesInvoiceDetail>(
-          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`,
-        );
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`);
         if (cancelled) return;
         setOrgInvoiceDetail(detail);
       } catch (error) {
@@ -445,8 +456,7 @@ export function OrganizationsPage() {
         setOrgInvoiceDetailError(
           error instanceof Error
             ? error.message
-            : "Failed to load invoice detail",
-        );
+            : "Failed to load invoice detail");
       } finally {
         if (!cancelled) setOrgInvoiceDetailLoading(false);
       }
@@ -467,16 +477,14 @@ export function OrganizationsPage() {
         projectId?: string | null;
         notes?: string | null;
         bankAccountId?: string | null;
-      },
-    ) => {
+      }) => {
       const updated = await client.requestJson<FinancialTransaction>(
         `/api/v1/transactions/${encodeURIComponent(id)}`,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(patch),
-        },
-      );
+        });
       setOrgTransactions((current) => {
         const next = current
           .map((row) => (row.id === id ? updated : row))
@@ -485,8 +493,7 @@ export function OrganizationsPage() {
         return next;
       });
     },
-    [client, selected?.id],
-  );
+    [client, selected?.id]);
 
   const bulkPatchOrgTransactions = useCallback(
     async (
@@ -499,8 +506,7 @@ export function OrganizationsPage() {
         projectId?: string | null;
         notes?: string | null;
         bankAccountId?: string | null;
-      },
-    ) => {
+      }) => {
       for (let offset = 0; offset < ids.length; offset += 500) {
         const chunk = ids.slice(offset, offset + 500);
         await client.requestJson("/api/v1/transactions/batch", {
@@ -512,13 +518,11 @@ export function OrganizationsPage() {
       if (!selected) return;
       const refreshed = await fetchAllOrganizationTransactions(
         client,
-        selected.id,
-      );
+        selected.id);
       setOrgTransactions(refreshed);
       setHasTransactions(refreshed.length > 0);
     },
-    [client, selected],
-  );
+    [client, selected]);
 
   useDesktopSectionBreadcrumb(
     selected
@@ -534,7 +538,7 @@ export function OrganizationsPage() {
           ...(sectionLabel ? [{ label: sectionLabel }] : []),
         ]
       : [{ label: "Organizations" }],
-  );
+    { enabled: keepAliveActive });
 
   const handleDeleteOrganization = useCallback(async () => {
     if (!selected) {
@@ -560,17 +564,14 @@ export function OrganizationsPage() {
       selected
         ? projects.filter((project) => project.organizationId === selected.id)
         : [],
-    [projects, selected],
-  );
+    [projects, selected]);
 
   const workingProjectIds = useMemo(
     () =>
       buildWorkingProjectIdSet(
         workspace.allTasks,
-        agentStatus?.workingTaskIds ?? new Set(),
-      ),
-    [agentStatus?.workingTaskIds, workspace.allTasks],
-  );
+        agentStatus?.workingTaskIds ?? new Set()),
+    [agentStatus?.workingTaskIds, workspace.allTasks]);
 
   const orgLetters = useMemo(() => {
     if (!selected) return [];
@@ -597,8 +598,7 @@ export function OrganizationsPage() {
       .sort((left, right) =>
         (left.name || "").localeCompare(right.name || "", undefined, {
           sensitivity: "base",
-        }),
-      );
+        }));
   }, [contactAvatarSrc, contacts, selected, workspace.contactDetails]);
 
   if (!slug) {
@@ -664,13 +664,11 @@ export function OrganizationsPage() {
             navigate(
               buildOrganizationProjectsHref(organizationSlug, {
                 view: nextView,
-              }),
-            );
+              }));
           }}
           onSelectProject={(key) => {
             const match = projects.find(
-              (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-            );
+              (entry) => entry.key.toLowerCase() === key.toLowerCase());
             const href = getOrganizationProjectHref(organizationSlug, key);
             if (match?.name) primeTabTitle(href, match.name);
             const state: ProjectLocationState | undefined = match?.type
@@ -707,8 +705,7 @@ export function OrganizationsPage() {
             const match =
               projects.find((entry) => entry.id === id) ??
               projects.find(
-                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-              );
+                (entry) => entry.key.toLowerCase() === key.toLowerCase());
             if (match?.name) primeTabTitle(href, match.name);
             navigate(href);
           }}
@@ -829,12 +826,16 @@ export function OrganizationsPage() {
 
   return (
     <>
-      <RegisterPageTitle title={organization.name} />
-      {activeSection === "overview" ? (
-        <RegisterEntityDeleteAction
-          entityLabel={`organization "${organization.name}"`}
-          onDelete={handleDeleteOrganization}
-        />
+      {keepAliveActive ? (
+        <>
+          <RegisterPageTitle title={organization.name} />
+          {activeSection === "overview" ? (
+            <RegisterEntityDeleteAction
+              entityLabel={`organization "${organization.name}"`}
+              onDelete={handleDeleteOrganization}
+            />
+          ) : null}
+        </>
       ) : null}
       <OrganizationDetailView
         organization={{
@@ -875,8 +876,7 @@ export function OrganizationsPage() {
                 client,
                 "organization",
                 organization.id,
-                file,
-              );
+                file);
               if (result.ok) {
                 const url = URL.createObjectURL(file);
                 setAvatarOverride((current) => {
@@ -890,8 +890,7 @@ export function OrganizationsPage() {
               const result = await removeDesktopAvatar(
                 client,
                 "organization",
-                organization.id,
-              );
+                organization.id);
               if (result.ok) {
                 setAvatarOverride((current) => {
                   if (current) URL.revokeObjectURL(current);

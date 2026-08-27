@@ -1,4 +1,3 @@
-import type { Organization } from "@backsteros/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -11,6 +10,8 @@ import {
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { createOrganizationViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TextInput } from "./app-text-input";
@@ -18,6 +19,7 @@ import { TextInput } from "./app-text-input";
 export function CreateOrganizationScreen() {
   const router = useRouter();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -31,10 +33,9 @@ export function CreateOrganizationScreen() {
     setSaving(true);
     setError(null);
     try {
-      await client.requestJson<Organization>("/api/v1/organizations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: trimmed, sortOrder: -Date.now() }),
+      await createOrganizationViaPowerSyncOrApi(client, powerSync, {
+        name: trimmed,
+        sortOrder: -Date.now(),
       });
       if (router.canGoBack()) router.back();
       else router.replace("/(app)/organizations");

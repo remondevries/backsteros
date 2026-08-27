@@ -258,12 +258,41 @@ export const apiKeys = pgTable(
   ],
 );
 
-/** Per-table cursor for local-core ↔ cloud-core replication worker. */
+/**
+ * Per-table cursors for local-core ↔ cloud-core replication.
+ * Pull and push watermarks are independent so advancing the peer tip on pull
+ * cannot skip local rows that still need to be pushed (Linear-shaped: no shared
+ * bidirectional clock).
+ * Legacy `updated_at` / `row_id` columns remain for older rows; new code uses
+ * pull_* / push_* exclusively.
+ */
 export const coreReplicationCursors = pgTable("core_replication_cursors", {
   tableName: text("table_name").primaryKey(),
+  /** @deprecated Prefer pullUpdatedAt / pushUpdatedAt. */
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  /** @deprecated Prefer pullRowId / pushRowId. */
   rowId: text("row_id").notNull().default(""),
+  pullUpdatedAt: timestamp("pull_updated_at", { withTimezone: true }),
+  pullRowId: text("pull_row_id").notNull().default(""),
+  pushUpdatedAt: timestamp("push_updated_at", { withTimezone: true }),
+  pushRowId: text("push_row_id").notNull().default(""),
 });
+
+/**
+ * Per-workspace watermark for peer sync_events delta pull (Linear-shaped).
+ * Replica advances `after_cursor` only after applying peer events in order.
+ * Does not invent a second LWW path — peer `sync_events.cursor` is authority.
+ */
+export const coreSyncEventReplicationState = pgTable(
+  "core_sync_event_replication_state",
+  {
+    workspaceId: text("workspace_id").primaryKey(),
+    afterCursor: integer("after_cursor").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
 
 export const projects = pgTable(
   "projects",
@@ -364,6 +393,8 @@ export const tasks = pgTable(
     trackedMinutes: integer("tracked_minutes"),
     /** Manual / timer tracked duration (whole seconds). */
     trackedDurationSeconds: integer("tracked_duration_seconds"),
+    /** Inbox “Updated” flag — external/agent edits while status qualifies. */
+    inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -435,6 +466,62 @@ export const habits = pgTable(
   ],
 );
 
+export type MeetingWorkingHours = {
+  weekdays: number[];
+  start: string;
+  end: string;
+};
+
+/** Public booking / calendar availability settings (one row per workspace). */
+export const meetingSchedulingSettings = pgTable(
+  "meeting_scheduling_settings",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    label: text("label").notNull().default("Book a meeting"),
+    timezone: text("timezone").notNull().default("Europe/Amsterdam"),
+    workingHours: jsonb("working_hours")
+      .$type<MeetingWorkingHours>()
+      .notNull()
+      .default(
+        sql`'{"weekdays":[1,2,3,4,5],"start":"09:00","end":"17:00"}'::jsonb`,
+      ),
+    weekdayHours: jsonb("weekday_hours").notNull(),
+    durationsMinutes: jsonb("durations_minutes")
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[30,60]'::jsonb`),
+    minNoticeMinutes: integer("min_notice_minutes").notNull().default(120),
+    bufferMinutes: integer("buffer_minutes").notNull().default(15),
+    horizonDays: integer("horizon_days").notNull().default(28),
+    defaultProjectId: text("default_project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    defaultOrganizationId: text("default_organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("meeting_scheduling_settings_workspace_id_uidx").on(
+      table.workspaceId,
+    ),
+  ],
+);
+
+export type DbMeetingSchedulingSettings =
+  typeof meetingSchedulingSettings.$inferSelect;
+
 /** Calendar meetings (workspace-scoped, M-1 display ids). */
 export const meetings = pgTable(
   "meetings",
@@ -460,10 +547,13 @@ export const meetings = pgTable(
       .default(sql`'[]'::jsonb`),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    /** video_call | in_person | phone_call */
+    format: text("format").notNull().default("video_call"),
     /** Manual / timer tracked duration (whole minutes; legacy). */
     trackedMinutes: integer("tracked_minutes"),
     /** Manual / timer tracked duration (whole seconds). */
     trackedDurationSeconds: integer("tracked_duration_seconds"),
+    inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1145,6 +1235,7 @@ export const emailThreads = pgTable(
     status: text("status").notNull().default("backlog"),
     priority: integer("priority").notNull().default(0),
     dueDate: timestamp("due_date", { withTimezone: true }),
+    inboxUpdatedAt: timestamp("inbox_updated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1222,3 +1313,32 @@ export type DbFinancialImportBatch = typeof financialImportBatches.$inferSelect;
 export type DbFinancialTransaction = typeof financialTransactions.$inferSelect;
 export type DbEmailThread = typeof emailThreads.$inferSelect;
 export type DbEmailThreadComment = typeof emailThreadComments.$inferSelect;
+
+/** Expo / APNs device tokens for inbox triage push (mobile). */
+export const devicePushTokens = pgTable(
+  "device_push_tokens",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    token: text("token").notNull(),
+    deviceName: text("device_name"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("device_push_tokens_workspace_token_uidx").on(
+      table.workspaceId,
+      table.token,
+    ),
+    index("device_push_tokens_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+export type DbDevicePushToken = typeof devicePushTokens.$inferSelect;

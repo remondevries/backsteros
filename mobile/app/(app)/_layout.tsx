@@ -7,7 +7,7 @@ import {
   type FloatingTabBarProps,
 } from "../../components/floating-tab-bar";
 import {
-  AreasNavIcon,
+  CalendarNavIcon,
   ComposeNavIcon,
   EmailNavIcon,
   FinanceNavIcon,
@@ -19,8 +19,11 @@ import {
   TasksNavIcon,
 } from "../../components/nav-icons";
 import { ProjectIcon } from "../../components/project-icon";
+import { CommandPaletteHost } from "../../components/command-palette/command-palette-modal";
+import { CommandPaletteShortcutListener } from "../../components/command-palette/command-palette-shortcut-listener";
 import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
 import { AgentMailProvider } from "../../lib/agentmail-context";
+import { CommandPaletteProvider } from "../../lib/use-command-palette";
 import { isPadDevice } from "../../lib/device";
 import { HabitConfettiHost } from "../../lib/habits/habit-complete-confetti";
 import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
@@ -35,8 +38,8 @@ const overflowTabOptions = {
 
 /** iPad promotes these into the tray — they must remain href-linkable. */
 const IPAD_TRAY_ROUTES = new Set([
-  "areas",
-  "development",
+  "calendar",
+  "projects",
   "email",
   "letters",
   "finance",
@@ -99,6 +102,16 @@ function SignedInTabs() {
           }}
         />
         <Tabs.Screen
+          name="calendar"
+          options={{
+            title: "Calendar",
+            tabBarAccessibilityLabel: "Calendar",
+            tabBarIcon: ({ color, size }) => (
+              <CalendarNavIcon color={color} size={size} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="tasks"
           options={{
             title: "Tasks",
@@ -111,12 +124,9 @@ function SignedInTabs() {
         <Tabs.Screen
           name="areas"
           options={{
-            ...tabOverflowOptions("areas"),
+            ...overflowTabOptions,
             title: "Areas",
-            tabBarAccessibilityLabel: "Areas",
-            tabBarIcon: ({ color, size }) => (
-              <AreasNavIcon color={color} size={size} />
-            ),
+            href: null,
           }}
         />
         <Tabs.Screen
@@ -133,7 +143,7 @@ function SignedInTabs() {
         <Tabs.Screen
           name="projects"
           options={{
-            ...overflowTabOptions,
+            ...tabOverflowOptions("projects"),
             title: "Projects",
             tabBarAccessibilityLabel: "Projects",
             tabBarIcon: ({ color, size }) => (
@@ -230,7 +240,11 @@ export default function AppLayout() {
 
   return (
     <AgentMailProvider>
-      <SignedInTabs />
+      <CommandPaletteProvider>
+        <CommandPaletteShortcutListener />
+        <CommandPaletteHost />
+        <SignedInTabs />
+      </CommandPaletteProvider>
     </AgentMailProvider>
   );
 }

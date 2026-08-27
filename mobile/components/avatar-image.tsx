@@ -1,5 +1,6 @@
+import { Image as ExpoImage } from "expo-image";
 import { useEffect, useState } from "react";
-import { Image, View } from "react-native";
+import { View } from "react-native";
 import { SvgUri } from "react-native-svg";
 
 import { isSvgAvatarUri } from "../lib/avatar-uri";
@@ -14,9 +15,8 @@ type Props = {
 };
 
 /**
- * Uploaded avatar image — raster via RN `Image`, `.svg` cache files via
- * `SvgUri` (RN `Image` cannot render SVG). Raster failures retry as SVG
- * before giving up, matching `FinanceAccountAvatar`.
+ * Uploaded avatar — raster via `expo-image` (disk/memory cache), `.svg` via
+ * `SvgUri`. Raster failures retry as SVG before giving up.
  */
 export function AvatarImage({ src, size, borderRadius, onFail }: Props) {
   const radius = borderRadius ?? size / 2;
@@ -45,8 +45,10 @@ export function AvatarImage({ src, size, borderRadius, onFail }: Props) {
   }
 
   return (
-    <Image
+    <ExpoImage
       source={{ uri: src }}
+      recyclingKey={src}
+      cachePolicy="memory-disk"
       style={{ width: size, height: size, borderRadius: radius }}
       accessibilityIgnoresInvertColors
       onError={() => setMode("svg")}

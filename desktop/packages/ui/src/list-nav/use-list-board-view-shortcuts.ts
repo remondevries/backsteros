@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import {
   LIST_BOARD_VIEW_SEARCH_PARAM,
   parseListBoardViewFromSearchParam,
@@ -85,21 +86,21 @@ export function useListBoardViewShortcuts({
   enabled = true,
   pathname,
   search = "",
-  commandPaletteOpen = false,
   onNavigate,
 }: {
   enabled?: boolean;
   pathname: string;
   search?: string;
-  commandPaletteOpen?: boolean;
   onNavigate: (href: string) => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.repeat) return;
-      if (commandPaletteOpen) return;
+      if (openRef.current) return;
       if (!shouldHandleProjectTaskViewShortcut(event)) return;
 
       const onDueTasksPage = isTasksDueListPathname(pathname);
@@ -165,5 +166,5 @@ export function useListBoardViewShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled, onNavigate, pathname, search]);
+  }, [enabled, onNavigate, openRef, pathname, search]);
 }

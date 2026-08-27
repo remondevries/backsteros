@@ -1,3 +1,5 @@
+import { invoke } from "./tauri-invoke-instrumentation";
+
 export const DESKTOP_OVERLAY_WINDOW_LABEL = "overlay";
 
 export const DESKTOP_OVERLAY_PALETTE_PATH = "/desktop-overlay/palette";
@@ -15,7 +17,6 @@ export type DesktopOverlayNavigatePayload = {
 
 export async function toggleDesktopOverlayPalette(): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("toggle_desktop_overlay_palette");
   } catch {
     // Ignore when not running in the desktop shell.
@@ -24,7 +25,6 @@ export async function toggleDesktopOverlayPalette(): Promise<void> {
 
 export async function toggleDesktopOverlayCompose(): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("toggle_desktop_overlay_compose");
   } catch {
     // Ignore when not running in the desktop shell.
@@ -52,7 +52,6 @@ export function isDesktopOverlayPath(pathname: string): boolean {
 
 export async function hideDesktopOverlayWindow(): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("hide_desktop_overlay");
   } catch {
     // Ignore when not running in the desktop shell.
@@ -63,7 +62,6 @@ export async function resizeDesktopOverlayWindow(
   height: number,
 ): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("resize_desktop_overlay", { height });
   } catch {
     // Ignore when not running in the desktop shell.
@@ -75,7 +73,6 @@ export async function completeDesktopOverlayNavigation(
 ): Promise<void> {
   try {
     const { emit } = await import("@tauri-apps/api/event");
-    const { invoke } = await import("@tauri-apps/api/core");
 
     await emit(DESKTOP_OVERLAY_NAVIGATE_EVENT, {
       href,

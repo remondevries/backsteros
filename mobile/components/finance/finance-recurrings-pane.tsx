@@ -1,14 +1,12 @@
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  SectionList,
   StyleSheet,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { categoryIconDisplay } from "../../lib/finance-categories";
@@ -19,8 +17,11 @@ import {
 } from "../../lib/finance-recurrings";
 import { ContentPageTitle } from "../content-page-title";
 import { rememberFinanceSection } from "../../lib/finance-section-memory";
-import { findSectionListLocation } from "../../lib/list-keyboard-nav";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../../lib/lists/flatten-grouped-sections";
 import { TabStackHeaderPlusButton } from "../../lib/tab-stack-options";
 import { colors, spacing } from "../../lib/theme";
 import { ui } from "../../lib/ui";
@@ -30,8 +31,10 @@ import {
   type FinanceRecurringRow,
 } from "../../lib/use-finance-recurrings";
 import { useListJkNavigation } from "../../lib/use-list-jk-navigation";
+import { BacksterGroupedList } from "../lists/index";
 
 type Section = {
+  key: string;
   title: string;
   data: FinanceRecurringRow[];
 };
@@ -48,13 +51,19 @@ export function FinanceRecurringsPane() {
   const sections = useMemo<Section[]>(
     () =>
       groupRecurringsByDate(recurrings.rows).map((group) => ({
+        key: group.label,
         title: group.label,
         data: group.recurrings,
       })),
     [recurrings.rows],
   );
 
-  const listRef = useRef<SectionList<FinanceRecurringRow, Section>>(null);
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () => flattenGroupedSections(sections),
+    [sections],
+  );
+
+  const listRef = useRef<FlashListRef<FlatGroupedRow<FinanceRecurringRow>>>(null);
   const itemIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
@@ -71,11 +80,11 @@ export function FinanceRecurringsPane() {
     onActivate: openRecurring,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -98,24 +107,15 @@ export function FinanceRecurringsPane() {
   }
 
   return (
-    <SectionList
+    <BacksterGroupedList
       ref={listRef}
-      style={ui.screen}
-      sections={sections as SectionListData<FinanceRecurringRow, Section>[]}
-      keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={false}
-      keyboardShouldPersistTaps="handled"
-      onScrollToIndexFailed={() => {}}
-      refreshControl={
-        <RefreshControl
-          refreshing={recurrings.pullRefreshing}
-          onRefresh={() => void recurrings.reload()}
-          tintColor={colors.muted}
-          colors={[colors.muted]}
-        />
-      }
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-      ListHeaderComponent={
+      sections={sections}
+      highlightedId={highlightedId}
+      estimatedItemSize={56}
+      estimatedHeaderSize={32}
+      refreshing={recurrings.pullRefreshing}
+      onRefresh={() => void recurrings.reload()}
+      listHeader={
         <ContentPageTitle
           title="Recurrings"
           trailing={
@@ -126,11 +126,11 @@ export function FinanceRecurringsPane() {
           }
         />
       }
-      ListEmptyComponent={<Text style={ui.empty}>No recurrings yet.</Text>}
-      renderSectionHeader={({ section }) => (
+      emptyText="No recurrings yet."
+      renderSectionHeader={(section) => (
         <Text style={ui.sectionHeader}>{section.title}</Text>
       )}
-      renderItem={({ item }) => {
+      renderItem={(item, { highlighted }) => {
         const icon = categoryIconDisplay(item.icon);
         const next = advanceMonthlyNextDate(item.nextDate);
         const categoryName = item.categoryId
@@ -143,7 +143,7 @@ export function FinanceRecurringsPane() {
             onPress={() => openRecurring(item.id)}
             style={({ pressed }) => [
               styles.row,
-              highlightedId === item.id ? ui.keyboardNavHighlight : null,
+              highlighted ? ui.keyboardNavHighlight : null,
               pressed ? { backgroundColor: colors.rowPressed } : null,
             ]}
           >

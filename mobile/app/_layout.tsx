@@ -9,11 +9,13 @@ import { StatusBar } from "expo-status-bar";
 import { Text, View } from "react-native";
 
 import { AppErrorBoundary } from "../components/app-error-boundary";
+import { MobileCoreApiUrlProvider } from "../lib/api-url-context";
 import { getMobileEnvironment } from "../lib/env";
 import { PowerSyncProvider } from "../lib/powersync-context";
 import { initSentry, wrapRoot } from "../lib/sentry";
 import { NavigationShortcutGateProvider } from "../lib/navigation-shortcut-gate";
-import { TabBarVisibilityProvider } from "../lib/tab-bar-visibility";
+import { TabBarVisibilityProvider, TabBarDetailRouteHider } from "../lib/tab-bar-visibility";
+import { TrackedTimerProvider } from "../lib/tracked-timer/tracked-timer-context";
 import { tabDetailScreenOptions, iosStackGestureOptions } from "../lib/tab-stack-options";
 import { colors, navigationTheme } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -64,9 +66,12 @@ function RootLayout() {
       <View style={ui.screen}>
         <ThemeProvider value={navigationTheme}>
           <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+            <MobileCoreApiUrlProvider>
             <ClerkLoaded>
               <PowerSyncProvider>
+                <TrackedTimerProvider>
                 <TabBarVisibilityProvider>
+                  <TabBarDetailRouteHider />
                   <NavigationShortcutGateProvider>
                     <EscapeBackNavigation />
                     <Stack screenOptions={stackScreenOptions}>
@@ -115,6 +120,7 @@ function RootLayout() {
                       options={rootDetailOptions}
                     />
                     <Stack.Screen name="letter/[id]" options={rootDetailOptions} />
+                    <Stack.Screen name="meeting/[id]" options={rootDetailOptions} />
                     <Stack.Screen name="create/task" options={rootDetailOptions} />
                     <Stack.Screen
                       name="create/document"
@@ -140,8 +146,10 @@ function RootLayout() {
                     <StatusBar style="light" backgroundColor={colors.background} />
                   </NavigationShortcutGateProvider>
                 </TabBarVisibilityProvider>
+                </TrackedTimerProvider>
               </PowerSyncProvider>
             </ClerkLoaded>
+            </MobileCoreApiUrlProvider>
           </ClerkProvider>
         </ThemeProvider>
       </View>

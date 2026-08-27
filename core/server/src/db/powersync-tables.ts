@@ -21,6 +21,7 @@ export const POWERSYNC_PUBLICATION_TABLES = [
   "cashflow_planner_entries",
   "habits",
   "meetings",
+  "task_comments",
 ] as const;
 
 export type PowerSyncPublicationTable =

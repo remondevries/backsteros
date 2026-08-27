@@ -60,10 +60,15 @@ const tasks = new Table(
     priority: column.integer,
     sort_order: column.integer,
     due_date: column.text,
+    due_end_date: column.text,
     triaged_at: column.text,
     inbox: column.integer,
     links: column.text,
     agent_chat_id: column.text,
+    agent_created_at: column.text,
+    agent_inbox_approved_at: column.text,
+    tracked_minutes: column.integer,
+    tracked_duration_seconds: column.integer,
     completed_at: column.text,
     habit_id: column.text,
     ...commonDates,
@@ -123,6 +128,7 @@ const organizations = new Table({
   avatar_content_type: column.text,
   sort_order: column.integer,
   notes: column.text,
+  moneybird_contact_id: column.text,
   ...commonDates,
 });
 
@@ -187,6 +193,7 @@ const workspace_settings = new Table({
   updated_at: column.text,
 });
 
+// Tier A/B — mirrors `core/packages/powersync-schema` (workspace_id omitted; publication-scoped).
 const areas = new Table({
   name: column.text,
   parent: column.text,
@@ -290,6 +297,38 @@ const habits = new Table({
   ...commonDates,
 });
 
+const meetings = new Table({
+  number: column.integer,
+  title: column.text,
+  summary: column.text,
+  notes: column.text,
+  transcription: column.text,
+  status: column.text,
+  project_id: column.text,
+  organization_id: column.text,
+  attendee_contact_ids: column.text,
+  start_at: column.text,
+  end_at: column.text,
+  tracked_minutes: column.integer,
+  tracked_duration_seconds: column.integer,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const task_comments = new Table(
+  {
+    task_id: column.text,
+    parent_comment_id: column.text,
+    author_user_id: column.text,
+    author_contact_id: column.text,
+    author_email: column.text,
+    body: column.text,
+    resolved_at: column.text,
+    ...commonDates,
+  },
+  { indexes: { task: ["task_id"], parent: ["parent_comment_id"] } },
+);
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -307,6 +346,8 @@ export const appSchema = new Schema({
   financial_recurrings,
   cashflow_planner_entries,
   habits,
+  meetings,
+  task_comments,
 });
 
 export type UploadEntry = {
@@ -450,7 +491,13 @@ export function createPowerSyncDatabase(
     schema: appSchema,
     database: useSqlJs
       ? new SQLJSOpenFactory({ dbFilename })
-      : new OPSqliteOpenFactory({ dbFilename }),
+      : new OPSqliteOpenFactory({
+          dbFilename,
+          sqliteOptions: {
+            // PowerSync RN defaults to ~50MB; keep explicit for tuning.
+            cacheSizeKb: 50 * 1024,
+          },
+        }),
     // Avoid aggressive internal reconnect while native threads are scarce.
     retryDelayMs: 10_000,
   });

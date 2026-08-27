@@ -14,13 +14,16 @@ export function nudgeDynamicIslandTasksRefresh(): void {
     let wroteHome = false;
 
     try {
-      const { homeDir, join } = await import("@tauri-apps/api/path");
-      const { mkdir, writeTextFile } = await import("@tauri-apps/plugin-fs");
-      const home = await homeDir();
-      const dir = await join(home, ".config/dynamic-island");
-      const file = await join(home, REFRESH_RELATIVE_PATH);
-      await mkdir(dir, { recursive: true });
-      await writeTextFile(file, stamp);
+      const { BaseDirectory, mkdir, writeTextFile } = await import(
+        "@tauri-apps/plugin-fs"
+      );
+      await mkdir(".config/dynamic-island", {
+        baseDir: BaseDirectory.Home,
+        recursive: true,
+      });
+      await writeTextFile(REFRESH_RELATIVE_PATH, stamp, {
+        baseDir: BaseDirectory.Home,
+      });
       wroteHome = true;
     } catch (err) {
       console.warn("[dynamic-island] home refresh nudge failed", err);

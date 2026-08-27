@@ -35,6 +35,7 @@ export function filterProjectsByArea<T extends { area: ProjectArea | null }>(
   area: ProjectAreaFilter,
 ): T[] {
   if (area === PROJECT_AREA_FILTER_ALL) {
+    // Include projects with no parent area so All is a true unfiltered list.
     return [...projects];
   }
   return projects.filter((project) => project.area === area);

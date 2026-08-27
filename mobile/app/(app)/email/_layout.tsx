@@ -39,7 +39,6 @@ export default function EmailLayout() {
         <Stack.Screen
           name="index"
           options={{
-            headerShown: false,
             contentStyle: { backgroundColor: colors.background },
           }}
         />

@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { getMobileEnvironment } from "./env";
+import { useMobileCoreApiUrl } from "./api-url-context";
 import { getOrCreateDeviceId } from "./device-id";
 import {
   BacksterPowerSyncConnector,
@@ -29,6 +29,23 @@ type PowerSyncStatus =
   | "connecting"
   | "ready"
   | "error";
+
+/** Tier A/B tables that support local PATCH + PowerSync upload. */
+export type SyncedMetadataTable =
+  | "tasks"
+  | "projects"
+  | "letters"
+  | "documents"
+  | "contacts"
+  | "organizations"
+  | "habits"
+  | "areas"
+  | "bank_accounts"
+  | "financial_categories"
+  | "financial_goals"
+  | "financial_recurrings"
+  | "meetings"
+  | "task_comments";
 
 type SyncState = {
   status: PowerSyncStatus;
@@ -52,6 +69,20 @@ type SyncState = {
     id: string,
     values: Record<string, unknown>,
   ) => Promise<void>;
+  patchHabit: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchArea: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchMeeting: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchMetadata: (
+    table: SyncedMetadataTable,
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<void>;
+  createMetadata: (
+    table: SyncedMetadataTable,
+    values: Record<string, unknown>,
+    id?: string,
+  ) => Promise<string>;
+  flushCrudUpload: () => Promise<void>;
   retry: () => Promise<void>;
 };
 
@@ -82,6 +113,24 @@ const idleState: SyncState = {
   patchOrganization: async () => {
     throw new Error("Offline database is not ready");
   },
+  patchHabit: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  patchArea: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  patchMeeting: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  patchMetadata: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  createMetadata: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  flushCrudUpload: async () => {
+    throw new Error("Offline database is not ready");
+  },
   retry: async () => {},
 };
 
@@ -105,7 +154,7 @@ async function closeDatabase(
 
 function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   const { isLoaded, userId, sessionId, getToken } = useAuth();
-  const { apiUrl } = getMobileEnvironment();
+  const { localApiUrl } = useMobileCoreApiUrl();
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   // Clerk session id string can churn; only react to presence.
@@ -125,6 +174,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   });
   const [restFallbackAllowed, setRestFallbackAllowed] = useState(false);
   const databaseRef = useRef<PowerSyncDatabase | null>(null);
+  const connectorRef = useRef<BacksterPowerSyncConnector | null>(null);
   const identityRef = useRef<string | null>(null);
   /** Serialize open/close — overlapping OP-SQLite opens exhaust device threads. */
   const transitionRef = useRef(Promise.resolve());
@@ -176,6 +226,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
 
       const previous = databaseRef.current;
       databaseRef.current = null;
+      connectorRef.current = null;
       if (previous) {
         await closeDatabase(previous, userChanged);
       }
@@ -196,7 +247,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
 
         const next = createPowerSyncDatabase(userId, { forceSqlJs });
         const connector = new BacksterPowerSyncConnector(
-          apiUrl,
+          localApiUrl,
           async () => {
             try {
               const token = await getTokenRef.current({ skipCache: true });
@@ -208,6 +259,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
           },
           deviceId,
         );
+        connectorRef.current = connector;
         const dispose = next.registerListener({
           statusChanged: (nextStatus) => {
             if (generation !== generationRef.current) return;
@@ -326,7 +378,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     };
     // sessionId string intentionally omitted — only hasSession (boolean).
     // getToken omitted — Clerk often returns a new function identity each render.
-  }, [apiUrl, hasSession, isLoaded, reconnectNonce, userId]);
+  }, [hasSession, isLoaded, localApiUrl, reconnectNonce, userId]);
 
   const retry = useCallback(async () => {
     const now = Date.now();
@@ -338,13 +390,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
 
   const patchRow = useCallback(
     async (
-      table:
-        | "tasks"
-        | "projects"
-        | "letters"
-        | "documents"
-        | "contacts"
-        | "organizations",
+      table: SyncedMetadataTable,
       id: string,
       values: Record<string, unknown>,
     ) => {
@@ -399,6 +445,71 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
       patchRow("organizations", id, values),
     [patchRow],
   );
+
+  const patchHabit = useCallback(
+    (id: string, values: Record<string, unknown>) =>
+      patchRow("habits", id, values),
+    [patchRow],
+  );
+
+  const patchArea = useCallback(
+    (id: string, values: Record<string, unknown>) =>
+      patchRow("areas", id, values),
+    [patchRow],
+  );
+
+  const patchMeeting = useCallback(
+    (id: string, values: Record<string, unknown>) =>
+      patchRow("meetings", id, values),
+    [patchRow],
+  );
+
+  const patchMetadata = useCallback(
+    (table: SyncedMetadataTable, id: string, values: Record<string, unknown>) =>
+      patchRow(table, id, values),
+    [patchRow],
+  );
+
+  const createMetadata = useCallback(
+    async (
+      table: SyncedMetadataTable,
+      values: Record<string, unknown>,
+      id?: string,
+    ) => {
+      const db = databaseRef.current;
+      if (!db) throw new Error("Offline database is not ready");
+      const rowId = id ?? crypto.randomUUID().replace(/-/g, "");
+      const now = new Date().toISOString();
+      const complete = {
+        ...values,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      };
+      const entries = Object.entries(complete);
+      const columns = entries.map(([key]) => {
+        if (!/^[a-z_]+$/.test(key)) throw new Error("Invalid metadata field");
+        return key;
+      });
+      await db.execute(
+        `INSERT INTO ${table} (id, ${columns.join(", ")}) VALUES (?, ${columns
+          .map(() => "?")
+          .join(", ")})`,
+        [rowId, ...entries.map(([, value]) => value)],
+      );
+      return rowId;
+    },
+    [],
+  );
+
+  const flushCrudUpload = useCallback(async () => {
+    const db = databaseRef.current;
+    const connector = connectorRef.current;
+    if (!db || !connector) {
+      throw new Error("Offline database is not ready");
+    }
+    await connector.uploadData(db);
+  }, []);
 
   const sqliteReady = Boolean(database?.ready);
   // Only trust local rows after PowerSync has completed at least one sync.
@@ -475,14 +586,26 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
       patchDocument,
       patchContact,
       patchOrganization,
+      patchHabit,
+      patchArea,
+      patchMeeting,
+      patchMetadata,
+      createMetadata,
+      flushCrudUpload,
       retry,
     };
   }, [
+    createMetadata,
     database,
+    flushCrudUpload,
     initError,
     isLoaded,
     patchContact,
     patchDocument,
+    patchHabit,
+    patchArea,
+    patchMeeting,
+    patchMetadata,
     patchLetter,
     patchOrganization,
     patchProject,

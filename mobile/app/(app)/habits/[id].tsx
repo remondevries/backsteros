@@ -41,16 +41,9 @@ export default function HabitDetailScreen() {
   // "not found" after load settles; cold deep-links get back chrome only.
   if (!isAll && !habit) {
     if (data.loading) {
-      const year =
-        Number(data.todayYmd.slice(0, 4)) || new Date().getFullYear();
       return (
         <View style={styles.phone}>
-          <HabitDetailNavHeader
-            year={year}
-            maxYear={year + 25}
-            onYearChange={() => {}}
-            onBack={handleBack}
-          />
+          <HabitDetailNavHeader onBack={handleBack} />
         </View>
       );
     }

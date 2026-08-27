@@ -26,7 +26,7 @@ export type TaskItemListRowTask = {
   assignee_name?: string | null;
   assigneeAvatarSrc?: string | null;
   /** Email thread rows render an email type icon (desktop `TaskItemRow`). */
-  item_type?: "task" | "email" | null;
+  item_type?: "task" | "email" | "meeting" | null;
 };
 
 type Props = {

@@ -19,6 +19,8 @@ import {
   putObject,
   snippetForContent,
 } from "../lib/storage.js";
+import { syncDocumentMetadataFromStorageKey } from "./vault-document-metadata.js";
+import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
 
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
@@ -292,6 +294,19 @@ export async function getDocumentContent(workspaceId: string, id: string) {
   }
 
   if (row.byteSize === 0) {
+    try {
+      const object = await getObject(row.storageKey);
+      if (object.byteSize > 0) {
+        await syncDocumentMetadataFromStorageKey(workspaceId, row.storageKey);
+        const refreshed = await getDocumentRow(workspaceId, id);
+        return {
+          row: refreshed ?? row,
+          content: object.body,
+        };
+      }
+    } catch {
+      // metadata says empty and no vault file — expected for new docs
+    }
     return {
       row,
       content: "",
@@ -392,10 +407,90 @@ export async function reorderDocuments(workspaceId: string, orderedIds: string[]
   });
 }
 
+export async function patchDocumentContentMetadataFromSyncPayload(
+  workspaceId: string,
+  id: string,
+  payload: Record<string, unknown>,
+  executor: DbExecutor = db,
+) {
+  const byteSize = payload.byte_size ?? payload.byteSize;
+  const contentVersion = payload.content_version ?? payload.contentVersion;
+  if (byteSize === undefined && contentVersion === undefined) {
+    return null;
+  }
+
+  const existing = await getDocumentRow(workspaceId, id, executor);
+  if (!existing) {
+    return null;
+  }
+
+  const nextByteSize =
+    byteSize === undefined || byteSize === null
+      ? existing.byteSize
+      : Number(byteSize);
+  if (
+    Number.isFinite(nextByteSize) &&
+    nextByteSize === 0 &&
+    (existing.byteSize ?? 0) > 0
+  ) {
+    return existing;
+  }
+
+  const nextContentVersion =
+    contentVersion === undefined || contentVersion === null
+      ? existing.contentVersion
+      : Number(contentVersion);
+  const checksum =
+    payload.checksum === undefined
+      ? existing.checksum
+      : (payload.checksum as string | null);
+  const snippet =
+    payload.snippet === undefined
+      ? existing.snippet
+      : (payload.snippet as string | null);
+  const contentEtag =
+    payload.content_etag === undefined && payload.contentEtag === undefined
+      ? existing.contentEtag
+      : ((payload.content_etag ?? payload.contentEtag) as string | null);
+  const updatedAtRaw = payload.updated_at ?? payload.updatedAt;
+  const updatedAt =
+    updatedAtRaw != null ? new Date(String(updatedAtRaw)) : new Date();
+
+  const [row] = await executor
+    .update(documents)
+    .set({
+      byteSize: Number.isFinite(nextByteSize) ? nextByteSize : existing.byteSize,
+      contentVersion: Number.isFinite(nextContentVersion)
+        ? nextContentVersion
+        : existing.contentVersion,
+      checksum,
+      snippet,
+      contentEtag,
+      updatedAt,
+    })
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
+    .returning();
+
+  return row ?? null;
+}
+
+/** Mirror Tier-D bytes on local vault after cloud leader accepted content. */
+export async function hydrateLocalDocumentVaultContent(
+  workspaceId: string,
+  id: string,
+  content: string,
+): Promise<void> {
+  if (!content.length) return;
+  const row = await getDocumentRow(workspaceId, id);
+  if (!row?.storageKey) return;
+  await putObject(row.storageKey, content);
+}
+
 export async function updateDocumentContent(
   workspaceId: string,
   id: string,
   input: UpdateDocumentContentInput,
+  options?: { mutationId?: string; deviceId?: string },
 ) {
   const existing = await getDocumentRow(workspaceId, id);
   if (!existing) {
@@ -407,6 +502,12 @@ export async function updateDocumentContent(
     input.ifMatchVersion !== existing.contentVersion
   ) {
     throw new Error("CONTENT_VERSION_CONFLICT");
+  }
+
+  // Same invariant as vault push: empty must never beat a non-empty body.
+  const incomingBytes = Buffer.byteLength(input.content ?? "", "utf8");
+  if (incomingBytes === 0 && (existing.byteSize ?? 0) > 0) {
+    throw new Error("EMPTY_BODY_OVER_NONEMPTY");
   }
 
   try {
@@ -427,6 +528,31 @@ export async function updateDocumentContent(
       })
       .where(and(eq(documents.workspaceId, workspaceId), eq(documents.id, id)))
       .returning();
+
+    if (updated) {
+      await recordDocumentContentSyncEvent({
+        workspaceId,
+        documentId: updated.id,
+        mutationId:
+          options?.mutationId ??
+          `rest:document-content:${updated.id}:${updated.contentVersion}`,
+        deviceId: options?.deviceId,
+        payload: {
+          id: updated.id,
+          type: updated.type,
+          project_id: updated.projectId,
+          path: updated.path,
+          title: updated.title,
+          storage_key: updated.storageKey,
+          byte_size: updated.byteSize,
+          checksum: updated.checksum,
+          snippet: updated.snippet,
+          content_version: updated.contentVersion,
+          content_etag: updated.contentEtag,
+          updated_at: updated.updatedAt.toISOString(),
+        },
+      });
+    }
 
     return updated ?? null;
   } catch (error) {

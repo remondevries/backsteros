@@ -8,10 +8,7 @@ import {
   type Ref,
 } from "react";
 
-import {
-  CALENDAR_PAGE_MODE_OPTIONS,
-  type CalendarPageMode,
-} from "../../calendar/calendar-page-mode.js";
+import { type CalendarPageMode } from "../../calendar/calendar-page-mode.js";
 import {
   buildTimetrackingDayGroups,
   type TimetrackingMonthGroup,
@@ -28,13 +25,13 @@ import {
   keyboardNavItemProps,
 } from "../../list-nav/keyboard-nav-item.js";
 import { isKeyboardNavHighlighted } from "../list-nav/list-keyboard-navigation-provider.js";
+import { CalendarSidePanelModeFooter } from "./calendar-side-panel-mode-footer.js";
 import { ContentSidePanelHeader } from "../content/content-side-panel-header.js";
 import {
   ContentSidePanelEmpty,
   ContentSidePanelList,
 } from "../content/content-side-panel-list.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
-import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 
 export type CalendarTimetrackingSidePanelViewProps = {
   pageMode: CalendarPageMode;
@@ -208,14 +205,10 @@ export function CalendarTimetrackingSidePanelView({
           </ContentSidePanelList>
         )}
       </div>
-      <div className="calendar-side-panel__footer">
-        <SegmentedPillToggle
-          value={pageMode}
-          options={CALENDAR_PAGE_MODE_OPTIONS}
-          onChange={onPageModeChange}
-          ariaLabel="Calendar page mode"
-        />
-      </div>
+      <CalendarSidePanelModeFooter
+        pageMode={pageMode}
+        onPageModeChange={onPageModeChange}
+      />
     </div>
   );
 }

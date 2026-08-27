@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  apiFillSourceForColdStart,
   fillMissingCodebaseFieldsFromApi,
   fillMissingDueDatesFromApi,
   fillMissingLinksFromApi,
@@ -10,7 +11,33 @@ import {
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
   preservePendingApiRows,
+  resolveLocalOrApiRows,
 } from "./merge-local-and-api.ts";
+
+test("resolveLocalOrApiRows prefers local when any local rows exist", () => {
+  const resolved = resolveLocalOrApiRows(
+    [{ id: "1", updatedAt: "2026-01-01T00:00:00.000Z", title: "local" }],
+    [{ id: "1", updatedAt: "2026-01-02T00:00:00.000Z", title: "api" }],
+  );
+  assert.equal(resolved[0]?.title, "local");
+  assert.equal(resolved.length, 1);
+});
+
+test("resolveLocalOrApiRows uses API when local is empty", () => {
+  const resolved = resolveLocalOrApiRows(
+    [],
+    [{ id: "1", updatedAt: "2026-01-02T00:00:00.000Z", title: "api" }],
+  );
+  assert.equal(resolved[0]?.title, "api");
+});
+
+test("apiFillSourceForColdStart is null once local has rows", () => {
+  assert.equal(
+    apiFillSourceForColdStart([{ id: "1" }], [{ id: "1" }]),
+    null,
+  );
+  assert.deepEqual(apiFillSourceForColdStart([], [{ id: "1" }]), [{ id: "1" }]);
+});
 
 test("dropStaleLocalHabitTasks removes local-only habit day copies", () => {
   const dropped = dropStaleLocalHabitTasks(

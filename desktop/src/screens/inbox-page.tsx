@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
-  InboxDetailSkeleton,
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   TaskDetailView,
@@ -22,6 +21,7 @@ import {
 
 import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
+import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
@@ -35,7 +35,21 @@ import {
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellLocation,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceDocuments,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
+import { parseTaskLinks } from "../lib/workspace/row-mappers";
 
 type MovedToProjectNotice = {
   projectKey: string;
@@ -44,14 +58,15 @@ type MovedToProjectNotice = {
 };
 
 function resolveInboxTaskFromWorkspace(
-  workspace: ReturnType<typeof useDesktopWorkspaceData>,
-  itemId: string,
-): InboxTaskListItem | null {
-  const fromList = findInboxItemBySlugOrId(workspace.inboxItems, itemId);
+  inboxItems: ReturnType<typeof useDesktopWorkspaceMeta>["inboxItems"],
+  allTasks: ReturnType<typeof useDesktopWorkspaceTasks>["allTasks"],
+  taskDescriptions: ReturnType<typeof useDesktopWorkspaceTasks>["taskDescriptions"],
+  itemId: string): InboxTaskListItem | null {
+  const fromList = findInboxItemBySlugOrId(inboxItems, itemId);
   if (fromList?.kind === "task") return fromList;
 
   const normalized = itemId.trim().toLowerCase();
-  const full = workspace.allTasks.find((task) => {
+  const full = allTasks.find((task) => {
     if (task.id === itemId) return true;
     const slug = getInboxTaskRouteSlugForTask({
       number: task.number,
@@ -78,7 +93,7 @@ function resolveInboxTaskFromWorkspace(
           ? full.dueDate.getTime()
           : null,
     updatedAt: full.updatedAt ?? Date.now(),
-    description: workspace.taskDescriptions[full.id] ?? null,
+    description: taskDescriptions[full.id] ?? null,
     projectId: full.projectId,
     projectKey: full.projectKey ?? null,
     projectName: full.projectName ?? null,
@@ -88,41 +103,63 @@ function resolveInboxTaskFromWorkspace(
 }
 
 export function InboxPage() {
+  return <InboxPageBody />;
+}
+
+function InboxPageBody() {
   const navigate = useNavigate();
-  const { itemId } = useParams<{ itemId?: string }>();
-  const workspace = useDesktopWorkspaceData();
+  const location = useShellLocation();
+  const { itemId: routeItemId } = useShellParams() as { itemId?: string };
+  const keepAliveActive = useKeepAliveActive();
+  const keepAliveFrozen = useKeepAliveFrozen();
+  const { inboxItems } = useDesktopWorkspaceMeta();
+  const { allTasks, taskDescriptions, taskDetails } =
+    useDesktopWorkspaceTasks();
+  const { documents } = useDesktopWorkspaceDocuments();
+  const { contacts } = useDesktopWorkspacePeople();
+  const { projects } = useDesktopWorkspaceProjects();
+  const workspace = useDesktopWorkspaceActions();
   const agentMail = useAgentMail();
   const { unpinInboxListItem } = useInboxListSessionPin();
   const documentLinkOptions = useMemo(
-    () => buildDocumentLinkOptions(workspace.documents),
-    [workspace.documents],
-  );
+    () => buildDocumentLinkOptions(documents),
+    [documents]);
   const emailLinkOptions = useMemo(
-    () => buildEmailLinkOptions(agentMail.messages),
-    [agentMail.messages],
-  );
+    () =>
+      keepAliveFrozen ? [] : buildEmailLinkOptions(agentMail.messages),
+    [agentMail.messages, keepAliveFrozen]);
   const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
-    null,
-  );
+    null);
+
+  const firstInboxHref = getFirstInboxItemHref(inboxItems);
+  const firstInboxItemId =
+    !routeItemId && firstInboxHref?.startsWith("/inbox/")
+      ? firstInboxHref.slice("/inbox/".length).split("/")[0]
+      : undefined;
+  const itemId = routeItemId ?? firstInboxItemId;
 
   const selectedTask = itemId
-    ? resolveInboxTaskFromWorkspace(workspace, itemId)
+    ? resolveInboxTaskFromWorkspace(
+        inboxItems,
+        allTasks,
+        taskDescriptions,
+        itemId)
     : null;
 
   const inList = selectedTask
-    ? workspace.inboxItems.some((item) => item.id === selectedTask.id)
+    ? inboxItems.some((item) => item.id === selectedTask.id)
     : false;
 
   // Inbox list items omit assignee; join full task row for detail chrome.
   const selectedTaskRecord = selectedTask
-    ? (workspace.allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
+    ? (allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
     : null;
 
-  useEnsureProjectVault(selectedTaskRecord?.projectId);
+  useEnsureProjectVault(
+    keepAliveActive ? selectedTaskRecord?.projectId : null);
 
   const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
-    selectedTask?.id ?? "",
-  );
+    selectedTask?.id ?? "");
 
   const displayId = selectedTask ? getInboxItemDisplayId(selectedTask) : null;
   useDesktopSectionBreadcrumb(
@@ -136,49 +173,33 @@ export function InboxPage() {
           },
         ]
       : [{ label: "Inbox" }],
-  );
+    { enabled: keepAliveActive });
 
   useEffect(() => {
     setMovedNotice(null);
   }, [itemId]);
 
-  useEffect(() => {
-    // Only auto-open the first item when the route has no selection.
-    // When the open task leaves the inbox list (e.g. assigned to a project),
-    // keep the detail pane mounted so the user can finish editing.
-    if (itemId) return;
-    const first = getFirstInboxItemHref(workspace.inboxItems);
-    if (first) {
-      navigate(first, { replace: true });
-    }
-  }, [itemId, navigate, workspace.inboxItems]);
-
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    workspace.contacts,
-  );
+    keepAliveFrozen ? [] : contacts);
 
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
-        withAvatarSrc(workspace.contacts, contactAvatarSrc),
-      ),
-    [contactAvatarSrc, workspace.contacts],
-  );
+        withAvatarSrc(contacts, contactAvatarSrc)),
+    [contactAvatarSrc, contacts]);
 
   const projectOptions = useMemo(
     () =>
       buildProjectDropdownOptions(
-        workspace.projects.map((project) => ({
+        projects.map((project) => ({
           key: project.key,
           name: project.name,
           icon: project.icon,
           type: project.type,
         })),
-        { includeNone: false },
-      ),
-    [workspace.projects],
-  );
+        { includeNone: false }),
+    [projects]);
 
   const handleDeleteTask = useCallback(async () => {
     if (!selectedTask) {
@@ -186,7 +207,7 @@ export function InboxPage() {
     }
     try {
       await workspace.softDeleteTask(selectedTask.id);
-      navigate("/inbox", { replace: true });
+      navigateToHref(navigate, "/inbox", { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -205,20 +226,19 @@ export function InboxPage() {
       const projectKey = selectedTask.projectKey ?? null;
       const project =
         projectKey != null
-          ? (workspace.projects.find((entry) => entry.key === projectKey) ??
+          ? (projects.find((entry) => entry.key === projectKey) ??
             null)
           : selectedTask.projectId
-            ? (workspace.projects.find(
-                (entry) => entry.id === selectedTask.projectId,
-              ) ?? null)
+            ? (projects.find(
+                (entry) => entry.id === selectedTask.projectId) ?? null)
             : null;
-      navigate(
+      navigateToHref(
+        navigate,
         resolveDuplicatedTaskHref({
           id: created.id,
           number: created.number,
           projectKey: project?.key ?? projectKey,
-        }),
-      );
+        }));
       return { ok: true as const };
     } catch (error) {
       return {
@@ -227,13 +247,13 @@ export function InboxPage() {
           error instanceof Error ? error.message : "Failed to duplicate task.",
       };
     }
-  }, [navigate, selectedTask, workspace]);
+  }, [navigate, projects, selectedTask, workspace]);
 
   const handleProjectChange = useCallback(
     (next: string | null) => {
       if (!selectedTask) return;
       const nextProject = next
-        ? workspace.projects.find((entry) => entry.key === next) ?? null
+        ? projects.find((entry) => entry.key === next) ?? null
         : null;
       void workspace.patchTask(selectedTask.id, {
         projectId: nextProject?.id ?? null,
@@ -251,17 +271,13 @@ export function InboxPage() {
         setMovedNotice(null);
       }
     },
-    [selectedTask, workspace],
-  );
+    [projects, selectedTask, workspace]);
 
-  if (!itemId || !selectedTask) {
-    if (!workspace.ready || workspace.inboxItems.length > 0) {
-      return <InboxDetailSkeleton />;
-    }
+  if (!selectedTask) {
     return (
       <div className="inbox-detail-layout">
         <div className="inbox-detail-empty">
-          <p>Inbox is empty.</p>
+          <p>{itemId ? "Item not found." : "Inbox is empty."}</p>
         </div>
       </div>
     );
@@ -272,15 +288,14 @@ export function InboxPage() {
     selectedTaskRecord?.projectKey ??
     null;
   const project =
-    workspace.projects.find((entry) => entry.key === resolvedProjectKey) ??
+    projects.find((entry) => entry.key === resolvedProjectKey) ??
     (selectedTaskRecord?.projectId
-      ? workspace.projects.find(
-          (entry) => entry.id === selectedTaskRecord.projectId,
-        ) ?? null
+      ? projects.find(
+          (entry) => entry.id === selectedTaskRecord.projectId) ?? null
       : null);
   const resolvedAssigneeId = selectedTaskRecord?.assigneeId ?? null;
   const assignee =
-    workspace.contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
+    contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
   const deleteEntityLabel = displayId
     ? `task ${displayId}`
     : "task";
@@ -297,11 +312,15 @@ export function InboxPage() {
 
   return (
     <>
-      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
-      <RegisterEntityDeleteAction
-        entityLabel={deleteEntityLabel}
-        onDelete={handleDeleteTask}
-      />
+      {keepAliveActive ? (
+        <>
+          <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
+          <RegisterEntityDeleteAction
+            entityLabel={deleteEntityLabel}
+            onDelete={handleDeleteTask}
+          />
+        </>
+      ) : null}
       <DesktopTaskLayout
         taskId={selectedTask.id}
         projectId={project?.id ?? null}
@@ -317,7 +336,7 @@ export function InboxPage() {
           number: selectedTask.number ?? 0,
           title: selectedTask.title,
           description:
-            workspace.taskDescriptions[selectedTask.id] ??
+            taskDescriptions[selectedTask.id] ??
             selectedTask.description ??
             null,
           projectKey: resolvedProjectKey,
@@ -373,10 +392,11 @@ export function InboxPage() {
             selectedTask.trackedDurationSeconds ??
             null,
           description:
-            workspace.taskDescriptions[selectedTask.id] ??
+            taskDescriptions[selectedTask.id] ??
             selectedTask.description ??
             "",
-          links: workspace.taskLinks[selectedTask.id] ?? [],
+          links: parseTaskLinks(
+            taskDetails[selectedTask.id]?.links),
           displayId: getInboxItemDisplayId(selectedTask),
         }}
         statusDisabled={statusDisabled}
@@ -426,7 +446,7 @@ export function InboxPage() {
         documentLinkOptions={documentLinkOptions}
         emailLinkOptions={emailLinkOptions}
         onNavigateLink={(href) => {
-          navigate(href);
+          navigateToHref(navigate, href);
         }}
         onSaveTitle={async (title) => {
           const trimmed = title.trim();
@@ -467,20 +487,21 @@ export function InboxPage() {
         }}
         onAgentInboxApprove={() => {
           const nextHref = getInboxHrefAfterRemovingItem(
-            workspace.inboxItems,
-            selectedTask.id,
-          );
+            inboxItems,
+            selectedTask.id);
           unpinInboxListItem(selectedTask.id);
           void workspace.patchTask(selectedTask.id, {
             agentInboxApproved: true,
           });
-          navigate(nextHref ?? "/inbox", { replace: true });
+          navigateToHref(navigate, nextHref ?? "/inbox", {
+            replace: true,
+          });
         }}
         belowDescription={
           <DesktopTaskActivityPanel
             taskId={selectedTask.id}
             taskUpdatedAt={selectedTaskRecord?.updatedAt ?? null}
-            contacts={workspace.contacts}
+            contacts={contacts}
             contactAvatarSrc={contactAvatarSrc}
             patchTaskValues={async (values) => {
               await workspace.patchTask(selectedTask.id, values);
@@ -489,7 +510,7 @@ export function InboxPage() {
               number: selectedTask.number ?? 0,
               title: selectedTask.title,
               description:
-                workspace.taskDescriptions[selectedTask.id] ??
+                taskDescriptions[selectedTask.id] ??
                 selectedTask.description ??
                 null,
               projectKey: resolvedProjectKey,

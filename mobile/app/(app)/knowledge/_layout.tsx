@@ -35,7 +35,6 @@ export default function KnowledgeLayout() {
         <Stack.Screen
           name="index"
           options={{
-            headerShown: false,
             contentStyle: { backgroundColor: colors.background },
           }}
         />

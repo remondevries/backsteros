@@ -16,6 +16,7 @@ export type TaskDetailModel = {
   status: string | null;
   priority: number;
   due_date: string | null;
+  due_end_date: string | null;
   project_id: string | null;
   assignee_id: string | null;
   project_name: string | null;
@@ -28,6 +29,8 @@ export type TaskDetailModel = {
   agent_chat_id: string | null;
   agent_created_at: string | null;
   agent_inbox_approved_at: string | null;
+  tracked_minutes: number | null;
+  tracked_duration_seconds: number | null;
 };
 
 type SyncedDetailRow = {
@@ -37,6 +40,7 @@ type SyncedDetailRow = {
   status: string | null;
   priority: number | null;
   due_date: string | null;
+  due_end_date: string | null;
   project_id: string | null;
   contact_id: string | null;
   assignee_id: string | null;
@@ -49,6 +53,8 @@ type SyncedDetailRow = {
   agent_chat_id: string | null;
   agent_created_at: string | null;
   agent_inbox_approved_at: string | null;
+  tracked_minutes: number | null;
+  tracked_duration_seconds: number | null;
 };
 
 function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
@@ -60,6 +66,7 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
     status: row.status,
     priority: row.priority ?? 0,
     due_date: row.due_date,
+    due_end_date: row.due_end_date ?? null,
     project_id: row.project_id,
     assignee_id: assigneeId,
     project_name: row.project_name,
@@ -81,6 +88,8 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
     agent_chat_id: row.agent_chat_id,
     agent_created_at: row.agent_created_at ?? null,
     agent_inbox_approved_at: row.agent_inbox_approved_at ?? null,
+    tracked_minutes: row.tracked_minutes ?? null,
+    tracked_duration_seconds: row.tracked_duration_seconds ?? null,
   };
 }
 
@@ -97,6 +106,7 @@ function mapApiTask(
     status: task.status,
     priority: task.priority ?? 0,
     due_date: task.dueDate,
+    due_end_date: task.dueEndDate ?? null,
     project_id: task.projectId,
     assignee_id: assigneeId,
     project_name: project?.name ?? null,
@@ -118,6 +128,8 @@ function mapApiTask(
     agent_chat_id: task.agentChatId,
     agent_created_at: task.agentCreatedAt ?? null,
     agent_inbox_approved_at: task.agentInboxApprovedAt ?? null,
+    tracked_minutes: task.trackedMinutes ?? null,
+    tracked_duration_seconds: task.trackedDurationSeconds ?? null,
   };
 }
 

@@ -32,6 +32,7 @@ export type TransactionFilters = {
   categoryId?: string;
   goalId?: string;
   recurringId?: string;
+  organizationId?: string;
   uncategorized?: boolean;
   /** `YYYY-MM` calendar month. */
   month?: string;
@@ -48,6 +49,7 @@ export function buildTransactionsPath(filters: TransactionFilters): string {
   if (filters.categoryId) params.set("categoryId", filters.categoryId);
   if (filters.goalId) params.set("goalId", filters.goalId);
   if (filters.recurringId) params.set("recurringId", filters.recurringId);
+  if (filters.organizationId) params.set("organizationId", filters.organizationId);
   if (filters.uncategorized) params.set("uncategorized", "true");
   if (filters.month) params.set("month", filters.month);
   params.set("limit", String(filters.limit ?? TRANSACTIONS_PAGE_LIMIT));
@@ -353,6 +355,11 @@ export function fetchMoneybirdInvoiceRevenue(
 /** Moneybird list filter for invoices dated in a calendar year. */
 export function buildMoneybirdInvoicesPeriodFilter(year: number): string {
   return `period:${year}0101..${year}1231`;
+}
+
+/** Moneybird filter that lists invoices for a contact across all periods. */
+export function buildMoneybirdContactInvoicesFilter(contactId: string): string {
+  return `contact_id:${contactId.trim()}`;
 }
 
 export function fetchAssetsDebt(

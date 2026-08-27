@@ -1,73 +1,57 @@
 import { useRouter } from "expo-router";
-import { Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
+import type { ListBoardView } from "../lib/list-board-view";
 import {
   getProjectAreaFilterLabel,
   PROJECT_AREA_FILTERS,
   type ProjectAreaFilter,
 } from "../lib/project-areas";
-import { colors, spacing } from "../lib/theme";
+import { ListBoardToggle } from "./list-board-toggle";
 import { PillNav } from "./pill-nav";
+import { SectionListHeader } from "./section-list-header";
 
 type Props = {
   area: ProjectAreaFilter;
   onAreaChange: (area: ProjectAreaFilter) => void;
+  boardView?: ListBoardView;
+  onBoardViewToggle?: () => void;
 };
 
-export function ProjectsHeader({ area, onAreaChange }: Props) {
-  const insets = useSafeAreaInsets();
+export function ProjectsHeader({
+  area,
+  onAreaChange,
+  boardView,
+  onBoardViewToggle,
+}: Props) {
   const router = useRouter();
 
   return (
-    <View
-      style={{
-        paddingTop: insets.top + 8,
-        backgroundColor: colors.background,
-      }}
-    >
-      <View
-        style={{
-          paddingHorizontal: spacing.screenX,
-          paddingBottom: 10,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Text
-          numberOfLines={1}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            color: colors.foreground,
-            fontWeight: "600",
-            fontSize: 22,
-          }}
-        >
-          Projects
-        </Text>
-        <TabStackHeaderPlusButton
-          onPress={() =>
-            router.push({
-              pathname: "/(app)/projects/new",
-              params: { area },
-            })
-          }
-          accessibilityLabel="Create project"
+    <SectionListHeader
+      title="Projects"
+      showGlobalSearch
+      onPressPlus={() =>
+        router.push({
+          pathname: "/(app)/projects/new",
+          params: { area },
+        })
+      }
+      plusAccessibilityLabel="Create project"
+      trailingControl={
+        boardView && onBoardViewToggle ? (
+          <ListBoardToggle view={boardView} onToggle={onBoardViewToggle} />
+        ) : null
+      }
+      below={
+        <PillNav
+          accessibilityLabel="Project area"
+          value={area}
+          onChange={onAreaChange}
+          items={PROJECT_AREA_FILTERS.map((value) => ({
+            value,
+            label: getProjectAreaFilterLabel(value),
+          }))}
         />
-      </View>
-      <PillNav
-        accessibilityLabel="Project area"
-        value={area}
-        onChange={onAreaChange}
-        items={PROJECT_AREA_FILTERS.map((value) => ({
-          value,
-          label: getProjectAreaFilterLabel(value),
-        }))}
-      />
-    </View>
+      }
+    />
   );
 }

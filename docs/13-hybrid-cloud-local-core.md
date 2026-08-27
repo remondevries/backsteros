@@ -2,12 +2,16 @@
 
 ## Status
 
-**Phase A implemented** (2026-08) — cloud-core MVP for meeting booking: HTTP replication
-between local-core and cloud-core, Docker Compose on the portal VPS, portal
-`BACKSTEROS_API_URL` points at cloud-core. Desktop/mobile remain on local-core only.
+**Phase B live** (full workspace table twin + vault markdown) — code is ahead of older
+“Phase A only” notes below. **Direction change (2026-08):** peer LWW twin is **not** the
+end state. Target is Linear-shaped sync with **cloud-core as leader** and shells as caches —
+see [`16-linear-shaped-sync.md`](16-linear-shaped-sync.md).
 
-Earlier phases (full Tier A/B replica, markdown vault, PDF fallback) remain planned.
-See [12-v2-local-computer.md](12-v2-local-computer.md) and [10-decisions-log.md](10-decisions-log.md) ADR-031.
+Live routes: `/internal/core-replication/*` (not the retired outbox paths).
+`REPLICATED_TABLES` is the Phase B full twin set.
+
+Earlier narrative (Phase A meeting booking MVP) remains historically true for the first
+ship, but do not use this doc alone for replication correctness.
 
 ## Goals
 

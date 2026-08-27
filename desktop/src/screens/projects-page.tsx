@@ -3,8 +3,7 @@ import {
   Link as RouterLink,
   useLocation,
   useNavigate,
-  useParams,
-} from "react-router-dom";
+} from "@tanstack/react-router";
 
 import {
   DocumentsEmptyCreateView,
@@ -20,8 +19,6 @@ import {
   ProjectDocumentsSidePanelView,
   ProjectDocumentsView,
   ProjectLettersView,
-  ProjectOverviewSkeleton,
-  ProjectsListSkeleton,
   ProjectTasksView,
   ProjectsOverviewView,
   RegisterEntityDeleteAction,
@@ -97,6 +94,11 @@ import { writeDocumentContentCache } from "../lib/document-content-cache";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
+import {
+  useKeepAliveActive,
+  useShellLocation,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
 import {
@@ -110,6 +112,7 @@ import {
   type ProjectLocationState,
   type ProjectNavFrom,
 } from "../lib/project-type-cache";
+import { navigateToHref } from "../router/navigate-href";
 
 type WorkspaceProject = ProjectOverviewRowProject & {
   organizationId?: string | null;
@@ -130,8 +133,7 @@ function computeTaskProgress(tasks: { status: string }[]) {
 }
 
 function mapWorkspaceNestedAreas(
-  areas: { id: string; name: string; parent: string | null; sortOrder?: number }[],
-) {
+  areas: { id: string; name: string; parent: string | null; sortOrder?: number }[]) {
   return areas.map((area) => ({
     id: area.id,
     name: area.name,
@@ -149,19 +151,67 @@ export function ProjectsPage({
   organizationRouteParam,
   organizationName,
 }: ProjectsPageProps = {}) {
-  const navigate = useNavigate();
-  const location = useLocation();
+  if (organizationRouteParam) {
+    return (
+      <OrgScopedProjectsPage
+        organizationRouteParam={organizationRouteParam}
+        organizationName={organizationName}
+      />
+    );
+  }
+  return (
+    <ProjectsPageBody
+      organizationRouteParam={organizationRouteParam}
+      organizationName={organizationName}
+    />
+  );
+}
+
+function OrgScopedProjectsPage({
+  organizationRouteParam,
+  organizationName,
+}: {
+  organizationRouteParam: string;
+  organizationName?: string;
+}) {
+  const { pathname } = useLocation();
+  if (!pathname.includes("/organizations")) {
+    return null;
+  }
+  return (
+    <ProjectsPageBody
+      organizationRouteParam={organizationRouteParam}
+      organizationName={organizationName}
+    />
+  );
+}
+
+function ProjectsPageBody({
+  organizationRouteParam,
+  organizationName,
+}: ProjectsPageProps = {}) {
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (
+      to: string,
+      options?: { replace?: boolean; state?: unknown },
+    ) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate]);
+  const location = useShellLocation();
+  const keepAliveActive = useKeepAliveActive();
   const {
     slug,
     projectSlug,
     section: sectionParam,
     letterSlug,
-  } = useParams<{
+  } = useShellParams() as {
     slug?: string;
     projectSlug?: string;
     section?: string;
     letterSlug?: string;
-  }>();
+  };
   const routeSlug = projectSlug ?? slug;
   const documentPath =
     getSelectedProjectDocumentPathFromPathname(location.pathname) ?? null;
@@ -170,8 +220,7 @@ export function ProjectsPage({
       organizationRouteParam
         ? { kind: "organization", organizationRouteParam }
         : { kind: "standalone" },
-    [organizationRouteParam],
-  );
+    [organizationRouteParam]);
   const projectsListHref = organizationRouteParam
     ? getOrganizationSectionHref(organizationRouteParam, "projects")
     : "/projects";
@@ -204,8 +253,7 @@ export function ProjectsPage({
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
-    organizations,
-  );
+    organizations);
   const projects = workspace.projects.map((project) => ({
     ...project,
     ...projectOverlay[project.id],
@@ -214,10 +262,8 @@ export function ProjectsPage({
     () =>
       buildWorkingProjectIdSet(
         tasks,
-        agentStatus?.workingTaskIds ?? new Set(),
-      ),
-    [agentStatus?.workingTaskIds, tasks],
-  );
+        agentStatus?.workingTaskIds ?? new Set()),
+    [agentStatus?.workingTaskIds, tasks]);
   const documents = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
     const byId = new Map<string, KnowledgeListItem>();
@@ -236,8 +282,7 @@ export function ProjectsPage({
       projects.find(
         (project) =>
           project.key.toLowerCase() === routeSlug.toLowerCase() ||
-          project.id === routeSlug,
-      ) ?? null
+          project.id === routeSlug) ?? null
     );
   }, [projects, routeSlug]);
 
@@ -263,15 +308,12 @@ export function ProjectsPage({
         (left.path || left.title).localeCompare(
           right.path || right.title,
           undefined,
-          { sensitivity: "base" },
-        ),
-      );
+          { sensitivity: "base" }));
   }, [documents, selected]);
 
   const readableProjectDocuments = useMemo(
     () => projectDocuments.filter((document) => document.kind !== "folder"),
-    [projectDocuments],
-  );
+    [projectDocuments]);
 
   const projectLetters = useMemo(() => {
     if (!selected) return [];
@@ -280,8 +322,7 @@ export function ProjectsPage({
         !omittedLetterIds.includes(letter.id) &&
         (letter.projectId === selected.id ||
           (letter.projectKey &&
-            letter.projectKey.toLowerCase() === selected.key.toLowerCase())),
-    );
+            letter.projectKey.toLowerCase() === selected.key.toLowerCase())));
   }, [letters, omittedLetterIds, selected]);
 
   useEffect(() => {
@@ -301,42 +342,35 @@ export function ProjectsPage({
           document.kind !== "folder" &&
           (document.id === documentPath ||
             document.path === documentPath ||
-            document.path === decodeURIComponent(documentPath)),
-      ) ?? null
+            document.path === decodeURIComponent(documentPath))) ?? null
     );
   }, [documentPath, projectDocuments]);
 
   const documentContent = useDesktopDocumentContent(
-    selectedDocument?.id ?? null,
-  );
+    selectedDocument?.id ?? null);
 
   const projectsListView = useMemo(
     () =>
       parseListBoardViewFromLocation(
         location.pathname,
-        location.search,
-        PROJECTS_LIST_BOARD_STORAGE_KEY,
-      ),
-    [location.pathname, location.search],
-  );
+        location.searchStr,
+        PROJECTS_LIST_BOARD_STORAGE_KEY),
+    [location.pathname, location.searchStr]);
 
   const projectTasksView = useMemo(
     () =>
       parseListBoardViewFromLocation(
         location.pathname,
-        location.search,
-        TASKS_LIST_BOARD_STORAGE_KEY,
-      ),
-    [location.pathname, location.search],
-  );
+        location.searchStr,
+        TASKS_LIST_BOARD_STORAGE_KEY),
+    [location.pathname, location.searchStr]);
 
   const composingLetter = letterSlug === "new";
   const selectedLetter = useMemo(() => {
     if (!letterSlug || composingLetter) return null;
     return (
       projectLetters.find((letter) =>
-        letterMatchesSlug(letter, letterSlug),
-      ) ?? null
+        letterMatchesSlug(letter, letterSlug)) ?? null
     );
   }, [composingLetter, letterSlug, projectLetters]);
 
@@ -344,8 +378,7 @@ export function ProjectsPage({
     ? workspace.letterRecords[selectedLetter.id] ?? null
     : null;
   const hasLivePdf = Boolean(
-    selectedLetterRecord?.storageKey && selectedLetterRecord.byteSize > 0,
-  );
+    selectedLetterRecord?.storageKey && selectedLetterRecord.byteSize > 0);
   const pdfPanel = useLetterPdfPanel(selectedLetter?.id, {
     hasLegacyPdf: hasLivePdf,
     legacyFilename: selectedLetterRecord?.originalFilename,
@@ -364,8 +397,7 @@ export function ProjectsPage({
     if (sectionParam === "overview" || !isProjectSectionId(sectionParam)) {
       navigate(
         getScopedProjectSectionHref(selected.key, "overview", routeScope),
-        { replace: true },
-      );
+        { replace: true });
     }
   }, [documentPath, letterSlug, navigate, routeScope, sectionParam, selected]);
 
@@ -380,10 +412,8 @@ export function ProjectsPage({
       getScopedProjectDocumentHref(
         selected.key,
         first.path || first.id,
-        routeScope,
-      ),
-      { replace: true },
-    );
+        routeScope),
+      { replace: true });
   }, [
     activeSection,
     composingDocument,
@@ -401,8 +431,7 @@ export function ProjectsPage({
     if (!first) return;
     navigate(
       getScopedProjectLetterHref(selected.key, first.number, routeScope),
-      { replace: true },
-    );
+      { replace: true });
   }, [
     activeSection,
     letterSlug,
@@ -466,8 +495,7 @@ export function ProjectsPage({
               label: organizationName,
               href: getOrganizationSectionHref(
                 organizationRouteParam,
-                "overview",
-              ),
+                "overview"),
             },
             { label: "Projects", href: projectsListHref },
             {
@@ -478,8 +506,7 @@ export function ProjectsPage({
                   : getScopedProjectSectionHref(
                       selected.key,
                       "overview",
-                      routeScope,
-                    ),
+                      routeScope),
             },
             ...(sectionLabel
               ? [
@@ -492,8 +519,7 @@ export function ProjectsPage({
                         ? getScopedProjectSectionHref(
                             selected.key,
                             activeSection,
-                            routeScope,
-                          )
+                            routeScope)
                         : undefined,
                   },
                 ]
@@ -513,8 +539,7 @@ export function ProjectsPage({
                   : getScopedProjectSectionHref(
                       selected.key,
                       "overview",
-                      routeScope,
-                    ),
+                      routeScope),
             },
             ...(sectionLabel
               ? [
@@ -527,8 +552,7 @@ export function ProjectsPage({
                         ? getScopedProjectSectionHref(
                             selected.key,
                             activeSection,
-                            routeScope,
-                          )
+                            routeScope)
                         : undefined,
                   },
                 ]
@@ -539,7 +563,7 @@ export function ProjectsPage({
               : []),
           ]
       : [{ label: "Projects" }],
-  );
+    { enabled: keepAliveActive });
 
   const handleDeleteProject = useCallback(async () => {
     if (!selected) {
@@ -583,8 +607,7 @@ export function ProjectsPage({
         };
       }
     },
-    [navigate, organizationRouteParam, routeScope, selected, workspace],
-  );
+    [navigate, organizationRouteParam, routeScope, selected, workspace]);
 
   const handleDeleteLetter = useCallback(async () => {
     if (!selectedLetter || !selected) {
@@ -593,34 +616,29 @@ export function ProjectsPage({
     const deletedId = selectedLetter.id;
     const remaining = projectLetters.filter((letter) => letter.id !== deletedId);
     setOmittedLetterIds((current) =>
-      current.includes(deletedId) ? current : [...current, deletedId],
-    );
+      current.includes(deletedId) ? current : [...current, deletedId]);
     try {
       await workspace.softDeleteLetter(deletedId);
       if (remaining.length === 0) {
         navigate(
           getScopedProjectSectionHref(selected.key, "letters", routeScope),
-          { replace: true },
-        );
+          { replace: true });
       } else {
         const next = remaining[0]!;
         if (next.number != null) {
           navigate(
             getScopedProjectLetterHref(selected.key, next.number, routeScope),
-            { replace: true },
-          );
+            { replace: true });
         } else {
           navigate(
             `${getScopedProjectSectionHref(selected.key, "letters", routeScope)}/${next.id}`,
-            { replace: true },
-          );
+            { replace: true });
         }
       }
       return { ok: true as const };
     } catch (error) {
       setOmittedLetterIds((current) =>
-        current.filter((id) => id !== deletedId),
-      );
+        current.filter((id) => id !== deletedId));
       return {
         ok: false as const,
         error:
@@ -642,44 +660,36 @@ export function ProjectsPage({
     }
     const deletedId = selectedDocument.id;
     const remaining = readableProjectDocuments.filter(
-      (document) => document.id !== deletedId,
-    );
+      (document) => document.id !== deletedId);
     setOmittedDocumentIds((current) =>
-      current.includes(deletedId) ? current : [...current, deletedId],
-    );
+      current.includes(deletedId) ? current : [...current, deletedId]);
     setLocalDocuments((current) =>
-      current.filter((doc) => doc.id !== deletedId),
-    );
+      current.filter((doc) => doc.id !== deletedId));
     try {
       const result = await workspace.deleteDocument(deletedId);
       if (!result.ok) {
         setOmittedDocumentIds((current) =>
-          current.filter((id) => id !== deletedId),
-        );
+          current.filter((id) => id !== deletedId));
         return result;
       }
       if (remaining.length === 0) {
         setComposingDocument(true);
         navigate(
           getScopedProjectSectionHref(selected.key, "documents", routeScope),
-          { replace: true },
-        );
+          { replace: true });
       } else {
         const next = remaining[0]!;
         navigate(
           getScopedProjectDocumentHref(
             selected.key,
             next.path || next.id,
-            routeScope,
-          ),
-          { replace: true },
-        );
+            routeScope),
+          { replace: true });
       }
       return { ok: true as const };
     } catch (error) {
       setOmittedDocumentIds((current) =>
-        current.filter((id) => id !== deletedId),
-      );
+        current.filter((id) => id !== deletedId));
       return {
         ok: false as const,
         error:
@@ -704,8 +714,7 @@ export function ProjectsPage({
         !task.habitId &&
         (task.projectId === selected.id ||
           (task.projectKey &&
-            task.projectKey.toLowerCase() === selected.key.toLowerCase())),
-    );
+            task.projectKey.toLowerCase() === selected.key.toLowerCase())));
     const mailboxes = agentMail.mailboxes.map((mailbox) => ({
       ...mailbox,
       avatarSrc: mailbox.contactId
@@ -714,8 +723,7 @@ export function ProjectsPage({
     }));
     const emailRows = filterEmailTaskRowsForProject(
       mapEmailMessagesToTaskRows(agentMail.messages, mailboxes),
-      selected,
-    );
+      selected);
     return [...taskRows, ...emailRows];
   }, [
     agentMail.mailboxes,
@@ -729,25 +737,20 @@ export function ProjectsPage({
 
   const assigneeOptions = useMemo(
     () => buildAssigneeDropdownOptions(withAvatarSrc(contacts, contactAvatarSrc)),
-    [contactAvatarSrc, contacts],
-  );
+    [contactAvatarSrc, contacts]);
 
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
         withAvatarSrc(organizations, organizationAvatarSrc),
-        { includeNone: false },
-      ),
-    [organizationAvatarSrc, organizations],
-  );
+        { includeNone: false }),
+    [organizationAvatarSrc, organizations]);
 
   const letterOrganizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc),
-      ),
-    [organizationAvatarSrc, organizations],
-  );
+        withAvatarSrc(organizations, organizationAvatarSrc)),
+    [organizationAvatarSrc, organizations]);
 
   const projectOptions = useMemo(
     () =>
@@ -757,10 +760,8 @@ export function ProjectsPage({
           name: entry.name,
           icon: entry.icon,
         })),
-        { includeNone: false },
-      ),
-    [projectList],
-  );
+        { includeNone: false }),
+    [projectList]);
 
   const composeProjectOptions = useMemo(
     () =>
@@ -770,23 +771,13 @@ export function ProjectsPage({
           name: entry.name,
           icon: entry.icon,
         })),
-        { includeNone: true },
-      ),
-    [projectList],
-  );
+        { includeNone: true }),
+    [projectList]);
 
   if (!routeSlug) {
     const areaFilter =
-      parseProjectAreaFilterFromLocation(location.pathname, location.search) ??
+      parseProjectAreaFilterFromLocation(location.pathname, location.searchStr) ??
       undefined;
-
-    if (!workspace.ready) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-          <ProjectsListSkeleton />
-        </div>
-      );
-    }
 
     return (
       <ProjectsOverviewView
@@ -800,13 +791,11 @@ export function ProjectsPage({
         onViewChange={(nextView) => {
           persistListBoardView(nextView, PROJECTS_LIST_BOARD_STORAGE_KEY);
           navigate(
-            getProjectsListAreaHref(areaFilter ?? "all", nextView),
-          );
+            getProjectsListAreaHref(areaFilter ?? "all", nextView));
         }}
         onSelectProject={(key) => {
           const match = projects.find(
-            (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-          );
+            (entry) => entry.key.toLowerCase() === key.toLowerCase());
           const href = `/projects/${key}`;
           if (match?.name) {
             primeTabTitle(href, match.name);
@@ -836,8 +825,7 @@ export function ProjectsPage({
         onCreateProject={async ({ status, name }) => {
           const organizationId = organizationRouteParam
             ? (organizations.find((org) =>
-                organizationMatchesSlug(org, organizationRouteParam),
-              )?.id ?? null)
+                organizationMatchesSlug(org, organizationRouteParam))?.id ?? null)
             : null;
           pendingCreatedProjectNameRef.current = name;
           return workspace.createProject({
@@ -854,13 +842,11 @@ export function ProjectsPage({
             pendingName ??
             projects.find((entry) => entry.id === id)?.name ??
             projects.find(
-              (entry) => entry.key.toLowerCase() === key.toLowerCase(),
-            )?.name;
+              (entry) => entry.key.toLowerCase() === key.toLowerCase())?.name;
           if (organizationRouteParam) {
             const href = getOrganizationProjectHref(
               organizationRouteParam,
-              key,
-            );
+              key);
             if (createdName) primeTabTitle(href, createdName);
             navigate(href);
             return;
@@ -884,9 +870,6 @@ export function ProjectsPage({
   }
 
   if (!selected) {
-    if (!workspace.ready) {
-      return <ProjectOverviewSkeleton />;
-    }
     return (
       <div className="inbox-detail-layout">
         <div className="inbox-detail-empty">
@@ -920,8 +903,7 @@ export function ProjectsPage({
       isCodebaseWorkbenchPath(location.pathname, projectKey));
 
   const patchSelected = (
-    patch: Partial<WorkspaceProject>,
-  ) => {
+    patch: Partial<WorkspaceProject>) => {
     setProjectOverlay((current) => ({
       ...current,
       [project.id]: { ...current[project.id], ...patch },
@@ -948,8 +930,7 @@ export function ProjectsPage({
     navigate(
       nextView === "board"
         ? `${base}?${LIST_BOARD_VIEW_SEARCH_PARAM}=board`
-        : base,
-    );
+        : base);
   }
 
   function renderSection(sectionId: ProjectSectionId) {
@@ -1034,8 +1015,7 @@ export function ProjectsPage({
                 client,
                 task,
                 { assigneeId },
-                { assigneeName: assignee?.name ?? null },
-              );
+                { assigneeName: assignee?.name ?? null });
               return;
             }
             void workspace.patchTask(taskId, { assigneeId });
@@ -1052,8 +1032,7 @@ export function ProjectsPage({
               (patch) => {
                 const task = projectTasks.find((entry) => entry.id === patch.id);
                 return !task || !isEmailTaskListItem(task);
-              },
-            );
+              });
             for (const patch of patches) {
               void workspace.patchTask(patch.id, {
                 status: patch.status,
@@ -1143,15 +1122,12 @@ export function ProjectsPage({
                           getScopedProjectLetterHref(
                             projectKey,
                             created.number,
-                            routeScope,
-                          ),
-                          { replace: true },
-                        );
+                            routeScope),
+                          { replace: true });
                       } else {
                         navigate(
                           `${getScopedProjectSectionHref(projectKey, "letters", routeScope)}/${created.id}`,
-                          { replace: true },
-                        );
+                          { replace: true });
                       }
                     }
                     if (payload.pdfFile) {
@@ -1159,8 +1135,7 @@ export function ProjectsPage({
                       const upload = await uploadLetterPdfFile(
                         client,
                         created.id,
-                        payload.pdfFile,
-                      );
+                        payload.pdfFile);
                       setComposePdfUploading(false);
                       if (!upload.ok) {
                         console.error(upload.error);
@@ -1173,13 +1148,7 @@ export function ProjectsPage({
               }}
             />
           ) : letterSlug && !selectedLetter ? (
-            !workspace.ready ? (
-              <LetterDetailSkeleton />
-            ) : (
-              <div className="project-detail__placeholder">
-                <p className="overview-empty">Letter not found.</p>
-              </div>
-            )
+            <LetterDetailSkeleton />
           ) : selectedLetter ? (
             <>
               <RegisterEntityDeleteAction
@@ -1194,8 +1163,7 @@ export function ProjectsPage({
                   organizationId: record?.organizationId ?? null,
                   organizationName:
                     organizations.find(
-                      (org) => org.id === record?.organizationId,
-                    )?.name ?? null,
+                      (org) => org.id === record?.organizationId)?.name ?? null,
                   contactId: record?.contactId ?? null,
                   contactName:
                     contacts.find((contact) => contact.id === record?.contactId)
@@ -1229,8 +1197,7 @@ export function ProjectsPage({
                   const result = await pdfPanel.reorderAttachments(orderedIds);
                   if (!result.ok) {
                     window.alert(
-                      `Could not save PDF order.\n${result.error}\n\nIf you are on Prod, switch Settings → Backend to Dev (local API), or deploy the API with the reorder route.`,
-                    );
+                      `Could not save PDF order.\n${result.error}\n\nIf you are on Prod, switch Settings → Backend to Dev (local API), or deploy the API with the reorder route.`);
                   }
                 }}
                 pdfOpen={pdfPanel.pdfOpen}
@@ -1321,10 +1288,8 @@ export function ProjectsPage({
                   record?.organizationId
                     ? contacts.filter(
                         (contact) =>
-                          contact.organizationId === record.organizationId,
-                      )
-                    : [],
-                )}
+                          contact.organizationId === record.organizationId)
+                    : [])}
                 projectOptions={projectOptions}
                 organizationNavigateHref={
                   record?.organizationId
@@ -1336,8 +1301,7 @@ export function ProjectsPage({
                 }
                 projectNavigateHref={getScopedProjectBasePath(
                   projectKey,
-                  routeScope,
-                )}
+                  routeScope)}
                 onCreateOrganizationFromQuery={(query) => {
                   void workspace
                     .createOrganization({ name: query })
@@ -1392,8 +1356,7 @@ export function ProjectsPage({
                   setLocalDocuments((current) =>
                     current.some((entry) => entry.id === created.id)
                       ? current
-                      : [...current, item],
-                  );
+                      : [...current, item]);
                   writeDocumentContentCache(created.id, {
                     content,
                     contentVersion: created.contentVersion,
@@ -1405,10 +1368,8 @@ export function ProjectsPage({
                     getScopedProjectDocumentHref(
                       projectKey,
                       created.path || created.id,
-                      routeScope,
-                    ),
-                    { replace: true },
-                  );
+                      routeScope),
+                    { replace: true });
                   return created;
                 } finally {
                   setCreatingDocument(false);
@@ -1416,13 +1377,7 @@ export function ProjectsPage({
               }}
             />
           ) : documentPath && !selectedDocument ? (
-            !workspace.ready ? (
-              <DocumentDetailSkeleton />
-            ) : (
-              <div className="project-detail__placeholder">
-                <p className="overview-empty">Document not found.</p>
-              </div>
-            )
+            <DocumentDetailSkeleton />
           ) : selectedDocument ? (
             documentContent.loading ? (
               <DocumentDetailSkeleton />
@@ -1451,26 +1406,21 @@ export function ProjectsPage({
                   }
                   initialBody={getDocumentEditorBody(
                     documentContent.initialBody,
-                    selectedDocument.title,
-                  )}
+                    selectedDocument.title)}
                   onSave={async (nextEditorBody) => {
                     await documentContent.onSave(
-                      serializeDocumentBody(nextEditorBody),
-                    );
+                      serializeDocumentBody(nextEditorBody));
                   }}
                   onSaveTitle={async (title) => {
                     const result = await workspace.renameDocument(
                       selectedDocument.id,
-                      title,
-                    );
+                      title);
                     if (result.ok) {
                       setLocalDocuments((current) =>
                         current.map((doc) =>
                           doc.id === selectedDocument.id
                             ? { ...doc, title: title.trim() }
-                            : doc,
-                        ),
-                      );
+                            : doc));
                     }
                     return result;
                   }}
@@ -1565,8 +1515,7 @@ export function ProjectsPage({
                     setLocalDocuments((current) =>
                       current.some((entry) => entry.id === created.id)
                         ? current
-                        : [...current, item],
-                    );
+                        : [...current, item]);
                     setPendingEditDocumentId(created.id);
                     setOmittedDocumentIds([]);
                     setComposingDocument(false);
@@ -1574,9 +1523,7 @@ export function ProjectsPage({
                       getScopedProjectDocumentHref(
                         projectKey,
                         created.path || created.id,
-                        routeScope,
-                      ),
-                    );
+                        routeScope));
                   });
               }}
               onCreateFolder={async ({ title, parentId }) => {
@@ -1597,8 +1544,7 @@ export function ProjectsPage({
                   setLocalDocuments((current) =>
                     current.some((entry) => entry.id === created.id)
                       ? current
-                      : [...current, item],
-                  );
+                      : [...current, item]);
                   return { ok: true as const };
                 } catch (error) {
                   return {
@@ -1625,14 +1571,12 @@ export function ProjectsPage({
                     parentId: item.parentId ?? null,
                     sortOrder: item.sortOrder ?? 0,
                     icon: item.icon ?? null,
-                  })),
-                );
+                  })));
                 void (async () => {
                   if (request.fromParentId !== request.toParentId) {
                     await workspace.moveDocument(
                       request.itemId,
-                      request.toParentId,
-                    );
+                      request.toParentId);
                     return;
                   }
                   const parent =
@@ -1769,8 +1713,7 @@ export function ProjectsPage({
           const conflict = projectList.some(
             (entry) =>
               entry.id !== project.id &&
-              entry.key.toLowerCase() === key.toLowerCase(),
-          );
+              entry.key.toLowerCase() === key.toLowerCase());
           if (conflict) {
             return { ok: false, error: "Project key already exists." };
           }
@@ -1791,8 +1734,7 @@ export function ProjectsPage({
           const nextPath = buildProjectKeyRenameRedirectPath(
             location.pathname,
             previousKey,
-            key,
-          );
+            key);
           if (nextPath !== location.pathname) {
             navigate(nextPath, { replace: true });
           }

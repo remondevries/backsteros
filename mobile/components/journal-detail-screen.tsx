@@ -1,13 +1,20 @@
-import type { Document, DocumentContent } from "@backsteros/contracts";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
 
 import { useCalendarTimeZone } from "../lib/calendar-timezone";
+import {
+  asContentVersion,
+  DocumentContentEmptyBodyRejectedError,
+  fetchDocumentContent,
+  saveDocumentContent,
+} from "../lib/document-content";
+import { ensureJournalDocumentViaApi } from "../lib/document-create";
 import { isPadDevice } from "../lib/device";
 import { taskDetailHref } from "../lib/detail-href";
 import { recordHabitDay } from "../lib/habits/api";
@@ -25,6 +32,10 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import {
+  CONTENT_HEADER_FADE_HEIGHT,
+  ContentHeaderFade,
+} from "./content-header-fade";
 import { ContentPageTitle } from "./content-page-title";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 import { collapseHabitItemsByHabitId } from "./tasks-today-habits-chips";
@@ -63,6 +74,7 @@ type JournalDocRow = {
   id: string;
   journal_date: string;
   snippet: string | null;
+  content_version: number | null;
 };
 
 type Props = {
@@ -70,7 +82,7 @@ type Props = {
 };
 
 /** Title → markdown body → due-tasks list (desktop journal layout). */
-const JOURNAL_DOC_SQL = `SELECT id, journal_date, snippet FROM documents
+const JOURNAL_DOC_SQL = `SELECT id, journal_date, snippet, content_version FROM documents
  WHERE deleted_at IS NULL
    AND type = 'journal'
    AND journal_date = ?
@@ -96,9 +108,13 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     useLocalQuery<JournalDocRow>(JOURNAL_DOC_SQL, [dateSlug]);
   const localDocId = syncedDocs?.[0]?.id ?? null;
   const localSnippet = syncedDocs?.[0]?.snippet ?? null;
+  const syncedContentVersion = asContentVersion(
+    syncedDocs?.[0]?.content_version,
+  );
 
   const [restDocId, setRestDocId] = useState<string | null>(null);
   const [body, setBody] = useState<string | null>(null);
+  const [contentVersion, setContentVersion] = useState<number | null>(null);
   const [bodyLoading, setBodyLoading] = useState(true);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [draftBody, setDraftBody] = useState("");
@@ -117,10 +133,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     if (powerSync.ready && docSyncLoading) return;
 
     let cancelled = false;
-    void client
-      .requestJson<Document>(
-        `/api/v1/journal/${encodeURIComponent(dateSlug)}`,
-      )
+    void ensureJournalDocumentViaApi(client, dateSlug)
       .then((document) => {
         if (!cancelled) setRestDocId(document.id);
       })
@@ -150,13 +163,11 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     let cancelled = false;
     setBodyLoading(true);
     setBodyError(null);
-    void client
-      .requestJson<DocumentContent>(
-        `/api/v1/documents/${encodeURIComponent(documentId)}/content`,
-      )
+    void fetchDocumentContent(client, documentId)
       .then((result) => {
         if (cancelled) return;
         setBody(getJournalDisplayBody(result.content ?? "", dateSlug, title));
+        setContentVersion(result.contentVersion);
       })
       .catch((reason) => {
         if (cancelled) return;
@@ -172,6 +183,42 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       cancelled = true;
     };
   }, [client, dateSlug, documentId, title]);
+
+  // Remote save bumped content_version in PowerSync — refetch Tier D body.
+  useEffect(() => {
+    if (!documentId) return;
+    if (syncedContentVersion == null || contentVersion == null) return;
+    if (syncedContentVersion <= contentVersion) return;
+
+    let cancelled = false;
+    setBodyLoading(true);
+    void fetchDocumentContent(client, documentId)
+      .then((result) => {
+        if (cancelled) return;
+        setBody(getJournalDisplayBody(result.content ?? "", dateSlug, title));
+        setContentVersion(result.contentVersion);
+      })
+      .catch((reason) => {
+        if (cancelled) return;
+        setBodyError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setBodyLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    client,
+    contentVersion,
+    dateSlug,
+    documentId,
+    syncedContentVersion,
+    title,
+  ]);
 
   const tasksSql = `${TASK_LIST_SELECT}
      WHERE t.deleted_at IS NULL
@@ -303,16 +350,22 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     setSaveError(null);
     try {
       const nextContent = mergeJournalContent(dateSlug, draftBody);
-      await client.requestJson<DocumentContent>(
-        `/api/v1/documents/${encodeURIComponent(documentId)}/content`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: nextContent }),
-        },
+      if (contentVersion == null) {
+        throw new Error("Journal content version is not loaded.");
+      }
+      const updated = await saveDocumentContent(
+        client,
+        documentId,
+        nextContent,
+        contentVersion,
       );
-      setBody(getJournalDisplayBody(nextContent, dateSlug, title));
+      setBody(getJournalDisplayBody(updated.content ?? nextContent, dateSlug, title));
+      setContentVersion(updated.contentVersion);
     } catch (reason) {
+      if (reason instanceof DocumentContentEmptyBodyRejectedError) {
+        setSaveError(null);
+        return;
+      }
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save journal.",
       );
@@ -322,6 +375,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   }, [
     bodyReady,
     client,
+    contentVersion,
     dateSlug,
     displayBody,
     documentId,
@@ -435,26 +489,48 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             : null),
         }}
       />
-      <GroupedTaskList
-        rows={listMode === "tasks" ? rows : []}
-        groupByStatus={listMode === "tasks"}
-        emptyText={
-          listMode === "tasks" ? "No tasks due on this date." : ""
-        }
-        contentConstrained={isPad}
-        listHeader={listHeader}
-        onPressRow={listMode === "tasks" ? onPressRow : undefined}
-        onAddToStatus={
-          listMode === "tasks"
-            ? (status) => {
-                router.push({
-                  pathname: "/create/task",
-                  params: { status, dueYmd: dateSlug },
-                });
-              }
-            : undefined
-        }
-      />
+      <View style={styles.page}>
+        <GroupedTaskList
+          rows={listMode === "tasks" ? rows : []}
+          groupByStatus={listMode === "tasks"}
+          emptyText={
+            listMode === "tasks" ? "No tasks due on this date." : ""
+          }
+          contentConstrained={isPad}
+          listHeader={listHeader}
+          onPressRow={listMode === "tasks" ? onPressRow : undefined}
+          onAddToStatus={
+            listMode === "tasks"
+              ? (status) => {
+                  router.push({
+                    pathname: "/create/task",
+                    params: { status, dueYmd: dateSlug },
+                  });
+                }
+              : undefined
+          }
+        />
+        <View pointerEvents="none" style={styles.headerFade}>
+          <ContentHeaderFade
+            color={inPadJournalSplit ? colors.surface : colors.background}
+          />
+        </View>
+      </View>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  page: {
+    flex: 1,
+  },
+  headerFade: {
+    position: "absolute",
+    // 1px into the nav/chrome so scrolling content doesn't flash a seam.
+    top: -1,
+    left: 0,
+    right: 0,
+    zIndex: 4,
+    height: CONTENT_HEADER_FADE_HEIGHT,
+  },
+});

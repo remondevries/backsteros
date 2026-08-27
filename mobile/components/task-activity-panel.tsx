@@ -13,6 +13,14 @@ import {
 } from "react-native";
 
 import { isAgentHoldCommentBody } from "../lib/agent-hold-comment";
+import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../lib/powersync-context";
+import {
+  createTaskCommentViaPowerSyncOrApi,
+  deleteTaskCommentViaPowerSyncOrApi,
+  patchTaskCommentViaPowerSyncOrApi,
+  sqliteRowToTaskComment,
+} from "../lib/task-comment-mutations";
 import {
   coalescePropertyActivities,
   formatActivityMessage,
@@ -22,6 +30,7 @@ import {
   normalizeEmail,
   VISIBLE_ACTIVITY_LIMIT,
 } from "../lib/task-activity-format";
+import { useLocalQuery } from "../lib/use-local-query";
 import {
   migrateLegacyTaskStatus,
   TASK_STATUS_ORDER,
@@ -43,6 +52,7 @@ export type TaskActivityRequestJson = <T>(
 ) => Promise<T>;
 
 export type TaskActivityCurrentUser = {
+  userId: string | null;
   email: string | null;
   imageUrl: string | null;
 };
@@ -59,6 +69,25 @@ export type TaskActivityPanelProps = {
 const ACTIVITY_MARKER_SIZE = 16;
 const ACTIVITY_GLYPH_SIZE = 12;
 const COMMENT_AVATAR_SIZE = 16;
+
+const TASK_COMMENTS_SQL = `
+SELECT
+  tc.id,
+  tc.task_id,
+  tc.parent_comment_id,
+  tc.author_user_id,
+  tc.author_contact_id,
+  tc.author_email,
+  tc.body,
+  tc.resolved_at,
+  tc.created_at,
+  tc.updated_at,
+  tc.deleted_at,
+  ct.name AS contact_name
+FROM task_comments tc
+LEFT JOIN contacts ct ON ct.id = tc.author_contact_id AND ct.deleted_at IS NULL
+WHERE tc.task_id = ? AND tc.deleted_at IS NULL
+`;
 
 function authorInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -164,6 +193,27 @@ export function TaskActivityPanel({
   requestJson,
   currentUser,
 }: TaskActivityPanelProps) {
+  const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
+  const useSyncedComments = powerSync.ready;
+  const { data: syncedCommentRows, isLoading: loadingSyncedComments } =
+    useLocalQuery<{
+      id: string;
+      task_id: string;
+      parent_comment_id: string | null;
+      author_user_id: string | null;
+      author_contact_id: string | null;
+      author_email: string | null;
+      body: string;
+      resolved_at: string | null;
+      created_at: string;
+      updated_at: string;
+      deleted_at: string | null;
+      contact_name?: string | null;
+    }>(useSyncedComments ? TASK_COMMENTS_SQL : "SELECT id FROM task_comments WHERE 0", [
+      taskId,
+    ]);
+
   const currentUserAvatar = useMemo(
     () => ({
       email: normalizeEmail(currentUser.email),
@@ -172,7 +222,12 @@ export function TaskActivityPanel({
     [currentUser.email, currentUser.imageUrl],
   );
 
-  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [restComments, setRestComments] = useState<TaskComment[]>([]);
+  const syncedComments = useMemo(
+    () => syncedCommentRows.map(sqliteRowToTaskComment),
+    [syncedCommentRows],
+  );
+  const comments = useSyncedComments ? syncedComments : restComments;
   const [activities, setActivities] = useState<TaskActivity[]>([]);
   const [draft, setDraft] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -211,29 +266,40 @@ export function TaskActivityPanel({
     }
     setError(null);
     try {
-      const [commentsResult, activitiesResult] = await Promise.all([
-        requestJson<{ comments: TaskComment[] }>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
-        ),
+      const requests: Promise<void>[] = [
         requestJson<{ activities: TaskActivity[] }>(
           `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
-        ),
-      ]);
-      setComments(commentsResult.comments ?? []);
-      setActivities(activitiesResult.activities ?? []);
+        ).then((activitiesResult) => {
+          setActivities(activitiesResult.activities ?? []);
+        }),
+      ];
+      if (!useSyncedComments) {
+        requests.push(
+          requestJson<{ comments: TaskComment[] }>(
+            `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+          ).then((commentsResult) => {
+            setRestComments(commentsResult.comments ?? []);
+          }),
+        );
+      }
+      await Promise.all(requests);
       hasLoadedFeedRef.current = true;
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not load activity.",
       );
       if (isInitialLoad) {
-        setComments([]);
+        setRestComments([]);
         setActivities([]);
       }
     } finally {
       setLoadingFeed(false);
     }
-  }, [requestJson, taskId]);
+  }, [requestJson, taskId, useSyncedComments]);
+
+  const loadingPanel =
+    loadingFeed ||
+    (useSyncedComments && loadingSyncedComments && comments.length === 0);
 
   useEffect(() => {
     void loadFeed();
@@ -310,18 +376,22 @@ export function TaskActivityPanel({
       }
       setError(null);
       try {
-        const created = await requestJson<TaskComment>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+        const created = await createTaskCommentViaPowerSyncOrApi(
+          client,
+          powerSync,
           {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              body,
-              parentCommentId: parentCommentId ?? null,
-            }),
+            taskId,
+            body,
+            parentCommentId,
+            author: {
+              userId: currentUser.userId,
+              email: currentUser.email,
+            },
           },
         );
-        setComments((current) => [...current, created]);
+        if (!useSyncedComments) {
+          setRestComments((current) => [...current, created]);
+        }
         if (parentCommentId) {
           setReplyDrafts((current) => ({
             ...current,
@@ -344,7 +414,7 @@ export function TaskActivityPanel({
         }
       }
     },
-    [posting, postingReplyTo, requestJson, taskId],
+    [client, currentUser.email, currentUser.userId, posting, postingReplyTo, powerSync, taskId, useSyncedComments],
   );
 
   const patchComment = useCallback(
@@ -352,22 +422,30 @@ export function TaskActivityPanel({
       commentId: string,
       patch: { body?: string; resolvedAt?: string | null },
     ) => {
+      const existing = comments.find((comment) => comment.id === commentId);
+      if (!existing) return null;
+
       setSavingCommentId(commentId);
       setError(null);
       try {
-        const updated = await requestJson<TaskComment>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+        const updated = await patchTaskCommentViaPowerSyncOrApi(
+          client,
+          powerSync,
           {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(patch),
+            taskId,
+            commentId,
+            existing,
+            body: patch.body,
+            resolvedAt: patch.resolvedAt,
           },
         );
-        setComments((current) =>
-          current.map((comment) =>
-            comment.id === commentId ? updated : comment,
-          ),
-        );
+        if (!useSyncedComments) {
+          setRestComments((current) =>
+            current.map((comment) =>
+              comment.id === commentId ? updated : comment,
+            ),
+          );
+        }
         return updated;
       } catch (err) {
         setError(
@@ -378,7 +456,7 @@ export function TaskActivityPanel({
         setSavingCommentId(null);
       }
     },
-    [requestJson, taskId],
+    [client, comments, powerSync, taskId, useSyncedComments],
   );
 
   const startEditComment = (comment: TaskComment) => {
@@ -441,17 +519,23 @@ export function TaskActivityPanel({
               void (async () => {
                 setError(null);
                 try {
-                  await requestJson<void>(
-                    `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(comment.id)}`,
-                    { method: "DELETE" },
-                  );
-                  setComments((current) =>
-                    current.filter(
-                      (entry) =>
-                        entry.id !== comment.id &&
-                        entry.parentCommentId !== comment.id,
-                    ),
-                  );
+                  const replyIds = comments
+                    .filter((entry) => entry.parentCommentId === comment.id)
+                    .map((entry) => entry.id);
+                  await deleteTaskCommentViaPowerSyncOrApi(client, powerSync, {
+                    taskId,
+                    comment,
+                    replyIds,
+                  });
+                  if (!useSyncedComments) {
+                    setRestComments((current) =>
+                      current.filter(
+                        (entry) =>
+                          entry.id !== comment.id &&
+                          entry.parentCommentId !== comment.id,
+                      ),
+                    );
+                  }
                   if (editingCommentId === comment.id) {
                     setEditingCommentId(null);
                     setEditDraft("");
@@ -469,7 +553,7 @@ export function TaskActivityPanel({
         ],
       );
     },
-    [comments, editingCommentId, requestJson, taskId],
+    [client, comments, editingCommentId, powerSync, taskId, useSyncedComments],
   );
 
   const openCommentMenu = (
@@ -635,20 +719,20 @@ export function TaskActivityPanel({
     <View style={styles.panel}>
       <Text style={styles.title}>Activity</Text>
 
-      {loadingFeed ? (
+      {loadingPanel ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator color={colors.muted} />
           <Text style={styles.empty}>Loading activity…</Text>
         </View>
       ) : null}
 
-      {!loadingFeed &&
+      {!loadingPanel &&
       visibleActivities.length === 0 &&
       rootComments.length === 0 ? (
         <Text style={styles.empty}>No activity yet.</Text>
       ) : null}
 
-      {!loadingFeed && activityTimeline.length > 0 ? (
+      {!loadingPanel && activityTimeline.length > 0 ? (
         <View style={styles.timeline}>
           {visibleActivities.map((item) => {
             const children = item.children;

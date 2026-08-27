@@ -7,16 +7,19 @@ import type {
   Project as ApiProject,
   Meeting as ApiMeeting,
   Task as ApiTask,
+  Area as ApiArea,
 } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
 import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
+import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 export type SoftDeletableTable =
   | "tasks"
   | "projects"
+  | "areas"
   | "letters"
   | "meetings"
   | "contacts"
@@ -25,7 +28,7 @@ export type SoftDeletableTable =
 
 /**
  * Optimistic patch / soft-delete pipeline shared by every entity: local
- * PowerSync SQLite first, then REST, then API cache updates.
+ * PowerSync SQLite first; REST only when PowerSync is not connected.
  */
 export function useWorkspaceEntityPatching({
   authenticated,
@@ -34,6 +37,7 @@ export function useWorkspaceEntityPatching({
   setApiTasks,
   setApiInboxTasks,
   setApiProjects,
+  setApiAreas,
   setApiLetters,
   setApiContacts,
   setApiOrganizations,
@@ -46,6 +50,7 @@ export function useWorkspaceEntityPatching({
   setApiTasks: ApiRowsSetter<ApiTask>;
   setApiInboxTasks: ApiRowsSetter<ApiTask>;
   setApiProjects: ApiRowsSetter<ApiProject>;
+  setApiAreas: ApiRowsSetter<ApiArea>;
   setApiLetters: ApiRowsSetter<ApiLetter>;
   setApiContacts: ApiRowsSetter<ApiContact>;
   setApiOrganizations: ApiRowsSetter<ApiOrganization>;
@@ -110,6 +115,7 @@ export function useWorkspaceEntityPatching({
     if (table === "tasks") return `/api/v1/tasks/${encodeURIComponent(id)}`;
     if (table === "projects")
       return `/api/v1/projects/${encodeURIComponent(id)}`;
+    if (table === "areas") return `/api/v1/areas/${encodeURIComponent(id)}`;
     if (table === "letters")
       return `/api/v1/letters/${encodeURIComponent(id)}`;
     if (table === "meetings")
@@ -215,6 +221,63 @@ export function useWorkspaceEntityPatching({
       });
     },
     [setApiMeetings],
+  );
+
+  const applyApiDocumentPatch = useCallback(
+    (id: string, values: Record<string, unknown>) => {
+      const nextUpdatedAt = new Date().toISOString();
+      setApiDocuments((rows) => {
+        if (!rows) return rows;
+        return rows.map((row) =>
+          row.id === id
+            ? ({ ...row, ...values, updatedAt: nextUpdatedAt } as ApiDocument)
+            : row,
+        );
+      });
+    },
+    [setApiDocuments],
+  );
+
+  const applyOptimisticEntityPatch = useCallback(
+    (table: string, id: string, values: Record<string, unknown>) => {
+      const localValues =
+        table === "tasks"
+          ? normalizeTaskPatchForLocalState(values)
+          : values;
+      if (table === "organizations") {
+        applyApiOrganizationPatch(id, values);
+      }
+      if (table === "contacts") {
+        applyApiContactPatch(id, values);
+      }
+      if (table === "letters") {
+        applyApiLetterPatch(id, values);
+      }
+      if (table === "meetings") {
+        applyApiMeetingPatch(id, values);
+      }
+      if (table === "projects") {
+        applyApiProjectPatch(id, values);
+      }
+      if (table === "documents") {
+        applyApiDocumentPatch(id, values);
+      }
+      if (table === "tasks") {
+        applyApiTaskPatch(id, localValues);
+        if (typeof localValues.status === "string") {
+          nudgeDynamicIslandTasksRefresh();
+        }
+      }
+    },
+    [
+      applyApiContactPatch,
+      applyApiDocumentPatch,
+      applyApiLetterPatch,
+      applyApiMeetingPatch,
+      applyApiOrganizationPatch,
+      applyApiProjectPatch,
+      applyApiTaskPatch,
+    ],
   );
 
   const softRefreshApiTasks = useCallback(async () => {
@@ -329,11 +392,12 @@ export function useWorkspaceEntityPatching({
           "attendeeContactIds" in values ||
           "status" in values);
 
-      // Match Next.js: optimistic local SQLite + REST so other clients see
-      // changes even when the PowerSync upload queue is slow or stalled.
-      if (powerSync.ready && powerSync.patchMetadata) {
+      // Optimistic API cache first — UI must not wait on SQLite or REST.
+      const persistLocalAndMaybeRest = async (): Promise<
+        { number?: number } | void
+      > => {
         try {
-          await powerSync.patchMetadata(
+          await powerSync.patchMetadata!(
             table as
               | "tasks"
               | "projects"
@@ -352,9 +416,12 @@ export function useWorkspaceEntityPatching({
             const { dueEndDate: _dueEndDate, ...rest } = localValues;
             if (Object.keys(rest).length > 0) {
               try {
-                await powerSync.patchMetadata("tasks", id, toSnakeFields(rest));
+                await powerSync.patchMetadata!("tasks", id, toSnakeFields(rest));
               } catch (retryError) {
-                console.warn("[desktop] local task patch retry failed", retryError);
+                console.warn(
+                  "[desktop] local task patch retry failed",
+                  retryError,
+                );
               }
             }
           }
@@ -368,35 +435,24 @@ export function useWorkspaceEntityPatching({
             } = values;
             if (Object.keys(rest).length > 0) {
               try {
-                await powerSync.patchMetadata("meetings", id, toSnakeFields(rest));
+                await powerSync.patchMetadata!(
+                  "meetings",
+                  id,
+                  toSnakeFields(rest),
+                );
               } catch (retryError) {
-                console.warn("[desktop] local meeting patch retry failed", retryError);
+                console.warn(
+                  "[desktop] local meeting patch retry failed",
+                  retryError,
+                );
               }
             }
           }
         }
-        // Optimistic API cache — REST-created orgs/contacts may not exist in
-        // local SQLite yet, so side panels would stay stale without this.
-        if (table === "organizations") {
-          applyApiOrganizationPatch(id, values);
-        }
-        if (table === "contacts") {
-          applyApiContactPatch(id, values);
-        }
-        if (table === "letters") {
-          applyApiLetterPatch(id, values);
-        }
-        if (table === "meetings") {
-          applyApiMeetingPatch(id, values);
-        }
-        if (table === "tasks") {
-          // Optimistic so agentChatId / status show in lists before REST returns.
-          applyApiTaskPatch(id, localValues);
-          if (typeof localValues.status === "string") {
-            nudgeDynamicIslandTasksRefresh();
-          }
-        }
         if (!authenticated) return;
+        if (shouldSkipRestEntityWrite(powerSync)) {
+          return;
+        }
         try {
           const updated =
             table === "tasks"
@@ -418,36 +474,12 @@ export function useWorkspaceEntityPatching({
                   });
           if (table === "tasks") {
             await applyTaskServerRow(updated as ApiTask);
-            // Re-fetch when links / agent chat binding change so merge can fill
-            // local SQLite gaps (stale schema often omits new columns).
-            if ("links" in apiValues || "agentChatId" in apiValues) {
-              void softRefreshApiTasks();
-            }
             return typeof (updated as ApiTask)?.number === "number"
               ? { number: (updated as ApiTask).number }
               : undefined;
           }
           if (table === "meetings") {
             await applyMeetingServerRow(updated as ApiMeeting);
-            if (meetingPatchNeedsApiRefresh) {
-              void softRefreshApiMeetings();
-            }
-          }
-          if (table === "projects") {
-            applyApiProjectPatch(id, values);
-            // Re-fetch when type / codebase binding changes so merge can fill
-            // local SQLite gaps after restart.
-            if (
-              "type" in values ||
-              "key" in values ||
-              "githubRepository" in values ||
-              "localWorkingDirectory" in values
-            ) {
-              void softRefreshApiProjects();
-            }
-          }
-          if (table === "organizations") {
-            applyApiOrganizationPatch(id, values);
           }
         } catch (error) {
           // Local write + upload queue remain the source of truth if REST fails —
@@ -463,6 +495,20 @@ export function useWorkspaceEntityPatching({
               : new Error("Could not link Moneybird contact on the organization.");
           }
         }
+      };
+
+      // Match Next.js: optimistic local SQLite + REST so other clients see
+      // changes even when the PowerSync upload queue is slow or stalled.
+      if (powerSync.ready && powerSync.patchMetadata) {
+        applyOptimisticEntityPatch(table, id, values);
+        const mustAwaitRest =
+          authenticated &&
+          !shouldSkipRestEntityWrite(powerSync) &&
+          ("agentChatId" in values || "moneybirdContactId" in values);
+        if (mustAwaitRest) {
+          return persistLocalAndMaybeRest();
+        }
+        void persistLocalAndMaybeRest();
         return;
       }
       if (!authenticated) return;
@@ -521,6 +567,7 @@ export function useWorkspaceEntityPatching({
       applyApiContactPatch,
       applyApiLetterPatch,
       applyApiMeetingPatch,
+      applyOptimisticEntityPatch,
       applyApiOrganizationPatch,
       applyApiProjectPatch,
       applyApiTaskPatch,
@@ -545,6 +592,10 @@ export function useWorkspaceEntityPatching({
       setApiProjects((rows) => rows?.filter((row) => row.id !== id) ?? null);
       return;
     }
+    if (table === "areas") {
+      setApiAreas((rows) => rows?.filter((row) => row.id !== id) ?? null);
+      return;
+    }
     if (table === "letters") {
       setApiLetters((rows) => rows?.filter((row) => row.id !== id) ?? null);
       return;
@@ -563,6 +614,7 @@ export function useWorkspaceEntityPatching({
     }
     setApiDocuments((rows) => rows?.filter((row) => row.id !== id) ?? null);
   }, [
+    setApiAreas,
     setApiContacts,
     setApiDocuments,
     setApiInboxTasks,
@@ -580,12 +632,15 @@ export function useWorkspaceEntityPatching({
         await powerSync.patchMetadata(table, id, {
           deleted_at: new Date().toISOString(),
         });
+        removeFromApiCache(table, id);
         if (!authenticated) {
           throw new Error("Sign in to delete.");
         }
+        if (shouldSkipRestEntityWrite(powerSync)) {
+          return;
+        }
         try {
           await client.requestJson(path, { method: "DELETE" });
-          removeFromApiCache(table, id);
         } catch {
           // Soft-delete remains queued for PowerSync upload.
         }

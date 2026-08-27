@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -19,6 +18,7 @@ import { colors, spacing } from "../../lib/theme";
 import { useLocalQuery } from "../../lib/use-local-query";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
 import { FileTypeIcon } from "../file-type-icon";
+import { BacksterFlashList } from "../lists/index";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -41,6 +41,8 @@ type Props = {
   onClearSelection?: () => void;
   /** Bumped after create/delete so parent can refresh editor. */
   onTreeChanged?: () => void;
+  /** Parent FAB — open the create file/folder picker (phone). */
+  filesCreateSignal?: number;
 };
 
 /** Browse / create / delete under the host working directory via Core FS API. */
@@ -50,6 +52,7 @@ export function ProjectFsTree({
   onSelectFile,
   onClearSelection,
   onTreeChanged,
+  filesCreateSignal = 0,
 }: Props) {
   const client = useMobileApiClient();
   const { data: wdRows } = useLocalQuery<ProjectWdRow>(WD_SQL, [projectId]);
@@ -95,6 +98,11 @@ export function ProjectFsTree({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!filesCreateSignal) return;
+    setKindPickerOpen(true);
+  }, [filesCreateSignal]);
 
   const breadcrumbs = currentPath
     ? currentPath.split("/").filter(Boolean)
@@ -258,7 +266,8 @@ export function ProjectFsTree({
           }}
         />
       ) : (
-        <FlatList
+        <BacksterFlashList
+          embedded
           data={entries}
           keyExtractor={(item) => item.path}
           style={styles.list}

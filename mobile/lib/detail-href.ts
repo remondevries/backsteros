@@ -25,3 +25,7 @@ export function organizationDetailHref(
 ): `/organization/${string}` {
   return `/organization/${organizationId}`;
 }
+
+export function meetingDetailHref(meetingId: string): `/meeting/${string}` {
+  return `/meeting/${meetingId}`;
+}

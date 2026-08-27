@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { useDesktopWorkspaceProjects } from "../lib/workspace-data";
 import { DesktopStatusBarAgents } from "./desktop-status-bar-agents";
 import { DesktopStatusBarMetrics } from "./desktop-status-bar-metrics";
 
@@ -8,15 +8,15 @@ import { DesktopStatusBarMetrics } from "./desktop-status-bar-metrics";
  * Bottom status bar — Agents + CPU/MEM/Disk (Development console port).
  */
 export function DesktopStatusBar() {
-  const workspace = useDesktopWorkspaceData();
+  const { projects } = useDesktopWorkspaceProjects();
 
   const diskPath = useMemo(() => {
-    for (const project of workspace.projects) {
+    for (const project of projects) {
       const cwd = project.localWorkingDirectory?.trim();
       if (cwd) return cwd;
     }
     return null;
-  }, [workspace.projects]);
+  }, [projects]);
 
   return (
     <footer className="console-statusbar" aria-label="Status">

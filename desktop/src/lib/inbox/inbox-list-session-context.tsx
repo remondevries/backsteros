@@ -13,6 +13,7 @@ import { getInboxAttentionGroupKey, type InboxListItem } from "@backsteros/ui";
 import type { InboxSessionPin } from "./build-inbox-session-list";
 
 type InboxListSessionContextValue = {
+  pinnedItems: Map<string, InboxSessionPin>;
   pinInboxListItem: (item: InboxListItem) => void;
   unpinInboxListItem: (itemId: string) => void;
 };
@@ -67,8 +68,8 @@ export function useInboxListSessionState(inInboxPanel: boolean): {
   }, []);
 
   const sessionContextValue = useMemo(
-    () => ({ pinInboxListItem, unpinInboxListItem }),
-    [pinInboxListItem, unpinInboxListItem],
+    () => ({ pinnedItems, pinInboxListItem, unpinInboxListItem }),
+    [pinInboxListItem, pinnedItems, unpinInboxListItem],
   );
 
   return { pinnedItems, pinInboxListItem, unpinInboxListItem, sessionContextValue };

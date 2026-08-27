@@ -6,14 +6,21 @@ import {
   SidebarChevronIcon,
   SidebarHistoryClockIcon,
 } from "./sidebar-nav-icons.js";
-import type { ProductSidebarRecentPage } from "./product-sidebar.js";
+
+export type ProductHistoryRecentPage = {
+  id: string;
+  href: string;
+  title: string;
+  badge?: string | null;
+  icon?: ReactNode;
+};
 
 export type ProductHistoryToolbarProps = {
   onBack?: () => void;
   onForward?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
-  recentPages?: ProductSidebarRecentPage[];
+  recentPages?: ProductHistoryRecentPage[];
   onSelectRecentPage?: (href: string) => void;
   className?: string;
 };

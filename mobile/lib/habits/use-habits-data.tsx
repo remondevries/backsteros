@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { getTodayJournalDateSlug } from "../journal";
+import { useMobilePowerSync } from "../powersync-context";
 import { useMobileApiClient } from "../use-mobile-api-client";
 import { useSyncedOrRest } from "../use-synced-or-rest";
 import {
@@ -134,6 +135,7 @@ const SILENT_RELOAD = { userPull: false } as const;
 
 function useHabitsDataState(): HabitsData {
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const todayYmd = getTodayJournalDateSlug();
   const [checkedOverride, setCheckedOverride] = useState<
     Partial<Record<string, boolean>>
@@ -301,13 +303,17 @@ function useHabitsDataState(): HabitsData {
 
   const onCreateHabit = useCallback(
     async (input: { title: string; icon: string | null }) => {
-      await createHabit(client, {
-        title: input.title,
-        icon: input.icon,
-      });
+      await createHabit(
+        client,
+        {
+          title: input.title,
+          icon: input.icon,
+        },
+        powerSync,
+      );
       await reloadSilent();
     },
-    [client, reloadSilent],
+    [client, powerSync, reloadSilent],
   );
 
   const onUpdateHabit = useCallback(
@@ -322,10 +328,10 @@ function useHabitsDataState(): HabitsData {
         nextDueYmd?: string;
       },
     ) => {
-      await updateHabit(client, id, input);
+      await updateHabit(client, id, input, powerSync);
       await reloadSilent();
     },
-    [client, reloadSilent],
+    [client, powerSync, reloadSilent],
   );
 
   const onRecordDay = useCallback(
@@ -362,10 +368,10 @@ function useHabitsDataState(): HabitsData {
 
   const onDeleteDay = useCallback(
     async (taskId: string) => {
-      await softDeleteTask(client, taskId);
+      await softDeleteTask(client, taskId, powerSync);
       await reloadSilent();
     },
-    [client, reloadSilent],
+    [client, powerSync, reloadSilent],
   );
 
   return {

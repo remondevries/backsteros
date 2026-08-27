@@ -1,34 +1,34 @@
+/**
+ * Public barrel for core-replication (current Linear-shaped worker API).
+ * Stale outbox/LWW helper names from an earlier draft are intentionally gone.
+ */
+export { applyRemoteChanges, bootstrapTableFromPeer } from "./apply.js";
 export {
-  applyReplicationChange,
-  applyReplicationChanges,
-  enqueueReplicationChange,
-  enqueueReplicationRow,
-  listPendingOutbox,
-  listReplicationChangesSince,
-  markOutboxDelivered,
-} from "./apply.js";
-export { isBusyTaskRow, shouldApplyReplicationChange } from "./rules.js";
-export { getReplicationConfig, getReplicationRole, isReplicationEnabled } from "./config.js";
+  getCoreReplicationConfig,
+  isCoreReplicationEnabled,
+  type CoreReplicationConfig,
+  type CoreReplicationRole,
+} from "./config.js";
 export {
   BOOTSTRAP_TABLES,
-  isReplicatedTable,
   REPLICATED_TABLES,
   type ReplicatedTable,
-  type ReplicationChange,
-  type ReplicationOrigin,
 } from "./constants.js";
 export { isApplyingReplication, withReplicationApply } from "./context.js";
+export { getChangesSince } from "./sync.js";
 export {
-  buildPullResponse,
-  pullFromPeer,
-  pushPendingOutbox,
-  receiveReplicationPush,
-  runReplicationTick,
-} from "./sync.js";
-export { startReplicationWorker, stopReplicationWorker, scheduleReplicationTick } from "./worker.js";
+  startCoreReplicationWorker,
+  stopCoreReplicationWorker,
+  runCoreReplicationTick,
+} from "./worker.js";
+export { registerCoreReplicationRoutes } from "./routes.js";
 export {
-  applyReplicatedAvatar,
-  applyReplicatedAvatarDeletion,
-  scheduleAvatarReplication,
-  scheduleAvatarDeletionReplication,
+  pullPeerSyncEvents,
+  buildSyncEventsFeed,
+} from "./sync-event-replication.js";
+export {
+  isAvatarStorageKey,
+  fetchAvatarFromPeer,
+  replicateAvatarsForKeys,
+  verifyAvatarReplicationAuth,
 } from "./avatar-replication.js";

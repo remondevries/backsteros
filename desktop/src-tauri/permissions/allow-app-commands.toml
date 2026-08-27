@@ -6,7 +6,7 @@ commands.allow = ["whoop_status", "whoop_fetch_day"]
 [[permission]]
 identifier = "allow-system-stats"
 description = "Allows reading host CPU, memory, and disk usage for the status bar."
-commands.allow = ["system_stats"]
+commands.allow = ["system_stats", "set_system_stats_disk_path"]
 
 [[permission]]
 identifier = "allow-cursor-usage"

@@ -13,6 +13,8 @@ type Props<T extends string> = {
   onChange: (value: T) => void;
   accessibilityLabel: string;
   disabled?: boolean;
+  /** Equal-width segments that fill the parent. */
+  fullWidth?: boolean;
 };
 
 /** Compact Task / Document style toggle for headers. */
@@ -22,12 +24,17 @@ export function SegmentedPillToggle<T extends string>({
   onChange,
   accessibilityLabel,
   disabled = false,
+  fullWidth = false,
 }: Props<T>) {
   return (
     <View
       accessibilityRole="tablist"
       accessibilityLabel={accessibilityLabel}
-      style={[styles.shell, disabled ? styles.shellDisabled : null]}
+      style={[
+        styles.shell,
+        fullWidth ? styles.shellFullWidth : null,
+        disabled ? styles.shellDisabled : null,
+      ]}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -40,12 +47,17 @@ export function SegmentedPillToggle<T extends string>({
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
               styles.segment,
+              fullWidth ? styles.segmentFullWidth : null,
               active ? styles.segmentActive : null,
               pressed && !active && !disabled ? styles.segmentPressed : null,
             ]}
           >
             <Text
-              style={[styles.label, active ? styles.labelActive : null]}
+              style={[
+                styles.label,
+                fullWidth ? styles.labelFullWidth : null,
+                active ? styles.labelActive : null,
+              ]}
               numberOfLines={1}
             >
               {option.label}
@@ -63,6 +75,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
+  shellFullWidth: {
+    alignSelf: "stretch",
+    width: "100%",
+  },
   shellDisabled: {
     opacity: 0.4,
   },
@@ -70,6 +86,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
+  },
+  segmentFullWidth: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   segmentActive: {
     backgroundColor: "rgba(255, 255, 255, 0.12)",
@@ -82,6 +103,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     lineHeight: 20,
+  },
+  labelFullWidth: {
+    textAlign: "center",
   },
   labelActive: {
     color: colors.foreground,

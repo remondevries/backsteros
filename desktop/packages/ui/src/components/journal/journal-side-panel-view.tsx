@@ -44,6 +44,11 @@ export type JournalSidePanelViewProps = {
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
+  /** Defaults to Journal (`/journal/...`). */
+  getEntryHref?: (dateSlug: string) => string;
+  /** Defaults to reading `/journal/YYYY-MM-DD`. */
+  getSelectedDateFromPathname?: (pathname: string) => string | undefined;
+  title?: string;
 };
 
 /**
@@ -61,13 +66,16 @@ export function JournalSidePanelView({
   highlightedId = null,
   listRef,
   listContainerProps,
+  getEntryHref = getJournalHref,
+  getSelectedDateFromPathname = getSelectedJournalDateFromPathname,
+  title = "Journal",
 }: JournalSidePanelViewProps) {
-  const selectedDate = getSelectedJournalDateFromPathname(pathname);
+  const selectedDate = getSelectedDateFromPathname(pathname);
 
   return (
     <div className="app-content-side-panel app-content-side-panel--journal">
       <ContentSidePanelHeader
-        title="Journal"
+        title={title}
         actions={
           onCreateToday ? (
             <button
@@ -103,7 +111,7 @@ export function JournalSidePanelView({
               return (
                 <li key={dateSlug} className="inbox-list-item">
                   <Link
-                    to={getJournalHref(dateSlug)}
+                    to={getEntryHref(dateSlug)}
                     className={sidePanelItemClass({
                       active: isActive,
                       keyboardHighlighted: highlightedId === dateSlug,

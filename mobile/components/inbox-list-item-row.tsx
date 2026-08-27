@@ -9,7 +9,7 @@ import { getTaskPriorityLabel } from "../lib/task-priority";
 import { TASK_STATUS_COLORS } from "../lib/task-status";
 import { colors } from "../lib/theme";
 import { ListAssigneeAvatar } from "./list-assignee-avatar";
-import { EmailNavIcon } from "./nav-icons";
+import { EmailNavIcon, CalendarNavIcon } from "./nav-icons";
 import { ProjectOcticon } from "./project-octicon";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
@@ -29,7 +29,7 @@ export type InboxListItemRowTask = {
   assignee_name?: string | null;
   assigneeAvatarSrc?: string | null;
   /** Email thread rows (desktop inbox parity) render an email type icon. */
-  item_type?: "task" | "email" | null;
+  item_type?: "task" | "email" | "meeting" | null;
   /** Email rows: sender label shown in the meta line. */
   email_from?: string | null;
 };
@@ -66,6 +66,7 @@ export function InboxListItemRow({
   const hasAssignee = Boolean(task.assignee_id || assigneeName);
 
   const isEmail = task.item_type === "email";
+  const isMeeting = task.item_type === "meeting";
   const emailFrom = isEmail ? task.email_from?.trim() || null : null;
 
   const body = (
@@ -77,6 +78,8 @@ export function InboxListItemRow({
               size={13}
               color={resolveInboxEmailIconColor(task.status)}
             />
+          ) : isMeeting ? (
+            <CalendarNavIcon size={13} color={colors.muted} />
           ) : (
             <TaskStatusIcon status={task.status} size={14} />
           )}
@@ -93,12 +96,14 @@ export function InboxListItemRow({
             </Text>
           </View>
         ) : null}
-        <View style={styles.metaItem}>
-          <TaskPriorityIcon priority={priority} size={14} />
-          <Text style={styles.metaLabel} numberOfLines={1}>
-            {priorityLabel}
-          </Text>
-        </View>
+        {!isEmail && !isMeeting ? (
+          <View style={styles.metaItem}>
+            <TaskPriorityIcon priority={priority} size={14} />
+            <Text style={styles.metaLabel} numberOfLines={1}>
+              {priorityLabel}
+            </Text>
+          </View>
+        ) : null}
         {dueLabel ? (
           <View style={styles.metaItem}>
             <TaskDueDateIcon active urgency={urgency} size={12} />
@@ -126,7 +131,7 @@ export function InboxListItemRow({
             </Text>
           </View>
         ) : null}
-        {hasAssignee ? (
+        {!isEmail && !isMeeting && hasAssignee ? (
           <View style={styles.assignee}>
             <ListAssigneeAvatar
               name={assigneeName}

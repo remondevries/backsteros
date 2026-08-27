@@ -183,22 +183,47 @@ export type KnowledgeListItem = {
 };
 
 export function getKnowledgeHref(pathOrId?: string): string {
-  if (!pathOrId) return "/knowledge";
+  if (!pathOrId) return "/knowledge-v2";
   // Preserve path separators (Next parity) — encode then restore `/`.
   const encoded = encodeURIComponent(pathOrId).replace(/%2F/gi, "/");
-  return encoded ? `/knowledge/${encoded}` : "/knowledge";
+  return encoded ? `/knowledge-v2/${encoded}` : "/knowledge-v2";
+}
+
+export function getKnowledgeV2Href(pathOrId?: string): string {
+  return getKnowledgeHref(pathOrId);
 }
 
 export function getSelectedKnowledgeSlugFromPathname(
   pathname: string,
 ): string | null {
-  if (!pathname.startsWith("/knowledge/")) return null;
-  const slug = pathname.slice("/knowledge/".length);
+  return (
+    getSelectedKnowledgeV2SlugFromPathname(pathname) ??
+    (() => {
+      if (!pathname.startsWith("/knowledge/")) return null;
+      const slug = pathname.slice("/knowledge/".length);
+      return slug ? decodeURIComponent(slug) : null;
+    })()
+  );
+}
+
+export function getSelectedKnowledgeV2SlugFromPathname(
+  pathname: string,
+): string | null {
+  if (!pathname.startsWith("/knowledge-v2/")) return null;
+  const slug = pathname.slice("/knowledge-v2/".length);
   return slug ? decodeURIComponent(slug) : null;
 }
 
 export function isKnowledgeSectionPath(pathname: string): boolean {
-  return pathname === "/knowledge" || pathname.startsWith("/knowledge/");
+  return (
+    pathname === "/knowledge" ||
+    pathname.startsWith("/knowledge/") ||
+    isKnowledgeV2SectionPath(pathname)
+  );
+}
+
+export function isKnowledgeV2SectionPath(pathname: string): boolean {
+  return pathname === "/knowledge-v2" || pathname.startsWith("/knowledge-v2/");
 }
 
 export type ProjectListItem = {

@@ -19,10 +19,15 @@ import {
   type FinanceRecurringsChromeState,
   type FinanceTransactionsChromeState,
 } from "@backsteros/ui";
-import { useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useCallback, useState, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import { useDesktopApi } from "../lib/api-context";
+import {
+  useKeepAliveActive,
+  useRoutePathActive,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
@@ -37,13 +42,29 @@ import { useFinancePageChrome } from "./finance/use-finance-page-chrome";
 import { useFinanceSectionData } from "./finance/use-finance-section-data";
 import { useFinanceSectionPatchHandlers } from "./finance/use-finance-section-patch-handlers";
 import { useFinanceTransactions } from "./finance/use-finance-transactions";
+import { navigateToHref } from "../router/navigate-href";
 
 export function FinancePage() {
-  const navigate = useNavigate();
-  const { slug, section: sectionParam } = useParams<{
+  const active = useRoutePathActive("/finance");
+  if (!active) return null;
+  return <FinancePageBody />;
+}
+
+function FinancePageBody() {
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (
+      to: string,
+      options?: { replace?: boolean; state?: unknown },
+    ) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate]);
+  const keepAliveActive = useKeepAliveActive();
+  const { slug, section: sectionParam } = useShellParams() as {
     slug?: string;
     section?: string;
-  }>();
+  };
   const { client } = useDesktopApi();
   const workspace = useDesktopWorkspaceData();
   const { organizations, projects } = workspace;
@@ -106,7 +127,13 @@ export function FinancePage() {
     updateRecurring,
     deleteRecurring,
     handleReorderRecurrings,
-  } = useFinanceCoreData({ client, navigate, slug, sectionParam });
+  } = useFinanceCoreData({
+    client,
+    navigate,
+    slug,
+    sectionParam,
+    routeActive: keepAliveActive,
+  });
 
   const {
     categorySpendById,
@@ -301,6 +328,7 @@ export function FinancePage() {
   });
 
   const { breadcrumbLabel } = useFinancePageChrome({
+    enabled: keepAliveActive,
     navId,
     showTransactions,
     selected,
@@ -350,11 +378,21 @@ export function FinancePage() {
           setFilterCategoryIds([DROPDOWN_NONE_VALUE]);
           navigate(getFinanceTransactionsHref());
         }}
-        onOpenCategories={() => navigate(getFinanceNavHref("categories"))}
-        onOpenGoals={() => navigate(getFinanceNavHref("goals"))}
-        onOpenRecurrings={() => navigate(getFinanceNavHref("recurrings"))}
-        onOpenAccounts={() => navigate(getFinanceNavHref("accounts"))}
-        onOpenCashflow={() => navigate(getFinanceNavHref("cashflow"))}
+        onOpenCategories={() =>
+          navigate(getFinanceNavHref("categories"))
+        }
+        onOpenGoals={() =>
+          navigate(getFinanceNavHref("goals"))
+        }
+        onOpenRecurrings={() =>
+          navigate(getFinanceNavHref("recurrings"))
+        }
+        onOpenAccounts={() =>
+          navigate(getFinanceNavHref("accounts"))
+        }
+        onOpenCashflow={() =>
+          navigate(getFinanceNavHref("cashflow"))
+        }
         onPatchTransaction={(id, patch) => {
           void handleDashboardTransactionPatch(id, patch);
         }}
@@ -452,8 +490,7 @@ export function FinancePage() {
         invoiceDetailError={moneybirdInvoiceDetailError}
         onLinkMoneybirdContact={async (moneybirdContactId, organizationId) => {
           const linked = organizations.filter(
-            (org) => org.moneybirdContactId === moneybirdContactId,
-          );
+            (org) => org.moneybirdContactId === moneybirdContactId);
           for (const org of linked) {
             if (org.id === organizationId) continue;
             await workspace.patchOrganization(org.id, {
@@ -542,8 +579,7 @@ export function FinancePage() {
             client,
             "bank_account",
             accountId,
-            file,
-          );
+            file);
           if (result.ok) {
             await refreshAccounts().catch(() => undefined);
             notifyBankAccountsChanged();
@@ -554,8 +590,7 @@ export function FinancePage() {
           const result = await removeDesktopAvatar(
             client,
             "bank_account",
-            accountId,
-          );
+            accountId);
           if (result.ok) {
             await refreshAccounts().catch(() => undefined);
             notifyBankAccountsChanged();
@@ -617,8 +652,7 @@ export function FinancePage() {
             client,
             "bank_account",
             accountId,
-            file,
-          );
+            file);
           if (result.ok) {
             await refreshAccounts().catch(() => undefined);
           }
@@ -628,8 +662,7 @@ export function FinancePage() {
           const result = await removeDesktopAvatar(
             client,
             "bank_account",
-            accountId,
-          );
+            accountId);
           if (result.ok) {
             await refreshAccounts().catch(() => undefined);
           }
@@ -688,7 +721,7 @@ export function FinancePage() {
 
   return (
     <>
-      <RegisterPageTitle title={breadcrumbLabel} />
+      {keepAliveActive ? <RegisterPageTitle title={breadcrumbLabel} /> : null}
       {main}
 
       <FinancePageModals

@@ -80,6 +80,9 @@ export type KnowledgeSidePanelViewProps = {
   onFolderActivateRef?: Ref<(folderId: string) => void>;
   /** Show tree skeleton while workspace metadata is loading. */
   loading?: boolean;
+  getDocumentHref?: (pathOrId?: string) => string;
+  getSelectedSlugFromPathname?: (pathname: string) => string | null;
+  title?: string;
 };
 
 function toTreeSource(item: KnowledgeListItem) {
@@ -109,8 +112,11 @@ export function KnowledgeSidePanelView({
   onVisibleNavItemIdsChange,
   onFolderActivateRef,
   loading = false,
+  getDocumentHref = getKnowledgeHref,
+  getSelectedSlugFromPathname = getSelectedKnowledgeSlugFromPathname,
+  title = "Knowledge Base",
 }: KnowledgeSidePanelViewProps) {
-  const selectedSlug = getSelectedKnowledgeSlugFromPathname(pathname);
+  const selectedSlug = getSelectedSlugFromPathname(pathname);
   const [addingFolder, setAddingFolder] = useState(false);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(
     () => new Set(),
@@ -228,7 +234,7 @@ export function KnowledgeSidePanelView({
   return (
     <div className="app-content-side-panel app-content-side-panel--documents">
       <ContentSidePanelHeader
-        title="Knowledge Base"
+        title={title}
         actions={
           <>
             {onAdd ? (
@@ -292,7 +298,7 @@ export function KnowledgeSidePanelView({
                 collapsedFolderIds={collapsedFolderIds}
                 onToggleFolderCollapsed={handleToggleFolderCollapsed}
                 highlightedNavItemId={highlightedId}
-                getDocumentHref={(path) => getKnowledgeHref(path)}
+                getDocumentHref={(path) => getDocumentHref(path)}
                 Link={Link}
                 onRename={onRename}
                 dragInsertBeforeId={dragInsertBeforeId}

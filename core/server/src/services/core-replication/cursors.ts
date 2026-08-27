@@ -4,11 +4,15 @@ import { db, sqlClient } from "../../db/index.js";
 import { coreReplicationCursors } from "../../db/schema.js";
 import type { ReplicatedTable } from "./constants.js";
 import type { ReplicationCursor } from "./types.js";
+import { compareCursor, maxCursor, toIso } from "./cursor-order.js";
 
-function toIso(value: Date | string | null | undefined): string {
-  if (!value) return new Date(0).toISOString();
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-}
+export type ReplicationCursorDirection = "pull" | "push";
+export { compareCursor, maxCursor, toIso };
+
+const EPOCH: ReplicationCursor = {
+  updatedAt: new Date(0).toISOString(),
+  rowId: "",
+};
 
 export async function tableExists(tableName: string): Promise<boolean> {
   const rows = await sqlClient<{ exists: boolean }[]>`
@@ -22,8 +26,30 @@ export async function tableExists(tableName: string): Promise<boolean> {
   return Boolean(rows[0]?.exists);
 }
 
+function cursorFromRow(
+  row: typeof coreReplicationCursors.$inferSelect | undefined,
+  direction: ReplicationCursorDirection,
+): ReplicationCursor {
+  if (!row) return { ...EPOCH };
+
+  if (direction === "pull") {
+    const updatedAt = row.pullUpdatedAt ?? row.updatedAt;
+    const rowId =
+      row.pullRowId && row.pullRowId.length > 0
+        ? row.pullRowId
+        : row.rowId;
+    return { updatedAt: toIso(updatedAt), rowId };
+  }
+
+  const updatedAt = row.pushUpdatedAt ?? row.updatedAt;
+  const rowId =
+    row.pushRowId && row.pushRowId.length > 0 ? row.pushRowId : row.rowId;
+  return { updatedAt: toIso(updatedAt), rowId };
+}
+
 export async function getReplicationCursor(
   table: ReplicatedTable,
+  direction: ReplicationCursorDirection = "pull",
 ): Promise<ReplicationCursor> {
   const [row] = await db
     .select()
@@ -31,25 +57,45 @@ export async function getReplicationCursor(
     .where(eq(coreReplicationCursors.tableName, table))
     .limit(1);
 
-  if (!row) {
-    return { updatedAt: new Date(0).toISOString(), rowId: "" };
-  }
-
-  return {
-    updatedAt: toIso(row.updatedAt),
-    rowId: row.rowId,
-  };
+  return cursorFromRow(row, direction);
 }
 
 export async function setReplicationCursor(
   table: ReplicatedTable,
   cursor: ReplicationCursor,
+  direction: ReplicationCursorDirection = "pull",
 ): Promise<void> {
   // Never move a cursor backwards — overlapping ticks / stalled bulk pushes
   // must not clobber a newer tip after bootstrap or a concurrent tick.
-  const existing = await getReplicationCursor(table);
+  const existing = await getReplicationCursor(table, direction);
   const next = maxCursor(existing, cursor);
   if (compareCursor(next, existing) <= 0 && existing.rowId !== "") {
+    return;
+  }
+
+  const nextDate = new Date(next.updatedAt);
+  if (direction === "pull") {
+    await db
+      .insert(coreReplicationCursors)
+      .values({
+        tableName: table,
+        updatedAt: nextDate,
+        rowId: next.rowId,
+        pullUpdatedAt: nextDate,
+        pullRowId: next.rowId,
+        pushUpdatedAt: new Date(0),
+        pushRowId: "",
+      })
+      .onConflictDoUpdate({
+        target: coreReplicationCursors.tableName,
+        set: {
+          pullUpdatedAt: nextDate,
+          pullRowId: next.rowId,
+          // Keep legacy columns aligned with pull for older readers.
+          updatedAt: nextDate,
+          rowId: next.rowId,
+        },
+      });
     return;
   }
 
@@ -57,30 +103,27 @@ export async function setReplicationCursor(
     .insert(coreReplicationCursors)
     .values({
       tableName: table,
-      updatedAt: new Date(next.updatedAt),
+      updatedAt: nextDate,
       rowId: next.rowId,
+      pullUpdatedAt: new Date(0),
+      pullRowId: "",
+      pushUpdatedAt: nextDate,
+      pushRowId: next.rowId,
     })
     .onConflictDoUpdate({
       target: coreReplicationCursors.tableName,
       set: {
-        updatedAt: new Date(next.updatedAt),
-        rowId: next.rowId,
+        pushUpdatedAt: nextDate,
+        pushRowId: next.rowId,
       },
     });
 }
 
-export function compareCursor(a: ReplicationCursor, b: ReplicationCursor): number {
-  const timeA = Date.parse(a.updatedAt);
-  const timeB = Date.parse(b.updatedAt);
-  if (timeA !== timeB) return timeA - timeB;
-  return a.rowId.localeCompare(b.rowId);
+/** Set both watermarks after bootstrap so neither direction re-sends the snapshot. */
+export async function setReplicationCursorsAfterBootstrap(
+  table: ReplicatedTable,
+  cursor: ReplicationCursor,
+): Promise<void> {
+  await setReplicationCursor(table, cursor, "pull");
+  await setReplicationCursor(table, cursor, "push");
 }
-
-export function maxCursor(
-  current: ReplicationCursor,
-  candidate: ReplicationCursor,
-): ReplicationCursor {
-  return compareCursor(candidate, current) > 0 ? candidate : current;
-}
-
-export { toIso };

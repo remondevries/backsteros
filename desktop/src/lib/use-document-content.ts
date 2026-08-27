@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useDesktopApi } from "./api-context";
 import {
-  discardDocumentContentCache,
   fetchDocumentContent,
   peekDocumentContentCache,
   writeDocumentContentCache,
@@ -26,10 +25,10 @@ function asContentVersion(value: unknown): number | null {
 /**
  * Load / save document markdown via `/api/v1/documents/:id/content`.
  *
- * - `loading` — no body for this id yet (cold open / day switch) → skeleton
+ * - `loading` — no body for this id yet (cold open / day switch)
  * - `refreshing` — revalidate while showing cached body for the *same* id
- * - session LRU + shared inflight with `prefetchDocumentContent`
- * - discards this document's Tier D body when leaving the detail screen
+ * - persisted LRU + shared inflight with `prefetchDocumentContent`
+ * - keeps the body in the bounded LRU after leave (return visits / reload)
  * - when PowerSync `content_version` advances past the local body version,
  *   refetch Tier D content (live refresh across clients)
  *
@@ -44,10 +43,13 @@ export function useDesktopDocumentContent(
   options?: {
     keepPreviousOnMiss?: boolean;
     skeletonUntilFetched?: boolean;
+    /** When false, keep the last body and do not fetch (hidden keep-alive). */
+    enabled?: boolean;
   },
 ) {
   const keepPreviousOnMiss = options?.keepPreviousOnMiss === true;
   const skeletonUntilFetched = options?.skeletonUntilFetched === true;
+  const enabled = options?.enabled !== false;
   const { client } = useDesktopApi();
   const cached = documentId ? peekDocumentContentCache(documentId) : null;
   const [initialBody, setInitialBody] = useState(
@@ -63,10 +65,10 @@ export function useDesktopDocumentContent(
   const [activeId, setActiveId] = useState(documentId);
 
   const syncedVersionRows = usePowerSyncQuery<Record<string, unknown>>(
-    documentId
+    enabled && documentId
       ? "SELECT content_version FROM documents WHERE id = ?"
       : null,
-    documentId ? [documentId] : [],
+    enabled && documentId ? [documentId] : [],
   );
   const syncedContentVersion = asContentVersion(
     syncedVersionRows.data?.[0]?.content_version ??
@@ -106,7 +108,7 @@ export function useDesktopDocumentContent(
   }
 
   useEffect(() => {
-    if (!documentId) {
+    if (!documentId || !enabled) {
       return;
     }
 
@@ -124,8 +126,8 @@ export function useDesktopDocumentContent(
 
     void fetchDocumentContent(client, fetchId).then((data) => {
       if (cancelled) {
-        // Late fetch must not keep a body after leave / id switch.
-        discardDocumentContentCache(fetchId);
+        // Keep the bounded session LRU — discarding here made every
+        // return visit wait on the network again (journal 1.6s + 510ms).
         return;
       }
       if (!data) {
@@ -141,14 +143,12 @@ export function useDesktopDocumentContent(
 
     return () => {
       cancelled = true;
-      // Leave detail screen / switch id → drop this Tier D body (07-performance.md).
-      discardDocumentContentCache(fetchId);
     };
-  }, [client, documentId, keepPreviousOnMiss, skeletonUntilFetched]);
+  }, [client, documentId, enabled, keepPreviousOnMiss, skeletonUntilFetched]);
 
   // Remote save bumped content_version in PowerSync — refetch Tier D body.
   useEffect(() => {
-    if (!documentId) return;
+    if (!documentId || !enabled) return;
     if (syncedContentVersion == null || contentVersion == null) return;
     if (syncedContentVersion <= contentVersion) return;
 
@@ -168,7 +168,7 @@ export function useDesktopDocumentContent(
     return () => {
       cancelled = true;
     };
-  }, [client, contentVersion, documentId, syncedContentVersion]);
+  }, [client, contentVersion, documentId, enabled, syncedContentVersion]);
 
   const onSave = useCallback(
     async (content: string) => {

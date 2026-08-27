@@ -7,103 +7,8 @@ import { describe, it } from "node:test";
 import {
   applyVaultFileDelete,
   applyVaultFilePut,
-  diffVaultManifest,
   listMarkdownFiles,
-  normalizeVaultMarkdownPath,
-  planVaultPull,
-  planVaultPullDeletes,
-  resolveSafeVaultAbsolute,
-  VaultPathError,
 } from "./vault-replication.js";
-
-describe("vault-replication paths", () => {
-  it("normalizes relative markdown paths", () => {
-    assert.equal(
-      normalizeVaultMarkdownPath("Journal/2026-08-25.md"),
-      "Journal/2026-08-25.md",
-    );
-    assert.equal(
-      normalizeVaultMarkdownPath("Projects/Foo/Documents/note.md"),
-      "Projects/Foo/Documents/note.md",
-    );
-  });
-
-  it("rejects traversal, absolute, non-md, and AppleDouble names", () => {
-    assert.throws(() => normalizeVaultMarkdownPath("../secret.md"), VaultPathError);
-    assert.throws(() => normalizeVaultMarkdownPath("/etc/passwd.md"), VaultPathError);
-    assert.throws(() => normalizeVaultMarkdownPath("Projects/foo/readme.txt"), VaultPathError);
-    assert.throws(() => normalizeVaultMarkdownPath("Journal/._note.md"), VaultPathError);
-    assert.throws(
-      () => resolveSafeVaultAbsolute("/tmp/vault", "Journal/../../etc/passwd.md"),
-      VaultPathError,
-    );
-  });
-});
-
-describe("vault-replication manifest diff", () => {
-  it("detects creates, mtime updates, and deletes", () => {
-    const diff = diffVaultManifest(
-      [
-        { relativePath: "a.md", mtimeMs: 100, size: 10 },
-        { relativePath: "b.md", mtimeMs: 300, size: 20 },
-      ],
-      {
-        "a.md": { mtimeMs: 100, size: 10 },
-        "b.md": { mtimeMs: 200, size: 20 },
-        "c.md": { mtimeMs: 1, size: 1 },
-      },
-    );
-    assert.deepEqual(
-      diff.upserts.map((f) => f.relativePath),
-      ["b.md"],
-    );
-    assert.deepEqual(diff.deletes, ["c.md"]);
-  });
-
-  it("treats size changes as upserts", () => {
-    const diff = diffVaultManifest(
-      [{ relativePath: "a.md", mtimeMs: 100, size: 11 }],
-      { "a.md": { mtimeMs: 100, size: 10 } },
-    );
-    assert.equal(diff.upserts.length, 1);
-    assert.equal(diff.deletes.length, 0);
-  });
-});
-
-describe("vault-replication pull planning", () => {
-  it("pulls missing and strictly newer peer files (LWW by mtime)", () => {
-    const pulls = planVaultPull(
-      [
-        { relativePath: "a.md", mtimeMs: 100, size: 1 },
-        { relativePath: "b.md", mtimeMs: 200, size: 1 },
-      ],
-      [
-        { relativePath: "a.md", mtimeMs: 150, size: 2 },
-        { relativePath: "b.md", mtimeMs: 200, size: 1 },
-        { relativePath: "c.md", mtimeMs: 1, size: 1 },
-      ],
-    );
-    assert.deepEqual(
-      pulls.map((f) => f.relativePath),
-      ["a.md", "c.md"],
-    );
-  });
-
-  it("deletes local copies only when they still match the synced manifest", () => {
-    const deletes = planVaultPullDeletes(
-      [
-        { relativePath: "gone.md", mtimeMs: 50, size: 3 },
-        { relativePath: "edited.md", mtimeMs: 99, size: 9 },
-      ],
-      [],
-      {
-        "gone.md": { mtimeMs: 50, size: 3 },
-        "edited.md": { mtimeMs: 50, size: 3 },
-      },
-    );
-    assert.deepEqual(deletes, ["gone.md"]);
-  });
-});
 
 describe("vault-replication filesystem", () => {
   it("lists markdown and skips AppleDouble sidecars", async () => {
@@ -157,5 +62,21 @@ describe("vault-replication filesystem", () => {
 
     const deleted = await applyVaultFileDelete(root, "Knowledge Base/note.md");
     assert.equal(deleted, "applied");
+  });
+
+  it("refuses to overwrite non-empty file with empty bytes", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "vault-repl-empty-"));
+    const mtimeMs = Date.UTC(2026, 7, 25, 12, 0, 0);
+    await applyVaultFilePut(root, {
+      path: "Knowledge Base/keep.md",
+      mtimeMs,
+      contentBase64: Buffer.from("# keep me\n", "utf8").toString("base64"),
+    });
+    const skipped = await applyVaultFilePut(root, {
+      path: "Knowledge Base/keep.md",
+      mtimeMs: mtimeMs + 60_000,
+      contentBase64: Buffer.from("", "utf8").toString("base64"),
+    });
+    assert.equal(skipped, "skipped");
   });
 });

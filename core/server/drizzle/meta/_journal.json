@@ -477,6 +477,20 @@
       "when": 1790300000000,
       "tag": "0076_cashflow_planner_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1790400000000,
+      "tag": "0077_core_replication_split_cursors",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0078_core_sync_event_replication_state",
+      "breakpoints": true
     }
   ]
 }

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   LetterComposeView,
-  LetterDetailSkeleton,
   LetterDetailView,
   RegisterEntityDeleteAction,
   RegisterPageTitle,
@@ -24,9 +23,22 @@ import {
 } from "../lib/avatar-src";
 import { useDesktopApi } from "../lib/api-context";
 import { uploadLetterPdfFile } from "../lib/letter-pdf-upload";
+import { firstLetterSlug } from "../lib/section-entry-hrefs";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellLocation,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useLetterPdfPanel } from "../lib/use-letter-pdf-panel";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+} from "../lib/workspace-data";
+import { navigateToHref } from "../router/navigate-href";
 
 export type LettersPageProps = {
   letterRouteParam?: string;
@@ -37,16 +49,77 @@ export type LettersPageProps = {
 
 export function LettersPage({
   letterRouteParam,
-  backHref = "/letters",
+  backHref = "/letters-v2",
   breadcrumbItems,
   disableAutoSelectFirst = false,
 }: LettersPageProps = {}) {
-  const navigate = useNavigate();
-  const { slug: slugParam } = useParams<{ slug?: string }>();
-  const [searchParams] = useSearchParams();
-  const slug = letterRouteParam ?? slugParam;
+  if (letterRouteParam || disableAutoSelectFirst) {
+    return (
+      <OutletLettersPage
+        letterRouteParam={letterRouteParam}
+        backHref={backHref}
+        breadcrumbItems={breadcrumbItems}
+        disableAutoSelectFirst={disableAutoSelectFirst}
+      />
+    );
+  }
+  return (
+    <LettersPageBody
+      letterRouteParam={letterRouteParam}
+      backHref={backHref}
+      breadcrumbItems={breadcrumbItems}
+      disableAutoSelectFirst={disableAutoSelectFirst}
+    />
+  );
+}
+
+function OutletLettersPage(props: LettersPageProps) {
+  const { pathname } = useShellLocation();
+  const onLettersRoute =
+    pathname === "/letters" ||
+    pathname.startsWith("/letters/") ||
+    pathname === "/letters-v2" ||
+    pathname.startsWith("/letters-v2/") ||
+    /\/letters(\/|$)/.test(pathname);
+  if (!onLettersRoute && !props.disableAutoSelectFirst) return null;
+  return <LettersPageBody {...props} />;
+}
+
+function LettersPageBody({
+  letterRouteParam,
+  backHref = "/letters-v2",
+  breadcrumbItems,
+  disableAutoSelectFirst = false,
+}: LettersPageProps = {}) {
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (
+      to: string,
+      options?: { replace?: boolean; state?: unknown },
+    ) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate]);
+  const keepAliveActive = useKeepAliveActive();
+  const keepAliveFrozen = useKeepAliveFrozen();
+  const { slug: slugParam } = useShellParams() as { slug?: string };
+  const { searchStr } = useShellLocation();
+  const searchParams = useMemo(
+    () =>
+      new URLSearchParams(
+        searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
+    [searchStr]);
+  const routedSlug = letterRouteParam ?? slugParam;
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
+  const { ready } = useDesktopWorkspaceMeta();
+  const {
+    letters: workspaceLetters,
+    letterRecords,
+    letterBodies,
+    projects,
+  } = useDesktopWorkspaceProjects();
+  const { organizations, contacts } = useDesktopWorkspacePeople();
+  const workspace = useDesktopWorkspaceActions();
   const [composePdfUploading, setComposePdfUploading] = useState(false);
   const [omittedLetterIds, setOmittedLetterIds] = useState<string[]>([]);
   const [statusOverride, setStatusOverride] = useState<TaskStatus | null>(null);
@@ -60,16 +133,16 @@ export function LettersPage({
   const [contactId, setContactId] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
 
-  const { letters: workspaceLetters, organizations, contacts, projects } =
-    workspace;
-
   const letters = useMemo(
     () =>
       workspaceLetters.filter(
-        (letter) => !omittedLetterIds.includes(letter.id),
-      ),
-    [omittedLetterIds, workspaceLetters],
-  );
+        (letter) => !omittedLetterIds.includes(letter.id)),
+    [omittedLetterIds, workspaceLetters]);
+  const slug =
+    routedSlug ??
+    (disableAutoSelectFirst
+      ? undefined
+      : firstLetterSlug(letters) ?? letters[0]?.id ?? undefined);
 
   useEffect(() => {
     if (omittedLetterIds.length === 0) return;
@@ -85,7 +158,7 @@ export function LettersPage({
     : null;
 
   const record = selected
-    ? workspace.letterRecords[selected.id] ?? null
+    ? letterRecords[selected.id] ?? null
     : null;
 
   useEffect(() => {
@@ -100,43 +173,25 @@ export function LettersPage({
     setProjectKey(linkedProject?.key ?? selected?.projectKey ?? null);
   }, [projects, record, selected?.id, selected?.projectKey]);
 
-  useEffect(() => {
-    if (disableAutoSelectFirst || letterRouteParam != null) return;
-    if (slug === "new") return;
-    if (slug) return;
-    const first = letters[0];
-    if (first) {
-      navigate(getLettersHref(first.number), { replace: true });
-    }
-  }, [
-    disableAutoSelectFirst,
-    letterRouteParam,
-    letters,
-    navigate,
-    slug,
-  ]);
-
-  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    keepAliveFrozen ? [] : contacts);
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
-    organizations,
-  );
+    keepAliveFrozen ? [] : organizations);
 
   const organizationOptions = useMemo(
     () =>
       buildOrganizationDropdownOptions(
-        withAvatarSrc(organizations, organizationAvatarSrc),
-      ),
-    [organizationAvatarSrc, organizations],
-  );
+        withAvatarSrc(organizations, organizationAvatarSrc)),
+    [organizationAvatarSrc, organizations]);
 
   const contactOptions = useMemo(() => {
     const scoped = organizationId
       ? contacts.filter((contact) => contact.organizationId === organizationId)
       : [];
     return buildContactDropdownOptions(
-      withAvatarSrc(scoped, contactAvatarSrc),
-    );
+      withAvatarSrc(scoped, contactAvatarSrc));
   }, [contactAvatarSrc, contacts, organizationId]);
 
   const projectOptions = useMemo(
@@ -148,10 +203,8 @@ export function LettersPage({
           icon: project.icon,
           type: project.type,
         })),
-        { includeNone: false },
-      ),
-    [projects],
-  );
+        { includeNone: false }),
+    [projects]);
 
   const composeProjectOptions = useMemo(
     () =>
@@ -161,10 +214,8 @@ export function LettersPage({
           name: project.name,
           icon: project.icon,
           type: project.type,
-        })),
-      ),
-    [projects],
-  );
+        }))),
+    [projects]);
 
   const letter = useMemo(() => {
     if (!selected) return null;
@@ -200,7 +251,7 @@ export function LettersPage({
       projectKey: project?.key ?? projectKey,
       projectName: project?.name ?? null,
       body:
-        workspace.letterBodies[selected.id] ??
+        letterBodies[selected.id] ??
         "",
       displayId: formatLetterDisplayId(selected.number),
     };
@@ -216,7 +267,7 @@ export function LettersPage({
     record,
     selected,
     statusOverride,
-    workspace.letterBodies,
+    letterBodies,
   ]);
 
   const hasLivePdf = Boolean(record?.storageKey && record.byteSize > 0);
@@ -247,20 +298,19 @@ export function LettersPage({
             { label: breadcrumbTitle },
           ]
         : [{ label: "Letters", href: backHref }],
-  );
+    { enabled: keepAliveActive });
 
   const letterDetailHref = useCallback(
     (created: { id: string; number?: number | null }) => {
       if (created.number != null) {
-        if (backHref === "/letters") {
+        if (backHref === "/letters" || backHref === "/letters-v2") {
           return getLettersHref(created.number);
         }
         return `${backHref}/${formatLetterDisplayId(created.number).toLowerCase()}`;
       }
       return `${backHref}/${created.id}`;
     },
-    [backHref],
-  );
+    [backHref]);
 
   const handleDeleteLetter = useCallback(async () => {
     if (!letter) {
@@ -269,8 +319,7 @@ export function LettersPage({
     const deletedId = letter.id;
     const remaining = letters.filter((entry) => entry.id !== deletedId);
     setOmittedLetterIds((current) =>
-      current.includes(deletedId) ? current : [...current, deletedId],
-    );
+      current.includes(deletedId) ? current : [...current, deletedId]);
     try {
       await workspace.softDeleteLetter(deletedId);
       if (remaining.length === 0) {
@@ -281,8 +330,7 @@ export function LettersPage({
       return { ok: true as const };
     } catch (error) {
       setOmittedLetterIds((current) =>
-        current.filter((id) => id !== deletedId),
-      );
+        current.filter((id) => id !== deletedId));
       return {
         ok: false as const,
         error:
@@ -296,7 +344,7 @@ export function LettersPage({
     slug === "new" ||
     (!slug &&
       !disableAutoSelectFirst &&
-      workspace.ready &&
+      ready &&
       letters.length === 0);
 
   if (showCompose) {
@@ -357,8 +405,7 @@ export function LettersPage({
                 const upload = await uploadLetterPdfFile(
                   client,
                   created.id,
-                  payload.pdfFile,
-                );
+                  payload.pdfFile);
                 setComposePdfUploading(false);
                 if (!upload.ok) {
                   console.error(upload.error);
@@ -374,16 +421,19 @@ export function LettersPage({
   }
 
   if (!slug || !letter) {
-    if (!slug || !workspace.ready) {
-      return <LetterDetailSkeleton />;
-    }
     return (
       <div className="inbox-detail-layout">
         <div className="inbox-detail-empty">
-          <p>Letter not found.</p>
-          <button type="button" onClick={() => navigate(backHref)}>
-            Back to letters
-          </button>
+          {slug ? (
+            <>
+              <p>Letter not found.</p>
+              <button type="button" onClick={() => navigate(backHref)}>
+                Back to letters
+              </button>
+            </>
+          ) : (
+            <p>No letters yet.</p>
+          )}
         </div>
       </div>
     );
@@ -395,11 +445,15 @@ export function LettersPage({
 
   return (
     <>
-      <RegisterPageTitle title={letter.title} />
-      <RegisterEntityDeleteAction
-        entityLabel={deleteEntityLabel}
-        onDelete={handleDeleteLetter}
-      />
+      {keepAliveActive ? (
+        <>
+          <RegisterPageTitle title={letter.title} />
+          <RegisterEntityDeleteAction
+            entityLabel={deleteEntityLabel}
+            onDelete={handleDeleteLetter}
+          />
+        </>
+      ) : null}
       <LetterDetailView
         letter={letter}
         showPdfDock
@@ -416,8 +470,7 @@ export function LettersPage({
           const result = await pdfPanel.reorderAttachments(orderedIds);
           if (!result.ok) {
             window.alert(
-              `Could not save PDF order.\n${result.error}\n\nIf you are on Prod, switch Settings → Backend to Dev (local API), or deploy the API with the reorder route.`,
-            );
+              `Could not save PDF order.\n${result.error}\n\nIf you are on Prod, switch Settings → Backend to Dev (local API), or deploy the API with the reorder route.`);
           }
         }}
         pdfOpen={pdfPanel.pdfOpen}

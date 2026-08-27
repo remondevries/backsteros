@@ -1,14 +1,21 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import { createSessionLruCache } from "./session-lru-cache";
+import { createPersistedSessionLruCache } from "./session-lru-cache";
 
 export type CachedDocumentContent = {
   content: string;
   contentVersion: number;
 };
 
+/** Skip persisting a single body larger than this; RAM still keeps it. */
+const MAX_PERSISTED_BODY_CHARS = 400_000;
+
 /** Bounded warm cache for Tier D markdown (hover / j-k prefetch). Not PowerSync. */
-const contentCache = createSessionLruCache<CachedDocumentContent>(32);
+const contentCache = createPersistedSessionLruCache<CachedDocumentContent>({
+  limit: 32,
+  storageKey: "backsteros:doc-content-v1",
+  maxValueChars: MAX_PERSISTED_BODY_CHARS,
+});
 
 /** In-flight prefeches/fetches so hover + open share one request. */
 const inflight = new Map<string, Promise<CachedDocumentContent | null>>();
@@ -57,7 +64,13 @@ export function prefetchDocumentContent(
       contentCache.set(id, entry);
       return entry;
     })
-    .catch(() => null)
+    .catch((error) => {
+      console.warn(
+        `[document-content] failed to fetch ${id}:`,
+        error instanceof Error ? error.message : error,
+      );
+      return null;
+    })
     .finally(() => {
       inflight.delete(id);
     });
@@ -94,7 +107,13 @@ export function fetchDocumentContent(
       contentCache.set(documentId, entry);
       return entry;
     })
-    .catch(() => null)
+    .catch((error) => {
+      console.warn(
+        `[document-content] failed to fetch ${documentId}:`,
+        error instanceof Error ? error.message : error,
+      );
+      return null;
+    })
     .finally(() => {
       inflight.delete(documentId);
     });

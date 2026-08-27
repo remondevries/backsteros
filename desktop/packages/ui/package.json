@@ -10,12 +10,38 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./shell": {
+      "types": "./dist/entry/shell.d.ts",
+      "import": "./dist/entry/shell.js",
+      "default": "./dist/entry/shell.js"
+    },
+    "./tasks": {
+      "types": "./dist/entry/tasks.d.ts",
+      "import": "./dist/entry/tasks.js",
+      "default": "./dist/entry/tasks.js"
+    },
+    "./inbox": {
+      "types": "./dist/entry/inbox.d.ts",
+      "import": "./dist/entry/inbox.js",
+      "default": "./dist/entry/inbox.js"
+    },
+    "./calendar": {
+      "types": "./dist/entry/calendar.d.ts",
+      "import": "./dist/entry/calendar.js",
+      "default": "./dist/entry/calendar.js"
+    },
+    "./navigation": {
+      "types": "./dist/entry/navigation.d.ts",
+      "import": "./dist/entry/navigation.js",
+      "default": "./dist/entry/navigation.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./tailwind.css": "./src/tailwind.css"
   },
   "scripts": {
     "build": "tsc && node ./scripts/copy-styles.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test 'src/**/*.test.ts'"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -70,6 +96,7 @@
     "@types/react-dom": "^19.1.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }

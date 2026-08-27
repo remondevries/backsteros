@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { taskDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import {
   contactsByIdFromList,
   mapApiTaskToRow,
@@ -39,19 +39,17 @@ const TASKS_SQL = `${TASK_LIST_SELECT}
 export function ContactTasksPanel({ contactId }: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const { rows, loading, error, pullRefreshing, reload } =
@@ -59,6 +57,7 @@ export function ContactTasksPanel({ contactId }: Props) {
       sql: TASKS_SQL,
       params: [contactId, contactId],
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
+      fillTaskFieldsFromRest: true,
       fetchRest: async () => {
         try {
           const [tasksBody, projectsBody, contactsBody] = await Promise.all([

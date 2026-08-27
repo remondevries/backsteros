@@ -97,3 +97,40 @@ export async function uploadAvatarFromUri(
     };
   }
 }
+
+type AvatarLocalPowerSync = {
+  ready: boolean;
+  patchContact: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchOrganization: (
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<void>;
+  patchMetadata: (
+    table: "bank_accounts",
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<void>;
+};
+
+/** After REST avatar bytes upload, mirror storage keys into local SQLite. */
+export async function patchAvatarMetadataLocally(
+  powerSync: AvatarLocalPowerSync,
+  kind: "contact" | "organization" | "bank_account",
+  entityId: string,
+  avatar: Pick<Avatar, "storageKey" | "contentType">,
+): Promise<void> {
+  if (!powerSync.ready) return;
+  const values = {
+    avatar_storage_key: avatar.storageKey,
+    avatar_content_type: avatar.contentType,
+  };
+  if (kind === "contact") {
+    await powerSync.patchContact(entityId, values);
+    return;
+  }
+  if (kind === "organization") {
+    await powerSync.patchOrganization(entityId, values);
+    return;
+  }
+  await powerSync.patchMetadata("bank_accounts", entityId, values);
+}

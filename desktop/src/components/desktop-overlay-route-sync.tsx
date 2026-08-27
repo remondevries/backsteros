@@ -1,5 +1,7 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
+
+import { navigateToHref } from "../router/navigate-href";
 
 export const DESKTOP_OVERLAY_SHOW_EVENT = "backsteros:desktop-overlay-show";
 
@@ -24,7 +26,7 @@ export function DesktopOverlayRouteSync() {
       }
       const ctx = detail.ctx?.trim() || "/";
       const href = `${path}?ctx=${encodeURIComponent(ctx)}`;
-      navigate(href, { replace: true });
+      navigateToHref(navigate, href, { replace: true });
     };
 
     window.addEventListener(DESKTOP_OVERLAY_SHOW_EVENT, onShow);

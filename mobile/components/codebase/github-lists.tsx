@@ -4,12 +4,10 @@ import type {
   GithubConnectionStatus,
   GithubPullRequest,
   GithubRepository,
-  Project,
 } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
@@ -22,10 +20,12 @@ import {
   pullRequestStateLabel,
 } from "../../lib/github-format";
 import { fetchGithubConnectionStatus } from "../../lib/github-oauth";
+import { patchEntityViaPowerSyncOrApi } from "../../lib/entity-mutations";
 import { useMobilePowerSync } from "../../lib/powersync-context";
 import { colors, spacing } from "../../lib/theme";
 import { useLocalQuery } from "../../lib/use-local-query";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
+import { BacksterFlashList } from "../lists/index";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -230,18 +230,13 @@ export function GithubCommitList({
     async (fullName: string | null) => {
       setRepoSaving(true);
       try {
-        if (powerSync.ready) {
-          await powerSync.patchProject(projectId, {
-            github_repository: fullName,
-          });
-        }
-        await client.requestJson<Project>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ githubRepository: fullName }),
-          },
+        await patchEntityViaPowerSyncOrApi(
+          client,
+          powerSync,
+          "projects",
+          projectId,
+          { githubRepository: fullName },
+          { github_repository: fullName },
         );
       } catch {
         // keep local optimistic value when possible
@@ -350,7 +345,8 @@ export function GithubCommitList({
           }}
         />
       ) : (
-        <FlatList
+        <BacksterFlashList
+          embedded
           data={commits}
           keyExtractor={(item) => item.sha}
           style={styles.list}
@@ -570,18 +566,13 @@ export function GithubPullRequestList({
     async (fullName: string | null) => {
       setRepoSaving(true);
       try {
-        if (powerSync.ready) {
-          await powerSync.patchProject(projectId, {
-            github_repository: fullName,
-          });
-        }
-        await client.requestJson<Project>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ githubRepository: fullName }),
-          },
+        await patchEntityViaPowerSyncOrApi(
+          client,
+          powerSync,
+          "projects",
+          projectId,
+          { githubRepository: fullName },
+          { github_repository: fullName },
         );
       } catch {
         // ignore
@@ -662,7 +653,8 @@ export function GithubPullRequestList({
           }}
         />
       ) : (
-        <FlatList
+        <BacksterFlashList
+          embedded
           data={pullRequests}
           keyExtractor={(item) => String(item.number)}
           style={styles.list}

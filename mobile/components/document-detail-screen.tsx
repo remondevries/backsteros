@@ -1,4 +1,3 @@
-import type { Document, DocumentContent } from "@backsteros/contracts";
 import { Stack, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -8,17 +7,25 @@ import {
   View,
 } from "react-native";
 
+import {
+  asContentVersion,
+  DocumentContentEmptyBodyRejectedError,
+  fetchDocumentContent,
+  saveDocumentContent,
+} from "../lib/document-content";
+import { updateDocumentViaPowerSyncOrApi } from "../lib/document-mutations";
 import { isPadDevice } from "../lib/device";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
-import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { DetailContentContainer } from "./detail-content-container";
+import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
 import { DocumentOcticon } from "./document-octicon";
 import { JournalMarkdownBody } from "./journal-markdown-body";
 import { SegmentedPillToggle } from "./segmented-pill-toggle";
@@ -29,6 +36,7 @@ type DocMetaRow = {
   title: string | null;
   path: string | null;
   icon: string | null;
+  content_version: number | null;
 };
 
 type Props = {
@@ -71,11 +79,11 @@ function getDocumentDisplayBody(content: string, title: string): string {
     .replace(/\n+$/, "");
 }
 
-const META_SQL = `SELECT id, title, path, icon FROM documents
+const META_SQL = `SELECT id, title, path, icon, content_version FROM documents
  WHERE deleted_at IS NULL AND id = ?
  LIMIT 1`;
 
-const EMPTY_META_SQL = `SELECT id, title, path, icon FROM documents WHERE 0`;
+const EMPTY_META_SQL = `SELECT id, title, path, icon, content_version FROM documents WHERE 0`;
 
 /**
  * Project / knowledge document — Tier D body on open.
@@ -84,8 +92,7 @@ const EMPTY_META_SQL = `SELECT id, title, path, icon FROM documents WHERE 0`;
 export function DocumentDetailScreen({ documentId }: Props) {
   const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
-  const hidePhoneTabBar = !isPad;
-  useHideTabBar(hidePhoneTabBar);
+  const { confirmAndDelete } = useEntitySoftDelete();
   const segments = useSegments();
   const inPadKnowledgeSplit =
     isPad && (segments as string[]).includes("knowledge");
@@ -112,6 +119,9 @@ export function DocumentDetailScreen({ documentId }: Props) {
 
   const syncedTitle = syncedMeta?.[0]?.title ?? null;
   const documentIcon = syncedMeta?.[0]?.icon ?? null;
+  const syncedContentVersion = asContentVersion(
+    syncedMeta?.[0]?.content_version,
+  );
 
   useEffect(() => {
     setLocalTitle(null);
@@ -130,10 +140,7 @@ export function DocumentDetailScreen({ documentId }: Props) {
     let cancelled = false;
     setBodyLoading(true);
     setBodyError(null);
-    void client
-      .requestJson<DocumentContent>(
-        `/api/v1/documents/${encodeURIComponent(documentId)}/content`,
-      )
+    void fetchDocumentContent(client, documentId)
       .then((result) => {
         if (cancelled) return;
         setBody(stripFrontmatter(result.content ?? ""));
@@ -155,8 +162,45 @@ export function DocumentDetailScreen({ documentId }: Props) {
     };
   }, [client, documentId]);
 
+  // Remote save bumped content_version in PowerSync — refetch Tier D body.
+  useEffect(() => {
+    if (!documentId) return;
+    if (syncedContentVersion == null || contentVersion == null) return;
+    if (syncedContentVersion <= contentVersion) return;
+
+    let cancelled = false;
+    setBodyLoading(true);
+    void fetchDocumentContent(client, documentId)
+      .then((result) => {
+        if (cancelled) return;
+        setBody(stripFrontmatter(result.content ?? ""));
+        setContentVersion(result.contentVersion);
+      })
+      .catch((reason) => {
+        if (cancelled) return;
+        setBodyError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setBodyLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, contentVersion, documentId, syncedContentVersion]);
+
   const resolvedTitle = localTitle ?? syncedTitle;
   const title = resolvedTitle?.trim() || "Document";
+
+  const onDeleteDocument = useCallback(() => {
+    confirmAndDelete(
+      "documents",
+      documentId,
+      draftTitle.trim() || resolvedTitle?.trim() || "Untitled",
+    );
+  }, [confirmAndDelete, documentId, draftTitle, resolvedTitle]);
   const displayBody = getDocumentDisplayBody(body ?? "", title);
   const bodyReady = Boolean(documentId) && !bodyLoading && !bodyError;
 
@@ -187,35 +231,30 @@ export function DocumentDetailScreen({ documentId }: Props) {
     setSaving(true);
     setSaveError(null);
     try {
-      if (powerSync.ready) {
-        await powerSync.patchDocument(documentId, { title: trimmedTitle });
+      if (!titleUnchanged) {
+        await updateDocumentViaPowerSyncOrApi(client, powerSync, documentId, {
+          title: trimmedTitle,
+        });
+        setLocalTitle(trimmedTitle);
       }
-      await client.requestJson<Document>(
-        `/api/v1/documents/${encodeURIComponent(documentId)}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: trimmedTitle }),
-        },
-      );
-      const contentPayload: { content: string; ifMatchVersion?: number } = {
-        content: nextBody,
-      };
-      if (contentVersion != null) {
-        contentPayload.ifMatchVersion = contentVersion;
+      if (!bodyUnchanged) {
+        if (contentVersion == null) {
+          throw new Error("Document content version is not loaded.");
+        }
+        const updated = await saveDocumentContent(
+          client,
+          documentId,
+          nextBody,
+          contentVersion,
+        );
+        setBody(stripFrontmatter(updated.content ?? nextBody));
+        setContentVersion(updated.contentVersion);
       }
-      const updated = await client.requestJson<DocumentContent>(
-        `/api/v1/documents/${encodeURIComponent(documentId)}/content`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(contentPayload),
-        },
-      );
-      setLocalTitle(trimmedTitle);
-      setBody(stripFrontmatter(updated.content ?? nextBody));
-      setContentVersion(updated.contentVersion);
     } catch (reason) {
+      if (reason instanceof DocumentContentEmptyBodyRejectedError) {
+        setSaveError(null);
+        return;
+      }
       setSaveError(
         reason instanceof Error ? reason.message : "Could not save document.",
       );
@@ -303,6 +342,9 @@ export function DocumentDetailScreen({ documentId }: Props) {
         options={{
           ...tabDetailScreenOptions({ embedded: isPad }),
           ...(inPadKnowledgeSplit ? { headerBackVisible: false } : null),
+          headerRight: () => (
+            <DetailHeaderDeleteButton onDelete={onDeleteDocument} />
+          ),
         }}
       />
       <View style={styles.root}>

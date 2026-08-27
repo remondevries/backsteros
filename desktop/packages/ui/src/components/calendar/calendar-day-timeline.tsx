@@ -76,7 +76,21 @@ export function CalendarDayTimeline({
   useEffect(() => {
     const container = mainRef.current;
     if (!container) return;
+    // Keep-alive panes toggle `content-visibility: hidden`, which collapses this
+    // container to 0×0 and snaps it back to the *same* size on reveal. Calling
+    // `updateSize()` on that round-trip forces a full FullCalendar relayout on
+    // every reveal (the dominant cost when re-entering Journal/Calendar). Only
+    // resize on a genuine, non-zero size change so a same-size reveal just
+    // repaints the already-laid-out grid.
+    let lastWidth = 0;
+    let lastHeight = 0;
     const observer = new ResizeObserver(() => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (width === 0 || height === 0) return;
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width;
+      lastHeight = height;
       calendarApiRef.current?.updateSize();
     });
     observer.observe(container);
@@ -86,7 +100,11 @@ export function CalendarDayTimeline({
   useEffect(() => {
     const api = calendarApiRef.current;
     if (!api) return;
-    api.gotoDate(initialDate);
+    // FullCalendar gotoDate uses flushSync — defer out of the passive effect turn.
+    const frame = requestAnimationFrame(() => {
+      api.gotoDate(initialDate);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [dateSlug, initialDate]);
 
   const closePopover = () => setOpenPopover(null);
@@ -97,7 +115,9 @@ export function CalendarDayTimeline({
       viewStart.getMonth() + 1,
     ).padStart(2, "0")}-${String(viewStart.getDate()).padStart(2, "0")}`;
     if (viewYmd !== dateSlug) {
-      info.view.calendar.gotoDate(initialDate);
+      requestAnimationFrame(() => {
+        info.view.calendar.gotoDate(initialDate);
+      });
     }
     closePopover();
   };

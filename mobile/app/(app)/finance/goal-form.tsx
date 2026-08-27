@@ -18,16 +18,17 @@ import {
 } from "react-native";
 
 import {
-  createFinancialGoal,
-  deleteFinancialGoal,
-  updateFinancialGoal,
-} from "../../../lib/finance-api";
+  createFinancialGoalViaPowerSyncOrApi,
+  deleteFinancialGoalViaPowerSyncOrApi,
+  updateFinancialGoalViaPowerSyncOrApi,
+} from "../../../lib/finance-mutations";
 import { GOAL_LISTING_LABELS } from "../../../lib/finance-goals";
 import { TabStackHeaderTextButton } from "../../../lib/tab-stack-options";
 import { colors, spacing } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 import { useFinanceGoals } from "../../../lib/use-finance-goals";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../../../lib/powersync-context";
 
 const LISTING_OPTIONS: FinancialGoalListing[] = [
   "active",
@@ -58,6 +59,7 @@ export default function FinanceGoalFormScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goals = useFinanceGoals();
   const editing = goals.rows.find((row) => row.id === id) ?? null;
@@ -101,9 +103,14 @@ export default function FinanceGoalFormScreen() {
         endDate: endDate.trim() || null,
       };
       if (editing) {
-        await updateFinancialGoal(client, editing.id, input);
+        await updateFinancialGoalViaPowerSyncOrApi(
+          client,
+          powerSync,
+          editing.id,
+          input,
+        );
       } else {
-        await createFinancialGoal(client, input);
+        await createFinancialGoalViaPowerSyncOrApi(client, powerSync, input);
       }
       await goals.reload();
       router.back();
@@ -127,7 +134,11 @@ export default function FinanceGoalFormScreen() {
         onPress: () => {
           void (async () => {
             try {
-              await deleteFinancialGoal(client, editing.id);
+              await deleteFinancialGoalViaPowerSyncOrApi(
+                client,
+                powerSync,
+                editing.id,
+              );
               await goals.reload();
               router.back();
             } catch (reason) {

@@ -87,8 +87,9 @@ export function useLetterPdfPanel(
   }, [client, letterId]);
 
   useEffect(() => {
+    if (!enabled) return;
     void reloadAttachments();
-  }, [reloadAttachments, revision]);
+  }, [enabled, reloadAttachments, revision]);
 
   useEffect(() => {
     if (attachments.length === 0) {

@@ -104,8 +104,22 @@
   -webkit-app-region: no-drag;
 }
 
-.app-route-loading {
-  flex: 1;
-  min-height: 120px;
-  background: transparent;
+/* Stack is the sized flex slot. Panes fill it and never leave absolute. */
+.keep-alive-stack {
+  position: relative;
+}
+
+/* Every keep-alive pane stays absolutely stacked. Hide never leaves this mode. */
+.keep-alive-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.keep-alive-pane[data-keep-alive-hidden] {
+  content-visibility: hidden;
+  pointer-events: none;
 }

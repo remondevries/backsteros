@@ -1,5 +1,11 @@
-import { formatLocalYmd, parseYmdLocal } from "./task-due-date.js";
+import {
+  formatLocalYmd,
+  getTaskDueDateYmd,
+  parseYmdLocal,
+} from "./task-due-date.js";
 import { migrateLegacyTaskStatus } from "./task-status.js";
+
+export { getTaskDueDateYmd } from "./task-due-date.js";
 
 export const TASKS_DUE_FILTERS = [
   "today",
@@ -95,40 +101,6 @@ function getMondayYmdOfWeek(referenceYmd: string): string {
   return formatLocalYmd(date);
 }
 
-export function getTaskDueDateYmd(
-  dueDate: Date | number | string | null | undefined,
-  timeZone?: string,
-): string | null {
-  if (dueDate == null) return null;
-  if (typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())) {
-    return dueDate.trim();
-  }
-  const date =
-    dueDate instanceof Date
-      ? dueDate
-      : typeof dueDate === "number"
-        ? new Date(dueDate)
-        : new Date(dueDate);
-  if (Number.isNaN(date.getTime())) return null;
-  if (timeZone) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).formatToParts(date);
-      const year = parts.find((part) => part.type === "year")?.value;
-      const month = parts.find((part) => part.type === "month")?.value;
-      const day = parts.find((part) => part.type === "day")?.value;
-      if (year && month && day) return `${year}-${month}-${day}`;
-    } catch {
-      // Invalid stored timezone: fall back to the machine calendar.
-    }
-  }
-  return formatLocalYmd(date);
-}
-
 export function taskDueDateMatchesFilter(
   dueDate: Date | number | string | null | undefined,
   filter: TasksDueFilter,
@@ -196,6 +168,7 @@ export function parseTasksDueFilter(
 export function buildTasksDueHref(
   due: TasksDueFilter = DEFAULT_TASKS_DUE_FILTER,
   view: "list" | "board" = "list",
+  listPath = "/tasks",
 ): string {
   const params = new URLSearchParams();
   if (due !== DEFAULT_TASKS_DUE_FILTER) {
@@ -205,7 +178,8 @@ export function buildTasksDueHref(
     params.set("view", "board");
   }
   const query = params.toString();
-  return query ? `/tasks?${query}` : "/tasks";
+  const root = listPath.replace(/\/+$/, "") || "/tasks";
+  return query ? `${root}?${query}` : root;
 }
 
 export function isTasksDueListPathname(pathname: string): boolean {

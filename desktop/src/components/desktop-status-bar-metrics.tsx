@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+import { invoke } from "../lib/tauri-invoke-instrumentation";
 
 type SystemStats = {
   cpuPercent: number | null;
@@ -11,6 +13,8 @@ type SystemStats = {
     free: number;
   } | null;
 };
+
+const SYSTEM_STATS_UPDATE_EVENT = "system-stats-update";
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
@@ -46,26 +50,36 @@ export function DesktopStatusBarMetrics({
 
   useEffect(() => {
     let cancelled = false;
+    let unlisten: UnlistenFn | undefined;
 
-    const load = async () => {
+    const path = diskPath?.trim() || null;
+
+    void (async () => {
       try {
-        const data = await invoke<SystemStats>("system_stats", {
-          path: diskPath?.trim() || null,
-        });
+        await invoke("set_system_stats_disk_path", { path });
+      } catch {
+        /* offline or permission */
+      }
+
+      try {
+        const data = await invoke<SystemStats>("system_stats", { path });
         if (!cancelled) setStats(data);
       } catch {
         /* offline or permission */
       }
-    };
 
-    void load();
-    const timer = window.setInterval(() => {
-      void load();
-    }, 2000);
+      try {
+        unlisten = await listen<SystemStats>(SYSTEM_STATS_UPDATE_EVENT, (event) => {
+          if (!cancelled) setStats(event.payload);
+        });
+      } catch {
+        /* not in Tauri shell */
+      }
+    })();
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      unlisten?.();
     };
   }, [diskPath]);
 

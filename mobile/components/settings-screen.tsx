@@ -48,6 +48,7 @@ import {
 } from "../lib/settings-tabs";
 import { useSuspendNavigationShortcuts } from "../lib/navigation-shortcut-gate";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
+import { SettingsCard, SettingsFieldRow } from "./settings/settings-primitives";
 import { colors, spacing } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
@@ -58,6 +59,8 @@ import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { PropertyOptionSheet } from "./property-option-sheet";
 import { SegmentedPillToggle } from "./segmented-pill-toggle";
 import { SettingsServerTab } from "./settings-server-tab";
+import { SettingsEmailTab } from "./settings/email-tab";
+import { SettingsMoneybirdTab } from "./settings/moneybird-tab";
 import { TextInput } from "./app-text-input";
 
 const CONTACTS_SQL = `SELECT id, name FROM contacts
@@ -87,102 +90,7 @@ function todayIsoDate(): string {
   return `${year}-${month}-${day}`;
 }
 
-function SettingsCard({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
-      {description ? (
-        <Text style={styles.cardDescription}>{description}</Text>
-      ) : null}
-      {children}
-    </View>
-  );
-}
-
-function SettingsFieldRow({
-  label,
-  value,
-  onPress,
-  muted,
-}: {
-  label: string;
-  value: string;
-  onPress?: () => void;
-  muted?: boolean;
-}) {
-  const content = (
-    <View style={styles.fieldRow}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <Text
-        style={[styles.fieldValue, muted ? styles.fieldValueMuted : null]}
-        numberOfLines={2}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-  if (!onPress) return content;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        pressed ? { backgroundColor: colors.rowPressed } : null,
-      ]}
-    >
-      {content}
-    </Pressable>
-  );
-}
-
-function GeneralTab({
-  timezone,
-  saving,
-  onTimezoneChange,
-}: {
-  timezone: string;
-  saving: boolean;
-  onTimezoneChange: (next: string) => void;
-}) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  return (
-    <>
-      <SettingsCard
-        title="Timezone"
-        description="Due dates, Today/Tomorrow task tabs, and journal due-task panels use this timezone — not your browser or server clock."
-      >
-        <SettingsFieldRow
-          label="Timezone"
-          value={appTimezoneLabel(timezone)}
-          onPress={saving ? undefined : () => setPickerOpen(true)}
-        />
-        {saving ? <Text style={styles.hint}>Saving…</Text> : null}
-      </SettingsCard>
-      <PropertyOptionSheet
-        visible={pickerOpen}
-        title="Timezone"
-        options={APP_TIMEZONE_OPTIONS.map((option) => ({
-          value: option.value,
-          label: option.label,
-        }))}
-        selected={timezone}
-        onSelect={(value) => {
-          if (value) onTimezoneChange(value);
-        }}
-        onClose={() => setPickerOpen(false)}
-      />
-    </>
-  );
-}
-
+import { GeneralTab } from "./settings/general-tab";
 function AccountTab({
   settings,
   onSettingsSaved,
@@ -1705,6 +1613,8 @@ export function SettingsScreen() {
             {tab === "api" ? <ApiTab /> : null}
             {tab === "cursor" ? <CursorTab /> : null}
             {tab === "github" ? <GithubTab /> : null}
+            {tab === "email" ? <SettingsEmailTab /> : null}
+            {tab === "moneybird" ? <SettingsMoneybirdTab /> : null}
             {tab === "whoop" ? <WhoopTab /> : null}
             {tab === "storage" ? <StorageTab /> : null}
           </KeyboardAwareScrollView>

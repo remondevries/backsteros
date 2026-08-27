@@ -1,4 +1,6 @@
-import type { Project } from "@backsteros/contracts";
+import { createProjectViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { useSyncedAreas } from "../lib/areas-data";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -78,20 +80,9 @@ type PickerKind =
 
 type NamedOptionRow = { id: string; name: string | null };
 
-type AreaRow = {
-  id: string;
-  name: string | null;
-  parent: string | null;
-  sort_order: number | null;
-};
-
 const ORGANIZATIONS_SQL = `SELECT id, name FROM organizations
   WHERE deleted_at IS NULL
   ORDER BY name COLLATE NOCASE ASC`;
-
-const AREAS_SQL = `SELECT id, name, parent, sort_order FROM areas
-  WHERE deleted_at IS NULL
-  ORDER BY sort_order ASC, name COLLATE NOCASE ASC`;
 
 const EMPTY_PROGRESS = { total: 0, completed: 0 };
 
@@ -141,9 +132,10 @@ export function CreateProjectScreen() {
   const initialType = migrateLegacyProjectType(typeParam ?? "general");
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const { data: syncedOrganizations } =
     useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
-  const { data: syncedAreas } = useLocalQuery<AreaRow>(AREAS_SQL);
+  const { rows: syncedAreas } = useSyncedAreas();
   const organizations = syncedOrganizations ?? [];
 
   const [name, setName] = useState("");
@@ -254,19 +246,11 @@ export function CreateProjectScreen() {
 
   const nestedAreasForParent = useMemo(
     () =>
-      (syncedAreas ?? [])
-        .filter((entry) => {
-          const parent = entry.parent;
-          return (
-            parent === area &&
-            (parent === "personal" ||
-              parent === "business" ||
-              parent === "clients")
-          );
-        })
+      syncedAreas
+        .filter((entry) => entry.parent === area)
         .map((entry) => ({
           id: entry.id,
-          name: entry.name?.trim() || "Untitled",
+          name: entry.name,
         })),
     [area, syncedAreas],
   );
@@ -374,24 +358,20 @@ export function CreateProjectScreen() {
     setError(null);
     try {
       const key = projectKey.trim() || projectKeyFromName(trimmedName);
-      const created = await client.requestJson<Project>("/api/v1/projects", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          key,
-          name: trimmedName,
-          summary: summary.trim() || undefined,
-          description: description.trim() || undefined,
-          status,
-          priority,
-          area,
-          areaId: areaId || null,
-          organizationId: organizationId || null,
-          startDate,
-          dueDate,
-          type: projectType,
-          sortOrder: -Date.now(),
-        }),
+      const created = await createProjectViaPowerSyncOrApi(client, powerSync, {
+        key,
+        name: trimmedName,
+        summary: summary.trim() || undefined,
+        description: description.trim() || undefined,
+        status,
+        priority,
+        area,
+        areaId: areaId || null,
+        organizationId: organizationId || null,
+        startDate,
+        dueDate,
+        type: projectType,
+        sortOrder: -Date.now(),
       });
       router.replace(`/(app)/projects/${created.id}`);
     } catch (reason) {

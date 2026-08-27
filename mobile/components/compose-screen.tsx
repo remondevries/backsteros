@@ -1,4 +1,3 @@
-import type { Document, Task } from "@backsteros/contracts";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -10,7 +9,6 @@ import {
 
 import {
   COMPOSE_KNOWLEDGE_BASE_VALUE,
-  documentPathFromTitle,
   isComposeKnowledgeBaseValue,
   type ComposeKind,
 } from "../lib/compose";
@@ -31,6 +29,11 @@ import {
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
+import { createDocumentWithLeaderContent } from "../lib/document-create";
+import {
+  createTaskViaPowerSyncOrApi,
+} from "../lib/entity-mutations";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { ContactPersonIcon } from "./contact-person-icon";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
@@ -83,6 +86,7 @@ export function ComposeScreen() {
   const segments = useSegments();
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
   const { data: syncedContacts } = useLocalQuery<NamedOptionRow>(CONTACTS_SQL);
@@ -313,20 +317,16 @@ export function ComposeScreen() {
     setError(null);
     try {
       if (isTask) {
-        const created = await client.requestJson<Task>("/api/v1/tasks", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: trimmedTitle,
-            description: description.trim() || undefined,
-            status,
-            priority,
-            dueDate,
-            assigneeId,
-            projectId,
-            inbox: !projectId,
-            sortOrder: Date.now(),
-          }),
+        const created = await createTaskViaPowerSyncOrApi(client, powerSync, {
+          title: trimmedTitle,
+          description: description.trim() || undefined,
+          status,
+          priority,
+          dueDate,
+          assigneeId,
+          projectId,
+          inbox: !projectId,
+          sortOrder: Date.now(),
         });
         // Stay inside `(app)` — replace onto root `/task/:id` can drop the tab bar.
         router.replace(createdTaskDetailHref(created.id, segments as string[]));
@@ -334,25 +334,11 @@ export function ComposeScreen() {
       }
 
       const isKnowledge = isComposeKnowledgeBaseValue(documentTarget);
-      const created = await client.requestJson<Document>("/api/v1/documents", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          isKnowledge
-            ? {
-                type: "knowledge",
-                title: trimmedTitle,
-                path: documentPathFromTitle(trimmedTitle),
-                content: documentContent,
-              }
-            : {
-                type: "project",
-                projectId: documentTarget,
-                title: trimmedTitle,
-                path: documentPathFromTitle(trimmedTitle),
-                content: documentContent,
-              },
-        ),
+      const created = await createDocumentWithLeaderContent(client, powerSync, {
+        type: isKnowledge ? "knowledge" : "project",
+        title: trimmedTitle,
+        content: documentContent,
+        projectId: isKnowledge ? null : documentTarget,
       });
       router.replace(documentDetailHref(created.id));
     } catch (reason) {

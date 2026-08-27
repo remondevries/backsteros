@@ -58,6 +58,9 @@ export type HabitSidePanelViewProps = {
   /** When true, the Inactive for today group is collapsed. */
   inactiveCollapsed?: boolean;
   onToggleInactiveGroup?: () => void;
+  getHabitHref?: (habitId?: string) => string;
+  getSelectedIdFromPathname?: (pathname: string) => string | undefined;
+  panelTitle?: string;
 };
 
 export function HabitSidePanelView({
@@ -75,9 +78,12 @@ export function HabitSidePanelView({
   onToggleCompletedGroup,
   inactiveCollapsed = false,
   onToggleInactiveGroup,
+  getHabitHref = getHabitTrackerHref,
+  getSelectedIdFromPathname = getSelectedHabitIdFromPathname,
+  panelTitle = "Habit Tracker",
 }: HabitSidePanelViewProps) {
   const selectedId =
-    getSelectedHabitIdFromPathname(pathname) ?? HABIT_TRACKER_ALL_ID;
+    getSelectedIdFromPathname(pathname) ?? HABIT_TRACKER_ALL_ID;
   const allActive = selectedId === HABIT_TRACKER_ALL_ID;
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -156,7 +162,7 @@ export function HabitSidePanelView({
           .join(" ")}
       >
         <Link
-          to={getHabitTrackerHref(habit.id)}
+          to={getHabitHref(habit.id)}
           className={sidePanelItemClass({
             active: isActive,
             keyboardHighlighted: highlightedId === habit.id,
@@ -208,7 +214,7 @@ export function HabitSidePanelView({
   return (
     <div className="app-content-side-panel app-content-side-panel--journal">
       <ContentSidePanelHeader
-        title="Habit Tracker"
+        title={panelTitle}
         actions={
           onCreateHabit ? (
             <button
@@ -274,7 +280,7 @@ export function HabitSidePanelView({
         >
           <li className="inbox-list-item habit-side-panel-item">
             <Link
-              to={getHabitTrackerHref()}
+              to={getHabitHref()}
               className={sidePanelItemClass({
                 active: allActive,
                 keyboardHighlighted: highlightedId === HABIT_TRACKER_ALL_ID,

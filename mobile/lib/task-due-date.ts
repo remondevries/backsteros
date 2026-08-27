@@ -1,61 +1,14 @@
-/** Local calendar-day helpers for Today filtering (mirrors web/desktop YMD match). */
+/** Local calendar-day helpers for Today filtering (shared YMD via contracts). */
+
+import {
+  formatLocalYmd,
+  getTaskDueDateYmd,
+  parseYmdLocal,
+} from "@backsteros/contracts";
+
+export { formatLocalYmd, getTaskDueDateYmd, parseYmdLocal };
 
 const INACTIVE_STATUSES = new Set(["completed", "canceled", "duplicated"]);
-
-export function formatLocalYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-export function parseYmdLocal(ymd: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return new Date(year, month - 1, day);
-}
-
-/**
- * Calendar day for a due value — mirrors `@backsteros/ui` `getTaskDueDateYmd`.
- * Pass workspace `timeZone` for journal/desktop parity (UTC-offset due timestamps).
- */
-export function getTaskDueDateYmd(
-  dueDate: Date | number | string | null | undefined,
-  timeZone?: string,
-): string | null {
-  if (dueDate == null) return null;
-  if (typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())) {
-    return dueDate.trim();
-  }
-  const date =
-    dueDate instanceof Date
-      ? dueDate
-      : typeof dueDate === "number"
-        ? new Date(dueDate)
-        : new Date(dueDate);
-  if (Number.isNaN(date.getTime())) return null;
-  if (timeZone) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).formatToParts(date);
-      const year = parts.find((part) => part.type === "year")?.value;
-      const month = parts.find((part) => part.type === "month")?.value;
-      const day = parts.find((part) => part.type === "day")?.value;
-      if (year && month && day) return `${year}-${month}-${day}`;
-    } catch {
-      // Invalid stored timezone: fall back to the machine calendar.
-    }
-  }
-  return formatLocalYmd(date);
-}
 
 /** Tasks whose due calendar date matches a journal `YYYY-MM-DD` slug. */
 export function filterTasksDueOnJournalDate<

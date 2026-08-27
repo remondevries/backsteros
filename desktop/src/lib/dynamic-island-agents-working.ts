@@ -36,13 +36,16 @@ export function publishDynamicIslandAgentsWorking(
     let wroteHome = false;
 
     try {
-      const { homeDir, join } = await import("@tauri-apps/api/path");
-      const { mkdir, writeTextFile } = await import("@tauri-apps/plugin-fs");
-      const home = await homeDir();
-      const dir = await join(home, ".config/dynamic-island");
-      const file = await join(home, STATE_RELATIVE_PATH);
-      await mkdir(dir, { recursive: true });
-      await writeTextFile(file, body);
+      const { BaseDirectory, mkdir, writeTextFile } = await import(
+        "@tauri-apps/plugin-fs"
+      );
+      await mkdir(".config/dynamic-island", {
+        baseDir: BaseDirectory.Home,
+        recursive: true,
+      });
+      await writeTextFile(STATE_RELATIVE_PATH, body, {
+        baseDir: BaseDirectory.Home,
+      });
       wroteHome = true;
     } catch (err) {
       if (!warnedHome) {

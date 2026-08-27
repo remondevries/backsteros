@@ -23,9 +23,9 @@ export function isProjectDocumentDetailPath(pathname: string): boolean {
   );
 }
 
-/** Desktop route match for `/knowledge/:slug`. */
+/** Desktop route match for `/knowledge/:slug` or `/knowledge-v2/:slug`. */
 export function isKnowledgeDocumentDetailPath(pathname: string): boolean {
-  return /^\/knowledge\/.+/.test(pathname);
+  return /^\/knowledge(?:-v2)?\/.+/.test(pathname);
 }
 
 export function resolveComposeContextKind(pathname: string): ComposeContextKind {

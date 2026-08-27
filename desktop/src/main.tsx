@@ -1,15 +1,13 @@
+import "./lib/tauri-invoke-instrumentation";
+
 import React, { useCallback, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { RouterProvider } from "@tanstack/react-router";
 
-import App from "./App";
 import { AppErrorBoundary } from "./components/app-error-boundary";
-import { isDesktopOverlayPath } from "./lib/desktop-overlay";
-import { DesktopProviders } from "./lib/desktop-providers";
+import { router } from "./router/router";
 import "@backsteros/ui/styles.css";
 import "./app.css";
-
-const enablePowerSync = !isDesktopOverlayPath(window.location.pathname);
 
 function Root() {
   const [treeKey, setTreeKey] = useState(0);
@@ -19,18 +17,15 @@ function Root() {
 
   return (
     <AppErrorBoundary onReset={remount}>
-      <BrowserRouter>
-        <DesktopProviders key={treeKey} enablePowerSync={enablePowerSync}>
-          <App />
-        </DesktopProviders>
-      </BrowserRouter>
+      <RouterProvider router={router} key={treeKey} />
     </AppErrorBoundary>
   );
 }
 
+// TEMP perf experiment: StrictMode double-invokes effects in dev, which
+// dominated the navigation trace. Disabled to measure the real (prod-like)
+// cost. Restore <React.StrictMode> once done.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>,
+  <Root />,
 );
-
+void React;

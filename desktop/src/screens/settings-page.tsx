@@ -7,7 +7,7 @@ import type {
 } from "@backsteros/contracts";
 import { API_KEY_SCOPES } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "@tanstack/react-router";
 
 import {
   AccountSettingsSectionView,
@@ -782,7 +782,7 @@ function SettingsGithubTab({
 }
 
 export function SettingsPage() {
-  const { tab } = useParams<{ tab?: string }>();
+  const { tab } = useParams({ strict: false }) as { tab?: string };
   const { client } = useDesktopApi();
   const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const activeTab: SettingsTabId =
@@ -828,11 +828,11 @@ export function SettingsPage() {
   }, [reloadSettings]);
 
   if (!tab) {
-    return <Navigate to="/settings/general" replace />;
+    return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
   }
 
   if (!isSettingsTabId(tab)) {
-    return <Navigate to="/settings/general" replace />;
+    return <Navigate to="/settings/$tab" params={{ tab: "general" }} replace />;
   }
 
   return (

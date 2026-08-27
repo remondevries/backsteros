@@ -1,6 +1,8 @@
+import { useNavigation } from "@react-navigation/native";
+import { useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 
-import { OrganizationsHeaderPlus } from "../../../components/organizations-header";
+import { OrganizationsHeader } from "../../../components/organizations-header";
 import { OrganizationsListPane } from "../../../components/organizations-list-pane";
 import { isPadDevice } from "../../../lib/device";
 import { ui } from "../../../lib/ui";
@@ -10,7 +12,17 @@ import { ui } from "../../../lib/ui";
  * iPad: detail pane placeholder — list lives in the layout.
  */
 export default function OrganizationsScreen() {
-  if (isPadDevice()) {
+  const navigation = useNavigation();
+  const isPad = isPadDevice();
+
+  useLayoutEffect(() => {
+    if (isPad) return;
+    navigation.setOptions({
+      header: () => <OrganizationsHeader />,
+    });
+  }, [isPad, navigation]);
+
+  if (isPad) {
     return (
       <View style={styles.empty}>
         <Text style={ui.empty}>Select an organization from the list.</Text>
@@ -18,13 +30,7 @@ export default function OrganizationsScreen() {
     );
   }
 
-  return (
-    <OrganizationsListPane
-      pageTitle="Organizations"
-      pageTitleSafeArea
-      pageTitleTrailing={<OrganizationsHeaderPlus chrome="glass" />}
-    />
-  );
+  return <OrganizationsListPane />;
 }
 
 const styles = {

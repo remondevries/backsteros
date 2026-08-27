@@ -1,4 +1,3 @@
-import type { Document } from "@backsteros/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -8,11 +7,12 @@ import {
   View,
 } from "react-native";
 
-import { documentPathFromTitle } from "../lib/compose";
 import { documentDetailHref } from "../lib/detail-href";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
+import { createDocumentWithLeaderContent } from "../lib/document-create";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
 import { TextInput } from "./app-text-input";
@@ -36,6 +36,7 @@ export function CreateDocumentScreen() {
   const isProject = Boolean(projectId) && !isKnowledge;
 
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -52,27 +53,12 @@ export function CreateDocumentScreen() {
     setSaving(true);
     setError(null);
     try {
-      const created = await client.requestJson<Document>("/api/v1/documents", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          isKnowledge
-            ? {
-                type: "knowledge",
-                title: trimmedTitle,
-                path: documentPathFromTitle(trimmedTitle),
-                content,
-                parentId: parentId || undefined,
-              }
-            : {
-                type: "project",
-                projectId,
-                title: trimmedTitle,
-                path: documentPathFromTitle(trimmedTitle),
-                content,
-                parentId: parentId || undefined,
-              },
-        ),
+      const created = await createDocumentWithLeaderContent(client, powerSync, {
+        type: isKnowledge ? "knowledge" : "project",
+        title: trimmedTitle,
+        content,
+        projectId: isKnowledge ? null : projectId,
+        parentId: parentId ?? null,
       });
       router.replace(
         isKnowledge

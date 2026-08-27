@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 import type {
   AgentMailDraftDetail,
   AgentMailMessageDetail,
@@ -33,6 +33,7 @@ import { createRequestAbortSignal } from "../../lib/request-timeout";
 import { dispatchEmailListPatch } from "../../lib/use-agentmail-mailboxes";
 
 import { requestMailboxReload } from "./email-page-helpers";
+import { navigateToHref } from "../../router/navigate-href";
 
 export function useEmailDraftActions({
   inboxId,
@@ -68,7 +69,13 @@ export function useEmailDraftActions({
   ) => string;
 }) {
   const { client } = useDesktopApi();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const agentMail = useAgentMail();
   const [conceptError, setConceptError] = useState<string | null>(null);
   const [conceptSaving, setConceptSaving] = useState(false);

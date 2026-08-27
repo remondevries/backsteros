@@ -5,6 +5,7 @@ type TaskRowPatch = {
   status?: string | null;
   priority?: number | null;
   due_date?: string | null;
+  due_end_date?: string | null;
   project_id?: string | null;
   project_name?: string | null;
   assignee_id?: string | null;
@@ -14,6 +15,7 @@ type TaskRowPatch = {
   agent_chat_id?: string | null;
   agent_created_at?: string | null;
   agent_inbox_approved_at?: string | null;
+  tracked_duration_seconds?: number | null;
 };
 
 type Listener = () => void;
@@ -95,6 +97,8 @@ export function taskPatchToRowFields(
   for (const [key, value] of Object.entries(values)) {
     if (key === "dueDate" || key === "due_date") {
       patch.due_date = (value as string | null) ?? null;
+    } else if (key === "dueEndDate" || key === "due_end_date") {
+      patch.due_end_date = (value as string | null) ?? null;
     } else if (key === "assigneeId" || key === "assignee_id") {
       patch.assignee_id = (value as string | null) ?? null;
     } else if (key === "assigneeName" || key === "assignee_name") {
@@ -115,6 +119,9 @@ export function taskPatchToRowFields(
       patch.agent_inbox_approved_at = new Date().toISOString();
     } else if (key === "agent_inbox_approved_at") {
       patch.agent_inbox_approved_at = (value as string | null) ?? null;
+    } else if (key === "trackedDurationSeconds" || key === "tracked_duration_seconds") {
+      patch.tracked_duration_seconds =
+        typeof value === "number" ? value : value == null ? null : Number(value);
     }
   }
   return patch;

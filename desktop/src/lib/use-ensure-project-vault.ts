@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import { useDesktopApi } from "./api-context";
 import { ensureProjectVault } from "./ensure-project-vault";
-import { useDesktopWorkspaceData } from "./workspace-data";
+import { useDesktopWorkspaceActions } from "./workspace-data";
 
 /**
  * On project open: ensure vault folder + `.cursor` skills exist, and refresh
@@ -10,8 +10,7 @@ import { useDesktopWorkspaceData } from "./workspace-data";
  */
 export function useEnsureProjectVault(projectId: string | null | undefined) {
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const patchProject = workspace.patchProject;
+  const { patchProject } = useDesktopWorkspaceActions();
 
   useEffect(() => {
     const id = projectId?.trim();

@@ -1,3 +1,4 @@
+import type { FlashListRef } from "@shopify/flash-list";
 import { usePathname, useRouter } from "expo-router";
 import {
   useCallback,
@@ -10,11 +11,8 @@ import {
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { useAgentMail } from "../lib/agentmail-context";
@@ -26,10 +24,13 @@ import {
   resolveInboxEmailIconColor,
   type EmailListItem,
 } from "../lib/email-list";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import { matchesListSearch } from "../lib/list-search";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { formatRelativeTime } from "../lib/task-activity-format";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -39,6 +40,7 @@ import { usePullToRevealSearch } from "../lib/use-pull-to-reveal-search";
 import { ContentPageTitle } from "./content-page-title";
 import { EmailNavIcon } from "./nav-icons";
 import { ListSearchField } from "./list-search-field";
+import { BacksterGroupedList } from "./lists/index";
 import {
   StatusGroupHeader,
   statusGroupEmptySectionFooter,
@@ -46,6 +48,7 @@ import {
 import { TaskStatusIcon } from "./task-status-icon";
 
 type Section = {
+  key: string;
   title: string;
   status: string;
   data: EmailListItem[];
@@ -112,6 +115,7 @@ export function EmailListPane({
   const sections = useMemo<Section[]>(
     () =>
       groupEmailItemsByStatus(rows).map((group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: group.items,
@@ -138,6 +142,14 @@ export function EmailListPane({
           : section,
       ),
     [collapsed, sections],
+  );
+
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () =>
+      flattenGroupedSections(visibleSections, {
+        includeEmptyFooter: (section) => section.data.length === 0,
+      }),
+    [visibleSections],
   );
 
   const onPressRow = useCallback(
@@ -174,7 +186,7 @@ export function EmailListPane({
     sections,
   ]);
 
-  const listRef = useRef<SectionList<EmailListItem, Section>>(null);
+  const listRef = useRef<FlashListRef<FlatGroupedRow<EmailListItem>>>(null);
   const itemIds = useMemo(
     () =>
       visibleSections.flatMap((section) => section.data.map((row) => row.id)),
@@ -188,11 +200,11 @@ export function EmailListPane({
     },
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(visibleSections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -233,33 +245,24 @@ export function EmailListPane({
           placeholder="Search email"
         />
       ) : null}
-      <SectionList
+      <BacksterGroupedList
         ref={listRef}
-        style={ui.screen}
-        sections={visibleSections as SectionListData<EmailListItem, Section>[]}
-        keyExtractor={(item) => `${item.inboxId}:${item.id}`}
-        stickySectionHeadersEnabled={isPad}
-        keyboardShouldPersistTaps="handled"
+        sections={visibleSections}
+        stickySectionHeaders={isPad}
+        highlightedId={highlightedId}
+        estimatedItemSize={56}
+        estimatedHeaderSize={44}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
         onScrollEndDrag={search.onScrollEndDrag}
         scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefreshing}
-            onRefresh={() => {
-              setPullRefreshing(true);
-              void reload().finally(() => setPullRefreshing(false));
-            }}
-            tintColor={colors.muted}
-            colors={[colors.muted]}
-          />
-        }
-        contentContainerStyle={{
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
+        refreshing={pullRefreshing}
+        onRefresh={() => {
+          setPullRefreshing(true);
+          void reload().finally(() => setPullRefreshing(false));
         }}
-        ListHeaderComponent={
+        listHeader={
           pageTitle ? (
             <ContentPageTitle
               title={pageTitle}
@@ -268,24 +271,25 @@ export function EmailListPane({
             />
           ) : null
         }
-        ListEmptyComponent={
-          <Text style={ui.empty}>
-            {search.query.trim() ? "No matching emails." : "No emails yet."}
-          </Text>
+        emptyText={
+          search.query.trim() ? "No matching emails." : "No emails yet."
         }
-        renderSectionHeader={({ section }) => (
+        renderSectionHeader={(section) => (
           <StatusGroupHeader
             title={section.title}
-            icon={<TaskStatusIcon status={section.status} size={14} />}
-            gradient={getTaskStatusHeaderGradient(section.status)}
-            collapsed={collapsed.has(section.status)}
-            onToggle={() => toggleStatus(section.status)}
+            icon={<TaskStatusIcon status={section.key} size={14} />}
+            gradient={getTaskStatusHeaderGradient(section.key)}
+            collapsed={collapsed.has(section.key)}
+            onToggle={() => toggleStatus(section.key)}
           />
         )}
-        renderSectionFooter={({ section }) =>
-          statusGroupEmptySectionFooter(visibleSections, section)
+        renderSectionFooter={(section) =>
+          statusGroupEmptySectionFooter(visibleSections, {
+            ...section,
+            status: section.key,
+          })
         }
-        renderItem={({ item }) => {
+        renderItem={(item, { highlighted }) => {
           const title = item.subject?.trim() || "(no subject)";
           const displayId =
             item.displayId ??
@@ -294,7 +298,6 @@ export function EmailListPane({
           const when = item.receivedAt
             ? formatRelativeTime(new Date(item.receivedAt).toISOString())
             : "";
-          const highlighted = highlightedId === item.id;
           const selected = pathSelectedId === item.id;
           return (
             <Pressable

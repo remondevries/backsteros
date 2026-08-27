@@ -10,6 +10,7 @@ export function ProjectDocumentsPanel({ projectId }: Props) {
     <DocumentsListPanel
       documentType="project"
       projectId={projectId}
+      includeFolders
       emptyMessage="No documents in this project yet."
     />
   );

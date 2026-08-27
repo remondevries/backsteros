@@ -6,6 +6,7 @@ import {
   tableExists,
   toIso,
 } from "./cursors.js";
+import { sanitizeWorkspaceSettingsRowForReplication } from "./machine-local-settings.js";
 import {
   getTableSpec,
   listBootstrapTableSpecs,
@@ -17,6 +18,16 @@ import {
 import type { ReplicationChange, ReplicationCursor } from "./types.js";
 
 const PAGE_SIZE = 100;
+
+function sanitizeOutboundRow(
+  table: string,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  if (table === "workspace_settings") {
+    return sanitizeWorkspaceSettingsRowForReplication(row);
+  }
+  return row;
+}
 
 function pkOrderClause(spec: TableSpec): string {
   return spec.pk.map((col) => `"${col}"`).join(", ");
@@ -72,7 +83,7 @@ async function fetchRowsSince(
     cursor = maxCursor(cursor, { updatedAt, rowId });
     return {
       table: spec.name,
-      row,
+      row: sanitizeOutboundRow(spec.name, row),
     };
   });
 
@@ -91,7 +102,7 @@ async function fetchAllRows(spec: TableSpec): Promise<ReplicationChange[]> {
   const rows = await sqlClient.unsafe(query) as { row: Record<string, unknown> }[];
   return rows.map(({ row }) => ({
     table: spec.name as ReplicatedTable,
-    row,
+    row: sanitizeOutboundRow(spec.name, row),
   }));
 }
 

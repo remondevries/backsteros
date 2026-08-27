@@ -1,10 +1,13 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import type { LetterAttachment } from "@backsteros/contracts";
 
-import { createSessionLruCache } from "./session-lru-cache";
+import { createPersistedSessionLruCache } from "./session-lru-cache";
 
 /** Attachment *metadata* lists (Tier B), not PDF bytes. */
-const attachmentListCache = createSessionLruCache<LetterAttachment[]>(24);
+const attachmentListCache = createPersistedSessionLruCache<LetterAttachment[]>({
+  limit: 24,
+  storageKey: "backsteros:letter-attachments-v1",
+});
 const inflight = new Map<string, Promise<LetterAttachment[]>>();
 
 export function peekLetterAttachmentCache(

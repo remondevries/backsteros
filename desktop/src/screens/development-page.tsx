@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useMemo } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import {
   ProjectsListSkeleton,
@@ -16,12 +16,15 @@ import {
   type ProjectStatus,
 } from "@backsteros/ui";
 
+import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useRoutePathActive } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import {
   type ProjectLocationState,
 } from "../lib/project-type-cache";
+import { navigateToHref } from "../router/navigate-href";
 
 const DEVELOPMENT_LIST_HREF = "/development";
 
@@ -32,7 +35,19 @@ function buildDevelopmentListHref(view: ListBoardView): string {
 }
 
 export function DevelopmentPage() {
-  const navigate = useNavigate();
+  const active = useRoutePathActive("/development");
+  if (!active) return null;
+  return <DevelopmentPageBody />;
+}
+
+function DevelopmentPageBody() {
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const location = useLocation();
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
@@ -41,10 +56,10 @@ export function DevelopmentPage() {
     () =>
       parseListBoardViewFromLocation(
         location.pathname,
-        location.search,
+        location.searchStr,
         PROJECTS_LIST_BOARD_STORAGE_KEY,
       ),
-    [location.pathname, location.search],
+    [location.pathname, location.searchStr],
   );
 
   const projects = useMemo(
@@ -63,6 +78,8 @@ export function DevelopmentPage() {
       ),
     [agentStatus?.workingTaskIds, workspace.allTasks],
   );
+
+  useDesktopSectionBreadcrumb([{ label: "Development" }]);
 
   const organizations = useMemo<OrganizationRef[]>(
     () =>

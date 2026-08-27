@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isBlockingModalOpen } from "../shortcuts/shortcut-guards.js";
 
 function shouldHandleEscapeBack(
@@ -52,7 +53,6 @@ function shouldHandleEscapeBack(
 export function useEscapeBackNavigation({
   enabled = true,
   pathname,
-  commandPaletteOpen = false,
   canGoBack = true,
   /** When true, Escape from xterm also triggers back (agent console task → list). */
   allowFromTerminal = false,
@@ -60,16 +60,18 @@ export function useEscapeBackNavigation({
 }: {
   enabled?: boolean;
   pathname: string;
-  commandPaletteOpen?: boolean;
   /** Prefer in-app history `canGoBack` over `window.history.length`. */
   canGoBack?: boolean;
   allowFromTerminal?: boolean;
   onGoBack: () => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
+      const commandPaletteOpen = openRef.current ?? false;
       if (
         !shouldHandleEscapeBack(event, commandPaletteOpen, allowFromTerminal)
       ) {
@@ -92,12 +94,5 @@ export function useEscapeBackNavigation({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [
-    allowFromTerminal,
-    canGoBack,
-    commandPaletteOpen,
-    enabled,
-    onGoBack,
-    pathname,
-  ]);
+  }, [allowFromTerminal, canGoBack, enabled, onGoBack, openRef, pathname]);
 }

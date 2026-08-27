@@ -1,14 +1,20 @@
 import {
   createContext,
+  memo,
+  startTransition,
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { useLocation } from "react-router-dom";
 import type { EmailListItem, EmailMailbox } from "@backsteros/ui";
-import { isEmailPath, isInboxPath } from "@backsteros/ui";
 
+import { shouldLiveUpdateAgentMail } from "./agentmail-live";
+import {
+  getVisibleKeepAliveSurface,
+  subscribeWarmKeepAlive,
+} from "./shell-warm-keep-alive";
 import { useAgentMailMailboxes } from "./use-agentmail-mailboxes";
 
 type AgentMailContextValue = {
@@ -22,36 +28,55 @@ type AgentMailContextValue = {
 
 const AgentMailContext = createContext<AgentMailContextValue | null>(null);
 
-function pathNeedsAgentMail(pathname: string): boolean {
-  return (
-    isInboxPath(pathname) ||
-    isEmailPath(pathname) ||
-    pathname.startsWith("/desktop-overlay/compose")
-  );
-}
+const MemoizedChildren = memo(function MemoizedChildren({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return children;
+});
 
 /**
  * Shared AgentMail list for Inbox, Tasks, and project task surfaces so email
  * rows stay in sync without duplicate fetches.
  *
- * Fetch is deferred until the user hits inbox/email (sticky for the session)
- * so cold start does not wait on AgentMail settings + message lists.
+ * Enable from the keep-alive store (inbox) or the window href (email/compose
+ * Outlet). Sticky for the session. Live rebuilds start after the inbox list
+ * paints. Hidden inbox does not live-rebuild the list or chrome.
  */
 export function AgentMailProvider({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  const [enabled, setEnabled] = useState(() =>
-    pathNeedsAgentMail(location.pathname),
+  const visible = useSyncExternalStore(
+    subscribeWarmKeepAlive,
+    getVisibleKeepAliveSurface,
+    getVisibleKeepAliveSurface,
   );
+  const live = shouldLiveUpdateAgentMail(visible);
+  const [liveAfterPaint, setLiveAfterPaint] = useState(false);
+  const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    if (pathNeedsAgentMail(location.pathname)) {
-      setEnabled(true);
+    if (!live) {
+      setLiveAfterPaint(false);
+      return;
     }
-  }, [location.pathname]);
+    const frame = requestAnimationFrame(() => setLiveAfterPaint(true));
+    return () => cancelAnimationFrame(frame);
+  }, [live]);
 
-  const value = useAgentMailMailboxes(enabled);
+  useEffect(() => {
+    if (!liveAfterPaint) return;
+    startTransition(() => {
+      setEnabled(true);
+    });
+  }, [liveAfterPaint]);
+
+  const value = useAgentMailMailboxes(enabled, {
+    liveUpdates: liveAfterPaint,
+  });
   return (
-    <AgentMailContext.Provider value={value}>{children}</AgentMailContext.Provider>
+    <AgentMailContext.Provider value={value}>
+      <MemoizedChildren>{children}</MemoizedChildren>
+    </AgentMailContext.Provider>
   );
 }
 

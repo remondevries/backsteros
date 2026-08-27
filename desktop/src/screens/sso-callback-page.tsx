@@ -1,8 +1,9 @@
 import { useClerk } from "@clerk/clerk-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import { consumeGithubOauthReturnUrl } from "../lib/github-oauth";
+import { navigateToHref } from "../router/navigate-href";
 
 const ESCAPE_MS = 1200;
 
@@ -33,7 +34,11 @@ export function SsoCallbackPage() {
       try {
         const url = new URL(returnUrl, window.location.origin);
         if (url.origin === window.location.origin) {
-          navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true });
+          navigateToHref(
+            navigate,
+            `${url.pathname}${url.search}${url.hash}`,
+            { replace: true },
+          );
           return;
         }
       } catch {

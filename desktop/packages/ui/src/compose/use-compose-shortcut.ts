@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js";
 import { shouldYieldComposeToFinanceTxCategory } from "../tasks/task-property-dropdown-keys.js";
 
@@ -11,18 +12,18 @@ import { shouldYieldComposeToFinanceTxCategory } from "../tasks/task-property-dr
  */
 export function useComposeShortcut({
   enabled = true,
-  commandPaletteOpen = false,
   onCompose,
 }: {
   enabled?: boolean;
-  commandPaletteOpen?: boolean;
   onCompose: () => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) return;
+      if (openRef.current) return;
       if (isAnyLeaderSequencePending()) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return;
@@ -59,5 +60,5 @@ export function useComposeShortcut({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled, onCompose]);
+  }, [enabled, onCompose, openRef]);
 }

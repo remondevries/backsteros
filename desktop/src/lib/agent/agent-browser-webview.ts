@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { invoke } from "../tauri-invoke-instrumentation";
 import { isTauriRuntime } from "../whoop";
 
 export const AGENT_BROWSER_LOAD_EVENT = "agent-browser:load";

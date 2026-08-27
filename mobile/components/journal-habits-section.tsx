@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { fireHabitCompleteConfetti } from "../lib/habits/habit-complete-confetti";
 import { colors } from "../lib/theme";
+import { ProjectOcticon } from "./project-octicon";
 
 export type JournalHabitDayItem = {
   habitId: string;
@@ -55,14 +56,14 @@ function HabitRow({
           }
           onToggle?.(item, next);
         }}
-        style={styles.checkHit}
+        style={styles.iconHit}
       >
-        <View
-          ref={originRef}
-          collapsable={false}
-          style={[styles.check, item.checked ? styles.checkOn : null]}
-        >
-          {item.checked ? <Text style={styles.checkMark}>✓</Text> : null}
+        <View ref={originRef} collapsable={false} style={styles.icon}>
+          <ProjectOcticon
+            icon={item.icon}
+            size={16}
+            color={item.checked ? HABIT_DONE_COLOR : colors.foreground}
+          />
         </View>
       </Pressable>
       <Text
@@ -78,7 +79,7 @@ function HabitRow({
   );
 }
 
-/** Journal Habits tab — list rows with checkbox, title, and outcome counts. */
+/** Journal Habits tab — icon toggle, title, and outcome counts. */
 export function JournalHabitsList({ items, onToggle }: Props) {
   if (items.length === 0) return null;
 
@@ -111,6 +112,8 @@ export function countHabitDayOutcomes(
   return { completedCount, missedCount };
 }
 
+const HABIT_DONE_COLOR = "#3d9a5b";
+
 const styles = StyleSheet.create({
   root: {
     paddingHorizontal: 16,
@@ -126,27 +129,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  checkHit: {
+  iconHit: {
     padding: 2,
   },
-  check: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+  icon: {
+    width: 16,
+    height: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  checkOn: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  checkMark: {
-    color: colors.background,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 14,
   },
   title: {
     flex: 1,

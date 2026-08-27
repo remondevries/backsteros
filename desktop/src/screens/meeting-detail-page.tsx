@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "@tanstack/react-router";
 
 import {
   formatMeetingDisplayId,
@@ -11,10 +11,13 @@ import {
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import { navigateToHref } from "../router/navigate-href";
 
 export function MeetingDetailPage() {
   const navigate = useNavigate();
-  const { meetingId: meetingRouteParam } = useParams<{ meetingId: string }>();
+  const { meetingId: meetingRouteParam } = useParams({ strict: false }) as {
+    meetingId?: string;
+  };
   const workspace = useDesktopWorkspaceData();
 
   const meeting = useMemo(() => {
@@ -59,7 +62,7 @@ export function MeetingDetailPage() {
     }
     try {
       await workspace.softDeleteMeeting(meeting.id);
-      navigate("/calendar", { replace: true });
+      navigateToHref(navigate, "/calendar", { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -78,7 +81,10 @@ export function MeetingDetailPage() {
     return (
       <div className="inbox-detail-empty">
         <p>Meeting not found.</p>
-        <button type="button" onClick={() => navigate("/calendar")}>
+        <button
+          type="button"
+          onClick={() => navigateToHref(navigate, "/calendar")}
+        >
           Back to calendar
         </button>
       </div>

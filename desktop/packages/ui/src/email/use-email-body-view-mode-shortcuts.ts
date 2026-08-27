@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import type { EmailThreadBodyViewMode } from "./email.js";
 import {
   resolveEmailBodyViewModeFromShortcut,
@@ -13,20 +14,24 @@ export function useEmailBodyViewModeShortcuts({
   onBodyViewModeChange,
   enabled = true,
   pathname,
-  commandPaletteOpen = false,
 }: {
   bodyViewMode: EmailThreadBodyViewMode;
   onBodyViewModeChange: (mode: EmailThreadBodyViewMode) => void;
   enabled?: boolean;
   pathname?: string;
-  commandPaletteOpen?: boolean;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
-    if (!enabled || commandPaletteOpen) {
+    if (!enabled) {
       return;
     }
 
     function handleKeyDown(event: KeyboardEvent) {
+      if (openRef.current) {
+        return;
+      }
+
       const routePath = pathname ?? window.location.pathname;
       if (!shouldHandleEmailBodyViewModeShortcut(event, routePath)) {
         return;
@@ -45,11 +50,5 @@ export function useEmailBodyViewModeShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [
-    bodyViewMode,
-    commandPaletteOpen,
-    enabled,
-    onBodyViewModeChange,
-    pathname,
-  ]);
+  }, [bodyViewMode, enabled, onBodyViewModeChange, openRef, pathname]);
 }

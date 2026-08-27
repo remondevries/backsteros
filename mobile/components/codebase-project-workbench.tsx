@@ -52,6 +52,8 @@ type Props = {
    */
   showInlineTabs?: boolean;
   onDescriptionLoaded?: (description: string) => void;
+  /** Phone FAB — open Files create picker when incremented. */
+  filesCreateSignal?: number;
 };
 
 /**
@@ -70,6 +72,7 @@ export function CodebaseProjectWorkbench({
   onTabChange,
   showInlineTabs = true,
   onDescriptionLoaded,
+  filesCreateSignal = 0,
 }: Props) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -163,6 +166,7 @@ export function CodebaseProjectWorkbench({
           selectedPath={null}
           onSelectFile={handleSelectFile}
           onClearSelection={() => {}}
+          filesCreateSignal={filesCreateSignal}
         />
       ) : tab === "commits" ? (
         <GithubCommitList

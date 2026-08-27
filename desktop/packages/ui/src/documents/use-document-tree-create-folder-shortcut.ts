@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { useCommandPalette } from "../components/command-palette/command-palette-context.js";
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { requestDocumentTreeCreateFolder } from "./document-tree-create-folder-shortcut.js";
 import { shouldHandleDocumentTreeCreateFolderShortcut } from "./should-handle-document-tree-create-folder-shortcut.js";
 import { useLatestRef } from "../shared/use-latest-ref.js";
@@ -17,7 +17,7 @@ export function useDocumentTreeCreateFolderShortcut({
   pathname: string;
   enabled?: boolean;
 }) {
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { openRef } = useCommandPaletteRuntimeRefs();
   const pathnameRef = useLatestRef(pathname);
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useDocumentTreeCreateFolderShortcut({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (
-        commandPaletteOpen ||
+        openRef.current ||
         !shouldHandleDocumentTreeCreateFolderShortcut(
           event,
           pathnameRef.current,
@@ -41,5 +41,5 @@ export function useDocumentTreeCreateFolderShortcut({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled, pathnameRef]);
+  }, [enabled, openRef, pathnameRef]);
 }

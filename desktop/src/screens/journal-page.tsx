@@ -5,45 +5,69 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
-import type { Document as ApiDocument } from "@backsteros/contracts";
 import {
   CalendarDayTimeline,
   DocumentDetailIcon,
-  JournalDetailSkeleton,
+  DocumentOcticon,
   JournalDueTasksSection,
   MarkdownDocumentDetailView,
   RegisterEntityDeleteAction,
   RegisterPageIcon,
+  buildJournalDayTaskModel,
   buildJournalTaskTrailHref,
-  countHabitDayOutcomes,
-  collapseHabitItemsByHabitId,
   formatJournalEntryTitle,
   getCalendarMeetingOverlayHref,
   getDocumentEditorBody,
-  getTaskDueDateYmd,
-  isHabitLinkedTask,
+  getJournalHref,
+  getTodayJournalDateSlug,
   meetingsToCalendarEventsForDate,
   mergeJournalContent,
-  tasksToCalendarEventsForDate,
+  tasksToCalendarEvents,
   type JournalHabitDayItem,
   type MeetingCalendarPatch,
   type TaskCalendarPatch,
+  type TaskItemRowTask,
 } from "@backsteros/ui";
 
 import { JournalWhoopLeading } from "../components/journal-whoop-leading";
 import { DesktopJournalDayLayout } from "../components/desktop-journal-day-layout";
 import { useDesktopApi } from "../lib/api-context";
-import { useJournalSelection } from "../lib/journal-selection-context";
 import {
   ensureJournalDocumentId,
   peekJournalDocumentId,
+  rememberJournalDocumentId,
 } from "../lib/prefetch-workspace-content";
 import { useDesktopDocumentContent } from "../lib/use-document-content";
-import { useDesktopResource } from "../lib/use-desktop-resource";
+import {
+  useKeepAliveActive,
+  useShellLocation,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceDocuments,
+  useDesktopWorkspaceMeta,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceTasks,
+} from "../lib/workspace-data";
+import { navigateToHref } from "../router/navigate-href";
+import {
+  ENABLE_JOURNAL_DAY_CALENDAR,
+  ENABLE_JOURNAL_DUE_TASKS_AND_HABITS,
+  ENABLE_JOURNAL_PAGE_CONTENT,
+  ENABLE_JOURNAL_WHOOP,
+} from "../lib/journal-cpu-bisect";
+
+/** Cached once — constructing DateTimeFormat only to read the zone is wasteful. */
+const JOURNAL_CALENDAR_TIME_ZONE =
+  Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function useJournalCalendarTimeZone(): string {
+  return JOURNAL_CALENDAR_TIME_ZONE;
+}
 
 function JournalDayBody({ children }: { children: ReactNode }) {
   return (
@@ -55,22 +79,28 @@ function JournalDayBody({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Selection (click / Enter / Space) calls `selectDate` with flushSync, which
- * clears `readyDate` in the same turn. This page then:
- *   1. Unmounts the journal body immediately
- *   2. Shows the skeleton
- *   3. Starts loading the new day
- *   4. Calls `markReady` when the body is available → content replaces skeleton
- */
+/** Journal list stays mounted; Tier C/D body loads on demand. */
 export function JournalPage() {
-  const { dateSlug: rawSlug } = useParams<{ dateSlug?: string }>();
-  const routeDate = rawSlug ?? new Date().toISOString().slice(0, 10);
-  const { pendingDate, readyDate, markReady, clearPending } =
-    useJournalSelection();
-  const dateSlug = pendingDate ?? routeDate;
-  // readyDate is cleared inside selectDate's flushSync — skeleton is immediate.
-  const showSkeleton = readyDate !== dateSlug;
+  const { dateSlug: rawSlug } = useShellParams() as { dateSlug?: string };
+  // TEMP: journal CPU bisect — restore via ENABLE_JOURNAL_PAGE_CONTENT.
+  if (!ENABLE_JOURNAL_PAGE_CONTENT) {
+    return (
+      <div className="inbox-detail-layout">
+        <div className="inbox-detail-body">
+          <p>journal</p>
+        </div>
+      </div>
+    );
+  }
+  return <JournalPageContent rawSlug={rawSlug} />;
+}
+
+function JournalPageContent({ rawSlug }: { rawSlug?: string }) {
+  const dateSlug = rawSlug ?? getTodayJournalDateSlug();
+  const displayTitle = useMemo(
+    () => formatJournalEntryTitle(dateSlug),
+    [dateSlug],
+  );
 
   const [breadcrumbDate, setBreadcrumbDate] = useState(dateSlug);
   const [resolvedBreadcrumbTitle, setResolvedBreadcrumbTitle] = useState<
@@ -81,96 +111,93 @@ export function JournalPage() {
     setResolvedBreadcrumbTitle(null);
   }
 
+  const keepAliveActive = useKeepAliveActive();
   useDesktopSectionBreadcrumb(
-    rawSlug || pendingDate
+    rawSlug
       ? [
           { label: "Journal", href: "/journal" },
           {
-            label:
-              resolvedBreadcrumbTitle ?? formatJournalEntryTitle(dateSlug),
+            label: resolvedBreadcrumbTitle ?? displayTitle,
           },
         ]
       : [{ label: "Journal" }],
+    { enabled: keepAliveActive },
   );
-
-  useEffect(() => {
-    if (pendingDate && pendingDate === routeDate) {
-      clearPending();
-    }
-  }, [clearPending, pendingDate, routeDate]);
 
   return (
     <JournalScreen
       date={dateSlug}
-      showSkeleton={showSkeleton}
       onResolvedTitle={setResolvedBreadcrumbTitle}
-      onContentReady={markReady}
     />
   );
 }
 
-function JournalScreen({
-  date,
-  showSkeleton,
-  onResolvedTitle,
-  onContentReady,
+function useJournalDayModel(dateSlug: string) {
+  const { habits } = useDesktopWorkspaceMeta();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const calendarTimeZone = useJournalCalendarTimeZone();
+
+  return useMemo(
+    () =>
+      buildJournalDayTaskModel(
+        allTasks,
+        habits,
+        dateSlug,
+        calendarTimeZone,
+      ),
+    [allTasks, calendarTimeZone, dateSlug, habits],
+  );
+}
+
+/** Journal entry editor + habits/due footer for a date (no day-calendar column). */
+const NOOP_RESOLVED_TITLE = (_title: string) => {};
+
+export function JournalDayEntryMain({
+  dateSlug,
+  onResolvedTitle = NOOP_RESOLVED_TITLE,
 }: {
-  date: string;
-  showSkeleton: boolean;
-  onResolvedTitle: (title: string) => void;
-  onContentReady: (dateSlug: string) => void;
+  dateSlug: string;
+  onResolvedTitle?: (title: string) => void;
 }) {
+  const displayTitle = useMemo(
+    () => formatJournalEntryTitle(dateSlug),
+    [dateSlug],
+  );
   const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
+  const { journalDocumentIdsByDate } = useDesktopWorkspaceDocuments();
+  const dayModel = useJournalDayModel(dateSlug);
   const knownId =
-    workspace.journalDocumentIdsByDate[date] ??
-    peekJournalDocumentId(date) ??
+    journalDocumentIdsByDate[dateSlug] ??
+    peekJournalDocumentId(dateSlug) ??
     null;
 
   const [ensuredId, setEnsuredId] = useState<string | null>(null);
   const [ensureError, setEnsureError] = useState<Error | null>(null);
   const [ensureNonce, setEnsureNonce] = useState(0);
-  const [trackedDate, setTrackedDate] = useState(date);
-  // Gate: do not start content fetch until skeleton has painted. Cached content
-  // used to call markReady inside flushSync (loading:false) and skip paint.
-  const [fetchEnabled, setFetchEnabled] = useState(false);
+  const [trackedDate, setTrackedDate] = useState(dateSlug);
 
-  if (date !== trackedDate) {
-    setTrackedDate(date);
+  if (dateSlug !== trackedDate) {
+    setTrackedDate(dateSlug);
     setEnsuredId(null);
     setEnsureError(null);
-    setFetchEnabled(false);
   }
 
   const documentId = knownId ?? ensuredId;
 
-  // After skeleton commit paints, enable content fetch.
   useEffect(() => {
-    if (!showSkeleton) {
-      setFetchEnabled(true);
-      return;
-    }
-    let cancelled = false;
-    let inner = 0;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => {
-        if (cancelled) return;
-        setFetchEnabled(true);
-      });
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(outer);
-      if (inner) cancelAnimationFrame(inner);
-    };
-  }, [date, showSkeleton]);
+    onResolvedTitle(displayTitle);
+  }, [displayTitle, onResolvedTitle]);
 
-  // Ensure document id only after paint.
   useEffect(() => {
-    if (!fetchEnabled || knownId) return;
+    if (!knownId) return;
+    rememberJournalDocumentId(dateSlug, knownId);
+  }, [dateSlug, knownId]);
+
+  useEffect(() => {
+    if (knownId) return;
     let cancelled = false;
     setEnsureError(null);
-    void ensureJournalDocumentId(client, date).then((id) => {
+    void ensureJournalDocumentId(client, dateSlug).then((id) => {
       if (cancelled) return;
       if (id) setEnsuredId(id);
       else setEnsureError(new Error("Could not open journal entry."));
@@ -178,11 +205,10 @@ function JournalScreen({
     return () => {
       cancelled = true;
     };
-  }, [client, date, ensureNonce, knownId, fetchEnabled]);
+  }, [client, dateSlug, ensureNonce, knownId]);
 
-  let body: ReactNode;
   if (ensureError && !documentId) {
-    body = (
+    return (
       <div className="inbox-detail-empty">
         <p>{ensureError.message}</p>
         <button type="button" onClick={() => setEnsureNonce((n) => n + 1)}>
@@ -190,102 +216,95 @@ function JournalScreen({
         </button>
       </div>
     );
-  } else if (showSkeleton) {
-    // Skeleton only until paint gate; then headless loader runs (no editor).
-    body = (
-      <>
-        <JournalDetailSkeleton framed={false} />
-        {fetchEnabled && documentId ? (
-          <JournalEntryLoader
-            dateSlug={date}
-            documentId={documentId}
-            onContentReady={onContentReady}
-          />
-        ) : null}
-      </>
-    );
-  } else if (documentId) {
-    body = (
-      <JournalEntryDetail
-        dateSlug={date}
-        documentId={documentId}
-        onResolvedTitle={onResolvedTitle}
-        onContentReady={onContentReady}
-      />
-    );
-  } else {
-    body = <JournalDetailSkeleton framed={false} />;
   }
 
   return (
+    <JournalDayBody>
+      <JournalEntryDetail
+        dateSlug={dateSlug}
+        displayTitle={displayTitle}
+        documentId={documentId}
+        dueTasks={dayModel.dueTasks}
+        habitItems={dayModel.habitItems}
+        onResolvedTitle={onResolvedTitle}
+      />
+    </JournalDayBody>
+  );
+}
+
+function JournalScreen({
+  date,
+  onResolvedTitle,
+}: {
+  date: string;
+  onResolvedTitle: (title: string) => void;
+}) {
+  const dayModel = useJournalDayModel(date);
+
+  return (
     <DesktopJournalDayLayout
-      main={<JournalDayBody>{body}</JournalDayBody>}
-      dayCalendar={<JournalDayCalendarColumn dateSlug={date} />}
+      main={
+        <JournalDayEntryMain
+          dateSlug={date}
+          onResolvedTitle={onResolvedTitle}
+        />
+      }
+      dayCalendar={
+        ENABLE_JOURNAL_DAY_CALENDAR ? (
+          <JournalDayCalendarColumn
+            dateSlug={date}
+            dayTasks={dayModel.dayTasks}
+          />
+        ) : null
+      }
     />
   );
 }
 
-/** Headless fetch while the skeleton is visible — never paints the editor. */
-function JournalEntryLoader({
-  dateSlug,
-  documentId,
-  onContentReady,
-}: {
-  dateSlug: string;
-  documentId: string;
-  onContentReady: (dateSlug: string) => void;
-}) {
-  const { loading } = useDesktopDocumentContent(documentId);
-
-  useEffect(() => {
-    if (loading) return;
-    onContentReady(dateSlug);
-  }, [loading, dateSlug, onContentReady]);
-
-  return null;
-}
-
 function JournalEntryDetail({
   dateSlug,
+  displayTitle,
   documentId,
+  dueTasks,
+  habitItems,
   onResolvedTitle,
-  onContentReady,
 }: {
   dateSlug: string;
-  documentId: string;
+  displayTitle: string;
+  documentId: string | null;
+  dueTasks: TaskItemRowTask[];
+  habitItems: readonly JournalHabitDayItem[];
   onResolvedTitle: (title: string) => void;
-  onContentReady: (dateSlug: string) => void;
 }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { client } = useDesktopApi();
-  const workspace = useDesktopWorkspaceData();
-  const localDoc = workspace.documents.find((doc) => doc.id === documentId);
-
-  const metadata = useDesktopResource<ApiDocument>(
-    (api) =>
-      api.requestJson(`/api/v1/documents/${encodeURIComponent(documentId)}`),
-    [documentId],
+  const location = useShellLocation();
+  const keepAliveActive = useKeepAliveActive();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
   );
+  const { client } = useDesktopApi();
+  const { documents } = useDesktopWorkspaceDocuments();
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const { contacts } = useDesktopWorkspacePeople();
+  const { source, ready } = useDesktopWorkspaceMeta();
+  const { updateDocumentIcon, patchTask } = useDesktopWorkspaceActions();
+  const calendarTimeZone = useJournalCalendarTimeZone();
+  const localDoc = documentId
+    ? documents.find((doc) => doc.id === documentId)
+    : undefined;
 
-  const {
-    initialBody,
-    onSave: saveContent,
-    loading: contentLoading,
-  } = useDesktopDocumentContent(documentId);
+  const { initialBody, onSave: saveContent } =
+    useDesktopDocumentContent(documentId);
 
-  const metadataIcon = metadata.data?.icon ?? localDoc?.icon ?? null;
-  const displayTitle = formatJournalEntryTitle(dateSlug);
+  const metadataIcon = localDoc?.icon ?? null;
   const storedTitle = dateSlug;
 
   useEffect(() => {
     onResolvedTitle(displayTitle);
   }, [displayTitle, onResolvedTitle]);
-
-  useEffect(() => {
-    if (contentLoading) return;
-    onContentReady(dateSlug);
-  }, [contentLoading, dateSlug, onContentReady]);
 
   const editorBody = useMemo(
     () => getDocumentEditorBody(initialBody, storedTitle),
@@ -293,12 +312,15 @@ function JournalEntryDetail({
   );
 
   const handleDeleteJournalDocument = useCallback(async () => {
+    if (!documentId) {
+      return { ok: false as const, error: "Journal entry is still opening." };
+    }
     try {
       await client.requestJson(
         `/api/v1/documents/${encodeURIComponent(documentId)}`,
         { method: "DELETE" },
       );
-      navigate("/journal", { replace: true });
+      navigate(getJournalHref(getTodayJournalDateSlug()), { replace: true });
       return { ok: true as const };
     } catch (error) {
       return {
@@ -313,10 +335,10 @@ function JournalEntryDetail({
 
   const handleSelectDueTask = useCallback(
     (taskId: string) => {
-      const task = workspace.allTasks.find((entry) => entry.id === taskId);
+      const task = allTasks.find((entry) => entry.id === taskId);
       if (!task) return;
       const contact = task.contactId
-        ? workspace.contacts.find((entry) => entry.id === task.contactId)
+        ? contacts.find((entry) => entry.id === task.contactId)
         : null;
       navigate(
         buildJournalTaskTrailHref(location.pathname, {
@@ -327,188 +349,136 @@ function JournalEntryDetail({
         }),
       );
     },
-    [location.pathname, navigate, workspace.allTasks, workspace.contacts],
+    [allTasks, contacts, location.pathname, navigate],
   );
-
-  if (contentLoading) {
-    return <JournalDetailSkeleton framed={false} />;
-  }
 
   return (
     <>
-      <RegisterPageIcon icon={metadataIcon} />
-      <RegisterEntityDeleteAction
-        entityLabel={`journal entry "${formatJournalEntryTitle(dateSlug)}"`}
-        onDelete={handleDeleteJournalDocument}
-      />
+      {keepAliveActive ? (
+        <>
+          <RegisterPageIcon icon={metadataIcon} />
+          {documentId ? (
+            <RegisterEntityDeleteAction
+              entityLabel={`journal entry "${displayTitle}"`}
+              onDelete={handleDeleteJournalDocument}
+            />
+          ) : null}
+        </>
+      ) : null}
       <MarkdownDocumentDetailView
         sectionLabel="Journal"
         title={displayTitle}
-        resetKey={documentId}
+        resetKey={documentId ?? dateSlug}
         titleEditable={false}
         previewTitleEditable={false}
         embedded
         leading={
-          <JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />
+          ENABLE_JOURNAL_WHOOP ? (
+            <JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />
+          ) : null
         }
         icon={
-          <DocumentDetailIcon
-            documentId={documentId}
-            icon={metadataIcon}
-            title={displayTitle}
-            onSaveIcon={async (icon) => {
-              const result = await workspace.updateDocumentIcon(
-                documentId,
-                icon,
-              );
-              if (!result.ok) return result;
-              try {
-                if (workspace.source === "powersync") {
-                  await client.requestJson(
-                    `/api/v1/documents/${encodeURIComponent(documentId)}`,
-                    {
-                      method: "PATCH",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ icon }),
-                    },
-                  );
+          documentId ? (
+            <DocumentDetailIcon
+              documentId={documentId}
+              icon={metadataIcon}
+              title={displayTitle}
+              onSaveIcon={async (icon) => {
+                const result = await updateDocumentIcon(documentId, icon);
+                if (!result.ok) return result;
+                try {
+                  if (source === "powersync") {
+                    await client.requestJson(
+                      `/api/v1/documents/${encodeURIComponent(documentId)}`,
+                      {
+                        method: "PATCH",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ icon }),
+                      },
+                    );
+                  }
+                  return { ok: true as const };
+                } catch (error) {
+                  return {
+                    ok: false as const,
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "Could not update document icon.",
+                  };
                 }
-                metadata.reload();
-                return { ok: true as const };
-              } catch (error) {
-                return {
-                  ok: false as const,
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Could not update document icon.",
-                };
-              }
-            }}
-          />
+              }}
+            />
+          ) : (
+            <div className="document-detail-icon">
+              <span className="document-detail-icon__button">
+                <DocumentOcticon
+                  icon={metadataIcon}
+                  size={16}
+                  className="document-detail-icon__glyph"
+                  title={displayTitle}
+                />
+              </span>
+            </div>
+          )
         }
         initialBody={editorBody}
         onSave={async (nextEditorBody) => {
+          if (!documentId) return;
           const nextContent = mergeJournalContent(storedTitle, nextEditorBody);
           if (nextContent === initialBody) return;
           await saveContent(nextContent);
         }}
         footer={
-          <JournalDueTasksFooter
-            dateSlug={dateSlug}
-            onSelectTask={handleSelectDueTask}
-          />
+          ENABLE_JOURNAL_DUE_TASKS_AND_HABITS ? (
+            <JournalDueTasksSection
+              dateSlug={dateSlug}
+              tasks={allTasks}
+              dueTasks={dueTasks}
+              habits={habitItems}
+              isLoading={!ready}
+              calendarTimeZone={calendarTimeZone}
+              dayTimelineDraggable
+              onSelectTask={handleSelectDueTask}
+              onToggleHabit={(item, checked) => {
+                void patchTask(item.taskId, {
+                  status: checked ? "completed" : "ready_to_start",
+                });
+              }}
+            />
+          ) : null
         }
       />
     </>
   );
 }
 
-function useJournalDayHabitItems(dateSlug: string): JournalHabitDayItem[] {
-  const workspace = useDesktopWorkspaceData();
-  const settings = useDesktopResource<{
-    settings: Record<string, unknown>;
-  }>((api) => api.requestJson("/api/v1/settings"));
-  const calendarTimeZone = String(
-    settings.data?.settings.timezone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
-
-  return useMemo((): JournalHabitDayItem[] => {
-    const habitById = new Map(
-      workspace.habits.map((habit) => [habit.id, habit] as const),
-    );
-    const items = workspace.allTasks
-      .filter(
-        (task) =>
-          isHabitLinkedTask(task) &&
-          getTaskDueDateYmd(task.dueDate, calendarTimeZone) === dateSlug,
-      )
-      .map((task) => {
-        const habit = habitById.get(task.habitId!);
-        const { completedCount, missedCount } = countHabitDayOutcomes(
-          workspace.allTasks,
-          task.habitId!,
-        );
-        return {
-          habitId: task.habitId!,
-          taskId: task.id,
-          title: habit?.title ?? task.title ?? "Habit",
-          icon: habit?.icon ?? null,
-          checked: task.status === "completed",
-          completedCount,
-          missedCount,
-          sortOrder: habit?.sortOrder ?? 0,
-        };
-      })
-      .sort((a, b) => {
-        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-        return a.title.localeCompare(b.title, undefined, {
-          sensitivity: "base",
-        });
-      })
-      .map(({ sortOrder: _sortOrder, ...item }) => item);
-    return collapseHabitItemsByHabitId(items);
-  }, [
-    calendarTimeZone,
-    dateSlug,
-    workspace.allTasks,
-    workspace.habits,
-  ]);
-}
-
-function JournalDueTasksFooter({
+function JournalDayCalendarColumn({
   dateSlug,
-  onSelectTask,
+  dayTasks,
 }: {
   dateSlug: string;
-  onSelectTask: (taskId: string) => void;
+  dayTasks: TaskItemRowTask[];
 }) {
-  const workspace = useDesktopWorkspaceData();
-  const settings = useDesktopResource<{
-    settings: Record<string, unknown>;
-  }>((api) => api.requestJson("/api/v1/settings"));
-  const calendarTimeZone = String(
-    settings.data?.settings.timezone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  const location = useShellLocation();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
   );
-  const habits = useJournalDayHabitItems(dateSlug);
-
-  return (
-    <JournalDueTasksSection
-      dateSlug={dateSlug}
-      tasks={workspace.allTasks}
-      habits={habits}
-      isLoading={!workspace.ready || settings.loading}
-      calendarTimeZone={calendarTimeZone}
-      dayTimelineDraggable
-      onSelectTask={onSelectTask}
-      onToggleHabit={(item, checked) => {
-        void workspace.patchTask(item.taskId, {
-          status: checked ? "completed" : "ready_to_start",
-        });
-      }}
-    />
-  );
-}
-
-function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const workspace = useDesktopWorkspaceData();
-  const settings = useDesktopResource<{
-    settings: Record<string, unknown>;
-  }>((api) => api.requestJson("/api/v1/settings"));
-  const calendarTimeZone = String(
-    settings.data?.settings.timezone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
+  const { allTasks } = useDesktopWorkspaceTasks();
+  const { contacts } = useDesktopWorkspacePeople();
+  const { habits, meetings } = useDesktopWorkspaceMeta();
+  const { patchTask, patchMeeting } = useDesktopWorkspaceActions();
+  const calendarTimeZone = useJournalCalendarTimeZone();
 
   const events = useMemo(() => {
     const habitIconById = new Map(
-      workspace.habits.map((habit) => [habit.id, habit.icon ?? null] as const),
+      habits.map((habit) => [habit.id, habit.icon ?? null] as const),
     );
-    const tasksWithHabitIcons = workspace.allTasks.map((task) => {
+    const tasksWithHabitIcons = dayTasks.map((task) => {
       const habitId = task.habitId?.trim() || null;
       if (!habitId) return task;
       return {
@@ -517,42 +487,32 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
       };
     });
     return [
-      ...tasksToCalendarEventsForDate(
-        tasksWithHabitIcons,
-        dateSlug,
-        calendarTimeZone,
-      ),
+      ...tasksToCalendarEvents(tasksWithHabitIcons),
       ...meetingsToCalendarEventsForDate(
-        workspace.meetings,
+        meetings,
         dateSlug,
         calendarTimeZone,
       ),
     ];
-  }, [
-    calendarTimeZone,
-    dateSlug,
-    workspace.allTasks,
-    workspace.habits,
-    workspace.meetings,
-  ]);
+  }, [calendarTimeZone, dateSlug, dayTasks, habits, meetings]);
 
   const handleReschedule = (taskId: string, patch: TaskCalendarPatch) => {
-    void workspace.patchTask(taskId, patch);
+    void patchTask(taskId, patch);
   };
 
   const handleMeetingReschedule = (
     meetingId: string,
     patch: MeetingCalendarPatch,
   ) => {
-    void workspace.patchMeeting(meetingId, patch);
+    void patchMeeting(meetingId, patch);
   };
 
   const handleTaskOpen = useCallback(
     (taskId: string) => {
-      const task = workspace.allTasks.find((entry) => entry.id === taskId);
+      const task = allTasks.find((entry) => entry.id === taskId);
       if (!task) return;
       const contact = task.contactId
-        ? workspace.contacts.find((entry) => entry.id === task.contactId)
+        ? contacts.find((entry) => entry.id === task.contactId)
         : null;
       navigate(
         buildJournalTaskTrailHref(location.pathname, {
@@ -563,7 +523,7 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
         }),
       );
     },
-    [location.pathname, navigate, workspace.allTasks, workspace.contacts],
+    [allTasks, contacts, location.pathname, navigate],
   );
 
   const handleMeetingOpen = useCallback(
@@ -572,15 +532,6 @@ function JournalDayCalendarColumn({ dateSlug }: { dateSlug: string }) {
     },
     [navigate],
   );
-
-  if (!workspace.ready) {
-    return (
-      <div
-        className="calendar-day-timeline calendar-view"
-        data-journal-day-calendar
-      />
-    );
-  }
 
   return (
     <CalendarDayTimeline

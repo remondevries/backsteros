@@ -15,6 +15,8 @@ type MountEntry = {
   slot: HTMLElement;
 };
 
+const pendingUnmountRoots = new Set<Root>();
+
 function cellKey(viewType: string, ymd: string): string {
   return `${viewType}:${ymd}`;
 }
@@ -53,6 +55,32 @@ function ensureHabitSlot(
   return slot;
 }
 
+/** FullCalendar tears down cells during React commit — never unmount synchronously. */
+function scheduleRootUnmount(root: Root) {
+  if (pendingUnmountRoots.has(root)) return;
+  pendingUnmountRoots.add(root);
+  setTimeout(() => {
+    pendingUnmountRoots.delete(root);
+    try {
+      root.unmount();
+    } catch {
+      // Root container may already be gone.
+    }
+  }, 0);
+}
+
+function releaseMountEntry(mounts: Map<string, MountEntry>, key: string) {
+  const entry = mounts.get(key);
+  if (!entry) return;
+  mounts.delete(key);
+  try {
+    entry.root.render(null);
+  } catch {
+    // Slot may already be detached from the document.
+  }
+  scheduleRootUnmount(entry.root);
+}
+
 export function useCalendarDayHabitMounts(
   habitsByDate: ReadonlyMap<string, readonly CalendarHabitIconItem[]>,
   onToggle?: (item: CalendarHabitIconItem, completed: boolean) => void,
@@ -81,10 +109,7 @@ export function useCalendarDayHabitMounts(
   }, []);
 
   const unmountKey = useCallback((key: string) => {
-    const entry = mountsRef.current.get(key);
-    if (!entry) return;
-    entry.root.unmount();
-    mountsRef.current.delete(key);
+    releaseMountEntry(mountsRef.current, key);
   }, []);
 
   useEffect(() => {
@@ -97,11 +122,9 @@ export function useCalendarDayHabitMounts(
   useEffect(() => {
     const mounts = mountsRef.current;
     return () => {
-      for (const key of mounts.keys()) {
-        const entry = mounts.get(key);
-        if (entry) entry.root.unmount();
+      for (const key of [...mounts.keys()]) {
+        releaseMountEntry(mounts, key);
       }
-      mounts.clear();
     };
   }, []);
 

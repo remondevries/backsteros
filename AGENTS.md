@@ -38,7 +38,8 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | Starting any build work | `docs/00-vision.md`, `docs/01-architecture.md`, `docs/09-phased-build-plan.md`, `docs/12-v2-local-computer.md` |
 | Choosing or changing tools | `docs/02-tech-stack.md`, `docs/10-decisions-log.md` |
 | Database / entities / sync tiers | `docs/03-data-model.md` |
-| API routes, sync, agent access | `docs/04-api-and-sync.md` |
+| API routes, sync, agent access | `docs/04-api-and-sync.md` (includes dual-hydrate) |
+| Desktop / mobile shared pure logic | `docs/14-client-logic-inventory.md` |
 | Desktop / mobile UI | `docs/05-clients.md`, `docs/07-performance.md` |
 | PDFs, markdown bodies, search | `docs/06-storage-and-search.md` |
 

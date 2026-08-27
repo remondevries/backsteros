@@ -15,7 +15,6 @@ import type {
   Habit as ApiHabit,
   Meeting as ApiMeeting,
   Task as ApiTask,
-  TaskLink,
 } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
@@ -28,6 +27,7 @@ import {
 
 import { useDesktopApi } from "../api-context";
 import {
+  apiFillSourceForColdStart,
   fillMissingAgentChatIdFromApi,
   fillMissingDueDatesFromApi,
   fillMissingHabitIdFromApi,
@@ -39,13 +39,14 @@ import {
   fillMissingMoneybirdContactIdFromApi,
   fillMissingParentFromApi,
   fillMissingTypeFromApi,
-  mergeLocalAndApiByUpdatedAt,
+  resolveLocalOrApiRows,
 } from "../merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "../powersync-context";
 import { getDesktopPublicEnvironment } from "../env";
 import { rememberProjectTypes } from "../project-type-cache";
 import { noteLocalTaskStatusPatch } from "../agent/agent-status-notifications";
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
+import { rememberWorkspaceSectionEntries } from "../section-entry-hrefs";
 import {
   asEpoch,
   mapContact,
@@ -55,7 +56,6 @@ import {
   mapOrganization,
   mapProject,
   mapTask,
-  parseTaskLinks,
   snakeRow,
 } from "./row-mappers";
 import type { DesktopWorkspaceData } from "./workspace-data-types";
@@ -91,7 +91,6 @@ export type DesktopWorkspaceTasks = Pick<
   | "inboxTasks"
   | "allTasks"
   | "taskDescriptions"
-  | "taskLinks"
   | "taskDetails"
 >;
 
@@ -221,24 +220,22 @@ function useDesktopWorkspaceDataImpl(): {
     queriesGracePeriodExpired,
   } = useWorkspaceApiRows({ authenticated, client, powerSync });
 
-  const rawProjects = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        fillMissingCodebaseFieldsFromApi(
-          fillMissingTypeFromApi(
-            mergeLocalAndApiByUpdatedAt(
-              localProjects.data?.map((row) => snakeRow(row) as ApiProject),
-              apiProjects,
-            ),
-            apiProjects,
-          ),
-          apiProjects,
+  const rawProjects = useMemo(() => {
+    const localMapped =
+      localProjects.data?.map((row) => snakeRow(row) as ApiProject) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiProjects);
+    return fillMissingLongTextFromApi(
+      fillMissingCodebaseFieldsFromApi(
+        fillMissingTypeFromApi(
+          resolveLocalOrApiRows(localMapped, apiProjects),
+          fillFrom,
         ),
-        apiProjects,
-        ["summary", "description"],
+        fillFrom,
       ),
-    [apiProjects, localProjects.data],
-  );
+      fillFrom,
+      ["summary", "description"],
+    );
+  }, [apiProjects, localProjects.data]);
 
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
@@ -246,23 +243,21 @@ function useDesktopWorkspaceDataImpl(): {
     return map;
   }, [rawProjects]);
 
-  const rawOrganizations = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        fillMissingMoneybirdContactIdFromApi(
-          mergeLocalAndApiByUpdatedAt(
-            localOrganizations.data?.map(
-              (row) => snakeRow(row) as ApiOrganization,
-            ),
-            apiOrganizations,
-          ),
-          apiOrganizations,
-        ),
-        apiOrganizations,
-        ["summary", "notes"],
+  const rawOrganizations = useMemo(() => {
+    const localMapped =
+      localOrganizations.data?.map(
+        (row) => snakeRow(row) as ApiOrganization,
+      ) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiOrganizations);
+    return fillMissingLongTextFromApi(
+      fillMissingMoneybirdContactIdFromApi(
+        resolveLocalOrApiRows(localMapped, apiOrganizations),
+        fillFrom,
       ),
-    [apiOrganizations, localOrganizations.data],
-  );
+      fillFrom,
+      ["summary", "notes"],
+    );
+  }, [apiOrganizations, localOrganizations.data]);
 
   const organizationsById = useMemo(() => {
     const map = new Map<string, ApiOrganization>();
@@ -272,121 +267,107 @@ function useDesktopWorkspaceDataImpl(): {
     return map;
   }, [rawOrganizations]);
 
-  const rawTasks = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        dropStaleLocalHabitTasks(
-          fillMissingDueDatesFromApi(
-            fillMissingHabitIdFromApi(
-              fillMissingAgentChatIdFromApi(
-                fillMissingLinksFromApi(
-                  mergeLocalAndApiByUpdatedAt(
-                    localTasks.data?.map((row) => snakeRow(row) as ApiTask),
-                    apiTasks,
-                  ),
-                  apiTasks,
-                ),
-                apiTasks,
+  const rawTasks = useMemo(() => {
+    const localMapped =
+      localTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiTasks);
+    return fillMissingLongTextFromApi(
+      dropStaleLocalHabitTasks(
+        fillMissingDueDatesFromApi(
+          fillMissingHabitIdFromApi(
+            fillMissingAgentChatIdFromApi(
+              fillMissingLinksFromApi(
+                resolveLocalOrApiRows(localMapped, apiTasks),
+                fillFrom,
               ),
-              apiTasks,
+              fillFrom,
             ),
-            apiTasks,
+            fillFrom,
           ),
-          apiTasks,
+          fillFrom,
         ),
-        apiTasks,
-        ["description"],
+        fillFrom,
       ),
-    [apiTasks, localTasks.data],
-  );
+      fillFrom,
+      ["description"],
+    );
+  }, [apiTasks, localTasks.data]);
 
-  const rawInboxTasks = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        dropStaleLocalHabitTasks(
-          fillMissingDueDatesFromApi(
-            fillMissingHabitIdFromApi(
-              fillMissingAgentChatIdFromApi(
-                fillMissingLinksFromApi(
-                  mergeLocalAndApiByUpdatedAt(
-                    localInboxTasks.data?.map(
-                      (row) => snakeRow(row) as ApiTask,
-                    ),
-                    apiInboxTasks,
-                  ),
-                  apiInboxTasks,
-                ),
-                apiInboxTasks,
+  const rawInboxTasks = useMemo(() => {
+    const localMapped =
+      localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiInboxTasks);
+    return fillMissingLongTextFromApi(
+      dropStaleLocalHabitTasks(
+        fillMissingDueDatesFromApi(
+          fillMissingHabitIdFromApi(
+            fillMissingAgentChatIdFromApi(
+              fillMissingLinksFromApi(
+                resolveLocalOrApiRows(localMapped, apiInboxTasks),
+                fillFrom,
               ),
-              apiInboxTasks,
+              fillFrom,
             ),
-            apiInboxTasks,
+            fillFrom,
           ),
-          apiInboxTasks,
+          fillFrom,
         ),
-        apiInboxTasks,
-        ["description"],
+        fillFrom,
       ),
-    [apiInboxTasks, localInboxTasks.data],
-  );
+      fillFrom,
+      ["description"],
+    );
+  }, [apiInboxTasks, localInboxTasks.data]);
 
-  const rawLetters = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        mergeLocalAndApiByUpdatedAt(
-          localLetters.data?.map((row) => snakeRow(row) as ApiLetter),
-          apiLetters,
-        ),
-        apiLetters,
-        ["context"],
-      ),
-    [apiLetters, localLetters.data],
-  );
+  const rawLetters = useMemo(() => {
+    const localMapped =
+      localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiLetters);
+    return fillMissingLongTextFromApi(
+      resolveLocalOrApiRows(localMapped, apiLetters),
+      fillFrom,
+      ["context"],
+    );
+  }, [apiLetters, localLetters.data]);
 
-  const rawMeetings = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        fillMissingMeetingPropertiesFromApi(
-          mergeLocalAndApiByUpdatedAt(
-            localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting),
-            apiMeetings,
-          ),
-          apiMeetings,
-        ),
-        apiMeetings,
-        ["summary", "notes", "transcription"],
+  const rawMeetings = useMemo(() => {
+    const localMapped =
+      localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiMeetings);
+    return fillMissingLongTextFromApi(
+      fillMissingMeetingPropertiesFromApi(
+        resolveLocalOrApiRows(localMapped, apiMeetings),
+        fillFrom,
       ),
-    [apiMeetings, localMeetings.data],
-  );
+      fillFrom,
+      ["summary", "notes", "transcription"],
+    );
+  }, [apiMeetings, localMeetings.data]);
 
-  const rawContacts = useMemo(
-    () =>
-      fillMissingLongTextFromApi(
-        mergeLocalAndApiByUpdatedAt(
-          localContacts.data?.map((row) => snakeRow(row) as ApiContact),
-          apiContacts,
-        ),
-        apiContacts,
-        ["summary", "notes"],
-      ),
-    [apiContacts, localContacts.data],
-  );
+  const rawContacts = useMemo(() => {
+    const localMapped =
+      localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
+    return fillMissingLongTextFromApi(
+      resolveLocalOrApiRows(localMapped, apiContacts),
+      fillFrom,
+      ["summary", "notes"],
+    );
+  }, [apiContacts, localContacts.data]);
 
-  const rawAreas = useMemo(
-    () =>
-      fillMissingParentFromApi(
-        mergeLocalAndApiByUpdatedAt(
-          localAreas.data?.map((row) => snakeRow(row) as ApiArea),
-          apiAreas,
-        ),
-        apiAreas,
-      ),
-    [apiAreas, localAreas.data],
-  );
+  const rawAreas = useMemo(() => {
+    const localMapped =
+      localAreas.data?.map((row) => snakeRow(row) as ApiArea) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiAreas);
+    return fillMissingParentFromApi(
+      resolveLocalOrApiRows(localMapped, apiAreas),
+      fillFrom,
+    );
+  }, [apiAreas, localAreas.data]);
 
   const rawDocuments = useMemo(
     () =>
-      mergeLocalAndApiByUpdatedAt(
+      resolveLocalOrApiRows(
         localDocuments.data?.map((row) => snakeRow(row) as ApiDocument),
         apiDocuments,
       ),
@@ -425,9 +406,10 @@ function useDesktopWorkspaceDataImpl(): {
           todayTaskStatus: local.todayTaskStatus ?? null,
         } satisfies ApiHabit;
       }) ?? null;
+    const fillFrom = apiFillSourceForColdStart(localMapped, apiHabits);
     return fillMissingLongTextFromApi(
-      mergeLocalAndApiByUpdatedAt(localMapped, apiHabits),
-      apiHabits,
+      resolveLocalOrApiRows(localMapped, apiHabits),
+      fillFrom,
       ["description"],
     );
   }, [apiHabits, localHabits.data]);
@@ -507,7 +489,6 @@ function useDesktopWorkspaceDataImpl(): {
     });
     return sortInboxItemsByAttentionStatus(inboxTaskItems);
   }, [projectsById, rawInboxTasks, rawTasks]);
-
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -521,6 +502,7 @@ function useDesktopWorkspaceDataImpl(): {
     setApiTasks,
     setApiInboxTasks,
     setApiProjects,
+    setApiAreas,
     setApiLetters,
     setApiContacts,
     setApiOrganizations,
@@ -545,6 +527,7 @@ function useDesktopWorkspaceDataImpl(): {
     setApiContacts,
     setApiProjects,
     setApiAreas,
+    softDeleteViaPowerSyncOrApi,
   });
 
   const { reloadHabits, createHabit, updateHabit, recordHabitDay } =
@@ -554,6 +537,7 @@ function useDesktopWorkspaceDataImpl(): {
       powerSync,
       toSnakeFields,
       softRefreshApiTasks,
+      rawHabits: habits,
       setApiHabits,
       setApiTasks,
     });
@@ -595,9 +579,11 @@ function useDesktopWorkspaceDataImpl(): {
     authenticated,
     client,
     powerSync,
+    toSnakeFields,
     seedDocumentLocal,
     patchViaPowerSyncOrApi,
     softDeleteViaPowerSyncOrApi,
+    setApiDocuments,
   });
 
   const mappedTasks = useMemo(
@@ -681,6 +667,13 @@ function useDesktopWorkspaceDataImpl(): {
     () => rawOrganizations.map(mapOrganization),
     [rawOrganizations],
   );
+  rememberWorkspaceSectionEntries({
+    inboxItems,
+    contacts,
+    organizations,
+    letters,
+    knowledgeDocuments,
+  });
 
   const taskDetails = useMemo(() => {
     const details: Record<string, ApiTask> = {};
@@ -702,14 +695,6 @@ function useDesktopWorkspaceDataImpl(): {
     const map: Record<string, string> = {};
     for (const task of Object.values(taskDetails)) {
       if (task.description) map[task.id] = task.description;
-    }
-    return map;
-  }, [taskDetails]);
-
-  const taskLinks = useMemo(() => {
-    const map: Record<string, TaskLink[]> = {};
-    for (const task of Object.values(taskDetails)) {
-      map[task.id] = parseTaskLinks(task.links);
     }
     return map;
   }, [taskDetails]);
@@ -856,7 +841,6 @@ function useDesktopWorkspaceDataImpl(): {
       inboxTasks: mappedInboxTasks,
       allTasks,
       taskDescriptions,
-      taskLinks,
       taskDetails,
     }),
     [
@@ -865,7 +849,6 @@ function useDesktopWorkspaceDataImpl(): {
       mappedTasks,
       taskDescriptions,
       taskDetails,
-      taskLinks,
     ],
   );
 
@@ -1093,7 +1076,7 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
   const people = useDesktopWorkspacePeople();
   const documents = useDesktopWorkspaceDocuments();
   const actions = useDesktopWorkspaceActions();
-  return useMemo(
+  const snapshot = useMemo(
     () => ({
       ...meta,
       ...tasks,
@@ -1104,4 +1087,5 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
     }),
     [actions, documents, meta, people, projects, tasks],
   );
+  return snapshot;
 }

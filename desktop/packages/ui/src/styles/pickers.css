@@ -799,6 +799,25 @@
   justify-content: center;
 }
 
+.journal-habits-list__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.journal-habits-list__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.journal-habits-list__item.is-checked .journal-habits-list__icon {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
 .journal-habits-list__title {
   min-width: 0;
   flex: 1;

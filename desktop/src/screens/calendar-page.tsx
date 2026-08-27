@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   CalendarAvailabilityView,
@@ -57,6 +57,11 @@ import {
 import { useMeetingSchedulingSettings } from "../lib/use-meeting-scheduling-settings";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useMeetingDetailViewProps } from "../lib/use-meeting-detail-props";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellLocation,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { TaskDetailPage } from "./task-detail-page";
 
@@ -67,9 +72,48 @@ type CalendarDateNavApi = {
   today?: () => void;
 };
 
+function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
+  return new URLSearchParams(
+    searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+  );
+}
+
 export function CalendarPage() {
-  const { pathname } = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
+  return <CalendarPageBody />;
+}
+
+function CalendarPageBody() {
+  const { pathname, searchStr } = useShellLocation();
+  const keepAliveActive = useKeepAliveActive();
+  const keepAliveFrozen = useKeepAliveFrozen();
+  const navigate = useNavigate();
+  const searchParams = useMemo(
+    () => searchParamsFromSearchStr(searchStr),
+    [searchStr],
+  );
+  const setSearchParams = useCallback(
+    (
+      nextInit:
+        | URLSearchParams
+        | ((prev: URLSearchParams) => URLSearchParams),
+      navigateOpts?: { replace?: boolean },
+    ) => {
+      const prev = searchParamsFromSearchStr(searchStr);
+      const resolved =
+        typeof nextInit === "function" ? nextInit(prev) : nextInit;
+      const next =
+        resolved instanceof URLSearchParams
+          ? resolved
+          : new URLSearchParams(resolved);
+      if (next.toString() === prev.toString()) return;
+      navigate({
+        to: ".",
+        search: Object.fromEntries(next.entries()),
+        replace: navigateOpts?.replace ?? false,
+      });
+    },
+    [navigate, searchStr],
+  );
   const workspace = useDesktopWorkspaceData();
   const { settings, loading: settingsLoading, setWeekdayHours } =
     useMeetingSchedulingSettings();
@@ -93,6 +137,14 @@ export function CalendarPage() {
       })
     : null;
   const calendarApiRef = useRef<CalendarDateNavApi | null>(null);
+  const frozenEventsRef = useRef<ReturnType<
+    typeof mergeCalendarGridEvents
+  > | null>(null);
+  const frozenDayHabitsRef = useRef<ReturnType<
+    typeof buildCalendarDayHabitsByDate
+  > | null>(null);
+  const viewedDateRef = useRef<Date | null>(null);
+  const wasFrozenRef = useRef(keepAliveFrozen);
   const [calendarNavReady, setCalendarNavReady] = useState(false);
   const [rangeTitle, setRangeTitle] = useState("");
 
@@ -116,8 +168,31 @@ export function CalendarPage() {
 
   const handleCalendarApi = useCallback((api: CalendarDateNavApi | null) => {
     calendarApiRef.current = api;
-    setCalendarNavReady(api != null);
+    const ready = api != null;
+    setCalendarNavReady((current) => (current === ready ? current : ready));
   }, []);
+
+  useEffect(() => {
+    const api = calendarApiRef.current as {
+      getDate?: () => Date;
+      gotoDate?: (date: Date) => void;
+    } | null;
+    const becameVisible = wasFrozenRef.current && !keepAliveFrozen;
+    const becameHidden = !wasFrozenRef.current && keepAliveFrozen;
+    wasFrozenRef.current = keepAliveFrozen;
+    if (becameHidden) {
+      viewedDateRef.current = api?.getDate?.() ?? null;
+      return;
+    }
+    if (!becameVisible) return;
+    const held = viewedDateRef.current;
+    if (!held || !api?.gotoDate || !api.getDate) return;
+    const current = api.getDate();
+    if (current.getTime() === held.getTime()) return;
+    requestAnimationFrame(() => {
+      api.gotoDate?.(held);
+    });
+  }, [keepAliveFrozen]);
 
   const handleViewModeChange = useCallback(
     (mode: CalendarViewMode) => {
@@ -141,7 +216,7 @@ export function CalendarPage() {
     // Local CalendarDateNavApi is structurally compatible with FullCalendar's API;
     // avoid importing @fullcalendar/core from the desktop app package.
     calendarApiRef: calendarApiRef as never,
-    enabled: calendarNavReady && !isTimetrackingMode,
+    enabled: keepAliveActive && calendarNavReady && !isTimetrackingMode,
   });
 
   const meeting = useMemo(() => {
@@ -218,7 +293,10 @@ export function CalendarPage() {
             ? taskDetailLabel
             : null,
     }),
-    { actions: isTimetrackingMode ? undefined : dateNav },
+    {
+      actions: isTimetrackingMode ? undefined : dateNav,
+      enabled: keepAliveActive,
+    },
   );
 
 
@@ -303,6 +381,9 @@ export function CalendarPage() {
   );
 
   const events = useMemo(() => {
+    if (keepAliveFrozen && frozenEventsRef.current) {
+      return frozenEventsRef.current;
+    }
     const habitIconById = new Map(
       workspace.habits.map((habit) => [habit.id, habit.icon ?? null] as const),
     );
@@ -314,14 +395,30 @@ export function CalendarPage() {
         habitIcon: habitIconById.get(habitId) ?? null,
       };
     });
-    return mergeCalendarGridEvents(tasksWithHabitIcons, workspace.meetings);
-  }, [workspace.allTasks, workspace.habits, workspace.meetings]);
+    const next = mergeCalendarGridEvents(
+      tasksWithHabitIcons,
+      workspace.meetings,
+    );
+    frozenEventsRef.current = next;
+    return next;
+  }, [
+    keepAliveFrozen,
+    workspace.allTasks,
+    workspace.habits,
+    workspace.meetings,
+  ]);
 
-  const dayHabitsByDate = useMemo(
-    () =>
-      buildCalendarDayHabitsByDate(workspace.habits, workspace.allTasks),
-    [workspace.allTasks, workspace.habits],
-  );
+  const dayHabitsByDate = useMemo(() => {
+    if (keepAliveFrozen && frozenDayHabitsRef.current) {
+      return frozenDayHabitsRef.current;
+    }
+    const next = buildCalendarDayHabitsByDate(
+      workspace.habits,
+      workspace.allTasks,
+    );
+    frozenDayHabitsRef.current = next;
+    return next;
+  }, [keepAliveFrozen, workspace.allTasks, workspace.habits]);
 
   const handleToggleDayHabit = useCallback(
     (item: CalendarHabitIconItem, completed: boolean) => {
@@ -579,22 +676,23 @@ export function CalendarPage() {
     [pathname, search],
   );
 
-  if (!workspace.ready) {
-    return <div className="flex min-h-0 flex-1" />;
-  }
-
-
   return (
     <div className="calendar-page" data-calendar-page data-calendar-page-mode={pageMode}>
       {meeting ? (
         <>
-          <RegisterPageTitle
-            title={displayId ? `${displayId} ${meeting.title}` : meeting.title}
-          />
-          <RegisterEntityDeleteAction
-            entityLabel={`meeting ${displayId ?? meeting.title}`}
-            onDelete={handleDeleteMeeting}
-          />
+          {keepAliveActive ? (
+            <>
+              <RegisterPageTitle
+                title={
+                  displayId ? `${displayId} ${meeting.title}` : meeting.title
+                }
+              />
+              <RegisterEntityDeleteAction
+                entityLabel={`meeting ${displayId ?? meeting.title}`}
+                onDelete={handleDeleteMeeting}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
       {isTimetrackingMode ? (
@@ -700,7 +798,9 @@ export function CalendarPage() {
           onCalendarApi={handleCalendarApi}
           onRangeTitleChange={setRangeTitle}
           selectedGridEventId={selectedGridEventId}
-          keyboardNavigationEnabled={!openMeetingId && !openTaskId}
+          keyboardNavigationEnabled={
+            keepAliveActive && !openMeetingId && !openTaskId
+          }
           bookingAvailability={
             settings
               ? {

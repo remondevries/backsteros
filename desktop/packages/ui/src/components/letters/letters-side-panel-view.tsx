@@ -55,6 +55,7 @@ export type LettersSidePanelViewProps = {
   listContainerProps?: HTMLAttributes<HTMLElement>;
   /** Show list skeleton while workspace metadata is loading. */
   loading?: boolean;
+  title?: string;
 };
 
 export function LettersSidePanelView({
@@ -62,13 +63,14 @@ export function LettersSidePanelView({
   items,
   Link,
   onAdd,
-  composeHref = "/letters/new",
+  composeHref = "/letters-v2/new",
   onCompose,
   getLetterHref = (letter) => getLettersHref(letter.number),
   highlightedId = null,
   listRef,
   listContainerProps,
   loading = false,
+  title = "Letters",
 }: LettersSidePanelViewProps) {
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const groups = groupLettersByStatus(items);
@@ -77,7 +79,7 @@ export function LettersSidePanelView({
   return (
     <div className="app-content-side-panel app-content-side-panel--letters">
       <ContentSidePanelHeader
-        title="Letters"
+        title={title}
         actions={
           onAdd ? (
             <button

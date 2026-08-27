@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 
 import { ClientLink } from "../../shared/client-link.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
+import { hasBlockMarkdown } from "../../documents/markdown-preview-blocks.js";
 import {
   normalizeMarkdownTaskLists,
   parseMarkdownTaskCheckbox,
@@ -269,18 +270,11 @@ export type DocumentMarkdownPreviewProps = {
   resolveImageSrc?: ResolveMarkdownImageSrc;
 };
 
-function hasBlockMarkdown(content: string): boolean {
-  return /^(\s*#{1,6}\s|\s*[-*+]\s|\s*\d+\.\s|```|>\s|\|.+\|)/m.test(
-    content,
-  );
-}
-
 /**
- * Split on blank-line runs while keeping empty rows visible in preview.
- * N consecutive newlines (N >= 2) become N - 1 blank paragraphs — matching
- * the empty lines the user sees in the editor.
+ * Inclusive ranges of fenced code blocks (``` / ~~~) so blank lines inside
+ * stay intact. Split on blank-line runs while keeping empty rows visible:
+ * N consecutive newlines (N >= 2) become N - 1 blank paragraphs.
  */
-/** Inclusive ranges of fenced code blocks (``` / ~~~) so blank lines inside stay intact. */
 function findFencedCodeRanges(body: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   let fence: { start: number; char: string; len: number } | null = null;
@@ -1100,7 +1094,12 @@ function renderParagraphWithMentions(
     }
 
     elements.push(
-      <p key={`${keyPrefix}-inline-${inlineRunKey}`}>{inlineRun}</p>,
+      <div
+        key={`${keyPrefix}-inline-${inlineRunKey}`}
+        className="content-markdown-preview-paragraph"
+      >
+        {inlineRun}
+      </div>,
     );
     inlineRun = [];
     inlineRunKey += 1;
@@ -1267,9 +1266,9 @@ function ParagraphPreview({
     }
 
     return (
-      <p>
+      <div className="content-markdown-preview-paragraph">
         <InlineMarkdownSegment content={paragraph} />
-      </p>
+      </div>
     );
   }
 

@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { fillMissingTaskFieldsFromApi } from "./merge-task-fields";
 import { useMobilePowerSync } from "./powersync-context";
 import { resolveSyncedOrRestRows } from "./resolve-synced-or-rest-rows";
 import { useLocalQuery } from "./use-local-query";
 import { useRestListHydration } from "./use-rest-list-hydration";
 
-type UseSyncedOrRestOptions<TLocal extends Record<string, unknown>, TRow> = {
+export type UseSyncedOrRestOptions<TLocal extends Record<string, unknown>, TRow> = {
   sql: string;
   /** Bound parameters for the local watch (preferred over string interpolation). */
   params?: readonly unknown[];
@@ -15,6 +16,10 @@ type UseSyncedOrRestOptions<TLocal extends Record<string, unknown>, TRow> = {
    * stale SQLite rows when the PowerSync stream is offline.
    */
   fetchRest: () => Promise<TRow[]>;
+  /** When false, skip REST hydration (local SQLite watch only). */
+  restEnabled?: boolean;
+  /** Fill newer schedule fields from REST when local SQLite rows omit them. */
+  fillTaskFieldsFromRest?: boolean;
 };
 
 type UseSyncedOrRestResult<TRow> = {
@@ -46,6 +51,8 @@ export function useSyncedOrRest<
   params = [],
   mapLocal,
   fetchRest,
+  restEnabled = true,
+  fillTaskFieldsFromRest = false,
 }: UseSyncedOrRestOptions<TLocal, TRow>): UseSyncedOrRestResult<TRow> {
   const powerSync = useMobilePowerSync();
   const { data: syncedRows, isLoading: syncLoading } = useLocalQuery<TLocal>(
@@ -70,6 +77,7 @@ export function useSyncedOrRest<
   );
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
+    if (!restEnabled) return;
     const userPull = opts?.userPull === true;
     if (userPull) {
       setPullRefreshing(true);
@@ -87,15 +95,34 @@ export function useSyncedOrRest<
       if (userPull) setPullRefreshing(false);
       setRestLoading(false);
     }
-  }, []);
+  }, [restEnabled]);
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, restEnabled);
 
-  const rows = resolveSyncedOrRestRows({
+  const rows = useMemo(() => {
+    const resolved = resolveSyncedOrRestRows({
+      localRows,
+      restRows,
+      connected: powerSync.connected,
+    });
+    if (
+      fillTaskFieldsFromRest &&
+      powerSync.connected &&
+      localRows.length > 0 &&
+      restRows != null
+    ) {
+      return fillMissingTaskFieldsFromApi(
+        resolved as Parameters<typeof fillMissingTaskFieldsFromApi>[0],
+        restRows as Parameters<typeof fillMissingTaskFieldsFromApi>[1],
+      ) as TRow[];
+    }
+    return resolved;
+  }, [
+    fillTaskFieldsFromRest,
     localRows,
+    powerSync.connected,
     restRows,
-    connected: powerSync.connected,
-  });
+  ]);
 
   const useRest =
     (!powerSync.connected && restRows != null) ||

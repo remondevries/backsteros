@@ -27,6 +27,7 @@ import {
   contacts,
   documents,
   entityCounters,
+  habits,
   organizations,
   projects,
   tasks,
@@ -46,7 +47,11 @@ type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 async function assertWorkspaceReference(
   workspaceId: string,
   id: string | null | undefined,
-  table: typeof organizations | typeof areas | typeof contacts,
+  table:
+    | typeof organizations
+    | typeof areas
+    | typeof contacts
+    | typeof habits,
   code: string,
   executor: DbExecutor,
 ) {
@@ -578,6 +583,13 @@ async function createTaskWithExecutor(
     "ASSIGNEE_NOT_FOUND",
     executor,
   );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.habitId,
+    habits,
+    "HABIT_NOT_FOUND",
+    executor,
+  );
 
   const number = await nextTaskNumber(
     workspaceId,
@@ -700,6 +712,13 @@ export async function updateTask(
     input.assigneeId,
     contacts,
     "ASSIGNEE_NOT_FOUND",
+    executor,
+  );
+  await assertWorkspaceReference(
+    workspaceId,
+    input.habitId,
+    habits,
+    "HABIT_NOT_FOUND",
     executor,
   );
 

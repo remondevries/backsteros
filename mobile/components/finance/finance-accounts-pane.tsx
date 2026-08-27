@@ -1,26 +1,28 @@
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
-  SectionList,
   StyleSheet,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
 import { FinanceAccountAvatar } from "./finance-account-avatar";
 import { ContentPageTitle } from "../content-page-title";
+import { BacksterGroupedList } from "../lists/index";
 import {
   bankAccountTypeLabel,
   groupBankAccounts,
 } from "../../lib/bank-account-groups";
 import { rememberFinanceSection } from "../../lib/finance-section-memory";
 import { formatCents } from "../../lib/finance-format";
-import { findSectionListLocation } from "../../lib/list-keyboard-nav";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../../lib/lists/flatten-grouped-sections";
 import { TabStackHeaderPlusButton } from "../../lib/tab-stack-options";
 import { colors } from "../../lib/theme";
 import { ui } from "../../lib/ui";
@@ -33,6 +35,7 @@ import {
 import { useListJkNavigation } from "../../lib/use-list-jk-navigation";
 
 type Section = {
+  key: string;
   title: string;
   data: FinanceAccountRow[];
 };
@@ -46,6 +49,7 @@ export function FinanceAccountsPane() {
   const sections = useMemo<Section[]>(
     () =>
       groupBankAccounts(accounts.rows).map((group) => ({
+        key: group.label,
         title: group.label,
         data: group.accounts,
       })),
@@ -58,7 +62,12 @@ export function FinanceAccountsPane() {
     [accounts.rows, balances],
   );
 
-  const listRef = useRef<SectionList<FinanceAccountRow, Section>>(null);
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () => flattenGroupedSections(sections),
+    [sections],
+  );
+
+  const listRef = useRef<FlashListRef<FlatGroupedRow<FinanceAccountRow>>>(null);
   const itemIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
@@ -75,11 +84,11 @@ export function FinanceAccountsPane() {
     onActivate: openAccount,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -103,26 +112,19 @@ export function FinanceAccountsPane() {
 
   return (
     <View style={ui.screen}>
-      <SectionList
+      <BacksterGroupedList
         ref={listRef}
-        style={ui.screen}
-        sections={sections as SectionListData<FinanceAccountRow, Section>[]}
-        keyExtractor={(item) => item.id}
-        stickySectionHeadersEnabled={false}
+        sections={sections}
+        highlightedId={highlightedId}
+        estimatedItemSize={56}
+        estimatedHeaderSize={32}
         alwaysBounceVertical
-        refreshControl={
-          <RefreshControl
-            refreshing={accounts.pullRefreshing}
-            onRefresh={() => {
-              void accounts.reload();
-              void reloadBalances();
-            }}
-            tintColor={colors.muted}
-            colors={[colors.muted]}
-          />
-        }
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
-        ListHeaderComponent={
+        refreshing={accounts.pullRefreshing}
+        onRefresh={() => {
+          void accounts.reload();
+          void reloadBalances();
+        }}
+        listHeader={
           <View>
             <ContentPageTitle
               title="Accounts"
@@ -139,12 +141,11 @@ export function FinanceAccountsPane() {
             </View>
           </View>
         }
-        ListEmptyComponent={<Text style={ui.empty}>No accounts yet.</Text>}
-        renderSectionHeader={({ section }) => (
+        emptyText="No accounts yet."
+        renderSectionHeader={(section) => (
           <Text style={ui.sectionHeader}>{section.title}</Text>
         )}
-        renderItem={({ item }) => {
-          const highlighted = highlightedId === item.id;
+        renderItem={(item, { highlighted }) => {
           const balance = balances[item.id];
           return (
             <Pressable

@@ -1,6 +1,6 @@
 import { type RefObject, useEffect } from "react";
 
-import { useCommandPalette } from "../components/command-palette/command-palette-context.js";
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { isSearchableDropdownPanelOpen } from "../list-nav/should-handle-list-keyboard-navigation.js";
 import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 import {
@@ -31,13 +31,13 @@ export function useCalendarDateNavigationShortcuts({
   /** @deprecated Digit shortcuts now switch page mode; ignored. */
   availableViewModes?: readonly string[];
 }) {
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { openRef } = useCommandPaletteRuntimeRefs();
 
   useEffect(() => {
     if (!enabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) return;
+      if (openRef.current) return;
       if (!shouldHandleGlobalShortcut(event)) return;
       if (isSearchableDropdownPanelOpen()) return;
       if (isCalendarDateNavigationPopoverOpen()) return;
@@ -60,5 +60,5 @@ export function useCalendarDateNavigationShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [calendarApiRef, commandPaletteOpen, enabled]);
+  }, [calendarApiRef, enabled, openRef]);
 }

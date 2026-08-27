@@ -4,6 +4,7 @@ export const SYNC_ENTITIES = [
   "project",
   "task",
   "document",
+  "area",
   "organization",
   "contact",
   "letter",
@@ -15,6 +16,7 @@ export const SYNC_ENTITIES = [
   "cashflow_planner_entry",
   "habit",
   "meeting",
+  "task_comment",
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
@@ -25,6 +27,7 @@ export const POWERSYNC_TABLES = [
   "projects",
   "tasks",
   "documents",
+  "areas",
   "organizations",
   "contacts",
   "letters",
@@ -36,6 +39,7 @@ export const POWERSYNC_TABLES = [
   "cashflow_planner_entries",
   "habits",
   "meetings",
+  "task_comments",
 ] as const;
 export type PowerSyncTable = (typeof POWERSYNC_TABLES)[number];
 

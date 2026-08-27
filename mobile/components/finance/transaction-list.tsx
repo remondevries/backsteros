@@ -1,4 +1,5 @@
 import type { FinancialTransaction } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import {
   useCallback,
@@ -10,13 +11,12 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   RefreshControl,
   StyleSheet,
   Text,
   View,
-  type ListRenderItemInfo,
 } from "react-native";
+import type { ListRenderItemInfo } from "@shopify/flash-list";
 
 import {
   TransactionMonthHeader,
@@ -25,6 +25,7 @@ import {
 import { TransactionListRow } from "./transaction-list-row";
 import { ListSearchField } from "../list-search-field";
 import { ContentPageTitle } from "../content-page-title";
+import { BacksterFlashList } from "../lists/index";
 import { isPadDevice } from "../../lib/device";
 import type { TransactionFilters } from "../../lib/finance-api";
 import type { FinanceCategoryRow } from "../../lib/finance-categories";
@@ -33,7 +34,6 @@ import {
   groupTransactionsByMonthWeek,
   type TransactionListEntry,
 } from "../../lib/group-transactions-by-month-week";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
 import { colors } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 import {
@@ -154,7 +154,7 @@ export function TransactionList({
     [collapsedMonths, collapsedWeeks, isPad, list.transactions],
   );
 
-  const listRef = useRef<FlatList<ListEntry>>(null);
+  const listRef = useRef<FlashListRef<ListEntry>>(null);
   const itemIds = useMemo(
     () =>
       listEntries
@@ -264,13 +264,19 @@ export function TransactionList({
           placeholder={searchPlaceholder}
         />
       ) : null}
-      <FlatList
+      <BacksterFlashList
         ref={listRef}
-        style={ui.screen}
         data={listEntries}
+        estimatedItemSize={isPad ? 48 : 56}
         keyExtractor={(item) => item.key}
+        getItemType={(item) => item.kind}
+        overrideItemLayout={(layout, item) => {
+          const rowLayout = layout as { span?: number; size?: number };
+          if (item.kind === "month") rowLayout.size = 40;
+          else if (item.kind === "week") rowLayout.size = 32;
+          else rowLayout.size = isPad ? 48 : 56;
+        }}
         renderItem={renderItem}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
@@ -278,7 +284,6 @@ export function TransactionList({
         scrollEventThrottle={16}
         onEndReached={() => void list.loadMore()}
         onEndReachedThreshold={0.4}
-        onScrollToIndexFailed={() => {}}
         refreshControl={
           <RefreshControl
             refreshing={list.refreshing}
@@ -290,7 +295,6 @@ export function TransactionList({
             colors={[colors.muted]}
           />
         }
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
         ListHeaderComponent={
           pageTitle || listHeaderExtra ? (
             <View>

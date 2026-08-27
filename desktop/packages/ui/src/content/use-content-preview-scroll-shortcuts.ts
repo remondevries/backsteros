@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 
-import { useCommandPalette } from "../components/command-palette/command-palette-context.js";
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import { scrollContentPreviewByArrowKey } from "./content-preview-scroll.js";
 
 export function useContentPreviewScrollShortcuts({
   enabled = true,
 }: { enabled?: boolean } = {}) {
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { openRef } = useCommandPaletteRuntimeRefs();
 
   useEffect(() => {
     if (!enabled) {
@@ -16,7 +16,7 @@ export function useContentPreviewScrollShortcuts({
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) {
+      if (openRef.current) {
         return;
       }
 
@@ -30,5 +30,5 @@ export function useContentPreviewScrollShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled]);
+  }, [enabled, openRef]);
 }

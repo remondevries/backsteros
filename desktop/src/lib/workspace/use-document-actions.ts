@@ -2,21 +2,57 @@ import { useCallback } from "react";
 import type { Document as ApiDocument } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
+import { writeDocumentContentCache } from "../document-content-cache";
 import type { SoftDeletableTable } from "./use-entity-patching";
+import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { WorkspacePowerSync } from "./workspace-data-types";
+
+async function flushPowerSyncMetadataUpload(
+  powerSync: WorkspacePowerSync,
+): Promise<void> {
+  const database = powerSync.database;
+  if (!database) {
+    throw new Error("PowerSync is not ready");
+  }
+  await database.uploadCrud();
+}
+
+async function commitInitialDocumentContent(
+  client: BacksterosApiClient,
+  documentId: string,
+  content: string,
+  ifMatchVersion: number,
+): Promise<number> {
+  const data = await client.requestJson<{
+    content: string;
+    contentVersion: number;
+  }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, ifMatchVersion }),
+  });
+  writeDocumentContentCache(documentId, {
+    content: data.content,
+    contentVersion: data.contentVersion,
+  });
+  return data.contentVersion;
+}
 
 /** Document / folder CRUD, moves, reordering, and icon updates. */
 export function useWorkspaceDocumentActions({
   authenticated,
   client,
   powerSync,
+  toSnakeFields,
   seedDocumentLocal,
   patchViaPowerSyncOrApi,
   softDeleteViaPowerSyncOrApi,
+  setApiDocuments,
 }: {
   authenticated: boolean;
   client: BacksterosApiClient;
   powerSync: WorkspacePowerSync;
+  toSnakeFields: (values: Record<string, unknown>) => Record<string, unknown>;
   seedDocumentLocal: (document: ApiDocument) => Promise<void>;
   patchViaPowerSyncOrApi: (
     table: string,
@@ -27,7 +63,107 @@ export function useWorkspaceDocumentActions({
     table: SoftDeletableTable,
     id: string,
   ) => Promise<void>;
+  setApiDocuments: (
+    updater: (rows: ApiDocument[] | null) => ApiDocument[] | null,
+  ) => void;
 }) {
+  const upsertOptimisticDocument = useCallback(
+    (document: ApiDocument) => {
+      setApiDocuments((rows) => {
+        const next = rows ? [...rows] : [];
+        const index = next.findIndex((entry) => entry.id === document.id);
+        if (index >= 0) {
+          next[index] = document;
+          return next;
+        }
+        next.push(document);
+        return next;
+      });
+    },
+    [setApiDocuments],
+  );
+
+  const createDocumentMetadataLocal = useCallback(
+    async (input: {
+      type: "knowledge" | "project";
+      title: string;
+      path: string;
+      projectId?: string | null;
+      parentId?: string | null;
+      kind?: "document" | "folder";
+      content?: string;
+    }) => {
+      if (!powerSync.createMetadata) {
+        throw new Error("PowerSync is not ready");
+      }
+      const id = crypto.randomUUID().replace(/-/g, "");
+      const now = new Date().toISOString();
+      const document = {
+        id,
+        type: input.type,
+        projectId: input.projectId ?? null,
+        parentId: input.parentId ?? null,
+        kind: input.kind ?? "document",
+        icon: null,
+        sortOrder: 0,
+        journalDate: null,
+        path: input.path,
+        title: input.title,
+        storageKey: "",
+        contentType: "text/markdown",
+        byteSize: 0,
+        checksum: null,
+        snippet: null,
+        contentVersion: 1,
+        contentEtag: null,
+        createdAt: now,
+        updatedAt: now,
+      } as ApiDocument;
+      upsertOptimisticDocument(document);
+      void (async () => {
+        try {
+          await powerSync.createMetadata!(
+            "documents",
+            toSnakeFields({
+              type: input.type,
+              projectId: input.projectId ?? null,
+              parentId: input.parentId ?? null,
+              kind: input.kind ?? "document",
+              icon: null,
+              sortOrder: 0,
+              journalDate: null,
+              path: input.path,
+              title: input.title,
+              storageKey: "",
+              contentType: "text/markdown",
+              byteSize: 0,
+              checksum: null,
+              snippet: null,
+              contentVersion: 1,
+              contentEtag: null,
+            }),
+            id,
+          );
+          await flushPowerSyncMetadataUpload(powerSync);
+          const content = input.content ?? "";
+          if (content.length > 0) {
+            const contentVersion = await commitInitialDocumentContent(
+              client,
+              id,
+              content,
+              1,
+            );
+            upsertOptimisticDocument({ ...document, contentVersion });
+          }
+        } catch (error) {
+          console.warn("[desktop] local document create failed", error);
+        }
+      })();
+      return { id, path: input.path, contentVersion: 1 };
+    },
+    [client, powerSync, toSnakeFields, upsertOptimisticDocument],
+  );
+
   const createKnowledgeDocument = useCallback(
     async (input: {
       title: string;
@@ -44,6 +180,15 @@ export function useWorkspaceDocumentActions({
       const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
       const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
       if (!authenticated) throw new Error("Sign in to create documents.");
+      if (shouldSkipRestEntityWrite(powerSync)) {
+        return createDocumentMetadataLocal({
+          type: "knowledge",
+          title,
+          path,
+          parentId: input.parentId ?? null,
+          content: input.content,
+        });
+      }
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -65,7 +210,13 @@ export function useWorkspaceDocumentActions({
         contentVersion: document.contentVersion,
       };
     },
-    [authenticated, client, seedDocumentLocal],
+    [
+      authenticated,
+      client,
+      createDocumentMetadataLocal,
+      powerSync,
+      seedDocumentLocal,
+    ],
   );
 
   const createProjectDocument = useCallback(
@@ -85,6 +236,16 @@ export function useWorkspaceDocumentActions({
       const folder = input.folderPath?.trim().replace(/^\/+|\/+$/g, "") ?? "";
       const path = folder ? `${folder}/${slug}.md` : `${slug}.md`;
       if (!authenticated) throw new Error("Sign in to create documents.");
+      if (shouldSkipRestEntityWrite(powerSync)) {
+        return createDocumentMetadataLocal({
+          type: "project",
+          title,
+          path,
+          projectId: input.projectId,
+          parentId: input.parentId ?? null,
+          content: input.content,
+        });
+      }
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -107,7 +268,13 @@ export function useWorkspaceDocumentActions({
         contentVersion: document.contentVersion,
       };
     },
-    [authenticated, client, seedDocumentLocal],
+    [
+      authenticated,
+      client,
+      createDocumentMetadataLocal,
+      powerSync,
+      seedDocumentLocal,
+    ],
   );
 
   const createKnowledgeFolder = useCallback(
@@ -122,6 +289,16 @@ export function useWorkspaceDocumentActions({
           .replace(/^-+|-+$/g, "") || "folder";
       const path = `${slug}-${stamp}`;
       if (!authenticated) throw new Error("Sign in to create folders.");
+      if (shouldSkipRestEntityWrite(powerSync)) {
+        const created = await createDocumentMetadataLocal({
+          type: "knowledge",
+          title,
+          path,
+          parentId: input.parentId ?? null,
+          kind: "folder",
+        });
+        return { id: created.id, path: created.path };
+      }
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -139,7 +316,13 @@ export function useWorkspaceDocumentActions({
       await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client, seedDocumentLocal],
+    [
+      authenticated,
+      client,
+      createDocumentMetadataLocal,
+      powerSync,
+      seedDocumentLocal,
+    ],
   );
 
   const createProjectFolder = useCallback(
@@ -158,6 +341,17 @@ export function useWorkspaceDocumentActions({
           .replace(/^-+|-+$/g, "") || "folder";
       const path = `${slug}-${stamp}`;
       if (!authenticated) throw new Error("Sign in to create folders.");
+      if (shouldSkipRestEntityWrite(powerSync)) {
+        const created = await createDocumentMetadataLocal({
+          type: "project",
+          title,
+          path,
+          projectId: input.projectId,
+          parentId: input.parentId ?? null,
+          kind: "folder",
+        });
+        return { id: created.id, path: created.path };
+      }
       const document = await client.requestJson<ApiDocument>(
         "/api/v1/documents",
         {
@@ -176,7 +370,13 @@ export function useWorkspaceDocumentActions({
       await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
-    [authenticated, client, seedDocumentLocal],
+    [
+      authenticated,
+      client,
+      createDocumentMetadataLocal,
+      powerSync,
+      seedDocumentLocal,
+    ],
   );
 
   const renameDocument = useCallback(
@@ -222,7 +422,9 @@ export function useWorkspaceDocumentActions({
           await powerSync.patchMetadata("documents", id, {
             parent_id: parentId,
           });
-          return { ok: true as const };
+          if (shouldSkipRestEntityWrite(powerSync)) {
+            return { ok: true as const };
+          }
         }
         if (!authenticated) {
           return { ok: false as const, error: "Sign in to move documents." };
@@ -263,7 +465,9 @@ export function useWorkspaceDocumentActions({
               }),
             ),
           );
-          return { ok: true as const };
+          if (shouldSkipRestEntityWrite(powerSync)) {
+            return { ok: true as const };
+          }
         }
         if (!authenticated) {
           return {

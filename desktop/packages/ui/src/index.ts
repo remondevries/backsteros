@@ -701,6 +701,10 @@ export {
 } from "./components/calendar/calendar-availability-view.js";
 
 export {
+  CalendarSidePanelModeFooter,
+} from "./components/calendar/calendar-side-panel-mode-footer.js";
+
+export {
   CalendarAvailabilitySidePanelView,
   type CalendarAvailabilitySidePanelViewProps,
 } from "./components/calendar/calendar-availability-side-panel-view.js";
@@ -866,6 +870,11 @@ export {
 } from "./components/tasks/task-due-date-icon.js";
 
 export {
+  TaskListPropertyFields,
+  type TaskListPropertyFieldsProps,
+} from "./components/tasks/task-list-property-fields.js";
+
+export {
   TaskListPriorityLabel,
   TaskListDueDateLabel,
 } from "./components/tasks/task-list-property-label.js";
@@ -878,7 +887,9 @@ export {
   formatJournalEntryTitle,
   formatJournalSidePanelLabel,
   getJournalHref,
+  getJournalV2Href,
   getSelectedJournalDateFromPathname,
+  getSelectedJournalV2DateFromPathname,
   isJournalDetailPath,
   isJournalReservedSlug,
   isJournalSectionPath,
@@ -889,10 +900,13 @@ export {
   HABIT_TRACKER_ALL_ID,
   JOURNAL_NAV_ITEMS,
   getHabitTrackerHref,
+  getHabitTrackerV2Href,
   getJournalNavHref,
   getSelectedHabitIdFromPathname,
+  getSelectedHabitIdFromHabitsV2Pathname,
   getSelectedJournalNavIdFromPathname,
   isJournalHabitsPath,
+  isHabitsV2Path,
   isJournalNavId,
   type JournalNavId,
   type JournalNavItem,
@@ -1023,8 +1037,10 @@ export {
   groupLettersByStatus,
   getFirstLetterInListOrder,
   getLettersHref,
+  getLettersV2Href,
   getSelectedLetterSlugFromPathname,
   isLettersSectionPath,
+  isLettersV2SectionPath,
   isProjectLettersSectionPath,
   isLetterDetailPath,
   normalizeProductPathname,
@@ -1116,8 +1132,11 @@ export {
   contactMatchesSlug,
   getUniqueListItemRouteParam,
   getKnowledgeHref,
+  getKnowledgeV2Href,
   getSelectedKnowledgeSlugFromPathname,
+  getSelectedKnowledgeV2SlugFromPathname,
   isKnowledgeSectionPath,
+  isKnowledgeV2SectionPath,
   getProjectsHref,
   isProjectsPath,
   getSelectedBankAccountSlugFromPathname,
@@ -2355,6 +2374,9 @@ export {
 export {
   CommandPaletteProvider,
   useCommandPalette,
+  useCommandPaletteActions,
+  useCommandPaletteRuntimeRefs,
+  useCommandPaletteState,
   type CommandPaletteMode,
 } from "./components/command-palette/command-palette-context.js";
 
@@ -2705,6 +2727,13 @@ export {
 } from "./components/journal/journal-due-tasks-section.js";
 
 export {
+  buildJournalDayTaskModel,
+  type JournalDayHabitMeta,
+  type JournalDayTaskLike,
+  type JournalDayTaskModel,
+} from "./journal/journal-day-tasks.js";
+
+export {
   JournalHabitsList,
   countHabitDayOutcomes,
   type JournalHabitDayItem,
@@ -2970,6 +2999,7 @@ export {
   getParentFolderPath,
   getSelectedProjectDocumentPathFromPathname,
   getSelectedKnowledgeDocumentPathFromPathname,
+  getSelectedKnowledgeV2DocumentPathFromPathname,
   resolveComposeContextDocumentFolder,
   resolveComposeDocumentFolderValue,
   getDirectChildComposeFolderOptions,
@@ -3334,6 +3364,18 @@ export {
   ProjectsListSkeleton,
   type ProjectsListSkeletonProps,
 } from "./components/skeletons/projects-list-skeleton.js";
+export { MainPaneSkeletonShell } from "./components/skeletons/main-pane-skeleton-shell.js";
+export { InboxListSkeleton } from "./components/skeletons/inbox-list-skeleton.js";
+export { AreasListSkeleton } from "./components/skeletons/areas-list-skeleton.js";
+export { CalendarGridSkeleton } from "./components/skeletons/calendar-grid-skeleton.js";
+export { FinanceSectionSkeleton } from "./components/skeletons/finance-section-skeleton.js";
+export { EmailThreadSkeleton } from "./components/skeletons/email-thread-skeleton.js";
+export { SettingsSectionSkeleton } from "./components/skeletons/settings-section-skeleton.js";
+export { OrganizationOverviewSkeleton } from "./components/skeletons/organization-overview-skeleton.js";
+export { ContactHubSkeleton } from "./components/skeletons/contact-hub-skeleton.js";
+export { CodebaseWorkbenchSkeleton } from "./components/skeletons/codebase-workbench-skeleton.js";
+export { JournalHabitsSkeleton } from "./components/skeletons/journal-habits-skeleton.js";
+export { GenericRouteFallbackSkeleton } from "./components/skeletons/generic-route-fallback-skeleton.js";
 
 export type {
   CodebaseApiClient,

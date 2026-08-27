@@ -16,12 +16,11 @@ import { createRequestAbortSignal } from "../request-timeout";
 import { preservePendingApiRows } from "../merge-local-and-api";
 import type { WorkspacePowerSync } from "./workspace-data-types";
 
-/** Soft-revalidate REST lists at most this often after sync checkpoints. */
-const REST_SOFT_REVALIDATE_DEBOUNCE_MS = 3_000;
-
 /**
  * REST-hydrated row caches for the workspace snapshot, plus the settle flags
  * used by the readiness computation in the main hook.
+ *
+ * Linear-shaped: cold-start rescue only — no soft-revalidate on sync epochs.
  */
 export function useWorkspaceApiRows({
   authenticated,
@@ -83,19 +82,12 @@ export function useWorkspaceApiRows({
     }
   }, [authenticated]);
 
-  const syncEpoch = powerSync.lastSyncedAt?.getTime() ?? 0;
   const hasHydratedOnceRef = useRef(false);
-  const softRevalidateTimerRef = useRef<number | null>(null);
 
-  // Always hydrate lists from REST when signed in. PowerSync remains the
-  // primary merge source once local rows exist, but packaged desktop builds
-  // can be "ready" with an empty SQLite if the sync stream never connects
-  // (e.g. Tailscale PowerSync endpoint from WKWebView) — without this, Projects
-  // / Tasks / Inbox stay empty even though core has data.
-  //
-  // Wave 1: tasks / inbox / projects → flips restHydrateSettled early.
-  // Wave 2: remaining entities via requestIdleCallback so cold start is not a
-  // 10-endpoint storm. Later sync checkpoints → debounced soft revalidate.
+  // Cold-start REST rescue only (Linear-shaped: once SQLite/PowerSync has rows,
+  // lists stay local — no soft-revalidate merge against wall-clock API).
+  // Packaged desktop can be "ready" with empty SQLite if the sync stream never
+  // connects; wave 1/2 hydrate fills that gap once per auth session.
   useEffect(() => {
     if (!authenticated) {
       hasHydratedOnceRef.current = false;
@@ -240,31 +232,25 @@ export function useWorkspaceApiRows({
       }
     };
 
-    if (!hasHydratedOnceRef.current) {
-      void runHydrate();
-      return () => {
-        cancelled = true;
-        clearWave2Schedule();
-      };
+    if (hasHydratedOnceRef.current) {
+      return;
     }
 
-    if (softRevalidateTimerRef.current != null) {
-      window.clearTimeout(softRevalidateTimerRef.current);
+    // Already bootstrapped via PowerSync — skip REST list fan-out.
+    if (powerSync.ready && powerSync.lastSyncedAt) {
+      hasHydratedOnceRef.current = true;
+      markWave1Hydrated();
+      markWave2Hydrated();
+      setRestHydrateSettled(true);
+      return;
     }
-    softRevalidateTimerRef.current = window.setTimeout(() => {
-      softRevalidateTimerRef.current = null;
-      void runHydrate();
-    }, REST_SOFT_REVALIDATE_DEBOUNCE_MS);
 
+    void runHydrate();
     return () => {
       cancelled = true;
       clearWave2Schedule();
-      if (softRevalidateTimerRef.current != null) {
-        window.clearTimeout(softRevalidateTimerRef.current);
-        softRevalidateTimerRef.current = null;
-      }
     };
-  }, [authenticated, client, syncEpoch]);
+  }, [authenticated, client, powerSync.ready, powerSync.lastSyncedAt]);
 
   return {
     apiTasks,

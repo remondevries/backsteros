@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useMemo } from "react";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
+import type { NavigateOptions } from "@tanstack/react-router";
 
 import {
   ContactOverviewView,
@@ -36,6 +37,7 @@ import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { LettersPage } from "./letters-page";
 import { TaskDetailPage } from "./task-detail-page";
+import { navigateToHref } from "../router/navigate-href";
 
 function resolveTaskRouteParam(ref: {
   routeParam?: string;
@@ -388,7 +390,7 @@ export function NavigationTrailPage({
 
   const leaf = trail.nodes[trail.nodes.length - 1];
   if (!leaf) {
-    return <Navigate to={trail.sourceHref} replace />;
+    return <Navigate to={trail.sourceHref as NavigateOptions["to"]} replace />;
   }
 
   const breadcrumbItems = resolveTrailBreadcrumbs(trail, workspace);
@@ -397,7 +399,7 @@ export function NavigationTrailPage({
   if (leaf.kind === "task") {
     const routeParam = resolveTaskRouteParam(leaf);
     if (!routeParam) {
-      return <Navigate to={trail.sourceHref} replace />;
+      return <Navigate to={trail.sourceHref as NavigateOptions["to"]} replace />;
     }
     // Ancestor crumbs only — TaskDetailPage appends the task leaf label.
     return (
@@ -412,7 +414,7 @@ export function NavigationTrailPage({
   if (leaf.kind === "letter") {
     const routeParam = leaf.entityId ?? leaf.routeParam;
     if (!routeParam) {
-      return <Navigate to={trail.sourceHref} replace />;
+      return <Navigate to={trail.sourceHref as NavigateOptions["to"]} replace />;
     }
     return (
       <LettersPage
@@ -439,7 +441,7 @@ export function NavigationTrailPage({
       if (!workspace.ready) {
         return <TrailLoadingSkeleton kind="document" />;
       }
-      return <Navigate to={trail.sourceHref} replace />;
+      return <Navigate to={trail.sourceHref as NavigateOptions["to"]} replace />;
     }
     const isKnowledge = !leaf.projectRouteParam;
     return (
@@ -462,7 +464,7 @@ export function NavigationTrailPage({
       if (!workspace.ready) {
         return <TrailLoadingSkeleton kind="project" />;
       }
-      return <Navigate to={getProjectsHref(leaf.routeParam)} replace />;
+      return <Navigate to={getProjectsHref(leaf.routeParam) as NavigateOptions["to"]} replace />;
     }
     return (
       <TrailProjectLeaf
@@ -483,7 +485,7 @@ export function NavigationTrailPage({
       if (!workspace.ready) {
         return <TrailLoadingSkeleton kind="contact" />;
       }
-      return <Navigate to={getContactsHref(leaf.routeParam)} replace />;
+      return <Navigate to={getContactsHref(leaf.routeParam) as NavigateOptions["to"]} replace />;
     }
     return (
       <TrailContactLeaf
@@ -504,7 +506,7 @@ export function NavigationTrailPage({
       if (!workspace.ready) {
         return <TrailLoadingSkeleton kind="organization" />;
       }
-      return <Navigate to={getOrganizationsHref(leaf.routeParam)} replace />;
+      return <Navigate to={getOrganizationsHref(leaf.routeParam) as NavigateOptions["to"]} replace />;
     }
     return (
       <TrailOrganizationLeaf
@@ -515,7 +517,7 @@ export function NavigationTrailPage({
     );
   }
 
-  return <Navigate to={trail.sourceHref} replace />;
+  return <Navigate to={trail.sourceHref as NavigateOptions["to"]} replace />;
 }
 
 function TrailProjectLeaf({
@@ -528,7 +530,13 @@ function TrailProjectLeaf({
   workspace: ReturnType<typeof useDesktopWorkspaceData>;
 }) {
   useDesktopSectionBreadcrumb(breadcrumbItems);
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = useCallback(
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
+      navigateToHref(routerNavigate, to, options);
+    },
+    [routerNavigate],
+  );
   const location = useLocation();
   const tasks = workspace.allTasks.filter(
     (task) => task.projectId === project.id,

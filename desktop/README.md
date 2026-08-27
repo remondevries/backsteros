@@ -147,6 +147,22 @@ Desktop always talks to local core via `VITE_API_URL` (default
 
 Connects on Clerk session via `GET /api/v1/powersync/token`. Tier A/B metadata syncs into local SQLite; Tier C/D bodies load on demand via REST.
 
+### IPC profiling
+
+Dev builds wrap Tauri `invoke` in
+`src/lib/tauri-invoke-instrumentation.ts` (counts per command).
+
+```js
+// Webview console while the desktop shell is running
+resetTauriInvokeStats?.();
+// …use the app for ~15s…
+getTauriInvokeStats?.();
+// or inspect window.__BACKSTEROS_INVOKE_STATS__
+```
+
+See [`../docs/15-tauri-ipc-profiling.md`](../docs/15-tauri-ipc-profiling.md)
+for the command inventory and batching gate (~10 invokes/sec sustained).
+
 ## Specs
 
 - [`../docs/05-clients.md`](../docs/05-clients.md)

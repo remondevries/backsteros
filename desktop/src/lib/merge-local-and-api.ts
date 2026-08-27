@@ -24,8 +24,38 @@ function hasLinks(value: unknown): boolean {
 }
 
 /**
- * Merge PowerSync + API rows by id.
- * Starts from local rows, then upserts API rows that are missing or newer.
+ * Resolve list rows for the Linear-shaped client.
+ * Once SQLite/PowerSync has any rows for an entity, trust local only —
+ * do not LWW-merge against REST by wall-clock `updatedAt`.
+ * REST remains a cold-start rescue when local is still empty.
+ */
+export function resolveLocalOrApiRows<
+  T extends { id: string; updatedAt?: string | number | Date | null },
+>(
+  localRows: T[] | null | undefined,
+  apiRows: T[] | null | undefined,
+): T[] {
+  if (localRows != null && localRows.length > 0) {
+    return localRows;
+  }
+  return apiRows ?? localRows ?? [];
+}
+
+/**
+ * Column fillers that copy from REST must only run on cold-start rescue
+ * (local empty). Once SQLite has rows, pass null so fillers are no-ops.
+ */
+export function apiFillSourceForColdStart<T>(
+  localRows: T[] | null | undefined,
+  apiRows: T[] | null | undefined,
+): T[] | null | undefined {
+  if (localRows != null && localRows.length > 0) return null;
+  return apiRows;
+}
+
+/**
+ * @deprecated Prefer {@link resolveLocalOrApiRows}. Kept for tests covering
+ * the legacy dual-hydrate wall-clock merge while that path is retired.
  */
 export function mergeLocalAndApiByUpdatedAt<
   T extends { id: string; updatedAt?: string | number | Date | null },

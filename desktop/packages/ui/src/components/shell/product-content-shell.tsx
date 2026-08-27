@@ -38,7 +38,7 @@ export function ProductContentShell({
       <div
         className={`content-frame${showSidePanelSlot ? " content-frame-with-side" : " content-frame-main-only"}`}
       >
-        {showSidePanelSlot ? sidePanel : null}
+        {sidePanel}
         <main className="main-slot">
           {chromeHeader}
           <div className="page-scroll">{children}</div>

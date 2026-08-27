@@ -9,6 +9,8 @@ type AvatarEntity = {
 
 type AvatarKind = "contact" | "organization" | "bank_account";
 
+const AVATAR_DOWNLOAD_CONCURRENCY = 4;
+
 async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   if (typeof blob.arrayBuffer === "function") {
     return new Uint8Array(await blob.arrayBuffer());
@@ -28,19 +30,65 @@ function looksLikeSvg(bytes: Uint8Array): boolean {
   return false;
 }
 
+function cachePathForAvatar(
+  kind: AvatarKind,
+  entityId: string,
+  storageKey: string,
+  ext: string,
+): File {
+  const safeKey = storageKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32);
+  return new File(
+    Paths.cache,
+    `avatar-${kind}-${entityId}-${safeKey}${ext}`,
+  );
+}
+
+function readCachedAvatarUri(
+  kind: AvatarKind,
+  entityId: string,
+  storageKey: string,
+): string | null {
+  for (const ext of ["", ".svg"]) {
+    const file = cachePathForAvatar(kind, entityId, storageKey, ext);
+    if (file.exists) return file.uri;
+  }
+  return null;
+}
+
 async function cacheAvatar(
   client: BacksterosApiClient,
   kind: AvatarKind,
   entityId: string,
+  storageKey: string,
 ): Promise<string> {
+  const cached = readCachedAvatarUri(kind, entityId, storageKey);
+  if (cached) return cached;
+
   const blob = await client.downloadAvatar(kind, entityId);
   const bytes = await blobToBytes(blob);
-  // RN Image cannot render SVG — use a `.svg` suffix so callers can switch to SvgUri.
   const ext = looksLikeSvg(bytes) ? ".svg" : "";
-  const file = new File(Paths.cache, `avatar-${kind}-${entityId}${ext}`);
+  const file = cachePathForAvatar(kind, entityId, storageKey, ext);
   file.create({ overwrite: true });
   file.write(bytes);
   return file.uri;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let index = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (index < items.length) {
+      const current = index;
+      index += 1;
+      results[current] = await worker(items[current]!);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 /**
@@ -54,45 +102,62 @@ export function useEntityAvatarSrcMap(
 ): Record<string, string> {
   const [urls, setUrls] = useState<Record<string, string>>({});
 
-  const fingerprint = useMemo(
+  const targets = useMemo(
     () =>
       entities
         .filter((entry) => entry.avatarStorageKey)
-        .map((entry) => `${entry.id}\0${entry.avatarStorageKey}`)
-        .sort()
-        .join("|"),
+        .map((entry) => ({
+          id: entry.id,
+          storageKey: entry.avatarStorageKey!.trim(),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
     [entities],
   );
 
+  const fingerprint = useMemo(
+    () => targets.map((t) => `${t.id}\0${t.storageKey}`).join("|"),
+    [targets],
+  );
+
   useEffect(() => {
-    if (!client || !fingerprint) {
+    if (!client || targets.length === 0) {
       setUrls({});
       return;
     }
 
     let cancelled = false;
-    const targets = fingerprint.split("|").map((entry) => entry.split("\0")[0]);
 
     void (async () => {
-      const next: Record<string, string> = {};
-      await Promise.all(
-        targets.map(async (entityId) => {
-          if (!entityId) return;
+      const pairs = await mapWithConcurrency(
+        targets,
+        AVATAR_DOWNLOAD_CONCURRENCY,
+        async (target) => {
           try {
-            const uri = await cacheAvatar(client, kind, entityId);
-            if (!cancelled) next[entityId] = uri;
+            const uri = await cacheAvatar(
+              client,
+              kind,
+              target.id,
+              target.storageKey,
+            );
+            return [target.id, uri] as const;
           } catch {
-            // Missing/unauthorized avatar — keep text-only row.
+            return null;
           }
-        }),
+        },
       );
-      if (!cancelled) setUrls(next);
+
+      if (cancelled) return;
+      const next: Record<string, string> = {};
+      for (const pair of pairs) {
+        if (pair) next[pair[0]] = pair[1];
+      }
+      setUrls(next);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [client, fingerprint, kind]);
+  }, [client, fingerprint, kind, targets]);
 
   return urls;
 }

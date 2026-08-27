@@ -3,13 +3,33 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
+import { visualizer } from "rollup-plugin-visualizer";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { desktopManualChunks } from "./vite.manual-chunks";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+const bundleReport = process.env.BUNDLE_REPORT === "1";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    wasm(),
+    topLevelAwait(),
+    bundleReport
+      ? visualizer({
+          filename: "dist/bundle-report.html",
+          gzipSize: true,
+          open: false,
+        })
+      : undefined,
+  ].filter(Boolean),
 
   optimizeDeps: {
     // Workspace UI must not be prebundled — otherwise dist rebuilds are ignored
@@ -18,6 +38,11 @@ export default defineConfig(async () => ({
       "@journeyapps/wa-sqlite",
       "@powersync/web",
       "@backsteros/ui",
+      "@backsteros/ui/shell",
+      "@backsteros/ui/tasks",
+      "@backsteros/ui/inbox",
+      "@backsteros/ui/calendar",
+      "@backsteros/ui/navigation",
       "@backsteros/contracts",
       "@backsteros/api-client",
       "@backsteros/powersync-schema",
@@ -33,6 +58,11 @@ export default defineConfig(async () => ({
   // Tauri webviews are modern; avoid downleveling that breaks TLA/wasm transforms.
   build: {
     target: "esnext",
+    rollupOptions: {
+      output: {
+        manualChunks: desktopManualChunks,
+      },
+    },
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

@@ -48,6 +48,7 @@ export const SYNCED_METADATA_TABLES = [
   "projects",
   "tasks",
   "documents",
+  "areas",
   "organizations",
   "contacts",
   "letters",
@@ -414,6 +415,21 @@ function AuthenticatedPowerSyncProvider({
 
   const status = database?.currentStatus;
   const ready = Boolean(database?.ready);
+  const connected = status?.connected ?? false;
+  const connecting = status?.connecting ?? false;
+  const hasSynced = Boolean(status?.lastSyncedAt);
+  const downloadErrorMessage =
+    status?.dataFlowStatus.downloadError?.message ?? null;
+  const uploadErrorMessage =
+    status?.dataFlowStatus.uploadError?.message ?? null;
+  // Keep the first lastSyncedAt so checkpoint ticks do not replace the context
+  // object and re-render every workspace action consumer.
+  const lastSyncedAtFrozenRef = useRef<Date | null>(null);
+  if (status?.lastSyncedAt && !lastSyncedAtFrozenRef.current) {
+    lastSyncedAtFrozenRef.current = status.lastSyncedAt;
+  }
+  const stableValueRef = useRef<SyncState | null>(null);
+
   const value = useMemo<SyncState>(() => {
     let syncStatus: PowerSyncStatus = "idle";
     let message = "PowerSync idle";
@@ -426,7 +442,7 @@ function AuthenticatedPowerSyncProvider({
     } else if (initError) {
       syncStatus = "error";
       message = `PowerSync unavailable (${initError.message})`;
-    } else if (!database || status?.connecting) {
+    } else if (!database || connecting) {
       syncStatus = "connecting";
       message = "Connecting PowerSync…";
     } else if (ready) {
@@ -437,23 +453,46 @@ function AuthenticatedPowerSyncProvider({
       message = "PowerSync not ready";
     }
 
-    return {
+    const next: SyncState = {
       status: syncStatus,
       message,
       database,
-      connected: status?.connected ?? false,
-      connecting: status?.connecting ?? false,
+      connected,
+      connecting,
       ready,
       offline,
-      lastSyncedAt: status?.lastSyncedAt ?? null,
-      error: database ? syncError(database) ?? initError : initError,
+      lastSyncedAt: lastSyncedAtFrozenRef.current,
+      error: initError,
       retry,
       createMetadata,
       patchMetadata,
     };
+    const prev = stableValueRef.current;
+    if (
+      prev &&
+      prev.status === next.status &&
+      prev.message === next.message &&
+      prev.database === next.database &&
+      prev.connected === next.connected &&
+      prev.connecting === next.connecting &&
+      prev.ready === next.ready &&
+      prev.offline === next.offline &&
+      prev.lastSyncedAt === next.lastSyncedAt &&
+      prev.error === next.error &&
+      prev.retry === next.retry &&
+      prev.createMetadata === next.createMetadata &&
+      prev.patchMetadata === next.patchMetadata
+    ) {
+      return prev;
+    }
+    stableValueRef.current = next;
+    return next;
   }, [
+    connected,
+    connecting,
     createMetadata,
     database,
+    downloadErrorMessage,
     initError,
     isLoaded,
     offline,
@@ -461,8 +500,9 @@ function AuthenticatedPowerSyncProvider({
     ready,
     retry,
     sessionId,
-    status,
+    uploadErrorMessage,
     userId,
+    hasSynced,
   ]);
 
   return (
@@ -499,21 +539,48 @@ export function useDesktopPowerSync() {
   return useContext(PowerSyncContext);
 }
 
-/** Debounce for rare Tauri watch remounts after sync (useWebWorker:false). */
-const POWER_SYNC_WATCH_REMOUNT_DEBOUNCE_MS = 2_000;
+function rowsUnchanged<T>(previous: readonly T[], next: readonly T[]): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  for (let i = 0; i < previous.length; i += 1) {
+    if (previous[i] !== next[i]) return false;
+  }
+  return true;
+}
 
+export type PowerSyncRowComparator<T> = {
+  keyBy: (item: T) => string;
+  compareBy: (item: T) => string;
+};
+
+/** Default comparator: key by `id` when present; compare via JSON. */
+export function defaultPowerSyncRowComparator<T>(item: T): {
+  key: string;
+  compare: string;
+} {
+  const record = item as { id?: unknown };
+  const key =
+    typeof record.id === "string" || typeof record.id === "number"
+      ? String(record.id)
+      : JSON.stringify(item);
+  return { key, compare: JSON.stringify(item) };
+}
+
+/**
+ * Watched PowerSync query with incremental `differentialWatch` so React only
+ * sees a new `data` reference when the result set actually changes, and
+ * unchanged row object references are preserved.
+ */
 export function usePowerSyncQuery<T>(
   sql: string | null,
   parameters: unknown[] = [],
+  options?: {
+    rowComparator?: PowerSyncRowComparator<T>;
+  },
 ) {
-  const { database, ready, lastSyncedAt } = useDesktopPowerSync();
+  const { database, ready } = useDesktopPowerSync();
   const parameterKey = JSON.stringify(parameters);
   const queryKey = `${sql ?? ""}\0${parameterKey}`;
-  // Tauri uses useWebWorker:false; watched queries can occasionally miss remote
-  // apply notifications. Keep watches alive across sync ticks — only bump a
-  // debounced remount epoch so we do not tear down all watches every checkpoint.
-  const syncEpoch = lastSyncedAt?.getTime() ?? 0;
-  const [remountEpoch, setRemountEpoch] = useState(0);
   const [result, setResult] = useState<{
     database: PowerSyncDatabase;
     queryKey: string;
@@ -524,48 +591,86 @@ export function usePowerSyncQuery<T>(
     queryKey: string;
     error: Error;
   } | null>(null);
-
-  useEffect(() => {
-    if (!database || !ready || !sql || syncEpoch === 0) return;
-    const timeoutId = window.setTimeout(() => {
-      setRemountEpoch((current) => current + 1);
-    }, POWER_SYNC_WATCH_REMOUNT_DEBOUNCE_MS);
-    return () => window.clearTimeout(timeoutId);
-  }, [database, ready, sql, syncEpoch]);
+  const rowComparator = options?.rowComparator;
+  const rowComparatorRef = useRef(rowComparator);
+  rowComparatorRef.current = rowComparator;
 
   useEffect(() => {
     if (!database || !ready || !sql) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        for await (const watchResult of database.watch(sql, parameters, {
-          signal: controller.signal,
-          throttleMs: 100,
-        })) {
-          setResult({
-            database,
-            queryKey,
-            rows: (watchResult.rows?._array ?? []) as T[],
-          });
-          setErrorState(null);
-        }
-      } catch (reason) {
-        if (!controller.signal.aborted) {
-          setErrorState({
-            database,
-            queryKey,
-            error:
-              reason instanceof Error
-                ? reason
-                : new Error("Local query failed"),
-          });
-        }
+
+    const comparator: PowerSyncRowComparator<T> = rowComparatorRef.current ?? {
+      keyBy: (item) => defaultPowerSyncRowComparator(item).key,
+      compareBy: (item) => defaultPowerSyncRowComparator(item).compare,
+    };
+
+    const watched = database
+      .query({
+        sql,
+        parameters: parameters as ReadonlyArray<
+          string | number | boolean | null | undefined
+        >,
+      })
+      .differentialWatch({
+        throttleMs: 32,
+        // Avoid extra React commits from isFetching flips when only data matters.
+        reportFetching: false,
+        rowComparator: comparator as {
+          keyBy: (item: unknown) => string;
+          compareBy: (item: unknown) => string;
+        },
+      });
+
+    const applyState = () => {
+      const { data: rows, error: watchError } = watched.state;
+      if (watchError) {
+        setErrorState({
+          database,
+          queryKey,
+          error: watchError,
+        });
+        return;
       }
-    })();
-    return () => controller.abort();
+      setResult((current) => {
+        if (
+          current &&
+          current.database === database &&
+          current.queryKey === queryKey &&
+          rowsUnchanged(current.rows, rows)
+        ) {
+          return current;
+        }
+        return {
+          database,
+          queryKey,
+          rows: [...rows] as T[],
+        };
+      });
+      setErrorState(null);
+    };
+
+    // Seed from current state (may already be warm from a shared prior watch).
+    if (!watched.state.isLoading) {
+      applyState();
+    }
+
+    const unsubscribe = watched.registerListener({
+      onData: () => applyState(),
+      onError: (watchError) => {
+        setErrorState({
+          database,
+          queryKey,
+          error: watchError,
+        });
+      },
+    });
+
+    return () => {
+      unsubscribe();
+      void watched.close();
+    };
     // parameters are keyed by their serialized stable values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database, parameterKey, ready, sql, remountEpoch]);
+  }, [database, parameterKey, ready, sql]);
 
   const data =
     result?.database === database && result.queryKey === queryKey

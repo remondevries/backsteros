@@ -14,16 +14,17 @@ import {
 } from "react-native";
 
 import {
-  createFinancialRecurring,
-  deleteFinancialRecurring,
-  updateFinancialRecurring,
-} from "../../../lib/finance-api";
+  createFinancialRecurringViaPowerSyncOrApi,
+  deleteFinancialRecurringViaPowerSyncOrApi,
+  updateFinancialRecurringViaPowerSyncOrApi,
+} from "../../../lib/finance-mutations";
 import { TabStackHeaderTextButton } from "../../../lib/tab-stack-options";
 import { colors, spacing } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 import { useFinanceCategories } from "../../../lib/use-finance-categories";
 import { useFinanceRecurrings } from "../../../lib/use-finance-recurrings";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../../../lib/powersync-context";
 
 function eurosToCents(raw: string): number | null {
   const trimmed = raw.trim().replace(",", ".");
@@ -42,6 +43,7 @@ export default function FinanceRecurringFormScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const recurrings = useFinanceRecurrings();
   const categories = useFinanceCategories();
@@ -79,9 +81,18 @@ export default function FinanceRecurringFormScreen() {
         archived,
       };
       if (editing) {
-        await updateFinancialRecurring(client, editing.id, input);
+        await updateFinancialRecurringViaPowerSyncOrApi(
+          client,
+          powerSync,
+          editing.id,
+          input,
+        );
       } else {
-        await createFinancialRecurring(client, input);
+        await createFinancialRecurringViaPowerSyncOrApi(
+          client,
+          powerSync,
+          input,
+        );
       }
       await recurrings.reload();
       router.back();
@@ -105,7 +116,11 @@ export default function FinanceRecurringFormScreen() {
         onPress: () => {
           void (async () => {
             try {
-              await deleteFinancialRecurring(client, editing.id);
+              await deleteFinancialRecurringViaPowerSyncOrApi(
+                client,
+                powerSync,
+                editing.id,
+              );
               await recurrings.reload();
               router.back();
             } catch (reason) {

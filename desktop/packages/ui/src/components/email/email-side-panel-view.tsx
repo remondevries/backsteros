@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 
 import {
   emailListItemIsSelected,
@@ -38,6 +37,25 @@ export type EmailSidePanelLinkComponent = ComponentType<{
   "aria-label"?: string;
   children?: ReactNode;
 }>;
+
+function FallbackEmailLink({
+  to,
+  className,
+  children,
+  ...rest
+}: {
+  to: string;
+  className?: string;
+  "aria-current"?: "page";
+  "aria-label"?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <a href={to} className={className} {...rest}>
+      {children}
+    </a>
+  );
+}
 
 export type EmailSidePanelViewProps = {
   pathname: string;
@@ -221,7 +239,7 @@ export function EmailSidePanelView({
   loading = false,
   messagesLoading = false,
   apiKeyConfigured = false,
-  Link: LinkComponent = Link,
+  Link: LinkComponent = FallbackEmailLink,
   composeHref = getEmailComposeHref(),
   onCompose,
 }: EmailSidePanelViewProps) {

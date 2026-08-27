@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   DESKTOP_OVERLAY_NAVIGATE_EVENT,
   type DesktopOverlayNavigatePayload,
 } from "../lib/desktop-overlay";
 import { isTauriRuntime } from "../lib/whoop";
+import { navigateToHref } from "../router/navigate-href";
 
 /** Main window: navigate when the compose overlay creates an entity. */
 export function DesktopOverlayMainNavigationListener() {
@@ -33,7 +34,7 @@ export function DesktopOverlayMainNavigationListener() {
             if (!href) {
               return;
             }
-            navigate(href);
+            navigateToHref(navigate, href);
           },
         );
       } catch {

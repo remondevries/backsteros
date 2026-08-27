@@ -1,6 +1,8 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
+
+import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
 
 import {
   CONTACT_SECTIONS,
@@ -13,6 +15,7 @@ import {
   tabDetailScreenOptions,
 } from "../lib/tab-stack-options";
 import { ui } from "../lib/ui";
+import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
 import { ContactOverviewPanel } from "./contact-overview-panel";
 import { ContactTasksPanel } from "./contact-tasks-panel";
@@ -36,6 +39,11 @@ export function ContactDetailScreen({ contactId, title }: Props) {
     DEFAULT_CONTACT_SECTION,
   );
   const [displayTitle, setDisplayTitle] = useState(title);
+  const { confirmAndDelete } = useEntitySoftDelete();
+
+  const onDeleteContact = useCallback(() => {
+    confirmAndDelete("contacts", contactId, displayTitle);
+  }, [confirmAndDelete, contactId, displayTitle]);
 
   useEffect(() => {
     setDisplayTitle(title);
@@ -105,6 +113,9 @@ export function ContactDetailScreen({ contactId, title }: Props) {
             </View>
           ),
           ...(inPadContactsSplit ? { headerBackVisible: false } : null),
+          headerRight: () => (
+            <DetailHeaderDeleteButton onDelete={onDeleteContact} />
+          ),
         }}
       />
       <View style={ui.screen}>

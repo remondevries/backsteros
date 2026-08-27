@@ -4,14 +4,14 @@ import { useRouter } from "expo-router";
 
 import { isPadDevice } from "../lib/device";
 import { getTodayJournalDateSlug } from "../lib/journal";
+import { createTodayJournalViaPowerSyncOrApi } from "../lib/document-create";
 import { PadSidePanelCollapseButton } from "../lib/pad-side-panel-collapse";
-import {
-  TabStackHeader,
-  TabStackHeaderPlusButton,
-} from "../lib/tab-stack-options";
+import { TabStackHeaderPlusButton } from "../lib/tab-stack-options";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { useRestFallbackGate } from "../lib/use-rest-fallback-gate";
+import { SectionListHeader } from "./section-list-header";
 
 type JournalDateRow = {
   id: string;
@@ -39,6 +39,7 @@ export function JournalHeader({
 }: Props = {}) {
   const router = useRouter();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
   const todaySlug = getTodayJournalDateSlug();
 
@@ -86,8 +87,10 @@ export function JournalHeader({
     onCreateTodayError?.(null);
     void (async () => {
       try {
-        await client.requestJson(
-          `/api/v1/journal/${encodeURIComponent(todaySlug)}`,
+        await createTodayJournalViaPowerSyncOrApi(
+          client,
+          powerSync,
+          todaySlug,
         );
         if (isPad) {
           router.replace(`/(app)/journal/${todaySlug}`);
@@ -104,12 +107,12 @@ export function JournalHeader({
         setIsCreatingToday(false);
       }
     })();
-  }, [client, isCreatingToday, isPad, onCreateTodayError, router, todaySlug]);
+  }, [client, isCreatingToday, isPad, onCreateTodayError, powerSync, router, todaySlug]);
 
   return (
-    <TabStackHeader
+    <SectionListHeader
       title="Journal"
-      leadingActions={
+      plusControl={
         showCreateToday ? (
           <TabStackHeaderPlusButton
             onPress={onCreateToday}
@@ -118,7 +121,7 @@ export function JournalHeader({
           />
         ) : null
       }
-      trailingActions={
+      trailingControl={
         onToggleCollapse ? (
           <PadSidePanelCollapseButton
             onCollapse={onToggleCollapse}

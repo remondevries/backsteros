@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,11 +12,12 @@ import {
 
 import { ListSearchField } from "../list-search-field";
 import { ContentPageTitle } from "../content-page-title";
+import { BacksterFlashList } from "../lists/index";
+import { FinanceChartBoundary } from "./finance-chart-boundary";
 import { InvoiceRevenueChart } from "./invoice-revenue-chart";
 import { buildMoneybirdInvoicesPeriodFilter } from "../../lib/finance-api";
 import { buildInvoiceRevenueChartPoints } from "../../lib/finance-chart-series";
 import { formatCalendarDate } from "../../lib/finance-format";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../lib/tab-bar-inset";
 import { colors, spacing } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 import { usePullToRevealSearch } from "../../lib/use-pull-to-reveal-search";
@@ -173,11 +173,10 @@ export function FinanceInvoicesPane() {
         <Text style={ui.error}>{list.error}</Text>
       ) : null}
 
-      <FlatList
-        style={ui.screen}
+      <BacksterFlashList
+        estimatedItemSize={56}
         data={visibleInvoices}
         keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
@@ -195,7 +194,6 @@ export function FinanceInvoicesPane() {
             colors={[colors.muted]}
           />
         }
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
         ListHeaderComponent={
           <View>
             <ContentPageTitle
@@ -211,7 +209,9 @@ export function FinanceInvoicesPane() {
                   <ActivityIndicator color={colors.muted} />
                 </View>
               ) : (
+                <FinanceChartBoundary>
                 <InvoiceRevenueChart points={chartPoints} year={year} />
+                </FinanceChartBoundary>
               )}
             </View>
           </View>

@@ -27,6 +27,7 @@ describe("resolveMentionLayout", () => {
     assert.equal(layoutFor("- [@task:IN-1]"), "inline");
     assert.equal(layoutFor("* [@task:IN-1]"), "inline");
     assert.equal(layoutFor("1. [@task:IN-1]"), "inline");
+    assert.equal(layoutFor("1) [@task:IN-1]"), "inline");
     assert.equal(layoutFor("> [@task:IN-1]"), "inline");
     assert.equal(layoutFor("# [@task:IN-1]"), "inline");
     assert.equal(layoutFor("## [@project:alpha]"), "inline");

@@ -1,6 +1,8 @@
+import { useNavigation } from "@react-navigation/native";
+import { useLayoutEffect } from "react";
 import { Text, View } from "react-native";
 
-import { LettersHeaderPlus } from "../../../components/letters-header";
+import { LettersHeader } from "../../../components/letters-header";
 import { LettersListPane } from "../../../components/letters-list-pane";
 import { isPadDevice } from "../../../lib/device";
 import { ui } from "../../../lib/ui";
@@ -11,7 +13,17 @@ import { ui } from "../../../lib/ui";
  * auto-opens the first letter (desktop letters side-panel parity).
  */
 export default function LettersScreen() {
-  if (isPadDevice()) {
+  const navigation = useNavigation();
+  const isPad = isPadDevice();
+
+  useLayoutEffect(() => {
+    if (isPad) return;
+    navigation.setOptions({
+      header: () => <LettersHeader />,
+    });
+  }, [isPad, navigation]);
+
+  if (isPad) {
     return (
       <View style={styles.empty}>
         <Text style={ui.empty}>Select a letter from the list.</Text>
@@ -19,13 +31,7 @@ export default function LettersScreen() {
     );
   }
 
-  return (
-    <LettersListPane
-      pageTitle="Letters"
-      pageTitleSafeArea
-      pageTitleTrailing={<LettersHeaderPlus chrome="glass" />}
-    />
-  );
+  return <LettersListPane />;
 }
 
 const styles = {

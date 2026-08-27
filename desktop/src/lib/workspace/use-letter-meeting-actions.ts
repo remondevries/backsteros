@@ -50,14 +50,42 @@ export function useWorkspaceLetterMeetingActions({
         sortOrder: -Date.now(),
       };
       if (!authenticated) throw new Error("Sign in to create letters.");
-      // API-first (Next parity): PDF upload needs a server id immediately.
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const letter = {
+          id,
+          number: null,
+          ...body,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiLetter;
+        setApiLetters((rows) => {
+          if (!rows) return [letter];
+          if (rows.some((entry) => entry.id === letter.id)) {
+            return rows.map((entry) =>
+              entry.id === letter.id ? letter : entry,
+            );
+          }
+          return [letter, ...rows];
+        });
+        void powerSync
+          .createMetadata(
+            "letters",
+            toSnakeFields(letter as unknown as Record<string, unknown>),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local letter create failed", error);
+          });
+        return { id: letter.id, number: letter.number };
+      }
+
       const letter = await client.requestJson<ApiLetter>("/api/v1/letters", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      // Optimistic list seed — same pattern as createInboxTask — so the side
-      // panel shows the letter before PowerSync download catches up.
       setApiLetters((rows) => {
         if (!rows) return [letter];
         if (rows.some((entry) => entry.id === letter.id)) {
@@ -67,17 +95,6 @@ export function useWorkspaceLetterMeetingActions({
         }
         return [letter, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "letters",
-            toSnakeFields(letter as unknown as Record<string, unknown>),
-            letter.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
       return { id: letter.id, number: letter.number };
     },
     [authenticated, client, powerSync, setApiLetters, toSnakeFields],
@@ -94,18 +111,50 @@ export function useWorkspaceLetterMeetingActions({
       endAt: string;
     }) => {
       if (!authenticated) throw new Error("Sign in to create meetings.");
+      const meetingBody = {
+        title: input.title?.trim() || "New meeting",
+        summary: input.summary ?? null,
+        notes: input.notes ?? null,
+        transcription: input.transcription ?? null,
+        ...(input.status ? { status: input.status } : {}),
+        startAt: input.startAt,
+        endAt: input.endAt,
+      };
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const meeting = {
+          id,
+          number: null,
+          ...meetingBody,
+          createdAt: now,
+          updatedAt: now,
+        } as ApiMeeting;
+        setApiMeetings((rows) => {
+          if (!rows) return [meeting];
+          if (rows.some((entry) => entry.id === meeting.id)) {
+            return rows.map((entry) =>
+              entry.id === meeting.id ? meeting : entry,
+            );
+          }
+          return [meeting, ...rows];
+        });
+        void powerSync
+          .createMetadata(
+            "meetings",
+            toSnakeFields(meeting as unknown as Record<string, unknown>),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local meeting create failed", error);
+          });
+        return { id: meeting.id, number: meeting.number };
+      }
+
       const meeting = await client.requestJson<ApiMeeting>("/api/v1/meetings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: input.title?.trim() || "New meeting",
-          summary: input.summary ?? null,
-          notes: input.notes ?? null,
-          transcription: input.transcription ?? null,
-          ...(input.status ? { status: input.status } : {}),
-          startAt: input.startAt,
-          endAt: input.endAt,
-        }),
+        body: JSON.stringify(meetingBody),
       });
       setApiMeetings((rows) => {
         if (!rows) return [meeting];
@@ -116,17 +165,6 @@ export function useWorkspaceLetterMeetingActions({
         }
         return [meeting, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "meetings",
-            toSnakeFields(meeting as unknown as Record<string, unknown>),
-            meeting.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
       return { id: meeting.id, number: meeting.number };
     },
     [authenticated, client, powerSync, setApiMeetings, toSnakeFields],

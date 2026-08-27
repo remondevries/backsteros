@@ -100,12 +100,16 @@ const TOP_LEVEL_NAV: Record<
   "/inbox": { navId: "inbox", badgeLabel: "Inbox" },
   "/email": { navId: "email", badgeLabel: "Email" },
   "/journal": { navId: "journal", badgeLabel: "Journal" },
+  "/journal-v2": { navId: "journal", badgeLabel: "Journal" },
+  "/habits-v2": { navId: "habits", badgeLabel: "Habit Tracker" },
   "/knowledge": { navId: "knowledge", badgeLabel: "Knowledge" },
+  "/knowledge-v2": { navId: "knowledge", badgeLabel: "Knowledge Base" },
   "/tasks": { navId: "tasks", badgeLabel: "Tasks" },
   "/areas": { navId: "areas", badgeLabel: "Areas" },
   "/projects": { navId: "projects", badgeLabel: "Projects" },
   "/development": { navId: "development", badgeLabel: "Development" },
   "/letters": { navId: "letters", badgeLabel: "Letters" },
+  "/letters-v2": { navId: "letters", badgeLabel: "Letters" },
   "/contacts": { navId: "contacts", badgeLabel: "Contacts" },
   "/organizations": { navId: "organizations", badgeLabel: "Organization" },
 };
@@ -304,6 +308,16 @@ export function resolveHistoryEntryDisplay(
     };
   }
 
+  const lettersV2Match = pathname.match(/^\/letters-v2\/([^/]+)$/);
+  if (lettersV2Match && lettersV2Match[1] !== "new") {
+    const slug = decodeURIComponent(lettersV2Match[1]!);
+    return {
+      kind: "letter",
+      badgeLabel: letterBadgeFromSlug(slug),
+      title,
+    };
+  }
+
   const projectLetterMatch = pathname.match(
     /^\/projects\/[^/]+\/letters\/([^/]+)$/,
   );
@@ -334,11 +348,29 @@ export function resolveHistoryEntryDisplay(
     };
   }
 
+  if (pathname === "/habits-v2" || pathname.startsWith("/habits-v2/")) {
+    return {
+      kind: "journal",
+      navId: "habits",
+      badgeLabel: "Habits",
+      title: title === pathname ? "Habit Tracker" : title,
+    };
+  }
+
   const journalDateMatch = pathname.match(/^\/journal\/([^/]+)$/);
   if (journalDateMatch) {
     return {
       kind: "journal",
       badgeLabel: journalDateMatch[1]!,
+      title,
+    };
+  }
+
+  const journalV2DateMatch = pathname.match(/^\/journal-v2\/([^/]+)$/);
+  if (journalV2DateMatch) {
+    return {
+      kind: "journal",
+      badgeLabel: journalV2DateMatch[1]!,
       title,
     };
   }

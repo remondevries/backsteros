@@ -23,79 +23,47 @@ import {
 } from "../../lib/storage.js";
 import { getCoreReplicationConfig } from "./config.js";
 
+import {
+  VaultPathError,
+  diffVaultManifest,
+  normalizeVaultMarkdownPath,
+  planVaultPull,
+  planVaultPullDeletes,
+  planVaultPush,
+  resolveSafeVaultAbsolute,
+  shouldPushVaultFile,
+  type VaultFileMeta,
+  type VaultManifest,
+  type VaultManifestDiff,
+  type VaultManifestEntry,
+} from "./vault-plan.js";
+
+export {
+  VaultPathError,
+  diffVaultManifest,
+  normalizeVaultMarkdownPath,
+  planVaultPull,
+  planVaultPullDeletes,
+  planVaultPush,
+  resolveSafeVaultAbsolute,
+  shouldPushVaultFile,
+};
+export type {
+  VaultFileMeta,
+  VaultManifest,
+  VaultManifestDiff,
+  VaultManifestEntry,
+};
+
+
 export const VAULT_MANIFEST_RELATIVE_PATH =
   ".backsteros/replication/vault-manifest.json";
 
 export const VAULT_REPLICATION_PAGE_SIZE = 50;
 export const VAULT_MAX_MARKDOWN_BYTES = 5 * 1024 * 1024;
 
-export type VaultFileMeta = {
-  relativePath: string;
-  mtimeMs: number;
-  size: number;
-};
-
-export type VaultManifestEntry = {
-  mtimeMs: number;
-  size: number;
-  sha256?: string;
-};
-
-export type VaultManifest = Record<string, VaultManifestEntry>;
-
-export type VaultManifestDiff = {
-  upserts: VaultFileMeta[];
-  deletes: string[];
-};
-
-export class VaultPathError extends Error {
-  readonly code = "bad_vault_path" as const;
-  constructor(message: string) {
-    super(message);
-    this.name = "VaultPathError";
-  }
-}
-
-function basenameOf(relativePath: string): string {
-  const parts = relativePath.split("/");
-  return parts[parts.length - 1] ?? relativePath;
-}
-
-/** Normalize and validate a vault-relative markdown path (posix). */
-export function normalizeVaultMarkdownPath(raw: string): string {
-  const trimmed = raw.trim().replace(/\\/g, "/");
-  if (!trimmed || trimmed.startsWith("/") || trimmed.includes("\0")) {
-    throw new VaultPathError("Invalid vault path");
-  }
-  const segments = trimmed
-    .split("/")
-    .filter((segment) => segment.length > 0 && segment !== ".");
-  if (segments.length === 0 || segments.some((s) => s === "..")) {
-    throw new VaultPathError("Path traversal is not allowed");
-  }
-  const relativePath = segments.join("/");
-  const base = basenameOf(relativePath);
-  if (base.startsWith("._") || base === ".DS_Store") {
-    throw new VaultPathError("macOS junk paths are not replicated");
-  }
-  if (!base.toLowerCase().endsWith(".md")) {
-    throw new VaultPathError("Only .md files are replicated");
-  }
-  return relativePath;
-}
-
-export function resolveSafeVaultAbsolute(
-  vaultRoot: string,
-  relativePath: string,
-): string {
-  const normalized = normalizeVaultMarkdownPath(relativePath);
-  const root = path.resolve(vaultRoot);
-  const absolute = path.resolve(root, ...normalized.split("/"));
-  const relative = path.relative(root, absolute);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new VaultPathError("Resolved path escapes vault root");
-  }
-  return absolute;
+function manifestAbsolutePath(vaultRoot: string): string {
+  return path.join(path.resolve(vaultRoot), VAULT_MANIFEST_RELATIVE_PATH);
 }
 
 function shouldSkipDirentName(name: string): boolean {
@@ -153,43 +121,6 @@ export async function listMarkdownFiles(
   await walkMarkdownFiles(root, "", out);
   out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   return out;
-}
-
-export function diffVaultManifest(
-  current: readonly VaultFileMeta[],
-  previous: VaultManifest,
-): VaultManifestDiff {
-  const upserts: VaultFileMeta[] = [];
-  const currentPaths = new Set<string>();
-
-  for (const file of current) {
-    currentPaths.add(file.relativePath);
-    const prior = previous[file.relativePath];
-    if (
-      !prior ||
-      prior.mtimeMs !== file.mtimeMs ||
-      prior.size !== file.size
-    ) {
-      upserts.push(file);
-    }
-  }
-
-  const deletes: string[] = [];
-  for (const priorPath of Object.keys(previous)) {
-    if (!currentPaths.has(priorPath)) {
-      deletes.push(priorPath);
-    }
-  }
-  deletes.sort((a, b) => a.localeCompare(b));
-  upserts.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  return { upserts, deletes };
-}
-
-function manifestAbsolutePath(vaultRoot: string): string {
-  return path.join(
-    path.resolve(vaultRoot),
-    ...VAULT_MANIFEST_RELATIVE_PATH.split("/"),
-  );
 }
 
 export async function readVaultManifest(
@@ -255,6 +186,10 @@ export async function applyVaultFilePut(
 
   try {
     const existing = await stat(absolute);
+    // Never clobber a non-empty body with empty bytes (document-emptying guard).
+    if (bytes.byteLength === 0 && existing.size > 0) {
+      return "skipped";
+    }
     if (
       existing.mtimeMs >= input.mtimeMs &&
       existing.size === bytes.byteLength
@@ -319,51 +254,6 @@ export type VaultPullResult = {
   skipped: number;
   remaining: number;
 };
-
-/** Peer files that should be written locally (missing or strictly newer on peer). */
-export function planVaultPull(
-  local: readonly VaultFileMeta[],
-  peer: readonly VaultFileMeta[],
-): VaultFileMeta[] {
-  const localByPath = new Map(
-    local.map((file) => [file.relativePath, file] as const),
-  );
-  const pulls: VaultFileMeta[] = [];
-  for (const remote of peer) {
-    const here = localByPath.get(remote.relativePath);
-    if (!here || remote.mtimeMs > here.mtimeMs) {
-      pulls.push(remote);
-    }
-  }
-  pulls.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  return pulls;
-}
-
-/**
- * Local paths that existed on the peer last sync and are gone remotely, while
- * the local file still matches the last synced meta — treat as remote deletes.
- */
-export function planVaultPullDeletes(
-  local: readonly VaultFileMeta[],
-  peer: readonly VaultFileMeta[],
-  previous: VaultManifest,
-): string[] {
-  const peerPaths = new Set(peer.map((f) => f.relativePath));
-  const localByPath = new Map(
-    local.map((file) => [file.relativePath, file] as const),
-  );
-  const deletes: string[] = [];
-  for (const [relativePath, prior] of Object.entries(previous)) {
-    if (peerPaths.has(relativePath)) continue;
-    const here = localByPath.get(relativePath);
-    if (!here) continue;
-    if (here.mtimeMs === prior.mtimeMs && here.size === prior.size) {
-      deletes.push(relativePath);
-    }
-  }
-  deletes.sort((a, b) => a.localeCompare(b));
-  return deletes;
-}
 
 async function fetchPeerManifest(
   peerUrl: string,
@@ -462,8 +352,15 @@ export async function pullVaultFromPeer(
         mtimeMs: body.mtimeMs,
         contentBase64: body.contentBase64,
       });
-      if (result === "applied") applied += 1;
-      else skipped += 1;
+      if (result === "applied") {
+        applied += 1;
+        const { syncDocumentMetadataAfterVaultWrite } = await import(
+          "../vault-document-metadata.js"
+        );
+        await syncDocumentMetadataAfterVaultWrite(body.path);
+      } else {
+        skipped += 1;
+      }
       nextManifest[remote.relativePath] = {
         mtimeMs: body.mtimeMs,
         size: Buffer.from(body.contentBase64, "base64").byteLength,
@@ -547,20 +444,17 @@ export async function pushVaultToPeer(
   }
 
   // Prefer peer when it is strictly newer so we don't overwrite cloud offline writes.
+  // Also never push an empty local file over a non-empty peer body.
   let peerFiles: VaultFileMeta[] = [];
   try {
     peerFiles = await fetchPeerManifest(config.peerUrl, config.secret, timeoutMs);
   } catch {
     peerFiles = [];
   }
+  const currentForPush = planVaultPush(current, peerFiles);
   const peerByPath = new Map(
     peerFiles.map((file) => [file.relativePath, file] as const),
   );
-  const currentForPush = current.filter((file) => {
-    const remote = peerByPath.get(file.relativePath);
-    if (!remote) return true;
-    return file.mtimeMs >= remote.mtimeMs;
-  });
 
   const diff = diffVaultManifest(currentForPush, previous);
 

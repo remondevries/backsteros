@@ -1,18 +1,16 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import {
-  Pressable,
-  SectionList,
-  Text,
-  View,
-  type SectionListData,
-} from "react-native";
+import { Pressable, Text, View } from "react-native";
+import type { FlashListRef } from "@shopify/flash-list";
 
 import { isPadDevice } from "../lib/device";
 import { resolveInboxEmailIconColor } from "../lib/email-list";
 import { groupInboxRowsByAttentionStatus } from "../lib/inbox-attention";
-import { findSectionListLocation } from "../lib/list-keyboard-nav";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../lib/lists/flatten-grouped-sections";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import {
   reconcileTaskRowOverride,
   useTaskRowOverridesVersion,
@@ -24,8 +22,9 @@ import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { BacksterGroupedList } from "./lists/index";
 import { DetailContentContainer } from "./detail-content-container";
-import { EmailNavIcon } from "./nav-icons";
+import { EmailNavIcon, CalendarNavIcon } from "./nav-icons";
 import { InboxListItemRow } from "./inbox-list-item-row";
 import { ProjectTypeGroupHeader } from "./project-type-group-header";
 import {
@@ -42,6 +41,7 @@ export type GroupedTaskRow = {
   status: string | null;
   priority?: number | null;
   due_date?: string | null;
+  due_end_date?: string | null;
   inbox?: boolean | number | null;
   project_name?: string | null;
   project_key?: string | null;
@@ -52,13 +52,15 @@ export type GroupedTaskRow = {
   assignee_name?: string | null;
   assignee_avatar_storage_key?: string | null;
   /** Inbox email rows (desktop parity): email icon + email navigation. */
-  item_type?: "task" | "email" | null;
+  item_type?: "task" | "email" | "meeting" | null;
   email_from?: string | null;
   email_inbox_id?: string | null;
   email_message_id?: string | null;
+  meeting_id?: string | null;
 };
 
 type Section = {
+  key: string;
   title: string;
   status: string;
   data: GroupedTaskRow[];
@@ -121,6 +123,8 @@ const CompactTaskRow = memo(function CompactTaskRow({
             size={STATUS_ICON_SIZE - 4}
             color={resolveInboxEmailIconColor(item.status)}
           />
+        ) : item.item_type === "meeting" ? (
+          <CalendarNavIcon size={STATUS_ICON_SIZE - 4} color={colors.muted} />
         ) : (
           <TaskStatusIcon status={item.status} size={STATUS_ICON_SIZE} />
         )}
@@ -224,18 +228,19 @@ export function GroupedTaskList({
 
   const sections = useMemo<Section[]>(() => {
     if (groupByStatus === false) {
-      return [{ title: "", status: "", data: mergedRows }];
+      return [{ key: "all", title: "", status: "", data: mergedRows }];
     }
     if (groupByStatus === "inbox") {
       return groupInboxRowsByAttentionStatus(mergedRows).map((group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: collapsed.has(group.status) ? [] : group.data,
       }));
     }
-    // Keep every status header visible (incl. empty) so chrome matches desktop Tasks.
     return groupTasksByStatus(mergedRows, { includeEmpty: true }).map(
       (group) => ({
+        key: group.status,
         title: group.label,
         status: group.status,
         data: collapsed.has(group.status) ? [] : group.tasks,
@@ -243,12 +248,22 @@ export function GroupedTaskList({
     );
   }, [collapsed, groupByStatus, mergedRows]);
 
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () =>
+      flattenGroupedSections(sections, {
+        includeEmptyFooter: groupByStatus
+          ? (section) => section.data.length === 0
+          : undefined,
+      }),
+    [groupByStatus, sections],
+  );
+
   const navigableIds = useMemo(
     () => sections.flatMap((section) => section.data.map((row) => row.id)),
     [sections],
   );
 
-  const listRef = useRef<SectionList<GroupedTaskRow, Section>>(null);
+  const listRef = useRef<FlashListRef<FlatGroupedRow<GroupedTaskRow>>>(null);
   const rowsById = useMemo(() => {
     const map = new Map<string, GroupedTaskRow>();
     for (const row of mergedRows) map.set(row.id, row);
@@ -269,16 +284,12 @@ export function GroupedTaskList({
     onActivate: activateRow,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      const location = findSectionListLocation(sections, id);
-      if (!location) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          ...location,
-          animated: true,
-          viewPosition: 0.35,
-        });
+        listRef.current.scrollToIndex({ index, animated: true, viewPosition: 0.35 });
       } catch {
-        // SectionList can throw before layout; ignore.
+        /* layout race */
       }
     },
   });
@@ -292,12 +303,11 @@ export function GroupedTaskList({
     });
   }, []);
 
-  const renderItem = useCallback(
-    ({ item }: { item: GroupedTaskRow }) => {
+  const renderTaskItem = useCallback(
+    (item: GroupedTaskRow, { highlighted }: { highlighted: boolean }) => {
       const assigneeAvatarSrc = item.assignee_id
         ? (avatarSrcById[item.assignee_id] ?? null)
         : null;
-      const highlighted = highlightedId === item.id;
       const selected = selectedId === item.id;
       let row: ReactElement;
       if (rowLayout === "inbox") {
@@ -339,7 +349,6 @@ export function GroupedTaskList({
     [
       avatarSrcById,
       contentConstrained,
-      highlightedId,
       isPad,
       onPressRow,
       rowLayout,
@@ -348,10 +357,8 @@ export function GroupedTaskList({
     ],
   );
 
-  const stickyHeaders = isPad && Boolean(groupByStatus);
-
   const renderSectionHeader = useCallback(
-    ({ section }: { section: Section }) => {
+    (section: Section) => {
       if (!groupByStatus) return null;
       const onAdd =
         onAddToStatus && section.status !== "overdue" && section.status !== "agents"
@@ -364,8 +371,6 @@ export function GroupedTaskList({
               onAddToStatus(section.status);
             }
           : undefined;
-      // Inbox attention groups use the project-type subgroup chrome
-      // (label + divider) — desktop `ProjectTypeGroupSection` parity.
       if (groupByStatus === "inbox") {
         return constrain(
           <ProjectTypeGroupHeader
@@ -390,17 +395,11 @@ export function GroupedTaskList({
         />,
       );
     },
-    [
-      collapsed,
-      constrain,
-      groupByStatus,
-      onAddToStatus,
-      toggleStatus,
-    ],
+    [collapsed, constrain, groupByStatus, onAddToStatus, toggleStatus],
   );
 
   const renderSectionFooter = useCallback(
-    ({ section }: { section: Section }) => {
+    (section: Section) => {
       if (!groupByStatus) return null;
       return statusGroupEmptySectionFooter(sections, section);
     },
@@ -412,29 +411,24 @@ export function GroupedTaskList({
   ) : null;
 
   return (
-    <SectionList
+    <BacksterGroupedList
       ref={listRef}
-      style={ui.screen}
-      sections={sections as SectionListData<GroupedTaskRow, Section>[]}
-      keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled={stickyHeaders}
+      sections={sections}
+      stickySectionHeaders={isPad && Boolean(groupByStatus)}
+      highlightedId={highlightedId}
+      renderItem={renderTaskItem}
+      renderSectionHeader={(section) => renderSectionHeader(section as Section)}
+      renderSectionFooter={
+        groupByStatus
+          ? (section) => renderSectionFooter(section as Section)
+          : undefined
+      }
+      emptyText={emptyText}
+      listHeader={listHeaderElement}
       refreshing={refreshing}
       onRefresh={onRefresh}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={listHeaderElement}
-      ListEmptyComponent={
-        emptyText
-          ? constrain(<Text style={ui.empty}>{emptyText}</Text>)
-          : null
-      }
-      renderSectionHeader={renderSectionHeader}
-      renderSectionFooter={renderSectionFooter}
-      renderItem={renderItem}
-      contentContainerStyle={{
-        width: "100%",
-        paddingTop: listHeader ? 0 : 8,
-        paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
-      }}
+      estimatedItemSize={rowLayout === "inbox" ? 72 : isPad ? 88 : 56}
+      estimatedHeaderSize={44}
     />
   );
 }

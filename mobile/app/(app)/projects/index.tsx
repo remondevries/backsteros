@@ -1,19 +1,19 @@
-import type { Document, Project, Task } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
-  RefreshControl,
-  SectionList,
   Text,
   View,
-  type SectionListData,
 } from "react-native";
 
+import { AreasHeader } from "../../../components/areas-header";
 import { ListSearchField } from "../../../components/list-search-field";
-import { ProjectIcon } from "../../../components/project-icon";
+import { BacksterGroupedList } from "../../../components/lists/index";
+import { ProjectOcticon } from "../../../components/project-octicon";
 import {
   ProjectOverviewListHeader,
   ProjectOverviewListRow,
@@ -21,326 +21,284 @@ import {
 import { ProjectProgressRing } from "../../../components/project-progress-ring";
 import { ProjectStatusIcon } from "../../../components/project-status-icon";
 import { ProjectTypeGroupHeader } from "../../../components/project-type-group-header";
-import { ProjectsHeader } from "../../../components/projects-header";
+import { PropertyTextSheet } from "../../../components/property-text-sheet";
 import {
   StatusGroupHeader,
   statusGroupEmptySectionFooter,
 } from "../../../components/status-group-header";
 import { projectDetailHref } from "../../../lib/detail-href";
 import { isPadDevice } from "../../../lib/device";
-import { getMobileEnvironment } from "../../../lib/env";
-import { findSectionListLocation } from "../../../lib/list-keyboard-nav";
+import {
+  groupProjectsByNestedArea,
+  projectNestedAreaCollapseKey,
+  type NestedAreaRef,
+} from "../../../lib/group-projects-by-area";
+import {
+  findFlatGroupedRowIndex,
+  flattenGroupedSections,
+  type FlatGroupedRow,
+} from "../../../lib/lists/flatten-grouped-sections";
 import { matchesListSearch } from "../../../lib/list-search";
 import {
-  aggregateTaskProgressByProjectId,
+  PROJECT_AREA_FILTER_ALL,
+  PROJECT_AREA_FILTERS,
+  PROJECT_AREA_LABELS,
+  type ProjectArea,
+} from "../../../lib/project-areas";
+import {
   formatProjectTaskProgressPercent,
   type ProjectTaskProgress,
 } from "../../../lib/project-progress-ring";
-import { useMobilePowerSync } from "../../../lib/powersync-context";
-import {
-  filterProjectsByArea,
-  PROJECT_AREA_FILTER_ALL,
-  PROJECT_AREA_FILTERS,
-  type ProjectArea,
-  type ProjectAreaFilter,
-} from "../../../lib/project-areas";
 import {
   groupProjectsByStatus,
   type ProjectStatus,
 } from "../../../lib/project-status";
-import {
-  groupProjectsByType,
-  projectTypeCollapseKey,
-} from "../../../lib/project-type";
 import { getProjectStatusHeaderGradient } from "../../../lib/status-header-gradient";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../../../lib/tab-bar-inset";
 import { colors } from "../../../lib/theme";
 import { ui } from "../../../lib/ui";
 import { useListJkNavigation } from "../../../lib/use-list-jk-navigation";
-import { useLocalQuery } from "../../../lib/use-local-query";
-import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
+import { useAreaActions } from "../../../lib/use-area-actions";
+import {
+  useProjectAreaListScreen,
+  type ProjectListRow as ProjectRow,
+} from "../../../lib/use-project-area-list-screen";
 import { usePullToRevealSearch } from "../../../lib/use-pull-to-reveal-search";
-import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
-import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
 import { useSectionTabShortcuts } from "../../../lib/use-section-tab-shortcuts";
 
-type ProjectRow = {
-  id: string;
-  key: string | null;
-  name: string | null;
-  status: string | null;
-  type: string | null;
-  icon: string | null;
-  priority: number | null;
-  start_date: string | null;
-  due_date: string | null;
-  area: ProjectArea | null;
-  sort_order: number | null;
-};
-
-type TaskProgressRow = {
-  project_id: string | null;
-  status: string | null;
-};
-
-type ProjectListRow =
+type ListRow =
   | {
-      kind: "type-header";
+      kind: "nested-header";
       id: string;
       label: string;
       collapseKey: string;
       collapsed: boolean;
+      areaId: string;
+      parent: ProjectArea | null;
     }
   | { kind: "project"; id: string; project: ProjectRow };
 
 type Section = {
+  key: string;
   title: string;
   status: ProjectStatus;
-  data: ProjectListRow[];
+  data: ListRow[];
 };
 
 const EMPTY_PROGRESS: ProjectTaskProgress = { total: 0, completed: 0 };
 
-function asProjectArea(value: string | null | undefined): ProjectArea | null {
-  if (value === "personal" || value === "business" || value === "clients") {
-    return value;
-  }
-  return null;
-}
+const PROJECTS_SQL = `SELECT id, key, name, status, type, icon, priority, start_date, due_date, area, area_id, sort_order FROM projects
+ WHERE deleted_at IS NULL
+ ORDER BY sort_order ASC, name ASC`;
 
-function buildProjectSections(
+function buildSections(
   projects: readonly ProjectRow[],
+  nestedAreas: readonly NestedAreaRef[],
   collapsedStatuses: ReadonlySet<string>,
-  collapsedTypes: ReadonlySet<string>,
+  collapsedNested: ReadonlySet<string>,
 ): Section[] {
+  const nestedAreaById = new Map(nestedAreas.map((entry) => [entry.id, entry]));
+
   return groupProjectsByStatus(projects).map((group) => {
     const statusCollapsed = collapsedStatuses.has(group.status);
     return {
+      key: group.status,
       title: group.label,
       status: group.status,
       data: statusCollapsed
         ? []
-        : groupProjectsByType(group.projects).flatMap((typeGroup) => {
-            const rows: ProjectListRow[] = [];
-            if (typeGroup.showHeader) {
-              const collapseKey = projectTypeCollapseKey(
-                group.status,
-                typeGroup.type,
-              );
-              const collapsed = collapsedTypes.has(collapseKey);
-              rows.push({
-                kind: "type-header",
-                id: `type:${collapseKey}`,
-                label: typeGroup.label,
-                collapseKey,
-                collapsed,
-              });
-              if (collapsed) return rows;
-            }
-            for (const project of typeGroup.projects) {
-              rows.push({ kind: "project", id: project.id, project });
-            }
-            return rows;
-          }),
+        : groupProjectsByNestedArea(group.projects, nestedAreas).flatMap(
+            (bucket) => {
+              const rows: ListRow[] = [];
+              if (bucket.showHeader && bucket.areaId && bucket.name) {
+                const collapseKey = projectNestedAreaCollapseKey(
+                  group.status,
+                  bucket.areaId,
+                );
+                const collapsed = collapsedNested.has(collapseKey);
+                rows.push({
+                  kind: "nested-header",
+                  id: `nested:${collapseKey}`,
+                  label: bucket.name,
+                  collapseKey,
+                  collapsed,
+                  areaId: bucket.areaId,
+                  parent: nestedAreaById.get(bucket.areaId)?.parent ?? null,
+                });
+                if (collapsed) return rows;
+              }
+              for (const project of bucket.projects) {
+                rows.push({ kind: "project", id: project.id, project });
+              }
+              return rows;
+            },
+          ),
     };
   });
 }
 
-const PROJECTS_SQL = `SELECT id, key, name, status, type, icon, priority, start_date, due_date, area, sort_order FROM projects
- WHERE deleted_at IS NULL
- ORDER BY sort_order ASC, name ASC`;
-
-const TASK_PROGRESS_SQL = `SELECT project_id, status FROM tasks
- WHERE deleted_at IS NULL
-   AND project_id IS NOT NULL`;
-
 export default function ProjectsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { apiUrl } = getMobileEnvironment();
-  const powerSync = useMobilePowerSync();
-  const client = useMobileApiClient();
   const isPad = isPadDevice();
-  const [area, setArea] = useState<ProjectAreaFilter>(PROJECT_AREA_FILTER_ALL);
+  const {
+    area,
+    setArea,
+    sourceRows,
+    rows: areaRows,
+    nestedAreas,
+    progressByProjectId,
+    syncLoading,
+    restLoading,
+    pullRefreshing,
+    restLoaded,
+    error: restError,
+    reloadRest,
+    powerSyncConnected,
+    powerSyncStatus,
+  } = useProjectAreaListScreen({
+    projectsSql: PROJECTS_SQL,
+    projectTypeFilter: "all",
+    includeNestedAreas: true,
+  });
+  const [renameArea, setRenameArea] = useState<{
+    areaId: string;
+    name: string;
+  } | null>(null);
+
+  const reloadAfterAreaWrite = useCallback(
+    () => reloadRest({ userPull: false }),
+    [reloadRest],
+  );
+  const { renameArea: saveAreaRename, deleteArea } =
+    useAreaActions(reloadAfterAreaWrite);
+
+  const projectCountByAreaId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of areaRows) {
+      if (project.areaId) {
+        counts.set(
+          project.areaId,
+          (counts.get(project.areaId) ?? 0) + 1,
+        );
+      }
+    }
+    return counts;
+  }, [areaRows]);
+
+  const confirmDeleteArea = useCallback(
+    (input: {
+      areaId: string;
+      name: string;
+      parent: ProjectArea | null;
+    }) => {
+      if (!input.parent) return;
+      const projectCount = projectCountByAreaId.get(input.areaId) ?? 0;
+      const message =
+        projectCount > 0
+          ? `Are you sure you want to delete this area? ${projectCount} project${projectCount === 1 ? "" : "s"} will move to ${PROJECT_AREA_LABELS[input.parent]}.`
+          : "Are you sure you want to delete this area? This action cannot be undone.";
+      Alert.alert(`Delete ${input.name}?`, message, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void deleteArea(input.areaId).catch((reason) => {
+              Alert.alert(
+                "Could not delete area",
+                reason instanceof Error ? reason.message : String(reason),
+              );
+            });
+          },
+        },
+      ]);
+    },
+    [deleteArea, projectCountByAreaId],
+  );
+
   const [collapsedStatuses, setCollapsedStatuses] = useState<Set<string>>(
     () => new Set(),
   );
-  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(
+  const [collapsedNested, setCollapsedNested] = useState<Set<string>>(
     () => new Set(),
   );
-  const [pullRefreshing, setPullRefreshing] = useState(false);
   const search = usePullToRevealSearch({ suppress: pullRefreshing });
 
-  const onAreaTabIndex = useCallback((index: number) => {
-    const next = PROJECT_AREA_FILTERS[index];
-    if (next) setArea(next);
-  }, []);
+  const onAreaTabIndex = useCallback(
+    (index: number) => {
+      const next = PROJECT_AREA_FILTERS[index];
+      if (next) setArea(next);
+    },
+    [setArea],
+  );
 
   useSectionTabShortcuts({
     sectionCount: PROJECT_AREA_FILTERS.length,
     onSelectIndex: onAreaTabIndex,
   });
 
-  const { data: syncedProjects, isLoading: syncLoading } =
-    useLocalQuery<ProjectRow>(PROJECTS_SQL);
-  const { data: syncedTaskRows } = useLocalQuery<TaskProgressRow>(
-    TASK_PROGRESS_SQL,
-  );
-
-  const [restRows, setRestRows] = useState<ProjectRow[] | null>(null);
-  const [restProgress, setRestProgress] = useState<
-    Record<string, ProjectTaskProgress>
-  >({});
-  const [restError, setRestError] = useState<string | null>(null);
-  const [restLoading, setRestLoading] = useState(false);
-  const restRowsRef = useRef(restRows);
-  restRowsRef.current = restRows;
-
   useLayoutEffect(() => {
     navigation.setOptions({
-      header: () => <ProjectsHeader area={area} onAreaChange={setArea} />,
+      header: () => (
+        <AreasHeader
+          area={area}
+          onAreaChange={setArea}
+        />
+      ),
     });
-  }, [area, navigation]);
-
-  const localRows = useMemo(
-    () =>
-      (syncedProjects ?? []).map((row) => ({
-        ...row,
-        area: asProjectArea(row.area),
-        type: row.type ?? "general",
-        icon: row.icon ?? null,
-        priority: row.priority ?? 0,
-        start_date: row.start_date ?? null,
-        due_date: row.due_date ?? null,
-        sort_order: row.sort_order ?? 0,
-      })),
-    [syncedProjects],
-  );
-
-  const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
-    const userPull = opts?.userPull === true;
-    if (userPull) {
-      setPullRefreshing(true);
-    } else if (restRowsRef.current == null) {
-      setRestLoading(true);
-    }
-    setRestError(null);
-    try {
-      const [projectsBody, tasksBody] = await Promise.all([
-        client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-        client
-          .requestJson<{ tasks: Task[] }>("/api/v1/tasks")
-          .catch(() => ({ tasks: [] as Task[] })),
-      ]);
-      setRestRows(
-        (projectsBody.projects ?? []).map((project) => ({
-          id: project.id,
-          key: project.key,
-          name: project.name,
-          status: project.status,
-          type: project.type ?? "general",
-          icon: project.icon ?? null,
-          priority: project.priority ?? 0,
-          start_date: project.startDate ?? null,
-          due_date: project.dueDate ?? null,
-          area: asProjectArea(project.area),
-          sort_order: project.sortOrder ?? 0,
-        })),
-      );
-      setRestProgress(
-        aggregateTaskProgressByProjectId(
-          (tasksBody.tasks ?? []).map((task) => ({
-            project_id: task.projectId,
-            status: task.status,
-          })),
-        ),
-      );
-    } catch (reason) {
-      const detail =
-        reason instanceof Error ? reason.message : String(reason);
-      setRestError(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
-      );
-    } finally {
-      if (userPull) setPullRefreshing(false);
-      setRestLoading(false);
-    }
-  }, [apiUrl, client]);
-
-  useRestListHydration(reloadRest);
-
-  const sourceRows = resolveSyncedOrRestRows({
-    localRows,
-    restRows,
-    connected: powerSync.connected,
-  });
+  }, [area, navigation, setArea]);
 
   const rows = useMemo(
     () =>
-      filterProjectsByArea(sourceRows, area).filter((project) =>
+      areaRows.filter((project) =>
         matchesListSearch(search.query, project.name, project.key),
       ),
-    [area, search.query, sourceRows],
+    [areaRows, search.query],
   );
 
   const sections = useMemo(
-    () => buildProjectSections(rows, collapsedStatuses, collapsedTypes),
-    [collapsedStatuses, collapsedTypes, rows],
+    () =>
+      buildSections(rows, nestedAreas, collapsedStatuses, collapsedNested),
+    [collapsedNested, collapsedStatuses, nestedAreas, rows],
+  );
+
+  const { rowIndexByItemId: flatMeta } = useMemo(
+    () =>
+      flattenGroupedSections(sections, {
+        includeEmptyFooter: (section) => section.data.length === 0,
+      }),
+    [sections],
   );
 
   const navigableIds = useMemo(
     () =>
       sections.flatMap((section) =>
         section.data
-          .filter((row): row is Extract<ProjectListRow, { kind: "project" }> =>
+          .filter((row): row is Extract<ListRow, { kind: "project" }> =>
             row.kind === "project",
           )
-          .map((row) => row.project.id),
+          .map((row) => row.id),
       ),
     [sections],
   );
 
-  const listRef = useRef<SectionList<ProjectListRow, Section>>(null);
-
+  const listRef = useRef<FlashListRef<FlatGroupedRow<ListRow>>>(null);
   const openProject = useCallback(
     (id: string) => {
       router.push(projectDetailHref(id));
     },
     [router],
   );
-
   const { highlightedId } = useListJkNavigation({
     itemIds: navigableIds,
-    enabled: true,
     onActivate: openProject,
     onHighlightChange: (id) => {
       if (!id || !listRef.current) return;
-      // Section list rows use ProjectListRow ids (type-header vs project).
-      const location = findSectionListLocation(
-        sections.map((section) => ({
-          data: section.data
-            .filter(
-              (row): row is Extract<ProjectListRow, { kind: "project" }> =>
-                row.kind === "project",
-            )
-            .map((row) => ({ id: row.project.id })),
-        })),
-        id,
-      );
-      if (!location) return;
-      // Remap to real section item index including type headers.
-      const section = sections[location.sectionIndex];
-      if (!section) return;
-      const itemIndex = section.data.findIndex(
-        (row) => row.kind === "project" && row.project.id === id,
-      );
-      if (itemIndex < 0) return;
+      const index = findFlatGroupedRowIndex(flatMeta, id);
+      if (index == null) return;
       try {
-        listRef.current.scrollToLocation({
-          sectionIndex: location.sectionIndex,
-          itemIndex,
+        listRef.current.scrollToIndex({
+          index,
           animated: true,
           viewPosition: 0.35,
         });
@@ -359,39 +317,28 @@ export default function ProjectsScreen() {
     });
   }, []);
 
-  const toggleTypeGroup = useCallback((collapseKey: string) => {
-    setCollapsedTypes((current) => {
+  const toggleNested = useCallback((collapseKey: string) => {
+    setCollapsedNested((current) => {
       const next = new Set(current);
       if (next.has(collapseKey)) next.delete(collapseKey);
       else next.add(collapseKey);
       return next;
     });
   }, []);
-  const localProgress = useMemo(
-    () => aggregateTaskProgressByProjectId(syncedTaskRows ?? []),
-    [syncedTaskRows],
-  );
-  const progressByProjectId = useMemo(() => {
-    if (Object.keys(localProgress).length > 0) return localProgress;
-    if (restRows != null) return restProgress;
-    return localProgress;
-  }, [localProgress, restProgress, restRows]);
 
   const hasShownDataRef = useRef(false);
   if (sourceRows.length > 0) hasShownDataRef.current = true;
 
-  // Full-screen spinner only on first load — keep the list mounted so
-  // remounts / brief empty sync windows cannot jump layout or re-arm search.
   const loading =
     !hasShownDataRef.current &&
     sourceRows.length === 0 &&
     (restLoading ||
-      (restRows == null &&
-        (powerSync.status === "connecting" ||
-          powerSync.status === "idle" ||
+      (!restLoaded &&
+        (powerSyncStatus === "connecting" ||
+          powerSyncStatus === "idle" ||
           syncLoading)));
   const error =
-    sourceRows.length === 0 && restError && !powerSync.connected
+    sourceRows.length === 0 && restError && !powerSyncConnected
       ? restError
       : null;
 
@@ -423,59 +370,65 @@ export default function ProjectsScreen() {
           placeholder="Search projects"
         />
       ) : null}
-      <SectionList
+      <BacksterGroupedList
         ref={listRef}
-        style={ui.screen}
-        sections={sections as SectionListData<ProjectListRow, Section>[]}
-        keyExtractor={(item) => item.id}
-        stickySectionHeadersEnabled={isPad}
-        keyboardShouldPersistTaps="handled"
+        sections={sections}
+        stickySectionHeaders={isPad}
+        highlightedId={highlightedId}
+        estimatedItemSize={isPad ? 88 : 56}
+        estimatedHeaderSize={44}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
         onScroll={search.onScroll}
         onScrollEndDrag={search.onScrollEndDrag}
         scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefreshing}
-            onRefresh={() => {
-              void reloadRest({ userPull: true });
-            }}
-            tintColor={colors.muted}
-            colors={[colors.muted]}
-          />
-        }
+        refreshing={pullRefreshing}
+        onRefresh={() => {
+          void reloadRest({ userPull: true });
+        }}
         contentContainerStyle={{
           paddingTop: isPad ? 0 : 8,
-          paddingBottom: FLOATING_TAB_BAR_CLEARANCE,
         }}
-        ListHeaderComponent={isPad ? <ProjectOverviewListHeader /> : null}
-        ListEmptyComponent={
-          <Text style={ui.empty}>
-            {search.query.trim()
-              ? "No matching projects."
-              : "No projects in this area."}
-          </Text>
+        listHeader={isPad ? <ProjectOverviewListHeader /> : null}
+        emptyText={
+          search.query.trim()
+            ? "No matching projects."
+            : area === PROJECT_AREA_FILTER_ALL
+              ? "No projects."
+              : "No projects in this area."
         }
-        renderSectionHeader={({ section }) => (
+        renderSectionHeader={(section) => (
           <StatusGroupHeader
             title={section.title}
-            icon={<ProjectStatusIcon status={section.status} size={14} />}
-            gradient={getProjectStatusHeaderGradient(section.status)}
-            collapsed={collapsedStatuses.has(section.status)}
-            onToggle={() => toggleStatusGroup(section.status)}
+            icon={<ProjectStatusIcon status={section.key} size={14} />}
+            gradient={getProjectStatusHeaderGradient(section.key as ProjectStatus)}
+            collapsed={collapsedStatuses.has(section.key)}
+            onToggle={() => toggleStatusGroup(section.key as ProjectStatus)}
           />
         )}
-        renderSectionFooter={({ section }) =>
-          statusGroupEmptySectionFooter(sections, section)
+        renderSectionFooter={(section) =>
+          statusGroupEmptySectionFooter(sections, {
+            ...section,
+            status: section.key,
+          })
         }
-        renderItem={({ item }) => {
-          if (item.kind === "type-header") {
+        renderItem={(item, { highlighted }) => {
+          if (item.kind === "nested-header") {
             return (
               <ProjectTypeGroupHeader
                 title={item.label}
                 collapsed={item.collapsed}
-                onToggle={() => toggleTypeGroup(item.collapseKey)}
+                onToggle={() => toggleNested(item.collapseKey)}
+                onRename={() =>
+                  setRenameArea({ areaId: item.areaId, name: item.label })
+                }
+                onDelete={() =>
+                  confirmDeleteArea({
+                    areaId: item.areaId,
+                    name: item.label,
+                    parent: item.parent,
+                  })
+                }
                 spaced
               />
             );
@@ -483,7 +436,6 @@ export default function ProjectsScreen() {
 
           const project = item.project;
           const progress = progressByProjectId[project.id] ?? EMPTY_PROGRESS;
-          const highlighted = highlightedId === project.id;
 
           if (isPad) {
             return (
@@ -510,7 +462,12 @@ export default function ProjectsScreen() {
               ]}
             >
               <View style={ui.rowIcon}>
-                <ProjectIcon size={18} color={colors.foreground} />
+                <ProjectOcticon
+                  icon={project.icon}
+                  type={project.type}
+                  size={18}
+                  color={colors.foreground}
+                />
               </View>
               <View style={ui.rowBody}>
                 <View style={[ui.rowTitleLine, { alignItems: "center" }]}>
@@ -538,6 +495,23 @@ export default function ProjectsScreen() {
           );
         }}
       />
+      {renameArea ? (
+        <PropertyTextSheet
+          visible
+          title="Rename area"
+          value={renameArea.name}
+          placeholder="Area name"
+          autoCapitalize="words"
+          validate={(value) =>
+            value.trim().length > 0 ? null : "Area name is required."
+          }
+          onClose={() => setRenameArea(null)}
+          onSave={async (value) => {
+            await saveAreaRename(renameArea.areaId, value);
+            setRenameArea(null);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

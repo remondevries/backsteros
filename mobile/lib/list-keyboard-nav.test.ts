@@ -5,6 +5,7 @@ import {
   findSectionListLocation,
   isListKeyboardActivateKey,
   listKeyboardNavDirection,
+  scrollFlashListToItemId,
   stepListKeyboardIndex,
 } from "./list-keyboard-nav.ts";
 
@@ -49,5 +50,19 @@ describe("list-keyboard-nav", () => {
       itemIndex: 0,
     });
     assert.equal(findSectionListLocation(sections, "z"), null);
+  });
+
+  it("scrolls flash list rows by item id", () => {
+    const calls: Array<{ index: number; viewPosition?: number }> = [];
+    scrollFlashListToItemId(
+      {
+        scrollToIndex: (opts) => {
+          calls.push(opts);
+        },
+      },
+      new Map([["b", 2]]),
+      "b",
+    );
+    assert.deepEqual(calls, [{ index: 2, animated: true, viewPosition: 0.35 }]);
   });
 });

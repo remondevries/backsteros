@@ -14,9 +14,11 @@ import {
   buildTaskImageStorageKey,
   checksumForContent,
   ensureProjectVaultFolders,
+  isCloudCoreVaultHost,
   isSpacesConfigured,
   isStorageConfigured,
   renameProjectVaultFolder,
+  resolveVaultPath,
   rewriteProjectStorageKeyPrefix,
   rewriteProjectVaultWorkingDirectory,
   setVaultPathCache,
@@ -24,9 +26,10 @@ import {
 
 test("isStorageConfigured uses vault path cache or env", () => {
   const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
-  const previousCache = null;
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
   setVaultPathCache(null);
   delete process.env.BACKSTEROS_VAULT_PATH;
+  delete process.env.CORE_REPLICATION_ROLE;
   assert.equal(isStorageConfigured(), false);
   assert.equal(isSpacesConfigured(), false);
 
@@ -37,9 +40,36 @@ test("isStorageConfigured uses vault path cache or env", () => {
   process.env.BACKSTEROS_VAULT_PATH = "/tmp/from-env";
   assert.equal(isStorageConfigured(), true);
 
-  setVaultPathCache(previousCache);
+  setVaultPathCache(null);
   if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
   else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+  if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+  else process.env.CORE_REPLICATION_ROLE = previousRole;
+});
+
+test("cloud-core resolveVaultPath ignores settings Mac path and uses env only", async () => {
+  const previousEnv = process.env.BACKSTEROS_VAULT_PATH;
+  const previousRole = process.env.CORE_REPLICATION_ROLE;
+  setVaultPathCache(null);
+  process.env.CORE_REPLICATION_ROLE = "cloud";
+  process.env.BACKSTEROS_VAULT_PATH = "/data/vault";
+
+  assert.equal(isCloudCoreVaultHost(), true);
+  const resolved = await resolveVaultPath("/Users/remondevries/BacksterOS");
+  assert.equal(resolved, path.resolve("/data/vault"));
+
+  setVaultPathCache(null);
+  delete process.env.BACKSTEROS_VAULT_PATH;
+  await assert.rejects(
+    () => resolveVaultPath("/Users/remondevries/BacksterOS"),
+    /STORAGE_NOT_CONFIGURED/,
+  );
+
+  setVaultPathCache(null);
+  if (previousEnv === undefined) delete process.env.BACKSTEROS_VAULT_PATH;
+  else process.env.BACKSTEROS_VAULT_PATH = previousEnv;
+  if (previousRole === undefined) delete process.env.CORE_REPLICATION_ROLE;
+  else process.env.CORE_REPLICATION_ROLE = previousRole;
 });
 
 test("storage keys follow Obsidian vault layout", () => {

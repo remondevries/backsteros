@@ -1,6 +1,7 @@
 import {
   assertVaultPathUsable,
   getVaultPathCache,
+  isCloudCoreVaultHost,
   isStorageConfigured,
   setVaultPathCache,
 } from "../lib/storage.js";
@@ -25,6 +26,20 @@ export async function warmVaultPathCache(workspaceId: string): Promise<void> {
   if (warmedForWorkspaceId === workspaceId && isStorageConfigured()) {
     return;
   }
+  if (isCloudCoreVaultHost()) {
+    const envPath = process.env.BACKSTEROS_VAULT_PATH?.trim();
+    if (envPath) {
+      setVaultPathCache(envPath);
+    }
+    // Scrub any leftover Mac path that landed in cloud settings.
+    try {
+      await scrubCloudMachineLocalSettings(workspaceId);
+    } catch {
+      // Non-fatal — env vault still works.
+    }
+    warmedForWorkspaceId = workspaceId;
+    return;
+  }
   const settings = (await circleService.getSettings(
     workspaceId,
   )) as Record<string, unknown>;
@@ -41,6 +56,15 @@ export async function getVaultStorageSettings(
   workspaceId: string,
 ): Promise<VaultStorageSettings> {
   await warmVaultPathCache(workspaceId);
+  if (isCloudCoreVaultHost()) {
+    const vaultPath =
+      process.env.BACKSTEROS_VAULT_PATH?.trim() || getVaultPathCache() || null;
+    return {
+      configured: Boolean(vaultPath),
+      provider: "local-vault",
+      vaultPath,
+    };
+  }
   const settings = (await circleService.getSettings(
     workspaceId,
   )) as Record<string, unknown>;
@@ -60,6 +84,9 @@ export async function updateVaultStorageSettings(
   workspaceId: string,
   vaultPath: string,
 ): Promise<VaultStorageSettings> {
+  if (isCloudCoreVaultHost()) {
+    throw new Error("VAULT_PATH_CLOUD_FORBIDDEN");
+  }
   const trimmed = vaultPath.trim();
   if (!trimmed) {
     throw new Error("VAULT_PATH_REQUIRED");
@@ -78,4 +105,19 @@ export async function updateVaultStorageSettings(
     // Vault path is still saved even if a project folder fails.
   }
   return getVaultStorageSettings(workspaceId);
+}
+
+/** Strip leftover Mac vaultPath from cloud workspace_settings rows. */
+export async function scrubCloudMachineLocalSettings(
+  workspaceId: string,
+): Promise<boolean> {
+  if (!isCloudCoreVaultHost()) return false;
+  const settings = (await circleService.getSettings(
+    workspaceId,
+  )) as Record<string, unknown>;
+  if (!("vaultPath" in settings)) return false;
+  const next = { ...settings };
+  delete next.vaultPath;
+  await circleService.replaceSettings(workspaceId, next);
+  return true;
 }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 
 import type {
   CreateProjectInput,
@@ -16,16 +16,19 @@ import {
   createMeetingSchema,
   updateHabitSchema,
   updateMeetingSchema,
+  updateTaskCommentSchema,
   financialCategoryInputSchema,
   financialGoalInputSchema,
   financialRecurringInputSchema,
   cashflowPlannerEntryInputSchema,
   letterInputSchema,
+  areaInputSchema,
   organizationInputSchema,
 } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
+  areas,
   bankAccounts,
   documents,
   contacts,
@@ -40,6 +43,7 @@ import {
   organizations,
   projects,
   syncEvents,
+  taskComments,
   tasks,
   workspaceSettings,
 } from "../db/schema.js";
@@ -52,7 +56,19 @@ import { sanitizeWorkspaceSettings } from "./cursor-settings.js";
 import * as financeService from "./finance/finance.js";
 import * as habitService from "./habits.js";
 import * as meetingService from "./meetings.js";
+import * as taskCommentService from "./task-comments.js";
 import * as taskProjectService from "./tasks-projects.js";
+import {
+  appendSyncEvent,
+  getWorkspaceLastSyncId,
+  recordRestEntitySyncEvent,
+} from "./sync-log.js";
+
+export {
+  appendSyncEvent,
+  getWorkspaceLastSyncId,
+  recordRestEntitySyncEvent,
+} from "./sync-log.js";
 
 const PULL_PAGE_SIZE = 100;
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
@@ -151,6 +167,20 @@ function documentSnapshot(row: typeof documents.$inferSelect) {
   };
 }
 
+function areaSnapshot(row: typeof areas.$inferSelect) {
+  return {
+    id: row.id,
+    name: row.name,
+    parent: row.parent,
+    icon: row.icon,
+    color: row.color,
+    sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
 function organizationSnapshot(row: typeof organizations.$inferSelect) {
   return {
     id: row.id, number: row.number, key: row.key, name: row.name,
@@ -195,13 +225,7 @@ async function maxCursor(
   workspaceId: string,
   executor: DbExecutor = db,
 ): Promise<number> {
-  const [row] = await executor
-    .select({ cursor: syncEvents.cursor })
-    .from(syncEvents)
-    .where(eq(syncEvents.workspaceId, workspaceId))
-    .orderBy(desc(syncEvents.cursor))
-    .limit(1);
-  return row?.cursor ?? 0;
+  return getWorkspaceLastSyncId(workspaceId, executor);
 }
 
 export async function bootstrapSync(workspaceId: string) {
@@ -223,9 +247,11 @@ export async function bootstrapSync(workspaceId: string) {
     circleService.getSettings(workspaceId),
   ]);
 
+  const lastSyncId = await maxCursor(workspaceId);
   return {
     schema_version: SYNC_SCHEMA_VERSION,
-    cursor: await maxCursor(workspaceId),
+    cursor: lastSyncId,
+    last_sync_id: lastSyncId,
     spaces_configured: isSpacesConfigured(),
     snapshot: {
       projects: projectRows.map(projectSnapshot),
@@ -266,6 +292,7 @@ export async function pullSync(workspaceId: string, cursor: number) {
   return {
     schema_version: SYNC_SCHEMA_VERSION,
     cursor: nextCursor,
+    last_sync_id: nextCursor,
     has_more: hasMore,
     events: page.map((row) => ({
       cursor: row.cursor,
@@ -289,14 +316,256 @@ async function recordSyncEvent(input: {
   operation: SyncOperation;
   payload: Record<string, unknown>;
 }, executor: DbExecutor = db) {
-  await executor.insert(syncEvents).values({
+  await appendSyncEvent(input, executor);
+}
+
+/**
+ * REST / agent document content writes must enter the same sync_events log as
+ * PowerSync mutations so replicas and clients share one ordered stream.
+ */
+export async function recordDocumentContentSyncEvent(input: {
+  workspaceId: string;
+  documentId: string;
+  mutationId: string;
+  deviceId?: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  await recordSyncEvent({
     workspaceId: input.workspaceId,
     mutationId: input.mutationId,
-    deviceId: input.deviceId ?? null,
-    entity: input.entity,
-    entityId: input.entityId,
-    operation: input.operation,
+    deviceId: input.deviceId,
+    entity: "document",
+    entityId: input.documentId,
+    operation: "upsert",
     payload: input.payload,
+  });
+}
+
+/** REST task writes → ordered sync_events (same clock as PowerSync uploads). */
+export async function recordTaskRestSyncEvent(
+  workspaceId: string,
+  row: typeof tasks.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "task",
+    entityId: row.id,
+    operation,
+    payload: taskSnapshot(row),
+    mutationId: `rest:task:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+/** REST project writes → ordered sync_events. */
+export async function recordProjectRestSyncEvent(
+  workspaceId: string,
+  row: typeof projects.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "project",
+    entityId: row.id,
+    operation,
+    payload: projectSnapshot(row),
+    mutationId: `rest:project:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+/** REST area writes → ordered sync_events. */
+export async function recordAreaRestSyncEvent(
+  workspaceId: string,
+  row: typeof areas.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "area",
+    entityId: row.id,
+    operation,
+    payload: areaSnapshot(row),
+    mutationId: `rest:area:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordOrganizationRestSyncEvent(
+  workspaceId: string,
+  row: typeof organizations.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "organization",
+    entityId: row.id,
+    operation,
+    payload: organizationSnapshot(row),
+    mutationId: `rest:organization:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordContactRestSyncEvent(
+  workspaceId: string,
+  row: typeof contacts.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "contact",
+    entityId: row.id,
+    operation,
+    payload: contactSnapshot(row),
+    mutationId: `rest:contact:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordLetterRestSyncEvent(
+  workspaceId: string,
+  row: typeof letters.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "letter",
+    entityId: row.id,
+    operation,
+    payload: letterSnapshot(row),
+    mutationId: `rest:letter:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordHabitRestSyncEvent(
+  workspaceId: string,
+  row: typeof habits.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "habit",
+    entityId: row.id,
+    operation,
+    payload: habitSnapshot(row),
+    mutationId: `rest:habit:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordMeetingRestSyncEvent(
+  workspaceId: string,
+  row: typeof meetings.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "meeting",
+    entityId: row.id,
+    operation,
+    payload: meetingSnapshot(row),
+    mutationId: `rest:meeting:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordTaskCommentRestSyncEvent(
+  workspaceId: string,
+  row: typeof taskComments.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "task_comment",
+    entityId: row.id,
+    operation,
+    payload: taskCommentSnapshot(row),
+    mutationId: `rest:task_comment:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordWorkspaceSettingRestSyncEvent(
+  workspaceId: string,
+  settings: Record<string, unknown>,
+  updatedAt: Date = new Date(),
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "workspace_setting",
+    entityId: workspaceId,
+    operation: "upsert",
+    payload: { id: workspaceId, settings, updated_at: updatedAt.toISOString() },
+    mutationId: `rest:workspace_setting:${workspaceId}:${updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordBankAccountRestSyncEvent(
+  workspaceId: string,
+  row: typeof bankAccounts.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "bank_account",
+    entityId: row.id,
+    operation,
+    payload: bankAccountSnapshot(row),
+    mutationId: `rest:bank_account:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordFinancialCategoryRestSyncEvent(
+  workspaceId: string,
+  row: typeof financialCategories.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "financial_category",
+    entityId: row.id,
+    operation,
+    payload: financialCategorySnapshot(row),
+    mutationId: `rest:financial_category:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordFinancialGoalRestSyncEvent(
+  workspaceId: string,
+  row: typeof financialGoals.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "financial_goal",
+    entityId: row.id,
+    operation,
+    payload: financialGoalSnapshot(row),
+    mutationId: `rest:financial_goal:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordFinancialRecurringRestSyncEvent(
+  workspaceId: string,
+  row: typeof financialRecurrings.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "financial_recurring",
+    entityId: row.id,
+    operation,
+    payload: financialRecurringSnapshot(row),
+    mutationId: `rest:financial_recurring:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
+  });
+}
+
+export async function recordCashflowPlannerRestSyncEvent(
+  workspaceId: string,
+  row: typeof cashflowPlannerEntries.$inferSelect,
+  operation: SyncOperation,
+): Promise<void> {
+  await recordRestEntitySyncEvent({
+    workspaceId,
+    entity: "cashflow_planner_entry",
+    entityId: row.id,
+    operation,
+    payload: cashflowPlannerEntrySnapshot(row),
+    mutationId: `rest:cashflow_planner_entry:${row.id}:${operation}:${row.updatedAt.getTime()}:${crypto.randomUUID()}`,
   });
 }
 
@@ -352,7 +621,16 @@ const POWERSYNC_SKIPPABLE_ERRORS = new Set([
   "ASSIGNEE_NOT_FOUND",
   "CONTACT_NOT_FOUND",
   "PROJECT_NOT_FOUND",
+  "HABIT_NOT_FOUND",
   "INVALID_HABIT",
+  "INVALID_MEETING",
+  "INVALID_MEETING_DATES",
+  "MEETING_END_BEFORE_START",
+  "INVALID_BANK_ACCOUNT",
+  "INVALID_FINANCIAL_CATEGORY",
+  "INVALID_FINANCIAL_GOAL",
+  "INVALID_FINANCIAL_RECURRING",
+  "INVALID_CASHFLOW_PLANNER_ENTRY",
 ]);
 
 function camelizePayload(
@@ -370,6 +648,13 @@ function camelizePayload(
   return result;
 }
 
+const areaKeys = {
+  name: "name",
+  parent: "parent",
+  icon: "icon",
+  color: "color",
+  sort_order: "sortOrder",
+};
 const organizationKeys = {
   number: "number", key: "key", name: "name", summary: "summary", phone: "phone",
   email: "email", website: "website", address: "address", city: "city",
@@ -454,6 +739,15 @@ const meetingKeys = {
   tracked_minutes: "trackedMinutes",
   tracked_duration_seconds: "trackedDurationSeconds",
   sort_order: "sortOrder",
+};
+const taskCommentKeys = {
+  task_id: "taskId",
+  parent_comment_id: "parentCommentId",
+  author_user_id: "authorUserId",
+  author_contact_id: "authorContactId",
+  author_email: "authorEmail",
+  body: "body",
+  resolved_at: "resolvedAt",
 };
 const financialRecurringKeys = {
   name: "name",
@@ -620,6 +914,22 @@ function meetingSnapshot(row: typeof meetings.$inferSelect) {
     tracked_minutes: row.trackedMinutes ?? null,
     tracked_duration_seconds: row.trackedDurationSeconds ?? null,
     sort_order: row.sortOrder,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+function taskCommentSnapshot(row: typeof taskComments.$inferSelect) {
+  return {
+    id: row.id,
+    task_id: row.taskId,
+    parent_comment_id: row.parentCommentId,
+    author_user_id: row.authorUserId,
+    author_contact_id: row.authorContactId,
+    author_email: row.authorEmail,
+    body: row.body,
+    resolved_at: row.resolvedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
@@ -866,6 +1176,12 @@ export async function applySyncChange(
         executor,
       );
       if (existing) {
+        await documentService.patchDocumentContentMetadataFromSyncPayload(
+          workspaceId,
+          change.entity_id,
+          change.payload,
+          executor,
+        );
         const row = await documentService.updateDocument(
           workspaceId,
           change.entity_id,
@@ -900,6 +1216,44 @@ export async function applySyncChange(
         executor,
       );
       return documentSnapshot(row);
+    }
+
+    case "area": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await circleService.deleteArea(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? areaSnapshot(row) : null;
+      }
+      const existing = await circleService.getAreaById(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, areaKeys);
+      if (existing) {
+        const parsed = areaInputSchema.partial().safeParse(payload);
+        if (!parsed.success) throw new Error("INVALID_AREA");
+        const row = await circleService.updateArea(
+          workspaceId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        return row ? areaSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const parsed = areaInputSchema.safeParse(payload);
+      if (!parsed.success) throw new Error("INVALID_AREA");
+      const row = await circleService.createArea(
+        workspaceId,
+        parsed.data,
+        change.entity_id,
+        executor,
+      );
+      return areaSnapshot(row);
     }
 
     case "organization": {
@@ -1298,6 +1652,73 @@ export async function applySyncChange(
       );
       return meetingSnapshot(row);
     }
+
+    case "task_comment": {
+      if (change.operation === "delete" || isSoftDeletePayload(change.payload)) {
+        const row = await taskCommentService.softDeleteTaskCommentRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? taskCommentSnapshot(row) : null;
+      }
+      const existing = await taskCommentService.getTaskCommentRow(
+        workspaceId,
+        change.entity_id,
+        executor,
+      );
+      const payload = camelizePayload(change.payload, taskCommentKeys);
+      if (existing) {
+        const parsed = updateTaskCommentSchema.safeParse({
+          body: payload.body,
+          resolvedAt: payload.resolvedAt,
+        });
+        if (!parsed.success) throw new Error("INVALID_TASK_COMMENT");
+        const updated = await taskCommentService.updateTaskComment(
+          workspaceId,
+          existing.taskId,
+          change.entity_id,
+          parsed.data,
+          executor,
+        );
+        if (!updated) return null;
+        const row = await taskCommentService.getTaskCommentRow(
+          workspaceId,
+          change.entity_id,
+          executor,
+        );
+        return row ? taskCommentSnapshot(row) : null;
+      }
+      if (change.operation === "patch") return null;
+      const taskId =
+        typeof payload.taskId === "string" ? payload.taskId.trim() : "";
+      const body = typeof payload.body === "string" ? payload.body.trim() : "";
+      if (!taskId || !body) throw new Error("INVALID_TASK_COMMENT");
+      const row = await taskCommentService.createTaskCommentRow(
+        workspaceId,
+        change.entity_id,
+        {
+          taskId,
+          body,
+          parentCommentId:
+            typeof payload.parentCommentId === "string"
+              ? payload.parentCommentId
+              : null,
+          authorUserId:
+            typeof payload.authorUserId === "string"
+              ? payload.authorUserId
+              : null,
+          authorContactId:
+            typeof payload.authorContactId === "string"
+              ? payload.authorContactId
+              : null,
+          authorEmail:
+            typeof payload.authorEmail === "string" ? payload.authorEmail : null,
+        },
+        executor,
+      );
+      return row ? taskCommentSnapshot(row) : null;
+    }
   }
 }
 
@@ -1308,7 +1729,28 @@ export async function pushSyncMutations(input: {
 }) {
   const acceptedMutationIds: string[] = [];
 
+  const { shouldForwardMutationsToLeader, commitMutationsLeaderFirst } =
+    await import("./core-replication/leader-mutations.js");
+
   for (const mutation of input.mutations) {
+    if (shouldForwardMutationsToLeader()) {
+      const changes = mutation.changes.map((change) => ({
+        entity: change.entity,
+        entityId: change.entity_id,
+        operation: change.operation,
+        payload: change.payload,
+        eventMutationId: `${mutation.id}:${change.entity}:${change.entity_id}`,
+      }));
+      await commitMutationsLeaderFirst({
+        workspaceId: input.workspaceId,
+        mutationId: mutation.id,
+        deviceId: input.deviceId,
+        changes,
+      });
+      acceptedMutationIds.push(mutation.id);
+      continue;
+    }
+
     await db.transaction(async (tx) => {
       const [receipt] = await tx
         .insert(mutationReceipts)
@@ -1350,9 +1792,11 @@ export async function pushSyncMutations(input: {
     acceptedMutationIds.push(mutation.id);
   }
 
+  const lastSyncId = await maxCursor(input.workspaceId);
   return {
     schema_version: SYNC_SCHEMA_VERSION,
-    cursor: await maxCursor(input.workspaceId),
+    cursor: lastSyncId,
+    last_sync_id: lastSyncId,
     accepted_mutation_ids: acceptedMutationIds,
   };
 }
@@ -1365,6 +1809,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "task";
     case "documents":
       return "document";
+    case "areas":
+      return "area";
     case "organizations":
       return "organization";
     case "contacts":
@@ -1387,6 +1833,8 @@ function mapPowerSyncTable(table: string): SyncEntity | null {
       return "habit";
     case "meetings":
       return "meeting";
+    case "task_comments":
+      return "task_comment";
     default:
       return null;
   }
@@ -1409,6 +1857,62 @@ export async function applyPowerSyncBatch(input: {
     data?: Record<string, unknown>;
   }>;
 }) {
+  const { shouldForwardMutationsToLeader, commitMutationsLeaderFirst } =
+    await import("./core-replication/leader-mutations.js");
+
+  const changes: Array<{
+    entity: SyncEntity;
+    entityId: string;
+    operation: SyncOperation;
+    payload: Record<string, unknown>;
+    eventMutationId: string;
+  }> = [];
+
+  for (const [index, entry] of input.batch.entries()) {
+    const entity = mapPowerSyncTable(entry.table);
+    if (!entity) continue;
+    const operation = mapPowerSyncOp(entry.op);
+    const payload = entry.data ?? {};
+    changes.push({
+      entity,
+      entityId: entry.id,
+      operation: operation === "patch" ? "upsert" : operation,
+      payload: operation === "delete" ? payload : { ...payload, id: entry.id },
+      eventMutationId: `${input.mutationId}:${index}`,
+    });
+  }
+
+  if (shouldForwardMutationsToLeader()) {
+    const [parentReceipt] = await db
+      .insert(mutationReceipts)
+      .values({
+        workspaceId: input.workspaceId,
+        mutationId: input.mutationId,
+        deviceId: input.deviceId,
+      })
+      .onConflictDoNothing()
+      .returning({ mutationId: mutationReceipts.mutationId });
+    if (!parentReceipt) {
+      return { ok: true as const, duplicate: true };
+    }
+    await commitMutationsLeaderFirst({
+      workspaceId: input.workspaceId,
+      mutationId: input.mutationId,
+      deviceId: input.deviceId,
+      changes,
+    });
+    await db
+      .update(mutationReceipts)
+      .set({ result: { accepted: true, source: "powersync_leader_first" } })
+      .where(
+        and(
+          eq(mutationReceipts.workspaceId, input.workspaceId),
+          eq(mutationReceipts.mutationId, input.mutationId),
+        ),
+      );
+    return { ok: true as const, duplicate: false };
+  }
+
   let duplicate = false;
   await db.transaction(async (tx) => {
     const [receipt] = await tx

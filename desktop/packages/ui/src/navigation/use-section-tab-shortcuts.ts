@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+import { useCommandPaletteRuntimeRefs } from "../components/command-palette/command-palette-context.js";
 import {
   normalizeTabLocation,
   parseSectionTabIndex,
@@ -24,20 +25,20 @@ export function useSectionTabShortcuts({
   enabled = true,
   pathname,
   search = "",
-  commandPaletteOpen = false,
   onNavigate,
 }: {
   enabled?: boolean;
   pathname: string;
   search?: string;
-  commandPaletteOpen?: boolean;
   onNavigate: (href: string) => void;
 }) {
+  const { openRef } = useCommandPaletteRuntimeRefs();
+
   useEffect(() => {
     if (!enabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (commandPaletteOpen) return;
+      if (openRef.current) return;
       if (!shouldHandleGlobalShortcut(event)) return;
 
       const cycle = resolveSectionTabCycleShortcut(event);
@@ -85,5 +86,5 @@ export function useSectionTabShortcuts({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [commandPaletteOpen, enabled, onNavigate, pathname, search]);
+  }, [enabled, onNavigate, openRef, pathname, search]);
 }

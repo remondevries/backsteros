@@ -18,7 +18,7 @@ import {
   keyboardNavListItemClass,
 } from "../../list-nav/keyboard-nav-item.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
-import { useCommandPalette } from "../command-palette/command-palette-context.js";
+import { useCommandPaletteState } from "../command-palette/command-palette-context.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
@@ -139,7 +139,7 @@ export function ProjectWorkingDirectoryTree({
   );
   const folderStateRef = useRef(folderState);
   folderStateRef.current = folderState;
-  const { open: commandPaletteOpen } = useCommandPalette();
+  const { open: commandPaletteOpen } = useCommandPaletteState();
   const { activeZone } = useListKeyboardNavigationZone();
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
     null,

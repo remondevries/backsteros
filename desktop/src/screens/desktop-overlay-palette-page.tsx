@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation } from "@tanstack/react-router";
 import {
   CommandPaletteProvider,
   CommandPaletteView,
@@ -18,7 +18,14 @@ import { DesktopOverlayRoot } from "../shell/desktop-overlay-root";
 function PaletteOverlayController() {
   const { open, openSearch, setOpen } = useCommandPalette();
   const searchFn = useCommandPaletteSearchFn();
-  const [searchParams] = useSearchParams();
+  const { searchStr } = useLocation();
+  const searchParams = useMemo(
+    () =>
+      new URLSearchParams(
+        searchStr.startsWith("?") ? searchStr.slice(1) : searchStr,
+      ),
+    [searchStr],
+  );
 
   useDesktopOverlayAutoResize(open, ".command-dialog");
 

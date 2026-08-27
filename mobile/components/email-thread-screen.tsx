@@ -74,6 +74,7 @@ import { ContactPersonIcon } from "./contact-person-icon";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
+import { FeatureErrorBoundary } from "./feature-error-boundary";
 import { EmailThreadMessageCard } from "./email-thread-message-card";
 import { MoreHorizontalIcon } from "./more-horizontal-icon";
 import { OrganizationIcon } from "./organization-icon";
@@ -1112,7 +1113,8 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
   );
 
   return (
-    <>
+    <FeatureErrorBoundary title="Email thread">
+      <>
       {screenOptions}
       <ScrollView
         style={ui.screen}
@@ -1298,7 +1300,8 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
           </Pressable>
         </View>
       </ScrollView>
-    </>
+      </>
+    </FeatureErrorBoundary>
   );
 }
 

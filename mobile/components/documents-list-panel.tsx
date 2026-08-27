@@ -1,9 +1,10 @@
 import type { Document } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Alert,
   Pressable,
   RefreshControl,
   Text,
@@ -12,9 +13,19 @@ import {
 
 import { isPadDevice } from "../lib/device";
 import { documentDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
+import {
+  compareDocumentTreeRows,
+  documentMoveFolderOptions,
+  documentSiblingRows,
+  reorderSiblingIds,
+} from "../lib/document-tree-actions";
+import {
+  moveDocumentViaPowerSyncOrApi,
+  reorderDocumentsViaPowerSyncOrApi,
+} from "../lib/document-mutations";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import { matchesListSearch, normalizeListSearchQuery } from "../lib/list-search";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
+import { useMobilePowerSync } from "../lib/powersync-context";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
@@ -26,6 +37,11 @@ import { DocumentIcon } from "./document-icon";
 import { FolderIcon } from "./folder-icon";
 import { ContentPageTitle } from "./content-page-title";
 import { ListSearchField } from "./list-search-field";
+import { BacksterFlashList } from "./lists/index";
+import {
+  PropertyOptionSheet,
+  type PropertyOption,
+} from "./property-option-sheet";
 
 export type DocumentRow = {
   id: string;
@@ -34,6 +50,7 @@ export type DocumentRow = {
   kind: string | null;
   parent_id: string | null;
   snippet: string | null;
+  sort_order: number | null;
 };
 
 type DocumentListType = "project" | "knowledge";
@@ -79,16 +96,7 @@ export function knowledgeSelectedIdFromPathname(
 }
 
 function sortDocuments(rows: DocumentRow[]): DocumentRow[] {
-  return [...rows].sort((left, right) => {
-    const leftFolder = left.kind === "folder" ? 0 : 1;
-    const rightFolder = right.kind === "folder" ? 0 : 1;
-    if (leftFolder !== rightFolder) return leftFolder - rightFolder;
-    return (left.path || left.title || "").localeCompare(
-      right.path || right.title || "",
-      undefined,
-      { sensitivity: "base" },
-    );
-  });
+  return [...rows].sort(compareDocumentTreeRows);
 }
 
 function documentsQuery(
@@ -101,21 +109,21 @@ function documentsQuery(
     : "AND (kind IS NULL OR kind != 'folder')";
   if (documentType === "knowledge") {
     return {
-      sql: `SELECT id, title, path, kind, parent_id, snippet FROM documents
+      sql: `SELECT id, title, path, kind, parent_id, snippet, sort_order FROM documents
        WHERE deleted_at IS NULL
          AND type = 'knowledge'
          ${folderFilter}
-       ORDER BY path ASC, title ASC`,
+       ORDER BY sort_order ASC, path ASC, title ASC`,
       params: [],
     };
   }
   return {
-    sql: `SELECT id, title, path, kind, parent_id, snippet FROM documents
+    sql: `SELECT id, title, path, kind, parent_id, snippet, sort_order FROM documents
        WHERE deleted_at IS NULL
          AND type = 'project'
          AND project_id = ?
          ${folderFilter}
-       ORDER BY path ASC, title ASC`,
+       ORDER BY sort_order ASC, path ASC, title ASC`,
     params: [projectId ?? ""],
   };
 }
@@ -208,12 +216,15 @@ export function DocumentsListPanel({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
   const client = useMobileApiClient();
+  const powerSync = useMobilePowerSync();
   const isPad = isPadDevice();
   const [collapsedFolderIds, setCollapsedFolderIds] = useState(
     () => new Set<string>(),
   );
+  const [movePickerItemId, setMovePickerItemId] = useState<string | null>(null);
+  const [treeActionError, setTreeActionError] = useState<string | null>(null);
 
   const pathSelectedId =
     selectedId ??
@@ -226,12 +237,10 @@ export function DocumentsListPanel({
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const { sql: docsSql, params: docsParams } = useMemo(
@@ -267,6 +276,7 @@ export function DocumentsListPanel({
               kind: document.kind,
               parent_id: document.parentId,
               snippet: document.snippet,
+              sort_order: document.sortOrder ?? 0,
             })),
         );
       } catch (reason) {
@@ -340,7 +350,7 @@ export function DocumentsListPanel({
     sectionRoute,
   ]);
 
-  const listRef = useRef<FlatList<VisibleRow>>(null);
+  const listRef = useRef<FlashListRef<VisibleRow>>(null);
   const itemIds = useMemo(() => rows.map((row) => row.id), [rows]);
 
   const activateRow = useCallback(
@@ -379,6 +389,102 @@ export function DocumentsListPanel({
     },
   });
 
+  const runTreeMutation = useCallback(
+    async (action: () => Promise<void>) => {
+      setTreeActionError(null);
+      try {
+        await action();
+        await reload();
+      } catch (reason) {
+        setTreeActionError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
+      }
+    },
+    [reload],
+  );
+
+  const reorderItem = useCallback(
+    (itemId: string, direction: "up" | "down") => {
+      const siblings = documentSiblingRows(sourceRows, itemId);
+      const orderedIds = reorderSiblingIds(siblings, itemId, direction);
+      if (!orderedIds) return;
+      void runTreeMutation(() =>
+        reorderDocumentsViaPowerSyncOrApi(client, powerSync, orderedIds),
+      );
+    },
+    [client, powerSync, runTreeMutation, sourceRows],
+  );
+
+  const moveItemToParent = useCallback(
+    (itemId: string, parentId: string | null) => {
+      void runTreeMutation(() =>
+        moveDocumentViaPowerSyncOrApi(client, powerSync, itemId, parentId),
+      );
+    },
+    [client, powerSync, runTreeMutation],
+  );
+
+  const openTreeActions = useCallback(
+    (item: VisibleRow) => {
+      const title = item.title?.trim() || item.path || "Untitled";
+      const siblings = documentSiblingRows(sourceRows, item.id);
+      const index = siblings.findIndex((row) => row.id === item.id);
+      const canMoveUp = index > 0;
+      const canMoveDown = index >= 0 && index < siblings.length - 1;
+      const isDocument = item.kind !== "folder";
+      const moveTargets = isDocument
+        ? documentMoveFolderOptions(sourceRows, item.id)
+        : [];
+
+      const buttons: Array<{
+        text: string;
+        style?: "cancel" | "default";
+        onPress?: () => void;
+      }> = [];
+
+      if (canMoveUp) {
+        buttons.push({
+          text: "Move up",
+          onPress: () => reorderItem(item.id, "up"),
+        });
+      }
+      if (canMoveDown) {
+        buttons.push({
+          text: "Move down",
+          onPress: () => reorderItem(item.id, "down"),
+        });
+      }
+      if (moveTargets.length > 0) {
+        buttons.push({
+          text: "Move to…",
+          onPress: () => setMovePickerItemId(item.id),
+        });
+      }
+      buttons.push({ text: "Cancel", style: "cancel" });
+
+      if (buttons.length === 1) return;
+      Alert.alert(title, "Reorder or move this item.", buttons);
+    },
+    [reorderItem, sourceRows],
+  );
+
+  const moveFolderOptions = useMemo((): PropertyOption<string>[] => {
+    if (!movePickerItemId) return [];
+    return documentMoveFolderOptions(sourceRows, movePickerItemId).map(
+      (option) => ({
+        value: option.id ?? "__root__",
+        label: option.label,
+        icon: option.id ? <FolderIcon size={14} /> : undefined,
+      }),
+    );
+  }, [movePickerItemId, sourceRows]);
+
+  const movePickerItem = movePickerItemId
+    ? sourceRows.find((row) => row.id === movePickerItemId)
+    : null;
+  const movePickerParentId = movePickerItem?.parent_id ?? null;
+
   if (loading) {
     return (
       <View style={ui.centered}>
@@ -393,6 +499,11 @@ export function DocumentsListPanel({
 
   return (
     <View style={ui.screen}>
+      {treeActionError ? (
+        <Text style={[ui.error, { paddingHorizontal: 16, paddingTop: 8 }]}>
+          {treeActionError}
+        </Text>
+      ) : null}
       {showListSearch && search.visible ? (
         <ListSearchField
           ref={search.inputRef}
@@ -403,18 +514,16 @@ export function DocumentsListPanel({
           placeholder="Search documents"
         />
       ) : null}
-      <FlatList
+      <BacksterFlashList
         ref={listRef}
-        style={ui.screen}
         data={rows}
+        estimatedItemSize={56}
         keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         alwaysBounceVertical={showListSearch}
         onScroll={showListSearch ? search.onScroll : undefined}
         onScrollEndDrag={showListSearch ? search.onScrollEndDrag : undefined}
         scrollEventThrottle={showListSearch ? 16 : undefined}
-        onScrollToIndexFailed={() => {}}
         refreshControl={
           <RefreshControl
             refreshing={pullRefreshing}
@@ -425,7 +534,6 @@ export function DocumentsListPanel({
             colors={[colors.muted]}
           />
         }
-        contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
         ListHeaderComponent={
           pageTitle ? (
             <ContentPageTitle
@@ -450,6 +558,11 @@ export function DocumentsListPanel({
               accessibilityLabel={title}
               accessibilityState={{ selected }}
               onPress={() => activateRow(item.id)}
+              onLongPress={
+                includeFolders && !searching
+                  ? () => openTreeActions(item)
+                  : undefined
+              }
               style={({ pressed }) => [
                 ui.row,
                 { paddingLeft: 16 + item.depth * 16 },
@@ -474,6 +587,20 @@ export function DocumentsListPanel({
           );
         }}
       />
+      {movePickerItemId ? (
+        <PropertyOptionSheet
+          visible
+          title="Move to folder"
+          options={moveFolderOptions}
+          selected={movePickerParentId ?? "__root__"}
+          onSelect={(value) => {
+            const parentId = value === "__root__" ? null : value;
+            moveItemToParent(movePickerItemId, parentId);
+            setMovePickerItemId(null);
+          }}
+          onClose={() => setMovePickerItemId(null)}
+        />
+      ) : null}
     </View>
   );
 }

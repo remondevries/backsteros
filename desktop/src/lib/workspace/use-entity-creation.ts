@@ -21,6 +21,7 @@ export function useWorkspaceEntityCreation({
   setApiContacts,
   setApiProjects,
   setApiAreas,
+  softDeleteViaPowerSyncOrApi,
 }: {
   authenticated: boolean;
   client: BacksterosApiClient;
@@ -36,6 +37,7 @@ export function useWorkspaceEntityCreation({
   setApiContacts: ApiRowsSetter<ApiContact>;
   setApiProjects: ApiRowsSetter<ApiProject>;
   setApiAreas: ApiRowsSetter<ApiArea>;
+  softDeleteViaPowerSyncOrApi: (table: "areas", id: string) => Promise<void>;
 }) {
   const entityKeyFromName = useCallback((name: string, fallback: string) => {
     const base = name
@@ -52,8 +54,40 @@ export function useWorkspaceEntityCreation({
       if (!name) throw new Error("Organization name is required.");
       if (!authenticated) throw new Error("Sign in to create organizations.");
       const key = entityKeyFromName(name, "org");
-      // Prefer REST (same as areas). PowerSync-only inserts can appear briefly then
-      // vanish when upload is skipped/fails and the next sync drops the local row.
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const organization = {
+          id,
+          key,
+          name,
+          sortOrder: Date.now(),
+          createdAt: now,
+          updatedAt: now,
+        } as ApiOrganization;
+        setApiOrganizations((rows) => {
+          const next = rows ? [...rows] : [];
+          if (!next.some((entry) => entry.id === organization.id)) {
+            next.push(organization);
+          }
+          return next;
+        });
+        void powerSync
+          .createMetadata(
+            "organizations",
+            toSnakeFields({
+              key,
+              name,
+              sortOrder: organization.sortOrder,
+            }),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local organization create failed", error);
+          });
+        return { id: organization.id, key: organization.key };
+      }
+
       const organization = await client.requestJson<ApiOrganization>(
         "/api/v1/organizations",
         {
@@ -75,7 +109,7 @@ export function useWorkspaceEntityCreation({
       });
       return { id: organization.id, key: organization.key };
     },
-    [authenticated, client, entityKeyFromName, setApiOrganizations],
+    [authenticated, client, entityKeyFromName, powerSync, setApiOrganizations, toSnakeFields],
   );
 
   const createContact = useCallback(
@@ -84,6 +118,42 @@ export function useWorkspaceEntityCreation({
       if (!name) throw new Error("Contact name is required.");
       if (!authenticated) throw new Error("Sign in to create contacts.");
       const key = entityKeyFromName(name, "person");
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const contact = {
+          id,
+          key,
+          name,
+          organizationId: input.organizationId ?? null,
+          sortOrder: Date.now(),
+          createdAt: now,
+          updatedAt: now,
+        } as ApiContact;
+        setApiContacts((rows) => {
+          const next = rows ? [...rows] : [];
+          if (!next.some((entry) => entry.id === contact.id)) {
+            next.push(contact);
+          }
+          return next;
+        });
+        void powerSync
+          .createMetadata(
+            "contacts",
+            toSnakeFields({
+              key,
+              name,
+              organizationId: contact.organizationId,
+              sortOrder: contact.sortOrder,
+            }),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local contact create failed", error);
+          });
+        return { id: contact.id, key: contact.key };
+      }
+
       const contact = await client.requestJson<ApiContact>("/api/v1/contacts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -103,7 +173,7 @@ export function useWorkspaceEntityCreation({
       });
       return { id: contact.id, key: contact.key };
     },
-    [authenticated, client, entityKeyFromName, setApiContacts],
+    [authenticated, client, entityKeyFromName, powerSync, setApiContacts, toSnakeFields],
   );
 
   const createProject = useCallback(
@@ -132,8 +202,47 @@ export function useWorkspaceEntityCreation({
         organizationId: input.organizationId ?? null,
         ...(input.type ? { type: input.type } : {}),
       };
-      // API-first (same as tasks / orgs): PowerSync-only creates skip vault
-      // setup and can vanish or 404 until upload succeeds.
+      // Linear-shaped: PowerSync-ready → local create only.
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const project = {
+          id,
+          key,
+          name,
+          status: body.status,
+          area: body.area,
+          sortOrder: body.sortOrder,
+          organizationId: body.organizationId,
+          ...(body.type ? { type: body.type } : {}),
+          createdAt: now,
+          updatedAt: now,
+        } as ApiProject;
+        setApiProjects((rows) => {
+          if (!rows) return [project];
+          if (rows.some((entry) => entry.id === project.id)) return rows;
+          return [project, ...rows];
+        });
+        void powerSync
+          .createMetadata(
+            "projects",
+            toSnakeFields({
+              key: project.key,
+              name: project.name,
+              status: project.status,
+              area: body.area ?? null,
+              sortOrder: body.sortOrder,
+              organizationId: project.organizationId ?? null,
+              ...(project.type ? { type: project.type } : {}),
+            }),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local project create failed", error);
+          });
+        return { id: project.id, key: project.key };
+      }
+
       const project = await client.requestJson<ApiProject>("/api/v1/projects", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -144,25 +253,6 @@ export function useWorkspaceEntityCreation({
         if (rows.some((entry) => entry.id === project.id)) return rows;
         return [project, ...rows];
       });
-      if (powerSync.ready && powerSync.createMetadata) {
-        try {
-          await powerSync.createMetadata(
-            "projects",
-            toSnakeFields({
-              key: project.key,
-              name: project.name,
-              status: project.status,
-              area: input.area ?? null,
-              sortOrder: body.sortOrder,
-              organizationId: project.organizationId ?? null,
-              ...(project.type ? { type: project.type } : {}),
-            }),
-            project.id,
-          );
-        } catch {
-          // Download sync will eventually bring the row in.
-        }
-      }
       return { id: project.id, key: project.key };
     },
     [authenticated, client, powerSync, setApiProjects, toSnakeFields],
@@ -176,14 +266,50 @@ export function useWorkspaceEntityCreation({
       const name = input.name.trim();
       if (!name) throw new Error("Area name is required.");
       if (!authenticated) throw new Error("Sign in to create areas.");
+      const body = {
+        name,
+        parent: input.parent,
+        sortOrder: Date.now(),
+      };
+      if (powerSync.ready && powerSync.createMetadata) {
+        const id = crypto.randomUUID().replace(/-/g, "");
+        const now = new Date().toISOString();
+        const area = {
+          id,
+          name,
+          parent: input.parent,
+          sortOrder: body.sortOrder,
+          icon: null,
+          color: null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        } as ApiArea;
+        setApiAreas((rows) => {
+          const next = rows ? [...rows] : [];
+          if (!next.some((entry) => entry.id === area.id)) next.push(area);
+          return next;
+        });
+        void powerSync
+          .createMetadata(
+            "areas",
+            toSnakeFields({
+              name: area.name,
+              parent: area.parent,
+              sortOrder: area.sortOrder,
+            }),
+            id,
+          )
+          .catch((error) => {
+            console.warn("[desktop] local area create failed", error);
+          });
+        return { id: area.id };
+      }
+
       const area = await client.requestJson<ApiArea>("/api/v1/areas", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name,
-          parent: input.parent,
-          sortOrder: Date.now(),
-        }),
+        body: JSON.stringify(body),
       });
       setApiAreas((rows) => {
         const next = rows ? [...rows] : [];
@@ -192,25 +318,26 @@ export function useWorkspaceEntityCreation({
       });
       return { id: area.id };
     },
-    [authenticated, client, setApiAreas],
+    [authenticated, client, powerSync, setApiAreas, toSnakeFields],
   );
 
   const softDeleteArea = useCallback(
     async (id: string) => {
       if (!authenticated) throw new Error("Sign in to delete areas.");
-      // Reassign projects to the parent bucket before soft-deleting the area.
       const affected = rawProjects.filter((project) => project.areaId === id);
       await Promise.all(
         affected.map((project) =>
           patchViaPowerSyncOrApi("projects", project.id, { areaId: null }),
         ),
       );
-      await client.requestJson(`/api/v1/areas/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      setApiAreas((rows) => rows?.filter((area) => area.id !== id) ?? null);
+      await softDeleteViaPowerSyncOrApi("areas", id);
     },
-    [authenticated, client, patchViaPowerSyncOrApi, rawProjects, setApiAreas],
+    [
+      authenticated,
+      patchViaPowerSyncOrApi,
+      rawProjects,
+      softDeleteViaPowerSyncOrApi,
+    ],
   );
 
   return {

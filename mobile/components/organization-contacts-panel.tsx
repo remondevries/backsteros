@@ -1,18 +1,19 @@
 import type { Contact } from "@backsteros/contracts";
+import type { FlashListRef } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { EntityListAvatar } from "./entity-list-avatar";
 import { contactDetailHref } from "../lib/detail-href";
-import { getMobileEnvironment } from "../lib/env";
-import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
+import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useSyncedOrRest } from "../lib/use-synced-or-rest";
+import { BacksterFlashList } from "./lists/index";
 
 type ContactRow = {
   id: string;
@@ -36,19 +37,17 @@ const CONTACTS_SQL = `SELECT id, name, email, title, avatar_storage_key
 export function OrganizationContactsPanel({ organizationId }: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
-  const { apiUrl } = getMobileEnvironment();
+  const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
 
   const mapNetworkError = useCallback(
     (reason: unknown): never => {
       const detail =
         reason instanceof Error ? reason.message : String(reason);
       throw new Error(
-        /network request failed|failed to fetch|could not connect/i.test(detail)
-          ? `Cannot reach API at ${apiUrl}. Is backsteros-api running?`
-          : detail,
+        isNetworkError(detail) ? formatNetworkError() : detail,
       );
     },
-    [apiUrl],
+    [formatNetworkError, isNetworkError],
   );
 
   const { rows, loading, error, pullRefreshing, reload } =
@@ -85,7 +84,7 @@ export function OrganizationContactsPanel({ organizationId }: Props) {
     client,
   );
 
-  const listRef = useRef<FlatList<ContactRow>>(null);
+  const listRef = useRef<FlashListRef<ContactRow>>(null);
   const itemIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const openContact = useCallback(
     (id: string) => {
@@ -123,18 +122,15 @@ export function OrganizationContactsPanel({ organizationId }: Props) {
   }
 
   return (
-    <FlatList
+    <BacksterFlashList
       ref={listRef}
-      style={ui.screen}
       data={rows}
+      estimatedItemSize={56}
       keyExtractor={(item) => item.id}
-      keyboardShouldPersistTaps="handled"
       refreshing={pullRefreshing}
       onRefresh={() => {
         void reload();
       }}
-      onScrollToIndexFailed={() => {}}
-      contentContainerStyle={{ paddingBottom: FLOATING_TAB_BAR_CLEARANCE }}
       ListEmptyComponent={
         <Text style={ui.empty}>
           No contacts linked to this organization yet.

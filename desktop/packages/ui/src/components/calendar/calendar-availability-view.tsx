@@ -115,7 +115,18 @@ export function CalendarAvailabilityView({
   useEffect(() => {
     const container = mainRef.current;
     if (!container) return;
+    // Skip the redundant `updateSize()` when a keep-alive pane collapses to 0×0
+    // (content-visibility hidden) and returns to the same size on reveal; only
+    // resize on a real, non-zero size change.
+    let lastWidth = 0;
+    let lastHeight = 0;
     const observer = new ResizeObserver(() => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (width === 0 || height === 0) return;
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width;
+      lastHeight = height;
       calendarApiRef.current?.updateSize();
     });
     observer.observe(container);
@@ -123,6 +134,15 @@ export function CalendarAvailabilityView({
   }, []);
 
   useEffect(() => () => onCalendarApi?.(null), [onCalendarApi]);
+
+  const handleCalendarInstanceRef = useCallback(
+    (instance: { getApi: () => CalendarApi } | null) => {
+      const api = instance?.getApi() ?? null;
+      calendarApiRef.current = api;
+      onCalendarApi?.(api);
+    },
+    [onCalendarApi],
+  );
 
   useEffect(() => {
     const api = calendarApiRef.current;
@@ -254,11 +274,7 @@ export function CalendarAvailabilityView({
     >
       <div className="calendar-view-main" ref={mainRef}>
         <FullCalendar
-          ref={(instance) => {
-            const api = instance?.getApi() ?? null;
-            calendarApiRef.current = api;
-            onCalendarApi?.(api);
-          }}
+          ref={handleCalendarInstanceRef}
           plugins={[
             dayGridPlugin,
             timeGridPlugin,

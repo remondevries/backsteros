@@ -1,7 +1,7 @@
 "use client";
 
 import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
-import { PolishedCheckbox } from "../shared/polished-checkbox.js";
+import { ProjectOcticon } from "../projects/project-octicon.js";
 
 export type JournalHabitDayItem = {
   habitId: string;
@@ -62,6 +62,9 @@ export function JournalHabitsList({ items, onToggle }: JournalHabitsListProps) {
                 onToggle?.(item, checked);
               }}
             />
+          </span>
+          <span className="journal-habits-list__icon" aria-hidden="true">
+            <ProjectOcticon icon={item.icon} size={16} />
           </span>
           <span className="journal-habits-list__title">{item.title}</span>
           <span className="journal-habits-list__counts">
