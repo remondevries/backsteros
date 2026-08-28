@@ -54,12 +54,6 @@ import {
   useDesktopWorkspaceTasks,
 } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
-import {
-  ENABLE_JOURNAL_DAY_CALENDAR,
-  ENABLE_JOURNAL_DUE_TASKS_AND_HABITS,
-  ENABLE_JOURNAL_PAGE_CONTENT,
-  ENABLE_JOURNAL_WHOOP,
-} from "../lib/journal-cpu-bisect";
 
 /** Cached once — constructing DateTimeFormat only to read the zone is wasteful. */
 const JOURNAL_CALENDAR_TIME_ZONE =
@@ -82,16 +76,6 @@ function JournalDayBody({ children }: { children: ReactNode }) {
 /** Journal list stays mounted; Tier C/D body loads on demand. */
 export function JournalPage() {
   const { dateSlug: rawSlug } = useShellParams() as { dateSlug?: string };
-  // TEMP: journal CPU bisect — restore via ENABLE_JOURNAL_PAGE_CONTENT.
-  if (!ENABLE_JOURNAL_PAGE_CONTENT) {
-    return (
-      <div className="inbox-detail-layout">
-        <div className="inbox-detail-body">
-          <p>journal</p>
-        </div>
-      </div>
-    );
-  }
   return <JournalPageContent rawSlug={rawSlug} />;
 }
 
@@ -250,12 +234,10 @@ function JournalScreen({
         />
       }
       dayCalendar={
-        ENABLE_JOURNAL_DAY_CALENDAR ? (
-          <JournalDayCalendarColumn
-            dateSlug={date}
-            dayTasks={dayModel.dayTasks}
-          />
-        ) : null
+        <JournalDayCalendarColumn
+          dateSlug={date}
+          dayTasks={dayModel.dayTasks}
+        />
       }
     />
   );
@@ -372,11 +354,7 @@ function JournalEntryDetail({
         titleEditable={false}
         previewTitleEditable={false}
         embedded
-        leading={
-          ENABLE_JOURNAL_WHOOP ? (
-            <JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />
-          ) : null
-        }
+        leading={<JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />}
         icon={
           documentId ? (
             <DocumentDetailIcon
@@ -430,23 +408,21 @@ function JournalEntryDetail({
           await saveContent(nextContent);
         }}
         footer={
-          ENABLE_JOURNAL_DUE_TASKS_AND_HABITS ? (
-            <JournalDueTasksSection
-              dateSlug={dateSlug}
-              tasks={allTasks}
-              dueTasks={dueTasks}
-              habits={habitItems}
-              isLoading={!ready}
-              calendarTimeZone={calendarTimeZone}
-              dayTimelineDraggable
-              onSelectTask={handleSelectDueTask}
-              onToggleHabit={(item, checked) => {
-                void patchTask(item.taskId, {
-                  status: checked ? "completed" : "ready_to_start",
-                });
-              }}
-            />
-          ) : null
+          <JournalDueTasksSection
+            dateSlug={dateSlug}
+            tasks={allTasks}
+            dueTasks={dueTasks}
+            habits={habitItems}
+            isLoading={!ready}
+            calendarTimeZone={calendarTimeZone}
+            dayTimelineDraggable
+            onSelectTask={handleSelectDueTask}
+            onToggleHabit={(item, checked) => {
+              void patchTask(item.taskId, {
+                status: checked ? "completed" : "ready_to_start",
+              });
+            }}
+          />
         }
       />
     </>

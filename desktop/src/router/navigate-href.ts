@@ -1,7 +1,10 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 
 import { expandNavigationHref } from "../lib/expand-navigation-href";
-import { tryWarmKeepAliveFlip } from "../lib/shell-warm-keep-alive";
+import {
+  remapLegacyKeepAliveHref,
+  tryWarmKeepAliveFlip,
+} from "../lib/shell-warm-keep-alive";
 
 type AppNavigate = (options: NavigateOptions) => void;
 
@@ -34,7 +37,7 @@ export function navigateToHref(
   if (tryWarmKeepAliveFlip(href)) {
     return;
   }
-  const target = expandNavigationHref(href);
+  const target = expandNavigationHref(remapLegacyKeepAliveHref(href));
   const { pathname, search, hash } = parseAppHref(target);
   navigate({
     to: pathname as NavigateOptions["to"],

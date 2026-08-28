@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   inboxUpdatedAtRequiresInboxListing,
   shouldClearInboxUpdatedOnUserWrite,
+  taskPatchRequiresRestWrite,
 } from "./inbox-updated.js";
 
 test("shouldClearInboxUpdatedOnUserWrite clears only on explicit acknowledgement", () => {
@@ -25,4 +26,10 @@ test("inboxUpdatedAtRequiresInboxListing includes any valid updated timestamp", 
   );
   assert.equal(inboxUpdatedAtRequiresInboxListing(null), false);
   assert.equal(inboxUpdatedAtRequiresInboxListing(""), false);
+});
+
+test("taskPatchRequiresRestWrite for agent inbox sign-off only", () => {
+  assert.equal(taskPatchRequiresRestWrite({ agentInboxApproved: true }), true);
+  assert.equal(taskPatchRequiresRestWrite({ agentInboxApproved: false }), false);
+  assert.equal(taskPatchRequiresRestWrite({ title: "x" }), false);
 });

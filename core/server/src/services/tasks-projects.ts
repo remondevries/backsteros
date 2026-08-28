@@ -747,6 +747,16 @@ export async function updateTask(
     !existing.agentInboxApprovedAt
   ) {
     agentInboxApprovedAt = new Date();
+  } else if (
+    input.agentInboxApprovedAt &&
+    existing.agentCreatedAt &&
+    !existing.agentInboxApprovedAt &&
+    (options === undefined || options.allowAgentInboxApproval === true)
+  ) {
+    const parsed = new Date(input.agentInboxApprovedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      agentInboxApprovedAt = parsed;
+    }
   }
 
   const [row] = await executor

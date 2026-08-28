@@ -429,6 +429,8 @@ export const updateTaskSchema = createTaskSchema
   .extend({
     /** Clerk-only sign-off — removes task from Agents inbox subgroup. */
     agentInboxApproved: z.boolean().optional(),
+    /** Replicated from client sync; prefer {@link agentInboxApproved} on REST. */
+    agentInboxApprovedAt: z.string().datetime().nullable().optional(),
   })
   .refine(
     (value) =>

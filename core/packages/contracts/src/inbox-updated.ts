@@ -137,3 +137,14 @@ export function shouldClearInboxUpdatedOnUserWrite(input: {
 }): boolean {
   return input.acknowledgeInboxUpdate === true;
 }
+
+/**
+ * Task PATCH fields that must reach Postgres via REST even when the client
+ * normally writes through PowerSync upload only. Without a REST dual-write,
+ * local approval can disappear on the next sync.
+ */
+export function taskPatchRequiresRestWrite(
+  values: Record<string, unknown>,
+): boolean {
+  return values.agentInboxApproved === true;
+}

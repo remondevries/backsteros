@@ -1,4 +1,5 @@
 import type { WorkspacePowerSync } from "./workspace-data-types";
+export { taskPatchRequiresRestWrite } from "@backsteros/contracts";
 
 /** When true, entity metadata writes go through PowerSync upload only — no REST dual-write. */
 export function shouldSkipRestEntityWrite(

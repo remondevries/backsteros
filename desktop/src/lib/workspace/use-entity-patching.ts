@@ -13,7 +13,10 @@ import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
 import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
-import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import {
+  shouldSkipRestEntityWrite,
+  taskPatchRequiresRestWrite,
+} from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 export type SoftDeletableTable =
@@ -450,7 +453,10 @@ export function useWorkspaceEntityPatching({
           }
         }
         if (!authenticated) return;
-        if (shouldSkipRestEntityWrite(powerSync)) {
+        if (
+          shouldSkipRestEntityWrite(powerSync) &&
+          !taskPatchRequiresRestWrite(values)
+        ) {
           return;
         }
         try {
@@ -503,8 +509,9 @@ export function useWorkspaceEntityPatching({
         applyOptimisticEntityPatch(table, id, values);
         const mustAwaitRest =
           authenticated &&
-          !shouldSkipRestEntityWrite(powerSync) &&
-          ("agentChatId" in values || "moneybirdContactId" in values);
+          ("agentChatId" in values ||
+            "moneybirdContactId" in values ||
+            taskPatchRequiresRestWrite(values));
         if (mustAwaitRest) {
           return persistLocalAndMaybeRest();
         }

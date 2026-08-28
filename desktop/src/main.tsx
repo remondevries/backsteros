@@ -22,10 +22,8 @@ function Root() {
   );
 }
 
-// TEMP perf experiment: StrictMode double-invokes effects in dev, which
-// dominated the navigation trace. Disabled to measure the real (prod-like)
-// cost. Restore <React.StrictMode> once done.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <Root />,
+  <React.StrictMode>
+    <Root />
+  </React.StrictMode>,
 );
-void React;

@@ -1020,6 +1020,9 @@ function mapTaskUpsert(
     trackedDurationSeconds: asNullableNumber(
       payload.tracked_duration_seconds ?? payload.trackedDurationSeconds,
     ),
+    agentInboxApprovedAt: asNullableString(
+      payload.agent_inbox_approved_at ?? payload.agentInboxApprovedAt,
+    ),
   };
 }
 

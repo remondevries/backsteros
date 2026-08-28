@@ -1,4 +1,5 @@
 import type { useMobilePowerSync } from "./powersync-context";
+export { taskPatchRequiresRestWrite } from "@backsteros/contracts";
 
 type PowerSyncWriteGate = Pick<
   ReturnType<typeof useMobilePowerSync>,
@@ -11,3 +12,4 @@ export function shouldSkipRestEntityWrite(
 ): boolean {
   return Boolean(powerSync.ready && powerSync.connected);
 }
+

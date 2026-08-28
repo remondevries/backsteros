@@ -1,7 +1,7 @@
 import { KnowledgePage } from "./knowledge-page";
 
 /**
- * TEMP Knowledge Base v2 bisect: same content on `/knowledge-v2`, own keep-alive.
+ * Knowledge Base on `/knowledge-v2` with its own keep-alive surface.
  */
 export function KnowledgeV2Page() {
   return <KnowledgePage variant="knowledge-v2" />;

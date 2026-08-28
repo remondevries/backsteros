@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import { useDesktopWorkspacePeople } from "../lib/workspace-data";
-import { NavPerfBadge } from "../components/nav-perf-badge";
 import { AppShellOverlays } from "./app-shell-overlays";
 import { CommandPaletteHost } from "./command-palette-host";
 import { ShellChrome } from "./shell-chrome";
@@ -101,7 +100,6 @@ export function AppShell({ children }: { children?: ReactNode }) {
     <ShellOuterProviders>
       <CommandPaletteHost />
       <AppShellInner>{children}</AppShellInner>
-      <NavPerfBadge />
     </ShellOuterProviders>
   );
 }

@@ -1,7 +1,7 @@
 import { LettersPage } from "./letters-page";
 
 /**
- * TEMP Letters v2 bisect: same content on `/letters-v2`, own keep-alive.
+ * Letters on `/letters-v2` with its own keep-alive surface.
  */
 export function LettersV2Page() {
   return (

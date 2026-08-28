@@ -1,10 +1,11 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
-import type {
-  Contact,
-  Letter,
-  Organization,
-  Project,
-  Task,
+import {
+  taskPatchRequiresRestWrite,
+  type Contact,
+  type Letter,
+  type Organization,
+  type Project,
+  type Task,
 } from "@backsteros/contracts";
 
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
@@ -234,7 +235,10 @@ export async function patchEntityViaPowerSyncOrApi(
     }
   }
 
-  if (shouldSkipRestEntityWrite(powerSync)) {
+  if (
+    shouldSkipRestEntityWrite(powerSync) &&
+    !taskPatchRequiresRestWrite(apiValues)
+  ) {
     return;
   }
 

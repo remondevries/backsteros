@@ -16,9 +16,6 @@ import {
   syncVisibleKeepAliveSurfaceFromRoute,
   tryWarmKeepAliveFlip,
 } from "./shell-warm-keep-alive.ts";
-import {
-  ENABLE_ALL_KEEP_ALIVE,
-} from "./journal-cpu-bisect.ts";
 
 afterEach(() => {
   resetKeepAliveForTests();
@@ -41,14 +38,6 @@ test("mounted journal, knowledge, letters, habits warm-flip like tasks", () => {
   markKeepAliveSurfaceMounted("tasks-list");
   syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
 
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/journal-v2"), false);
-    assert.equal(tryWarmKeepAliveFlip("/knowledge-v2"), false);
-    assert.equal(tryWarmKeepAliveFlip("/letters-v2"), false);
-    assert.equal(tryWarmKeepAliveFlip("/habits-v2"), false);
-    return;
-  }
-
   assert.equal(tryWarmKeepAliveFlip("/journal-v2"), true);
   assert.equal(getVisibleKeepAliveSurface(), "journal-v2");
   assert.equal(tryWarmKeepAliveFlip("/knowledge-v2"), true);
@@ -59,15 +48,30 @@ test("mounted journal, knowledge, letters, habits warm-flip like tasks", () => {
   assert.equal(getVisibleKeepAliveSurface(), "habits-v2");
 });
 
+test("legacy journal/knowledge/letters hrefs warm-flip onto v2 surfaces", () => {
+  markKeepAliveSurfaceMounted("journal-v2");
+  markKeepAliveSurfaceMounted("knowledge-v2");
+  markKeepAliveSurfaceMounted("letters-v2");
+  markKeepAliveSurfaceMounted("habits-v2");
+  markKeepAliveSurfaceMounted("tasks-list");
+  syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
+
+  assert.equal(tryWarmKeepAliveFlip("/journal"), true);
+  assert.equal(getVisibleKeepAliveSurface(), "journal-v2");
+  assert.equal(tryWarmKeepAliveFlip("/journal/habits"), true);
+  assert.equal(getVisibleKeepAliveSurface(), "habits-v2");
+  assert.equal(tryWarmKeepAliveFlip("/knowledge"), true);
+  assert.equal(getVisibleKeepAliveSurface(), "knowledge-v2");
+  assert.equal(tryWarmKeepAliveFlip("/letters"), true);
+  assert.equal(getVisibleKeepAliveSurface(), "letters-v2");
+});
+
 test("same mounted surface is not a warm section flip", () => {
   markKeepAliveSurfaceMounted("tasks-list");
   syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
   assert.equal(isWarmKeepAliveSectionFlip("/tasks"), false);
-  assert.equal(tryWarmKeepAliveFlip("/tasks"), ENABLE_ALL_KEEP_ALIVE);
-  assert.equal(
-    tryWarmKeepAliveFlip("/tasks?due=overdue"),
-    ENABLE_ALL_KEEP_ALIVE,
-  );
+  assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
+  assert.equal(tryWarmKeepAliveFlip("/tasks?due=overdue"), true);
 });
 
 test("mounted knowledge and letters warm-flip from tasks", () => {
@@ -75,11 +79,6 @@ test("mounted knowledge and letters warm-flip from tasks", () => {
   markKeepAliveSurfaceMounted("letters-v2");
   markKeepAliveSurfaceMounted("tasks-list");
   syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/knowledge-v2"), false);
-    assert.equal(tryWarmKeepAliveFlip("/letters-v2"), false);
-    return;
-  }
   assert.equal(tryWarmKeepAliveFlip("/knowledge-v2"), true);
   assert.equal(getVisibleKeepAliveSurface(), "knowledge-v2");
   assert.equal(tryWarmKeepAliveFlip("/letters-v2"), true);
@@ -95,12 +94,6 @@ test("g+t / g+p / calendar flips a mounted pane and skips TanStack navigate", ()
   rememberKeepAliveHref("tasks-list", "/tasks", "?due=today");
   syncVisibleKeepAliveSurfaceFromRoute("calendar");
 
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/tasks"), false);
-    assert.equal(tryWarmKeepAliveFlip("/projects"), false);
-    assert.equal(tryWarmKeepAliveFlip("/calendar"), false);
-    return;
-  }
   assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
   assert.equal(getVisibleKeepAliveSurface(), "tasks-list");
   assert.equal(tryWarmKeepAliveFlip("/projects"), true);
@@ -122,10 +115,6 @@ test("route sync does not overwrite a warm flip while the router is stale", () =
   markKeepAliveSurfaceMounted("tasks-list");
   rememberKeepAliveHref("tasks-list", "/tasks", "");
   syncVisibleKeepAliveSurfaceFromRoute("calendar");
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/tasks"), false);
-    return;
-  }
   assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
   assert.equal(shouldApplyRouteKeepAliveSync("/calendar"), false);
 });
@@ -138,10 +127,6 @@ test("chrome href follows the keep-alive store while the router is stale", () =>
   syncVisibleKeepAliveSurfaceFromRoute("calendar");
   assert.equal(chromeHrefForWarmKeepAlive("/calendar"), "/calendar");
 
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/tasks"), false);
-    return;
-  }
   assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
   assert.equal(chromeHrefForWarmKeepAlive("/calendar"), "/tasks?due=today");
   assert.equal(chromeHrefForWarmKeepAlive("/tasks"), "/tasks?due=today");
@@ -151,10 +136,6 @@ test("same-pane query flip does not let a stale router overwrite lastHref", () =
   markKeepAliveSurfaceMounted("tasks-list");
   rememberKeepAliveHref("tasks-list", "/tasks", "?due=today");
   syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
-  if (!ENABLE_ALL_KEEP_ALIVE) {
-    assert.equal(tryWarmKeepAliveFlip("/tasks?due=overdue"), false);
-    return;
-  }
   assert.equal(tryWarmKeepAliveFlip("/tasks?due=overdue"), true);
   assert.equal(
     shouldApplyRouteKeepAliveSync("/tasks", "?due=today"),
@@ -169,36 +150,21 @@ test("same-pane query flip does not let a stale router overwrite lastHref", () =
 test("tasks-list and standalone /projects stay in the keep-alive side-panel set", () => {
   assert.equal(
     shouldKeepAliveSidePanelSurface("tasks-list", "/tasks"),
-    ENABLE_ALL_KEEP_ALIVE,
+    true,
   );
   assert.equal(
     shouldKeepAliveSidePanelSurface("projects", "/projects"),
-    ENABLE_ALL_KEEP_ALIVE,
+    true,
   );
-  assert.equal(
-    keepAliveSidePanelSurface("/tasks"),
-    ENABLE_ALL_KEEP_ALIVE ? "tasks-list" : null,
-  );
-  assert.equal(
-    keepAliveSidePanelSurface("/projects"),
-    ENABLE_ALL_KEEP_ALIVE ? "projects" : null,
-  );
-  assert.equal(
-    keepAliveSidePanelSurface("/projects/CA"),
-    ENABLE_ALL_KEEP_ALIVE ? "projects" : null,
-  );
+  assert.equal(keepAliveSidePanelSurface("/tasks"), "tasks-list");
+  assert.equal(keepAliveSidePanelSurface("/projects"), "projects");
+  assert.equal(keepAliveSidePanelSurface("/projects/CA"), "projects");
   assert.equal(
     keepAliveSidePanelSurface("/organizations/1/projects/CA"),
     null,
   );
   assert.equal(keepAliveDestinationShowsSidePanel("/tasks"), false);
   assert.equal(keepAliveDestinationShowsSidePanel("/projects"), false);
-  assert.equal(
-    keepAliveDestinationShowsSidePanel("/projects/CA"),
-    ENABLE_ALL_KEEP_ALIVE,
-  );
-  assert.equal(
-    keepAliveDestinationShowsSidePanel("/letters-v2"),
-    ENABLE_ALL_KEEP_ALIVE,
-  );
+  assert.equal(keepAliveDestinationShowsSidePanel("/projects/CA"), true);
+  assert.equal(keepAliveDestinationShowsSidePanel("/letters-v2"), true);
 });

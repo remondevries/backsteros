@@ -35,7 +35,7 @@ const JOURNAL_CALENDAR_TIME_ZONE =
   Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /**
- * TEMP Journal v2 bisect: full Journal clone on `/journal-v2` (+ `/$dateSlug`).
+ * Journal on `/journal-v2` (+ `/$dateSlug`) with its own keep-alive surface.
  */
 export function JournalV2Page() {
   const { dateSlug: rawSlug } = useShellParams() as { dateSlug?: string };

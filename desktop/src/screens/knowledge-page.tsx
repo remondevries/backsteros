@@ -29,7 +29,7 @@ import {
 import { navigateToHref } from "../router/navigate-href";
 
 export type KnowledgePageProps = {
-  /** TEMP bisect: `/knowledge-v2` clone keeps navigation on the v2 prefix. */
+  /** When `"knowledge-v2"`, links stay on the `/knowledge-v2` prefix. */
   variant?: "knowledge" | "knowledge-v2";
 };
 

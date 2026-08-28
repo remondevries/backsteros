@@ -1,4 +1,3 @@
-import { shouldShowContentSidePanel } from "@backsteros/ui/shell";
 
 import {
   currentWindowNavigationHref,
@@ -7,9 +6,6 @@ import {
   resolvePendingPageSurface,
   type PendingPageSurface,
 } from "./pending-navigation-routes";
-import { recordNavPerf } from "./nav-perf-probe";
-import { ENABLE_ALL_KEEP_ALIVE, ENABLE_JOURNAL_KEEP_ALIVE } from "./journal-cpu-bisect";
-
 /**
  * Heavy section panes stay mounted after the first visit. Hide them;
  * do not unmount. Org-scoped contacts/projects stay on Outlet.
@@ -27,10 +23,39 @@ export const KEEP_ALIVE_SURFACES = new Set<PendingPageSurface>([
   "letters-v2",
 ]);
 
-const JOURNAL_KEEP_ALIVE_SURFACES = new Set<PendingPageSurface>([
-  "journal-day",
-  "journal-habits",
-]);
+/**
+ * Legacy section roots still appear in bookmarks / older Go bindings.
+ * Remap so warm flips hit the keep-alive surfaces (same as left nav).
+ */
+export function remapLegacyKeepAliveHref(href: string): string {
+  const normalized = normalizeNavigationHref(href);
+  const pathname = parseNavigationPathname(normalized);
+  const search = normalized.slice(pathname.length);
+
+  if (pathname === "/journal" || pathname === "/journal/") {
+    return `/journal-v2${search}`;
+  }
+  if (pathname.startsWith("/journal/habits")) {
+    const rest = pathname.slice("/journal/habits".length);
+    return `/habits-v2${rest}${search}`;
+  }
+  if (pathname.startsWith("/journal/")) {
+    return `/journal-v2/${pathname.slice("/journal/".length)}${search}`;
+  }
+  if (pathname === "/knowledge" || pathname === "/knowledge/") {
+    return `/knowledge-v2${search}`;
+  }
+  if (pathname.startsWith("/knowledge/")) {
+    return `/knowledge-v2/${pathname.slice("/knowledge/".length)}${search}`;
+  }
+  if (pathname === "/letters" || pathname === "/letters/") {
+    return `/letters-v2${search}`;
+  }
+  if (pathname.startsWith("/letters/")) {
+    return `/letters-v2/${pathname.slice("/letters/".length)}${search}`;
+  }
+  return normalized;
+}
 
 const mountedKeepAliveSurfaces = new Set<PendingPageSurface>();
 const lastKeepAliveHref = new Map<PendingPageSurface, string>();
@@ -84,16 +109,7 @@ export function shouldKeepAliveSurface(
   surface: PendingPageSurface,
   pathname: string,
 ): boolean {
-  // TEMP: journal CPU bisect — restore via ENABLE_ALL_KEEP_ALIVE.
-  if (!ENABLE_ALL_KEEP_ALIVE) return false;
   if (!KEEP_ALIVE_SURFACES.has(surface)) return false;
-  // TEMP: journal CPU bisect — restore via ENABLE_JOURNAL_KEEP_ALIVE.
-  if (
-    !ENABLE_JOURNAL_KEEP_ALIVE &&
-    JOURNAL_KEEP_ALIVE_SURFACES.has(surface)
-  ) {
-    return false;
-  }
   const root = pathname.split("/").filter(Boolean)[0];
   if (
     surface === "projects" ||
@@ -247,34 +263,16 @@ export function isWarmKeepAliveSectionFlip(href: string): boolean {
  */
 export function tryWarmKeepAliveFlip(href: string): boolean {
   ensureWarmKeepAlivePopstate();
-  const normalized = normalizeNavigationHref(href);
+  const normalized = remapLegacyKeepAliveHref(href);
   const surface = resolvePendingPageSurface(normalized);
   const pathname = parseNavigationPathname(normalized);
-  const fromPathname = parseNavigationPathname(currentWindowNavigationHref());
-  const panelToggled =
-    shouldShowContentSidePanel(fromPathname) !==
-    shouldShowContentSidePanel(pathname);
   if (
     !mountedKeepAliveSurfaces.has(surface) ||
     !shouldKeepAliveSurface(surface, pathname)
   ) {
-    recordNavPerf({
-      from: visibleKeepAliveSurface,
-      to: normalized,
-      surface,
-      flipped: false,
-      panelToggled,
-    });
     return false;
   }
-  recordNavPerf({
-    from: visibleKeepAliveSurface,
-    to: normalized,
-    surface,
-    flipped: true,
-    panelToggled,
-  });
-  const target = resolveWarmKeepAliveHref(href);
+  const target = resolveWarmKeepAliveHref(normalized);
   const targetPath = parseNavigationPathname(target);
   const targetSearch = target.slice(targetPath.length);
   const nextHref = hrefFromParts(targetPath, targetSearch);

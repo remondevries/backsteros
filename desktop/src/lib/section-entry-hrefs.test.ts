@@ -15,7 +15,6 @@ import {
   shouldKeepAliveSidePanelSurface,
   shouldKeepAliveSurface,
 } from "./shell-route-keep-alive";
-import { ENABLE_ALL_KEEP_ALIVE } from "./journal-cpu-bisect";
 
 afterEach(() => {
   rememberSectionEntryHrefs({
@@ -82,42 +81,28 @@ describe("expandNavigationHref section roots", () => {
 
 describe("shouldKeepAliveSurface", () => {
   it("keeps list/calendar/inbox/knowledge/tasks/journal panes after first visit", () => {
-    expect(shouldKeepAliveSurface("calendar", "/calendar")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
-    expect(shouldKeepAliveSurface("inbox", "/inbox/in-1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSurface("calendar", "/calendar")).toBe(true);
+    expect(shouldKeepAliveSurface("inbox", "/inbox/in-1")).toBe(true);
     expect(shouldKeepAliveSurface("knowledge-v2", "/knowledge-v2/note")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
-    expect(shouldKeepAliveSurface("tasks-list", "/tasks")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSurface("tasks-list", "/tasks")).toBe(true);
     expect(shouldKeepAliveSurface("journal-v2", "/journal-v2/2026-08-26")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
-    expect(shouldKeepAliveSurface("habits-v2", "/habits-v2")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSurface("habits-v2", "/habits-v2")).toBe(true);
     expect(shouldKeepAliveSurface("journal-day", "/journal/2026-08-26")).toBe(
       false,
     );
     expect(shouldKeepAliveSurface("journal-habits", "/journal/habits")).toBe(
       false,
     );
-    expect(shouldKeepAliveSurface("projects", "/projects")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
-    expect(shouldKeepAliveSurface("contacts", "/contacts/1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSurface("projects", "/projects")).toBe(true);
+    expect(shouldKeepAliveSurface("contacts", "/contacts/1")).toBe(true);
     expect(shouldKeepAliveSurface("organizations", "/organizations/1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
-    expect(shouldKeepAliveSurface("letters-v2", "/letters-v2/l-1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSurface("letters-v2", "/letters-v2/l-1")).toBe(true);
     expect(shouldKeepAliveSurface("letters", "/letters/l-1")).toBe(false);
     expect(shouldKeepAliveSurface("knowledge", "/knowledge/note")).toBe(false);
   });
@@ -136,54 +121,41 @@ describe("shouldKeepAliveSurface", () => {
 
 describe("shouldKeepAliveSidePanelSurface", () => {
   it("keeps calendar, inbox, knowledge, and journal panels", () => {
-    expect(shouldKeepAliveSidePanelSurface("calendar", "/calendar")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
-    expect(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
+    expect(shouldKeepAliveSidePanelSurface("calendar", "/calendar")).toBe(true);
+    expect(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1")).toBe(true);
     expect(
       shouldKeepAliveSidePanelSurface("knowledge-v2", "/knowledge-v2/note"),
-    ).toBe(ENABLE_ALL_KEEP_ALIVE);
+    ).toBe(true);
     expect(
       shouldKeepAliveSidePanelSurface("journal-v2", "/journal-v2/2026-08-26"),
-    ).toBe(ENABLE_ALL_KEEP_ALIVE);
+    ).toBe(true);
     expect(
       shouldKeepAliveSidePanelSurface("habits-v2", "/habits-v2"),
-    ).toBe(ENABLE_ALL_KEEP_ALIVE);
+    ).toBe(true);
     expect(shouldKeepAliveSidePanelSurface("contacts", "/contacts/1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
     expect(
       shouldKeepAliveSidePanelSurface("organizations", "/organizations/1"),
-    ).toBe(ENABLE_ALL_KEEP_ALIVE);
+    ).toBe(true);
     expect(shouldKeepAliveSidePanelSurface("letters-v2", "/letters-v2/l-1")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
   });
 
   it("keeps the tasks-list panel and the standalone projects list", () => {
-    expect(shouldKeepAliveSidePanelSurface("tasks-list", "/tasks")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
-    expect(shouldKeepAliveSidePanelSurface("projects", "/projects")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
-    );
-    expect(keepAliveSidePanelSurface("/tasks")).toBe(
-      ENABLE_ALL_KEEP_ALIVE ? "tasks-list" : null,
-    );
-    expect(keepAliveSidePanelSurface("/projects")).toBe(
-      ENABLE_ALL_KEEP_ALIVE ? "projects" : null,
-    );
+    expect(shouldKeepAliveSidePanelSurface("tasks-list", "/tasks")).toBe(true);
+    expect(shouldKeepAliveSidePanelSurface("projects", "/projects")).toBe(true);
+    expect(keepAliveSidePanelSurface("/tasks")).toBe("tasks-list");
+    expect(keepAliveSidePanelSurface("/projects")).toBe("projects");
   });
 
   it("keeps the project documents panel only on a standalone project slug", () => {
     expect(shouldKeepAliveSidePanelSurface("projects", "/projects/CA")).toBe(
-      ENABLE_ALL_KEEP_ALIVE,
+      true,
     );
-    expect(keepAliveSidePanelSurface("/projects/CA")).toBe(
-      ENABLE_ALL_KEEP_ALIVE ? "projects" : null,
-    );    expect(
+    expect(keepAliveSidePanelSurface("/projects/CA")).toBe("projects");
+    expect(
       shouldKeepAliveSidePanelSurface(
         "projects",
         "/organizations/1/projects/CA",

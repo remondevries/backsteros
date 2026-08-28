@@ -87,7 +87,6 @@ import {
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
 import { RouterLink } from "./app-shell-links";
 import { handleDocumentTreeReorder } from "./document-tree-reorder";
-import { ENABLE_JOURNAL_ENTRIES_SIDE_PANEL } from "../lib/journal-cpu-bisect";
 
 const NO_ENTITIES: [] = [];
 
@@ -104,10 +103,7 @@ export function keepAliveSidePanelTree(
     case "calendar":
       return <CalendarKeepAliveSidePanel onNavigate={onNavigate} />;
     case "journal-day":
-      // TEMP: journal CPU bisect — restore via ENABLE_JOURNAL_ENTRIES_SIDE_PANEL.
-      return ENABLE_JOURNAL_ENTRIES_SIDE_PANEL ? (
-        <JournalKeepAliveSidePanel onNavigate={onNavigate} />
-      ) : null;
+      return <JournalKeepAliveSidePanel onNavigate={onNavigate} />;
     case "journal-habits":
       return <HabitsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "habits-v2":

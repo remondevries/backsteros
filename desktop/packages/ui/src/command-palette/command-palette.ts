@@ -151,20 +151,26 @@ export type GoNavigationItem = {
 
 export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
   { id: "inbox", letter: "i", hint: "G I", label: "Inbox", href: "/inbox" },
-  { id: "journal", letter: "j", hint: "G J", label: "Journal", href: "/journal" },
+  {
+    id: "journal",
+    letter: "j",
+    hint: "G J",
+    label: "Journal",
+    href: "/journal-v2",
+  },
   {
     id: "habits",
     letter: "h",
     hint: "G H",
     label: "Habit Tracker",
-    href: "/journal/habits",
+    href: "/habits-v2",
   },
   {
     id: "knowledge",
     letter: "k",
     hint: "G K",
     label: "Knowledge Base",
-    href: "/knowledge",
+    href: "/knowledge-v2",
   },
   { id: "tasks", letter: "t", hint: "G T", label: "Tasks", href: "/tasks" },
   {
@@ -189,7 +195,13 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     label: "Development",
     href: "/development",
   },
-  { id: "letters", letter: "l", hint: "G L", label: "Letters", href: "/letters" },
+  {
+    id: "letters",
+    letter: "l",
+    hint: "G L",
+    label: "Letters",
+    href: "/letters-v2",
+  },
   {
     id: "finance",
     letter: "f",

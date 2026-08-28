@@ -429,13 +429,9 @@ export function CommandPaletteView({
   function closeAndNavigate(href: string) {
     clearGoLeaderSequence();
     clearGoFinanceChord();
-    if (isGoMode) {
-      setOpen(false);
-      navigate(href);
-      return;
-    }
     navigate(href);
-    // Search-select: unmount after paint so cmdk teardown does not win the frame.
+    // Unmount after paint so cmdk teardown does not steal the navigation frame
+    // (same path as search-select and G→letter chords).
     afterNextPaint(() => {
       setOpen(false);
     });

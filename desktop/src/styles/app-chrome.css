@@ -7,12 +7,48 @@
 .bos-product-shell {
   /* Traffic lights at x:16 + ~54px cluster + gap → clear the titlebar controls. */
   --bos-traffic-light-inset: 88px;
+  /* Matches `.content-frame` top margin — keeps tabs vertically centered in chrome. */
+  --bos-chrome-gutter: 8px;
 }
 
 .bos-product-shell .app-side-panel-history-toolbar {
   min-height: 44px;
   margin-bottom: 0;
   padding-left: var(--bos-traffic-light-inset);
+}
+
+/*
+ * Nav visible: extend the tabs row to match sidebar chrome (8px sidebar-inner
+ * padding + 44px history toolbar). Pin tab controls to the bottom 44px band so
+ * pills get an 8px top gutter without padding-top (which clipped in WKWebView).
+ */
+.bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-bar-row {
+  box-sizing: border-box;
+  height: calc(44px + var(--bos-chrome-gutter));
+  min-height: calc(44px + var(--bos-chrome-gutter));
+  max-height: none;
+  align-items: flex-end;
+  padding-top: 0;
+}
+
+.bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-bar {
+  height: 44px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-timer {
+  align-self: flex-end;
+  height: 44px;
+}
+
+.bos-product-shell:not(.is-sidebar-collapsed) .content-tab {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.bos-product-shell:not(.is-sidebar-collapsed) .app-side-panel-history-toolbar {
+  margin-top: var(--bos-chrome-gutter);
 }
 
 .bos-product-shell .sidebar-inner {
@@ -47,7 +83,7 @@
    content card (top / left / right), not the traffic-light inset.
    No bottom padding: content-frame’s top margin already gaps tabs ↔ card. */
 .bos-product-shell.is-window-fullscreen {
-  --bos-fullscreen-chrome-inset: 8px;
+  --bos-fullscreen-chrome-inset: var(--bos-chrome-gutter);
 }
 
 .bos-product-shell.is-window-fullscreen .app-side-panel-history-toolbar {
@@ -58,8 +94,15 @@
   .content-tabs-bar-row {
   box-sizing: border-box;
   height: calc(44px + var(--bos-fullscreen-chrome-inset));
-  padding: var(--bos-fullscreen-chrome-inset) var(--bos-fullscreen-chrome-inset)
-    0;
+  min-height: calc(44px + var(--bos-fullscreen-chrome-inset));
+  max-height: none;
+  align-items: flex-end;
+  padding: 0 var(--bos-fullscreen-chrome-inset);
+}
+
+.bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-timer {
+  align-self: flex-end;
+  height: 44px;
 }
 
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {

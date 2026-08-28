@@ -99,8 +99,11 @@ export function useNavigationShortcuts({
             });
             return;
           }
-          closePalette();
+          // Navigate first (warm keep-alive flip), then tear down the palette
+          // after paint — same order as search-select. Closing first costs a
+          // React unmount frame before left-nav-speed navigation can start.
           onNavigate(leaderBinding.href);
+          afterNextPaint(() => closePalette());
           return;
         }
         if (key !== "g") {
