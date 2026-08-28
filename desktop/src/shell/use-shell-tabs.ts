@@ -11,11 +11,11 @@ import {
 import { useNavigationHistory } from "@backsteros/ui/navigation";
 
 import { navigateToHref } from "../router/navigate-href";
-import { useChromeShellLocation } from "../lib/shell-route-keep-alive";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { loadTabsState, TABS_STORAGE_KEY } from "./app-shell-tabs";
 
 export function useShellTabs() {
-  const location = useChromeShellLocation();
+  const location = useShellLocation();
   const navigate = useNavigate();
   const search = location.searchStr;
 

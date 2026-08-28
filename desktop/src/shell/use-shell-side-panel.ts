@@ -17,11 +17,11 @@ import {
   resolveProjectNavFromForPath,
   resolveSidebarActivePathname,
 } from "../lib/project-type-cache";
-import { useChromeShellLocation } from "../lib/shell-route-keep-alive";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceProjects } from "../lib/workspace-data";
 
 export function useShellSidePanel() {
-  const location = useChromeShellLocation();
+  const location = useShellLocation();
   const { projects } = useDesktopWorkspaceProjects();
 
   const pathname = location.pathname;
@@ -36,7 +36,9 @@ export function useShellSidePanel() {
   const panelSearch =
     panelUrl.search ||
     (panelPathname === pathname ? search : "");
-  const inInboxPanel = isInboxPanelPath(panelPathname, panelSearch);
+  const inInboxPanel =
+    isInboxPanelPath(panelPathname, panelSearch) ||
+    isInboxPanelPath(pathname, search);
   const settingsPage = isSettingsPath(pathname);
 
   const projectRouteParam = getProjectRouteParamFromPathname(panelPathname);
@@ -51,7 +53,8 @@ export function useShellSidePanel() {
 
   const showSidePanel =
     !settingsPage &&
-    shouldShowContentSidePanel(panelPathname, panelSearch) &&
+    (shouldShowContentSidePanel(panelPathname, panelSearch) ||
+      shouldShowContentSidePanel(pathname, search)) &&
     !(
       activeProject?.type === "codebase" &&
       isProjectDocumentsSectionPath(panelPathname)

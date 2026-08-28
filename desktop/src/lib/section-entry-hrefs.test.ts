@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { expandNavigationHref } from "./expand-navigation-href";
+import { formatResolvedAppHref, resolveAppHref } from "./resolve-app-href";
 import {
   firstContactHref,
   firstKnowledgeHref,
@@ -43,18 +43,18 @@ describe("section entry hrefs", () => {
   });
 
   it("picks the first letter and non-folder document", () => {
-    expect(firstLetterHref([{ number: 12 }])).toBe("/letters-v2/l-12");
+    expect(firstLetterHref([{ number: 12 }])).toBe("/letters/l-12");
     expect(
       firstKnowledgeHref([
         { id: "folder", title: "Folder", kind: "folder" },
         { id: "doc-1", title: "Note", path: "note", kind: "document" },
       ]),
-    ).toBe("/knowledge-v2/note");
+    ).toBe("/knowledge/note");
   });
 });
 
-describe("expandNavigationHref section roots", () => {
-  it("expands contacts/orgs and leaves inbox/knowledge/letters on the list root", () => {
+describe("resolveAppHref section roots", () => {
+  it("expands list+detail section roots to the seeded first entry", () => {
     rememberSectionEntryHrefs({
       inbox: "/inbox/in-1",
       contacts: "/contacts/1",
@@ -62,11 +62,19 @@ describe("expandNavigationHref section roots", () => {
       letters: "/letters/l-3",
       knowledge: "/knowledge/note",
     });
-    expect(expandNavigationHref("/inbox")).toBe("/inbox");
-    expect(expandNavigationHref("/contacts")).toBe("/contacts/1");
-    expect(expandNavigationHref("/organizations")).toBe("/organizations/2");
-    expect(expandNavigationHref("/letters")).toBe("/letters");
-    expect(expandNavigationHref("/knowledge")).toBe("/knowledge");
+    expect(formatResolvedAppHref(resolveAppHref("/inbox"))).toBe("/inbox/in-1");
+    expect(formatResolvedAppHref(resolveAppHref("/contacts"))).toBe(
+      "/contacts/1",
+    );
+    expect(formatResolvedAppHref(resolveAppHref("/organizations"))).toBe(
+      "/organizations/2",
+    );
+    expect(formatResolvedAppHref(resolveAppHref("/letters"))).toBe(
+      "/letters/l-3",
+    );
+    expect(formatResolvedAppHref(resolveAppHref("/knowledge"))).toBe(
+      "/knowledge/note",
+    );
   });
 
   it("leaves concrete item hrefs alone", () => {
@@ -74,8 +82,12 @@ describe("expandNavigationHref section roots", () => {
       inbox: "/inbox/in-1",
       contacts: "/contacts/1",
     });
-    expect(expandNavigationHref("/inbox/in-9")).toBe("/inbox/in-9");
-    expect(expandNavigationHref("/contacts/8")).toBe("/contacts/8");
+    expect(formatResolvedAppHref(resolveAppHref("/inbox/in-9"))).toBe(
+      "/inbox/in-9",
+    );
+    expect(formatResolvedAppHref(resolveAppHref("/contacts/8"))).toBe(
+      "/contacts/8",
+    );
   });
 });
 
@@ -83,28 +95,20 @@ describe("shouldKeepAliveSurface", () => {
   it("keeps list/calendar/inbox/knowledge/tasks/journal panes after first visit", () => {
     expect(shouldKeepAliveSurface("calendar", "/calendar")).toBe(true);
     expect(shouldKeepAliveSurface("inbox", "/inbox/in-1")).toBe(true);
-    expect(shouldKeepAliveSurface("knowledge-v2", "/knowledge-v2/note")).toBe(
-      true,
-    );
+    expect(shouldKeepAliveSurface("knowledge", "/knowledge/note")).toBe(true);
     expect(shouldKeepAliveSurface("tasks-list", "/tasks")).toBe(true);
-    expect(shouldKeepAliveSurface("journal-v2", "/journal-v2/2026-08-26")).toBe(
-      true,
-    );
-    expect(shouldKeepAliveSurface("habits-v2", "/habits-v2")).toBe(true);
     expect(shouldKeepAliveSurface("journal-day", "/journal/2026-08-26")).toBe(
-      false,
+      true,
     );
     expect(shouldKeepAliveSurface("journal-habits", "/journal/habits")).toBe(
-      false,
+      true,
     );
     expect(shouldKeepAliveSurface("projects", "/projects")).toBe(true);
     expect(shouldKeepAliveSurface("contacts", "/contacts/1")).toBe(true);
     expect(shouldKeepAliveSurface("organizations", "/organizations/1")).toBe(
       true,
     );
-    expect(shouldKeepAliveSurface("letters-v2", "/letters-v2/l-1")).toBe(true);
-    expect(shouldKeepAliveSurface("letters", "/letters/l-1")).toBe(false);
-    expect(shouldKeepAliveSurface("knowledge", "/knowledge/note")).toBe(false);
+    expect(shouldKeepAliveSurface("letters", "/letters/l-1")).toBe(true);
   });
 
   it("does not keep-alive org-scoped lists or Outlet-only sections", () => {
@@ -124,13 +128,13 @@ describe("shouldKeepAliveSidePanelSurface", () => {
     expect(shouldKeepAliveSidePanelSurface("calendar", "/calendar")).toBe(true);
     expect(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1")).toBe(true);
     expect(
-      shouldKeepAliveSidePanelSurface("knowledge-v2", "/knowledge-v2/note"),
+      shouldKeepAliveSidePanelSurface("knowledge", "/knowledge/note"),
     ).toBe(true);
     expect(
-      shouldKeepAliveSidePanelSurface("journal-v2", "/journal-v2/2026-08-26"),
+      shouldKeepAliveSidePanelSurface("journal-day", "/journal/2026-08-26"),
     ).toBe(true);
     expect(
-      shouldKeepAliveSidePanelSurface("habits-v2", "/habits-v2"),
+      shouldKeepAliveSidePanelSurface("journal-habits", "/journal/habits"),
     ).toBe(true);
     expect(shouldKeepAliveSidePanelSurface("contacts", "/contacts/1")).toBe(
       true,
@@ -138,7 +142,7 @@ describe("shouldKeepAliveSidePanelSurface", () => {
     expect(
       shouldKeepAliveSidePanelSurface("organizations", "/organizations/1"),
     ).toBe(true);
-    expect(shouldKeepAliveSidePanelSurface("letters-v2", "/letters-v2/l-1")).toBe(
+    expect(shouldKeepAliveSidePanelSurface("letters", "/letters/l-1")).toBe(
       true,
     );
   });
@@ -171,9 +175,11 @@ describe("isRoutePathActive", () => {
     expect(isRoutePathActive("/calendar/tasks", "/calendar")).toBe(true);
     expect(isRoutePathActive("/contacts/2", "/calendar")).toBe(false);
     expect(isRoutePathActive("/journal/2026-08-26", "/calendar")).toBe(false);
-    expect(isRoutePathActive("/habits-v2", "/habits-v2")).toBe(true);
-    expect(isRoutePathActive("/habits-v2/habit-1", "/habits-v2")).toBe(true);
-    expect(isRoutePathActive("/journal-v2/2026-08-26", "/habits-v2")).toBe(
+    expect(isRoutePathActive("/journal/habits", "/journal/habits")).toBe(true);
+    expect(isRoutePathActive("/journal/habits/habit-1", "/journal/habits")).toBe(
+      true,
+    );
+    expect(isRoutePathActive("/journal/2026-08-26", "/journal/habits")).toBe(
       false,
     );
   });

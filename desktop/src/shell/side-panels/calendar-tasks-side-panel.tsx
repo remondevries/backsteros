@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   CalendarTasksSidePanelView,
+  type CalendarPageMode,
   type CalendarSidePanelHabitItem,
   unscheduledCalendarTasks,
   buildCalendarSidePanelKeyboardItemIds,
@@ -13,9 +14,10 @@ import {
   LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
 } from "@backsteros/ui";
 
-import { useCalendarPageModeControls } from "../../lib/use-calendar-page-mode";
+import { useKeepAliveActive } from "../../lib/shell-route-keep-alive";
 import type { useDesktopWorkspaceMeta } from "../../lib/workspace-data";
 
+/** Tasks/meetings body — chrome owned by DesktopCalendarSidePanel when embedded. */
 export function DesktopCalendarTasksSidePanel({
   pathname,
   search,
@@ -28,6 +30,9 @@ export function DesktopCalendarTasksSidePanel({
   onTaskOpen,
   onToggleHabit,
   panelVariant = "calendar",
+  embedded = false,
+  pageMode,
+  onPageModeChange,
 }: {
   pathname: string;
   search: string;
@@ -43,8 +48,11 @@ export function DesktopCalendarTasksSidePanel({
     habit: CalendarSidePanelHabitItem,
     checked: boolean,
   ) => void;
+  embedded?: boolean;
+  pageMode: CalendarPageMode;
+  onPageModeChange: (mode: CalendarPageMode) => void;
 }) {
-  const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
+  const keepAliveActive = useKeepAliveActive();
   const listRef = useRef<HTMLElement>(null);
   const [inboxCollapsed, setInboxCollapsed] = useState(false);
   const [meetingsCollapsed, setMeetingsCollapsed] = useState(false);
@@ -91,7 +99,7 @@ export function DesktopCalendarTasksSidePanel({
       onTaskOpen(parsed.entityId);
     },
     zone: LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
-    enabled: itemIds.length > 0,
+    enabled: keepAliveActive && itemIds.length > 0,
   });
   const listContainerProps = useListKeyboardNavigationContainerProps(
     LIST_KEYBOARD_NAV_ZONE_SIDE_PANEL,
@@ -111,7 +119,7 @@ export function DesktopCalendarTasksSidePanel({
       loading={loading}
       panelVariant={panelVariant}
       pageMode={pageMode}
-      onPageModeChange={handlePageModeChange}
+      onPageModeChange={onPageModeChange}
       onCreateMeeting={onCreateMeeting}
       onMeetingOpen={onMeetingOpen}
       onTaskOpen={onTaskOpen}
@@ -120,6 +128,7 @@ export function DesktopCalendarTasksSidePanel({
       highlightedId={highlightedId}
       listRef={listRef}
       listContainerProps={listContainerProps}
+      embedded={embedded}
       inboxCollapsed={inboxCollapsed}
       onToggleInboxGroup={() => {
         setInboxCollapsed((value) => !value);

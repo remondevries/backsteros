@@ -74,6 +74,8 @@ export type CalendarTasksSidePanelViewProps = {
   onToggleTasksGroup?: () => void;
   habitsCollapsed?: boolean;
   onToggleHabitsGroup?: () => void;
+  /** When true, render only the list body — parent shell owns chrome + mode footer. */
+  embedded?: boolean;
 };
 
 /**
@@ -104,6 +106,7 @@ export function CalendarTasksSidePanelView({
   onToggleTasksGroup,
   habitsCollapsed: habitsCollapsedProp,
   onToggleHabitsGroup,
+  embedded = false,
 }: CalendarTasksSidePanelViewProps) {
   const dragContainerRef = useRef<HTMLDivElement>(null);
   const showUnscheduledTasks = panelVariant === "calendar";
@@ -175,11 +178,11 @@ export function CalendarTasksSidePanelView({
   const resolvedEmptyLabel =
     panelVariant === "meetings" ? "No meetings yet." : emptyLabel;
 
-  return (
+  const shell = (
     <ContentSidePanelShell
       title={panelTitle}
       className="calendar-side-panel"
-      mainRef={dragContainerRef}
+      mainRef={embedded ? undefined : dragContainerRef}
       headerActions={
         onCreateMeeting ? (
           <button
@@ -201,12 +204,16 @@ export function CalendarTasksSidePanelView({
       listAriaLabel={listAriaLabel}
       listRef={listRef}
       listContainerProps={listContainerProps}
+      bare={embedded}
       afterMain={
-        <CalendarSidePanelModeFooter
-          pageMode={pageMode}
-          onPageModeChange={onPageModeChange}
-        />
+        embedded ? null : (
+          <CalendarSidePanelModeFooter
+            pageMode={pageMode}
+            onPageModeChange={onPageModeChange}
+          />
+        )
       }
+      showHeader={!embedded}
     >
       {hasInboxMeetings ? (
         <ProjectTypeGroupSection
@@ -359,4 +366,9 @@ export function CalendarTasksSidePanelView({
       ) : null}
     </ContentSidePanelShell>
   );
+
+  if (embedded) {
+    return <div ref={dragContainerRef}>{shell}</div>;
+  }
+  return shell;
 }

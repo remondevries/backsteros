@@ -211,7 +211,8 @@ async function patchLocalEntity(
   }
 }
 
-/** Optimistic local SQLite first; REST only when PowerSync is not connected. */
+/** Optimistic local SQLite first; REST only when PowerSync is not connected
+ *  (plus the sole dual-write exception in {@link taskPatchRequiresRestWrite}). */
 export async function patchEntityViaPowerSyncOrApi(
   client: BacksterosApiClient,
   powerSync: MobileEntityPowerSync,
@@ -235,6 +236,7 @@ export async function patchEntityViaPowerSyncOrApi(
     }
   }
 
+  // Skip REST while PowerSync uploads — except agentInboxApproved (sole exception).
   if (
     shouldSkipRestEntityWrite(powerSync) &&
     !taskPatchRequiresRestWrite(apiValues)

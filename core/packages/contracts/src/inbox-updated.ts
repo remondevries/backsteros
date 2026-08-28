@@ -139,9 +139,20 @@ export function shouldClearInboxUpdatedOnUserWrite(input: {
 }
 
 /**
- * Task PATCH fields that must reach Postgres via REST even when the client
- * normally writes through PowerSync upload only. Without a REST dual-write,
- * local approval can disappear on the next sync.
+ * Sole REST dual-write exception while PowerSync upload is the primary path.
+ *
+ * Clients skip REST entity writes when PowerSync is ready + connected
+ * (`shouldSkipRestEntityWrite`). The one allowed exception is approving an
+ * agent-created inbox task (`agentInboxApproved: true`):
+ *
+ * Server `updateTask` stamps `agent_inbox_approved_at` from either the boolean
+ * REST flag or a replicated ISO timestamp. PowerSync upload does send
+ * `agent_inbox_approved_at`, but a concurrent pull that still has a null
+ * approval can race ahead of the upload ack and clear the local sign-off from
+ * the inbox list. The REST PATCH stamps Postgres immediately so the next
+ * replication cannot drop the approval.
+ *
+ * Do not add further exceptions here — fix the upload/replication race instead.
  */
 export function taskPatchRequiresRestWrite(
   values: Record<string, unknown>,

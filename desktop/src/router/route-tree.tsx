@@ -30,7 +30,11 @@ import {
   DevelopmentPage,
   EmailPage,
   FinancePage,
+  HabitTrackerPage,
   InboxPage,
+  JournalPage,
+  KnowledgePage,
+  LettersPage,
   NotFoundPage,
   OrgContactScopedLetterPage,
   OrgContactScopedTaskDetailPage,
@@ -42,12 +46,7 @@ import {
   ProjectsPage,
   SettingsPage,
   ShellLayout,
-  TaskDetailPage,
   TaskListPage,
-  JournalV2Page,
-  HabitTrackerV2Page,
-  KnowledgeV2Page,
-  LettersV2Page,
 } from "./shell-layout";
 
 function RootLayout() {
@@ -171,39 +170,41 @@ const emailMessageRoute = createRoute({
 const journalIndexRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal",
-  beforeLoad: () => {
-    throw redirect({ to: "/journal-v2" });
-  },
+  component: () => (
+    <LazyRoute>
+      <JournalPage />
+    </LazyRoute>
+  ),
 });
 
 const journalHabitsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal/habits",
-  beforeLoad: () => {
-    throw redirect({ to: "/habits-v2" });
-  },
+  component: () => (
+    <LazyRoute>
+      <HabitTrackerPage />
+    </LazyRoute>
+  ),
 });
 
 const journalHabitDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal/habits/$habitId",
-  beforeLoad: ({ params }) => {
-    throw redirect({
-      to: "/habits-v2/$habitId",
-      params: { habitId: params.habitId },
-    });
-  },
+  component: () => (
+    <LazyRoute>
+      <HabitTrackerPage />
+    </LazyRoute>
+  ),
 });
 
 const journalDateRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal/$dateSlug",
-  beforeLoad: ({ params }) => {
-    throw redirect({
-      to: "/journal-v2/$dateSlug",
-      params: { dateSlug: params.dateSlug },
-    });
-  },
+  component: () => (
+    <LazyRoute>
+      <JournalPage />
+    </LazyRoute>
+  ),
 });
 
 const tasksListRoute = createRoute({
@@ -220,87 +221,87 @@ const tasksListRoute = createRoute({
 const journalV2ListRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal-v2",
-  component: () => (
-    <LazyRoute>
-      <JournalV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/journal", replace: true });
+  },
 });
 
 const journalV2DateRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "journal-v2/$dateSlug",
-  component: () => (
-    <LazyRoute>
-      <JournalV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/journal/$dateSlug",
+      params: { dateSlug: params.dateSlug },
+      replace: true,
+    });
+  },
 });
 
 const habitsV2ListRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "habits-v2",
-  component: () => (
-    <LazyRoute>
-      <HabitTrackerV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/journal/habits", replace: true });
+  },
 });
 
 const habitsV2DetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "habits-v2/$habitId",
-  component: () => (
-    <LazyRoute>
-      <HabitTrackerV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/journal/habits/$habitId",
+      params: { habitId: params.habitId },
+      replace: true,
+    });
+  },
 });
 
 const knowledgeV2Route = createRoute({
   getParentRoute: () => shellRoute,
   path: "knowledge-v2",
+  beforeLoad: ({ location }) => {
+    const next =
+      location.pathname === "/knowledge-v2" ||
+      location.pathname === "/knowledge-v2/"
+        ? "/knowledge"
+        : location.pathname.replace(/^\/knowledge-v2/, "/knowledge");
+    throw redirect({ href: `${next}${location.searchStr}`, replace: true });
+  },
   component: () => <Outlet />,
 });
 
 const knowledgeV2IndexRoute = createRoute({
   getParentRoute: () => knowledgeV2Route,
   path: "/",
-  component: () => (
-    <LazyRoute>
-      <KnowledgeV2Page />
-    </LazyRoute>
-  ),
+  component: () => null,
 });
 
 const knowledgeV2SplatRoute = createRoute({
   getParentRoute: () => knowledgeV2Route,
   path: "$",
-  component: () => (
-    <LazyRoute>
-      <KnowledgeV2Page />
-    </LazyRoute>
-  ),
+  component: () => null,
 });
 
 const lettersV2Route = createRoute({
   getParentRoute: () => shellRoute,
   path: "letters-v2",
-  component: () => (
-    <LazyRoute>
-      <LettersV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: () => {
+    throw redirect({ to: "/letters", replace: true });
+  },
 });
 
 const lettersV2DetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "letters-v2/$slug",
-  component: () => (
-    <LazyRoute>
-      <LettersV2Page />
-    </LazyRoute>
-  ),
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/letters/$slug",
+      params: { slug: params.slug },
+      replace: true,
+    });
+  },
 });
 
 const tasksDueFilterDetailRoute = createRoute({
@@ -308,7 +309,7 @@ const tasksDueFilterDetailRoute = createRoute({
   path: "tasks/$dueFilter/$taskSlug",
   component: () => (
     <LazyRoute>
-      <TaskDetailPage />
+      <TaskListPage />
     </LazyRoute>
   ),
 });
@@ -318,7 +319,7 @@ const tasksDetailRoute = createRoute({
   path: "tasks/$taskId",
   component: () => (
     <LazyRoute>
-      <TaskDetailPage />
+      <TaskListPage />
     </LazyRoute>
   ),
 });
@@ -485,45 +486,47 @@ const projectDetailRoute = createRoute({
 const knowledgeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "knowledge",
-  beforeLoad: ({ location }) => {
-    const next =
-      location.pathname === "/knowledge" || location.pathname === "/knowledge/"
-        ? "/knowledge-v2"
-        : location.pathname.replace(/^\/knowledge/, "/knowledge-v2");
-    throw redirect({ href: `${next}${location.searchStr}` });
-  },
   component: () => <Outlet />,
 });
 
 const knowledgeIndexRoute = createRoute({
   getParentRoute: () => knowledgeRoute,
   path: "/",
-  component: () => null,
+  component: () => (
+    <LazyRoute>
+      <KnowledgePage />
+    </LazyRoute>
+  ),
 });
 
 const knowledgeSplatRoute = createRoute({
   getParentRoute: () => knowledgeRoute,
   path: "$",
-  component: () => null,
+  component: () => (
+    <LazyRoute>
+      <KnowledgePage />
+    </LazyRoute>
+  ),
 });
 
 const lettersRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "letters",
-  beforeLoad: () => {
-    throw redirect({ to: "/letters-v2" });
-  },
+  component: () => (
+    <LazyRoute>
+      <LettersPage />
+    </LazyRoute>
+  ),
 });
 
 const letterDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "letters/$slug",
-  beforeLoad: ({ params }) => {
-    throw redirect({
-      to: "/letters-v2/$slug",
-      params: { slug: params.slug },
-    });
-  },
+  component: () => (
+    <LazyRoute>
+      <LettersPage />
+    </LazyRoute>
+  ),
 });
 
 const financeRoute = createRoute({

@@ -25,7 +25,7 @@ import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import {
   TaskListDueDateLabel,
-  TaskListPriorityLabel,
+  TaskListPriorityMark,
 } from "../tasks/task-list-property-label.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { Tooltip } from "../shared/tooltip.js";
@@ -211,13 +211,13 @@ function EmailMessageRow({
               {relativeTime}
             </span>
           ) : null}
-          <TaskListPriorityLabel priority={priority} />
+          <TaskListPriorityMark priority={priority} />
           {hasDue ? (
             <TaskListDueDateLabel dueDate={dueDate!} status={status} />
           ) : null}
           <Tooltip label={personLabel}>
             <span
-              className="inbox-list-item-assignee inbox-list-item-field"
+              className="inbox-list-item-assignee"
               aria-label={personLabel}
             >
               {personChip}

@@ -52,6 +52,7 @@ import {
 } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel, TASK_STATUS_ORDER, type TaskStatus } from "../../tasks/task-status.js";
 import {
+  TITLE_RENAME_EVENT,
   focusAndSelectTitleInput,
   isTitleRenameShortcut,
 } from "../../shortcuts/title-rename-shortcut.js";
@@ -698,19 +699,20 @@ export function ComposeModal({
       return;
     }
 
+    function focusComposeTitle() {
+      if (document.querySelector("[data-searchable-dropdown-panel]")) {
+        requestCloseSearchableDropdowns();
+      }
+      window.requestAnimationFrame(() => {
+        focusAndSelectTitleInput(titleInputRef.current);
+      });
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       if (isTitleRenameShortcut(event)) {
-        if (document.querySelector("[data-searchable-dropdown-panel]")) {
-          event.preventDefault();
-          event.stopPropagation();
-          requestCloseSearchableDropdowns();
-        } else {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        window.requestAnimationFrame(() => {
-          focusAndSelectTitleInput(titleInputRef.current);
-        });
+        event.preventDefault();
+        event.stopPropagation();
+        focusComposeTitle();
         return;
       }
 
@@ -800,7 +802,11 @@ export function ComposeModal({
     }
 
     document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener(TITLE_RENAME_EVENT, focusComposeTitle);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener(TITLE_RENAME_EVENT, focusComposeTitle);
+    };
   }, [
     advanceComposeTaskTab,
     canSubmit,

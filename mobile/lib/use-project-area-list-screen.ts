@@ -156,7 +156,7 @@ export function useProjectAreaListScreen({
     ],
   );
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, true, localRows.length > 0);
 
   const sourceRows = resolveSyncedOrRestRows({
     localRows,

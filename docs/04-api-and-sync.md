@@ -8,32 +8,34 @@ Three surfaces on one backend:
 2. **REST / OpenAPI** — agents, portals, automation
 3. **Live documents** — SSE/WebSocket for open-file collaboration
 
-## Sync API (apps)
+## Sync API (apps) — **DEAD (quarantined)**
 
-Aligned with Linear-style cursor sync. PowerSync handles transport; these are the logical operations the API validates on upload.
+> **Do not build new clients against these.** Active upload path is
+> PowerSync → `POST /api/v1/powersync/write`. The endpoints below remain
+> registered for legacy storage-health probes only (`sync-routes.ts`).
 
-### Bootstrap (scoped)
+### Bootstrap (scoped) — DEAD
 
 ```http
-POST /sync/bootstrap
+POST /api/v1/sync/bootstrap
 ```
 
 Returns: `schema_version`, `cursor`, snapshot of Tier A + B entities per sync rules, `spaces_configured` flag.
 
 Does **not** include Tier D bodies.
 
-### Pull deltas
+### Pull deltas — DEAD
 
 ```http
-GET /sync/pull?cursor={n}
+GET /api/v1/sync/pull?cursor={n}
 ```
 
 Returns: `events[]`, `has_more`, new `cursor`.
 
-### Push mutations (batch)
+### Push mutations (batch) — DEAD
 
 ```http
-POST /sync/push
+POST /api/v1/sync/push
 ```
 
 ```json
@@ -53,7 +55,7 @@ Supports **bulk edit**: many changes in one mutation, one DB transaction server-
 
 Response: `accepted_mutation_ids`, new `cursor`.
 
-### Realtime hint (optional)
+### Realtime hint (optional) — not wired for apps
 
 ```http
 GET /sync/stream
@@ -148,9 +150,15 @@ When user opens a document in CodeMirror:
 
 ## PowerSync upload path
 
-Client writes locally → PowerSync queue → `uploadData` callback on API → same domain functions as REST → Postgres → replication back to clients.
+Client writes locally → PowerSync queue → `uploadData` → `POST /api/v1/powersync/write` → same domain functions as REST → Postgres → replication back to clients.
 
-**One implementation** of business logic; REST is a thin wrapper for external callers.
+**One implementation** of business logic; REST is a thin wrapper for external callers (agents) and for the **sole dual-write exception** below.
+
+### Client write gate
+
+When PowerSync is `ready && connected`, desktop/mobile `*ViaPowerSyncOrApi` helpers skip REST (`shouldSkipRestEntityWrite`).
+
+**Sole REST dual-write exception:** `taskPatchRequiresRestWrite` — `agentInboxApproved: true` only. Stamps Postgres immediately so a racing pull cannot clear the local inbox sign-off before the PowerSync upload ack. Do not add further exceptions; fix upload/replication races instead. See `@backsteros/contracts` `inbox-updated.ts`.
 
 ## Circle API reference
 
@@ -169,7 +177,7 @@ Historical context (why it existed): packaged desktop could report PowerSync `re
 | 1 | Tasks, inbox tasks, projects | Immediately on auth — flips `restHydrateSettled` |
 | 2 | Documents, areas, orgs, contacts, letters, habits, meetings | `requestIdleCallback` (or timeout fallback) after wave 1 |
 
-Former implementation: [`desktop/src/lib/workspace/use-workspace-api-rows.ts`](../desktop/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts). Mobile still mirrors via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) until a follow-up.
+Former implementation: [`desktop/src/lib/workspace/use-workspace-api-rows.ts`](../desktop/src/lib/workspace/use-workspace-api-rows.ts), [`merge-local-and-api.ts`](../desktop/src/lib/merge-local-and-api.ts). Mobile list hydrate is cold-start / offline-only via [`mobile/lib/use-rest-list-hydration.ts`](../mobile/lib/use-rest-list-hydration.ts) + [`rest-list-hydration-policy.ts`](../mobile/lib/rest-list-hydration-policy.ts) — no REST refetch or field-merge over local rows while PowerSync is connected and SQLite has rows.
 
 ### Merge rules
 

@@ -68,10 +68,10 @@ export function formatJournalSidePanelLabel(dateSlug: string): string {
 
 export function getJournalHref(dateSlug?: string): string {
   if (!dateSlug) {
-    return "/journal-v2";
+    return "/journal";
   }
 
-  return `/journal-v2/${dateSlug}`;
+  return `/journal/${dateSlug}`;
 }
 
 export function getJournalV2Href(dateSlug?: string): string {
@@ -81,22 +81,16 @@ export function getJournalV2Href(dateSlug?: string): string {
 export function getSelectedJournalDateFromPathname(
   pathname: string,
 ): string | undefined {
-  return (
-    getSelectedJournalV2DateFromPathname(pathname) ??
-    (() => {
-      const match = pathname.match(/^\/journal\/([^/]+)(?:\/|$)/);
-      if (!match) {
-        return undefined;
-      }
+  const match = pathname.match(/^\/journal\/([^/]+)(?:\/|$)/);
+  if (match) {
+    const slug = decodeURIComponent(match[1]!);
+    if (isJournalReservedSlug(slug) || !isValidJournalDateSlug(slug)) {
+      return undefined;
+    }
+    return slug;
+  }
 
-      const slug = decodeURIComponent(match[1]!);
-      if (isJournalReservedSlug(slug) || !isValidJournalDateSlug(slug)) {
-        return undefined;
-      }
-
-      return slug;
-    })()
-  );
+  return getSelectedJournalV2DateFromPathname(pathname);
 }
 
 export function getSelectedJournalV2DateFromPathname(

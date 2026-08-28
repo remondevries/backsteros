@@ -1,14 +1,13 @@
-/* Sticky (not absolute): invoices page scrolls as a whole, unlike the
-   height-constrained transactions list pane. Dock stays full-width with
-   pointer-events: none (from bulk-bar-dock); the filter pill itself is
-   clickable. */
+/* Absolute dock pinned to the list pane (same pattern as transactions):
+   scroll lives in `.finance-invoices-view__scroll`, so the island stays put
+   while the chart/list load or change height. */
 .finance-invoices-view__filter-dock.finance-bulk-bar-dock {
-  position: sticky;
-  left: auto;
-  right: auto;
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 12px;
   z-index: 50;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .finance-invoices-view__filter-dock .finance-filter-bar {
@@ -130,9 +129,9 @@
   min-width: 0;
   grid-template-columns: var(--finance-invoices-cols);
   align-items: center;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 550;
+  color: var(--list-column-header-color, var(--muted));
+  font-size: var(--list-column-header-size, 11px);
+  font-weight: var(--list-column-header-weight, 500);
   line-height: 1.2;
 }
 

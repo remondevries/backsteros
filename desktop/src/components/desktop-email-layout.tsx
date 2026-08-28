@@ -9,6 +9,10 @@ import {
 import { shouldHandleGlobalShortcut } from "@backsteros/ui";
 
 import { DesktopAgentChatPanel } from "./desktop-agent-chat-panel";
+import {
+  readAgentPanelCollapsed,
+  writeAgentPanelCollapsed,
+} from "../lib/agent/agent-panel-collapsed";
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import { buildEmailAgentAcpPrompt } from "../lib/agent/email-agent-prompt";
@@ -66,7 +70,19 @@ export function DesktopEmailLayout({
   } = useDesktopEmailAgentSession({ taskId, message });
 
   const [layoutReady, setLayoutReady] = useState(false);
-  const [agentCollapsed, setAgentCollapsed] = useState(true);
+  const [agentCollapsed, setAgentCollapsedState] = useState(() =>
+    readAgentPanelCollapsed("email", true),
+  );
+  const setAgentCollapsed = useCallback(
+    (update: boolean | ((current: boolean) => boolean)) => {
+      setAgentCollapsedState((current) => {
+        const next = typeof update === "function" ? update(current) : update;
+        writeAgentPanelCollapsed("email", next);
+        return next;
+      });
+    },
+    [],
+  );
   const [collapseAnimating, setCollapseAnimating] = useState(false);
   const collapseAnimTimerRef = useRef<number | null>(null);
   const collapseRafRef = useRef<number | null>(null);
@@ -184,7 +200,6 @@ export function DesktopEmailLayout({
     previousTaskIdRef.current = taskId;
     if (taskChanged) {
       reconcileKeyRef.current = null;
-      setAgentCollapsed(true);
     }
   }, [taskId]);
 
@@ -264,6 +279,7 @@ export function DesktopEmailLayout({
             cwd="~"
             agentChatId={agentChatId}
             collapsed={agentCollapsed}
+            collapseAnimating={collapseAnimating}
             layoutReady={layoutReady}
             viewScope="rail"
             chatOnly

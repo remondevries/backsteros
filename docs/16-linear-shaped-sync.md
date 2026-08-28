@@ -56,7 +56,7 @@ flowchart TB
 
 1. **Bootstrap** Tier A/B into local SQLite (PowerSync download / sync bootstrap).
 2. **Read path** = local SQLite only for list/detail metadata.
-3. **Write path** = optimistic local patch → mutation queue (`mutation_id`) → `/powersync/write` or `/sync/push` → wait for server ack / delta containing that sync id.
+3. **Write path** = optimistic local patch → mutation queue (`mutation_id`) → `/powersync/write` → wait for server ack / delta containing that sync id. (`/sync/push` is DEAD — storage-health only.)
 4. **No** `mergeLocalAndApiByUpdatedAt` for product lists. REST may remain for one-shot Tier C/D fetches and cold-start rescue **only until** PowerSync download is proven — not as a second source of truth.
 5. Open markdown bodies stay on-demand (Tier C); PDFs stay local-vault (Tier D).
 
@@ -96,9 +96,10 @@ flowchart TB
 | Desktop cold-start-only REST hydrate (no soft-revalidate) | Landed |
 | API column fillers only on cold start | Landed |
 | True cloud `lastSyncId` + replica apply protocol | Partial — local REST/PowerSync forward to `POST /internal/core-replication/mutations`; cloud assigns sync_id; local applies ordered events (no local append). Table LWW remains catch-up |
-| Drop REST list hydrate entirely | Partial — skipped when PowerSync already has `lastSyncedAt`; cold-start rescue remains |
+| Drop REST list hydrate entirely | Partial — mobile skips while PowerSync connected + SQLite has rows; empty-SQLite / offline rescue remains |
 | Mutation receipts across cores | Partial — REST/PowerSync claim receipts; leader accept is idempotent on event mutation id |
-| Desktop writes via PowerSync upload only | Partial — skip REST dual-write when PowerSync `connected` |
+| Desktop writes via PowerSync upload only | Partial — `shouldSkipRestEntityWrite`; sole REST exception `taskPatchRequiresRestWrite` (`agentInboxApproved`) |
+| Legacy `/api/v1/sync/{bootstrap,pull,push}` | Quarantined DEAD — storage-health only; do not build new clients |
 | Leader-first writes (cloud clock) | Partial — local-core forwards when `CORE_REPLICATION_ROLE=local`; offline falls back to local clock |
 
 ## Non-goals

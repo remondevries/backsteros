@@ -63,6 +63,10 @@ export type TaskPropertiesDisplayProps = {
   agentInboxPending?: boolean;
   onAgentInboxApprove?: () => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  onTimerSessionChange?: (
+    action: "start" | "pause",
+    seconds?: number | null,
+  ) => void;
   timerSession?: TrackedTimerSessionMeta | null;
 };
 
@@ -91,6 +95,7 @@ export function TaskPropertiesDisplay({
   agentInboxPending = false,
   onAgentInboxApprove,
   onTrackedDurationSecondsChange,
+  onTimerSessionChange,
   timerSession = null,
 }: TaskPropertiesDisplayProps) {
   const disabled = task == null;
@@ -132,6 +137,7 @@ export function TaskPropertiesDisplay({
           )}
           disabled={disabled}
           onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+          onTimerSessionChange={onTimerSessionChange}
           timerSession={timerSession}
         />
       </div>

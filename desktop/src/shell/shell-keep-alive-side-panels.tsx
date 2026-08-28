@@ -1,10 +1,9 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { primeTabTitle } from "@backsteros/ui/shell";
 import {
   buildAssigneeDropdownOptions,
   buildProjectDropdownOptions,
-  getTaskDueDateYmd,
   buildTaskDueDatePatch,
 } from "@backsteros/ui/tasks";
 import {
@@ -15,7 +14,6 @@ import {
   type InboxListItem,
 } from "@backsteros/ui/inbox";
 import {
-  isCalendarListPath,
   defaultNewMeetingTimes,
   withCalendarMeetingSearch,
   getCalendarMeetingOverlayHref,
@@ -25,13 +23,11 @@ import {
   withCalendarViewSearch,
   type CalendarSidePanelHabitItem,
 } from "@backsteros/ui/calendar";
-import { getFirstInboxItemHref } from "@backsteros/ui";
+import { getFirstInboxItemHref, getJournalHref } from "@backsteros/ui";
 import {
   getContactsHref,
   getKnowledgeHref,
-  getKnowledgeV2Href,
   getLettersHref,
-  getLettersV2Href,
   getOrganizationsHref,
   getProjectRouteParamFromPathname,
   getProjectRouteScopeFromPathname,
@@ -44,9 +40,16 @@ import {
 import { useDesktopApi } from "../lib/api-context";
 import { useAgentMail } from "../lib/agentmail-context";
 import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
-import { firstKnowledgeHref, firstLetterHref } from "../lib/section-entry-hrefs";
+import {
+  firstContactHref,
+  firstKnowledgeHref,
+  firstLetterHref,
+  firstOrganizationHref,
+} from "../lib/section-entry-hrefs";
 import { buildMailboxByIdMap } from "../lib/email-list-tasks";
+import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
 import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
+import { habitsWithTodayTasks } from "../lib/habit-today-tasks";
 import { renderTaskAgentTitleTrailing } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import {
@@ -68,15 +71,16 @@ import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceMeta,
+  useDesktopWorkspaceInboxItems,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
+  useWorkspaceSurfaceReady,
 } from "../lib/workspace-data";
 import {
-  DesktopCalendarTasksSidePanel,
-  DesktopCalendarAvailabilitySidePanel,
-  DesktopCalendarTimetrackingSidePanel,
+  DesktopCalendarSidePanel,
   DesktopContactsSidePanel,
+  DesktopFinanceSidePanel,
   DesktopHabitSidePanel,
   DesktopJournalSidePanel,
   DesktopKnowledgeSidePanel,
@@ -87,10 +91,44 @@ import {
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
 import { RouterLink } from "./app-shell-links";
 import { handleDocumentTreeReorder } from "./document-tree-reorder";
+import type { LeftSidePanelDest } from "../lib/left-side-panel-dest";
 
 const NO_ENTITIES: [] = [];
 
 type PanelNav = (href: string) => void;
+
+export type { LeftSidePanelDest } from "../lib/left-side-panel-dest";
+export {
+  isKeepAliveLeftSidePanelDest,
+  resolveLeftSidePanelDest,
+} from "../lib/left-side-panel-dest";
+
+/**
+ * One tree builder for the host. Keep-alive dests and finance both go here.
+ */
+export function resolveSidePanelTree(
+  dest: LeftSidePanelDest,
+  onNavigate: PanelNav,
+  options: {
+    pathname?: string;
+    sidePanelCollapsed?: boolean;
+    setSidePanelCollapsed?: Dispatch<SetStateAction<boolean>>;
+  } = {},
+): ReactNode {
+  if (dest === "finance") {
+    const setCollapsed = options.setSidePanelCollapsed;
+    return (
+      <DesktopFinanceSidePanel
+        pathname={options.pathname ?? ""}
+        Link={RouterLink}
+        collapsed={options.sidePanelCollapsed ?? false}
+        onToggleCollapse={() => setCollapsed?.((current) => !current)}
+        onExpand={() => setCollapsed?.(false)}
+      />
+    );
+  }
+  return keepAliveSidePanelTree(dest, onNavigate, options.pathname ?? "");
+}
 
 export function keepAliveSidePanelTree(
   surface: Surface,
@@ -106,12 +144,8 @@ export function keepAliveSidePanelTree(
       return <JournalKeepAliveSidePanel onNavigate={onNavigate} />;
     case "journal-habits":
       return <HabitsKeepAliveSidePanel onNavigate={onNavigate} />;
-    case "habits-v2":
-      return <HabitsV2KeepAliveSidePanel onNavigate={onNavigate} />;
     case "knowledge":
       return <KnowledgeKeepAliveSidePanel onNavigate={onNavigate} />;
-    case "knowledge-v2":
-      return <KnowledgeV2KeepAliveSidePanel onNavigate={onNavigate} />;
     case "projects": {
       const parts = pathname.split("/").filter(Boolean);
       if (parts.length < 2) return null;
@@ -123,14 +157,8 @@ export function keepAliveSidePanelTree(
       return <OrganizationsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "letters":
       return <LettersKeepAliveSidePanel onNavigate={onNavigate} />;
-    case "letters-v2":
-      return <LettersV2KeepAliveSidePanel onNavigate={onNavigate} />;
     case "tasks-list":
       return null;
-    case "journal-v2":
-      return (
-        <JournalV2KeepAliveSidePanel onNavigate={onNavigate} />
-      );
     default:
       return null;
   }
@@ -139,7 +167,7 @@ export function keepAliveSidePanelTree(
 export function InboxKeepAliveSidePanel({ onNavigate }: { onNavigate: PanelNav }) {
   const painted = useKeepAliveAfterPaint();
   const { pathname } = useShellLocation();
-  const { inboxItems } = useDesktopWorkspaceMeta();
+  const inboxItems = useDesktopWorkspaceInboxItems();
   if (!painted) {
     return (
       <DesktopInboxSidePanel
@@ -161,9 +189,10 @@ export function InboxKeepAliveSidePanel({ onNavigate }: { onNavigate: PanelNav }
 
 function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
   const frozen = useKeepAliveFrozen();
+  const inboxReady = useWorkspaceSurfaceReady("inbox");
   const { pathname } = useShellLocation();
   const { client } = useDesktopApi();
-  const { ready, inboxItems } = useDesktopWorkspaceMeta();
+  const inboxItems = useDesktopWorkspaceInboxItems();
   const { projects } = useDesktopWorkspaceProjects();
   const { contacts, organizations } = useDesktopWorkspacePeople();
   const { allTasks } = useDesktopWorkspaceTasks();
@@ -186,25 +215,31 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     [contactAvatarSrc, contacts, frozen],
   );
 
-  const inboxNotificationsReady = ready;
+  const inboxNotificationsReady = inboxReady;
   const inboxNotificationsActive = !frozen && isInboxPath(pathname);
 
-  const baseInboxItems = useMemo(() => {
-    const workspaceInboxItems = inboxItems.map((item) => {
-      if (item.kind !== "meeting" || !item.organizationId) return item;
-      return {
-        ...item,
-        organizationAvatarSrc:
-          organizationAvatarSrc[item.organizationId] ?? null,
-      };
-    });
+  const workspaceInboxItems = useMemo(
+    () =>
+      inboxItems.map((item) => {
+        if (item.kind !== "meeting" || !item.organizationId) return item;
+        return {
+          ...item,
+          organizationAvatarSrc:
+            organizationAvatarSrc[item.organizationId] ?? null,
+        };
+      }),
+    [inboxItems, organizationAvatarSrc],
+  );
 
-    if (frozen) {
-      return sortInboxItemsByAttentionStatus(workspaceInboxItems);
-    }
+  const agentMailListSignature = useMemo(
+    () => agentMailMessagesSignature(agentMail.messages),
+    [agentMail.messages],
+  );
 
+  const emailInboxItems = useMemo((): InboxListItem[] => {
+    if (frozen) return [];
     const mailboxById = buildMailboxByIdMap(agentMail.mailboxes);
-    const emailItems: InboxListItem[] = agentMail.messages
+    return agentMail.messages
       .filter((item) =>
         emailBelongsInInbox({
           status: item.status,
@@ -251,18 +286,23 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
             : null,
         });
       });
-    return sortInboxItemsByAttentionStatus([
-      ...workspaceInboxItems,
-      ...emailItems,
-    ]);
   }, [
     agentMail.mailboxes,
-    agentMail.messages,
+    agentMailListSignature,
     contactAvatarSrc,
     frozen,
-    inboxItems,
     organizationAvatarSrc,
   ]);
+
+  const baseInboxItems = useMemo(() => {
+    if (frozen) {
+      return sortInboxItemsByAttentionStatus(workspaceInboxItems);
+    }
+    return sortInboxItemsByAttentionStatus([
+      ...workspaceInboxItems,
+      ...emailInboxItems,
+    ]);
+  }, [emailInboxItems, frozen, workspaceInboxItems]);
 
   const inboxItemsWithEmail = useInboxSessionList(
     !frozen,
@@ -379,10 +419,19 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
       )}
       items={inboxItemsWithEmail}
       attentionGroupOverrides={inboxAttentionGroupOverrides}
-      loading={!ready && inboxItems.length === 0}
+      loading={!inboxReady && inboxItemsWithEmail.length === 0}
       Link={RouterLink}
       projectOptions={inboxProjectOptions}
       assigneeOptions={inboxAssigneeOptions}
+      onStatusChange={(itemId, status) => {
+        const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
+        if (item?.kind === "meeting") return;
+        if (item?.kind === "email") {
+          void patchEmailThreadFromInbox(itemId, { status });
+          return;
+        }
+        void workspaceActions.patchTask(itemId, { status });
+      }}
       onPriorityChange={(itemId, priority) => {
         const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
         if (item?.kind === "meeting") return;
@@ -392,7 +441,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         }
         void workspaceActions.patchTask(itemId, { priority });
       }}
-      onDueDateChange={(itemId, dueDate, dueEndDate) => {
+      onDueDateChange={(itemId, dueDate) => {
         const item = inboxItemsWithEmail.find((entry) => entry.id === itemId);
         if (item?.kind === "meeting") return;
         if (item?.kind === "email") {
@@ -403,7 +452,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         }
         void workspaceActions.patchTask(
           itemId,
-          buildTaskDueDatePatch(dueDate, dueEndDate),
+          buildTaskDueDatePatch(dueDate),
         );
       }}
       onProjectChange={(itemId, projectKey) => {
@@ -468,7 +517,8 @@ export function CalendarKeepAliveSidePanel({
   const frozen = useKeepAliveFrozen();
   const { pathname, searchStr } = useShellLocation();
   const search = searchStr ?? "";
-  const { ready, habits, meetings } = useDesktopWorkspaceMeta();
+  const calendarReady = useWorkspaceSurfaceReady("calendar");
+  const { habits, meetings } = useDesktopWorkspaceMeta();
   const { tasks, allTasks } = useDesktopWorkspaceTasks();
   const { organizations } = useDesktopWorkspacePeople();
   const workspaceActions = useDesktopWorkspaceActions();
@@ -500,21 +550,20 @@ export function CalendarKeepAliveSidePanel({
   );
 
   const calendarSidePanelHabits = useMemo((): CalendarSidePanelHabitItem[] => {
-    const todayYmd = getTodayJournalDateSlug();
+    const enriched = habitsWithTodayTasks(habits, allTasks, {
+      enabled: !frozen,
+      fallback: [],
+    });
     const items: CalendarSidePanelHabitItem[] = [];
-    for (const habit of habits) {
-      const todayTask = allTasks.find((task) => {
-        if (task.habitId !== habit.id) return false;
-        return getTaskDueDateYmd(task.dueDate) === todayYmd;
-      });
-      if (!todayTask) continue;
+    for (const habit of enriched) {
+      if (!habit.todayTaskId || habit.todayTaskStatus == null) continue;
       items.push({
         id: habit.id,
         title: habit.title,
         icon: habit.icon ?? null,
-        todayTaskId: todayTask.id,
-        todayTaskStatus: todayTask.status,
-        checked: todayTask.status === "completed",
+        todayTaskId: habit.todayTaskId,
+        todayTaskStatus: habit.todayTaskStatus,
+        checked: habit.checked,
       });
     }
     items.sort((a, b) => {
@@ -522,32 +571,19 @@ export function CalendarKeepAliveSidePanel({
       return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
     });
     return items;
-  }, [allTasks, habits]);
+  }, [allTasks, frozen, habits]);
 
   const calendarViewMode = readCalendarViewModeFromSearch(search);
   const calendarPageMode = readCalendarPageModeFromSearch(search);
 
-  if (
-    calendarPageMode === "availability" &&
-    isCalendarListPath(pathname)
-  ) {
-    return <DesktopCalendarAvailabilitySidePanel />;
-  }
-  if (
-    calendarPageMode === "timetracking" &&
-    isCalendarListPath(pathname)
-  ) {
-    return <DesktopCalendarTimetrackingSidePanel />;
-  }
-
   return (
-    <DesktopCalendarTasksSidePanel
+    <DesktopCalendarSidePanel
       pathname={pathname}
       search={search}
       meetings={calendarMeetings}
       tasks={calendarSidePanelTasks}
       habits={calendarSidePanelHabits}
-      loading={!ready}
+      loading={!calendarReady}
       panelVariant="calendar"
       onCreateMeeting={() => {
         const { startAt, endAt } = defaultNewMeetingTimes();
@@ -598,29 +634,16 @@ export function JournalKeepAliveSidePanel({
 }) {
   const { pathname } = useShellLocation();
   const { journalItems } = useDesktopWorkspaceDocuments();
+  const todayHref = getJournalHref(getTodayJournalDateSlug());
   return (
     <DesktopJournalSidePanel
       onNavigate={onNavigate}
-      pathname={pathname}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        todayHref,
+        Boolean(pathname.match(/^\/journal\/\d{4}-\d{2}-\d{2}/)),
+      )}
       items={journalItems}
-    />
-  );
-}
-
-/** Journal v2: same date list, links stay on `/journal-v2/...`. */
-export function JournalV2KeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const { pathname } = useShellLocation();
-  const { journalItems } = useDesktopWorkspaceDocuments();
-  return (
-    <DesktopJournalSidePanel
-      onNavigate={onNavigate}
-      pathname={pathname}
-      items={journalItems}
-      variant="journal-v2"
     />
   );
 }
@@ -636,28 +659,13 @@ export function HabitsKeepAliveSidePanel({
   );
 }
 
-export function HabitsV2KeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const { pathname } = useShellLocation();
-  return (
-    <DesktopHabitSidePanel
-      onNavigate={onNavigate}
-      pathname={pathname}
-      variant="habits-v2"
-    />
-  );
-}
-
 export function KnowledgeKeepAliveSidePanel({
   onNavigate,
 }: {
   onNavigate: PanelNav;
 }) {
   const { pathname } = useShellLocation();
-  const { ready } = useDesktopWorkspaceMeta();
+  const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const workspaceActions = useDesktopWorkspaceActions();
 
@@ -670,7 +678,7 @@ export function KnowledgeKeepAliveSidePanel({
         pathname.startsWith("/knowledge/"),
       )}
       items={knowledgeDocuments}
-      loading={!ready}
+      loading={!knowledgeReady}
       onAdd={(parentFolderId) => {
         void workspaceActions
           .createKnowledgeDocument({
@@ -716,85 +724,13 @@ export function KnowledgeKeepAliveSidePanel({
   );
 }
 
-export function KnowledgeV2KeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const { pathname } = useShellLocation();
-  const { ready } = useDesktopWorkspaceMeta();
-  const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
-  const workspaceActions = useDesktopWorkspaceActions();
-  const firstHref = (() => {
-    const href = firstKnowledgeHref(knowledgeDocuments);
-    if (!href) return null;
-    if (href === "/knowledge") return "/knowledge-v2";
-    return href.replace(/^\/knowledge\//, "/knowledge-v2/");
-  })();
-
-  return (
-    <DesktopKnowledgeSidePanel
-      onNavigate={onNavigate}
-      variant="knowledge-v2"
-      pathname={panePathnameWithFirstItem(
-        pathname,
-        firstHref,
-        pathname.startsWith("/knowledge-v2/"),
-      )}
-      items={knowledgeDocuments}
-      loading={!ready}
-      onAdd={(parentFolderId) => {
-        void workspaceActions
-          .createKnowledgeDocument({
-            title: "Untitled",
-            parentId: parentFolderId,
-          })
-          .then((created) => {
-            onNavigate(getKnowledgeV2Href(created.path || created.id));
-          });
-      }}
-      onCreateFolder={async ({ title, parentId }) => {
-        try {
-          await workspaceActions.createKnowledgeFolder({ title, parentId });
-          return { ok: true };
-        } catch (error) {
-          return {
-            ok: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not create folder.",
-          };
-        }
-      }}
-      onRename={(id, title) => workspaceActions.renameDocument(id, title)}
-      onDelete={(id) => workspaceActions.deleteDocument(id)}
-      onReorderTreeItem={(request) =>
-        handleDocumentTreeReorder(
-          request,
-          knowledgeDocuments.map((item) => ({
-            id: item.id,
-            title: item.title,
-            path: item.path ?? item.id,
-            kind: item.kind === "folder" ? "folder" : "document",
-            parentId: item.parentId ?? null,
-            sortOrder: item.sortOrder ?? 0,
-            icon: item.icon ?? null,
-          })),
-          workspaceActions,
-        )
-      }
-    />
-  );
-}
-
 export function ProjectKeepAliveSidePanel({
   onNavigate,
 }: {
   onNavigate: PanelNav;
 }) {
   const { pathname } = useShellLocation();
-  const { ready } = useDesktopWorkspaceMeta();
+  const lettersReady = useWorkspaceSurfaceReady("letters");
   const { projectDocuments } = useDesktopWorkspaceDocuments();
   const { letters, projects } = useDesktopWorkspaceProjects();
   const workspaceActions = useDesktopWorkspaceActions();
@@ -834,7 +770,7 @@ export function ProjectKeepAliveSidePanel({
         onNavigate={onNavigate}
         pathname={pathname}
         items={projectLettersForPanel}
-        loading={!ready}
+        loading={!lettersReady}
         getLetterHref={(letter) =>
           getScopedProjectLetterHref(projectKey, letter.number, projectRouteScope)
         }
@@ -940,11 +876,16 @@ export function ContactsKeepAliveSidePanel({
     () => (frozen ? contacts : withAvatarSrc(contacts, contactAvatarSrc)),
     [contactAvatarSrc, contacts, frozen],
   );
+  const firstHref = firstContactHref(contacts);
 
   return (
     <DesktopContactsSidePanel
       onNavigate={onNavigate}
-      pathname={pathname}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstHref,
+        pathname.startsWith("/contacts/"),
+      )}
       items={items}
       Link={RouterLink}
       onAdd={() => {
@@ -978,11 +919,16 @@ export function OrganizationsKeepAliveSidePanel({
         : withAvatarSrc(organizations, organizationAvatarSrc),
     [frozen, organizationAvatarSrc, organizations],
   );
+  const firstHref = firstOrganizationHref(organizations);
 
   return (
     <DesktopOrganizationsSidePanel
       onNavigate={onNavigate}
-      pathname={pathname}
+      pathname={panePathnameWithFirstItem(
+        pathname,
+        firstHref,
+        pathname.startsWith("/organizations/"),
+      )}
       items={items}
       Link={RouterLink}
       onAdd={() => {
@@ -1002,7 +948,7 @@ export function LettersKeepAliveSidePanel({
   onNavigate: PanelNav;
 }) {
   const { pathname } = useShellLocation();
-  const { ready } = useDesktopWorkspaceMeta();
+  const lettersReady = useWorkspaceSurfaceReady("letters");
   const { letters } = useDesktopWorkspaceProjects();
   const workspaceActions = useDesktopWorkspaceActions();
 
@@ -1015,55 +961,13 @@ export function LettersKeepAliveSidePanel({
         pathname.startsWith("/letters/"),
       )}
       items={letters}
-      loading={!ready}
+      loading={!lettersReady}
       onAdd={() => {
         void workspaceActions
           .createLetter({ title: "New letter" })
           .then((created) => {
             if (created.number == null) return;
             const href = getLettersHref(created.number);
-            primeTabTitle(href, "New letter");
-            onNavigate(href);
-          });
-      }}
-    />
-  );
-}
-
-export function LettersV2KeepAliveSidePanel({
-  onNavigate,
-}: {
-  onNavigate: PanelNav;
-}) {
-  const { pathname } = useShellLocation();
-  const { ready } = useDesktopWorkspaceMeta();
-  const { letters } = useDesktopWorkspaceProjects();
-  const workspaceActions = useDesktopWorkspaceActions();
-  const firstHref = (() => {
-    const href = firstLetterHref(letters);
-    if (!href) return null;
-    if (href === "/letters") return "/letters-v2";
-    return href.replace(/^\/letters\//, "/letters-v2/");
-  })();
-
-  return (
-    <DesktopLettersSidePanel
-      onNavigate={onNavigate}
-      title="Letters"
-      getLetterHref={(letter) => getLettersV2Href(letter.number)}
-      pathname={panePathnameWithFirstItem(
-        pathname,
-        firstHref,
-        pathname.startsWith("/letters-v2/"),
-      )}
-      items={letters}
-      loading={!ready}
-      onAdd={() => {
-        void workspaceActions
-          .createLetter({ title: "New letter" })
-          .then((created) => {
-            if (created.number == null) return;
-            const href = getLettersV2Href(created.number);
             primeTabTitle(href, "New letter");
             onNavigate(href);
           });

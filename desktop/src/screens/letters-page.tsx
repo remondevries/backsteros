@@ -49,7 +49,7 @@ export type LettersPageProps = {
 
 export function LettersPage({
   letterRouteParam,
-  backHref = "/letters-v2",
+  backHref = "/letters",
   breadcrumbItems,
   disableAutoSelectFirst = false,
 }: LettersPageProps = {}) {
@@ -87,7 +87,7 @@ function OutletLettersPage(props: LettersPageProps) {
 
 function LettersPageBody({
   letterRouteParam,
-  backHref = "/letters-v2",
+  backHref = "/letters",
   breadcrumbItems,
   disableAutoSelectFirst = false,
 }: LettersPageProps = {}) {
@@ -274,7 +274,7 @@ function LettersPageBody({
   const pdfPanel = useLetterPdfPanel(selected?.id, {
     hasLegacyPdf: hasLivePdf,
     legacyFilename: record?.originalFilename,
-    enabled: Boolean(selected && slug !== "new"),
+    enabled: keepAliveActive && Boolean(selected && slug !== "new"),
   });
 
   const breadcrumbTitle =

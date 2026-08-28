@@ -1,3 +1,8 @@
+import {
+  resolveKeyboardNavScrollTarget,
+  scrollElementIntoViewPastSticky,
+} from "./keyboard-nav-sticky-scroll.js";
+
 export const KEYBOARD_NAV_ITEM_ATTR = "data-keyboard-nav-item";
 
 export function keyboardNavItemProps(itemId: string) {
@@ -13,11 +18,20 @@ export function queryKeyboardNavItem(
   );
 }
 
+/**
+ * Bring a keyboard-nav row into view, accounting for sticky group headers that
+ * cover the top of the scrollport (`scrollIntoView` alone treats those rows as
+ * already visible).
+ */
 export function scrollKeyboardNavItemIntoView(
   container: HTMLElement,
   itemId: string,
 ): void {
-  queryKeyboardNavItem(container, itemId)?.scrollIntoView({ block: "nearest" });
+  const marker = queryKeyboardNavItem(container, itemId);
+  if (!marker) {
+    return;
+  }
+  scrollElementIntoViewPastSticky(resolveKeyboardNavScrollTarget(marker));
 }
 
 function isFocusableKeyboardNavElement(element: HTMLElement): boolean {

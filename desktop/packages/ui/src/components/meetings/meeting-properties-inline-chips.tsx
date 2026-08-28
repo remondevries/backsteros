@@ -6,6 +6,7 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../../tasks/task-status.js";
+import { trackedMinutesFromMeetingSchedule } from "@backsteros/contracts";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -21,6 +22,7 @@ import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 
@@ -68,6 +70,7 @@ export function MeetingPropertiesInlineChips({
   onStatusChange,
   onStartChange,
   onEndChange,
+  onTrackedDurationSecondsChange,
   onProjectChange,
   onOrganizationChange,
   onAttendeeContactIdsChange,
@@ -77,6 +80,7 @@ export function MeetingPropertiesInlineChips({
   projectOptions = [],
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
+  timerSession = null,
   triggerVariant = "inlineChip",
 }: MeetingPropertiesInlineChipsProps) {
   const disabled = meeting == null;
@@ -318,6 +322,17 @@ export function MeetingPropertiesInlineChips({
             </span>
           </button>
         )}
+        <div className="task-properties-inline__tracked-time">
+          <TrackedTimeField
+            variant="pill"
+            trackedDurationSeconds={meeting?.trackedDurationSeconds ?? null}
+            trackedMinutes={meeting?.trackedMinutes ?? null}
+            scheduleMinutes={trackedMinutesFromMeetingSchedule(startAt, endAt)}
+            disabled={disabled}
+            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+            timerSession={timerSession}
+          />
+        </div>
       </div>
     </div>
   );

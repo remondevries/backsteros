@@ -26,14 +26,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0;
+  width: 20px;
+  height: 20px;
+  /* Chrome is 36px tall with 16px side padding; tuck so right inset ≈ top/bottom. */
+  margin: 0 -12px 0 0;
   padding: 0;
-  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border: none;
   border-radius: 6px;
   background: transparent;
-  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
   line-height: 0;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -41,7 +42,7 @@
 
 .finance-chrome-actions__icon-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--foreground) 6%, transparent);
-  color: var(--foreground);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
 }
 
 .finance-chrome-actions__icon-button:disabled {

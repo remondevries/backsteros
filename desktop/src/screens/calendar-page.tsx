@@ -63,6 +63,10 @@ import {
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  peekTaskDescriptionCache,
+  useDesktopTaskDescription,
+} from "../lib/use-task-description";
 import { TaskDetailPage } from "./task-detail-page";
 
 /** Subset of FullCalendar API used for date-nav (matches UI CalendarDateNavApi). */
@@ -450,10 +454,22 @@ function CalendarPageBody() {
     [workspace.allTasks],
   );
 
+  const [popoverTaskId, setPopoverTaskId] = useState<string | null>(null);
+  const { description: popoverDescription } = useDesktopTaskDescription(
+    popoverTaskId,
+    { enabled: keepAliveActive && Boolean(popoverTaskId) },
+  );
+
   const resolveTask = useCallback(
     (taskId: string): CalendarTaskPopoverTask | null => {
       const task = tasksById.get(taskId);
       if (!task) return null;
+      const fromWatch =
+        taskId === popoverTaskId ? popoverDescription : null;
+      const description =
+        (fromWatch && fromWatch.length > 0 ? fromWatch : null) ??
+        peekTaskDescriptionCache(taskId) ??
+        null;
       return {
         id: task.id,
         title: task.title,
@@ -465,10 +481,10 @@ function CalendarPageBody() {
         projectId: task.projectId,
         projectKey: task.projectKey,
         projectName: task.projectName,
-        description: workspace.taskDescriptions[task.id] ?? null,
+        description,
       };
     },
-    [tasksById, workspace.taskDescriptions],
+    [popoverDescription, popoverTaskId, tasksById],
   );
 
   const meetingsById = useMemo(
@@ -813,6 +829,7 @@ function CalendarPageBody() {
           onMeetingReschedule={handleMeetingReschedule}
           onCreateMeetingFromSelect={handleCreateMeetingFromSelect}
           resolveTask={resolveTask}
+          onTaskPopoverChange={setPopoverTaskId}
           resolveMeeting={resolveMeeting}
           onTaskOpen={openTaskFromGrid}
           onMeetingOpen={openMeetingFromGrid}

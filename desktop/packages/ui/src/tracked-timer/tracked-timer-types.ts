@@ -16,7 +16,11 @@ export type TrackedTimerRegistration = TrackedTimerSessionMeta & {
   trackedMinutes?: number | null;
   scheduleMinutes?: number | null;
   onPersist: (seconds: number | null, fromTimerPause?: boolean) => void;
-  onSessionChange?: (action: TrackedTimerSessionAction) => void;
+  /** Fired when a session starts or stops; `sessionSeconds` is only set on stop. */
+  onSessionChange?: (
+    action: TrackedTimerSessionAction,
+    sessionSeconds?: number,
+  ) => void;
 };
 
 export type TrackedTimerListItem = TrackedTimerSessionMeta & {

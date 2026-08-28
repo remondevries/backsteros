@@ -19,9 +19,12 @@ import {
   putObject,
   snippetForContent,
 } from "../lib/storage.js";
+import { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
 import { syncDocumentMetadataFromStorageKey } from "./vault-document-metadata.js";
 import { recordDocumentContentSyncEvent } from "./sync.js";
 import { getProjectById } from "./tasks-projects.js";
+
+export { diskContentNeedsMetadataHeal } from "./document-content-heal.js";
 
 const DEFAULT_CONTENT_TYPE = "text/markdown; charset=utf-8";
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
@@ -293,34 +296,46 @@ export async function getDocumentContent(workspaceId: string, id: string) {
     return null;
   }
 
-  if (row.byteSize === 0) {
-    try {
-      const object = await getObject(row.storageKey);
-      if (object.byteSize > 0) {
-        await syncDocumentMetadataFromStorageKey(workspaceId, row.storageKey);
-        const refreshed = await getDocumentRow(workspaceId, id);
-        return {
-          row: refreshed ?? row,
-          content: object.body,
-        };
-      }
-    } catch {
-      // metadata says empty and no vault file — expected for new docs
-    }
-    return {
-      row,
-      content: "",
-    };
-  }
-
   try {
     const object = await getObject(row.storageKey);
+    const diskChecksum =
+      object.byteSize > 0 ? checksumForContent(object.body) : null;
+
+    if (
+      diskContentNeedsMetadataHeal({
+        rowByteSize: row.byteSize ?? 0,
+        rowChecksum: row.checksum ?? null,
+        diskByteSize: object.byteSize,
+        diskChecksum,
+      })
+    ) {
+      await syncDocumentMetadataFromStorageKey(workspaceId, row.storageKey);
+      const refreshed = await getDocumentRow(workspaceId, id);
+      return {
+        row: refreshed ?? row,
+        content: object.body,
+      };
+    }
+
     return {
       row,
       content: object.body,
     };
-  } catch {
-    throw new Error("STORAGE_OBJECT_NOT_FOUND");
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "STORAGE_OBJECT_NOT_FOUND"
+    ) {
+      // Metadata may still say empty for a brand-new doc with no file yet.
+      if ((row.byteSize ?? 0) === 0) {
+        return {
+          row,
+          content: "",
+        };
+      }
+      throw error;
+    }
+    throw error;
   }
 }
 
@@ -492,9 +507,20 @@ export async function updateDocumentContent(
   input: UpdateDocumentContentInput,
   options?: { mutationId?: string; deviceId?: string },
 ) {
-  const existing = await getDocumentRow(workspaceId, id);
+  let existing = await getDocumentRow(workspaceId, id);
   if (!existing) {
     return null;
+  }
+
+  // Heal vault-side drift before ifMatch so a stale desktop cache cannot
+  // overwrite a newer .md with a matching outdated content_version.
+  if (existing.storageKey) {
+    await syncDocumentMetadataFromStorageKey(workspaceId, existing.storageKey);
+    const healed = await getDocumentRow(workspaceId, id);
+    if (!healed) {
+      return null;
+    }
+    existing = healed;
   }
 
   if (

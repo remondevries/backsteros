@@ -135,11 +135,19 @@ export function registerSyncRoutes(app: Hono) {
   app.get("/api/v1/powersync/token", withClerkAuth);
   app.post("/api/v1/powersync/write", withClerkOrPowerSyncAuth);
 
+  // ---------------------------------------------------------------------------
+  // DEAD — legacy Linear-style cursor sync (bootstrap / pull / push).
+  // Kept for storage-health probes. Do not build new clients against these.
+  // Active client upload path: POST /api/v1/powersync/write.
+  // ---------------------------------------------------------------------------
+
+  /** @deprecated DEAD — legacy sync. Storage-health only. Prefer PowerSync. */
   app.post("/api/v1/sync/bootstrap", async (c) => {
     const payload = await syncService.bootstrapSync(getAuth(c).workspaceId);
     return c.json(payload);
   });
 
+  /** @deprecated DEAD — legacy sync. Storage-health only. Prefer PowerSync. */
   app.get("/api/v1/sync/pull", async (c) => {
     const cursor = Number(c.req.query("cursor") ?? "0");
     if (!Number.isFinite(cursor) || cursor < 0) {
@@ -150,6 +158,7 @@ export function registerSyncRoutes(app: Hono) {
     return c.json(payload);
   });
 
+  /** @deprecated DEAD — legacy sync. Storage-health only. Prefer PowerSync. */
   app.post(
     "/api/v1/sync/push",
     zValidator("json", syncPushSchema),

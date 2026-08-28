@@ -59,12 +59,12 @@ export function VirtualizedOverviewList<T extends VirtualizedOverviewRow>({
     (node: HTMLDivElement | null) => {
       containerRef.current = node;
       if (!listRef) return;
-      const listEl = (node?.querySelector("[data-overview-virtual-list]") ??
-        null) as HTMLUListElement | null;
+      // Keyboard-nav registration needs this node (listContainerProps live here).
+      // Do not querySelector — `data-overview-virtual-list` is on `node` itself.
       if (typeof listRef === "function") {
-        listRef(listEl);
+        listRef(node as unknown as HTMLUListElement | null);
       } else {
-        listRef.current = listEl;
+        listRef.current = node as unknown as HTMLUListElement | null;
       }
     },
     [listRef],

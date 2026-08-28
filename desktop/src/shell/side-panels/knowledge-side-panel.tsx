@@ -3,9 +3,7 @@ import { useCallback, useMemo, useRef, useState, type FocusEvent, type MouseEven
 import {
   KnowledgeSidePanelView,
   getKnowledgeHref,
-  getKnowledgeV2Href,
   getSelectedKnowledgeSlugFromPathname,
-  getSelectedKnowledgeV2SlugFromPathname,
   parseFolderNavId,
   type KnowledgeSidePanelViewProps,
 } from "@backsteros/ui";
@@ -22,7 +20,6 @@ import type { SidePanelNavProps } from "./types.js";
 
 export function DesktopKnowledgeSidePanel({
   onNavigate,
-  variant = "knowledge",
   ...viewProps
 }: Omit<
   KnowledgeSidePanelViewProps,
@@ -36,20 +33,12 @@ export function DesktopKnowledgeSidePanel({
   | "getSelectedSlugFromPathname"
   | "title"
 > &
-  SidePanelNavProps & {
-    variant?: "knowledge" | "knowledge-v2";
-  }) {
+  SidePanelNavProps) {
   const folderActivateRef = useRef<(folderId: string) => void>(() => {});
   const [navItemIds, setNavItemIds] = useState<string[]>([]);
   const { client } = useDesktopApi();
   const { pathname, items } = viewProps;
-  const getDocumentHref =
-    variant === "knowledge-v2" ? getKnowledgeV2Href : getKnowledgeHref;
-  const getSelectedSlugFromPathname =
-    variant === "knowledge-v2"
-      ? getSelectedKnowledgeV2SlugFromPathname
-      : getSelectedKnowledgeSlugFromPathname;
-  const selectedSlug = getSelectedSlugFromPathname(pathname);
+  const selectedSlug = getSelectedKnowledgeSlugFromPathname(pathname);
   const selectedId = selectedSlug
     ? (items.find(
         (item) =>
@@ -78,7 +67,7 @@ export function DesktopKnowledgeSidePanel({
           return;
         }
         const item = items.find((entry) => entry.id === itemId);
-        if (item) onNavigate(getDocumentHref(item.path ?? item.id));
+        if (item) onNavigate(getKnowledgeHref(item.path ?? item.id));
       },
       enabled: navItemIds.length > 0,
       prefetchItemId,
@@ -98,9 +87,7 @@ export function DesktopKnowledgeSidePanel({
       onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
       [key: string]: unknown;
     }) {
-      const slug = String(to)
-        .replace(/^\/knowledge-v2\/?/, "")
-        .replace(/^\/knowledge\/?/, "");
+      const slug = String(to).replace(/^\/knowledge\/?/, "");
       const item = items.find(
         (entry) =>
           slug === entry.id ||
@@ -128,11 +115,9 @@ export function DesktopKnowledgeSidePanel({
   return (
     <KnowledgeSidePanelView
       {...viewProps}
-      title={
-        variant === "knowledge-v2" ? "Knowledge Base" : "Knowledge Base"
-      }
-      getDocumentHref={getDocumentHref}
-      getSelectedSlugFromPathname={getSelectedSlugFromPathname}
+      title="Knowledge Base"
+      getDocumentHref={getKnowledgeHref}
+      getSelectedSlugFromPathname={getSelectedKnowledgeSlugFromPathname}
       Link={PrefetchLink}
       listRef={listRef}
       listContainerProps={listContainerProps}

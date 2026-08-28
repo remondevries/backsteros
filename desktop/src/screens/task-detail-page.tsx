@@ -1,9 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  useLocation,
-  useNavigate,
-  useParams,
-} from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   RegisterEntityDeleteAction,
@@ -35,25 +31,43 @@ import {
 } from "../components/desktop-task-activity-panel";
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
+import {
+  useShellLocation,
+  useShellParams,
+  useKeepAliveActive,
+} from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
+import { useDesktopTaskDescription } from "../lib/use-task-description";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
+import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
-import { useDesktopWorkspaceData } from "../lib/workspace-data";
+import {
+  useDesktopWorkspaceActions,
+  useDesktopWorkspaceDocuments,
+  useDesktopWorkspacePeople,
+  useDesktopWorkspaceProjects,
+  useDesktopWorkspaceTasks,
+  useWorkspaceSurfaceReady,
+} from "../lib/workspace-data";
 import { parseTaskLinks } from "../lib/workspace/row-mappers";
 
 export type TaskDetailPageProps = {
   taskRouteParam?: string;
   backHref?: string;
   breadcrumbItems?: { label: string; href?: string }[];
+  /** When false, detail is kept mounted but hidden (tasks list host). */
+  detailVisible?: boolean;
+  /** List-row snapshot for instant paint before workspace index catches up. */
+  bootstrapTask?: TaskDetailBootstrap | null;
   /**
    * Embed in a host panel (calendar overlay / Timetracking rail):
    * render task + properties only — no DesktopTaskLayout agent split.
@@ -61,76 +75,147 @@ export type TaskDetailPageProps = {
   overlayMode?: boolean;
 };
 
-function taskMatchesRouteParam(
-  entry: {
-    id: string;
-    number: number;
-    projectId: string | null;
-    projectKey?: string | null;
-    contactId?: string | null;
-    contactKey?: string | null;
-  },
-  routeParam: string | undefined): boolean {
-  if (!routeParam) return false;
-  if (entry.id === routeParam) return true;
+type TaskRouteRow = {
+  id: string;
+  number: number;
+  projectId: string | null;
+  projectKey?: string | null;
+  contactId?: string | null;
+  contactKey?: string | null;
+  assigneeId?: string | null;
+  agentChatId?: string | null;
+  projectName?: string | null;
+  title?: string;
+  status?: string;
+  priority?: number;
+};
 
+export type TaskDetailBootstrap = {
+  id: string;
+  title: string;
+  number: number;
+  status: string;
+  priority?: number;
+  projectKey?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  agentChatId?: string | null;
+  assigneeId?: string | null;
+  /** Slug/id segment from the navigation href (guards stale bootstrap). */
+  routeSlug?: string | null;
+};
+
+function bootstrapMatchesRoute(
+  bootstrap: TaskDetailBootstrap,
+  routeParam: string,
+): boolean {
   const normalized = decodeURIComponent(routeParam).toLowerCase();
-  const displayId = getTaskDisplayId(
-    {
-      number: entry.number,
-      projectId: entry.projectId,
-      contactId: entry.contactId,
-    },
-    entry.projectKey ?? entry.contactKey);
-  if (displayId?.toLowerCase() === normalized) return true;
-
-  const slug = getInboxTaskRouteSlugForTask({
-    number: entry.number,
-    projectKey: entry.projectKey,
-    contactKey: entry.contactKey,
-  });
-  if (slug === normalized) return true;
-
-  if (
-    entry.projectKey &&
-    encodeTaskSlug(entry.projectKey, entry.number) === normalized
-  ) {
+  if (bootstrap.routeSlug?.toLowerCase() === normalized) return true;
+  if (bootstrap.id === routeParam || bootstrap.id.toLowerCase() === normalized) {
     return true;
   }
-
-  if (
-    entry.contactKey &&
-    encodeTaskSlug(entry.contactKey, entry.number) === normalized
-  ) {
-    return true;
-  }
-
   return false;
+}
+
+function bootstrapToRouteRow(bootstrap: TaskDetailBootstrap): TaskRouteRow {
+  return {
+    id: bootstrap.id,
+    number: bootstrap.number,
+    projectId: bootstrap.projectId ?? null,
+    projectKey: bootstrap.projectKey ?? null,
+    assigneeId: bootstrap.assigneeId ?? null,
+    agentChatId: bootstrap.agentChatId ?? null,
+    projectName: bootstrap.projectName ?? null,
+    title: bootstrap.title,
+    status: bootstrap.status,
+    priority: bootstrap.priority,
+  };
+}
+
+function buildTaskRouteIndex(
+  allTasks: readonly TaskRouteRow[],
+  contactKeyById: ReadonlyMap<string, string | null>,
+): Map<string, TaskRouteRow> {
+  const index = new Map<string, TaskRouteRow>();
+  for (const entry of allTasks) {
+    const contactKey = entry.contactId
+      ? (contactKeyById.get(entry.contactId) ?? null)
+      : null;
+    const keys = new Set<string>();
+    keys.add(entry.id);
+    keys.add(entry.id.toLowerCase());
+    const displayId = getTaskDisplayId(
+      {
+        number: entry.number,
+        projectId: entry.projectId,
+        contactId: entry.contactId,
+      },
+      entry.projectKey ?? contactKey,
+    );
+    if (displayId) {
+      keys.add(displayId);
+      keys.add(displayId.toLowerCase());
+    }
+    const slug = getInboxTaskRouteSlugForTask({
+      number: entry.number,
+      projectKey: entry.projectKey,
+      contactKey,
+    });
+    keys.add(slug);
+    keys.add(slug.toLowerCase());
+    if (entry.projectKey) {
+      keys.add(encodeTaskSlug(entry.projectKey, entry.number));
+    }
+    if (contactKey) {
+      keys.add(encodeTaskSlug(contactKey, entry.number));
+    }
+    for (const key of keys) {
+      index.set(key, entry);
+    }
+  }
+  return index;
 }
 
 export function TaskDetailPage({
   taskRouteParam,
   backHref: backHrefProp,
   breadcrumbItems: breadcrumbItemsProp,
+  detailVisible = true,
+  bootstrapTask = null,
   overlayMode = false,
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { taskId, taskSlug, dueFilter: dueFilterParam } = useParams({
-    strict: false,
-  }) as {
+  const location = useShellLocation();
+  const shellParams = useShellParams() as {
     taskId?: string;
     taskSlug?: string;
     dueFilter?: string;
   };
-  const routeParam = taskRouteParam ?? taskSlug ?? taskId;
+  const routeParam =
+    taskRouteParam ?? shellParams.taskSlug ?? shellParams.taskId;
+  // Warm flips leave the TanStack match on /tasks — dueFilter must come from
+  // the keep-alive snapshot (or the detail path segment), not useParams().
+  const dueFilterFromPath = (() => {
+    const parts = location.pathname.split("/").filter(Boolean);
+    if (parts[0] === "tasks" && parts.length >= 3 && isTasksDueFilter(parts[1])) {
+      return parts[1];
+    }
+    return null;
+  })();
+  const dueFilterParam = shellParams.dueFilter ?? dueFilterFromPath;
   const dueFilter: TasksDueFilter | null =
     dueFilterParam && isTasksDueFilter(dueFilterParam) ? dueFilterParam : null;
   const backHref =
     backHrefProp ??
     (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
-  const workspace = useDesktopWorkspaceData();
-  const { allTasks, projects, contacts, organizations, documents } = workspace;
+  const { allTasks, taskDetails } =
+    useDesktopWorkspaceTasks();
+  const { projects } = useDesktopWorkspaceProjects();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { documents } = useDesktopWorkspaceDocuments();
+  const workspace = useDesktopWorkspaceActions();
+  const tasksReady = useWorkspaceSurfaceReady("tasks");
+  const keepAliveActive = useKeepAliveActive();
   const agentMail = useAgentMail();
   const documentLinkOptions = useMemo(
     () => buildDocumentLinkOptions(documents),
@@ -140,6 +225,7 @@ export function TaskDetailPage({
     [agentMail.messages]);
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
+  const [activityFeedBump, setActivityFeedBump] = useState(0);
   const spellcheckNonceRef = useRef(0);
   /** Keeps the open task stable while project-change URL rewrite catches up. */
   const pinnedTaskIdRef = useRef<string | null>(null);
@@ -170,18 +256,28 @@ export function TaskDetailPage({
     },
     []);
 
-  const matchedByRoute =
-    allTasks.find((entry) => {
-      const contact = entry.contactId
-        ? contacts.find((c) => c.id === entry.contactId)
-        : null;
-      return taskMatchesRouteParam(
-        {
-          ...entry,
-          contactKey: contact?.key ?? null,
-        },
-        routeParam);
-    }) ?? null;
+  const contactKeyById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const contact of contacts) {
+      map.set(contact.id, contact.key ?? null);
+    }
+    return map;
+  }, [contacts]);
+
+  const taskRouteIndex = useMemo(
+    () => buildTaskRouteIndex(allTasks, contactKeyById),
+    [allTasks, contactKeyById],
+  );
+
+  const matchedByRoute = useMemo(() => {
+    if (!routeParam) return null;
+    const normalized = decodeURIComponent(routeParam).toLowerCase();
+    return (
+      taskRouteIndex.get(routeParam) ??
+      taskRouteIndex.get(normalized) ??
+      null
+    );
+  }, [routeParam, taskRouteIndex]);
 
   if (matchedByRoute) {
     pinnedTaskIdRef.current = null;
@@ -189,24 +285,62 @@ export function TaskDetailPage({
 
   const base =
     matchedByRoute ??
+    (bootstrapTask && routeParam && bootstrapMatchesRoute(bootstrapTask, routeParam)
+      ? bootstrapToRouteRow(bootstrapTask)
+      : null) ??
     (pinnedTaskIdRef.current
       ? (allTasks.find((entry) => entry.id === pinnedTaskIdRef.current) ?? null)
       : null);
 
-  useEnsureProjectVault(base?.projectId);
+  useEnsureProjectVault(detailVisible ? base?.projectId : null);
+
+  const bumpActivityFeed = useCallback(() => {
+    setActivityFeedBump((n) => n + 1);
+  }, []);
+  const postTimerActivity = usePostTaskTimerActivity(base?.id, bumpActivityFeed);
+
+  const {
+    description: fetchedDescription,
+    rememberDescription,
+  } = useDesktopTaskDescription(base?.id, {
+    enabled: keepAliveActive && detailVisible && Boolean(base?.id),
+  });
 
   const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
-    base?.id ?? "");
+    detailVisible ? (base?.id ?? "") : "",
+  );
+
+  const [belowDescriptionReady, setBelowDescriptionReady] = useState(false);
+  useEffect(() => {
+    if (!detailVisible || overlayMode) {
+      setBelowDescriptionReady(false);
+      return;
+    }
+    let cancelled = false;
+    const raf1 = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (!cancelled) setBelowDescriptionReady(true);
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf1);
+    };
+  }, [detailVisible, overlayMode, base?.id]);
 
   const applySpellcheckComposition = useCallback(
     async (session: TaskSpellcheckHighlight) => {
       if (!base) return;
+      const nextDescription = composeSpellcheckText(
+        session.descriptionSegments,
+      );
+      rememberDescription(nextDescription);
       await workspace.patchTask(base.id, {
         title: composeSpellcheckText(session.titleSegments),
-        description: composeSpellcheckText(session.descriptionSegments),
+        description: nextDescription,
       });
     },
-    [base, workspace]);
+    [base, rememberDescription, workspace]);
 
   const onToggleSpellcheckTitleSegment = useCallback(
     (segmentId: string) => {
@@ -246,13 +380,14 @@ export function TaskDetailPage({
       setSpellcheckHighlight(null);
       return;
     }
+    rememberDescription(session.beforeDescription);
     void workspace
       .patchTask(base.id, {
         title: session.beforeTitle,
         description: session.beforeDescription,
       })
       .finally(() => setSpellcheckHighlight(null));
-  }, [base, spellcheckHighlight, workspace]);
+  }, [base, rememberDescription, spellcheckHighlight, workspace]);
 
   // Drop highlight when navigating to another task.
   const highlightTaskId = base?.id ?? null;
@@ -262,7 +397,10 @@ export function TaskDetailPage({
     if (spellcheckHighlight) setSpellcheckHighlight(null);
   }
 
-  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    detailVisible ? contacts : [],
+  );
 
   const assigneeOptions = useMemo(
     () =>
@@ -295,8 +433,8 @@ export function TaskDetailPage({
       assigneeName: assignee?.name ?? null,
       projectKey: resolvedProjectKey,
       projectName: project?.name ?? base.projectName ?? null,
-      description: workspace.taskDescriptions[base.id] ?? "",
-      links: parseTaskLinks(workspace.taskDetails[base.id]?.links),
+      description: fetchedDescription,
+      links: parseTaskLinks(taskDetails[base.id]?.links),
       displayId: getTaskDisplayId(
         {
           number: base.number,
@@ -304,7 +442,7 @@ export function TaskDetailPage({
         },
         base.projectKey),
     };
-  }, [base, contacts, projects, workspace.taskDescriptions, workspace.taskDetails]);
+  }, [base, contacts, fetchedDescription, projects, taskDetails]);
 
   const taskLabel = task
     ? task.displayId
@@ -337,7 +475,9 @@ export function TaskDetailPage({
       : [{ label: "Tasks", href: backHref }];
   }, [backHref, breadcrumbItemsProp, dueFilter, taskLabel]);
 
-  useDesktopSectionBreadcrumb(breadcrumbItems, { enabled: !overlayMode });
+  useDesktopSectionBreadcrumb(breadcrumbItems, {
+    enabled: detailVisible && !overlayMode,
+  });
 
 
 
@@ -388,7 +528,7 @@ export function TaskDetailPage({
   }, [base, contacts, navigate, projects, workspace]);
 
   if (!task) {
-    if (!workspace.ready) {
+    if (!tasksReady && !bootstrapTask) {
       return <TaskDetailSkeleton />;
     }
     return (
@@ -491,6 +631,7 @@ export function TaskDetailPage({
       });
   };
   const saveDescription = (description: string) => {
+    rememberDescription(description);
     void workspace.patchTask(task.id, { description });
   };
   const changeLinks = (links: typeof task.links) => {
@@ -551,6 +692,7 @@ export function TaskDetailPage({
       onSpellcheckConfirm={() => setSpellcheckHighlight(null)}
       onSpellcheckReset={onSpellcheckReset}
       spellcheckControlsVisible={spellcheckControlsVisible}
+      activityFeedBump={activityFeedBump}
       taskSummary={taskAgentSummary}
     />
   );
@@ -567,6 +709,7 @@ export function TaskDetailPage({
           onStatusChange={patchStatus}
           onPriorityChange={patchPriority}
           onTrackedDurationSecondsChange={patchTrackedDurationSeconds}
+          onTimerSessionChange={postTimerActivity}
           timerSession={{
             kind: "task",
             entityId: task.id,
@@ -600,18 +743,26 @@ export function TaskDetailPage({
           onAgentInboxApprove={() => {
             void workspace.patchTask(task.id, { agentInboxApproved: true });
           }}
-          belowDescription={({ mode }) => activityPanel(mode === "preview")}
+          belowDescription={
+            belowDescriptionReady
+              ? ({ mode }) => activityPanel(mode === "preview")
+              : undefined
+          }
         />
   );
 
   return (
     <>
-      <RegisterPageTitle title={task.title} />
-      <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
-      <RegisterEntityDeleteAction
-        entityLabel={deleteEntityLabel}
-        onDelete={handleDeleteTask}
-      />
+      {detailVisible ? <RegisterPageTitle title={task.title} /> : null}
+      {detailVisible ? (
+        <>
+          <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
+          <RegisterEntityDeleteAction
+            entityLabel={deleteEntityLabel}
+            onDelete={handleDeleteTask}
+          />
+        </>
+      ) : null}
       {overlayMode ? (
         <div className="task-detail-page-overlay">{detailView}</div>
       ) : (
@@ -635,6 +786,7 @@ export function TaskDetailPage({
           preferWideTaskPanel={!isCodebaseTask}
           viewScope={isCodebaseTask ? "codebase" : "rail"}
           requireWorkingDirectory={isCodebaseTask}
+          agentPaneEnabled={detailVisible}
           onWorkingDirectoryChange={
             isCodebaseTask && project
               ? async (directory) => {

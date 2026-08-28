@@ -35,6 +35,7 @@ export function DesktopContactsSidePanel({
     useDesktopSidePanelListNav({
       itemIds,
       selectedId,
+      pathname,
       onNavigate: (itemId) => {
         const item = items.find((entry) => entry.id === itemId);
         if (item) {

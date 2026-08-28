@@ -1,9 +1,18 @@
-import { useCallback, useMemo, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import {
   LettersSidePanelView,
+  flattenGroupedListItemIds,
   getLettersHref,
   getSelectedLetterSlugFromPathname,
+  groupLettersByStatus,
   letterMatchesSlug,
   type LettersSidePanelViewProps,
 } from "@backsteros/ui";
@@ -25,7 +34,12 @@ export function DesktopLettersSidePanel({
   ...viewProps
 }: Omit<
   LettersSidePanelViewProps,
-  "highlightedId" | "listRef" | "listContainerProps" | "Link"
+  | "highlightedId"
+  | "listRef"
+  | "listContainerProps"
+  | "Link"
+  | "collapsedKeys"
+  | "onToggleCollapsed"
 > &
   SidePanelNavProps) {
   const { client } = useDesktopApi();
@@ -36,6 +50,23 @@ export function DesktopLettersSidePanel({
   const selectedId = selectedSlug
     ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)
     : null;
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  // Match status-grouped visual order (not workspace list order) so j/k steps
+  // to the row above/below what the user sees.
+  const itemIds = useMemo(
+    () =>
+      flattenGroupedListItemIds(
+        groupLettersByStatus(items).map((group) => ({
+          key: group.status,
+          items: group.letters,
+        })),
+        collapsedKeys,
+        (letter) => letter.id,
+      ),
+    [collapsedKeys, items],
+  );
 
   const prefetchItemId = useCallback(
     (itemId: string) => {
@@ -46,13 +77,13 @@ export function DesktopLettersSidePanel({
 
   const { listRef, highlightedId, listContainerProps } =
     useDesktopSidePanelListNav({
-      itemIds: items.map((item) => item.id),
+      itemIds,
       selectedId,
       onNavigate: (itemId) => {
         const item = items.find((entry) => entry.id === itemId);
         if (item) onNavigate(resolveHref(item));
       },
-      enabled: items.length > 0,
+      enabled: itemIds.length > 0,
       prefetchItemId,
     });
 
@@ -98,6 +129,15 @@ export function DesktopLettersSidePanel({
       listRef={listRef}
       listContainerProps={listContainerProps}
       highlightedId={highlightedId}
+      collapsedKeys={collapsedKeys}
+      onToggleCollapsed={(status) =>
+        setCollapsedKeys((current) => {
+          const next = new Set(current);
+          if (next.has(status)) next.delete(status);
+          else next.add(status);
+          return next;
+        })
+      }
     />
   );
 }

@@ -3,6 +3,7 @@
 import type { TaskLink } from "@backsteros/contracts";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,8 +28,8 @@ import {
   type MarkdownDetailEditorMode,
 } from "../content/content-markdown-view-layout.js";
 import { ContentDetailTitleHeader } from "../content/content-detail-title-header.js";
-import { DetailWithPropertiesLayout } from "../content/detail-with-properties-layout.js";
 import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
+import { ResizableSidePanel } from "../shell/resizable-side-panel.js";
 import {
   DocumentMarkdownPreview,
   type ResolveMarkdownImageSrc,
@@ -37,6 +38,7 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { SpellcheckSegmentText } from "../shared/spellcheck-segment-text.js";
+import { useContentLayoutTransition } from "../shell/content-layout-transition-context.js";
 import {
   TaskPropertiesDisplay,
   type TaskPropertiesDisplayTask,
@@ -50,6 +52,21 @@ import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.
 
 /** Below this width, properties render as inline chips; at/above as the card rail. */
 export const TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT = 720;
+
+function clearTaskDetailWidthLock(node: HTMLElement) {
+  node.style.width = "";
+  node.style.maxWidth = "";
+  node.style.minWidth = "";
+}
+
+function lockTaskDetailWidth(node: HTMLElement) {
+  const width = Math.round(node.getBoundingClientRect().width);
+  node.style.boxSizing = "border-box";
+  node.style.width = `${width}px`;
+  node.style.maxWidth = `${width}px`;
+  node.style.minWidth = `${width}px`;
+  return width;
+}
 
 export type TaskDetailViewTask = TaskPropertiesDisplayTask & {
   title: string;
@@ -125,6 +142,10 @@ export type TaskDetailViewProps = {
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
   onAgentInboxApprove?: () => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  onTimerSessionChange?: (
+    action: "start" | "pause",
+    seconds?: number | null,
+  ) => void;
   timerSession?: TrackedTimerSessionMeta | null;
 };
 
@@ -160,11 +181,43 @@ export function TaskDetailView({
   onCreateAssigneeFromQuery,
   onAgentInboxApprove,
   onTrackedDurationSecondsChange,
+  onTimerSessionChange,
   timerSession = null,
 }: TaskDetailViewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [usePropertiesRail, setUsePropertiesRail] = useState(false);
+  const { animating: layoutAnimating } = useContentLayoutTransition();
+  const layoutAnimatingRef = useRef(layoutAnimating);
+  layoutAnimatingRef.current = layoutAnimating;
+  const widthLockedRef = useRef(false);
   const agentInboxPending = isAgentInboxPending(task);
+
+  // Freeze pixel width the moment chrome/agent panels start interpolating so
+  // chips ↔ rail cannot flip while available space is mid-slide.
+  useLayoutEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    if (layoutAnimating) {
+      if (!widthLockedRef.current) {
+        lockTaskDetailWidth(node);
+        widthLockedRef.current = true;
+      }
+      return;
+    }
+    if (widthLockedRef.current) {
+      clearTaskDetailWidthLock(node);
+      widthLockedRef.current = false;
+    }
+  }, [layoutAnimating]);
+
+  // After unlock (or when not animating), commit presentation from real width.
+  useEffect(() => {
+    if (layoutAnimating) return;
+    const node = rootRef.current;
+    if (!node) return;
+    const width = Math.round(node.getBoundingClientRect().width);
+    setUsePropertiesRail(width >= TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT);
+  }, [layoutAnimating]);
 
   useEffect(() => {
     const node = rootRef.current;
@@ -172,9 +225,11 @@ export function TaskDetailView({
     let settledTimer: number | null = null;
     let didCommitInitial = false;
     const commit = (width: number) => {
+      if (layoutAnimatingRef.current) return;
       setUsePropertiesRail(width >= TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT);
     };
     const update = () => {
+      if (layoutAnimatingRef.current) return;
       const width = Math.round(node.getBoundingClientRect().width);
       // First paint: apply immediately. Later: wait until width stops changing
       // so a smooth split nudge cannot flip chips ↔ rail mid-animation.
@@ -367,116 +422,15 @@ export function TaskDetailView({
     </p>
   ) : null;
 
+  const viewModeDock = (
+    <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
+  );
+
   void sectionLabel;
 
-  const stackedBody = (
-    <>
-      {headerMeta ? (
-        <div className="inbox-detail-header-meta">{headerMeta}</div>
-      ) : null}
-      <div className="task-detail-stacked__scroll">
-        <ContentDetailTitleHeader>
-          {displayIdNode}
-          {titleEditor}
-        </ContentDetailTitleHeader>
-        <div className="task-detail-stacked__properties">
-          <TaskPropertiesInlineChips
-            task={task}
-            onFieldActivate={onFieldActivate}
-            onStatusChange={onStatusChange}
-            statusDisabled={statusDisabled}
-            onPriorityChange={onPriorityChange}
-            onDueDateChange={onDueDateChange}
-            onAssigneeChange={onAssigneeChange}
-            onProjectChange={onProjectChange}
-            assigneeOptions={assigneeOptions}
-            projectOptions={projectOptions}
-            onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
-          />
-        </div>
-        <div className="task-detail-stacked__content">
-          <ContentMarkdownViewLayout
-            mode={mode}
-            editorActivated={editorActivated}
-            onToggleMode={handleToggleViewMode}
-            editor={descriptionEditor}
-            preview={descriptionPreview}
-            toggle={
-              <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
-            }
-          />
-          <TaskLinkAttachments
-            links={task.links}
-            onChangeLinks={onChangeLinks}
-            documentOptions={documentLinkOptions}
-            emailOptions={emailLinkOptions}
-            onNavigate={onNavigateLink}
-          />
-          {belowDescriptionNode}
-          {errorNode}
-        </div>
-      </div>
-    </>
-  );
-
-  const railBody = (
-    <DetailWithPropertiesLayout
-      storageKey={TASK_PROPERTIES_PANEL_WIDTH_KEY}
-      legacyStorageKeys={TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS}
-      main={
-        <div className="inbox-detail-layout">
-          {headerMeta ? (
-            <div className="inbox-detail-header-meta">{headerMeta}</div>
-          ) : null}
-          <div className="inbox-detail-body inbox-detail-body--document">
-            <ContentDetailTitleHeader>
-              {displayIdNode}
-              {titleEditor}
-            </ContentDetailTitleHeader>
-            <ContentMarkdownViewLayout
-              mode={mode}
-              editorActivated={editorActivated}
-              onToggleMode={handleToggleViewMode}
-              editor={descriptionEditor}
-              preview={descriptionPreview}
-            />
-            <TaskLinkAttachments
-              links={task.links}
-              onChangeLinks={onChangeLinks}
-              documentOptions={documentLinkOptions}
-              emailOptions={emailLinkOptions}
-              onNavigate={onNavigateLink}
-            />
-            {belowDescriptionNode}
-            {errorNode}
-          </div>
-        </div>
-      }
-      properties={
-        <TaskPropertiesDisplay
-          task={task}
-          onFieldActivate={onFieldActivate}
-          onStatusChange={onStatusChange}
-          statusDisabled={statusDisabled}
-          onPriorityChange={onPriorityChange}
-          onDueDateChange={onDueDateChange}
-          onAssigneeChange={onAssigneeChange}
-          onProjectChange={onProjectChange}
-          assigneeOptions={assigneeOptions}
-          projectOptions={projectOptions}
-          assigneeNavigateHref={assigneeNavigateHref}
-          projectNavigateHref={projectNavigateHref}
-          onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
-          agentInboxPending={agentInboxPending}
-          onAgentInboxApprove={onAgentInboxApprove}
-          onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
-          timerSession={timerSession}
-        />
-      }
-      dock={<FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>}
-    />
-  );
-
+  // One persistent tree for chips ↔ rail so activity/comments keep their
+  // instance (and feed) across the presentation flip. Unused layout wrappers
+  // use `display: contents` so stacked CSS still sees the original hierarchy.
   return (
     <div
       ref={rootRef}
@@ -488,8 +442,122 @@ export function TaskDetailView({
       data-detail-split={usePropertiesRail ? "" : undefined}
       data-content-view-mode={mode}
       data-properties-presentation={usePropertiesRail ? "rail" : "chips"}
+      data-width-locked={layoutAnimating ? "true" : undefined}
     >
-      {usePropertiesRail ? railBody : stackedBody}
+      <div
+        className={usePropertiesRail ? "detail-with-properties" : undefined}
+        style={usePropertiesRail ? undefined : { display: "contents" }}
+      >
+        <div
+          className={
+            usePropertiesRail
+              ? "detail-with-properties__main"
+              : "task-detail-stacked__scroll"
+          }
+        >
+          {headerMeta ? (
+            <div className="inbox-detail-header-meta">{headerMeta}</div>
+          ) : null}
+          <div
+            className={usePropertiesRail ? "inbox-detail-layout" : undefined}
+            style={usePropertiesRail ? undefined : { display: "contents" }}
+          >
+            <div
+              className={
+                usePropertiesRail
+                  ? "inbox-detail-body inbox-detail-body--document"
+                  : undefined
+              }
+              style={usePropertiesRail ? undefined : { display: "contents" }}
+            >
+              <ContentDetailTitleHeader>
+                {displayIdNode}
+                {titleEditor}
+              </ContentDetailTitleHeader>
+              {!usePropertiesRail ? (
+                <div className="task-detail-stacked__properties">
+                  <TaskPropertiesInlineChips
+                    task={task}
+                    onFieldActivate={onFieldActivate}
+                    onStatusChange={onStatusChange}
+                    statusDisabled={statusDisabled}
+                    onPriorityChange={onPriorityChange}
+                    onDueDateChange={onDueDateChange}
+                    onAssigneeChange={onAssigneeChange}
+                    onProjectChange={onProjectChange}
+                    assigneeOptions={assigneeOptions}
+                    projectOptions={projectOptions}
+                    onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+                    onTrackedDurationSecondsChange={
+                      onTrackedDurationSecondsChange
+                    }
+                    onTimerSessionChange={onTimerSessionChange}
+                    timerSession={timerSession}
+                  />
+                </div>
+              ) : null}
+              <div
+                className={
+                  usePropertiesRail ? undefined : "task-detail-stacked__content"
+                }
+                style={usePropertiesRail ? { display: "contents" } : undefined}
+              >
+                <ContentMarkdownViewLayout
+                  mode={mode}
+                  editorActivated={editorActivated}
+                  onToggleMode={handleToggleViewMode}
+                  editor={descriptionEditor}
+                  preview={descriptionPreview}
+                  toggle={usePropertiesRail ? undefined : viewModeDock}
+                />
+                <TaskLinkAttachments
+                  links={task.links}
+                  onChangeLinks={onChangeLinks}
+                  documentOptions={documentLinkOptions}
+                  emailOptions={emailLinkOptions}
+                  onNavigate={onNavigateLink}
+                />
+                {belowDescriptionNode}
+                {errorNode}
+              </div>
+            </div>
+          </div>
+        </div>
+        {usePropertiesRail ? (
+          <ResizableSidePanel
+            storageKey={TASK_PROPERTIES_PANEL_WIDTH_KEY}
+            legacyStorageKeys={TASK_PROPERTIES_PANEL_LEGACY_WIDTH_KEYS}
+            edge="start"
+            className="detail-properties-panel"
+          >
+            <div className="detail-properties-panel__inner">
+              <TaskPropertiesDisplay
+                task={task}
+                onFieldActivate={onFieldActivate}
+                onStatusChange={onStatusChange}
+                statusDisabled={statusDisabled}
+                onPriorityChange={onPriorityChange}
+                onDueDateChange={onDueDateChange}
+                onAssigneeChange={onAssigneeChange}
+                onProjectChange={onProjectChange}
+                assigneeOptions={assigneeOptions}
+                projectOptions={projectOptions}
+                assigneeNavigateHref={assigneeNavigateHref}
+                projectNavigateHref={projectNavigateHref}
+                onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+                agentInboxPending={agentInboxPending}
+                onAgentInboxApprove={onAgentInboxApprove}
+                onTrackedDurationSecondsChange={
+                  onTrackedDurationSecondsChange
+                }
+                onTimerSessionChange={onTimerSessionChange}
+                timerSession={timerSession}
+              />
+              {viewModeDock}
+            </div>
+          </ResizableSidePanel>
+        ) : null}
+      </div>
     </div>
   );
 }

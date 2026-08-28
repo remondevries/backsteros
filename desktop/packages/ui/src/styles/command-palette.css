@@ -6,6 +6,12 @@
   background: rgb(0 0 0 / 0.42);
 }
 
+/* Sync hide during navigate — see conceal-command-palette-chrome.ts */
+html[data-command-palette-concealed] .command-overlay,
+html[data-command-palette-concealed] .command-dialog {
+  display: none !important;
+}
+
 .command-dialog {
   position: fixed;
   z-index: 101;

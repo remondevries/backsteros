@@ -1,6 +1,4 @@
 import { useMemo, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
-import type { NavigateOptions } from "@tanstack/react-router";
 
 import {
   ContentBreadcrumb,
@@ -9,6 +7,8 @@ import {
   useRegisterChromeHeader,
   type ContentBreadcrumbItem,
 } from "@backsteros/ui";
+
+import { RouterLink } from "../shell/app-shell-links";
 
 function ChromeLink({
   to,
@@ -19,10 +19,12 @@ function ChromeLink({
   className?: string;
   children: ReactNode;
 }) {
+  // Warm keep-alive flip (same as sidebar) — raw TanStack Link rematches the
+  // router and can leave lastHref stuck on the detail while the URL goes list.
   return (
-    <Link to={to as NavigateOptions["to"]} className={className}>
-      {children as never}
-    </Link>
+    <RouterLink to={to} className={className}>
+      {children}
+    </RouterLink>
   );
 }
 

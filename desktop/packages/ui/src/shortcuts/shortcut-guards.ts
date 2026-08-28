@@ -91,6 +91,12 @@ export function shouldHandleGlobalShortcut(event: KeyboardEvent): boolean {
     return false;
   }
 
+  // Markdown / document edit mode (⌘E): suppress page hotkeys even if focus
+  // briefly left the CodeMirror surface. ⌘E itself uses a separate listener.
+  if (isContentEditModeActive()) {
+    return false;
+  }
+
   if (isEditableShortcutTarget(event.target)) {
     return false;
   }

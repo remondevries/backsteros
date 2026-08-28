@@ -9,9 +9,7 @@ import {
   RegisterPageTitle,
   getDocumentEditorBody,
   getKnowledgeHref,
-  getKnowledgeV2Href,
   getSelectedKnowledgeDocumentPathFromPathname,
-  getSelectedKnowledgeV2DocumentPathFromPathname,
   serializeDocumentBody,
 } from "@backsteros/ui";
 
@@ -28,27 +26,19 @@ import {
 } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
 
-export type KnowledgePageProps = {
-  /** When `"knowledge-v2"`, links stay on the `/knowledge-v2` prefix. */
-  variant?: "knowledge" | "knowledge-v2";
-};
-
-export function KnowledgePage({ variant = "knowledge" }: KnowledgePageProps = {}) {
-  return <KnowledgePageBody variant={variant} />;
+export function KnowledgePage() {
+  return <KnowledgePageBody />;
 }
 
-function KnowledgePageBody({ variant }: { variant: "knowledge" | "knowledge-v2" }) {
+function KnowledgePageBody() {
   const navigate = useNavigate();
   const location = useShellLocation();
   const keepAliveActive = useKeepAliveActive();
-  const isV2 = variant === "knowledge-v2";
   const sectionLabel = "Knowledge Base";
-  const listHref = isV2 ? "/knowledge-v2" : "/knowledge";
-  const getDocHref = isV2 ? getKnowledgeV2Href : getKnowledgeHref;
-  const getSelectedPath = isV2
-    ? getSelectedKnowledgeV2DocumentPathFromPathname
-    : getSelectedKnowledgeDocumentPathFromPathname;
-  const routedDocumentPath = getSelectedPath(location.pathname) ?? null;
+  const listHref = "/knowledge";
+  const getDocHref = getKnowledgeHref;
+  const routedDocumentPath =
+    getSelectedKnowledgeDocumentPathFromPathname(location.pathname) ?? null;
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const workspace = useDesktopWorkspaceActions();
   const [creating, setCreating] = useState(false);
@@ -77,7 +67,9 @@ function KnowledgePageBody({ variant }: { variant: "knowledge" | "knowledge-v2" 
       : null) ?? firstDoc;
 
   const { initialBody, onSave } = useDesktopDocumentContent(
-    selected?.id ?? null);
+    selected?.id ?? null,
+    { enabled: keepAliveActive },
+  );
 
   useEffect(() => {
     if (!pendingEditDocumentId || !selected) return;

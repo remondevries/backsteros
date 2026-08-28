@@ -128,15 +128,47 @@ a[data-keyboard-nav-item]:focus-visible,
   box-shadow: none !important;
 }
 
-/* While j/k nav is active, mute :hover on other rows so a stationary cursor
-   does not show a second highlight beside the orange ring. */
+/* While j/k (or board) nav is active, mute CSS :hover on other rows so the
+   stationary cursor does not show a second highlight beside the orange ring. */
 body[data-keyboard-nav-hover="suppressed"]
   .keyboard-nav-list-item:hover:not(.keyboard-nav-item-highlight),
 body[data-keyboard-nav-hover="suppressed"]
+  [data-keyboard-nav-item]:hover:not(.keyboard-nav-item-highlight)
+  > :is(a, button, [role="button"]):not(.keyboard-nav-item-highlight),
+body[data-keyboard-nav-hover="suppressed"]
+  [data-keyboard-nav-item]
+  > :is(a, button, [role="button"]):hover:not(.keyboard-nav-item-highlight) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-keyboard-nav-hover="suppressed"]
   .app-side-panel-item:hover:not(.keyboard-nav-item-highlight):not(
     .app-side-panel-item-active
-  ) {
-  background-color: transparent;
+  ),
+body[data-keyboard-nav-hover="suppressed"]
+  .app-side-panel-tree-folder-row:hover:not(.keyboard-nav-item-highlight) {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--sidebar-icon-color);
+  box-shadow: none !important;
+}
+
+body[data-keyboard-nav-hover="suppressed"]
+  .task-kanban-card:hover:not(.keyboard-nav-item-highlight) {
+  border-color: #262629 !important;
+  background: #171718 !important;
+  background-color: #171718 !important;
+}
+
+@media (prefers-color-scheme: light) {
+  body[data-keyboard-nav-hover="suppressed"]
+    .task-kanban-card:hover:not(.keyboard-nav-item-highlight) {
+    border-color: #e8e8e8 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
 }
 
 .inbox-list-item-meta-label {

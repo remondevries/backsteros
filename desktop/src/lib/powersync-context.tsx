@@ -21,6 +21,8 @@ import {
   setPowerSyncGlobalSlot,
 } from "./powersync";
 import { useDesktopApi } from "./api-context";
+import type { PowerSyncRowComparator } from "./powersync-row-comparators";
+export type { PowerSyncRowComparator } from "./powersync-row-comparators";
 
 async function connectWithTimeout(
   database: PowerSyncDatabase,
@@ -548,11 +550,6 @@ function rowsUnchanged<T>(previous: readonly T[], next: readonly T[]): boolean {
   return true;
 }
 
-export type PowerSyncRowComparator<T> = {
-  keyBy: (item: T) => string;
-  compareBy: (item: T) => string;
-};
-
 /** Default comparator: key by `id` when present; compare via JSON. */
 export function defaultPowerSyncRowComparator<T>(item: T): {
   key: string;
@@ -596,7 +593,7 @@ export function usePowerSyncQuery<T>(
   rowComparatorRef.current = rowComparator;
 
   useEffect(() => {
-    if (!database || !ready || !sql) return;
+    if (!database || !sql) return;
 
     const comparator: PowerSyncRowComparator<T> = rowComparatorRef.current ?? {
       keyBy: (item) => defaultPowerSyncRowComparator(item).key,
@@ -670,7 +667,7 @@ export function usePowerSyncQuery<T>(
     };
     // parameters are keyed by their serialized stable values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database, parameterKey, ready, sql]);
+  }, [database, parameterKey, sql]);
 
   const data =
     result?.database === database && result.queryKey === queryKey
@@ -680,5 +677,5 @@ export function usePowerSyncQuery<T>(
     errorState?.database === database && errorState.queryKey === queryKey
       ? errorState.error
       : null;
-  return { data, error, loading: Boolean(sql) && ready && data === null };
+  return { data, error, loading: Boolean(sql) && data === null && !database };
 }

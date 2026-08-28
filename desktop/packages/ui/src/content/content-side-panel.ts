@@ -40,16 +40,8 @@ export function shouldShowContentSidePanel(
     isCalendarListPath(pathname) ||
     (isEmailPath(pathname) && isEmailInboxListContext(search)) ||
     isJournalSectionPath(pathname) ||
-    pathname === "/journal-v2" ||
-    pathname.startsWith("/journal-v2/") ||
-    pathname === "/habits-v2" ||
-    pathname.startsWith("/habits-v2/") ||
     isKnowledgeSectionPath(pathname) ||
-    pathname === "/knowledge-v2" ||
-    pathname.startsWith("/knowledge-v2/") ||
     isLettersSectionPath(pathname) ||
-    pathname === "/letters-v2" ||
-    pathname.startsWith("/letters-v2/") ||
     isContactSectionPath(pathname) ||
     isOrganizationSectionPath(pathname) ||
     isFinanceSectionPath(pathname) ||
@@ -65,7 +57,7 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   if (isProjectLettersSectionPath(pathname)) {
     return LETTERS_LIST_PANEL_WIDTH_KEY;
   }
-  if (isKnowledgeSectionPath(pathname) || pathname === "/knowledge-v2" || pathname.startsWith("/knowledge-v2/")) {
+  if (isKnowledgeSectionPath(pathname)) {
     return KNOWLEDGE_LIST_PANEL_WIDTH_KEY;
   }
   if (isContactSectionPath(pathname)) {
@@ -77,15 +69,11 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   if (isFinanceSectionPath(pathname)) {
     return FINANCE_LIST_PANEL_WIDTH_KEY;
   }
-  if (isLettersSectionPath(pathname) || pathname === "/letters-v2" || pathname.startsWith("/letters-v2/")) {
+  if (isLettersSectionPath(pathname)) {
     return LETTERS_LIST_PANEL_WIDTH_KEY;
   }
   if (
-    isJournalSectionPath(pathname) ||
-    pathname === "/journal-v2" ||
-    pathname.startsWith("/journal-v2/") ||
-    pathname === "/habits-v2" ||
-    pathname.startsWith("/habits-v2/")
+    isJournalSectionPath(pathname)
   ) {
     return JOURNAL_LIST_PANEL_WIDTH_KEY;
   }

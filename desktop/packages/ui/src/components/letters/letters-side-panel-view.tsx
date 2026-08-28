@@ -56,6 +56,12 @@ export type LettersSidePanelViewProps = {
   /** Show list skeleton while workspace metadata is loading. */
   loading?: boolean;
   title?: string;
+  /**
+   * Controlled collapsed status keys (keeps j/k itemIds in sync). When omitted,
+   * collapse state is owned locally by this view.
+   */
+  collapsedKeys?: ReadonlySet<string>;
+  onToggleCollapsed?: (status: string) => void;
 };
 
 export function LettersSidePanelView({
@@ -63,7 +69,7 @@ export function LettersSidePanelView({
   items,
   Link,
   onAdd,
-  composeHref = "/letters-v2/new",
+  composeHref = "/letters/new",
   onCompose,
   getLetterHref = (letter) => getLettersHref(letter.number),
   highlightedId = null,
@@ -71,10 +77,29 @@ export function LettersSidePanelView({
   listContainerProps,
   loading = false,
   title = "Letters",
+  collapsedKeys: controlledCollapsedKeys,
+  onToggleCollapsed,
 }: LettersSidePanelViewProps) {
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const groups = groupLettersByStatus(items);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState<
+    Set<string>
+  >(() => new Set());
+  const collapsed =
+    controlledCollapsedKeys ?? uncontrolledCollapsed;
+
+  function toggleCollapsed(status: string) {
+    if (onToggleCollapsed) {
+      onToggleCollapsed(status);
+      return;
+    }
+    setUncontrolledCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  }
 
   return (
     <div className="app-content-side-panel app-content-side-panel--letters">
@@ -123,14 +148,7 @@ export function LettersSidePanelView({
                   groupKey={group.status}
                   title={group.label}
                   collapsed={isCollapsed}
-                  onToggle={() =>
-                    setCollapsed((current) => {
-                      const next = new Set(current);
-                      if (next.has(group.status)) next.delete(group.status);
-                      else next.add(group.status);
-                      return next;
-                    })
-                  }
+                  onToggle={() => toggleCollapsed(group.status)}
                 >
                   {group.letters.map((letter) => {
                     const isActive = letterMatchesSlug(letter, selectedSlug);

@@ -65,7 +65,6 @@ export function ProjectTasksPanel({ projectId }: Props) {
       sql: TASKS_SQL,
       params: [projectId],
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
-      fillTaskFieldsFromRest: true,
       fetchRest: async () => {
         try {
           const [tasksBody, projectsBody, contactsBody] = await Promise.all([

@@ -183,10 +183,10 @@ export type KnowledgeListItem = {
 };
 
 export function getKnowledgeHref(pathOrId?: string): string {
-  if (!pathOrId) return "/knowledge-v2";
+  if (!pathOrId) return "/knowledge";
   // Preserve path separators (Next parity) — encode then restore `/`.
   const encoded = encodeURIComponent(pathOrId).replace(/%2F/gi, "/");
-  return encoded ? `/knowledge-v2/${encoded}` : "/knowledge-v2";
+  return encoded ? `/knowledge/${encoded}` : "/knowledge";
 }
 
 export function getKnowledgeV2Href(pathOrId?: string): string {
@@ -196,14 +196,11 @@ export function getKnowledgeV2Href(pathOrId?: string): string {
 export function getSelectedKnowledgeSlugFromPathname(
   pathname: string,
 ): string | null {
-  return (
-    getSelectedKnowledgeV2SlugFromPathname(pathname) ??
-    (() => {
-      if (!pathname.startsWith("/knowledge/")) return null;
-      const slug = pathname.slice("/knowledge/".length);
-      return slug ? decodeURIComponent(slug) : null;
-    })()
-  );
+  if (pathname.startsWith("/knowledge/")) {
+    const slug = pathname.slice("/knowledge/".length);
+    return slug ? decodeURIComponent(slug) : null;
+  }
+  return getSelectedKnowledgeV2SlugFromPathname(pathname);
 }
 
 export function getSelectedKnowledgeV2SlugFromPathname(

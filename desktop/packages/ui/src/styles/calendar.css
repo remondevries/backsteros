@@ -968,7 +968,8 @@
   padding: 16px var(--meeting-panel-inset) 0 var(--meeting-panel-inset-left);
 }
 
-.meeting-detail-view--panel .meeting-properties-stacked {
+.meeting-detail-view--panel .meeting-properties-stacked,
+.meeting-detail-view--panel .task-properties-inline {
   flex-shrink: 0;
   padding: 12px var(--meeting-panel-inset) 0 var(--meeting-panel-inset-left);
 }
@@ -1193,11 +1194,6 @@
 .meeting-detail-view__layout-action:hover {
   color: var(--foreground);
   background: rgb(255 255 255 / 0.06);
-}
-
-.meeting-detail-view .task-properties-inline {
-  flex-shrink: 0;
-  padding: 0 2px;
 }
 
 .meeting-properties-stacked {

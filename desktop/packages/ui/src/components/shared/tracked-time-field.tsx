@@ -201,18 +201,19 @@ export function TrackedTimeField({
       trackedDurationSeconds: registrationTrackedSecondsRef.current,
       trackedMinutes,
       scheduleMinutes,
-      onPersist: (seconds, fromTimerPause) => {
-        if (fromTimerPause) {
-          setPendingSeconds(seconds);
-          setDraft(formatTrackedTimeInput(seconds));
-          setIsEditingTime(false);
-          onTimerSessionChangeRef.current?.("pause", seconds);
-          return;
-        }
+      onPersist: (seconds) => {
         setPendingSeconds(seconds);
         setDraft(formatTrackedTimeInput(seconds));
         setIsEditingTime(false);
         onPersistRef.current?.(seconds);
+      },
+      onSessionChange: (action, sessionSeconds) => {
+        if (action === "started") {
+          onTimerSessionChangeRef.current?.("start");
+          return;
+        }
+        // Session elapsed for activity copy; total duration persists via onPersist.
+        onTimerSessionChangeRef.current?.("pause", sessionSeconds ?? null);
       },
     });
   }, [
@@ -329,16 +330,17 @@ export function TrackedTimeField({
     }
 
     if (localRunning) {
+      const sessionSeconds =
+        sessionStartRef.current != null
+          ? Math.max(0, Math.floor((Date.now() - sessionStartRef.current) / 1000))
+          : 0;
       const totalSeconds = getLocalElapsedSeconds();
       sessionStartRef.current = null;
       setLocalRunning(false);
       const seconds = trackedDurationSecondsFromElapsed(totalSeconds);
       setDraft(formatTrackedTimeInput(seconds));
-      if (onTimerSessionChangeRef.current) {
-        onTimerSessionChangeRef.current("pause", seconds);
-      } else {
-        onTrackedDurationSecondsChange?.(seconds);
-      }
+      onTrackedDurationSecondsChange?.(seconds);
+      onTimerSessionChangeRef.current?.("pause", sessionSeconds);
       return;
     }
 
@@ -350,6 +352,7 @@ export function TrackedTimeField({
     baseSecondsRef.current = baseSeconds;
     sessionStartRef.current = Date.now();
     setLocalRunning(true);
+    onTimerSessionChangeRef.current?.("start");
   };
 
   const derivedHint =

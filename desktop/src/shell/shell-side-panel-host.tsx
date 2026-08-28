@@ -1,4 +1,13 @@
-import { Suspense, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 
 import {
   ResizableContextPanel,
@@ -7,30 +16,36 @@ import {
 import { resolveInboxSidebarIndicator } from "@backsteros/ui/inbox";
 
 import { useInboxListSessionState } from "../lib/inbox/inbox-list-session-context";
-import { useDesktopWorkspaceMeta } from "../lib/workspace-data";
+import { useDesktopWorkspaceInboxItems } from "../lib/workspace-data";
 import { useShellSidePanel } from "./use-shell-side-panel";
-import { keepAliveSidePanelTree } from "./shell-keep-alive-side-panels";
-import { LiveSidePanelBody } from "./shell-live-side-panel";
+import {
+  isKeepAliveLeftSidePanelDest,
+  resolveLeftSidePanelDest,
+  resolveSidePanelTree,
+} from "./shell-keep-alive-side-panels";
 import {
   KeepAlivePane,
-  KeepAliveSidePanelFrame,
-  KeepAliveSidePanelSwitch,
   StableKeepAliveTree,
-  keepAliveSidePanelSurface,
   snapshotFor,
   type RouteSnapshot,
 } from "../lib/shell-route-keep-alive";
 import type { PendingPageSurface } from "../lib/pending-navigation-routes";
 
+/**
+ * One host path for the left list.
+ * Warm dests stay mounted-hidden; finance remounts on purpose.
+ */
 export function useShellSidePanelHost({
   composeOpen: _composeOpen,
   sidePanelCollapsed,
+  sidePanelAnimating,
   setSidePanelCollapsed,
   onNavigate,
 }: {
   composeOpen: boolean;
   sidePanelCollapsed: boolean;
-  setSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  sidePanelAnimating: boolean;
+  setSidePanelCollapsed: Dispatch<SetStateAction<boolean>>;
   onNavigate: (href: string) => void;
 }) {
   const panel = useShellSidePanel();
@@ -39,11 +54,18 @@ export function useShellSidePanelHost({
     panelSearch,
     inInboxPanel,
     showSidePanel,
-    activeProject,
-    projectRouteScope,
     financeSection,
   } = panel;
-  const currentKeepSurface = keepAliveSidePanelSurface(panelPathname);
+
+  const dest = resolveLeftSidePanelDest({
+    pathname: panelPathname,
+    search: panelSearch,
+    inInboxPanel,
+    financeSection,
+    showSidePanel,
+  });
+  const currentKeepSurface = isKeepAliveLeftSidePanelDest(dest) ? dest : null;
+
   const cachedKeepAlivePanels = useRef(
     new Map<PendingPageSurface, ReactNode>(),
   );
@@ -57,7 +79,7 @@ export function useShellSidePanelHost({
     () => new Set<PendingPageSurface>(),
   );
 
-  const { inboxItems } = useDesktopWorkspaceMeta();
+  const inboxItems = useDesktopWorkspaceInboxItems();
   const { sessionContextValue } = useInboxListSessionState(inInboxPanel);
   const inboxSidebarIndicator = useMemo(
     () => resolveInboxSidebarIndicator(inboxItems),
@@ -79,11 +101,9 @@ export function useShellSidePanelHost({
     ) {
       keepAlivePanelSnapshots.current.set(currentKeepSurface, nextSnap);
     }
-    const tree = keepAliveSidePanelTree(
-      currentKeepSurface,
-      onNavigate,
-      panelPathname,
-    );
+    const tree = resolveSidePanelTree(currentKeepSurface, onNavigate, {
+      pathname: panelPathname,
+    });
     if (tree != null && !cachedKeepAlivePanels.current.has(currentKeepSurface)) {
       cachedKeepAlivePanels.current.set(
         currentKeepSurface,
@@ -102,6 +122,7 @@ export function useShellSidePanelHost({
     }
   }
 
+  const keepAliveActive = currentKeepSurface != null;
   const keepAliveStack =
     visibleKeepAlivePanels.size > 0 ? (
       <div className="keep-alive-stack relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -123,54 +144,66 @@ export function useShellSidePanelHost({
       </div>
     ) : null;
 
-  const needsLivePanel = showSidePanel && currentKeepSurface == null;
-  const liveBody = needsLivePanel ? (
-    <Suspense fallback={null}>
-      <LiveSidePanelBody
-        panelPathname={panelPathname}
-        showSidePanel={showSidePanel}
-        activeProject={activeProject}
-        projectRouteScope={projectRouteScope}
-        financeSection={financeSection}
-        sidePanelCollapsed={sidePanelCollapsed}
-        setSidePanelCollapsed={setSidePanelCollapsed}
-        onNavigate={onNavigate}
-      />
-    </Suspense>
-  ) : null;
+  const financeBody =
+    dest === "finance" ? (
+      <Suspense fallback={null}>
+        {resolveSidePanelTree("finance", onNavigate, {
+          pathname: panelPathname,
+          sidePanelCollapsed,
+          setSidePanelCollapsed,
+        })}
+      </Suspense>
+    ) : null;
 
-  const financeRail = Boolean(financeSection && sidePanelCollapsed && liveBody);
+  const financeRail = Boolean(
+    financeSection && sidePanelCollapsed && financeBody,
+  );
 
+  // Warm stack stays in the tree when visiting finance/settings/tasks so
+  // return visits do not remount. CSS hide only — never swap out for live.
+  const keepHiddenStyle = {
+    contentVisibility: "hidden",
+  } as CSSProperties;
   const keepAliveChrome =
     keepAliveStack != null ? (
-      <KeepAliveSidePanelFrame>
+      <div
+        className={
+          keepAliveActive
+            ? "contents"
+            : "pointer-events-none invisible absolute inset-0 overflow-hidden"
+        }
+        {...(!keepAliveActive ? { inert: true } : {})}
+        style={keepAliveActive ? undefined : keepHiddenStyle}
+      >
         <ResizableContextPanel
           key="keep-alive-side-panel-chrome"
           storageKey={lastKeepAliveWidthKey.current}
+          collapsed={keepAliveActive && sidePanelCollapsed}
+          animating={keepAliveActive && sidePanelAnimating}
         >
           {keepAliveStack}
         </ResizableContextPanel>
-      </KeepAliveSidePanelFrame>
+      </div>
     ) : null;
 
-  const liveChrome = liveBody ? (
+  const liveChrome = financeBody ? (
     financeRail ? (
-      <aside className="context-panel context-panel--rail">{liveBody}</aside>
+      <aside className="context-panel context-panel--rail">{financeBody}</aside>
     ) : (
       <ResizableContextPanel
         storageKey={getContentSidePanelWidthKey(panelPathname)}
       >
-        {liveBody}
+        {financeBody}
       </ResizableContextPanel>
     )
   ) : null;
 
   const sidePanel =
     keepAliveChrome || liveChrome ? (
-      <KeepAliveSidePanelSwitch
-        keepAliveChrome={keepAliveChrome}
-        liveChrome={liveChrome}
-      />
+      <>
+        {keepAliveChrome}
+        {liveChrome}
+      </>
     ) : undefined;
 
   return {

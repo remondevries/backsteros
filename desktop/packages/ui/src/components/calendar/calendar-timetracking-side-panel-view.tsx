@@ -47,6 +47,8 @@ export type CalendarTimetrackingSidePanelViewProps = {
   highlightedId?: string | null;
   listRef?: Ref<HTMLElement | null>;
   listContainerProps?: HTMLAttributes<HTMLElement>;
+  /** When true, render only the day list — parent shell owns chrome + mode footer. */
+  embedded?: boolean;
 };
 
 /**
@@ -67,6 +69,7 @@ export function CalendarTimetrackingSidePanelView({
   highlightedId = null,
   listRef,
   listContainerProps,
+  embedded = false,
 }: CalendarTimetrackingSidePanelViewProps) {
   const monthGroups = useMemo(
     () => monthGroupsProp ?? buildTimetrackingDayGroups({ monthsBack: 3 }),
@@ -88,123 +91,118 @@ export function CalendarTimetrackingSidePanelView({
     month.weeks.some((week) => week.days.length > 0),
   );
 
+  const mainBody = !hasDays ? (
+    <ContentSidePanelEmpty>No days to show.</ContentSidePanelEmpty>
+  ) : (
+    <ContentSidePanelList
+      ref={listRef}
+      aria-label="Timetracking days"
+      {...listContainerProps}
+    >
+      {monthGroups.map((month) => {
+        const monthItemId = timetrackingSidePanelMonthItemId(month.monthKey);
+        const monthSelected =
+          period?.kind === "month" && period.monthKey === month.monthKey;
+        const monthHighlighted = isKeyboardNavHighlighted(
+          highlightedId,
+          monthItemId,
+        );
+        return (
+          <Fragment key={month.monthKey}>
+            <li className="side-panel-plain-group-header">
+              <button
+                type="button"
+                className={[
+                  "side-panel-plain-group-label",
+                  keyboardNavItemClass(monthHighlighted),
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-current={monthSelected ? "true" : undefined}
+                {...keyboardNavItemProps(monthItemId)}
+                onClick={() => onSelectMonth(month.monthKey, month.monthLabel)}
+              >
+                {month.monthLabel}
+              </button>
+            </li>
+            {month.weeks.map((week) => {
+              const weekItemId = timetrackingSidePanelWeekItemId(week.weekKey);
+              const collapsed = collapsedWeeks.has(week.weekKey);
+              const weekSelected =
+                period?.kind === "week" && period.weekKey === week.weekKey;
+              const weekHighlighted = isKeyboardNavHighlighted(
+                highlightedId,
+                weekItemId,
+              );
+              return (
+                <ProjectTypeGroupSection
+                  key={week.weekKey}
+                  title={`Week ${week.weekNumber}`}
+                  collapsed={collapsed}
+                  titleSelected={weekSelected}
+                  titleKeyboardItemId={weekItemId}
+                  titleKeyboardHighlighted={weekHighlighted}
+                  onTitleClick={() =>
+                    onSelectWeek(week.weekKey, week.weekNumber)
+                  }
+                  onToggle={() => {
+                    const next = new Set(collapsedWeeks);
+                    if (next.has(week.weekKey)) next.delete(week.weekKey);
+                    else next.add(week.weekKey);
+                    setCollapsedWeeks(next);
+                  }}
+                >
+                  {week.days.map((day) => {
+                    const dayItemId = timetrackingSidePanelDayItemId(day.ymd);
+                    const active =
+                      period?.kind === "day" && period.ymd === day.ymd;
+                    return (
+                      <li key={day.ymd} className="inbox-list-item">
+                        <button
+                          type="button"
+                          className={sidePanelItemClass({
+                            active,
+                            keyboardHighlighted: isKeyboardNavHighlighted(
+                              highlightedId,
+                              dayItemId,
+                            ),
+                          })}
+                          aria-current={active ? "true" : undefined}
+                          {...keyboardNavItemProps(dayItemId)}
+                          onClick={() => onSelectDay(day.ymd)}
+                        >
+                          <span className="side-panel-item-stack">
+                            <span className="app-side-panel-item-label">
+                              {day.label}
+                              {day.isToday ? (
+                                <span className="journal-side-panel-today">
+                                  {" "}
+                                  Today
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ProjectTypeGroupSection>
+              );
+            })}
+          </Fragment>
+        );
+      })}
+    </ContentSidePanelList>
+  );
+
+  if (embedded) {
+    return mainBody;
+  }
+
   return (
     <div className="app-content-side-panel calendar-side-panel calendar-timetracking-side-panel">
       <ContentSidePanelHeader title="Timetracking" />
-      <div className="app-content-side-panel-main">
-        {!hasDays ? (
-          <ContentSidePanelEmpty>No days to show.</ContentSidePanelEmpty>
-        ) : (
-          <ContentSidePanelList
-            ref={listRef}
-            aria-label="Timetracking days"
-            {...listContainerProps}
-          >
-            {monthGroups.map((month) => {
-              const monthItemId = timetrackingSidePanelMonthItemId(
-                month.monthKey,
-              );
-              const monthSelected =
-                period?.kind === "month" && period.monthKey === month.monthKey;
-              const monthHighlighted = isKeyboardNavHighlighted(
-                highlightedId,
-                monthItemId,
-              );
-              return (
-                <Fragment key={month.monthKey}>
-                  <li className="side-panel-plain-group-header">
-                    <button
-                      type="button"
-                      className={[
-                        "side-panel-plain-group-label",
-                        keyboardNavItemClass(monthHighlighted),
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      aria-current={monthSelected ? "true" : undefined}
-                      {...keyboardNavItemProps(monthItemId)}
-                      onClick={() =>
-                        onSelectMonth(month.monthKey, month.monthLabel)
-                      }
-                    >
-                      {month.monthLabel}
-                    </button>
-                  </li>
-                  {month.weeks.map((week) => {
-                    const weekItemId = timetrackingSidePanelWeekItemId(
-                      week.weekKey,
-                    );
-                    const collapsed = collapsedWeeks.has(week.weekKey);
-                    const weekSelected =
-                      period?.kind === "week" &&
-                      period.weekKey === week.weekKey;
-                    const weekHighlighted = isKeyboardNavHighlighted(
-                      highlightedId,
-                      weekItemId,
-                    );
-                    return (
-                      <ProjectTypeGroupSection
-                        key={week.weekKey}
-                        title={`Week ${week.weekNumber}`}
-                        collapsed={collapsed}
-                        titleSelected={weekSelected}
-                        titleKeyboardItemId={weekItemId}
-                        titleKeyboardHighlighted={weekHighlighted}
-                        onTitleClick={() =>
-                          onSelectWeek(week.weekKey, week.weekNumber)
-                        }
-                        onToggle={() => {
-                          const next = new Set(collapsedWeeks);
-                          if (next.has(week.weekKey)) next.delete(week.weekKey);
-                          else next.add(week.weekKey);
-                          setCollapsedWeeks(next);
-                        }}
-                      >
-                        {week.days.map((day) => {
-                          const dayItemId = timetrackingSidePanelDayItemId(
-                            day.ymd,
-                          );
-                          const active =
-                            period?.kind === "day" && period.ymd === day.ymd;
-                          return (
-                            <li key={day.ymd} className="inbox-list-item">
-                              <button
-                                type="button"
-                                className={sidePanelItemClass({
-                                  active,
-                                  keyboardHighlighted: isKeyboardNavHighlighted(
-                                    highlightedId,
-                                    dayItemId,
-                                  ),
-                                })}
-                                aria-current={active ? "true" : undefined}
-                                {...keyboardNavItemProps(dayItemId)}
-                                onClick={() => onSelectDay(day.ymd)}
-                              >
-                                <span className="side-panel-item-stack">
-                                  <span className="app-side-panel-item-label">
-                                    {day.label}
-                                    {day.isToday ? (
-                                      <span className="journal-side-panel-today">
-                                        {" "}
-                                        Today
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </span>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ProjectTypeGroupSection>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </ContentSidePanelList>
-        )}
-      </div>
+      <div className="app-content-side-panel-main">{mainBody}</div>
       <CalendarSidePanelModeFooter
         pageMode={pageMode}
         onPageModeChange={onPageModeChange}

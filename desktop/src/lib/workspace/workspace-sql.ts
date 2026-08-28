@@ -3,8 +3,9 @@
  * `SELECT *` so list snapshots stay lean as tables grow.
  *
  * Long text (`description` / `summary` / `context` / `notes` / `transcription`)
- * is omitted from list watches — REST hydrate + fill-missing helpers supply
- * those fields for detail / preview surfaces.
+ * is omitted from list watches. Task descriptions load via one-row PowerSync
+ * (`useDesktopTaskDescription`); other entities may still use REST hydrate +
+ * fill-missing helpers for detail / preview surfaces.
  */
 
 export const TASK_LIST_COLUMNS = [
@@ -189,6 +190,8 @@ export const MEETING_LIST_COLUMNS = [
   "created_at",
   "deleted_at",
 ].join(", ");
+
+export const ALL_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
 
 export const TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (inbox = 0 OR inbox IS NULL) ORDER BY sort_order, updated_at DESC`;
 

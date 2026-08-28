@@ -270,41 +270,46 @@ export function OrganizationOverviewView({
           />
         </DetailsField>
         <DetailsField label="Address" htmlFor="organization-address">
-          <textarea
+          <input
             id="organization-address"
-            className="entity-overview-input entity-overview-input--textarea"
+            type="text"
+            className="entity-overview-input"
             value={address}
-            rows={2}
             placeholder="Street and number"
             autoComplete="street-address"
             onChange={(event) => setAddress(event.target.value)}
             onBlur={() => persist({ address: address.trim() || null })}
           />
         </DetailsField>
-        <DetailsField label="City" htmlFor="organization-city">
-          <input
-            id="organization-city"
-            type="text"
-            className="entity-overview-input"
-            value={city}
-            placeholder="City"
-            autoComplete="address-level2"
-            onChange={(event) => setCity(event.target.value)}
-            onBlur={() => persist({ city: city.trim() || null })}
-          />
-        </DetailsField>
-        <DetailsField label="Postal code" htmlFor="organization-postal">
-          <input
-            id="organization-postal"
-            type="text"
-            className="entity-overview-input"
-            value={postalCode}
-            placeholder="1234 AB"
-            autoComplete="postal-code"
-            onChange={(event) => setPostalCode(event.target.value)}
-            onBlur={() => persist({ postalCode: postalCode.trim() || null })}
-          />
-        </DetailsField>
+        <div className="entity-overview-field">
+          <span className="entity-overview-field__label" aria-hidden="true" />
+          <div className="entity-overview-address-locality">
+            <input
+              id="organization-city"
+              type="text"
+              className="entity-overview-input"
+              value={city}
+              placeholder="City"
+              aria-label="City"
+              autoComplete="address-level2"
+              onChange={(event) => setCity(event.target.value)}
+              onBlur={() => persist({ city: city.trim() || null })}
+            />
+            <input
+              id="organization-postal"
+              type="text"
+              className="entity-overview-input"
+              value={postalCode}
+              placeholder="Postal code"
+              aria-label="Postal code"
+              autoComplete="postal-code"
+              onChange={(event) => setPostalCode(event.target.value)}
+              onBlur={() =>
+                persist({ postalCode: postalCode.trim() || null })
+              }
+            />
+          </div>
+        </div>
         <DetailsField label="Country" htmlFor="organization-country">
           <input
             id="organization-country"

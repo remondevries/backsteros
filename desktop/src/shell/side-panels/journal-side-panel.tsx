@@ -3,9 +3,7 @@ import { useCallback, useMemo, useRef, type FocusEvent, type MouseEvent, type Re
 import {
   JournalSidePanelView,
   getJournalHref,
-  getJournalV2Href,
   getSelectedJournalDateFromPathname,
-  getSelectedJournalV2DateFromPathname,
   isValidJournalDateSlug,
   type JournalSidePanelViewProps,
 } from "@backsteros/ui";
@@ -24,7 +22,6 @@ import type { SidePanelNavProps } from "./types.js";
 export function DesktopJournalSidePanel({
   onNavigate,
   listOnly = false,
-  variant = "journal",
   ...viewProps
 }: Omit<
   JournalSidePanelViewProps,
@@ -39,8 +36,6 @@ export function DesktopJournalSidePanel({
   SidePanelNavProps & {
     /** List rows only — no API fallback fetch and no content prefetch. */
     listOnly?: boolean;
-    /** `journal-v2` keeps navigation inside `/journal-v2/...`. */
-    variant?: "journal" | "journal-v2";
   }) {
   const { client } = useDesktopApi();
   const { journalDocumentIdsByDate } = useDesktopWorkspaceDocuments();
@@ -53,12 +48,6 @@ export function DesktopJournalSidePanel({
     [listOnly],
   );
   const { pathname } = viewProps;
-  const getEntryHref =
-    variant === "journal-v2" ? getJournalV2Href : getJournalHref;
-  const getSelectedDateFromPathname =
-    variant === "journal-v2"
-      ? getSelectedJournalV2DateFromPathname
-      : getSelectedJournalDateFromPathname;
   const items = useMemo(() => {
     if (viewProps.items.length > 0) return viewProps.items;
     if (listOnly) return [];
@@ -70,7 +59,7 @@ export function DesktopJournalSidePanel({
       .sort((a, b) => b.localeCompare(a))
       .map((dateSlug) => ({ dateSlug }));
   }, [listOnly, resource.data, viewProps.items]);
-  const selectedId = getSelectedDateFromPathname(pathname) ?? null;
+  const selectedId = getSelectedJournalDateFromPathname(pathname) ?? null;
   const itemIds = useMemo(
     () => items.map((item) => item.dateSlug),
     [items],
@@ -94,7 +83,7 @@ export function DesktopJournalSidePanel({
       itemIds,
       selectedId,
       onNavigate: (dateSlug) => {
-        onNavigate(getEntryHref(dateSlug));
+        onNavigate(getJournalHref(dateSlug));
       },
       enabled: items.length > 0,
       prefetchItemId: listOnly ? undefined : prefetchItemId,
@@ -113,12 +102,10 @@ export function DesktopJournalSidePanel({
       children: ReactNode;
       onMouseEnter?: (event: MouseEvent<HTMLAnchorElement>) => void;
       onFocus?: (event: FocusEvent<HTMLAnchorElement>) => void;
-      onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+      onClick?: (event?: MouseEvent<HTMLAnchorElement>) => void;
       [key: string]: unknown;
     }) {
-      const rawSlug = String(to)
-        .replace(/^\/journal-v2\/?/, "")
-        .replace(/^\/journal\/?/, "");
+      const rawSlug = String(to).replace(/^\/journal\/?/, "");
       const dateSlug = isValidJournalDateSlug(rawSlug) ? rawSlug : "";
       return (
         <RouterLink
@@ -141,9 +128,9 @@ export function DesktopJournalSidePanel({
   return (
     <JournalSidePanelView
       {...viewProps}
-      title={variant === "journal-v2" ? "Journal" : "Journal"}
-      getEntryHref={getEntryHref}
-      getSelectedDateFromPathname={getSelectedDateFromPathname}
+      title="Journal"
+      getEntryHref={getJournalHref}
+      getSelectedDateFromPathname={getSelectedJournalDateFromPathname}
       items={items}
       Link={PrefetchLink}
       listRef={listRef}

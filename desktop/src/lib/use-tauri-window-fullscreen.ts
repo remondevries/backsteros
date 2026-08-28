@@ -12,6 +12,14 @@ function readDomFullscreenHint(): boolean {
   );
 }
 
+/** Toggle native Tauri window fullscreen (macOS space / Windows exclusive FS). */
+export async function toggleTauriWindowFullscreen(): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const appWindow = getCurrentWindow();
+  const currentlyFullscreen = await appWindow.isFullscreen();
+  await appWindow.setFullscreen(!currentlyFullscreen);
+}
+
 /**
  * Tracks whether the current Tauri window is in native fullscreen.
  * Used to drop macOS traffic-light insets when the titlebar controls are hidden.

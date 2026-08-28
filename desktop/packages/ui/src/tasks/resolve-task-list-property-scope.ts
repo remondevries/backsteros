@@ -9,7 +9,15 @@ function rowHasTaskPropertyDropdowns(row: HTMLElement): boolean {
   return row.querySelector(`[${TASK_PROPERTY_DROPDOWN_ATTRIBUTE}]`) !== null;
 }
 
+function isHiddenKeepAliveSubtree(element: Element): boolean {
+  return element.closest("[inert], [data-keep-alive-hidden]") !== null;
+}
+
 function resolveTaskPropertyRow(marker: HTMLElement): HTMLElement | null {
+  if (isHiddenKeepAliveSubtree(marker)) {
+    return null;
+  }
+
   const row = marker.closest("li");
   if (!(row instanceof HTMLElement) || !rowHasTaskPropertyDropdowns(row)) {
     return null;

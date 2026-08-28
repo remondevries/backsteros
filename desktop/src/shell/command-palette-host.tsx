@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   CommandPaletteView,
@@ -16,11 +16,12 @@ import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
 } from "../lib/workspace-data";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { navigateToHref } from "../router/navigate-href";
 
 /** Isolated command palette — re-renders only on palette context + route, not full shell. */
 export function CommandPaletteHost() {
-  const location = useLocation();
+  const location = useShellLocation();
   const pathname = location.pathname;
   const routerNavigate = useNavigate();
   const { mode } = useCommandPaletteState();

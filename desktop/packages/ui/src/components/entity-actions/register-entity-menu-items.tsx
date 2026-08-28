@@ -2,6 +2,7 @@
 
 import { useId, useLayoutEffect } from "react";
 
+import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
 import {
   useEntityHeaderActionsContext,
   type EntityExtraMenuItem,
@@ -14,17 +15,23 @@ export function RegisterEntityMenuItems({
   items: EntityExtraMenuItem[];
 }) {
   const ownerId = useId();
+  const mountGate = useListKeyboardNavMountGate();
   const { registerExtraMenuItems, clearExtraMenuItems } =
     useEntityHeaderActionsContext();
   const itemsRef = useLatestRef(items);
 
   useLayoutEffect(() => {
+    if (!mountGate) {
+      clearExtraMenuItems(ownerId);
+      return;
+    }
     registerExtraMenuItems(ownerId, itemsRef.current);
     return () => clearExtraMenuItems(ownerId);
   }, [
     clearExtraMenuItems,
     items,
     itemsRef,
+    mountGate,
     ownerId,
     registerExtraMenuItems,
   ]);

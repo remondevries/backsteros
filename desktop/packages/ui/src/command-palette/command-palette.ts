@@ -156,21 +156,21 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     letter: "j",
     hint: "G J",
     label: "Journal",
-    href: "/journal-v2",
+    href: "/journal",
   },
   {
     id: "habits",
     letter: "h",
     hint: "G H",
     label: "Habit Tracker",
-    href: "/habits-v2",
+    href: "/journal/habits",
   },
   {
     id: "knowledge",
     letter: "k",
     hint: "G K",
     label: "Knowledge Base",
-    href: "/knowledge-v2",
+    href: "/knowledge",
   },
   { id: "tasks", letter: "t", hint: "G T", label: "Tasks", href: "/tasks" },
   {
@@ -200,7 +200,7 @@ export const DEFAULT_GO_NAVIGATION_ITEMS: GoNavigationItem[] = [
     letter: "l",
     hint: "G L",
     label: "Letters",
-    href: "/letters-v2",
+    href: "/letters",
   },
   {
     id: "finance",

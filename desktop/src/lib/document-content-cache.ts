@@ -5,15 +5,31 @@ import { createPersistedSessionLruCache } from "./session-lru-cache";
 export type CachedDocumentContent = {
   content: string;
   contentVersion: number;
+  /** Full sha256 from GET; used to detect vault-side drift vs a warm LRU. */
+  checksum?: string | null;
 };
 
 /** Skip persisting a single body larger than this; RAM still keeps it. */
 const MAX_PERSISTED_BODY_CHARS = 400_000;
 
+/**
+ * True when a warm LRU entry must not be trusted as Tier D truth — missing
+ * checksum (pre-v2 cache) or checksum drifted from the last known server etag.
+ */
+export function shouldMissDocumentContentCache(
+  cached: CachedDocumentContent | null | undefined,
+  knownChecksum?: string | null,
+): boolean {
+  if (!cached) return true;
+  if (cached.checksum == null || cached.checksum === "") return true;
+  if (knownChecksum == null || knownChecksum === "") return false;
+  return cached.checksum !== knownChecksum;
+}
+
 /** Bounded warm cache for Tier D markdown (hover / j-k prefetch). Not PowerSync. */
 const contentCache = createPersistedSessionLruCache<CachedDocumentContent>({
   limit: 32,
-  storageKey: "backsteros:doc-content-v1",
+  storageKey: "backsteros:doc-content-v2",
   maxValueChars: MAX_PERSISTED_BODY_CHARS,
 });
 
@@ -39,9 +55,21 @@ export function discardDocumentContentCache(documentId: string): void {
   inflight.delete(documentId);
 }
 
+function entryFromResponse(data: {
+  content: string;
+  contentVersion: number;
+  checksum?: string | null;
+}): CachedDocumentContent {
+  return {
+    content: data.content,
+    contentVersion: data.contentVersion,
+    checksum: data.checksum ?? null,
+  };
+}
+
 /**
  * Warm the session content cache. Safe to call from hover / j-k highlight.
- * No-ops when already cached; dedupes concurrent requests for the same id.
+ * No-ops when already cached with a checksum; dedupes concurrent requests.
  */
 export function prefetchDocumentContent(
   client: BacksterosApiClient,
@@ -49,18 +77,18 @@ export function prefetchDocumentContent(
 ): void {
   const id = documentId?.trim();
   if (!id) return;
-  if (contentCache.peek(id)) return;
+  const cached = contentCache.peek(id);
+  if (cached && !shouldMissDocumentContentCache(cached)) return;
   if (inflight.has(id)) return;
 
   const request = client
-    .requestJson<{ content: string; contentVersion: number }>(
-      `/api/v1/documents/${encodeURIComponent(id)}/content`,
-    )
+    .requestJson<{
+      content: string;
+      contentVersion: number;
+      checksum?: string | null;
+    }>(`/api/v1/documents/${encodeURIComponent(id)}/content`)
     .then((data) => {
-      const entry = {
-        content: data.content,
-        contentVersion: data.contentVersion,
-      };
+      const entry = entryFromResponse(data);
       contentCache.set(id, entry);
       return entry;
     })
@@ -78,32 +106,42 @@ export function prefetchDocumentContent(
   inflight.set(id, request);
 }
 
-/** Shared with the hook so open + prefetch use the same in-flight map. */
+/**
+ * Shared with the hook so open + prefetch use the same in-flight map.
+ *
+ * Always revalidates over the network (GET heals vault disk vs content_version).
+ * Peek still first-paints from the LRU; do not short-circuit fetch on a hit —
+ * a stale body + matching ifMatchVersion must not overwrite a newer .md.
+ */
 export function fetchDocumentContent(
   client: BacksterosApiClient,
   documentId: string,
-  options?: { force?: boolean },
+  options?: {
+    force?: boolean;
+    /** When set (e.g. PowerSync checksum), drop LRU if it drifted. */
+    knownChecksum?: string | null;
+  },
 ): Promise<CachedDocumentContent | null> {
   if (options?.force) {
     contentCache.delete(documentId);
     inflight.delete(documentId);
   } else {
     const cached = contentCache.peek(documentId);
-    if (cached) return Promise.resolve(cached);
-
+    if (shouldMissDocumentContentCache(cached, options?.knownChecksum)) {
+      if (cached) contentCache.delete(documentId);
+    }
     const existing = inflight.get(documentId);
     if (existing) return existing;
   }
 
   const request = client
-    .requestJson<{ content: string; contentVersion: number }>(
-      `/api/v1/documents/${encodeURIComponent(documentId)}/content`,
-    )
+    .requestJson<{
+      content: string;
+      contentVersion: number;
+      checksum?: string | null;
+    }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`)
     .then((data) => {
-      const entry = {
-        content: data.content,
-        contentVersion: data.contentVersion,
-      };
+      const entry = entryFromResponse(data);
       contentCache.set(documentId, entry);
       return entry;
     })

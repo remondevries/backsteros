@@ -19,6 +19,10 @@ import {
 
 import { useDesktopApi } from "./api-context";
 import { createRequestAbortSignal } from "./request-timeout";
+import {
+  peekAgentMailListCache,
+  writeAgentMailListCache,
+} from "./agentmail-list-cache";
 import { startEmailInboxEventsLoop } from "./email-inbox-events";
 
 export const EMAIL_LIST_PATCH_EVENT = "backsteros-email-list-patch";
@@ -183,15 +187,24 @@ export function useAgentMailMailboxes(
 ) {
   const liveUpdates = options?.liveUpdates !== false;
   const { client } = useDesktopApi();
-  const [mailboxes, setMailboxes] = useState<EmailMailbox[]>([]);
-  const [messages, setMessages] = useState<EmailListItem[]>([]);
-  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
-  const [loading, setLoading] = useState(active);
-  const [messagesLoading, setMessagesLoading] = useState(false);
+  const cachedSnapshot = peekAgentMailListCache();
+  const [mailboxes, setMailboxes] = useState<EmailMailbox[]>(
+    () => cachedSnapshot?.mailboxes ?? [],
+  );
+  const [messages, setMessages] = useState<EmailListItem[]>(
+    () => cachedSnapshot?.messages ?? [],
+  );
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(
+    () => cachedSnapshot?.apiKeyConfigured ?? false,
+  );
+  const [loading, setLoading] = useState(active && !cachedSnapshot);
+  const [messagesLoading, setMessagesLoading] = useState(
+    active && !cachedSnapshot,
+  );
   const reloadAbortRef = useRef<AbortController | null>(null);
   const reloadGenerationRef = useRef(0);
   const mountedRef = useRef(true);
-  const hydratedRef = useRef(false);
+  const hydratedRef = useRef(Boolean(cachedSnapshot));
   const sseReloadTimerRef = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
@@ -247,13 +260,23 @@ export function useAgentMailMailboxes(
         }
         if (!mountedRef.current) return;
         startTransition(() => {
-          setMessages(
-            collapseEmailListItemsByThread(
-              (listed.messages ?? [])
-                .map(toListItem)
-                .filter((item): item is EmailListItem => item != null),
-            ),
+          const nextMessages = collapseEmailListItemsByThread(
+            (listed.messages ?? [])
+              .map(toListItem)
+              .filter((item): item is EmailListItem => item != null),
           );
+          setMessages(nextMessages);
+          writeAgentMailListCache({
+            mailboxes: (body.inboxes ?? []).map((inbox) => ({
+              inboxId: inbox.inboxId,
+              email: inbox.email,
+              displayName: inbox.displayName,
+              contactId: inbox.contactId ?? null,
+              contactName: inbox.contactName ?? null,
+            })),
+            messages: nextMessages,
+            apiKeyConfigured: body.apiKeyConfigured,
+          });
         });
       } catch {
         if (signal.aborted || generation !== reloadGenerationRef.current) {

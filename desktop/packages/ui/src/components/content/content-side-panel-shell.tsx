@@ -43,6 +43,11 @@ export type ContentSidePanelShellProps = {
    * Default true — wraps children in ContentSidePanelList when not loading/empty.
    */
   wrapList?: boolean;
+  /**
+   * When true, render only the loading / empty / list body (no root, header,
+   * or afterMain). Used when a parent shell already owns the chrome.
+   */
+  bare?: boolean;
   children?: ReactNode;
 };
 
@@ -67,6 +72,7 @@ export function ContentSidePanelShell({
   listRef,
   listContainerProps,
   wrapList = true,
+  bare = false,
   children = null,
 }: ContentSidePanelShellProps) {
   const resolvedShowHeader =
@@ -101,6 +107,15 @@ export function ContentSidePanelShell({
     );
   } else {
     body = children;
+  }
+
+  if (bare) {
+    return (
+      <>
+        {beforeBody}
+        {body}
+      </>
+    );
   }
 
   return (

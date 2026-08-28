@@ -40,6 +40,8 @@ export type DesktopTaskActivityPanelProps = {
   onSpellcheckReset?: () => void;
   /** When false, hide Spellcheck / Research / Reset / Confirm (e.g. description edit mode). */
   spellcheckControlsVisible?: boolean;
+  /** Increment to force-refresh comments + activities (e.g. after posting a timer row). */
+  activityFeedBump?: number;
   taskSummary: {
     number: number;
     title: string;
@@ -64,6 +66,7 @@ export function DesktopTaskActivityPanel({
   onSpellcheckConfirm,
   onSpellcheckReset,
   spellcheckControlsVisible = true,
+  activityFeedBump = 0,
   taskSummary,
 }: DesktopTaskActivityPanelProps) {
   const { client } = useDesktopApi();
@@ -79,6 +82,11 @@ export function DesktopTaskActivityPanel({
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [feedRevision, setFeedRevision] = useState(0);
+
+  useEffect(() => {
+    if (!activityFeedBump) return;
+    setFeedRevision((n) => n + 1);
+  }, [activityFeedBump]);
 
   const working =
     isTaskAgentWorkingForUi(

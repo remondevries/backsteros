@@ -4,6 +4,21 @@
   --background: #0a0a0a;
   --foreground: #ededed;
   --muted: rgb(255 255 255 / 0.52);
+  /*
+   * Quiet labels above list/table columns (projects Name/Health/…, finance
+   * invoice/category headers). Keep smaller and greyer than row body text.
+   */
+  --list-column-header-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+  --list-column-header-size: 11px;
+  --list-column-header-weight: 500;
+  /*
+   * Sticky stack: column labels at top:0, status/area group headers below them.
+   * Keep in sync with `.project-overview-row.project-overview-header` padding
+   * (8px + 8px) and line-height 1.2.
+   */
+  --list-column-headers-sticky-height: calc(
+    16px + (var(--list-column-header-size) * 1.2)
+  );
   --faint: rgb(255 255 255 / 0.06);
   --border: rgb(255 255 255 / 0.1);
   --surface: #111112;
@@ -500,4 +515,46 @@
 
 .sidebar-cursor-credits-fill--critical {
   background: color-mix(in oklab, #c45c5c 80%, var(--foreground));
+}
+
+/**
+ * Quiet column labels above overview / table lists.
+ * Prefer this class (or the shared CSS vars) so headers stay xs + grey.
+ */
+.list-column-headers {
+  color: var(--list-column-header-color);
+  font-size: var(--list-column-header-size);
+  font-weight: var(--list-column-header-weight);
+  line-height: 1.2;
+}
+
+/*
+ * Global overlay scrollbar: hide native bars in the product shell and paint
+ * a thin macOS-style thumb via OverlayScrollbarRoot (fixed, show-on-scroll).
+ * Opt out with data-overlay-scrollbar="off" on a scroller or ancestor.
+ */
+.bos-product-shell,
+.bos-product-shell * {
+  scrollbar-width: none;
+}
+
+.bos-product-shell *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.overlay-scrollbar-thumb {
+  position: fixed;
+  z-index: 200;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+  will-change: transform, opacity;
+}
+
+.overlay-scrollbar-thumb.is-active {
+  opacity: 1;
 }

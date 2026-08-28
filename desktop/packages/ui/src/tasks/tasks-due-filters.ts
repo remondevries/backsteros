@@ -171,9 +171,9 @@ export function buildTasksDueHref(
   listPath = "/tasks",
 ): string {
   const params = new URLSearchParams();
-  if (due !== DEFAULT_TASKS_DUE_FILTER) {
-    params.set(TASKS_DUE_SEARCH_PARAM, due);
-  }
+  // Always include `due` — bare `/tasks` is the section-root “restore last”
+  // target for warm keep-alive; omitting today made the Today tab unreachable.
+  params.set(TASKS_DUE_SEARCH_PARAM, due);
   if (view === "board") {
     params.set("view", "board");
   }

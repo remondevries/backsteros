@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 
+import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
+
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { TASK_PRIORITY_ORDER } from "../../tasks/task-priority.js";
 import {
@@ -10,6 +12,7 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../../tasks/task-status.js";
+import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -21,6 +24,7 @@ import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import {
@@ -40,6 +44,12 @@ export type TaskPropertiesInlineChipsProps = {
   assigneeOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  onTimerSessionChange?: (
+    action: "start" | "pause",
+    seconds?: number | null,
+  ) => void;
+  timerSession?: TrackedTimerSessionMeta | null;
 };
 
 function toDate(value: number | Date | null | undefined): Date | null {
@@ -100,6 +110,9 @@ export function TaskPropertiesInlineChips({
   assigneeOptions = [],
   projectOptions = [],
   onCreateAssigneeFromQuery,
+  onTrackedDurationSecondsChange,
+  onTimerSessionChange,
+  timerSession = null,
 }: TaskPropertiesInlineChipsProps) {
   const disabled = task == null;
   const status = migrateLegacyTaskStatus(task?.status ?? "triage");
@@ -226,6 +239,21 @@ export function TaskPropertiesInlineChips({
             onClick={() => onFieldActivate?.("project")}
           />
         )}
+        <div className="task-properties-inline__tracked-time">
+          <TrackedTimeField
+            variant="pill"
+            trackedDurationSeconds={task?.trackedDurationSeconds ?? null}
+            trackedMinutes={task?.trackedMinutes ?? null}
+            scheduleMinutes={trackedMinutesFromTaskSchedule(
+              toDate(task?.dueDate),
+              toDate(task?.dueEndDate),
+            )}
+            disabled={disabled}
+            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+            onTimerSessionChange={onTimerSessionChange}
+            timerSession={timerSession}
+          />
+        </div>
       </div>
     </div>
   );

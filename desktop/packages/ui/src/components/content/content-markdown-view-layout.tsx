@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { createContentViewModeDoubleClickHandler } from "../../content/content-view-mode-double-click.js";
-import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
+import { useContentViewModeShortcut } from "../../content/use-content-view-mode-shortcut.js";
 
 export type ContentMarkdownViewMode = "edit" | "preview";
 
@@ -245,7 +245,8 @@ const DEFAULT_SAVE_DEBOUNCE_MS = 700;
 
 /**
  * Shared edit/preview state for markdown detail views.
- * ⌘/Ctrl+E toggles edit ↔ preview; ⌘/Ctrl+P forces preview (Next parity).
+ * ⌘/Ctrl+E toggles edit ↔ preview (JS keydown + Tauri Edit menu, so it still
+ * works while CodeMirror is focused); ⌘/Ctrl+P forces preview (Next parity).
  */
 export function useMarkdownDetailEditor({
   initialValue,
@@ -403,42 +404,17 @@ export function useMarkdownDetailEditor({
     activateEditMode();
   }, [activateEditMode, switchToPreview]);
 
+  useContentViewModeShortcut({
+    enabled: shortcutsEnabled,
+    onToggle: toggleViewMode,
+    onForcePreview: switchToPreview,
+  });
+
   useEffect(() => {
     return () => {
       clearScheduledSave();
     };
   }, [clearScheduledSave]);
-
-  useEffect(() => {
-    if (!shortcutsEnabled) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "e") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (modeRef.current === "edit") {
-          switchToPreview();
-        } else {
-          activateEditMode();
-        }
-        return;
-      }
-
-      if (key === "p") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        switchToPreview();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [activateEditMode, shortcutsEnabled, switchToPreview]);
 
   return {
     value,

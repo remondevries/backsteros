@@ -31,8 +31,13 @@ import {
 } from "./inbox-list-item-row.js";
 import { ProjectTypeGroupSection } from "../projects/project-type-group-section.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import type { TaskStatus } from "../../tasks/task-status.js";
+import {
+  VirtualizedOverviewList,
+  OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
+} from "../../list-nav/virtualized-overview-list.js";
 import { InboxSidePanelSkeleton } from "../skeletons/inbox-side-panel-skeleton.js";
+import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 
@@ -55,6 +60,7 @@ export type InboxSidePanelViewProps = {
   onComposeEmail?: () => void;
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeOptions?: SearchableDropdownOption<string>[];
+  onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
@@ -77,7 +83,7 @@ export type InboxSidePanelViewProps = {
   showHeader?: boolean;
   /**
    * Narrow rail: status icon + task id only (attention inbox focus mode).
-   * Hides section labels and interactive meta fields.
+   * Hides section labels and property meta.
    */
   minimized?: boolean;
   /** Keyboard-nav highlighted row id (from useListKeyboardNavigation). */
@@ -102,6 +108,7 @@ export function InboxSidePanelView({
   onComposeEmail,
   projectOptions,
   assigneeOptions,
+  onStatusChange,
   onPriorityChange,
   onDueDateChange,
   onProjectChange,
@@ -149,6 +156,41 @@ export function InboxSidePanelView({
     [groupByAttentionStatus, items],
   );
 
+  const useVirtualList = items.length >= OVERVIEW_LIST_VIRTUALIZE_THRESHOLD;
+
+  const virtualRows = useMemo(() => {
+    if (!useVirtualList) return [];
+    if (attentionGroups) {
+      return attentionGroups.flatMap((group) => {
+        const header = {
+          key: `header:${group.status}`,
+          kind: "header" as const,
+          status: group.status,
+          label: group.label,
+          estimatedSize: minimized ? 28 : 36,
+        };
+        if (collapsedGroups.has(group.status)) return [header];
+        return [
+          header,
+          ...group.items.map((item) => ({
+            key: `${item.kind}-${item.id}`,
+            kind: "item" as const,
+            itemId: item.id,
+            item,
+            estimatedSize: minimized ? 28 : 44,
+          })),
+        ];
+      });
+    }
+    return items.map((item) => ({
+      key: `${item.kind}-${item.id}`,
+      kind: "item" as const,
+      itemId: item.id,
+      item,
+      estimatedSize: minimized ? 28 : 44,
+    }));
+  }, [attentionGroups, collapsedGroups, items, minimized, useVirtualList]);
+
   const hrefById = useMemo(() => buildInboxItemHrefById(items), [items]);
 
   function renderRow(item: InboxListItem) {
@@ -165,6 +207,7 @@ export function InboxSidePanelView({
         titleTrailing={minimized ? null : renderTitleTrailing?.(item) ?? null}
         projectOptions={minimized ? undefined : projectOptions}
         assigneeOptions={minimized ? undefined : assigneeOptions}
+        onStatusChange={minimized ? undefined : onStatusChange}
         onPriorityChange={minimized ? undefined : onPriorityChange}
         onDueDateChange={minimized ? undefined : onDueDateChange}
         onProjectChange={minimized ? undefined : onProjectChange}
@@ -248,6 +291,55 @@ export function InboxSidePanelView({
         ) : !items.length && !composing ? (
           <ContentSidePanelEmpty>{emptyLabel}</ContentSidePanelEmpty>
         ) : items.length ? (
+          useVirtualList ? (
+            <VirtualizedOverviewList
+              rows={virtualRows}
+              highlightedId={highlightedId}
+              listRef={listRef as Ref<HTMLUListElement | null> | undefined}
+              listContainerProps={{
+                ...listContainerProps,
+                "aria-label": "Inbox items",
+              }}
+              className="app-content-side-panel-body"
+              estimatedItemSize={minimized ? 28 : 40}
+              renderRow={(row) => {
+                if (row.kind === "header") {
+                  return minimized ? (
+                    <li
+                      className="side-panel-plain-group-header side-panel-plain-group-header--minimized"
+                      title={row.label}
+                    >
+                      {isTaskStatus(row.status) ? (
+                        <TaskStatusIcon
+                          status={row.status}
+                          size={14}
+                          title={row.label}
+                        />
+                      ) : row.status === "overdue" ? (
+                        <TaskStatusIcon
+                          status="on_hold"
+                          size={14}
+                          title={row.label}
+                        />
+                      ) : (
+                        <InboxItemTypeIcon kind="letter" />
+                      )}
+                      <span className="sr-only">{row.label}</span>
+                    </li>
+                  ) : (
+                    <button
+                      type="button"
+                      className="side-panel-plain-group-header w-full text-left"
+                      onClick={() => onToggleGroup?.(row.status)}
+                    >
+                      {row.label}
+                    </button>
+                  );
+                }
+                return renderRow(row.item!);
+              }}
+            />
+          ) : (
           <ContentSidePanelList
             aria-label="Inbox items"
             ref={listRef}
@@ -293,6 +385,7 @@ export function InboxSidePanelView({
                 )
               : items.map((item) => renderRow(item))}
           </ContentSidePanelList>
+          )
         ) : null}
       </div>
     </div>

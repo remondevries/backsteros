@@ -488,6 +488,8 @@ export const taskActivityTypeSchema = z.enum([
   "due_date_changed",
   "project_changed",
   "agent_worked",
+  "timer_started",
+  "timer_stopped",
 ]);
 
 export const agentWorkedActivityDataSchema = z.object({
@@ -501,10 +503,26 @@ export const agentWorkedActivityDataSchema = z.object({
   status: z.string().nullable().optional(),
 });
 
-export const createTaskActivitySchema = z.object({
-  type: z.literal("agent_worked"),
-  data: agentWorkedActivityDataSchema,
+export const timerStartedActivityDataSchema = z.object({}).passthrough();
+
+export const timerStoppedActivityDataSchema = z.object({
+  durationSeconds: z.number().int().nonnegative(),
 });
+
+export const createTaskActivitySchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("agent_worked"),
+    data: agentWorkedActivityDataSchema,
+  }),
+  z.object({
+    type: z.literal("timer_started"),
+    data: timerStartedActivityDataSchema.optional().default({}),
+  }),
+  z.object({
+    type: z.literal("timer_stopped"),
+    data: timerStoppedActivityDataSchema,
+  }),
+]);
 
 export const taskActivitySchema = z.object({
   id: z.string(),

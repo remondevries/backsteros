@@ -8,7 +8,7 @@ import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dro
 import { DeferredTaskDueDateDropdown } from "./deferred-task-due-date-dropdown.js";
 import {
   TaskListDueDateLabel,
-  TaskListPriorityLabel,
+  TaskListPriorityMark,
 } from "./task-list-property-label.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 
@@ -90,7 +90,7 @@ export function TaskListPropertyFields({
           />
         </span>
       ) : (
-        <TaskListPriorityLabel priority={priority} />
+        <TaskListPriorityMark priority={priority} />
       )}
       {hasDueMeta ? (
         onDueDateChange ? (

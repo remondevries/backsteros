@@ -128,7 +128,7 @@ export function JournalListPane({
     }
   }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated]);
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, true, localRows.length > 0);
 
   const rows = resolveSyncedOrRestRows({
     localRows,

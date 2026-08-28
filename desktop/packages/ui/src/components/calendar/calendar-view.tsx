@@ -79,6 +79,8 @@ export type CalendarViewProps = {
   }) => void | Promise<void>;
   /** When set, clicking a calendar task opens an anchored detail popover. */
   resolveTask?: (taskId: string) => CalendarTaskPopoverTask | null | undefined;
+  /** Fires when the task popover opens/closes so the host can load description from SQLite. */
+  onTaskPopoverChange?: (taskId: string | null) => void;
   /** When set, clicking a calendar meeting opens an anchored detail popover. */
   resolveMeeting?: (
     meetingId: string,
@@ -129,6 +131,7 @@ export function CalendarView({
   onMeetingReschedule,
   onCreateMeetingFromSelect,
   resolveTask,
+  onTaskPopoverChange,
   resolveMeeting,
   onTaskOpen,
   onMeetingOpen,
@@ -188,6 +191,10 @@ export function CalendarView({
     setOpenTaskPopover(null);
     setOpenMeetingPopover(null);
   }, []);
+
+  useEffect(() => {
+    onTaskPopoverChange?.(openTaskPopover?.task.id ?? null);
+  }, [onTaskPopoverChange, openTaskPopover?.task.id]);
 
   const calendarEntityPopoverOpen =
     openTaskPopover != null || openMeetingPopover != null;

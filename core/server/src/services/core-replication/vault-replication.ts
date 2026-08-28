@@ -2,8 +2,13 @@
  * Continuous markdown vault twinning on the core-replication tick.
  * Local role: pull from peer (LWW by mtime) then push local changes.
  * Cloud role: serves vault HTTP only. PDFs / macOS junk are never synced.
+ *
+ * Local listing is manifest-first: a no-change tick reuses vault-manifest.json
+ * (no full .md walk). fs.watch marks dirty paths; only those are re-stat'd.
+ * Periodic full walk remains a safety net.
  */
 import { createHash } from "node:crypto";
+import { watch, type FSWatcher } from "node:fs";
 import {
   mkdir,
   readFile,
@@ -25,13 +30,17 @@ import { getCoreReplicationConfig } from "./config.js";
 
 import {
   VaultPathError,
+  applyDirtyVaultPathStats,
   diffVaultManifest,
   normalizeVaultMarkdownPath,
   planVaultPull,
   planVaultPullDeletes,
   planVaultPush,
   resolveSafeVaultAbsolute,
+  shouldPullVaultFile,
   shouldPushVaultFile,
+  shouldSkipFullVaultWalk,
+  vaultFileMetaFromManifest,
   type VaultFileMeta,
   type VaultManifest,
   type VaultManifestDiff,
@@ -40,13 +49,17 @@ import {
 
 export {
   VaultPathError,
+  applyDirtyVaultPathStats,
   diffVaultManifest,
   normalizeVaultMarkdownPath,
   planVaultPull,
   planVaultPullDeletes,
   planVaultPush,
   resolveSafeVaultAbsolute,
+  shouldPullVaultFile,
   shouldPushVaultFile,
+  shouldSkipFullVaultWalk,
+  vaultFileMetaFromManifest,
 };
 export type {
   VaultFileMeta,
@@ -55,12 +68,71 @@ export type {
   VaultManifestEntry,
 };
 
-
 export const VAULT_MANIFEST_RELATIVE_PATH =
   ".backsteros/replication/vault-manifest.json";
 
 export const VAULT_REPLICATION_PAGE_SIZE = 50;
 export const VAULT_MAX_MARKDOWN_BYTES = 5 * 1024 * 1024;
+/** Safety net: full vault walk even when the dirty set is empty. */
+export const VAULT_FULL_SCAN_EVERY_TICKS = 40;
+
+const dirtyMarkdownPaths = new Set<string>();
+let vaultWatcher: FSWatcher | null = null;
+let vaultWatcherRoot: string | null = null;
+let ticksSinceFullScan = 0;
+
+/** Test / ops: mark paths dirty (`*` = force full walk). */
+export function markVaultMarkdownDirty(relativePath: string): void {
+  dirtyMarkdownPaths.add(relativePath.replace(/\\/g, "/"));
+}
+
+/** Test helper: clear dirty set + tick counter (does not stop the watcher). */
+export function resetVaultListingStateForTests(): void {
+  dirtyMarkdownPaths.clear();
+  ticksSinceFullScan = 0;
+}
+
+export function peekVaultDirtyPathsForTests(): string[] {
+  return [...dirtyMarkdownPaths].sort();
+}
+
+function noteVaultWatchEvent(filename: string | null): void {
+  if (!filename) {
+    dirtyMarkdownPaths.add("*");
+    return;
+  }
+  const normalized = filename.replace(/\\/g, "/");
+  const base = path.posix.basename(normalized);
+  if (shouldSkipDirentName(base)) return;
+  if (base.toLowerCase().endsWith(".md")) {
+    dirtyMarkdownPaths.add(normalized);
+    return;
+  }
+  // Directory / non-md change may mean a new .md appeared — force a walk.
+  dirtyMarkdownPaths.add("*");
+}
+
+export function ensureVaultChangeWatcher(vaultRoot: string): void {
+  const root = path.resolve(vaultRoot);
+  if (vaultWatcher && vaultWatcherRoot === root) return;
+  if (vaultWatcher) {
+    vaultWatcher.close();
+    vaultWatcher = null;
+    vaultWatcherRoot = null;
+  }
+  try {
+    vaultWatcher = watch(root, { recursive: true }, (_event, filename) => {
+      noteVaultWatchEvent(typeof filename === "string" ? filename : null);
+    });
+    vaultWatcherRoot = root;
+    vaultWatcher.on("error", () => {
+      dirtyMarkdownPaths.add("*");
+    });
+  } catch {
+    // Recursive watch unsupported — fall back to periodic full walks.
+    dirtyMarkdownPaths.add("*");
+  }
+}
 
 function manifestAbsolutePath(vaultRoot: string): string {
   return path.join(path.resolve(vaultRoot), VAULT_MANIFEST_RELATIVE_PATH);
@@ -121,6 +193,72 @@ export async function listMarkdownFiles(
   await walkMarkdownFiles(root, "", out);
   out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   return out;
+}
+
+export type LocalVaultListing = {
+  files: VaultFileMeta[];
+  /** How the listing was produced. */
+  scanned: "full" | "manifest" | "dirty";
+};
+
+/**
+ * Manifest-first local listing for replication ticks.
+ * - No dirty paths + non-empty manifest → reuse manifest (no walk, no .md stat).
+ * - Specific dirty .md paths → stat only those; merge into manifest listing.
+ * - Empty manifest, `*`, or forceFullScan → full walk.
+ */
+export async function resolveLocalMarkdownListing(
+  vaultRoot: string,
+  previous: VaultManifest,
+  options?: { forceFullScan?: boolean },
+): Promise<LocalVaultListing> {
+  const dirty = [...dirtyMarkdownPaths];
+  const forceFullScan = options?.forceFullScan === true;
+  const skipWalk = shouldSkipFullVaultWalk({
+    manifestEntryCount: Object.keys(previous).length,
+    dirtyPaths: dirty,
+    forceFullScan,
+  });
+
+  if (skipWalk) {
+    return {
+      files: vaultFileMetaFromManifest(previous),
+      scanned: "manifest",
+    };
+  }
+
+  if (
+    !forceFullScan &&
+    Object.keys(previous).length > 0 &&
+    dirty.length > 0 &&
+    !dirty.includes("*")
+  ) {
+    const dirtyStats = new Map<
+      string,
+      { mtimeMs: number; size: number } | null
+    >();
+    for (const relativePath of dirty) {
+      try {
+        const absolute = resolveSafeVaultAbsolute(vaultRoot, relativePath);
+        const info = await stat(absolute);
+        dirtyStats.set(relativePath, {
+          mtimeMs: Math.trunc(info.mtimeMs),
+          size: info.size,
+        });
+      } catch {
+        dirtyStats.set(relativePath, null);
+      }
+    }
+    dirtyMarkdownPaths.clear();
+    return {
+      files: applyDirtyVaultPathStats({ previous, dirtyStats }),
+      scanned: "dirty",
+    };
+  }
+
+  const files = await listMarkdownFiles(vaultRoot);
+  dirtyMarkdownPaths.clear();
+  return { files, scanned: "full" };
 }
 
 export async function readVaultManifest(
@@ -204,6 +342,7 @@ export async function applyVaultFilePut(
   await writeFile(absolute, bytes);
   const mtimeSec = input.mtimeMs / 1000;
   await utimes(absolute, mtimeSec, mtimeSec);
+  markVaultMarkdownDirty(relativePath);
   return "applied";
 }
 
@@ -215,6 +354,7 @@ export async function applyVaultFileDelete(
   const absolute = resolveSafeVaultAbsolute(vaultRoot, relativePath);
   try {
     await rm(absolute, { force: true });
+    markVaultMarkdownDirty(relativePath);
     return "applied";
   } catch {
     return "skipped";
@@ -281,28 +421,43 @@ async function fetchPeerManifest(
   }
 }
 
+type VaultTickContext = {
+  vaultRoot: string;
+  localFiles: VaultFileMeta[];
+  previous: VaultManifest;
+};
+
 /**
  * Local-core: pull newer/missing markdown from peer (cloud), then callers push.
  * LWW by mtimeMs — peer wins when strictly newer. Deletes apply only when the
  * local file still matches the last synced manifest entry.
  */
 export async function pullVaultFromPeer(
-  options: { pageSize?: number; timeoutMs?: number } = {},
+  options: {
+    pageSize?: number;
+    timeoutMs?: number;
+    /** Precomputed listing from syncVaultWithPeer (avoids a second walk). */
+    tick?: VaultTickContext;
+  } = {},
 ): Promise<VaultPullResult | null> {
   const config = getCoreReplicationConfig();
   if (!config || config.role !== "local") {
     return null;
   }
 
-  const vaultRoot = await resolveConfiguredVaultRoot();
+  const vaultRoot =
+    options.tick?.vaultRoot ?? (await resolveConfiguredVaultRoot());
   if (!vaultRoot) {
     return null;
   }
 
   const pageSize = options.pageSize ?? VAULT_REPLICATION_PAGE_SIZE;
   const timeoutMs = options.timeoutMs ?? 120_000;
-  const localFiles = await listMarkdownFiles(vaultRoot);
-  const previous = await readVaultManifest(vaultRoot);
+  const previous =
+    options.tick?.previous ?? (await readVaultManifest(vaultRoot));
+  const localFiles =
+    options.tick?.localFiles ??
+    (await resolveLocalMarkdownListing(vaultRoot, previous)).files;
   const peerFiles = await fetchPeerManifest(
     config.peerUrl,
     config.secret,
@@ -399,14 +554,19 @@ export async function pullVaultFromPeer(
  * Updates the on-disk manifest only for successfully synced paths.
  */
 export async function pushVaultToPeer(
-  options: { pageSize?: number; timeoutMs?: number } = {},
+  options: {
+    pageSize?: number;
+    timeoutMs?: number;
+    tick?: VaultTickContext;
+  } = {},
 ): Promise<VaultPushResult | null> {
   const config = getCoreReplicationConfig();
   if (!config || config.role !== "local") {
     return null;
   }
 
-  const vaultRoot = await resolveConfiguredVaultRoot();
+  const vaultRoot =
+    options.tick?.vaultRoot ?? (await resolveConfiguredVaultRoot());
   if (!vaultRoot) {
     appendOpsLog(
       "info",
@@ -418,8 +578,11 @@ export async function pushVaultToPeer(
 
   const pageSize = options.pageSize ?? VAULT_REPLICATION_PAGE_SIZE;
   const timeoutMs = options.timeoutMs ?? 120_000;
-  const current = await listMarkdownFiles(vaultRoot);
-  let previous = await readVaultManifest(vaultRoot);
+  let previous =
+    options.tick?.previous ?? (await readVaultManifest(vaultRoot));
+  const current =
+    options.tick?.localFiles ??
+    (await resolveLocalMarkdownListing(vaultRoot, previous)).files;
 
   // After bootstrap/rsync, local may have no manifest yet. Use the peer
   // manifest as baseline so we only push real drift instead of every file.
@@ -581,12 +744,47 @@ export async function pushVaultToPeer(
   return { upserted, deleted, remaining };
 }
 
-/** Pull then push vault markdown (local role). */
+/** Pull then push vault markdown (local role). Listing computed once per tick. */
 export async function syncVaultWithPeer(
   options: { pageSize?: number; timeoutMs?: number } = {},
 ): Promise<{ pull: VaultPullResult | null; push: VaultPushResult | null }> {
-  const pull = await pullVaultFromPeer(options);
-  const push = await pushVaultToPeer(options);
+  const vaultRoot = await resolveConfiguredVaultRoot();
+  if (!vaultRoot) {
+    return { pull: null, push: null };
+  }
+
+  ensureVaultChangeWatcher(vaultRoot);
+  const previous = await readVaultManifest(vaultRoot);
+  ticksSinceFullScan += 1;
+  const forceFullScan = ticksSinceFullScan >= VAULT_FULL_SCAN_EVERY_TICKS;
+  const listing = await resolveLocalMarkdownListing(vaultRoot, previous, {
+    forceFullScan,
+  });
+  if (listing.scanned === "full") {
+    ticksSinceFullScan = 0;
+  }
+
+  const tick: VaultTickContext = {
+    vaultRoot,
+    localFiles: listing.files,
+    previous,
+  };
+
+  const pull = await pullVaultFromPeer({ ...options, tick });
+  // Pull may have rewritten files + manifest; re-resolve so push sees disk.
+  const previousAfterPull = await readVaultManifest(vaultRoot);
+  const listingAfterPull = await resolveLocalMarkdownListing(
+    vaultRoot,
+    previousAfterPull,
+  );
+  const push = await pushVaultToPeer({
+    ...options,
+    tick: {
+      vaultRoot,
+      localFiles: listingAfterPull.files,
+      previous: previousAfterPull,
+    },
+  });
   return { pull, push };
 }
 

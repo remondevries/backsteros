@@ -1,6 +1,7 @@
 "use client";
 
 import type { TaskActivity, TaskComment } from "@backsteros/contracts";
+import { formatTrackedDuration } from "@backsteros/contracts";
 import {
   useCallback,
   useEffect,
@@ -13,7 +14,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { ChevronRightIcon } from "@primer/octicons-react";
+import { ChevronRightIcon, PlayIcon } from "@primer/octicons-react";
 
 import { isAgentHoldCommentBody } from "../../tasks/agent-hold-comment.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
@@ -258,15 +259,35 @@ function activityMessage(activity: TaskActivity): ReactNode {
       </>
     );
   }
+  if (activity.type === "timer_started") {
+    return <>{name} started the timer on this task</>;
+  }
+  if (activity.type === "timer_stopped") {
+    const durationSeconds =
+      typeof activity.data.durationSeconds === "number" &&
+      Number.isFinite(activity.data.durationSeconds)
+        ? Math.max(0, Math.round(activity.data.durationSeconds))
+        : 0;
+    return (
+      <>
+        {name} tracked{" "}
+        <strong>{formatTrackedDuration(durationSeconds)}</strong> on this task
+      </>
+    );
+  }
   return <>{name} updated this task</>;
 }
 
 function ActivityLeadingIcon({
   activity,
   assigneeAvatarById,
+  avatarByEmail,
+  currentUser,
 }: {
   activity: TaskActivity;
   assigneeAvatarById?: ReadonlyMap<string, string | null>;
+  avatarByEmail?: ReadonlyMap<string, string | null>;
+  currentUser: TaskActivityCurrentUser;
 }) {
   if (activity.type === "status_changed") {
     const status = asTaskStatus(activity.data.to);
@@ -329,9 +350,34 @@ function ActivityLeadingIcon({
       </span>
     );
   }
+  if (
+    activity.type === "timer_started" ||
+    activity.type === "timer_stopped"
+  ) {
+    return (
+      <span className="task-activity-event__marker" aria-hidden="true">
+        <PlayIcon size={12} className="task-activity-event__glyph" />
+      </span>
+    );
+  }
+
+  // Generic "updated this task" (and any other untyped rows): show the actor.
+  const actorAvatarSrc = resolveActorAvatarSrc(
+    {
+      userId: activity.actorUserId,
+      contactId: activity.actorContactId,
+      email: activity.actorEmail,
+    },
+    avatarByEmail,
+    assigneeAvatarById,
+    currentUser,
+  );
   return (
-    <span className="task-activity-event__marker" aria-hidden="true">
-      <span className="task-activity-event__glyph-fallback" />
+    <span
+      className="task-activity-event__marker task-activity-event__marker--avatar"
+      aria-hidden="true"
+    >
+      <EntityAvatarIcon src={actorAvatarSrc} size={12} kind="contact" />
     </span>
   );
 }
@@ -428,24 +474,47 @@ function normalizeEmail(email: string | null | undefined): string | null {
   return trimmed || null;
 }
 
+function resolveActorAvatarSrc(
+  actor: {
+    userId?: string | null;
+    contactId?: string | null;
+    email?: string | null;
+  },
+  avatarByEmail: ReadonlyMap<string, string | null> | undefined,
+  avatarByContactId: ReadonlyMap<string, string | null> | undefined,
+  currentUser: { email: string | null; imageUrl: string | null },
+): string | null {
+  if (actor.contactId) {
+    const fromContact = avatarByContactId?.get(actor.contactId);
+    if (fromContact) return fromContact;
+  }
+  if (actor.userId == null && !actor.email) return null;
+  const email = normalizeEmail(actor.email);
+  if (!email) return null;
+  const fromEmail = avatarByEmail?.get(email);
+  if (fromEmail) return fromEmail;
+  if (currentUser.email && email === currentUser.email) {
+    return currentUser.imageUrl;
+  }
+  return null;
+}
+
 function resolveCommentAvatarSrc(
   comment: Pick<TaskComment, "authorUserId" | "authorContactId" | "authorEmail">,
   avatarByEmail: ReadonlyMap<string, string | null> | undefined,
   avatarByContactId: ReadonlyMap<string, string | null> | undefined,
   currentUser: { email: string | null; imageUrl: string | null },
 ): string | null {
-  if (comment.authorContactId) {
-    return avatarByContactId?.get(comment.authorContactId) ?? null;
-  }
-  if (comment.authorUserId == null) return null;
-  const email = normalizeEmail(comment.authorEmail);
-  if (!email) return null;
-  const fromContact = avatarByEmail?.get(email);
-  if (fromContact) return fromContact;
-  if (currentUser.email && email === currentUser.email) {
-    return currentUser.imageUrl;
-  }
-  return null;
+  return resolveActorAvatarSrc(
+    {
+      userId: comment.authorUserId,
+      contactId: comment.authorContactId,
+      email: comment.authorEmail,
+    },
+    avatarByEmail,
+    avatarByContactId,
+    currentUser,
+  );
 }
 
 function isAgentComment(
@@ -1320,6 +1389,8 @@ export function TaskActivityPanel({
                     <ActivityLeadingIcon
                       activity={item.activity}
                       assigneeAvatarById={assigneeAvatarById}
+                      avatarByEmail={avatarByEmail}
+                      currentUser={currentUser}
                     />
                   </span>
                   {hasChildren ? (

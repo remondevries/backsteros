@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -21,8 +21,10 @@ import {
   type HabitCheckChipItem,
 } from "@backsteros/ui";
 
+import { taskDetailPage } from "../router/shell-route-modules";
 import { navigateToHref } from "../router/navigate-href";
 import { useTasksRouteSearch } from "../router/use-tasks-route-search";
+import { TaskDetailPage, type TaskDetailBootstrap } from "./task-detail-page";
 
 import {
   useDesktopAvatarSrcMap,
@@ -42,7 +44,11 @@ import {
   patchEmailTaskListItem,
 } from "../lib/email-list-tasks";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
-import { useKeepAliveActive, useKeepAliveFrozen } from "../lib/shell-route-keep-alive";
+import {
+  useKeepAliveActive,
+  useKeepAliveFrozen,
+  useShellParams,
+} from "../lib/shell-route-keep-alive";
 import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceMeta,
@@ -51,14 +57,81 @@ import {
   useDesktopWorkspaceTasks,
 } from "../lib/workspace-data";
 
+const tasksSectionBootstrapRef: {
+  current: TaskDetailBootstrap | null;
+} = { current: null };
+
+/** Survives TaskListPage remount when leaving and returning to Tasks. */
+const tasksSectionDetailHostEverRef = { current: false };
+/** Survives remount — component useRef was wiped while module host flag stayed true. */
+const tasksSectionRetainedRouteParamRef: { current: string | null } = {
+  current: null,
+};
+
 export function TaskListPage() {
-  return <TaskListPageBody />;
+  const { taskId, taskSlug } = useShellParams() as {
+    taskId?: string;
+    taskSlug?: string;
+  };
+  const taskRouteParam = taskSlug ?? taskId;
+  const showDetail = Boolean(taskRouteParam);
+  if (taskRouteParam) {
+    tasksSectionRetainedRouteParamRef.current = taskRouteParam;
+    tasksSectionDetailHostEverRef.current = true;
+  }
+
+  useEffect(() => {
+    void taskDetailPage.load();
+    void import("../components/desktop-task-layout");
+    const preloadAgent = () => {
+      void import("../components/desktop-agent-chat-panel");
+    };
+    if (typeof requestIdleCallback !== "undefined") {
+      const idleId = requestIdleCallback(preloadAgent);
+      return () => cancelIdleCallback(idleId);
+    }
+    const timer = window.setTimeout(preloadAgent, 150);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const retainedTaskRouteParam =
+    taskRouteParam ?? tasksSectionRetainedRouteParamRef.current;
+  const detailHostMounted = tasksSectionDetailHostEverRef.current;
+
+  return (
+    <div className="tasks-section-page">
+      <div
+        className="tasks-section-page__list"
+        hidden={showDetail}
+        aria-hidden={showDetail || undefined}
+      >
+        <TaskListPageBody listHidden={showDetail} />
+      </div>
+      {detailHostMounted && retainedTaskRouteParam ? (
+        <div
+          className={[
+            "tasks-section-page__detail",
+            !showDetail ? "is-offscreen" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden={!showDetail || undefined}
+        >
+          <TaskDetailPage
+            taskRouteParam={retainedTaskRouteParam}
+            detailVisible={showDetail}
+            bootstrapTask={tasksSectionBootstrapRef.current}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 const NO_ENTITIES: [] = [];
 const NO_EMAIL_ROWS: ReturnType<typeof mapEmailMessagesToTaskRows> = [];
 
-function TaskListPageBody() {
+function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
   const navigate = useNavigate();
   const { tasks, allTasks } = useDesktopWorkspaceTasks();
   const { projects } = useDesktopWorkspaceProjects();
@@ -70,9 +143,9 @@ function TaskListPageBody() {
   const { client } = useDesktopApi();
 
   const keepAliveActive = useKeepAliveActive();
-  const keepAliveFrozen = useKeepAliveFrozen();
+  const keepAliveFrozen = useKeepAliveFrozen() || listHidden;
   useDesktopSectionBreadcrumb([{ label: "Tasks" }], {
-    enabled: keepAliveActive,
+    enabled: keepAliveActive && !listHidden,
   });
 
   const { dueFilter, view } = useTasksRouteSearch();
@@ -178,6 +251,27 @@ function TaskListPageBody() {
       const href = `/tasks/${due}/${id}`;
       const title = titleHint?.trim();
       if (title) primeTabTitle(href, title);
+      tasksSectionBootstrapRef.current = task
+        ? {
+            id: task.id,
+            title: task.title,
+            number: task.number,
+            status: task.status,
+            priority: task.priority,
+            projectKey: task.projectKey ?? null,
+            projectId: task.projectId ?? null,
+            projectName: task.projectName ?? null,
+            agentChatId: task.agentChatId ?? null,
+            assigneeId: task.assigneeId ?? null,
+            routeSlug: id,
+          }
+        : {
+            id,
+            title: titleHint?.trim() ?? "Task",
+            number: 0,
+            status: "backlog",
+            routeSlug: id,
+          };
       navigateToHref(navigate, href);
       return;
     }
@@ -192,6 +286,19 @@ function TaskListPageBody() {
     const href = `/tasks/${due}/${slug}`;
     const title = task.title || titleHint?.trim() || null;
     if (title) primeTabTitle(href, title);
+    tasksSectionBootstrapRef.current = {
+      id: task.id,
+      title: task.title,
+      number: task.number,
+      status: task.status,
+      priority: task.priority,
+      projectKey: task.projectKey ?? null,
+      projectId: task.projectId ?? null,
+      projectName: task.projectName ?? null,
+      agentChatId: task.agentChatId ?? null,
+      assigneeId: task.assigneeId ?? null,
+      routeSlug: slug,
+    };
     navigateToHref(navigate, href);
   };
 
@@ -199,6 +306,7 @@ function TaskListPageBody() {
     <TasksOverviewView
       tasks={tasksWithEmails}
       todayHabits={todayHabits}
+      listKeyboardEnabled={keepAliveActive && !listHidden}
       onToggleTodayHabit={(item, checked) => {
         void workspace.patchTask(item.taskId, {
           status: checked ? "completed" : "ready_to_start",

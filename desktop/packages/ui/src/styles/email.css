@@ -2044,6 +2044,14 @@
   white-space: nowrap;
 }
 
+.bos-property-label--icon-only {
+  gap: 0;
+}
+
+.bos-property-label--icon-only > span {
+  display: none;
+}
+
 .journal-side-panel-today {
   margin-left: 6px;
   font-size: 11px;

@@ -8,9 +8,98 @@ import {
   planVaultPullDeletes,
   planVaultPush,
   resolveSafeVaultAbsolute,
+  shouldPullVaultFile,
   shouldPushVaultFile,
+  shouldSkipFullVaultWalk,
+  vaultFileMetaFromManifest,
+  applyDirtyVaultPathStats,
   VaultPathError,
 } from "./vault-plan.js";
+
+describe("vault-replication manifest-first listing", () => {
+  it("skips full walk when manifest is warm and nothing is dirty", () => {
+    assert.equal(
+      shouldSkipFullVaultWalk({
+        manifestEntryCount: 12,
+        dirtyPaths: [],
+        forceFullScan: false,
+      }),
+      true,
+    );
+  });
+
+  it("walks when manifest is empty, forced, or wildcard-dirty", () => {
+    assert.equal(
+      shouldSkipFullVaultWalk({
+        manifestEntryCount: 0,
+        dirtyPaths: [],
+        forceFullScan: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipFullVaultWalk({
+        manifestEntryCount: 12,
+        dirtyPaths: [],
+        forceFullScan: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipFullVaultWalk({
+        manifestEntryCount: 12,
+        dirtyPaths: ["*"],
+        forceFullScan: false,
+      }),
+      false,
+    );
+  });
+
+  it("does not skip when specific paths are dirty (stat those only)", () => {
+    assert.equal(
+      shouldSkipFullVaultWalk({
+        manifestEntryCount: 12,
+        dirtyPaths: ["Journal/day.md"],
+        forceFullScan: false,
+      }),
+      false,
+    );
+  });
+
+  it("builds file meta from manifest without FS", () => {
+    const files = vaultFileMetaFromManifest({
+      "b.md": { mtimeMs: 2, size: 20 },
+      "a.md": { mtimeMs: 1, size: 10 },
+    });
+    assert.deepEqual(
+      files.map((f) => f.relativePath),
+      ["a.md", "b.md"],
+    );
+  });
+
+  it("merges dirty stats into the previous listing", () => {
+    const files = applyDirtyVaultPathStats({
+      previous: {
+        "keep.md": { mtimeMs: 1, size: 1 },
+        "gone.md": { mtimeMs: 2, size: 2 },
+        "edit.md": { mtimeMs: 3, size: 3 },
+      },
+      dirtyStats: new Map([
+        ["gone.md", null],
+        ["edit.md", { mtimeMs: 99, size: 9 }],
+        ["new.md", { mtimeMs: 5, size: 5 }],
+      ]),
+    });
+    assert.deepEqual(
+      files.map((f) => ({ path: f.relativePath, size: f.size })),
+      [
+        { path: "edit.md", size: 9 },
+        { path: "keep.md", size: 1 },
+        { path: "new.md", size: 5 },
+      ],
+    );
+  });
+});
 
 describe("vault-replication paths", () => {
   it("normalizes relative markdown paths", () => {
@@ -89,6 +178,29 @@ describe("vault-replication pull planning", () => {
     const pulls = planVaultPull(
       [{ relativePath: "note.md", mtimeMs: 500, size: 0 }],
       [{ relativePath: "note.md", mtimeMs: 400, size: 355 }],
+    );
+    assert.deepEqual(pulls.map((f) => f.relativePath), ["note.md"]);
+  });
+
+  it("does not pull empty peer over non-empty local even with newer mtime", () => {
+    assert.equal(
+      shouldPullVaultFile(
+        { relativePath: "note.md", mtimeMs: 500, size: 0 },
+        { relativePath: "note.md", mtimeMs: 400, size: 355 },
+      ),
+      false,
+    );
+    const pulls = planVaultPull(
+      [{ relativePath: "note.md", mtimeMs: 400, size: 355 }],
+      [{ relativePath: "note.md", mtimeMs: 500, size: 0 }],
+    );
+    assert.deepEqual(pulls, []);
+  });
+
+  it("still pulls empty peer when local is already empty", () => {
+    const pulls = planVaultPull(
+      [{ relativePath: "note.md", mtimeMs: 400, size: 0 }],
+      [{ relativePath: "note.md", mtimeMs: 500, size: 0 }],
     );
     assert.deepEqual(pulls.map((f) => f.relativePath), ["note.md"]);
   });

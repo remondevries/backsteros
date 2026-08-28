@@ -1,5 +1,4 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { useLocation } from "@tanstack/react-router";
 import {
   isInboxPath,
   refreshOpenTabTaskStatuses,
@@ -9,6 +8,7 @@ import {
 } from "@backsteros/ui";
 
 import { useAgentAttentionNotifications } from "../lib/agent/use-agent-attention-notifications";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceTasks } from "../lib/workspace-data";
 
 /**
@@ -20,7 +20,7 @@ export function AppShellTaskSideEffects({
 }: {
   setTabsState: Dispatch<SetStateAction<ProductTabsState>>;
 }) {
-  const location = useLocation();
+  const location = useShellLocation();
   const { allTasks } = useDesktopWorkspaceTasks();
   useAgentAttentionNotifications(allTasks);
 

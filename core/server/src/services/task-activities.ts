@@ -15,7 +15,9 @@ export type TaskActivityType =
   | "priority_changed"
   | "due_date_changed"
   | "project_changed"
-  | "agent_worked";
+  | "agent_worked"
+  | "timer_started"
+  | "timer_stopped";
 
 /** Property updates coalesce into one row when repeated quickly. */
 const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
@@ -150,7 +152,10 @@ export async function recordTaskActivity(
 export async function createClientTaskActivity(
   workspaceId: string,
   taskId: string,
-  type: Extract<TaskActivityType, "agent_worked">,
+  type: Extract<
+    TaskActivityType,
+    "agent_worked" | "timer_started" | "timer_stopped"
+  >,
   data: Record<string, unknown>,
   actor: TaskWriteActor | null = { userId: null, kind: "agent" },
   executor: DbExecutor = db,

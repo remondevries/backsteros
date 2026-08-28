@@ -4,8 +4,8 @@ import {
   CategoryActionsMenu,
   GoalActionsMenu,
   ProjectsSidePanelIcon,
+  FinanceSyncIcon,
   RecurringActionsMenu,
-  SyncStatusIdleIcon,
   TransactionActionsMenu,
   getFinanceDashboardHref,
   getFinanceNavHref,
@@ -94,8 +94,8 @@ export function useFinancePageChrome({
               void loadMoneybirdInvoicesPage();
             }}
           >
-            <SyncStatusIdleIcon
-              size={16}
+            <FinanceSyncIcon
+              size={14}
               className={
                 moneybirdInvoicesLoading
                   ? "finance-chrome-actions__sync-icon is-spinning"

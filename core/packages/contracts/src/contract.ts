@@ -1709,26 +1709,39 @@ export const apiContract = c.router(
       responses: { 200: z.object({ results: z.array(s.globalSearchResultSchema) }), 400: badRequestSchema, 401: errorSchema, 403: errorSchema },
       summary: "Search all human-facing entities",
     },
+    /**
+     * @deprecated DEAD — legacy Linear-style sync. Kept for storage-health
+     * probes. Do not build new clients against this. Use PowerSync upload
+     * (`POST /api/v1/powersync/write`) instead.
+     */
     syncBootstrap: {
       method: "POST",
       path: "/api/v1/sync/bootstrap",
       body: null,
       responses: { 200: s.syncBootstrapSchema, 401: errorSchema },
-      summary: "Bootstrap legacy sync",
+      summary: "[DEAD] Legacy sync bootstrap — storage-health only",
     },
+    /**
+     * @deprecated DEAD — legacy Linear-style sync. Kept for storage-health
+     * probes. Do not build new clients against this.
+     */
     syncPull: {
       method: "GET",
       path: "/api/v1/sync/pull",
       query: z.object({ cursor: z.coerce.number().int().nonnegative().optional() }),
       responses: { 200: s.syncPullSchema, 400: badRequestSchema, 401: errorSchema },
-      summary: "Pull legacy sync events",
+      summary: "[DEAD] Legacy sync pull — storage-health only",
     },
+    /**
+     * @deprecated DEAD — legacy Linear-style sync. Kept for storage-health
+     * probes. Do not build new clients against this.
+     */
     syncPush: {
       method: "POST",
       path: "/api/v1/sync/push",
       body: s.syncPushSchema,
       responses: { 200: s.syncPushResponseSchema, 400: badRequestSchema, 401: errorSchema, 404: errorSchema },
-      summary: "Push legacy sync mutations",
+      summary: "[DEAD] Legacy sync push — storage-health only",
     },
     getPowerSyncCredentials: {
       method: "GET",

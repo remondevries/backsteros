@@ -13,4 +13,12 @@ test("selects the first list href only when the pane is on the section root", ()
     "/inbox/in-9",
   );
   assert.equal(panePathnameWithFirstItem("/knowledge", null, false), "/knowledge");
+  assert.equal(
+    panePathnameWithFirstItem(
+      "/inbox",
+      "/email/box/msg?list=inbox",
+      false,
+    ),
+    "/email/box/msg",
+  );
 });

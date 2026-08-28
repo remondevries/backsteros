@@ -1,4 +1,4 @@
-import { memo, Suspense, useRef, type ReactNode } from "react";
+import { memo, Suspense, type ReactNode } from "react";
 import {
   Navigate,
   Outlet,
@@ -27,8 +27,9 @@ import {
   KeepAlivePane,
   StableKeepAliveTree,
   isKeepAliveSurface,
+  rememberInboxPanelSelectionHref,
   rememberKeepAliveHref,
-  shouldApplyRouteKeepAliveSync,
+  routerAgreesWithWindow,
   shouldKeepAliveSurface,
   syncVisibleKeepAliveSurfaceFromRoute,
   useKeepAliveSnapshots,
@@ -54,10 +55,6 @@ import {
   settingsPage,
   taskDetailPage,
   taskListPage,
-  journalV2Page,
-  habitTrackerV2Page,
-  knowledgeV2Page,
-  lettersV2Page,
 } from "./shell-route-modules";
 import {
   useScopedContact,
@@ -82,25 +79,24 @@ const MeetingDetailPage = meetingDetailPage.Page;
 const TaskDetailPage = taskDetailPage.Page;
 const InboxPage = inboxPage.Page;
 const TaskListPage = taskListPage.Page;
-const JournalV2Page = journalV2Page.Page;
-const HabitTrackerV2Page = habitTrackerV2Page.Page;
-const KnowledgeV2Page = knowledgeV2Page.Page;
-const LettersV2Page = lettersV2Page.Page;
 const NavigationTrailPage = navigationTrailPage.Page;
 const NotFoundPage = notFoundPage.Page;
 
 const KEEP_ALIVE_PAGE: Partial<Record<PendingPageSurface, () => ReactNode>> = {
   calendar: () => <CalendarPage />,
   inbox: () => <InboxPage />,
-  "knowledge-v2": () => <KnowledgeV2Page />,
+  knowledge: () => <KnowledgePage />,
   "tasks-list": () => <TaskListPage />,
-  "journal-v2": () => <JournalV2Page />,
-  "habits-v2": () => <HabitTrackerV2Page />,
+  "journal-day": () => <JournalPage />,
+  "journal-habits": () => <HabitTrackerPage />,
   projects: () => <ProjectsPage />,
   contacts: () => <ContactsPage />,
   organizations: () => <OrganizationsPage />,
-  "letters-v2": () => <LettersV2Page />,
+  letters: () => <LettersPage />,
 };
+
+/** Survive ShellRouteContent remounts — same element identity for StableKeepAliveTree. */
+const keepAlivePageElements = new Map<PendingPageSurface, ReactNode>();
 
 function ShellRouteSuspenseFallback() {
   return (
@@ -147,16 +143,16 @@ function ShellRouteContent({
   );
   const showOutlet =
     Boolean(trail) || !isKeepAliveSurface(surface, location.pathname);
-  const keepAlivePages = useRef(new Map<PendingPageSurface, ReactNode>());
 
-  if (
-    shouldApplyRouteKeepAliveSync(
-      location.pathname,
-      location.searchStr ?? "",
-    )
-  ) {
+  // Keep-alive store is truth after warm pushState. Only mirror the router
+  // when History still agrees (first visit / Outlet / real TanStack nav).
+  if (routerAgreesWithWindow(location.pathname, location.searchStr ?? "")) {
     if (trail || !shouldKeepAliveSurface(surface, location.pathname)) {
       syncVisibleKeepAliveSurfaceFromRoute(null);
+      // Inbox list stays warm on email detail — keep its selection href in sync.
+      rememberInboxPanelSelectionHref(
+        `${location.pathname}${location.searchStr ?? ""}`,
+      );
     } else {
       rememberKeepAliveHref(
         surface,
@@ -175,9 +171,11 @@ function ShellRouteContent({
           const renderPage = KEEP_ALIVE_PAGE[keepSurface];
           const snapshot = snapshots.get(keepSurface);
           if (!renderPage || !snapshot) return null;
-          if (!keepAlivePages.current.has(keepSurface)) {
-            keepAlivePages.current.set(
+          if (!keepAlivePageElements.has(keepSurface)) {
+            keepAlivePageElements.set(
               keepSurface,
+              // Inner boundary: detail/agent lazy loads must not fall through to
+              // this Suspense (fallback null would unmount the whole section page).
               <Suspense fallback={null}>{renderPage()}</Suspense>,
             );
           }
@@ -193,7 +191,7 @@ function ShellRouteContent({
               snapshot={snapshot}
             >
               <StableKeepAliveTree
-                tree={keepAlivePages.current.get(keepSurface)}
+                tree={keepAlivePageElements.get(keepSurface)}
               />
             </KeepAlivePane>
           );
@@ -494,8 +492,4 @@ export {
   SettingsPage,
   TaskDetailPage,
   TaskListPage,
-  JournalV2Page,
-  HabitTrackerV2Page,
-  KnowledgeV2Page,
-  LettersV2Page,
 };

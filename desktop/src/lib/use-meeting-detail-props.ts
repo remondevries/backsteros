@@ -13,9 +13,11 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "./avatar-src";
-import type { useDesktopWorkspaceData } from "./workspace-data";
+import type { DesktopWorkspaceData } from "./workspace/workspace-data-types";
 
-type Workspace = ReturnType<typeof useDesktopWorkspaceData>;
+export { parseMeetingAttendeeContactIdsFromRow } from "./workspace/row-mappers";
+
+type Workspace = DesktopWorkspaceData;
 
 export function useMeetingDetailViewProps(
   meeting: MeetingListItem | null | undefined,
@@ -151,28 +153,4 @@ export function useMeetingDetailViewProps(
     contactOptions,
     projectOptions,
   };
-}
-
-export function parseMeetingAttendeeContactIdsFromRow(
-  row: Record<string, unknown>,
-): string[] {
-  const raw = row.attendee_contact_ids ?? row.attendeeContactIds;
-  if (Array.isArray(raw)) {
-    return raw.filter(
-      (id): id is string => typeof id === "string" && id.trim().length > 0,
-    );
-  }
-  if (typeof raw === "string" && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (id): id is string => typeof id === "string" && id.trim().length > 0,
-        );
-      }
-    } catch {
-      return [];
-    }
-  }
-  return [];
 }

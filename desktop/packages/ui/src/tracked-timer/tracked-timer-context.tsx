@@ -34,7 +34,10 @@ type TimerEntry = TrackedTimerSessionMeta & {
   lastActiveAt: number;
   startedAt: number | null;
   onPersist: ((seconds: number | null, fromTimerPause?: boolean) => void) | null;
-  onSessionChange: ((action: "started" | "stopped") => void) | null;
+  onSessionChange: ((
+    action: "started" | "stopped",
+    sessionSeconds?: number,
+  ) => void) | null;
 };
 
 function memorySeconds(entry: TimerEntry | undefined): number {
@@ -216,6 +219,10 @@ export function TrackedTimerProvider({
 
   const commitEntry = useCallback((entry: TimerEntry) => {
     const wasRunning = entry.sessionStartAt != null;
+    const sessionSeconds =
+      entry.sessionStartAt != null
+        ? Math.max(0, Math.floor((Date.now() - entry.sessionStartAt) / 1000))
+        : 0;
     const seconds = secondsFromEntry(entry);
     const committed = seconds ?? 0;
     entry.accumulatedSeconds = Math.max(entry.accumulatedSeconds, committed);
@@ -225,7 +232,7 @@ export function TrackedTimerProvider({
     entry.sessionStartAt = null;
     entry.onPersist?.(seconds, wasRunning);
     if (wasRunning) {
-      entry.onSessionChange?.("stopped");
+      entry.onSessionChange?.("stopped", sessionSeconds);
     }
     entriesRef.current.set(entry.key, entry);
   }, []);

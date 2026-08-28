@@ -19,6 +19,7 @@ import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import {
   TaskPropertiesInlineChips,
 } from "./task-properties-inline-chips.js";
@@ -59,6 +60,12 @@ export type TaskStackedDetailViewProps = {
   assigneeOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onTrackedDurationSecondsChange?: (seconds: number | null) => void;
+  onTimerSessionChange?: (
+    action: "start" | "pause",
+    seconds?: number | null,
+  ) => void;
+  timerSession?: TrackedTimerSessionMeta | null;
 };
 
 /**
@@ -85,6 +92,9 @@ export function TaskStackedDetailView({
   assigneeOptions,
   projectOptions,
   onCreateAssigneeFromQuery,
+  onTrackedDurationSecondsChange,
+  onTimerSessionChange,
+  timerSession = null,
 }: TaskStackedDetailViewProps) {
   const [title, setTitle] = useState(task.title);
   const [titleSource, setTitleSource] = useState(task.title);
@@ -184,6 +194,9 @@ export function TaskStackedDetailView({
             assigneeOptions={assigneeOptions}
             projectOptions={projectOptions}
             onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+            onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
+            onTimerSessionChange={onTimerSessionChange}
+            timerSession={timerSession}
           />
         </div>
         <div className="task-detail-stacked__content">

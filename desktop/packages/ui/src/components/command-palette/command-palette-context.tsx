@@ -3,6 +3,11 @@
 import { clearGoFinanceChord } from "../../finance/go-finance-chord-gate.js";
 import { clearGoLeaderSequence } from "../../shortcuts/go-leader-sequence-gate.js";
 import {
+  concealCommandPaletteChrome,
+  revealCommandPaletteChrome,
+  showInstantCommandOverlay,
+} from "../../command-palette/conceal-command-palette-chrome.js";
+import {
   createContext,
   useCallback,
   useContext,
@@ -71,11 +76,17 @@ export function CommandPaletteProvider({
       if (!next) {
         clearGoFinanceChord();
         clearGoLeaderSequence();
+        concealCommandPaletteChrome();
+        openRef.current = false;
         setOpenState(false);
         setMode("search");
         onOpenChange?.(false);
         return;
       }
+      openRef.current = true;
+      // Reveal before commit so reused cmdk portal nodes are not left hidden.
+      revealCommandPaletteChrome();
+      showInstantCommandOverlay();
       setOpenState(true);
       onOpenChange?.(true);
     },
@@ -85,9 +96,14 @@ export function CommandPaletteProvider({
   const toggle = useCallback(() => {
     setOpenState((current) => {
       const next = !current;
+      openRef.current = next;
       if (!next) {
         clearGoFinanceChord();
         clearGoLeaderSequence();
+        concealCommandPaletteChrome();
+      } else {
+        revealCommandPaletteChrome();
+        showInstantCommandOverlay();
       }
       setMode("search");
       onOpenChange?.(next);
@@ -97,18 +113,24 @@ export function CommandPaletteProvider({
 
   const openSearch = useCallback(() => {
     setMode("search");
+    openRef.current = true;
+    showInstantCommandOverlay();
     setOpenState(true);
     onOpenChange?.(true);
   }, [onOpenChange]);
 
   const openGo = useCallback(() => {
     setMode("go");
+    openRef.current = true;
+    showInstantCommandOverlay();
     setOpenState(true);
     onOpenChange?.(true);
   }, [onOpenChange]);
 
   const openFinanceGo = useCallback(() => {
     setMode("finance-go");
+    openRef.current = true;
+    showInstantCommandOverlay();
     setOpenState(true);
     onOpenChange?.(true);
   }, [onOpenChange]);

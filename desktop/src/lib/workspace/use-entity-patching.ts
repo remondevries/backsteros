@@ -19,6 +19,36 @@ import {
 } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
+/**
+ * Sole REST dual-write while PowerSync is connected — agent inbox approval.
+ * See {@link taskPatchRequiresRestWrite}. Do not add further dual-writes here.
+ */
+function queueSoleRestDualWriteAgentInboxApproval(input: {
+  client: BacksterosApiClient;
+  path: string;
+  table: string;
+  values: Record<string, unknown>;
+  apiValues: Record<string, unknown>;
+  applyTaskServerRow: (row: ApiTask | null | undefined) => Promise<void>;
+}): void {
+  if (input.table !== "tasks" || !taskPatchRequiresRestWrite(input.values)) {
+    return;
+  }
+  void input.client
+    .requestJson<ApiTask>(input.path, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input.apiValues),
+    })
+    .then((updated) => input.applyTaskServerRow(updated))
+    .catch((error) => {
+      console.warn(
+        "[desktop] background agent inbox approval REST failed",
+        error,
+      );
+    });
+}
+
 export type SoftDeletableTable =
   | "tasks"
   | "projects"
@@ -284,7 +314,7 @@ export function useWorkspaceEntityPatching({
   );
 
   const softRefreshApiTasks = useCallback(async () => {
-    if (!authenticated) return;
+    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
     try {
       const [tasksBody, inboxTasksBody] = await Promise.all([
         client.requestJson<{ tasks: ApiTask[] }>("/api/v1/tasks"),
@@ -295,10 +325,10 @@ export function useWorkspaceEntityPatching({
     } catch {
       // PowerSync remains the primary source.
     }
-  }, [authenticated, client, setApiInboxTasks, setApiTasks]);
+  }, [authenticated, client, powerSync, setApiInboxTasks, setApiTasks]);
 
   const softRefreshApiProjects = useCallback(async () => {
-    if (!authenticated) return;
+    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
     try {
       const projectsBody = await client.requestJson<{ projects: ApiProject[] }>(
         "/api/v1/projects",
@@ -307,10 +337,10 @@ export function useWorkspaceEntityPatching({
     } catch {
       // PowerSync remains the primary source.
     }
-  }, [authenticated, client, setApiProjects]);
+  }, [authenticated, client, powerSync, setApiProjects]);
 
   const softRefreshApiMeetings = useCallback(async () => {
-    if (!authenticated) return;
+    if (!authenticated || shouldSkipRestEntityWrite(powerSync)) return;
     try {
       const meetingsBody = await client.requestJson<{ meetings: ApiMeeting[] }>(
         "/api/v1/meetings",
@@ -319,7 +349,7 @@ export function useWorkspaceEntityPatching({
     } catch {
       // PowerSync remains the primary source.
     }
-  }, [authenticated, client, setApiMeetings]);
+  }, [authenticated, client, powerSync, setApiMeetings]);
 
   const patchViaPowerSyncOrApi = useCallback(
     async (
@@ -453,10 +483,17 @@ export function useWorkspaceEntityPatching({
           }
         }
         if (!authenticated) return;
-        if (
-          shouldSkipRestEntityWrite(powerSync) &&
-          !taskPatchRequiresRestWrite(values)
-        ) {
+        // PowerSync upload is primary. Sole REST dual-write:
+        // taskPatchRequiresRestWrite (agentInboxApproved) — see contracts.
+        if (shouldSkipRestEntityWrite(powerSync)) {
+          queueSoleRestDualWriteAgentInboxApproval({
+            client,
+            path,
+            table,
+            values,
+            apiValues,
+            applyTaskServerRow,
+          });
           return;
         }
         try {
@@ -495,6 +532,11 @@ export function useWorkspaceEntityPatching({
               ? error
               : new Error("Could not persist agent chat on the task.");
           }
+          if (taskPatchRequiresRestWrite(values)) {
+            throw error instanceof Error
+              ? error
+              : new Error("Could not approve agent-created task.");
+          }
           if ("moneybirdContactId" in values) {
             throw error instanceof Error
               ? error
@@ -509,9 +551,7 @@ export function useWorkspaceEntityPatching({
         applyOptimisticEntityPatch(table, id, values);
         const mustAwaitRest =
           authenticated &&
-          ("agentChatId" in values ||
-            "moneybirdContactId" in values ||
-            taskPatchRequiresRestWrite(values));
+          ("agentChatId" in values || "moneybirdContactId" in values);
         if (mustAwaitRest) {
           return persistLocalAndMaybeRest();
         }

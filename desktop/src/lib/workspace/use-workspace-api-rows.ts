@@ -62,7 +62,7 @@ export function useWorkspaceApiRows({
     }
     const timeoutId = window.setTimeout(
       () => setQueriesGracePeriodExpired(true),
-      12_000,
+      5_000,
     );
     return () => window.clearTimeout(timeoutId);
   }, [authenticated, powerSync.ready]);

@@ -55,6 +55,7 @@ import { StatusGroupSection } from "../list-nav/status-group-section.js";
 import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
+  useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import {
   OVERVIEW_LIST_VIRTUALIZE_THRESHOLD,
@@ -144,6 +145,8 @@ export type TasksOverviewViewProps = {
    * resize the column.
    */
   taskIdColumnCh?: number;
+  /** When false, unregister j/k (hidden keep-alive tasks list). */
+  listKeyboardEnabled?: boolean;
 };
 
 export function TasksOverviewView({
@@ -173,6 +176,7 @@ export function TasksOverviewView({
   renderTaskTitleTrailing,
   isTaskAgentWorking,
   taskIdColumnCh: taskIdColumnChProp,
+  listKeyboardEnabled = true,
 }: TasksOverviewViewProps) {
   const [uncontrolledFilter, setUncontrolledFilter] =
     useState<TasksDueFilter>(initialFilter);
@@ -405,13 +409,36 @@ export function TasksOverviewView({
     [collapsed, groups],
   );
 
+  const listKeyboardActive =
+    listKeyboardEnabled && view === "list" && itemIds.length > 0;
+  const { setActiveZone } = useListKeyboardNavigationZone();
+  const lastLandingKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!listKeyboardActive) {
+      lastLandingKeyRef.current = null;
+      return;
+    }
+    if (lastLandingKeyRef.current === "active") return;
+    lastLandingKeyRef.current = "active";
+    const landingId = itemIds[0] ?? null;
+    const frame = requestAnimationFrame(() => {
+      setActiveZone(LIST_KEYBOARD_NAV_ZONE_MAIN, {
+        preferSidepanelForJk: false,
+        activate: true,
+        landAtStart: true,
+        highlightItemId: landingId,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [itemIds, listKeyboardActive, setActiveZone]);
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
     selectedId: selectedTaskId,
     onNavigate: (taskId) => selectTask(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
-    enabled: view === "list" && itemIds.length > 0,
+    enabled: listKeyboardActive,
   });
 
   const {

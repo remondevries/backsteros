@@ -47,6 +47,20 @@ const FOCUS_BROWSER_ADDRESS_JS: &str =
 const SELECT_ALL_JS: &str =
     "window.dispatchEvent(new CustomEvent('backsteros:select-all'))";
 
+/// Dispatched when ⌘E / Ctrl+E fires. WKWebView swallows ⌘E while a text
+/// field / CodeMirror is focused ("Use Selection for Find") unless the app
+/// menu claims the accelerator — same class of bug as ⌘K / ⌘A.
+const TOGGLE_CONTENT_VIEW_MODE_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsteros:toggle-content-view-mode'))";
+
+/// Dispatched when ⌘P / Ctrl+P fires. WKWebView otherwise opens Print.
+const FORCE_CONTENT_PREVIEW_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsteros:force-content-preview'))";
+
+/// Dispatched when ⌘R / Ctrl+R fires. WKWebView otherwise reloads the page.
+const TITLE_RENAME_JS: &str =
+    "window.dispatchEvent(new CustomEvent('backsteros:title-rename'))";
+
 fn is_app_origin(url: &tauri::Url) -> bool {
     match url.scheme() {
         "tauri" | "asset" | "data" | "blob" => true,
@@ -336,10 +350,31 @@ fn install_app_menu(app: &tauri::App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+A")
         .build(handle)?;
 
+    // Claim ⌘E so WKWebView cannot swallow it as "Use Selection for Find"
+    // while the markdown / draft editor is focused.
+    let toggle_view_mode_item =
+        MenuItemBuilder::with_id("toggle-content-view-mode", "Toggle Edit/Preview")
+            .accelerator("CmdOrCtrl+E")
+            .build(handle)?;
+
+    // Claim ⌘P so WKWebView cannot open the system Print dialog.
+    let force_preview_item =
+        MenuItemBuilder::with_id("force-content-preview", "Preview")
+            .accelerator("CmdOrCtrl+P")
+            .build(handle)?;
+
+    // Claim ⌘R so WKWebView cannot Reload while an editor / title field is focused.
+    let title_rename_item = MenuItemBuilder::with_id("title-rename", "Rename")
+        .accelerator("CmdOrCtrl+R")
+        .build(handle)?;
+
     let edit_submenu = SubmenuBuilder::new(handle, "Edit")
         .item(&search_item)
         .item(&search_item_shift)
         .item(&open_location_item)
+        .item(&toggle_view_mode_item)
+        .item(&force_preview_item)
+        .item(&title_rename_item)
         .separator()
         .undo()
         .redo()
@@ -390,6 +425,27 @@ fn dispatch_select_all(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
         let _ = window.eval(SELECT_ALL_JS);
+    }
+}
+
+fn dispatch_toggle_content_view_mode(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+        let _ = window.eval(TOGGLE_CONTENT_VIEW_MODE_JS);
+    }
+}
+
+fn dispatch_force_content_preview(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+        let _ = window.eval(FORCE_CONTENT_PREVIEW_JS);
+    }
+}
+
+fn dispatch_title_rename(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_focus();
+        let _ = window.eval(TITLE_RENAME_JS);
     }
 }
 
@@ -516,6 +572,12 @@ pub fn run() {
                 dispatch_focus_browser_address(app);
             } else if event.id() == "select-all" {
                 dispatch_select_all(app);
+            } else if event.id() == "toggle-content-view-mode" {
+                dispatch_toggle_content_view_mode(app);
+            } else if event.id() == "force-content-preview" {
+                dispatch_force_content_preview(app);
+            } else if event.id() == "title-rename" {
+                dispatch_title_rename(app);
             }
         })
         .setup(|app| {

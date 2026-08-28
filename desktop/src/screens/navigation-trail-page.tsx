@@ -34,6 +34,7 @@ import {
 
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { LettersPage } from "./letters-page";
 import { TaskDetailPage } from "./task-detail-page";
@@ -329,9 +330,12 @@ function TrailDocumentLeaf({
   sectionLabel: string;
   breadcrumbItems: { label: string; href?: string }[];
 }) {
-  const { initialBody, onSave, loading } =
-    useDesktopDocumentContent(documentId);
-  useDesktopSectionBreadcrumb(breadcrumbItems);
+  const keepAliveActive = useKeepAliveActive();
+  const { initialBody, onSave, loading } = useDesktopDocumentContent(
+    documentId,
+    { enabled: keepAliveActive },
+  );
+  useDesktopSectionBreadcrumb(breadcrumbItems, { enabled: keepAliveActive });
   const editorBody = useMemo(
     () => getDocumentEditorBody(initialBody, title),
     [initialBody, title],

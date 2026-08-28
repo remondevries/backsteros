@@ -24,7 +24,6 @@ import {
   shouldHandleGlobalShortcut,
 } from "../shortcuts/shortcut-guards.js";
 import { shouldYieldGoNavigationToFinanceTxGoal } from "../tasks/task-property-dropdown-keys.js";
-import { afterNextPaint } from "../timing/after-next-paint.js";
 
 function findGoItemByLetter(
   letter: string,
@@ -72,15 +71,22 @@ export function useNavigationShortcuts({
 
       const key = event.key.toLowerCase();
 
-      if (key === "g" && !event.shiftKey && !commandPaletteOpen) {
-        if (!shouldYieldGoNavigationToFinanceTxGoal()) {
-          event.preventDefault();
-          clearFinanceLeaderSequence();
-          clearGoFinanceChord();
-          registerGoLeaderKeyPress();
-          openGo();
-          return;
-        }
+      // Initial G must yield to CodeMirror / content edit / other editable
+      // targets. Only the follow-up letter chord below may bypass the guard
+      // (palette search steals focus before the second key arrives).
+      if (
+        key === "g" &&
+        !event.shiftKey &&
+        !commandPaletteOpen &&
+        shouldHandleGlobalShortcut(event) &&
+        !shouldYieldGoNavigationToFinanceTxGoal()
+      ) {
+        event.preventDefault();
+        clearFinanceLeaderSequence();
+        clearGoFinanceChord();
+        registerGoLeaderKeyPress();
+        openGo();
+        return;
       }
 
       // G then letter — handle before shouldHandleGlobalShortcut so fast chords
@@ -94,16 +100,16 @@ export function useNavigationShortcuts({
           clearGoFinanceChord();
           if (leaderBinding.id === "finance") {
             registerGoFinanceChord(leaderBinding.href, () => {
+              closePalette();
               onNavigate(leaderBinding.href);
-              afterNextPaint(() => closePalette());
             });
             return;
           }
-          // Navigate first (warm keep-alive flip), then tear down the palette
-          // after paint — same order as search-select. Closing first costs a
-          // React unmount frame before left-nav-speed navigation can start.
+          // Close then navigate in the same turn so React batches palette
+          // teardown with the warm keep-alive flip (no overlay lingering
+          // a frame behind the new page).
+          closePalette();
           onNavigate(leaderBinding.href);
-          afterNextPaint(() => closePalette());
           return;
         }
         if (key !== "g") {

@@ -308,6 +308,10 @@
   padding-top: 4px;
 }
 
+.projects-overview-list--areas .overview-grouped-list {
+  padding-top: 0;
+}
+
 .task-item-row-item,
 .project-overview-row-item {
   list-style: none;
@@ -928,6 +932,43 @@
   flex-direction: column;
 }
 
+/* Stack status group sticky headers under the column-name row. */
+.projects-overview-list .status-group-header-row {
+  /* 1px overlap avoids a subpixel hairline between the two sticky bands. */
+  top: calc(var(--list-column-headers-sticky-height, 30px) - 1px);
+  z-index: 15;
+  /* Square top edge so it meets the column labels without corner gaps. */
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/*
+ * Areas page: top-level area groups (Personal / Business / …) stick under the
+ * column labels. Nested custom-area subgroups stay in normal flow.
+ */
+.projects-overview-list--areas
+  > .overview-grouped-list
+  > .project-type-subgroup
+  > .project-type-subgroup__header-row {
+  position: sticky;
+  top: calc(var(--list-column-headers-sticky-height, 30px) - 1px);
+  z-index: 15;
+  box-sizing: border-box;
+  margin: 0;
+  background-color: var(--sticky-list-header-bg, #161616);
+  background-clip: border-box;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Kill the subgroup top margin while stuck under column labels — avoids a gap. */
+.projects-overview-list--areas
+  > .overview-grouped-list
+  > .project-type-subgroup {
+  margin-top: 0;
+  gap: 0;
+}
+
 .project-overview-row,
 .project-overview-header {
   display: grid;
@@ -947,11 +988,6 @@
   z-index: 20;
   padding-top: 8px;
   padding-bottom: 8px;
-  background: color-mix(in srgb, var(--background) 92%, transparent);
-  backdrop-filter: blur(8px);
-  color: color-mix(in srgb, var(--foreground) 40%, transparent);
-  font-size: 12px;
-  font-weight: 500;
 }
 
 .project-overview-header .text-center {
@@ -974,6 +1010,33 @@
   cursor: pointer;
 }
 
+/*
+ * Header also uses `.project-overview-row` for the grid; beat that rule so
+ * labels stay xs + grey, and keep a solid content-surface slab (no blur /
+ * radius) so scrolling rows cannot show through above stuck status groups.
+ *
+ * Padding must win over `.project-overview-row { padding: 10px 8px }` or the
+ * sticky offset (`--list-column-headers-sticky-height`) drifts and leaves a gap.
+ */
+.project-overview-row.project-overview-header {
+  padding: 8px;
+  border-radius: 0;
+  background-color: var(--sticky-list-header-bg, #161616);
+  background-clip: border-box;
+  color: var(--list-column-header-color);
+  font: inherit;
+  font-size: var(--list-column-header-size);
+  font-weight: var(--list-column-header-weight);
+  line-height: 1.2;
+  cursor: default;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.project-overview-row.project-overview-header:hover {
+  background-color: var(--sticky-list-header-bg, #161616);
+}
+
 .project-overview-row:hover {
   background: rgb(255 255 255 / 0.03);
 }
@@ -986,7 +1049,12 @@
 }
 
 .project-overview-row__key {
-  flex-shrink: 0;
+  box-sizing: content-box;
+  display: inline-block;
+  flex: 0 0 calc(var(--project-key-column-ch, 4) * 1ch);
+  width: calc(var(--project-key-column-ch, 4) * 1ch);
+  min-width: calc(var(--project-key-column-ch, 4) * 1ch);
+  white-space: nowrap;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;

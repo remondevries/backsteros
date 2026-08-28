@@ -11,9 +11,15 @@ import type { NavigateOptions } from "@tanstack/react-router";
 
 import { type ClientLinkProps } from "@backsteros/ui";
 
-import { expandNavigationHref } from "../lib/expand-navigation-href";
+import { formatResolvedAppHref, resolveAppHref } from "../lib/resolve-app-href";
 import { preloadShellRouteChunkForHref } from "../lib/preload-shell-route-chunk";
-import { tryWarmKeepAliveFlip } from "../lib/shell-warm-keep-alive";
+import { parseAppHref } from "../router/navigate-href";
+import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
+import {
+  dismissKeepAliveForOutletNavigation,
+  rememberInboxPanelSelectionHref,
+  tryWarmKeepAliveFlip,
+} from "../lib/shell-warm-keep-alive";
 
 function isModifiedClick(
   event: KeyboardEvent | MouseEvent | PointerEvent<HTMLAnchorElement>,
@@ -62,21 +68,34 @@ export function RouterLink({
   const restKeyDown = rest.onKeyDown as
     | ((event: KeyboardEvent<HTMLAnchorElement>) => void)
     | undefined;
-  const destination = expandNavigationHref(to);
+  const destination = formatResolvedAppHref(resolveAppHref(to));
+  const { pathname, search, hash } = parseAppHref(destination);
   return (
     <Link
-      to={destination as NavigateOptions["to"]}
+      to={pathname as NavigateOptions["to"]}
+      search={search}
+      hash={hash}
       className={className}
       title={title}
       aria-current={rest["aria-current"] as "page" | undefined}
       {...rest}
       onClick={(event) => {
-        if (shouldHandleLinkActivation(event) && tryWarmKeepAliveFlip(to)) {
+        if (
+          shouldHandleLinkActivation(event) &&
+          tryWarmKeepAliveFlip(destination)
+        ) {
           event.preventDefault();
           event.stopPropagation();
           event.nativeEvent.stopImmediatePropagation();
           return;
         }
+        // Warm project open can leave the router on /development|/areas while
+        // Projects keep-alive stays visible — dismiss so overview can show.
+        // Do not preventDefault: TanStack still needs to move when the router
+        // is on a different keep-alive path.
+        rememberSectionEntryFromNav(destination);
+        rememberInboxPanelSelectionHref(destination);
+        dismissKeepAliveForOutletNavigation(destination);
         onClick?.(event);
       }}
       onDoubleClick={onDoubleClick}
@@ -87,11 +106,16 @@ export function RouterLink({
       onFocus={onFocus}
       onPointerDown={onPointerDown}
       onKeyDown={(event) => {
-        if (event.key === " " && tryWarmKeepAliveFlip(to)) {
+        if (event.key === " " && tryWarmKeepAliveFlip(destination)) {
           event.preventDefault();
           event.stopPropagation();
           event.nativeEvent.stopImmediatePropagation();
           return;
+        }
+        if (event.key === " ") {
+          rememberSectionEntryFromNav(destination);
+          rememberInboxPanelSelectionHref(destination);
+          dismissKeepAliveForOutletNavigation(destination);
         }
         restKeyDown?.(event);
       }}
@@ -106,23 +130,32 @@ export const DesktopClientLink = forwardRef<HTMLAnchorElement, ClientLinkProps>(
     { href, className, title, children, onClick, ...rest },
     ref,
   ) {
-    const destination = expandNavigationHref(href);
+    const destination = formatResolvedAppHref(resolveAppHref(href));
+    const { pathname, search, hash } = parseAppHref(destination);
     // Duplicate @types/react in the monorepo (Expo 19.0 vs desktop 19.1+) makes
     // React Router's Link props incompatible with AnchorHTMLAttributes — cast.
     return (
       <Link
         ref={ref}
-        to={destination as NavigateOptions["to"]}
+        to={pathname as NavigateOptions["to"]}
+        search={search}
+        hash={hash}
         className={className}
         title={title}
         {...(rest as object)}
         onClick={(event) => {
-          if (shouldHandleLinkActivation(event) && tryWarmKeepAliveFlip(href)) {
+          if (
+            shouldHandleLinkActivation(event) &&
+            tryWarmKeepAliveFlip(destination)
+          ) {
             event.preventDefault();
             event.stopPropagation();
             event.nativeEvent.stopImmediatePropagation();
             return;
           }
+          rememberSectionEntryFromNav(destination);
+          rememberInboxPanelSelectionHref(destination);
+          dismissKeepAliveForOutletNavigation(destination);
           onClick?.(event);
         }}
         onMouseEnter={() => {

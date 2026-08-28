@@ -1,4 +1,9 @@
 import type { useMobilePowerSync } from "./powersync-context";
+
+/**
+ * Sole REST dual-write exception while PowerSync is primary — see
+ * {@link taskPatchRequiresRestWrite} in `@backsteros/contracts`.
+ */
 export { taskPatchRequiresRestWrite } from "@backsteros/contracts";
 
 type PowerSyncWriteGate = Pick<

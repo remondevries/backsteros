@@ -11,6 +11,7 @@ import {
   ProjectsSidePanelIcon,
   TaskStatusIcon,
   TerminalDirectoryGate,
+  ContentLayoutTransitionProvider,
   shouldHandleGlobalShortcut,
 } from "@backsteros/ui";
 
@@ -421,21 +422,22 @@ export function DesktopTaskLayout({
   }, [agentChatId, hasWorkingDirectory, layoutReady, requestAttach, taskId]);
 
   return (
-    <div
-      ref={setLayoutRef}
-      className={[
-        "desktop-task-layout",
-        detailCollapsed ? "is-detail-collapsed" : null,
-        agentCollapsed ? "is-agent-collapsed" : null,
-        collapseAnimating ? "is-collapse-animating" : null,
-        isDetailResizing ? "is-resizing" : null,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-content-detail
-      data-detail-collapsed={detailCollapsed ? "true" : "false"}
-      data-agent-collapsed={agentCollapsed ? "true" : "false"}
-    >
+    <ContentLayoutTransitionProvider animating={collapseAnimating}>
+      <div
+        ref={setLayoutRef}
+        className={[
+          "desktop-task-layout",
+          detailCollapsed ? "is-detail-collapsed" : null,
+          agentCollapsed ? "is-agent-collapsed" : null,
+          collapseAnimating ? "is-collapse-animating" : null,
+          isDetailResizing ? "is-resizing" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-content-detail
+        data-detail-collapsed={detailCollapsed ? "true" : "false"}
+        data-agent-collapsed={agentCollapsed ? "true" : "false"}
+      >
       <div
         className={[
           "desktop-task-layout__detail",
@@ -509,6 +511,7 @@ export function DesktopTaskLayout({
               agentChatId={agentChatId}
               taskStatus={taskStatus}
               collapsed={agentCollapsed}
+              collapseAnimating={collapseAnimating}
               layoutReady={layoutReady}
               viewScope={viewScope}
               agentAttachRequest={agentAttachRequest}
@@ -557,6 +560,7 @@ export function DesktopTaskLayout({
           />
         ) : null}
       </aside>
-    </div>
+      </div>
+    </ContentLayoutTransitionProvider>
   );
 }

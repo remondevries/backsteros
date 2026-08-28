@@ -379,13 +379,89 @@
 }
 
 .context-panel {
+  --context-panel-collapse-duration: 220ms;
+  --context-panel-collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --context-panel-content-fade-duration: 160ms;
+  --context-panel-content-fade-ease: ease;
   position: relative;
   display: flex;
   min-width: 210px;
   max-width: 420px;
+  height: 100%;
+  min-height: 0;
   flex: none;
   flex-direction: column;
+  overflow: hidden;
   border-right: 0.5px solid var(--border);
+}
+
+/*
+ * Real flex item wrapping the context panel (not display:contents).
+ * Must stretch to the content-frame height — keep-alive panes are
+ * position:absolute and only fill a sized ancestor.
+ */
+.content-side-panel-slot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.context-panel__body {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * Fade list + header label/actions — keep the chrome header bar (and its
+ * bottom border) and the panel's vertical border-right fully opaque.
+ */
+.context-panel .app-content-side-panel-main,
+.context-panel .app-content-side-panel-header > * {
+  opacity: 1;
+  transition: opacity var(--context-panel-content-fade-duration)
+    var(--context-panel-content-fade-ease);
+}
+
+/* Only animate width during collapse/expand — not while dragging. */
+.context-panel.is-collapse-animating {
+  min-width: 0;
+  max-width: none;
+  transition: width var(--context-panel-collapse-duration)
+    var(--context-panel-collapse-ease);
+}
+
+.context-panel.is-collapse-animating .app-content-side-panel-main,
+.context-panel.is-collapse-animating .app-content-side-panel-header > * {
+  opacity: 0;
+  transition: none;
+}
+
+.context-panel.is-collapsed {
+  min-width: 0;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Drop the seam only when fully closed — keep it during the slide. */
+.context-panel.is-collapsed:not(.is-collapse-animating) {
+  border-right-width: 0;
+}
+
+.context-panel.is-collapsed:not(.is-collapse-animating)
+  .app-content-side-panel-main,
+.context-panel.is-collapsed:not(.is-collapse-animating)
+  .app-content-side-panel-header > * {
+  opacity: 0;
 }
 
 .resize-handle {

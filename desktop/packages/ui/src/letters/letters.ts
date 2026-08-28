@@ -70,8 +70,8 @@ export function getFirstLetterInListOrder<T extends LetterListItem>(
 }
 
 export function getLettersHref(letterNumber?: number | null): string {
-  if (letterNumber == null) return "/letters-v2";
-  return `/letters-v2/${LETTER_DISPLAY_KEY.toLowerCase()}-${letterNumber}`;
+  if (letterNumber == null) return "/letters";
+  return `/letters/${LETTER_DISPLAY_KEY.toLowerCase()}-${letterNumber}`;
 }
 
 export function getLettersV2Href(letterNumber?: number | null): string {
@@ -97,16 +97,19 @@ export function getSelectedLetterSlugFromPathname(
     return slug;
   }
 
+  if (pathname.startsWith("/letters/")) {
+    const slug = pathname.slice("/letters/".length).split("/")[0];
+    if (!slug || slug === "new" || slug === "compose") return null;
+    return decodeURIComponent(slug);
+  }
+
   if (pathname.startsWith("/letters-v2/")) {
     const slug = pathname.slice("/letters-v2/".length).split("/")[0];
     if (!slug || slug === "new" || slug === "compose") return null;
     return decodeURIComponent(slug);
   }
 
-  if (!pathname.startsWith("/letters/")) return null;
-  const slug = pathname.slice("/letters/".length).split("/")[0];
-  if (!slug || slug === "new" || slug === "compose") return null;
-  return decodeURIComponent(slug);
+  return null;
 }
 
 const PROJECT_LETTERS_PATH =

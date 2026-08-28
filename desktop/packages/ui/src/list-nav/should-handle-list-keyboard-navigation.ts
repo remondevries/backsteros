@@ -1,3 +1,4 @@
+import { shouldHandleContentPreviewArrowScroll } from "../content/content-preview-scroll.js";
 import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js";
 import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 
@@ -73,6 +74,14 @@ export function shouldHandleListKeyboardNavigation(
   }
 
   if ((key === "j" || key === "k") && isAnyLeaderSequencePending()) {
+    return false;
+  }
+
+  // Yield ArrowUp/Down to content-preview scroll when that surface owns them.
+  if (
+    (key === "ArrowUp" || key === "ArrowDown") &&
+    shouldHandleContentPreviewArrowScroll(event)
+  ) {
     return false;
   }
 

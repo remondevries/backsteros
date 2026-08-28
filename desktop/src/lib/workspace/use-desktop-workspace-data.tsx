@@ -1,5 +1,4 @@
 import {
-  createContext,
   useCallback,
   useContext,
   useMemo,
@@ -29,6 +28,7 @@ import { useDesktopApi } from "../api-context";
 import {
   apiFillSourceForColdStart,
   fillMissingAgentChatIdFromApi,
+  fillMissingAgentInboxApprovedAtFromApi,
   fillMissingDueDatesFromApi,
   fillMissingHabitIdFromApi,
   dropStaleLocalHabitTasks,
@@ -42,6 +42,7 @@ import {
   resolveLocalOrApiRows,
 } from "../merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "../powersync-context";
+import { WORKSPACE_LIST_ROW_COMPARATOR } from "../powersync-row-comparators";
 import { getDesktopPublicEnvironment } from "../env";
 import { rememberProjectTypes } from "../project-type-cache";
 import { noteLocalTaskStatusPatch } from "../agent/agent-status-notifications";
@@ -58,7 +59,27 @@ import {
   mapTask,
   snakeRow,
 } from "./row-mappers";
+import {
+  computeWorkspaceGlobalReady,
+  computeWorkspaceSurfaceReady,
+} from "./workspace-ready";
 import type { DesktopWorkspaceData } from "./workspace-data-types";
+import {
+  DesktopWorkspaceActionsContext,
+  DesktopWorkspaceDocumentsContext,
+  DesktopWorkspaceInboxItemsContext,
+  DesktopWorkspaceMetaContext,
+  DesktopWorkspacePeopleContext,
+  DesktopWorkspaceProjectsContext,
+  DesktopWorkspaceTasksContext,
+  type DesktopWorkspaceActions,
+  type DesktopWorkspaceDocuments,
+  type DesktopWorkspaceMeta,
+  type DesktopWorkspacePeople,
+  type DesktopWorkspaceProjects,
+  type DesktopWorkspaceTasks,
+  type WorkspaceSurface,
+} from "./workspace-contexts";
 import { useWorkspaceApiRows } from "./use-workspace-api-rows";
 import { useWorkspaceEntityPatching } from "./use-entity-patching";
 import { useWorkspaceEntityCreation } from "./use-entity-creation";
@@ -67,84 +88,55 @@ import { useWorkspaceTaskActions } from "./use-task-actions";
 import { useWorkspaceLetterMeetingActions } from "./use-letter-meeting-actions";
 import { useWorkspaceDocumentActions } from "./use-document-actions";
 import {
+  ALL_TASKS_LIST_SQL,
   AREAS_LIST_SQL,
   CONTACTS_LIST_SQL,
   DOCUMENTS_LIST_SQL,
   HABITS_LIST_SQL,
-  INBOX_TASKS_LIST_SQL,
   LETTERS_LIST_SQL,
   MEETINGS_LIST_SQL,
   ORGANIZATIONS_LIST_SQL,
   PROJECTS_LIST_SQL,
-  TASKS_LIST_SQL,
 } from "./workspace-sql";
 
-/** Meta + readiness — changes infrequently relative to entity rows. */
-export type DesktopWorkspaceMeta = Pick<
-  DesktopWorkspaceData,
-  "source" | "ready" | "habits" | "meetings" | "inboxItems" | "areas"
->;
+export type {
+  DesktopWorkspaceActions,
+  DesktopWorkspaceDocuments,
+  DesktopWorkspaceMeta,
+  DesktopWorkspacePeople,
+  DesktopWorkspaceProjects,
+  DesktopWorkspaceTasks,
+  WorkspaceSurface,
+  WorkspaceSurfaceReady,
+} from "./workspace-contexts";
 
-export type DesktopWorkspaceTasks = Pick<
-  DesktopWorkspaceData,
-  | "tasks"
-  | "inboxTasks"
-  | "allTasks"
-  | "taskDescriptions"
-  | "taskDetails"
->;
+function isTasksListTask(task: ApiTask): boolean {
+  return !task.inbox;
+}
 
-export type DesktopWorkspaceProjects = Pick<
-  DesktopWorkspaceData,
-  | "projects"
-  | "letters"
-  | "projectSummaries"
-  | "projectDescriptions"
-  | "letterBodies"
-  | "letterRecords"
-  | "projectDetails"
->;
-
-export type DesktopWorkspacePeople = Pick<
-  DesktopWorkspaceData,
-  "contacts" | "organizations" | "contactDetails" | "organizationDetails"
->;
-
-export type DesktopWorkspaceDocuments = Pick<
-  DesktopWorkspaceData,
-  | "documents"
-  | "knowledgeDocuments"
-  | "projectDocuments"
-  | "journalItems"
-  | "journalDocumentIdsByDate"
->;
-
-export type DesktopWorkspaceActions = Omit<
-  DesktopWorkspaceData,
-  | keyof DesktopWorkspaceMeta
-  | keyof DesktopWorkspaceTasks
-  | keyof DesktopWorkspaceProjects
-  | keyof DesktopWorkspacePeople
-  | keyof DesktopWorkspaceDocuments
->;
-
-const DesktopWorkspaceMetaContext = createContext<DesktopWorkspaceMeta | null>(
-  null,
-);
-const DesktopWorkspaceTasksContext =
-  createContext<DesktopWorkspaceTasks | null>(null);
-const DesktopWorkspaceProjectsContext =
-  createContext<DesktopWorkspaceProjects | null>(null);
-const DesktopWorkspacePeopleContext =
-  createContext<DesktopWorkspacePeople | null>(null);
-const DesktopWorkspaceDocumentsContext =
-  createContext<DesktopWorkspaceDocuments | null>(null);
-const DesktopWorkspaceActionsContext =
-  createContext<DesktopWorkspaceActions | null>(null);
+function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined): {
+  listTasks: ApiTask[] | null;
+  inboxTasks: ApiTask[] | null;
+} {
+  if (rows == null) return { listTasks: null, inboxTasks: null };
+  const mapped = rows.map((row) => snakeRow(row) as ApiTask);
+  return {
+    listTasks: mapped.filter(isTasksListTask),
+    inboxTasks: mapped.filter((task) =>
+      taskBelongsInInbox({
+        inbox: task.inbox,
+        status: task.status,
+        dueDate: task.dueDate,
+        agentCreatedAt: task.agentCreatedAt,
+        agentInboxApprovedAt: task.agentInboxApprovedAt,
+      }),
+    ),
+  };
+}
 
 /**
- * Prefer PowerSync rows when ready. Soft-revalidate from the API after sync
- * checkpoints so newer remote columns can merge in.
+ * Prefer PowerSync rows when ready. Cold-start REST rescue only when SQLite
+ * is empty — no soft-revalidate on sync checkpoints (Linear-shaped).
  *
  * Prefer {@link DesktopWorkspaceDataProvider} + domain hooks so navigations
  * share one hydrated snapshot (avoids not-found flashes) without every
@@ -152,6 +144,7 @@ const DesktopWorkspaceActionsContext =
  */
 function useDesktopWorkspaceDataImpl(): {
   meta: DesktopWorkspaceMeta;
+  inboxItems: InboxListItem[];
   tasks: DesktopWorkspaceTasks;
   projects: DesktopWorkspaceProjects;
   people: DesktopWorkspacePeople;
@@ -164,35 +157,56 @@ function useDesktopWorkspaceDataImpl(): {
   const authenticated =
     Boolean(clerkKey) && powerSync.status !== "unauthenticated";
 
-  const localTasks = usePowerSyncQuery<Record<string, unknown>>(
-    authenticated ? TASKS_LIST_SQL : null,
+  const localAllTasks = usePowerSyncQuery<Record<string, unknown>>(
+    authenticated ? ALL_TASKS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
-  const localInboxTasks = usePowerSyncQuery<Record<string, unknown>>(
-    authenticated ? INBOX_TASKS_LIST_SQL : null,
+  const localTaskSplits = useMemo(
+    () => splitLocalTaskRows(localAllTasks.data),
+    [localAllTasks.data],
   );
+  const localTasks = localTaskSplits.listTasks;
+  const localInboxTasks = localTaskSplits.inboxTasks;
   const localProjects = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? PROJECTS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localLetters = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? LETTERS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localContacts = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? CONTACTS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localOrganizations = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? ORGANIZATIONS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localAreas = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? AREAS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localDocuments = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? DOCUMENTS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localHabits = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? HABITS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
   const localMeetings = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? MEETINGS_LIST_SQL : null,
+    [],
+    { rowComparator: WORKSPACE_LIST_ROW_COMPARATOR },
   );
 
   const {
@@ -232,7 +246,7 @@ function useDesktopWorkspaceDataImpl(): {
         ),
         fillFrom,
       ),
-      fillFrom,
+      apiProjects,
       ["summary", "description"],
     );
   }, [apiProjects, localProjects.data]);
@@ -254,7 +268,7 @@ function useDesktopWorkspaceDataImpl(): {
         resolveLocalOrApiRows(localMapped, apiOrganizations),
         fillFrom,
       ),
-      fillFrom,
+      apiOrganizations,
       ["summary", "notes"],
     );
   }, [apiOrganizations, localOrganizations.data]);
@@ -268,18 +282,14 @@ function useDesktopWorkspaceDataImpl(): {
   }, [rawOrganizations]);
 
   const rawTasks = useMemo(() => {
-    const localMapped =
-      localTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? null;
+    const localMapped = localTasks;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiTasks);
-    return fillMissingLongTextFromApi(
-      dropStaleLocalHabitTasks(
-        fillMissingDueDatesFromApi(
-          fillMissingHabitIdFromApi(
-            fillMissingAgentChatIdFromApi(
-              fillMissingLinksFromApi(
-                resolveLocalOrApiRows(localMapped, apiTasks),
-                fillFrom,
-              ),
+    const resolved = dropStaleLocalHabitTasks(
+      fillMissingDueDatesFromApi(
+        fillMissingHabitIdFromApi(
+          fillMissingAgentChatIdFromApi(
+            fillMissingLinksFromApi(
+              resolveLocalOrApiRows(localMapped, apiTasks),
               fillFrom,
             ),
             fillFrom,
@@ -289,23 +299,19 @@ function useDesktopWorkspaceDataImpl(): {
         fillFrom,
       ),
       fillFrom,
-      ["description"],
     );
-  }, [apiTasks, localTasks.data]);
+    return fillMissingAgentInboxApprovedAtFromApi(resolved, apiTasks);
+  }, [apiTasks, localTasks]);
 
   const rawInboxTasks = useMemo(() => {
-    const localMapped =
-      localInboxTasks.data?.map((row) => snakeRow(row) as ApiTask) ?? null;
+    const localMapped = localInboxTasks;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiInboxTasks);
-    return fillMissingLongTextFromApi(
-      dropStaleLocalHabitTasks(
-        fillMissingDueDatesFromApi(
-          fillMissingHabitIdFromApi(
-            fillMissingAgentChatIdFromApi(
-              fillMissingLinksFromApi(
-                resolveLocalOrApiRows(localMapped, apiInboxTasks),
-                fillFrom,
-              ),
+    const resolved = dropStaleLocalHabitTasks(
+      fillMissingDueDatesFromApi(
+        fillMissingHabitIdFromApi(
+          fillMissingAgentChatIdFromApi(
+            fillMissingLinksFromApi(
+              resolveLocalOrApiRows(localMapped, apiInboxTasks),
               fillFrom,
             ),
             fillFrom,
@@ -315,17 +321,16 @@ function useDesktopWorkspaceDataImpl(): {
         fillFrom,
       ),
       fillFrom,
-      ["description"],
     );
-  }, [apiInboxTasks, localInboxTasks.data]);
+    return fillMissingAgentInboxApprovedAtFromApi(resolved, apiInboxTasks);
+  }, [apiInboxTasks, localInboxTasks]);
 
   const rawLetters = useMemo(() => {
     const localMapped =
       localLetters.data?.map((row) => snakeRow(row) as ApiLetter) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiLetters);
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiLetters),
-      fillFrom,
+      apiLetters,
       ["context"],
     );
   }, [apiLetters, localLetters.data]);
@@ -339,7 +344,7 @@ function useDesktopWorkspaceDataImpl(): {
         resolveLocalOrApiRows(localMapped, apiMeetings),
         fillFrom,
       ),
-      fillFrom,
+      apiMeetings,
       ["summary", "notes", "transcription"],
     );
   }, [apiMeetings, localMeetings.data]);
@@ -347,10 +352,9 @@ function useDesktopWorkspaceDataImpl(): {
   const rawContacts = useMemo(() => {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiContacts);
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiContacts),
-      fillFrom,
+      apiContacts,
       ["summary", "notes"],
     );
   }, [apiContacts, localContacts.data]);
@@ -406,15 +410,14 @@ function useDesktopWorkspaceDataImpl(): {
           todayTaskStatus: local.todayTaskStatus ?? null,
         } satisfies ApiHabit;
       }) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiHabits);
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiHabits),
-      fillFrom,
+      apiHabits,
       ["description"],
     );
   }, [apiHabits, localHabits.data]);
 
-  const source: DesktopWorkspaceData["source"] = localTasks.data
+  const source: DesktopWorkspaceData["source"] = localAllTasks.data
     ? "powersync"
     : "empty";
 
@@ -611,37 +614,72 @@ function useDesktopWorkspaceDataImpl(): {
     })),
   );
 
-  const queriesHydrating =
-    authenticated &&
-    powerSync.ready &&
-    !queriesGracePeriodExpired &&
-    (localTasks.loading ||
-      localInboxTasks.loading ||
-      localProjects.loading ||
-      localLetters.loading ||
-      localMeetings.loading ||
-      localContacts.loading ||
-      localOrganizations.loading ||
-      localAreas.loading ||
-      localDocuments.loading);
+  const readyInput = useMemo(
+    () => ({
+      authenticated,
+      restHydrateSettled,
+      queriesGracePeriodExpired,
+      powerSyncReady: powerSync.ready,
+      powerSyncStatus: powerSync.status,
+      localLoaded: {
+        tasks: localAllTasks.data !== null,
+        inboxTasks: localAllTasks.data !== null,
+        projects: localProjects.data !== null,
+        documents: localDocuments.data !== null,
+        letters: localLetters.data !== null,
+        contacts: localContacts.data !== null,
+        organizations: localOrganizations.data !== null,
+        habits: localHabits.data !== null,
+        meetings: localMeetings.data !== null,
+        areas: localAreas.data !== null,
+      },
+      apiLoaded: {
+        tasks: apiTasks !== null,
+        inboxTasks: apiInboxTasks !== null,
+        projects: apiProjects !== null,
+        documents: apiDocuments !== null,
+        letters: apiLetters !== null,
+        contacts: apiContacts !== null,
+        organizations: apiOrganizations !== null,
+        habits: apiHabits !== null,
+        meetings: apiMeetings !== null,
+        areas: apiAreas !== null,
+      },
+    }),
+    [
+      apiAreas,
+      apiContacts,
+      apiDocuments,
+      apiHabits,
+      apiInboxTasks,
+      apiLetters,
+      apiMeetings,
+      apiOrganizations,
+      apiProjects,
+      apiTasks,
+      authenticated,
+      localAreas.data,
+      localContacts.data,
+      localDocuments.data,
+      localHabits.data,
+      localAllTasks.data,
+      localLetters.data,
+      localMeetings.data,
+      localOrganizations.data,
+      localProjects.data,
+      powerSync.ready,
+      powerSync.status,
+      queriesGracePeriodExpired,
+      restHydrateSettled,
+    ],
+  );
 
-  const apiHydrated =
-    apiProjects !== null ||
-    apiTasks !== null ||
-    apiInboxTasks !== null ||
-    apiOrganizations !== null ||
-    apiAreas !== null ||
-    apiContacts !== null ||
-    apiDocuments !== null ||
-    apiLetters !== null ||
-    apiMeetings !== null;
+  const readyBySurface = useMemo(
+    () => computeWorkspaceSurfaceReady(readyInput),
+    [readyInput],
+  );
 
-  const ready =
-    !authenticated ||
-    apiHydrated ||
-    restHydrateSettled ||
-    (powerSync.ready && !queriesHydrating) ||
-    powerSync.status === "error";
+  const ready = computeWorkspaceGlobalReady(readyBySurface);
 
   const projects = useMemo(
     () => rawProjects.map(mapProject),
@@ -689,15 +727,10 @@ function useDesktopWorkspaceDataImpl(): {
     return details;
   }, [rawProjects]);
 
-  // Lazy detail maps: only include entries that have text so the global
-  // snapshot does not retain empty string entries for every row.
-  const taskDescriptions = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const task of Object.values(taskDetails)) {
-      if (task.description) map[task.id] = task.description;
-    }
-    return map;
-  }, [taskDetails]);
+  // Descriptions are not on list SQL — detail/calendar use one-row PowerSync
+  // via useDesktopTaskDescription. Keep an empty map for API compat (do not
+  // fillMissingLongTextFromApi description into list rows).
+  const taskDescriptions = useMemo(() => ({} as Record<string, string>), []);
 
   const projectSummaries = useMemo(() => {
     const map: Record<string, string> = {};
@@ -827,12 +860,12 @@ function useDesktopWorkspaceDataImpl(): {
     () => ({
       source,
       ready,
+      readyBySurface,
       habits,
       meetings,
-      inboxItems,
       areas: rawAreas,
     }),
-    [habits, inboxItems, meetings, rawAreas, ready, source],
+    [habits, meetings, rawAreas, ready, readyBySurface, source],
   );
 
   const tasksSlice = useMemo<DesktopWorkspaceTasks>(
@@ -983,6 +1016,7 @@ function useDesktopWorkspaceDataImpl(): {
 
   return {
     meta,
+    inboxItems,
     tasks: tasksSlice,
     projects: projectsSlice,
     people: peopleSlice,
@@ -997,11 +1031,12 @@ export function DesktopWorkspaceDataProvider({
 }: {
   children: ReactNode;
 }) {
-  const { meta, tasks, projects, people, documents, actions } =
+  const { meta, inboxItems, tasks, projects, people, documents, actions } =
     useDesktopWorkspaceDataImpl();
   return (
     <DesktopWorkspaceActionsContext.Provider value={actions}>
-      <DesktopWorkspaceMetaContext.Provider value={meta}>
+      <DesktopWorkspaceInboxItemsContext.Provider value={inboxItems}>
+        <DesktopWorkspaceMetaContext.Provider value={meta}>
         <DesktopWorkspaceTasksContext.Provider value={tasks}>
           <DesktopWorkspaceProjectsContext.Provider value={projects}>
             <DesktopWorkspacePeopleContext.Provider value={people}>
@@ -1011,7 +1046,8 @@ export function DesktopWorkspaceDataProvider({
             </DesktopWorkspacePeopleContext.Provider>
           </DesktopWorkspaceProjectsContext.Provider>
         </DesktopWorkspaceTasksContext.Provider>
-      </DesktopWorkspaceMetaContext.Provider>
+        </DesktopWorkspaceMetaContext.Provider>
+      </DesktopWorkspaceInboxItemsContext.Provider>
     </DesktopWorkspaceActionsContext.Provider>
   );
 }
@@ -1028,6 +1064,18 @@ export function useDesktopWorkspaceMeta(): DesktopWorkspaceMeta {
     useContext(DesktopWorkspaceMetaContext),
     "useDesktopWorkspaceMeta",
   );
+}
+
+export function useDesktopWorkspaceInboxItems(): InboxListItem[] {
+  return requireWorkspaceSlice(
+    useContext(DesktopWorkspaceInboxItemsContext),
+    "useDesktopWorkspaceInboxItems",
+  );
+}
+
+/** Surface-scoped readiness — avoids waiting on unrelated PowerSync watches. */
+export function useWorkspaceSurfaceReady(surface: WorkspaceSurface): boolean {
+  return useDesktopWorkspaceMeta().readyBySurface[surface];
 }
 
 export function useDesktopWorkspaceTasks(): DesktopWorkspaceTasks {
@@ -1071,6 +1119,7 @@ export function useDesktopWorkspaceActions(): DesktopWorkspaceActions {
  */
 export function useDesktopWorkspaceData(): DesktopWorkspaceData {
   const meta = useDesktopWorkspaceMeta();
+  const inboxItems = useDesktopWorkspaceInboxItems();
   const tasks = useDesktopWorkspaceTasks();
   const projects = useDesktopWorkspaceProjects();
   const people = useDesktopWorkspacePeople();
@@ -1079,13 +1128,14 @@ export function useDesktopWorkspaceData(): DesktopWorkspaceData {
   const snapshot = useMemo(
     () => ({
       ...meta,
+      inboxItems,
       ...tasks,
       ...projects,
       ...people,
       ...documents,
       ...actions,
     }),
-    [actions, documents, meta, people, projects, tasks],
+    [actions, documents, inboxItems, meta, people, projects, tasks],
   );
   return snapshot;
 }

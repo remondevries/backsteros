@@ -10,30 +10,14 @@ import {
   type KnowledgeListItem,
 } from "@backsteros/ui";
 
-type SectionEntryKey =
-  | "inbox"
-  | "contacts"
-  | "organizations"
-  | "letters"
-  | "knowledge";
+import {
+  peekSectionEntryHref,
+  rememberSectionEntryHrefs,
+  type SectionEntryKey,
+} from "./section-entry-store";
 
-const entries: Record<SectionEntryKey, string | null> = {
-  inbox: null,
-  contacts: null,
-  organizations: null,
-  letters: null,
-  knowledge: null,
-};
-
-export function rememberSectionEntryHrefs(
-  next: Partial<Record<SectionEntryKey, string | null>>,
-): void {
-  Object.assign(entries, next);
-}
-
-export function peekSectionEntryHref(key: SectionEntryKey): string | null {
-  return entries[key];
-}
+export { peekSectionEntryHref, rememberSectionEntryHrefs };
+export type { SectionEntryKey };
 
 function firstAlphaItem<T extends { name: string }>(items: readonly T[]): T | null {
   return groupItemsByAlphaLetter(items).flatMap(([, group]) => group)[0] ?? null;
@@ -101,13 +85,9 @@ export function firstLetterSlug(
   letters: readonly { number?: number | null }[],
 ): string | null {
   const href = firstLetterHref(letters);
-  if (!href || href === "/letters" || href === "/letters-v2") return null;
-  const fromV2 = href.startsWith("/letters-v2/")
-    ? href.slice("/letters-v2/".length)
-    : href.startsWith("/letters/")
-      ? href.slice("/letters/".length)
-      : null;
-  return fromV2?.split("/")[0] ?? null;
+  if (!href || href === "/letters") return null;
+  if (!href.startsWith("/letters/")) return null;
+  return href.slice("/letters/".length).split("/")[0] ?? null;
 }
 
 export function firstKnowledgeHref(
@@ -135,11 +115,24 @@ export function rememberWorkspaceSectionEntries(input: {
   letters: readonly { number?: number | null }[];
   knowledgeDocuments: readonly KnowledgeListItem[];
 }): void {
-  rememberSectionEntryHrefs({
-    inbox: getFirstInboxItemHref(input.inboxItems) ?? null,
-    contacts: firstContactHref(input.contacts),
-    organizations: firstOrganizationHref(input.organizations),
-    letters: firstLetterHref(input.letters),
-    knowledge: firstKnowledgeHref(input.knowledgeDocuments),
-  });
+  // Seed only — section roots always open these first items (never last-place).
+  const seed: Partial<Record<SectionEntryKey, string | null>> = {};
+  if (peekSectionEntryHref("inbox") == null) {
+    seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
+  }
+  if (peekSectionEntryHref("contacts") == null) {
+    seed.contacts = firstContactHref(input.contacts);
+  }
+  if (peekSectionEntryHref("organizations") == null) {
+    seed.organizations = firstOrganizationHref(input.organizations);
+  }
+  if (peekSectionEntryHref("letters") == null) {
+    seed.letters = firstLetterHref(input.letters);
+  }
+  if (peekSectionEntryHref("knowledge") == null) {
+    seed.knowledge = firstKnowledgeHref(input.knowledgeDocuments);
+  }
+  if (Object.keys(seed).length > 0) {
+    rememberSectionEntryHrefs(seed);
+  }
 }

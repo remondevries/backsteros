@@ -8,7 +8,6 @@ import {
   isBlockingModalOpen,
   shouldHandleGlobalShortcut,
 } from "./shortcut-guards.js";
-import { afterNextPaint } from "../timing/after-next-paint.js";
 
 const SETTINGS_SHORTCUT_KEY = ",";
 
@@ -51,8 +50,8 @@ export function useSettingsShortcut({
       }
 
       event.preventDefault();
+      closePalette();
       onNavigate(getDefaultSettingsHref());
-      afterNextPaint(() => closePalette());
     }
 
     window.addEventListener("keydown", handleKeyDown);

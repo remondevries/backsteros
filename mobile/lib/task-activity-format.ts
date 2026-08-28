@@ -1,4 +1,5 @@
 import type { TaskActivity, TaskComment } from "@backsteros/contracts";
+import { formatTrackedDuration } from "@backsteros/contracts";
 
 import { isAgentHoldCommentBody } from "./agent-hold-comment";
 import { formatTaskDueMetaLabel } from "./task-due-date";
@@ -170,6 +171,17 @@ export function formatActivityMessage(activity: TaskActivity): string {
       return `${name} worked for ${duration} · ${formatActivityTokenCount(totalTokens)} tokens`;
     }
     return `${name} worked for ${duration}`;
+  }
+  if (activity.type === "timer_started") {
+    return `${name} started the timer on this task`;
+  }
+  if (activity.type === "timer_stopped") {
+    const durationSeconds =
+      typeof activity.data.durationSeconds === "number" &&
+      Number.isFinite(activity.data.durationSeconds)
+        ? Math.max(0, Math.round(activity.data.durationSeconds))
+        : 0;
+    return `${name} tracked ${formatTrackedDuration(durationSeconds)} on this task`;
   }
   return `${name} updated this task`;
 }

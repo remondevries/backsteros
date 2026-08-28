@@ -23,7 +23,6 @@ import {
   mapApiTaskToRow,
   withDisplayId,
 } from "../lib/map-task-row";
-import { fillMissingTaskFieldsFromApi } from "../lib/merge-task-fields";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
@@ -238,19 +237,17 @@ export function InboxListPane({
     }
   }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated]);
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, true, localRows.length > 0);
 
-  const taskRows = useMemo(() => {
-    const rows = resolveSyncedOrRestRows({
-      localRows,
-      restRows,
-      connected: powerSync.connected,
-    });
-    if (powerSync.connected && localRows.length > 0 && restRows != null) {
-      return fillMissingTaskFieldsFromApi(rows, restRows);
-    }
-    return rows;
-  }, [localRows, powerSync.connected, restRows]);
+  const taskRows = useMemo(
+    () =>
+      resolveSyncedOrRestRows({
+        localRows,
+        restRows,
+        connected: powerSync.connected,
+      }),
+    [localRows, powerSync.connected, restRows],
+  );
 
   // Email thread rows alongside tasks — desktop inbox parity.
   const { messages: emailMessages } = useAgentMail();

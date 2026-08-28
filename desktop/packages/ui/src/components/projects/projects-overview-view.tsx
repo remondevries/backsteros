@@ -58,6 +58,10 @@ import {
 } from "../list-nav/list-keyboard-navigation-provider.js";
 import { mapProjectStatusToTaskStatusIcon } from "../../projects/project-status-icon-model.js";
 import { migrateLegacyProjectStatus } from "../../projects/project-status.js";
+import {
+  computeProjectKeyColumnCh,
+  projectKeyColumnCssVars,
+} from "../../projects/project-key-column-width.js";
 
 type SecondaryBucket = {
   id: string | null;
@@ -145,6 +149,12 @@ export type ProjectsOverviewViewProps = {
   selectedProjectId?: string | null;
   /** Project ids with an active working agent (swap row/card icon for loader). */
   workingProjectIds?: ReadonlySet<string>;
+  /**
+   * Fixed monospace width (in `ch`) for the project-key column.
+   * Prefer the global max across all workspace projects so area filters do not
+   * resize the column.
+   */
+  projectKeyColumnCh?: number;
 };
 
 export function ProjectsOverviewView({
@@ -171,6 +181,7 @@ export function ProjectsOverviewView({
   emptyMessage = "No projects in this area.",
   selectedProjectId = null,
   workingProjectIds,
+  projectKeyColumnCh: projectKeyColumnChProp,
 }: ProjectsOverviewViewProps) {
   const [uncontrolledArea, setUncontrolledArea] =
     useState<ProjectAreaFilter>(initialArea);
@@ -208,6 +219,14 @@ export function ProjectsOverviewView({
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
   const canReorder = Boolean(onReorder);
+  const projectKeyColumnCh = useMemo(
+    () => projectKeyColumnChProp ?? computeProjectKeyColumnCh(projects),
+    [projectKeyColumnChProp, projects],
+  );
+  const projectKeyColumnStyle = useMemo(
+    () => projectKeyColumnCssVars(projectKeyColumnCh),
+    [projectKeyColumnCh],
+  );
 
   useEffect(() => {
     setLocalProjects(projects);
@@ -425,7 +444,7 @@ export function ProjectsOverviewView({
   const listContent = showEmpty ? (
     <p className="overview-empty">{emptyMessage}</p>
   ) : (
-    <div className="projects-overview-list">
+    <div className="projects-overview-list" style={projectKeyColumnStyle}>
       <ProjectsListHeader />
       <ul
         className="overview-grouped-list"

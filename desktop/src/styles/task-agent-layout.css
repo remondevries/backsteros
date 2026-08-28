@@ -1,3 +1,41 @@
+/*
+ * Tasks section host (list ↔ detail keep-alive). Without this, page-scroll
+ * fills the frame but the unstyled wrapper sizes to content — so the task
+ * UI + agent rail stop mid-window after side-panel / agent-rail slides.
+ */
+.tasks-section-page {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tasks-section-page__list,
+.tasks-section-page__detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Keep detail mounted while browsing the list — out of flow, not painted. */
+.tasks-section-page__detail.is-offscreen {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  content-visibility: hidden;
+}
+
 /* Task workbench: detail + collapsible agent terminal rail */
 .desktop-task-workbench {
   display: flex;
@@ -52,6 +90,8 @@
   --desktop-task-agent-col: 380px;
   --desktop-task-layout-collapse-duration: 220ms;
   --desktop-task-layout-collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --desktop-task-layout-content-fade-duration: 160ms;
+  --desktop-task-layout-content-fade-ease: ease;
   display: grid !important;
   grid-template-columns: var(--desktop-task-detail-col) var(--desktop-task-agent-col);
   grid-template-rows: minmax(0, 1fr);
@@ -87,13 +127,54 @@
   transition: none;
 }
 
+/*
+ * Right agent rail only: hide chat chrome while the column slides, then fade
+ * it in when settled. Collapsed dashed tabs fade in after collapse and fade
+ * out as the rail expands (strip stays mounted through the slide).
+ */
+.desktop-task-layout__terminal
+  .desktop-agent-chat:not(.is-collapsed)
+  > .desktop-agent-chat__body,
+.desktop-task-layout__terminal
+  .desktop-agent-chat:not(.is-collapsed)
+  > .desktop-agent-chat__error {
+  opacity: 1;
+  transition: opacity var(--desktop-task-layout-content-fade-duration)
+    var(--desktop-task-layout-content-fade-ease);
+}
+
+.desktop-task-layout.is-collapse-animating
+  .desktop-task-layout__terminal
+  .desktop-agent-chat:not(.is-collapsed)
+  > .desktop-agent-chat__body,
+.desktop-task-layout.is-collapse-animating
+  .desktop-task-layout__terminal
+  .desktop-agent-chat:not(.is-collapsed)
+  > .desktop-agent-chat__error {
+  opacity: 0;
+  transition: none;
+}
+
+.desktop-agent-collapsed-strip__tabs {
+  opacity: 0;
+  transition: opacity var(--desktop-task-layout-content-fade-duration)
+    var(--desktop-task-layout-content-fade-ease);
+}
+
+.desktop-task-layout.is-agent-collapsed:not(.is-collapse-animating)
+  .desktop-agent-collapsed-strip__tabs {
+  opacity: 1;
+}
+
+.desktop-task-layout.is-collapse-animating .desktop-agent-collapsed-strip__tabs {
+  pointer-events: none;
+}
+
 .desktop-task-layout__detail {
   position: relative;
   overflow: hidden;
-}
-
-.desktop-task-layout.is-agent-collapsed .desktop-task-layout__detail {
-  border-right: 0;
+  /* Seam with the agent rail — right edge of the detail column. */
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .desktop-task-layout.is-detail-collapsed .desktop-task-layout__detail,
@@ -104,14 +185,15 @@
 
 .desktop-task-layout__terminal {
   position: relative;
-  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  /* Detail column owns the seam when both panes are open. */
+  border-left: 0;
   background: var(--background);
   overflow: hidden;
 }
 
 .desktop-task-layout.is-agent-collapsed .desktop-task-layout__terminal,
 .desktop-task-layout__terminal.is-collapsed {
-  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
+  border-left: 0;
   background: transparent;
 }
 
@@ -639,7 +721,6 @@
   gap: 4px;
   padding: 4px 0 8px;
   background: var(--background);
-  border-left: 0.5px solid var(--border, rgb(255 255 255 / 0.1));
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
 }
 

@@ -1493,7 +1493,7 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.param("id"),
         body.type,
-        body.data,
+        body.data ?? {},
         writeActorFromAuth(auth),
       );
       if (!row) return c.json(notFound("Task"), 404);

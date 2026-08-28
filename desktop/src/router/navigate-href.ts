@@ -1,14 +1,19 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 
-import { expandNavigationHref } from "../lib/expand-navigation-href";
 import {
-  remapLegacyKeepAliveHref,
+  formatResolvedAppHref,
+  resolveAppHref,
+} from "../lib/resolve-app-href";
+import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
+import {
+  dismissKeepAliveForOutletNavigation,
+  rememberInboxPanelSelectionHref,
   tryWarmKeepAliveFlip,
 } from "../lib/shell-warm-keep-alive";
 
 type AppNavigate = (options: NavigateOptions) => void;
 
-function parseAppHref(href: string): {
+export function parseAppHref(href: string): {
   pathname: string;
   search?: Record<string, string>;
   hash?: string;
@@ -25,7 +30,11 @@ function parseAppHref(href: string): {
   const search = searchPart
     ? Object.fromEntries(new URLSearchParams(searchPart).entries())
     : undefined;
-  return { pathname, search, hash };
+  return {
+    pathname,
+    ...(search ? { search } : {}),
+    ...(hash ? { hash } : {}),
+  };
 }
 
 /** Navigate via an app href string (`/tasks?due=today`) — Phase 5c helper. */
@@ -34,10 +43,13 @@ export function navigateToHref(
   href: string,
   options?: { replace?: boolean; state?: unknown },
 ): void {
-  if (tryWarmKeepAliveFlip(href)) {
+  const target = formatResolvedAppHref(resolveAppHref(href));
+  if (tryWarmKeepAliveFlip(target)) {
     return;
   }
-  const target = expandNavigationHref(remapLegacyKeepAliveHref(href));
+  rememberSectionEntryFromNav(target);
+  rememberInboxPanelSelectionHref(target);
+  dismissKeepAliveForOutletNavigation(target);
   const { pathname, search, hash } = parseAppHref(target);
   navigate({
     to: pathname as NavigateOptions["to"],

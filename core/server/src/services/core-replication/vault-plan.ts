@@ -73,6 +73,70 @@ export function resolveSafeVaultAbsolute(
   return absolute;
 }
 
+/**
+ * Local listing can reuse the on-disk vault-manifest when nothing is dirty.
+ * Empty manifest or a forced/full-dirty signal requires a real walk.
+ */
+export function shouldSkipFullVaultWalk(input: {
+  manifestEntryCount: number;
+  dirtyPaths: readonly string[];
+  forceFullScan: boolean;
+}): boolean {
+  if (input.forceFullScan) return false;
+  if (input.manifestEntryCount === 0) return false;
+  if (input.dirtyPaths.includes("*")) return false;
+  return input.dirtyPaths.length === 0;
+}
+
+/** Treat the synced manifest as the current local file list (no FS). */
+export function vaultFileMetaFromManifest(
+  manifest: VaultManifest,
+): VaultFileMeta[] {
+  return Object.entries(manifest)
+    .map(([relativePath, entry]) => ({
+      relativePath,
+      mtimeMs: entry.mtimeMs,
+      size: entry.size,
+    }))
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+/**
+ * Merge dirty path stats into the previous manifest listing.
+ * `null` stat means the path was deleted on disk.
+ */
+export function applyDirtyVaultPathStats(input: {
+  previous: VaultManifest;
+  dirtyStats: ReadonlyMap<string, { mtimeMs: number; size: number } | null>;
+}): VaultFileMeta[] {
+  const byPath = new Map(
+    Object.entries(input.previous).map(([relativePath, entry]) => [
+      relativePath,
+      {
+        relativePath,
+        mtimeMs: entry.mtimeMs,
+        size: entry.size,
+      } satisfies VaultFileMeta,
+    ]),
+  );
+
+  for (const [relativePath, statOrNull] of input.dirtyStats) {
+    if (statOrNull == null) {
+      byPath.delete(relativePath);
+      continue;
+    }
+    byPath.set(relativePath, {
+      relativePath,
+      mtimeMs: statOrNull.mtimeMs,
+      size: statOrNull.size,
+    });
+  }
+
+  return [...byPath.values()].sort((a, b) =>
+    a.relativePath.localeCompare(b.relativePath),
+  );
+}
+
 export function diffVaultManifest(
   current: readonly VaultFileMeta[],
   previous: VaultManifest,
@@ -103,6 +167,23 @@ export function diffVaultManifest(
   return { upserts, deletes };
 }
 
+/**
+ * Whether peer should be written locally.
+ * Never overwrite a non-empty local body with an empty peer file — even if
+ * peer mtime is newer (same empty-over-nonempty invariant as push / updateDocumentContent).
+ */
+export function shouldPullVaultFile(
+  remote: VaultFileMeta,
+  local: VaultFileMeta | undefined,
+): boolean {
+  if (!local) return true;
+  if (remote.size === 0 && local.size > 0) return false;
+  return (
+    remote.mtimeMs > local.mtimeMs ||
+    (local.size === 0 && remote.size > 0)
+  );
+}
+
 /** Peer files that should be written locally (missing or strictly newer on peer). */
 export function planVaultPull(
   local: readonly VaultFileMeta[],
@@ -111,19 +192,11 @@ export function planVaultPull(
   const localByPath = new Map(
     local.map((file) => [file.relativePath, file] as const),
   );
-  const pulls: VaultFileMeta[] = [];
-  for (const remote of peer) {
-    const here = localByPath.get(remote.relativePath);
-    if (
-      !here ||
-      remote.mtimeMs > here.mtimeMs ||
-      (here.size === 0 && remote.size > 0)
-    ) {
-      pulls.push(remote);
-    }
-  }
-  pulls.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-  return pulls;
+  return peer
+    .filter((remote) =>
+      shouldPullVaultFile(remote, localByPath.get(remote.relativePath)),
+    )
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
 /**

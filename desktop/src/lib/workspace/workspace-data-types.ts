@@ -63,9 +63,10 @@ export type DesktopWorkspaceData = {
   areas: ApiArea[];
   projectSummaries: Record<string, string>;
   projectDescriptions: Record<string, string>;
+  /** Session/detail descriptions — list SQL omits them; prefer useDesktopTaskDescription. */
   taskDescriptions: Record<string, string>;
   letterBodies: Record<string, string>;
-  /** Full API task rows (includes description / links when REST hydrate filled them). */
+  /** Full API task rows (includes links when REST hydrate filled them). */
   taskDetails: Record<string, ApiTask>;
   /** Full API project rows (includes summary/description when available). */
   projectDetails: Record<string, ApiProject>;

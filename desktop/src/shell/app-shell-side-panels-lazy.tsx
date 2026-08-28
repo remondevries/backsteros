@@ -6,6 +6,12 @@
  */
 import { lazy } from "react";
 
+export const DesktopCalendarSidePanel = lazy(() =>
+  import("./side-panels/calendar-side-panel").then((m) => ({
+    default: m.DesktopCalendarSidePanel,
+  })),
+);
+
 export const DesktopCalendarTasksSidePanel = lazy(() =>
   import("./side-panels/calendar-tasks-side-panel").then((m) => ({
     default: m.DesktopCalendarTasksSidePanel,

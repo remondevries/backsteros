@@ -40,6 +40,10 @@ import {
   useListKeyboardNavigation,
   useListKeyboardNavigationContainerProps,
 } from "../list-nav/list-keyboard-navigation-provider.js";
+import {
+  computeProjectKeyColumnCh,
+  projectKeyColumnCssVars,
+} from "../../projects/project-key-column-width.js";
 
 export type AreasOverviewViewProps = {
   projects: ProjectOverviewRowProject[];
@@ -74,6 +78,12 @@ export type AreasOverviewViewProps = {
   selectedProjectId?: string | null;
   /** Project ids with an active working agent (swap row icon for loader). */
   workingProjectIds?: ReadonlySet<string>;
+  /**
+   * Fixed monospace width (in `ch`) for the project-key column.
+   * Prefer the global max across all workspace projects so filters do not
+   * resize the column.
+   */
+  projectKeyColumnCh?: number;
 };
 
 export function AreasOverviewView({
@@ -95,6 +105,7 @@ export function AreasOverviewView({
   emptyMessage = "No projects yet.",
   selectedProjectId = null,
   workingProjectIds,
+  projectKeyColumnCh: projectKeyColumnChProp,
 }: AreasOverviewViewProps) {
   const [uncontrolledView, setUncontrolledView] =
     useState<ListBoardView>(initialView);
@@ -129,6 +140,14 @@ export function AreasOverviewView({
     LIST_KEYBOARD_NAV_ZONE_MAIN,
   );
   const canReorder = Boolean(onReorder);
+  const projectKeyColumnCh = useMemo(
+    () => projectKeyColumnChProp ?? computeProjectKeyColumnCh(projects),
+    [projectKeyColumnChProp, projects],
+  );
+  const projectKeyColumnStyle = useMemo(
+    () => projectKeyColumnCssVars(projectKeyColumnCh),
+    [projectKeyColumnCh],
+  );
 
   useEffect(() => {
     setLocalProjects(projects);
@@ -385,7 +404,10 @@ export function AreasOverviewView({
   const listContent = showEmpty ? (
     <p className="overview-empty">{emptyMessage}</p>
   ) : (
-    <div className="projects-overview-list">
+    <div
+      className="projects-overview-list projects-overview-list--areas"
+      style={projectKeyColumnStyle}
+    >
       <ProjectsListHeader />
       <ul
         className="overview-grouped-list"

@@ -98,7 +98,7 @@ function mapRest(
 }
 
 /**
- * Financial goals — PowerSync Tier B + REST merge for `savedCents`.
+ * Financial goals — PowerSync Tier B; REST only for empty SQLite / offline.
  */
 export function useFinanceGoals() {
   const client = useMobileApiClient();
@@ -133,7 +133,7 @@ export function useFinanceGoals() {
     }
   }, [beginReload, client, endReload, markHydrated]);
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, true, localRows.length > 0);
 
   const baseRows = resolveSyncedOrRestRows({
     localRows,
@@ -141,21 +141,24 @@ export function useFinanceGoals() {
     connected: powerSync.connected,
   });
 
-  // Overlay REST savedCents onto whichever membership we display.
+  // Overlay REST savedCents only for offline / empty-SQLite rescue — never
+  // while connected with local rows (no REST merge over PowerSync).
   const savedById = useMemo(() => {
+    if (powerSync.connected && localRows.length > 0) {
+      return null;
+    }
     const map = new Map<string, number>();
     for (const row of restRows ?? []) map.set(row.id, row.savedCents);
     return map;
-  }, [restRows]);
+  }, [localRows.length, powerSync.connected, restRows]);
 
-  const rows = useMemo(
-    () =>
-      baseRows.map((row) => ({
-        ...row,
-        savedCents: savedById.get(row.id) ?? row.savedCents,
-      })),
-    [baseRows, savedById],
-  );
+  const rows = useMemo(() => {
+    if (savedById == null) return baseRows;
+    return baseRows.map((row) => ({
+      ...row,
+      savedCents: savedById.get(row.id) ?? row.savedCents,
+    }));
+  }, [baseRows, savedById]);
 
   const useRest =
     (!powerSync.connected && restRows != null) ||

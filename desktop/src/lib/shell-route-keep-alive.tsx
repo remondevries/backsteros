@@ -11,17 +11,25 @@ import {
 } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
 
-import type { PendingPageSurface } from "./pending-navigation-routes";
 import {
-  KEEP_ALIVE_SURFACES,
-  chromeHrefForWarmKeepAlive,
+  getDefaultListKeyboardNavZone,
+  ListKeyboardNavMountGate,
+  useListKeyboardNavigationZone,
+} from "@backsteros/ui";
+
+import { type PendingPageSurface } from "./pending-navigation-routes";
+import {
   getVisibleKeepAliveSurface,
+  getWarmKeepAliveEpoch,
   lastHrefForKeepAliveSurface,
+  listMountedKeepAliveSurfaces,
   markKeepAliveSurfaceMounted,
   partsFromKeepAliveHref,
   rememberKeepAliveHref,
+  routerAgreesWithWindow,
   shouldKeepAliveSurface,
   subscribeWarmKeepAlive,
+  visibleKeepAliveHref,
 } from "./shell-warm-keep-alive";
 
 export type RouteSnapshot = {
@@ -40,7 +48,7 @@ const FrozenRouteContext = createContext<FrozenRouteContextValue | null>(null);
 
 type LocationStore = {
   subscribe: (listener: () => void) => unknown;
-  get: () => { pathname: string; searchStr?: string };
+  get: () => { pathname: string; searchStr?: string; state?: unknown };
 };
 
 function routerLocationStore(router: {
@@ -63,9 +71,24 @@ function unsubscribeFromStore(subscription: unknown): () => void {
   return () => {};
 }
 
+function locationWithState(
+  live: { pathname: string; searchStr?: string; state?: unknown },
+  routerState: unknown,
+): {
+  pathname: string;
+  searchStr: string;
+  state: unknown;
+} {
+  return {
+    pathname: live.pathname,
+    searchStr: live.searchStr ?? "",
+    state: live.state ?? routerState,
+  };
+}
+
 export {
   KEEP_ALIVE_SURFACES,
-  chromeHrefForWarmKeepAlive,
+  dismissKeepAliveForOutletNavigation,
   getVisibleKeepAliveSurface,
   isKeepAlivePaneMounted,
   isKeepAliveSurface,
@@ -76,13 +99,15 @@ export {
   markKeepAliveSurfaceMounted,
   partsFromKeepAliveHref,
   rememberKeepAliveHref,
+  rememberInboxPanelSelectionHref,
   resetKeepAliveForTests,
   resolveWarmKeepAliveHref,
-  shouldApplyRouteKeepAliveSync,
+  routerAgreesWithWindow,
   shouldKeepAliveSidePanelSurface,
   shouldKeepAliveSurface,
   syncVisibleKeepAliveSurfaceFromRoute,
   tryWarmKeepAliveFlip,
+  visibleKeepAliveHref,
 } from "./shell-warm-keep-alive";
 
 export function useVisibleKeepAliveSurface(): PendingPageSurface | null {
@@ -94,33 +119,15 @@ export function useVisibleKeepAliveSurface(): PendingPageSurface | null {
 }
 
 /**
- * Sidebar / tabs / side-panel host location. Follows the keep-alive store
- * on a warm hop; uses the router when it matches or when showing Outlet.
+ * Changes on every warm emit (including same-surface href flips). Subscribe so
+ * panes re-read lastHref when the visible surface string is unchanged.
  */
-export function useChromeShellLocation() {
-  const visible = useVisibleKeepAliveSurface();
-  const location = useLocation();
-  if (visible == null) {
-    return {
-      pathname: location.pathname,
-      searchStr: location.searchStr ?? "",
-      state: location.state,
-    };
-  }
-  const warmHref = chromeHrefForWarmKeepAlive();
-  if (warmHref == null) {
-    return {
-      pathname: location.pathname,
-      searchStr: location.searchStr ?? "",
-      state: location.state,
-    };
-  }
-  const parts = partsFromKeepAliveHref(warmHref);
-  return {
-    pathname: parts.pathname,
-    searchStr: parts.searchStr,
-    state: location.state,
-  };
+export function useWarmKeepAliveEpoch(): number {
+  return useSyncExternalStore(
+    subscribeWarmKeepAlive,
+    getWarmKeepAliveEpoch,
+    getWarmKeepAliveEpoch,
+  );
 }
 
 export function useKeepAliveActive(): boolean {
@@ -141,11 +148,18 @@ export function useKeepAliveAfterPaint(): boolean {
   return useContext(FrozenRouteContext)?.allowHeavy ?? true;
 }
 
-/** Location for a keep-alive page — always the pane snapshot, not the router. */
+/**
+ * One location for chrome and keep-alive pages:
+ * - Inside a KeepAlivePane → that pane's store href (snapshot)
+ * - Else if a keep-alive surface is visible → visible surface store href
+ * - Else (Outlet: finance, settings, email, development) → TanStack router
+ */
 export function useShellLocation() {
   const frozen = useContext(FrozenRouteContext);
+  const visible = useVisibleKeepAliveSurface();
+  useWarmKeepAliveEpoch();
   const router = useRouter();
-  const skipLive = frozen != null;
+  const skipLive = frozen != null || visible != null;
   const store = routerLocationStore(router);
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -159,14 +173,32 @@ export function useShellLocation() {
     () => store?.get() ?? router.state.location,
     () => store?.get() ?? router.state.location,
   );
+  const routerState = router.state.location.state;
   if (frozen) {
-    return {
-      ...live,
-      pathname: frozen.snapshot.pathname,
-      searchStr: frozen.snapshot.searchStr,
-    };
+    return locationWithState(
+      {
+        pathname: frozen.snapshot.pathname,
+        searchStr: frozen.snapshot.searchStr,
+        state: live.state,
+      },
+      routerState,
+    );
   }
-  return live;
+  if (visible != null) {
+    const warmHref = visibleKeepAliveHref();
+    if (warmHref != null) {
+      const parts = partsFromKeepAliveHref(warmHref);
+      return locationWithState(
+        {
+          pathname: parts.pathname,
+          searchStr: parts.searchStr,
+          state: live.state,
+        },
+        routerState,
+      );
+    }
+  }
+  return locationWithState(live, routerState);
 }
 
 /** Params for a keep-alive page — frozen while the pane is hidden. */
@@ -232,13 +264,7 @@ export function snapshotFor(
   if (surface === "journal-habits") {
     params.habitId = parts[2];
   }
-  if (surface === "habits-v2") {
-    params.habitId = parts[1];
-  }
   if (surface === "journal-day") {
-    params.dateSlug = parts[1];
-  }
-  if (surface === "journal-v2") {
     params.dateSlug = parts[1];
   }
   if (surface === "projects" || surface === "contacts") {
@@ -249,8 +275,16 @@ export function snapshotFor(
     params.slug = parts[1];
     params.section = parts[2];
   }
-  if (surface === "letters" || surface === "letters-v2") {
+  if (surface === "letters") {
     params.slug = parts[1];
+  }
+  if (surface === "tasks-list" && parts[0] === "tasks") {
+    if (parts.length >= 3) {
+      params.dueFilter = parts[1];
+      params.taskSlug = parts[2];
+    } else if (parts.length === 2) {
+      params.taskId = parts[1];
+    }
   }
   return { pathname, searchStr, params };
 }
@@ -271,6 +305,8 @@ export const KeepAlivePane = memo(function KeepAlivePane({
   children: ReactNode;
 }) {
   const visible = useVisibleKeepAliveSurface();
+  // Same-surface task/list href flips emit without changing `visible`.
+  useWarmKeepAliveEpoch();
   const active =
     surface != null && visible != null ? visible === surface : activeProp;
   let nextSnapshot = snapshot;
@@ -284,6 +320,25 @@ export const KeepAlivePane = memo(function KeepAlivePane({
     const frame = requestAnimationFrame(() => setAllowHeavy(true));
     return () => cancelAnimationFrame(frame);
   }, [active, allowHeavy]);
+
+  const { setActiveZone } = useListKeyboardNavigationZone();
+  const wasActiveRef = useRef(false);
+  useEffect(() => {
+    const becameActive = active && !wasActiveRef.current;
+    wasActiveRef.current = active;
+    // Only reclaim j/k when this pane becomes visible — not on every
+    // same-surface href flip (journal day → day would re-scroll the list).
+    if (!becameActive) return;
+    const preferredZone = getDefaultListKeyboardNavZone(nextSnapshot.pathname);
+    const frame = requestAnimationFrame(() => {
+      setActiveZone(preferredZone, {
+        preferSidepanelForJk: preferredZone === "sidepanel",
+        activate: true,
+        landAtStart: true,
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active, nextSnapshot.pathname, setActiveZone]);
 
   const valueRef = useRef<FrozenRouteContextValue>({
     active,
@@ -306,7 +361,9 @@ export const KeepAlivePane = memo(function KeepAlivePane({
         inert={!active ? true : undefined}
         aria-hidden={!active}
       >
-        {children}
+        <ListKeyboardNavMountGate active={active}>
+          {children}
+        </ListKeyboardNavMountGate>
       </div>
     </FrozenRouteContext.Provider>
   );
@@ -327,7 +384,7 @@ export function useVisitedKeepAliveSurfaces(
   trail: boolean,
 ): Set<PendingPageSurface> {
   const [visited, setVisited] = useState<ReadonlySet<PendingPageSurface>>(
-    () => new Set(),
+    () => new Set(listMountedKeepAliveSurfaces()),
   );
   if (
     !trail &&
@@ -350,8 +407,13 @@ export function useKeepAliveSnapshots(
 ): Map<PendingPageSurface, RouteSnapshot> {
   const snapshots = useRef(new Map<PendingPageSurface, RouteSnapshot>());
   if (shouldKeepAliveSurface(surface, pathname)) {
-    rememberKeepAliveHref(surface, pathname, searchStr);
-    const next = snapshotFor(surface, pathname, searchStr);
+    // Only write the store from the router when History matches — after a
+    // warm pushState the router is stale and must not clobber lastHref.
+    if (routerAgreesWithWindow(pathname, searchStr)) {
+      rememberKeepAliveHref(surface, pathname, searchStr);
+    }
+    const parts = partsFromKeepAliveHref(lastHrefForKeepAliveSurface(surface));
+    const next = snapshotFor(surface, parts.pathname, parts.searchStr);
     const prev = snapshots.current.get(surface);
     if (!prev || !snapshotsMatch(prev, next)) {
       snapshots.current.set(surface, next);
@@ -371,44 +433,4 @@ export function KeepAliveOutletGate({
   const visible = useVisibleKeepAliveSurface();
   if (visible != null || !showOutlet) return null;
   return children;
-}
-
-/**
- * Stay `contents` on every keep-alive destination, including tasks /projects.
- * Those pages hide the column via `showSidePanel` + content-frame CSS so the
- * ResizableContextPanel is never remounted or pulled out of the frame.
- */
-export function KeepAliveSidePanelFrame({ children }: { children: ReactNode }) {
-  const visible = useVisibleKeepAliveSurface();
-  const show = visible != null;
-  return (
-    <div
-      className={
-        show
-          ? "contents"
-          : "pointer-events-none invisible absolute inset-0 overflow-hidden"
-      }
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Drop live (finance) chrome while a keep-alive surface is visible. */
-export function KeepAliveSidePanelSwitch({
-  keepAliveChrome,
-  liveChrome,
-}: {
-  keepAliveChrome: ReactNode;
-  liveChrome: ReactNode;
-}) {
-  const visible = useVisibleKeepAliveSurface();
-  if (visible != null) return keepAliveChrome;
-  if (!keepAliveChrome && !liveChrome) return null;
-  return (
-    <>
-      {keepAliveChrome}
-      {liveChrome}
-    </>
-  );
 }

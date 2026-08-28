@@ -7,11 +7,13 @@ export {
   DesktopWorkspaceDataProvider,
   useDesktopWorkspaceData,
   useDesktopWorkspaceMeta,
+  useDesktopWorkspaceInboxItems,
   useDesktopWorkspaceTasks,
   useDesktopWorkspaceProjects,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceActions,
+  useWorkspaceSurfaceReady,
 } from "./workspace/use-desktop-workspace-data";
 export type {
   DesktopWorkspaceMeta,
@@ -20,5 +22,7 @@ export type {
   DesktopWorkspacePeople,
   DesktopWorkspaceDocuments,
   DesktopWorkspaceActions,
+  WorkspaceSurface,
+  WorkspaceSurfaceReady,
 } from "./workspace/use-desktop-workspace-data";
 export type { DesktopWorkspaceData } from "./workspace/workspace-data-types";

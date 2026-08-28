@@ -100,9 +100,11 @@ sync policy TBD — transactions are server-primary today.
 | **PDF** (letters) | **Not stored** | Source | `GET …/pdf` → `503` / `pdf_requires_local_core` |
 | Avatars / small `.backsteros/` blobs | Optional replicate | Source | Degrade or cache on cloud |
 
-Markdown sync: local vault watcher → push creates/updates/deletes to cloud
-filesystem (or object store on VPS). Conflict policy: **last-write-wins** on
-`content_version` / `updated_at` unless local-core is online and wins ties.
+Markdown sync: local **manifest-first** listing + `fs.watch` dirty paths →
+push creates/updates/deletes to cloud filesystem (or object store on VPS).
+A no-change tick reuses `.backsteros/replication/vault-manifest.json` (no full
+`.md` walk); only dirty paths are re-stat'd. Conflict policy: **last-write-wins**
+on `content_version` / `updated_at` unless local-core is online and wins ties.
 
 ### Never on cloud-core
 
@@ -212,8 +214,9 @@ Internal routes: `POST/GET /api/v1/internal/replication/push|pull`.
 
 - Sync `**/*.md` on the same replication tick as Postgres (`syncVaultWithPeer`
   when `CORE_REPLICATION_ROLE=local`): **pull** from cloud (LWW by `mtimeMs`) then
-  **push** local changes — so docs created while the laptop is offline land on
-  the Mac when it wakes
+  **push** local changes — local listing is manifest-first (`vault-manifest.json`
+  + dirty paths from `fs.watch`; periodic full walk safety net) so idle ticks do
+  not walk every `.md`
 - Cloud serves vault apply/read routes only (does not push vault)
 - Cloud serves `GET /documents/{id}/content` from the cloud vault copy
 - `GET /letters/{id}/pdf` checks local reachability or returns structured error

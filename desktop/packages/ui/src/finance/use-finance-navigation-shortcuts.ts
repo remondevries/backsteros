@@ -18,7 +18,6 @@ import {
   isBlockingModalOpen,
   shouldHandleGlobalShortcut,
 } from "../shortcuts/shortcut-guards.js";
-import { afterNextPaint } from "../timing/after-next-paint.js";
 
 function findFinanceGoItemByLetter(
   letter: string,
@@ -101,8 +100,8 @@ export function useFinanceNavigationShortcuts({
       }
 
       event.preventDefault();
+      closePalette();
       onNavigate(binding.href);
-      afterNextPaint(() => closePalette());
     }
 
     window.addEventListener("keydown", handleKeyDown, true);

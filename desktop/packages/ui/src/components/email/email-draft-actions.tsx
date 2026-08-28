@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { TrashIcon } from "@primer/octicons-react";
+import { useRef } from "react";
 
-import { isBlockingModalOpen } from "../../shortcuts/shortcut-guards.js";
+import { useContentViewModeShortcut } from "../../content/use-content-view-mode-shortcut.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { TrashIcon } from "@primer/octicons-react";
 
 export type EmailDraftBodyMode = "edit" | "preview";
 
@@ -94,30 +94,13 @@ export function useEmailDraftBodyModeShortcuts({
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  useEffect(() => {
-    if (!enabled) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || isBlockingModalOpen()) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "e") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        onModeChange(modeRef.current === "edit" ? "preview" : "edit");
-        return;
-      }
-
-      if (key === "p") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        onModeChange("preview");
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [enabled, onModeChange]);
+  useContentViewModeShortcut({
+    enabled,
+    onToggle: () => {
+      onModeChange(modeRef.current === "edit" ? "preview" : "edit");
+    },
+    onForcePreview: () => {
+      onModeChange("preview");
+    },
+  });
 }

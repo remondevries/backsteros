@@ -194,6 +194,15 @@ export {
 } from "./components/shell/product-app-shell.js";
 
 export {
+  ContentLayoutTransitionProvider,
+  useContentLayoutTransition,
+  SIDEBAR_COLLAPSE_DURATION_MS,
+  type ContentLayoutTransitionContextValue,
+} from "./components/shell/content-layout-transition-context.js";
+
+export { OverlayScrollbarRoot } from "./components/shell/overlay-scrollbar-root.js";
+
+export {
   TrackedTimerProvider,
   useTrackedTimer,
 } from "./tracked-timer/tracked-timer-context.js";
@@ -251,6 +260,7 @@ export {
 export { sidePanelItemClass } from "./content/side-panel-styles.js";
 
 export {
+  CONTEXT_PANEL_COLLAPSE_DURATION_MS,
   ResizableContextPanel,
   type ResizableContextPanelProps,
 } from "./components/shell/resizable-context-panel.js";
@@ -264,6 +274,11 @@ export {
   ContentSidePanelList,
   ContentSidePanelEmpty,
 } from "./components/content/content-side-panel-list.js";
+
+export {
+  ContentSidePanelShell,
+  type ContentSidePanelShellProps,
+} from "./components/content/content-side-panel-shell.js";
 
 export {
   buildInboxEmailListItem,
@@ -1389,6 +1404,10 @@ export {
   FinanceInvoiceDetailDocument,
   type FinanceInvoiceDetailDocumentProps,
 } from "./components/finance/finance-invoice-detail-document.js";
+export {
+  FinanceSyncIcon,
+  type FinanceSyncIconProps,
+} from "./components/finance/finance-sync-icon.js";
 
 export {
   FINANCE_INVOICE_STATUS_OPTIONS,
@@ -1923,6 +1942,26 @@ export {
 } from "./components/list-nav/list-board-view-shell.js";
 
 export {
+  OVERLAY_SCROLLBAR_LEGEND_SCROLL_CLASS,
+  OVERLAY_SCROLLBAR_MIN_THUMB_PX,
+  OVERLAY_SCROLLBAR_OPT_OUT_ATTR,
+  OVERLAY_SCROLLBAR_THUMB_WIDTH_PX,
+  computeOverlayScrollbarFixedBox,
+  computeOverlayScrollbarThumb,
+  resolveOverlayScrollbarTarget,
+  resolveScrollEventTarget,
+  shouldTrackOverlayScrollbar,
+  type OverlayScrollbarFixedBox,
+  type OverlayScrollbarThumbInput,
+  type OverlayScrollbarThumbMetrics,
+} from "./list-nav/overlay-scrollbar.js";
+
+export {
+  OVERLAY_SCROLLBAR_IDLE_MS,
+  useOverlayScrollbar,
+} from "./list-nav/use-overlay-scrollbar.js";
+
+export {
   TaskItemRow,
   type TaskItemRowProps,
   type TaskItemRowTask,
@@ -2020,6 +2059,14 @@ export {
   normalizeProjectKey,
   type TaskProjectChangeRedirectInput,
 } from "./projects/project-key.js";
+
+export {
+  DEFAULT_PROJECT_KEY_COLUMN_CH,
+  PROJECT_KEY_COLUMN_CH_SLACK,
+  computeProjectKeyColumnCh,
+  projectKeyColumnCssVars,
+  type ProjectKeyColumnWidthSource,
+} from "./projects/project-key-column-width.js";
 
 export {
   ProjectLettersSectionView,
@@ -3143,8 +3190,10 @@ export {
 export { useContentSidePanelToggleShortcut } from "./content/use-content-side-panel-toggle-shortcut.js";
 
 export {
+  TITLE_RENAME_EVENT,
   isTitleRenameShortcut,
   focusAndSelectTitleInput,
+  installTitleRenameShortcutListeners,
   useTitleRenameShortcut,
 } from "./shortcuts/title-rename-shortcut.js";
 
@@ -3193,6 +3242,18 @@ export {
   isContentEditModeActive,
   isContentPreviewModeActive,
 } from "./content/content-view-mode.js";
+
+export {
+  FORCE_CONTENT_PREVIEW_EVENT,
+  TOGGLE_CONTENT_VIEW_MODE_EVENT,
+  installContentViewModeShortcutListeners,
+  isForceContentPreviewShortcut,
+  isToggleContentViewModeShortcut,
+  registerContentViewModeToggle,
+  registerForceContentPreview,
+} from "./content/content-view-mode-shortcut.js";
+
+export { useContentViewModeShortcut } from "./content/use-content-view-mode-shortcut.js";
 
 export {
   CONTENT_PREVIEW_SCROLL_SELECTOR,
@@ -3286,6 +3347,7 @@ export {
 } from "./list-nav/keyboard-nav-item.js";
 export {
   stepListKeyboardIndex,
+  resolveListKeyboardStepTarget,
   flattenGroupedListItemIds,
   type ListKeyboardNavDirection,
 } from "./list-nav/list-keyboard-nav-index.js";
@@ -3298,11 +3360,18 @@ export {
   LIST_KEYBOARD_NAV_ACTIVE_ZONE_ATTR,
   isEntitySectionListPathname,
   isInboxPathname,
+  isInboxListKeyboardPathname,
   getDefaultListKeyboardNavZone,
+  getListKeyboardNavSurfaceKey,
+  isTasksListKeyboardPathname,
   shouldAutoSwitchJkToMainList,
+  resolveZonePolicy,
+  readCalendarPageModeFromDocument,
   filterListKeyboardNavZonesForTab,
   type ListKeyboardNavZone,
   type ApplyListKeyboardNavZoneOptions,
+  type ResolveZonePolicyFlags,
+  type ListKeyboardZonePolicy,
 } from "./list-nav/list-keyboard-nav-zone.js";
 export {
   shouldHandleListKeyboardNavigation,
@@ -3324,6 +3393,10 @@ export {
   isKeyboardNavHighlighted,
   type ListKeyboardNavigationRegistration,
 } from "./components/list-nav/list-keyboard-navigation-provider.js";
+export {
+  ListKeyboardNavMountGate,
+  useListKeyboardNavMountGate,
+} from "./list-nav/list-keyboard-nav-mount-gate.js";
 
 export { SkeletonBlock } from "./components/skeletons/skeleton-block.js";
 export {

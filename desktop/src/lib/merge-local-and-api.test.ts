@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   apiFillSourceForColdStart,
+  fillMissingAgentInboxApprovedAtFromApi,
   fillMissingCodebaseFieldsFromApi,
   fillMissingDueDatesFromApi,
   fillMissingLinksFromApi,
@@ -60,6 +61,22 @@ test("mergeLocalAndApiByUpdatedAt prefers newer API row", () => {
     [{ id: "1", updatedAt: "2026-01-02T00:00:00.000Z", title: "api" }],
   );
   assert.equal(merged[0]?.title, "api");
+});
+
+test("fillMissingAgentInboxApprovedAtFromApi copies approval when local reverted", () => {
+  const filled = fillMissingAgentInboxApprovedAtFromApi(
+    [{ id: "1", agentInboxApprovedAt: null }],
+    [{ id: "1", agentInboxApprovedAt: "2026-08-28T10:00:00.000Z" }],
+  );
+  assert.equal(filled[0]?.agentInboxApprovedAt, "2026-08-28T10:00:00.000Z");
+});
+
+test("fillMissingAgentInboxApprovedAtFromApi keeps local approval when present", () => {
+  const filled = fillMissingAgentInboxApprovedAtFromApi(
+    [{ id: "1", agentInboxApprovedAt: "2026-08-28T09:00:00.000Z" }],
+    [{ id: "1", agentInboxApprovedAt: "2026-08-28T10:00:00.000Z" }],
+  );
+  assert.equal(filled[0]?.agentInboxApprovedAt, "2026-08-28T09:00:00.000Z");
 });
 
 test("fillMissingDueDatesFromApi copies scheduling when local omitted due date", () => {

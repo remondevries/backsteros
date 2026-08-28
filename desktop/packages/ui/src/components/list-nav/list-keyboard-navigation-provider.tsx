@@ -16,7 +16,9 @@ import {
 } from "react";
 
 import {
+  getLastHoveredKeyboardNavItemId,
   installKeyboardNavHoverModalityListeners,
+  isKeyboardNavHoverSuppressed,
   resolveListKeyboardAnchorId,
   setKeyboardNavMouseResumeHandler,
   suppressKeyboardNavHover,
@@ -28,16 +30,19 @@ import {
   focusListKeyboardNavItem,
   scrollKeyboardNavItemIntoView,
 } from "../../list-nav/keyboard-nav-item.js";
-import { stepListKeyboardIndex } from "../../list-nav/list-keyboard-nav-index.js";
+import { resolveListKeyboardStepTarget } from "../../list-nav/list-keyboard-nav-index.js";
+import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
+import { isListKeyboardNavContainerVisible } from "../../list-nav/list-keyboard-nav-visibility.js";
 import {
-  getDefaultListKeyboardNavZone,
+  getListKeyboardNavSurfaceKey,
   getListKeyboardNavTabDirection,
   filterListKeyboardNavZonesForTab,
   LIST_KEYBOARD_NAV_CONTENT_PRIORITY,
   LIST_KEYBOARD_NAV_ZONE_ORDER,
+  readCalendarPageModeFromDocument,
   resolveActiveListKeyboardNavZone,
   resolveListKeyboardNavTabTargetZone,
-  shouldAutoSwitchJkToMainList,
+  resolveZonePolicy,
   shouldHandleListKeyboardZoneTab,
   type ApplyListKeyboardNavZoneOptions,
   type ListKeyboardNavZone,
@@ -154,12 +159,7 @@ function useListKeyboardNavigationContext(): ListKeyboardNavigationContextValue 
 function isRegistrationVisible(
   registration: ListKeyboardNavigationRegistration,
 ): boolean {
-  const container = registration.containerRef.current;
-  if (!container || !container.isConnected) {
-    return false;
-  }
-
-  return container.getClientRects().length > 0;
+  return isListKeyboardNavContainerVisible(registration.containerRef.current);
 }
 
 function hasListItems(
@@ -183,8 +183,9 @@ function pickBestRegistrationInZone(
     return null;
   }
 
+  // Equal priority → prefer the most recently registered list (warm flip).
   return visible.reduce((best, current) =>
-    current.priority > best.priority ? current : best,
+    current.priority >= best.priority ? current : best,
   );
 }
 
@@ -219,7 +220,7 @@ export function pickActiveListKeyboardRegistration(
   }
 
   return visible.reduce((best, current) =>
-    current.priority > best.priority ? current : best,
+    current.priority >= best.priority ? current : best,
   );
 }
 
@@ -229,21 +230,35 @@ function resolveListKeyboardRegistrationForNavigation(
   preferSidepanelForJk: boolean,
   pathname: string,
 ): ListKeyboardNavigationRegistration | null {
-  const main = pickBestRegistrationInZone(registrations, "main");
-  const zone = activeZone ?? "sidepanel";
+  const policy = resolveZonePolicy(pathname, {
+    calendarPageMode: readCalendarPageModeFromDocument(),
+    preferSidepanelForJk,
+    activeZone,
+    hasMainList: pickBestRegistrationInZone(registrations, "main") != null,
+  });
 
-  if (
-    main &&
-    zone === "sidepanel" &&
-    !preferSidepanelForJk &&
-    shouldAutoSwitchJkToMainList(pathname)
-  ) {
-    return main;
-  }
-
-  const inZone = pickBestRegistrationInZone(registrations, zone);
+  const inZone = pickBestRegistrationInZone(registrations, policy.jkZone);
   if (inZone) {
     return inZone;
+  }
+
+  // Warm flip left jkZone empty (e.g. sidepanel preference after leaving
+  // inbox). Fall through to the path default, then any visible list.
+  if (policy.jkZone !== policy.defaultZone) {
+    const byDefault = pickBestRegistrationInZone(
+      registrations,
+      policy.defaultZone,
+    );
+    if (byDefault) {
+      return byDefault;
+    }
+  }
+
+  if (policy.autoSwitchJkToMain && policy.jkZone !== "main") {
+    const main = pickBestRegistrationInZone(registrations, "main");
+    if (main) {
+      return main;
+    }
   }
 
   return pickActiveListKeyboardRegistration(registrations, activeZone);
@@ -278,6 +293,8 @@ function syncActiveZoneToAvailableRegistrations(
      * steal focus from the terminal by activating the projects rail.
      */
     activate?: boolean;
+    /** Land on the first row after a keep-alive surface reclaim. */
+    landAtStart?: boolean;
   },
 ): void {
   const available = getAvailableKeyboardNavZones(registrations);
@@ -290,6 +307,7 @@ function syncActiveZoneToAvailableRegistrations(
   applyActiveZone(zone, {
     preferSidepanelForJk: shouldActivate && zone === "sidepanel",
     activate: shouldActivate,
+    landAtStart: shouldActivate && options?.landAtStart === true,
   });
 }
 
@@ -299,6 +317,20 @@ function clearHighlightsExceptZone(
 ): void {
   for (const registration of registrations) {
     if (registration.zone === zone) {
+      continue;
+    }
+
+    registration.setHighlightedId(null);
+  }
+}
+
+/** Drop highlights on every list except the one that now owns the keys. */
+function clearHighlightsExceptRegistration(
+  registrations: ListKeyboardNavigationRegistration[],
+  keep: ListKeyboardNavigationRegistration,
+): void {
+  for (const registration of registrations) {
+    if (registration.id === keep.id) {
       continue;
     }
 
@@ -327,7 +359,7 @@ function activateListKeyboardRegistration(
   registration: ListKeyboardNavigationRegistration,
   highlightItemId?: string | null,
 ): void {
-  clearHighlightsExceptZone(registrations, registration.zone);
+  clearHighlightsExceptRegistration(registrations, registration);
   focusListKeyboardRegistration(registration, highlightItemId);
 }
 
@@ -401,11 +433,13 @@ export function ListKeyboardNavigationProvider({
   const preferSidepanelForJkRef = useRef(false);
   const pendingActivateZoneRef = useRef<ListKeyboardNavZone | null>(null);
   const pendingActivateHighlightItemIdRef = useRef<string | null>(null);
+  const pendingActivateLandAtStartRef = useRef(false);
   const [activeZone, setActiveZoneState] = useState<ListKeyboardNavZone | null>(
     null,
   );
   const pathnameRef = useLatestRef(pathname);
   const lastPathnameZoneRef = useRef<ListKeyboardNavZone | null>(null);
+  const lastSurfaceKeyRef = useRef<string | null>(null);
 
   const applyActiveZone = useCallback(
     (zone: ListKeyboardNavZone, options?: ApplyListKeyboardNavZoneOptions) => {
@@ -419,22 +453,30 @@ export function ListKeyboardNavigationProvider({
           registrationsRef.current,
           zone,
         );
+        const landAtStart = options.landAtStart === true;
         if (registration) {
           pendingActivateZoneRef.current = null;
           pendingActivateHighlightItemIdRef.current = null;
+          pendingActivateLandAtStartRef.current = false;
+          const highlightItemId = landAtStart
+            ? (registration.getItemIds()[0] ?? null)
+            : options.highlightItemId;
           activateListKeyboardRegistration(
             registrationsRef.current,
             registration,
-            options.highlightItemId,
+            highlightItemId,
           );
         } else {
           pendingActivateZoneRef.current = zone;
-          pendingActivateHighlightItemIdRef.current =
-            options.highlightItemId ?? null;
+          pendingActivateLandAtStartRef.current = landAtStart;
+          pendingActivateHighlightItemIdRef.current = landAtStart
+            ? null
+            : (options.highlightItemId ?? null);
         }
       } else {
         pendingActivateZoneRef.current = null;
         pendingActivateHighlightItemIdRef.current = null;
+        pendingActivateLandAtStartRef.current = false;
       }
     },
     [],
@@ -443,19 +485,41 @@ export function ListKeyboardNavigationProvider({
   const clearHighlights = useCallback(() => {
     pendingActivateZoneRef.current = null;
     pendingActivateHighlightItemIdRef.current = null;
+    pendingActivateLandAtStartRef.current = false;
     preferSidepanelForJkRef.current = false;
     clearAllListKeyboardHighlights(registrationsRef.current);
   }, []);
 
   useEffect(() => {
-    const preferredZone = getDefaultListKeyboardNavZone(pathname);
+    const preferredZone = resolveZonePolicy(pathname).defaultZone;
+    const surfaceKey = getListKeyboardNavSurfaceKey(pathname);
+    // Soft transitions that keep the same list mounted (inbox → email,
+    // journal day → journal day) must not re-activate / scroll the list.
+    // Crossing keep-alive surfaces (journal → inbox, inbox → tasks) must
+    // re-claim j/k even when zones look similar.
+    if (
+      lastPathnameZoneRef.current === preferredZone &&
+      lastSurfaceKeyRef.current === surfaceKey
+    ) {
+      return;
+    }
+    const surfaceChanged =
+      lastSurfaceKeyRef.current != null &&
+      lastSurfaceKeyRef.current !== surfaceKey;
     lastPathnameZoneRef.current = preferredZone;
+    lastSurfaceKeyRef.current = surfaceKey;
+    // Drop inbox/journal sidepanel preference so the new surface can own j/k.
+    preferSidepanelForJkRef.current = false;
+    if (surfaceChanged) {
+      clearAllListKeyboardHighlights(registrationsRef.current);
+    }
 
     const frame = requestAnimationFrame(() => {
       syncActiveZoneToAvailableRegistrations(
         registrationsRef.current,
         preferredZone,
         applyActiveZone,
+        { landAtStart: surfaceChanged },
       );
     });
 
@@ -531,19 +595,24 @@ export function ListKeyboardNavigationProvider({
           pendingZone &&
           zoneHasNavigableItems(registrationsRef.current, pendingZone)
         ) {
+          const landAtStart = pendingActivateLandAtStartRef.current;
           const pendingHighlightItemId =
             pendingActivateHighlightItemIdRef.current;
           pendingActivateZoneRef.current = null;
           pendingActivateHighlightItemIdRef.current = null;
+          pendingActivateLandAtStartRef.current = false;
           const pendingRegistration = pickBestRegistrationInZone(
             registrationsRef.current,
             pendingZone,
           );
           if (pendingRegistration) {
+            const highlightItemId = landAtStart
+              ? (pendingRegistration.getItemIds()[0] ?? null)
+              : pendingHighlightItemId;
             activateListKeyboardRegistration(
               registrationsRef.current,
               pendingRegistration,
-              pendingHighlightItemId,
+              highlightItemId,
             );
           }
           return;
@@ -725,7 +794,23 @@ function ListKeyboardNavigationGlobalListener({
         return;
       }
 
-      const itemIds = registration.getItemIds();
+      // Side panel is active and has a list — never steal the first j/k to
+      // main content (org/contact entity tabs previously auto-switched).
+      let navigationRegistration = registration;
+      if (
+        activeZoneRef.current === "sidepanel" &&
+        registration.zone !== "sidepanel"
+      ) {
+        const sidepanel = pickBestRegistrationInZone(
+          registrationsRef.current,
+          "sidepanel",
+        );
+        if (sidepanel) {
+          navigationRegistration = sidepanel;
+        }
+      }
+
+      const itemIds = navigationRegistration.getItemIds();
       if (itemIds.length === 0) {
         return;
       }
@@ -736,7 +821,7 @@ function ListKeyboardNavigationGlobalListener({
       );
       const boardDirection = boardKeyboardNavDirection(event.key);
       const isBoardNav = Boolean(
-        registration.resolveNextItemId &&
+        navigationRegistration.resolveNextItemId &&
           boardDirection &&
           shouldHandleBoardKeyboardNavigation(event),
       );
@@ -745,9 +830,12 @@ function ListKeyboardNavigationGlobalListener({
 
       if (
         isNavigationIntent &&
-        registration.zone === "main" &&
+        navigationRegistration.zone === "main" &&
         activeZoneRef.current !== "main" &&
-        shouldAutoSwitchJkToMainList(pathnameRef.current)
+        activeZoneRef.current !== "sidepanel" &&
+        resolveZonePolicy(pathnameRef.current, {
+          calendarPageMode: readCalendarPageModeFromDocument(),
+        }).autoSwitchJkToMain
       ) {
         event.preventDefault();
         event.stopPropagation();
@@ -755,26 +843,29 @@ function ListKeyboardNavigationGlobalListener({
         applyActiveZone("main", { activate: true });
         if (isActivate) {
           const targetId =
-            registration.getSelectedId() ??
-            (itemIds.length > 0 ? itemIds[0] : null);
+            resolveListKeyboardAnchorId(
+              navigationRegistration.getHighlightedId(),
+              navigationRegistration.getSelectedId(),
+              itemIds,
+            ) ?? (itemIds.length > 0 ? itemIds[0] : null);
           if (targetId && itemIds.includes(targetId)) {
-            registration.onActivate(targetId);
+            navigationRegistration.onActivate(targetId);
           }
         }
         return;
       }
 
-      const highlightedId = registration.getHighlightedId();
-      const selectedId = registration.getSelectedId();
-      const anchorId = resolveListKeyboardAnchorId(
-        highlightedId,
-        selectedId,
-        itemIds,
-      );
+      const highlightedId = navigationRegistration.getHighlightedId();
+      const selectedId = navigationRegistration.getSelectedId();
 
-      if (registration.resolveNextItemId) {
+      if (navigationRegistration.resolveNextItemId) {
         if (boardDirection && isBoardNav) {
-          const nextItemId = registration.resolveNextItemId({
+          const anchorId = resolveListKeyboardAnchorId(
+            highlightedId,
+            selectedId,
+            itemIds,
+          );
+          const nextItemId = navigationRegistration.resolveNextItemId({
             key: event.key,
             currentId: anchorId,
             itemIds,
@@ -794,22 +885,35 @@ function ListKeyboardNavigationGlobalListener({
           event.preventDefault();
           event.stopPropagation();
           suppressKeyboardNavHover();
-          registration.setHighlightedId(nextItemId);
-          scrollHighlightedItem(registration, nextItemId);
+          navigationRegistration.setHighlightedId(nextItemId);
+          scrollHighlightedItem(navigationRegistration, nextItemId);
           return;
         }
       } else if (direction && isListNav) {
-        const currentIndex = anchorId != null ? itemIds.indexOf(anchorId) : -1;
-        const nextIndex = stepListKeyboardIndex(
-          currentIndex,
+        // Hover modality tracks the row under the pointer; use it as the j/k
+        // step origin when nothing is keyboard-highlighted yet (legacy pickup).
+        const hoverAnchorId =
+          highlightedId == null && !isKeyboardNavHoverSuppressed()
+            ? getLastHoveredKeyboardNavItemId()
+            : null;
+        const nextItemId = resolveListKeyboardStepTarget({
           direction,
-          itemIds.length,
-        );
-        const nextItemId = itemIds[nextIndex];
+          highlightedId,
+          selectedId,
+          itemIds,
+          hoverAnchorId,
+        });
         if (!nextItemId) {
           return;
         }
 
+        // Same target as current highlight: still enter keyboard mode when
+        // re-anchoring from a hovered row so the next j/k can step further.
+        const anchorId = resolveListKeyboardAnchorId(
+          highlightedId,
+          selectedId,
+          itemIds,
+        );
         if (nextItemId === highlightedId && anchorId === highlightedId) {
           return;
         }
@@ -817,8 +921,8 @@ function ListKeyboardNavigationGlobalListener({
         event.preventDefault();
         event.stopPropagation();
         suppressKeyboardNavHover();
-        registration.setHighlightedId(nextItemId);
-        scrollHighlightedItem(registration, nextItemId);
+        navigationRegistration.setHighlightedId(nextItemId);
+        scrollHighlightedItem(navigationRegistration, nextItemId);
         return;
       }
 
@@ -826,14 +930,14 @@ function ListKeyboardNavigationGlobalListener({
         return;
       }
 
-      const activateItemIds = registration.getItemIds();
+      const activateItemIds = navigationRegistration.getItemIds();
       if (activateItemIds.length === 0) {
         return;
       }
 
       const targetId = resolveListKeyboardAnchorId(
-        registration.getHighlightedId(),
-        registration.getSelectedId(),
+        navigationRegistration.getHighlightedId(),
+        navigationRegistration.getSelectedId(),
         activateItemIds,
       );
       if (!targetId || !activateItemIds.includes(targetId)) {
@@ -842,7 +946,7 @@ function ListKeyboardNavigationGlobalListener({
 
       event.preventDefault();
       event.stopPropagation();
-      registration.onActivate(targetId);
+      navigationRegistration.onActivate(targetId);
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
@@ -885,6 +989,8 @@ export function useListKeyboardNavigation({
 }): { highlightedId: string | null } {
   const context = useListKeyboardNavigationContext();
   const { activeZone, register } = context;
+  const mountGate = useListKeyboardNavMountGate();
+  const resolvedEnabled = enabled && mountGate;
   const resolvedPriority =
     priority ??
     (zone === "sidepanel"
@@ -894,6 +1000,14 @@ export function useListKeyboardNavigation({
         : LIST_KEYBOARD_NAV_MAIN_PRIORITY);
 
   const [manualHighlight, setManualHighlight] = useState<string | null>(null);
+
+  // Drop stale j/k highlight when the keep-alive pane hides so a return visit
+  // starts at the top instead of the previous row.
+  useEffect(() => {
+    if (!mountGate) {
+      setManualHighlight(null);
+    }
+  }, [mountGate]);
   const itemIdsRef = useLatestRef(itemIds);
   const selectedIdRef = useLatestRef(selectedId);
   const onNavigateRef = useLatestRef(onNavigate);
@@ -912,7 +1026,12 @@ export function useListKeyboardNavigation({
       // Escape / clear selection — keep j/k anchored on the row that was open
       // instead of falling through to the top of the list.
       setManualHighlight(previous);
-    } else if (manualHighlight !== null) {
+    } else if (
+      manualHighlight !== null &&
+      selectedId != null &&
+      manualHighlight !== selectedId
+    ) {
+      // Navigated to a different row — drop the stale keyboard ring.
       setManualHighlight(null);
     }
   }
@@ -930,8 +1049,13 @@ export function useListKeyboardNavigation({
   // the row — which paints the browser's blue focus ring and looks "focused"
   // even when attention is in the detail pane. Blur the row; keep the list
   // container focused so j/k still works without a misleading ring.
+  //
+  // Skip when the highlight is already on the selected row (e.g. inbox claims
+  // the side panel and lands j/k on the open item) — blurring would fight
+  // activate() and leave no visible keyboard focus.
   useEffect(() => {
     if (selectedId == null || activeZone !== zone) return;
+    if (manualHighlight != null && manualHighlight === selectedId) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -954,10 +1078,10 @@ export function useListKeyboardNavigation({
     // j/k focus is scheduled in rAF; catch that too after Enter/open.
     const raf = requestAnimationFrame(blurRowFocus);
     return () => cancelAnimationFrame(raf);
-  }, [activeZone, containerRef, selectedId, zone]);
+  }, [activeZone, containerRef, manualHighlight, selectedId, zone]);
 
   useEffect(() => {
-    if (!enabled || itemIds.length === 0) {
+    if (!resolvedEnabled || itemIds.length === 0) {
       return;
     }
 
@@ -977,7 +1101,7 @@ export function useListKeyboardNavigation({
     });
   }, [
     containerRef,
-    enabled,
+    resolvedEnabled,
     highlightedIdRef,
     itemIds.length,
     itemIdsRef,

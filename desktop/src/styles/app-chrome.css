@@ -1,45 +1,48 @@
 /*
  * Overlay titlebar (macOS): keep native traffic lights, no system title strip.
- * Inset/height match the 44px content tabs row so lights sit on that baseline.
+ * Tab chrome is sized so 30px pills center on the traffic-light baseline
+ * (`trafficLightPosition.y: 24` → visual center ~30).
  * When the menu sidebar is expanded, the history toolbar carries the inset.
  * When collapsed, the tabs bar becomes the leftmost chrome and needs the same inset.
  */
 .bos-product-shell {
   /* Traffic lights at x:16 + ~54px cluster + gap → clear the titlebar controls. */
   --bos-traffic-light-inset: 88px;
-  /* Matches `.content-frame` top margin — keeps tabs vertically centered in chrome. */
-  --bos-chrome-gutter: 8px;
+  /* Top empty band above the tab/history controls (avoid padding-top — clips in WKWebView). */
+  --bos-chrome-gutter: 12px;
+  /* Control band height — tight around 30px tab pills (was 44px). */
+  --bos-tabs-band-height: 36px;
 }
 
 .bos-product-shell .app-side-panel-history-toolbar {
-  min-height: 44px;
+  min-height: var(--bos-tabs-band-height);
   margin-bottom: 0;
   padding-left: var(--bos-traffic-light-inset);
 }
 
 /*
- * Nav visible: extend the tabs row to match sidebar chrome (8px sidebar-inner
- * padding + 44px history toolbar). Pin tab controls to the bottom 44px band so
- * pills get an 8px top gutter without padding-top (which clipped in WKWebView).
+ * Nav visible: extend the tabs row to match sidebar chrome (gutter + band).
+ * Pin tab controls to the bottom band so pills get a top gutter without
+ * padding-top (which clipped in WKWebView).
  */
 .bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-bar-row {
   box-sizing: border-box;
-  height: calc(44px + var(--bos-chrome-gutter));
-  min-height: calc(44px + var(--bos-chrome-gutter));
+  height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
+  min-height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
   max-height: none;
   align-items: flex-end;
   padding-top: 0;
 }
 
 .bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-bar {
-  height: 44px;
+  height: var(--bos-tabs-band-height);
   flex: 1;
   min-width: 0;
 }
 
 .bos-product-shell:not(.is-sidebar-collapsed) .content-tabs-timer {
   align-self: flex-end;
-  height: 44px;
+  height: var(--bos-tabs-band-height);
 }
 
 .bos-product-shell:not(.is-sidebar-collapsed) .content-tab {
@@ -67,23 +70,46 @@
 }
 
 .bos-product-shell.is-sidebar-collapsed .content-tabs-bar-row {
+  box-sizing: border-box;
+  /* Same gutter + band as expanded chrome so pills share the traffic-light baseline. */
+  height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
+  min-height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
+  max-height: none;
+  align-items: flex-end;
+  padding-top: 0;
   padding-left: var(--bos-traffic-light-inset);
 }
 
 .bos-product-shell.is-sidebar-collapsed .content-tabs-bar {
   /* Row carries the traffic-light inset; history + tabs share that space. */
+  height: var(--bos-tabs-band-height);
   padding-left: 0;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tabs-timer {
+  align-self: flex-end;
+  height: var(--bos-tabs-band-height);
 }
 
 .bos-product-shell.is-sidebar-collapsed .content-tabs-history-toolbar {
   padding-left: 0;
+  align-self: flex-end;
+  height: var(--bos-tabs-band-height);
+  display: flex;
+  align-items: center;
+}
+
+.bos-product-shell.is-sidebar-collapsed .content-tab {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /* Native fullscreen hides traffic lights — use the same 8px gutter as the
    content card (top / left / right), not the traffic-light inset.
    No bottom padding: content-frame’s top margin already gaps tabs ↔ card. */
 .bos-product-shell.is-window-fullscreen {
-  --bos-fullscreen-chrome-inset: var(--bos-chrome-gutter);
+  --bos-fullscreen-chrome-inset: 8px;
+  --bos-chrome-gutter: var(--bos-fullscreen-chrome-inset);
 }
 
 .bos-product-shell.is-window-fullscreen .app-side-panel-history-toolbar {
@@ -93,8 +119,8 @@
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
   .content-tabs-bar-row {
   box-sizing: border-box;
-  height: calc(44px + var(--bos-fullscreen-chrome-inset));
-  min-height: calc(44px + var(--bos-fullscreen-chrome-inset));
+  height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
+  min-height: calc(var(--bos-tabs-band-height) + var(--bos-chrome-gutter));
   max-height: none;
   align-items: flex-end;
   padding: 0 var(--bos-fullscreen-chrome-inset);
@@ -102,17 +128,21 @@
 
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-timer {
   align-self: flex-end;
-  height: 44px;
+  height: var(--bos-tabs-band-height);
 }
 
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed .content-tabs-bar {
-  height: 44px;
+  height: var(--bos-tabs-band-height);
   padding-left: 0;
 }
 
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed
   .content-tabs-history-toolbar {
   padding-left: 0;
+  align-self: flex-end;
+  height: var(--bos-tabs-band-height);
+  display: flex;
+  align-items: center;
 }
 
 .bos-product-shell.is-window-fullscreen.is-sidebar-collapsed

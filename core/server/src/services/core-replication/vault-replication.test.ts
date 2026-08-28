@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, utimes, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -8,6 +8,10 @@ import {
   applyVaultFileDelete,
   applyVaultFilePut,
   listMarkdownFiles,
+  markVaultMarkdownDirty,
+  resetVaultListingStateForTests,
+  resolveLocalMarkdownListing,
+  writeVaultManifest,
 } from "./vault-replication.js";
 
 describe("vault-replication filesystem", () => {
@@ -22,6 +26,51 @@ describe("vault-replication filesystem", () => {
     assert.deepEqual(
       files.map((f) => f.relativePath),
       ["Journal/day.md"],
+    );
+  });
+
+  it("reuses the manifest on a no-change tick (no full walk)", async () => {
+    resetVaultListingStateForTests();
+    const root = await mkdtemp(path.join(tmpdir(), "vault-repl-manifest-"));
+    await mkdir(path.join(root, "Journal"), { recursive: true });
+    await writeFile(path.join(root, "Journal", "day.md"), "# hi\n");
+    await writeVaultManifest(root, {
+      "Journal/day.md": { mtimeMs: 1_700_000_000_000, size: 5 },
+      "Knowledge Base/ghost.md": { mtimeMs: 1, size: 1 },
+    });
+
+    const listing = await resolveLocalMarkdownListing(root, {
+      "Journal/day.md": { mtimeMs: 1_700_000_000_000, size: 5 },
+      "Knowledge Base/ghost.md": { mtimeMs: 1, size: 1 },
+    });
+    assert.equal(listing.scanned, "manifest");
+    assert.deepEqual(
+      listing.files.map((f) => f.relativePath),
+      ["Journal/day.md", "Knowledge Base/ghost.md"],
+    );
+  });
+
+  it("stats only dirty paths instead of walking the vault", async () => {
+    resetVaultListingStateForTests();
+    const root = await mkdtemp(path.join(tmpdir(), "vault-repl-dirty-"));
+    await mkdir(path.join(root, "Journal"), { recursive: true });
+    const dayPath = path.join(root, "Journal", "day.md");
+    await writeFile(dayPath, "# edited\n");
+    const info = await stat(dayPath);
+
+    const previous = {
+      "Journal/day.md": { mtimeMs: 1, size: 1 },
+      "Journal/other.md": { mtimeMs: 2, size: 2 },
+    };
+    markVaultMarkdownDirty("Journal/day.md");
+    const listing = await resolveLocalMarkdownListing(root, previous);
+    assert.equal(listing.scanned, "dirty");
+    const day = listing.files.find((f) => f.relativePath === "Journal/day.md");
+    assert.ok(day);
+    assert.equal(day.size, info.size);
+    assert.equal(
+      listing.files.find((f) => f.relativePath === "Journal/other.md")?.size,
+      2,
     );
   });
 

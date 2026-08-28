@@ -528,5 +528,47 @@
 
 .task-properties-inline__tracked-time {
   display: flex;
+  flex-shrink: 0;
   justify-content: flex-start;
+  align-items: center;
+}
+
+.task-properties-inline__tracked-time .tracked-time-pill-wrap {
+  gap: 4px;
+}
+
+/* Match `.property-dropdown-trigger--inline-chip` chrome in the chips row. */
+.task-properties-inline__tracked-time .tracked-time-pill {
+  gap: 5px;
+  min-height: 0;
+  padding: 5px 8px 5px 5px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.task-properties-inline__tracked-time .tracked-time-pill.is-running {
+  border-color: color-mix(in srgb, #7ee2a8 45%, transparent);
+  background: color-mix(in srgb, #7ee2a8 8%, transparent);
+}
+
+.task-properties-inline__tracked-time .tracked-time-pill__toggle {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.task-properties-inline__tracked-time .tracked-time-pill__toggle-icon,
+.task-properties-inline__tracked-time .tracked-time-pill__toggle svg {
+  transform: scale(0.9);
+  transform-origin: center;
+}
+
+.task-properties-inline__tracked-time .tracked-time-pill__hint {
+  font-size: 11px;
+  line-height: 1.3;
 }

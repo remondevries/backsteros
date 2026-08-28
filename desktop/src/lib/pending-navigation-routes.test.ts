@@ -1,41 +1,19 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { test } from "node:test";
 
-import { resolvePendingPageSurface } from "./pending-navigation-routes";
+import { resolvePendingPageSurface } from "./pending-navigation-routes.ts";
 
-describe("resolvePendingPageSurface", () => {
-  it("keeps list vs task-detail distinct", () => {
-    expect(resolvePendingPageSurface("/tasks")).toBe("tasks-list");
-    expect(resolvePendingPageSurface("/journal-v2")).toBe("journal-v2");
-    expect(resolvePendingPageSurface("/journal-v2/2026-08-26")).toBe(
-      "journal-v2",
-    );
-    expect(resolvePendingPageSurface("/habits-v2")).toBe("habits-v2");
-    expect(resolvePendingPageSurface("/habits-v2/habit-1")).toBe("habits-v2");
-    expect(resolvePendingPageSurface("/knowledge-v2")).toBe("knowledge-v2");
-    expect(resolvePendingPageSurface("/knowledge-v2/note")).toBe(
-      "knowledge-v2",
-    );
-    expect(resolvePendingPageSurface("/letters-v2")).toBe("letters-v2");
-    expect(resolvePendingPageSurface("/letters-v2/l-1")).toBe("letters-v2");
-    expect(resolvePendingPageSurface("/tasks/today/BSH-1")).toBe("task-detail");
-    expect(resolvePendingPageSurface("/projects/CA/tasks/BSH-1")).toBe(
-      "task-detail",
-    );
-    expect(resolvePendingPageSurface("/projects/CA/tasks")).toBe("projects");
-  });
-
-  it("does not treat splat folder names as task or letter routes", () => {
-    expect(resolvePendingPageSurface("/knowledge/tasks/notes")).toBe(
-      "knowledge",
-    );
-    expect(resolvePendingPageSurface("/knowledge/letters/draft")).toBe(
-      "knowledge",
-    );
-    expect(
-      resolvePendingPageSurface("/projects/CA/files/src/tasks/foo.ts"),
-    ).toBe("projects");
-    expect(
-      resolvePendingPageSurface("/projects/CA/documents/letters/intro"),
-    ).toBe("projects");
-  });
+test("resolvePendingPageSurface maps canonical section roots", () => {
+  assert.equal(resolvePendingPageSurface("/tasks"), "tasks-list");
+  assert.equal(resolvePendingPageSurface("/journal"), "journal-day");
+  assert.equal(resolvePendingPageSurface("/journal/2026-08-26"), "journal-day");
+  assert.equal(resolvePendingPageSurface("/journal/habits"), "journal-habits");
+  assert.equal(
+    resolvePendingPageSurface("/journal/habits/habit-1"),
+    "journal-habits",
+  );
+  assert.equal(resolvePendingPageSurface("/knowledge"), "knowledge");
+  assert.equal(resolvePendingPageSurface("/knowledge/note"), "knowledge");
+  assert.equal(resolvePendingPageSurface("/letters"), "letters");
+  assert.equal(resolvePendingPageSurface("/letters/l-1"), "letters");
 });

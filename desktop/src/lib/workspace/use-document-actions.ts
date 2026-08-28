@@ -26,6 +26,7 @@ async function commitInitialDocumentContent(
   const data = await client.requestJson<{
     content: string;
     contentVersion: number;
+    checksum?: string | null;
   }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -34,6 +35,7 @@ async function commitInitialDocumentContent(
   writeDocumentContentCache(documentId, {
     content: data.content,
     contentVersion: data.contentVersion,
+    checksum: data.checksum ?? null,
   });
   return data.contentVersion;
 }

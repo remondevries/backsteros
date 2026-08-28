@@ -1,7 +1,7 @@
 "use client";
 
 import { Command } from "cmdk";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import {
@@ -45,7 +45,7 @@ import {
 import { FinanceSectionNavIcon } from "../finance/finance-side-panel-nav-view.js";
 import { NavigationItemIcon } from "../navigation/navigation-item-icon.js";
 import { SearchNavIcon } from "../shell/sidebar-nav-icons.js";
-import { afterNextPaint } from "../../timing/after-next-paint.js";
+import { dismissInstantCommandOverlay, revealCommandPaletteChrome } from "../../command-palette/conceal-command-palette-chrome.js";
 
 /** Native desktop menus (Tauri) dispatch this when ⌘K / Ctrl+K is pressed. */
 export const TOGGLE_COMMAND_PALETTE_EVENT = "backsteros:toggle-command-palette";
@@ -253,6 +253,23 @@ export function CommandPaletteView({
     setRouteContextOverride((current) => (current != null ? null : current));
   }, [pathname]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      dismissInstantCommandOverlay();
+      return;
+    }
+    // Belt-and-suspenders: never leave the palette open but concealed.
+    revealCommandPaletteChrome();
+    // Drop the sync backdrop once Radix has mounted the real overlay.
+    if (
+      document.querySelector(
+        ".command-overlay:not([data-instant-command-overlay])",
+      )
+    ) {
+      dismissInstantCommandOverlay();
+    }
+  }, [open, mode]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -261,6 +278,13 @@ export function CommandPaletteView({
     let frame = 0;
     let attempts = 0;
     const focusInput = () => {
+      if (
+        document.querySelector(
+          ".command-overlay:not([data-instant-command-overlay])",
+        )
+      ) {
+        dismissInstantCommandOverlay();
+      }
       const input = inputRef.current;
       if (input && document.activeElement !== input) {
         input.focus();
@@ -429,12 +453,9 @@ export function CommandPaletteView({
   function closeAndNavigate(href: string) {
     clearGoLeaderSequence();
     clearGoFinanceChord();
+    // Close before navigate so a sync warm flip cannot paint under the overlay.
+    setOpen(false);
     navigate(href);
-    // Unmount after paint so cmdk teardown does not steal the navigation frame
-    // (same path as search-select and G→letter chords).
-    afterNextPaint(() => {
-      setOpen(false);
-    });
   }
 
   /** `f ` (or lone `f` + Tab) scopes into Finance go destinations. */

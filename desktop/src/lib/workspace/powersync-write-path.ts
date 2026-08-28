@@ -1,4 +1,9 @@
 import type { WorkspacePowerSync } from "./workspace-data-types";
+
+/**
+ * Sole REST dual-write exception while PowerSync is primary — see
+ * {@link taskPatchRequiresRestWrite} in `@backsteros/contracts`.
+ */
 export { taskPatchRequiresRestWrite } from "@backsteros/contracts";
 
 /** When true, entity metadata writes go through PowerSync upload only — no REST dual-write. */

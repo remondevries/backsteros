@@ -90,6 +90,11 @@ export type DesktopAgentChatPanelProps = {
   /** Task status — suppresses Working… when On Hold. */
   taskStatus?: string | null;
   collapsed?: boolean;
+  /**
+   * True while the parent layout is sliding the agent column. Keeps the
+   * collapsed strip mounted through expand so dashed tabs can fade out.
+   */
+  collapseAnimating?: boolean;
   layoutReady?: boolean;
   /**
    * Persists Chat/Terminal preference. `"codebase"` defaults to Terminal;
@@ -152,6 +157,7 @@ export function DesktopAgentChatPanel({
   agentChatId = null,
   taskStatus = null,
   collapsed = false,
+  collapseAnimating = false,
   layoutReady = true,
   viewScope = "rail",
   agentAttachRequest = null,
@@ -186,6 +192,20 @@ export function DesktopAgentChatPanel({
   );
   /** Remount LegendList after expand so row width matches the restored pane. */
   const [transcriptLayoutKey, setTranscriptLayoutKey] = useState(0);
+  /**
+   * Keep the collapsed strip mounted through the expand slide so dashed tabs
+   * can fade out instead of unmounting immediately.
+   */
+  const [collapsedStripMounted, setCollapsedStripMounted] = useState(collapsed);
+  useEffect(() => {
+    if (collapsed) {
+      setCollapsedStripMounted(true);
+      return;
+    }
+    if (!collapseAnimating) {
+      setCollapsedStripMounted(false);
+    }
+  }, [collapsed, collapseAnimating]);
   const [sendError, setSendError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<AgentChatViewMode>(() =>
     readAgentChatViewMode(viewScope),
@@ -644,7 +664,7 @@ export function DesktopAgentChatPanel({
       }`}
       data-agent-chat
     >
-      {!composerOnly && collapsed && onExpand ? (
+      {!composerOnly && collapsedStripMounted && onExpand ? (
         chatOnly ? (
           <button
             type="button"

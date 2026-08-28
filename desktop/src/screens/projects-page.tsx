@@ -347,7 +347,9 @@ function ProjectsPageBody({
   }, [documentPath, projectDocuments]);
 
   const documentContent = useDesktopDocumentContent(
-    selectedDocument?.id ?? null);
+    selectedDocument?.id ?? null,
+    { enabled: keepAliveActive },
+  );
 
   const projectsListView = useMemo(
     () =>
@@ -382,7 +384,7 @@ function ProjectsPageBody({
   const pdfPanel = useLetterPdfPanel(selectedLetter?.id, {
     hasLegacyPdf: hasLivePdf,
     legacyFilename: selectedLetterRecord?.originalFilename,
-    enabled: Boolean(selectedLetter),
+    enabled: keepAliveActive && Boolean(selectedLetter),
   });
 
   useEffect(() => {

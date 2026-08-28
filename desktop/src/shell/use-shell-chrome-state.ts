@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { useChromeShellLocation } from "../lib/shell-route-keep-alive";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useShellLocation } from "../lib/shell-route-keep-alive";
 
 import {
+  CONTEXT_PANEL_COLLAPSE_DURATION_MS,
+  SIDEBAR_COLLAPSE_DURATION_MS,
   shouldHandleGlobalShortcut,
   useBlockBrowserTabFocus,
   useComposeShortcut,
@@ -54,18 +56,83 @@ import type { useShellTabs } from "./use-shell-tabs";
 export function useShellChromeState() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [sidePanelAnimating, setSidePanelAnimating] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarAnimating, setSidebarAnimating] = useState(false);
   const windowFullscreen = useTauriWindowFullscreen();
   const [defaultAssigneeId, setDefaultAssigneeIdState] = useState<string | null>(
     () => getDefaultAssigneeId(),
   );
+  const sidePanelAnimTimerRef = useRef<number | null>(null);
+  const sidePanelAnimRafRef = useRef<number | null>(null);
+  const sidebarAnimTimerRef = useRef<number | null>(null);
+  const sidebarAnimRafRef = useRef<number | null>(null);
 
+  /** `[` — enable width transition for one paint, then flip collapsed. */
   const toggleSidebarCollapsed = useCallback(() => {
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      localStorage.setItem("backsteros:sidebar-visible", String(!next));
-      return next;
+    setSidebarAnimating(true);
+    if (sidebarAnimTimerRef.current != null) {
+      window.clearTimeout(sidebarAnimTimerRef.current);
+      sidebarAnimTimerRef.current = null;
+    }
+    if (sidebarAnimRafRef.current != null) {
+      window.cancelAnimationFrame(sidebarAnimRafRef.current);
+      sidebarAnimRafRef.current = null;
+    }
+    sidebarAnimRafRef.current = window.requestAnimationFrame(() => {
+      sidebarAnimRafRef.current = window.requestAnimationFrame(() => {
+        sidebarAnimRafRef.current = null;
+        setSidebarCollapsed((current) => {
+          const next = !current;
+          localStorage.setItem("backsteros:sidebar-visible", String(!next));
+          return next;
+        });
+        sidebarAnimTimerRef.current = window.setTimeout(() => {
+          sidebarAnimTimerRef.current = null;
+          setSidebarAnimating(false);
+        }, SIDEBAR_COLLAPSE_DURATION_MS);
+      });
     });
+  }, []);
+
+  /** ⇧[ — enable width transition for one paint, then flip collapsed. */
+  const toggleSidePanelCollapsed = useCallback(() => {
+    setSidePanelAnimating(true);
+    if (sidePanelAnimTimerRef.current != null) {
+      window.clearTimeout(sidePanelAnimTimerRef.current);
+      sidePanelAnimTimerRef.current = null;
+    }
+    if (sidePanelAnimRafRef.current != null) {
+      window.cancelAnimationFrame(sidePanelAnimRafRef.current);
+      sidePanelAnimRafRef.current = null;
+    }
+    sidePanelAnimRafRef.current = window.requestAnimationFrame(() => {
+      sidePanelAnimRafRef.current = window.requestAnimationFrame(() => {
+        sidePanelAnimRafRef.current = null;
+        setSidePanelCollapsed((current) => !current);
+        sidePanelAnimTimerRef.current = window.setTimeout(() => {
+          sidePanelAnimTimerRef.current = null;
+          setSidePanelAnimating(false);
+        }, CONTEXT_PANEL_COLLAPSE_DURATION_MS);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sidePanelAnimTimerRef.current != null) {
+        window.clearTimeout(sidePanelAnimTimerRef.current);
+      }
+      if (sidePanelAnimRafRef.current != null) {
+        window.cancelAnimationFrame(sidePanelAnimRafRef.current);
+      }
+      if (sidebarAnimTimerRef.current != null) {
+        window.clearTimeout(sidebarAnimTimerRef.current);
+      }
+      if (sidebarAnimRafRef.current != null) {
+        window.cancelAnimationFrame(sidebarAnimRafRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -101,7 +168,10 @@ export function useShellChromeState() {
     setComposeOpen,
     sidePanelCollapsed,
     setSidePanelCollapsed,
+    sidePanelAnimating,
+    toggleSidePanelCollapsed,
     sidebarCollapsed,
+    sidebarAnimating,
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,
@@ -187,15 +257,15 @@ export function useShellShortcuts({
   setComposeOpen,
   showSidePanel,
   panelPathname,
-  setSidePanelCollapsed,
+  toggleSidePanelCollapsed,
 }: {
   tabs: ReturnType<typeof useShellTabs>;
   setComposeOpen: (open: boolean) => void;
   showSidePanel: boolean;
   panelPathname: string;
-  setSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleSidePanelCollapsed: () => void;
 }) {
-  const location = useChromeShellLocation();
+  const location = useShellLocation();
   const search = location.searchStr;
   const { openSearch, openGo, openFinanceGo, setOpen } =
     useCommandPaletteActions();
@@ -291,7 +361,7 @@ export function useShellShortcuts({
 
   useContentSidePanelToggleShortcut({
     enabled: showSidePanel,
-    onToggle: () => setSidePanelCollapsed((current) => !current),
+    onToggle: toggleSidePanelCollapsed,
   });
 
   useDocumentTreeCreateFolderShortcut({

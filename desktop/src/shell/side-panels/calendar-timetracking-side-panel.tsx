@@ -12,9 +12,9 @@ import {
   buildTimetrackingSidePanelKeyboardItemIds,
   getSelectedTimetrackingSidePanelItemId,
   parseTimetrackingSidePanelItemId,
+  type CalendarPageMode,
 } from "@backsteros/ui";
 
-import { useCalendarPageModeControls } from "../../lib/use-calendar-page-mode";
 import { useDesktopSidePanelListNav } from "../../lib/use-desktop-side-panel-list-nav";
 import { useShellLocation } from "../../lib/shell-route-keep-alive";
 
@@ -24,8 +24,16 @@ function searchParamsFromSearchStr(searchStr: string): URLSearchParams {
   );
 }
 
-export function DesktopCalendarTimetrackingSidePanel() {
-  const { pageMode, handlePageModeChange } = useCalendarPageModeControls();
+/** Timetracking body — chrome owned by DesktopCalendarSidePanel when embedded. */
+export function DesktopCalendarTimetrackingSidePanel({
+  embedded = false,
+  pageMode,
+  onPageModeChange,
+}: {
+  embedded?: boolean;
+  pageMode: CalendarPageMode;
+  onPageModeChange: (mode: CalendarPageMode) => void;
+}) {
   const navigate = useNavigate();
   const { searchStr: rawSearchStr } = useShellLocation();
   const searchStr = rawSearchStr ?? "";
@@ -123,7 +131,7 @@ export function DesktopCalendarTimetrackingSidePanel() {
   return (
     <CalendarTimetrackingSidePanelView
       pageMode={pageMode}
-      onPageModeChange={handlePageModeChange}
+      onPageModeChange={onPageModeChange}
       period={period}
       monthGroups={monthGroups}
       collapsedWeeks={collapsedWeeks}
@@ -131,6 +139,7 @@ export function DesktopCalendarTimetrackingSidePanel() {
       highlightedId={highlightedId}
       listRef={listRef}
       listContainerProps={listContainerProps}
+      embedded={embedded}
       onSelectDay={(ymd) => {
         setTimetrackingParams((next) => {
           next.set(CALENDAR_TIMETRACKING_DATE_PARAM, ymd);

@@ -2,6 +2,7 @@
 
 import { useId, useLayoutEffect } from "react";
 
+import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
 import {
   useEntityHeaderActionsContext,
   type EntityDeleteConfig,
@@ -15,11 +16,16 @@ export function RegisterEntityDeleteAction({
   onDelete,
 }: EntityDeleteConfig) {
   const ownerId = useId();
+  const mountGate = useListKeyboardNavMountGate();
   const { registerDeleteConfig, clearDeleteConfig } =
     useEntityHeaderActionsContext();
   const onDeleteRef = useLatestRef(onDelete);
 
   useLayoutEffect(() => {
+    if (!mountGate) {
+      clearDeleteConfig(ownerId);
+      return;
+    }
     registerDeleteConfig(ownerId, {
       entityLabel,
       confirmLabel,
@@ -32,6 +38,7 @@ export function RegisterEntityDeleteAction({
     clearDeleteConfig,
     confirmLabel,
     entityLabel,
+    mountGate,
     onDeleteRef,
     ownerId,
     registerDeleteConfig,

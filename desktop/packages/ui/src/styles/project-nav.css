@@ -186,20 +186,11 @@
   flex: 1;
 }
 
-.entity-overview-field-row {
+.entity-overview-address-locality {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-}
-
-.entity-overview-field-row .entity-overview-field {
-  flex-direction: column;
-  gap: 6px;
-}
-
-.entity-overview-field-row .entity-overview-field__label {
-  width: auto;
-  padding-top: 0;
+  min-width: 0;
 }
 
 .entity-overview-input {

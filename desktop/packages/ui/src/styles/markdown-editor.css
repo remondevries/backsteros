@@ -289,7 +289,7 @@
   height: 14px;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 45%, transparent);
   border-radius: 3px;
   background: color-mix(in srgb, var(--background) 70%, transparent);
   color: var(--foreground);

@@ -108,22 +108,6 @@ export const taskListPage = createSharedLazyPage(
   () => import("../screens/task-list-page"),
   "TaskListPage",
 );
-export const journalV2Page = createSharedLazyPage(
-  () => import("../screens/journal-v2-page"),
-  "JournalV2Page",
-);
-export const habitTrackerV2Page = createSharedLazyPage(
-  () => import("../screens/habit-tracker-v2-page"),
-  "HabitTrackerV2Page",
-);
-export const knowledgeV2Page = createSharedLazyPage(
-  () => import("../screens/knowledge-v2-page"),
-  "KnowledgeV2Page",
-);
-export const lettersV2Page = createSharedLazyPage(
-  () => import("../screens/letters-v2-page"),
-  "LettersV2Page",
-);
 export const navigationTrailPage = createSharedLazyPage(
   () => import("../screens/navigation-trail-page"),
   "NavigationTrailPage",

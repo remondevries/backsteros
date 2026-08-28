@@ -75,11 +75,14 @@ function resolveSearchableDropdownRoot(
 }
 
 function pageHasTaskListPropertyRows(): boolean {
-  return (
-    document.querySelector(
-      `[${KEYBOARD_NAV_ITEM_ATTR}] [${TASK_PROPERTY_DROPDOWN_ATTRIBUTE}]`,
-    ) !== null
-  );
+  for (const node of document.querySelectorAll(
+    `[${KEYBOARD_NAV_ITEM_ATTR}] [${TASK_PROPERTY_DROPDOWN_ATTRIBUTE}]`,
+  )) {
+    if (node instanceof HTMLElement && !isInertSubtree(node)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Bulk editor scope when >1 tasks are selected (see TaskBulkEditBar). */

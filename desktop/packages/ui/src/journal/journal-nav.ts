@@ -11,8 +11,8 @@ export type JournalNavItem = {
 };
 
 export const JOURNAL_NAV_ITEMS: readonly JournalNavItem[] = [
-  { id: "journal", label: "Journal", href: "/journal-v2" },
-  { id: "habits", label: "Habit Tracker", href: "/habits-v2" },
+  { id: "journal", label: "Journal", href: "/journal" },
+  { id: "habits", label: "Habit Tracker", href: "/journal/habits" },
 ] as const;
 
 const JOURNAL_NAV_ID_SET = new Set<string>(JOURNAL_NAV_IDS);
@@ -24,14 +24,14 @@ export function isJournalNavId(
 }
 
 export function getJournalNavHref(id: JournalNavId): string {
-  return id === "journal" ? "/journal-v2" : "/habits-v2";
+  return id === "journal" ? "/journal" : "/journal/habits";
 }
 
 export const HABIT_TRACKER_ALL_ID = "all";
 
 export function getHabitTrackerHref(habitId?: string): string {
-  if (!habitId || habitId === HABIT_TRACKER_ALL_ID) return "/habits-v2";
-  return `/habits-v2/${encodeURIComponent(habitId)}`;
+  if (!habitId || habitId === HABIT_TRACKER_ALL_ID) return "/journal/habits";
+  return `/journal/habits/${encodeURIComponent(habitId)}`;
 }
 
 export function getHabitTrackerV2Href(habitId?: string): string {
@@ -53,14 +53,11 @@ export function isHabitsV2Path(pathname: string): boolean {
 export function getSelectedHabitIdFromPathname(
   pathname: string,
 ): string | undefined {
-  return (
-    getSelectedHabitIdFromHabitsV2Pathname(pathname) ??
-    (() => {
-      const match = pathname.match(/^\/journal\/habits\/([^/]+)$/);
-      if (!match) return undefined;
-      return decodeURIComponent(match[1]!);
-    })()
-  );
+  const match = pathname.match(/^\/journal\/habits\/([^/]+)$/);
+  if (match) {
+    return decodeURIComponent(match[1]!);
+  }
+  return getSelectedHabitIdFromHabitsV2Pathname(pathname);
 }
 
 export function getSelectedHabitIdFromHabitsV2Pathname(
@@ -74,6 +71,7 @@ export function getSelectedHabitIdFromHabitsV2Pathname(
 export function getSelectedJournalNavIdFromPathname(
   pathname: string,
 ): JournalNavId | null {
+  if (isJournalHabitsPath(pathname)) return "habits";
   if (!isJournalSectionPath(pathname)) return null;
-  return isJournalHabitsPath(pathname) ? "habits" : "journal";
+  return "journal";
 }

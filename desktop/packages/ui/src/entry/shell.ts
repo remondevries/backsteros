@@ -4,6 +4,13 @@ export {
 } from "../components/shell/product-app-shell.js";
 
 export {
+  ContentLayoutTransitionProvider,
+  useContentLayoutTransition,
+  SIDEBAR_COLLAPSE_DURATION_MS,
+  type ContentLayoutTransitionContextValue,
+} from "../components/shell/content-layout-transition-context.js";
+
+export {
   ProductSidebar,
   type ProductSidebarProps,
   type ProductSidebarLinkComponent,
@@ -11,6 +18,7 @@ export {
 } from "../components/shell/product-sidebar.js";
 
 export {
+  CONTEXT_PANEL_COLLAPSE_DURATION_MS,
   ResizableContextPanel,
   type ResizableContextPanelProps,
 } from "../components/shell/resizable-context-panel.js";
@@ -77,6 +85,13 @@ export {
   isKeyboardNavHighlighted,
   type ListKeyboardNavigationRegistration,
 } from "../components/list-nav/list-keyboard-navigation-provider.js";
+export {
+  ListKeyboardNavMountGate,
+  useListKeyboardNavMountGate,
+} from "../list-nav/list-keyboard-nav-mount-gate.js";
+export {
+  getDefaultListKeyboardNavZone,
+} from "../list-nav/list-keyboard-nav-zone.js";
 
 export {
   shouldShowContentSidePanel,
@@ -120,5 +135,15 @@ export {
   useListDismissDetailShortcut,
   installClearSelectionShortcutListeners,
 } from "../list-nav/use-list-clear-selection-shortcut.js";
+
+export {
+  installContentViewModeShortcutListeners,
+  useContentViewModeShortcut,
+} from "../content/use-content-view-mode-shortcut.js";
+
+export {
+  installTitleRenameShortcutListeners,
+  useTitleRenameShortcut,
+} from "../shortcuts/title-rename-shortcut.js";
 
 export { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";

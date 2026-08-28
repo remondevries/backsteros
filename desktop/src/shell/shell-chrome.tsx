@@ -33,7 +33,9 @@ type ShellChromeProps = {
   showSidePanel: boolean;
   financeRail: boolean;
   sidePanelCollapsed: boolean;
+  sidePanelAnimating: boolean;
   sidebarCollapsed: boolean;
+  sidebarAnimating: boolean;
   windowFullscreen: boolean;
   onComposeOpen: () => void;
 };
@@ -49,15 +51,16 @@ function ShellChromeInner({
   showSidePanel,
   financeRail,
   sidePanelCollapsed,
+  sidePanelAnimating,
   sidebarCollapsed,
+  sidebarAnimating,
   windowFullscreen,
   onComposeOpen,
 }: ShellChromeProps) {
   const navigate = useNavigate();
   const chromeHeader = useChromeHeader();
   const { tabsState, history, activateTab, closeTab, openNewTab } = tabs;
-  const showSidePanelSlot =
-    showSidePanel && Boolean(sidePanel) && (!sidePanelCollapsed || financeRail);
+  const showSidePanelSlot = showSidePanel && Boolean(sidePanel);
 
   const sidebar = settingsPage ? (
     <SettingsSidePanelNavView
@@ -105,6 +108,7 @@ function ShellChromeInner({
       className={windowFullscreen ? "is-window-fullscreen" : undefined}
       sidebar={sidebar}
       sidebarCollapsed={sidebarCollapsed}
+      sidebarAnimating={sidebarAnimating}
       tabs={tabsState.tabs}
       activeTabId={tabsState.activeTabId}
       onActivateTab={activateTab}
@@ -143,6 +147,8 @@ function ShellChromeInner({
       renderTabIcon={renderAppShellTabIcon}
       showSidePanel={showSidePanelSlot}
       sidePanel={sidePanel}
+      sidePanelCollapsed={sidePanelCollapsed && !financeRail}
+      sidePanelAnimating={sidePanelAnimating && !financeRail}
       chromeHeader={
         chromeHeader ?? (showSidePanelSlot ? <BreadcrumbChromeSkeleton /> : null)
       }

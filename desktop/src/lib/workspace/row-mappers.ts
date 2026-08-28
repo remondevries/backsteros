@@ -18,7 +18,29 @@ import type {
   TaskItemRowTask,
 } from "@backsteros/ui";
 
-import { parseMeetingAttendeeContactIdsFromRow } from "../use-meeting-detail-props";
+export function parseMeetingAttendeeContactIdsFromRow(
+  row: Record<string, unknown>,
+): string[] {
+  const raw = row.attendee_contact_ids ?? row.attendeeContactIds;
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (id): id is string => typeof id === "string" && id.trim().length > 0,
+    );
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        );
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 export function snakeRow(row: Record<string, unknown>) {
   const output: Record<string, unknown> = {};

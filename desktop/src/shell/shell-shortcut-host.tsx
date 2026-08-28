@@ -1,5 +1,3 @@
-import type { Dispatch, SetStateAction } from "react";
-
 import { useShellShortcuts } from "./use-shell-chrome-state";
 import type { useShellTabs } from "./use-shell-tabs";
 
@@ -9,20 +7,20 @@ export function ShellShortcutHost({
   setComposeOpen,
   showSidePanel,
   panelPathname,
-  setSidePanelCollapsed,
+  toggleSidePanelCollapsed,
 }: {
   tabs: ReturnType<typeof useShellTabs>;
   setComposeOpen: (open: boolean) => void;
   showSidePanel: boolean;
   panelPathname: string;
-  setSidePanelCollapsed: Dispatch<SetStateAction<boolean>>;
+  toggleSidePanelCollapsed: () => void;
 }) {
   useShellShortcuts({
     tabs,
     setComposeOpen,
     showSidePanel,
     panelPathname,
-    setSidePanelCollapsed,
+    toggleSidePanelCollapsed,
   });
   return null;
 }

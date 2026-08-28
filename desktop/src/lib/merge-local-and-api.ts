@@ -42,8 +42,13 @@ export function resolveLocalOrApiRows<
 }
 
 /**
- * Column fillers that copy from REST must only run on cold-start rescue
- * (local empty). Once SQLite has rows, pass null so fillers are no-ops.
+ * Column fillers for fields that PowerSync list watches already select
+ * (links, type, due dates, …) must only run on cold-start rescue (local
+ * empty). Once SQLite has rows, pass null so those fillers are no-ops.
+ *
+ * Do **not** gate {@link fillMissingLongTextFromApi} with this for entities
+ * that still merge list-omitted long text from REST (projects, letters, …).
+ * Task **description** is not list-filled — detail opens fetch on demand.
  */
 export function apiFillSourceForColdStart<T>(
   localRows: T[] | null | undefined,
@@ -425,6 +430,26 @@ export function fillMissingMeetingPropertiesFromApi<
     }
 
     return next;
+  });
+}
+
+/**
+ * Agent inbox approval is monotonic — once set locally or via REST, keep it
+ * when PowerSync download briefly omits the column before upload catches up.
+ */
+export function fillMissingAgentInboxApprovedAtFromApi<
+  T extends {
+    id: string;
+    agentInboxApprovedAt?: string | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    if (!optionalTextMissing(row.agentInboxApprovedAt)) return row;
+    const api = apiById.get(row.id);
+    if (!api || optionalTextMissing(api.agentInboxApprovedAt)) return row;
+    return { ...row, agentInboxApprovedAt: api.agentInboxApprovedAt };
   });
 }
 

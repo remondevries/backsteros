@@ -27,6 +27,8 @@ export type CalendarAvailabilitySidePanelViewProps = {
   pageMode: CalendarPageMode;
   onPageModeChange: (mode: CalendarPageMode) => void;
   onWeekdayHoursChange: (weekdayHours: MeetingWeekdayHoursEntry[]) => void;
+  /** When true, render only the day list — parent shell owns chrome + mode footer. */
+  embedded?: boolean;
 };
 
 function AvailabilityDayToggle({
@@ -146,87 +148,96 @@ export function CalendarAvailabilitySidePanelView({
   pageMode,
   onPageModeChange,
   onWeekdayHoursChange,
+  embedded = false,
 }: CalendarAvailabilitySidePanelViewProps) {
   const sorted = useMemo(
     () => [...weekdayHours].sort((a, b) => a.weekday - b.weekday),
     [weekdayHours],
   );
 
+  const dayList = (
+    <div className="calendar-availability-side-panel-list">
+      {sorted.map((entry) => (
+        <div
+          key={entry.weekday}
+          className={`calendar-availability-day-row${entry.enabled ? "" : " is-off"}`}
+          data-weekday={entry.weekday}
+        >
+          <div className="calendar-availability-day-row__header">
+            <AvailabilityDayToggle
+              checked={entry.enabled}
+              disabled={loading}
+              dayLabel={weekdayLabel(entry.weekday)}
+              onChange={(enabled) =>
+                onWeekdayHoursChange(
+                  patchWeekdayHoursEntry(weekdayHours, entry.weekday, {
+                    enabled,
+                    slots: enabled
+                      ? entry.slots.length > 0
+                        ? entry.slots
+                        : [suggestNextSlot([])]
+                      : entry.slots,
+                  }),
+                )
+              }
+            />
+
+            <div className="calendar-availability-day-row__actions">
+              <button
+                type="button"
+                className="calendar-availability-day-row__icon-btn"
+                aria-label={`Add time slot on ${weekdayLabel(entry.weekday)}`}
+                disabled={loading || !entry.enabled}
+                onClick={() =>
+                  onWeekdayHoursChange(addWeekdaySlot(weekdayHours, entry.weekday))
+                }
+              >
+                <PlusIcon size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="calendar-availability-day-row__body">
+            {entry.enabled ? (
+              entry.slots.map((slot, slotIndex) => (
+                <AvailabilitySlotRow
+                  key={`${entry.weekday}-${slotIndex}`}
+                  slot={slot}
+                  slotIndex={slotIndex}
+                  weekday={entry.weekday}
+                  loading={loading}
+                  enabled={entry.enabled}
+                  onChange={(index, patch) =>
+                    onWeekdayHoursChange(
+                      updateWeekdaySlot(weekdayHours, entry.weekday, index, patch),
+                    )
+                  }
+                  onRemove={(index) =>
+                    onWeekdayHoursChange(
+                      removeWeekdaySlot(weekdayHours, entry.weekday, index),
+                    )
+                  }
+                />
+              ))
+            ) : (
+              <span className="calendar-availability-day-row__unavailable">
+                Unavailable
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (embedded) {
+    return dayList;
+  }
+
   return (
     <div className="app-content-side-panel calendar-side-panel calendar-availability-side-panel">
       <ContentSidePanelHeader title="Availability" />
-      <div className="app-content-side-panel-main calendar-availability-side-panel-list">
-        {sorted.map((entry) => (
-          <div
-            key={entry.weekday}
-            className={`calendar-availability-day-row${entry.enabled ? "" : " is-off"}`}
-            data-weekday={entry.weekday}
-          >
-            <div className="calendar-availability-day-row__header">
-              <AvailabilityDayToggle
-                checked={entry.enabled}
-                disabled={loading}
-                dayLabel={weekdayLabel(entry.weekday)}
-                onChange={(enabled) =>
-                  onWeekdayHoursChange(
-                    patchWeekdayHoursEntry(weekdayHours, entry.weekday, {
-                      enabled,
-                      slots: enabled
-                        ? entry.slots.length > 0
-                          ? entry.slots
-                          : [suggestNextSlot([])]
-                        : entry.slots,
-                    }),
-                  )
-                }
-              />
-
-              <div className="calendar-availability-day-row__actions">
-                <button
-                  type="button"
-                  className="calendar-availability-day-row__icon-btn"
-                  aria-label={`Add time slot on ${weekdayLabel(entry.weekday)}`}
-                  disabled={loading || !entry.enabled}
-                  onClick={() =>
-                    onWeekdayHoursChange(addWeekdaySlot(weekdayHours, entry.weekday))
-                  }
-                >
-                  <PlusIcon size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="calendar-availability-day-row__body">
-              {entry.enabled ? (
-                entry.slots.map((slot, slotIndex) => (
-                  <AvailabilitySlotRow
-                    key={`${entry.weekday}-${slotIndex}`}
-                    slot={slot}
-                    slotIndex={slotIndex}
-                    weekday={entry.weekday}
-                    loading={loading}
-                    enabled={entry.enabled}
-                    onChange={(index, patch) =>
-                      onWeekdayHoursChange(
-                        updateWeekdaySlot(weekdayHours, entry.weekday, index, patch),
-                      )
-                    }
-                    onRemove={(index) =>
-                      onWeekdayHoursChange(
-                        removeWeekdaySlot(weekdayHours, entry.weekday, index),
-                      )
-                    }
-                  />
-                ))
-              ) : (
-                <span className="calendar-availability-day-row__unavailable">
-                  Unavailable
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+      <div className="app-content-side-panel-main">{dayList}</div>
       <CalendarSidePanelModeFooter
         pageMode={pageMode}
         onPageModeChange={onPageModeChange}

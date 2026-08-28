@@ -61,6 +61,8 @@ export type JournalDueTasksSectionProps = {
    * Prefer the global workspace max; defaults from the unfiltered `tasks` prop.
    */
   taskIdColumnCh?: number;
+  /** When false, unregister j/k (hidden keep-alive journal day). */
+  listKeyboardEnabled?: boolean;
 };
 
 export { isHabitLinkedTask } from "../../journal/journal-day-tasks.js";
@@ -85,6 +87,7 @@ export function JournalDueTasksSection({
   onToggleHabit,
   dayTimelineDraggable = false,
   taskIdColumnCh: taskIdColumnChProp,
+  listKeyboardEnabled = true,
 }: JournalDueTasksSectionProps) {
   const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
   const tasks = useMemo(
@@ -152,7 +155,7 @@ export function JournalDueTasksSection({
     selectedId: null,
     onNavigate: (taskId) => onSelectTask?.(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
-    enabled: listMode === "tasks" && itemIds.length > 0,
+    enabled: listKeyboardEnabled && listMode === "tasks" && itemIds.length > 0,
   });
 
   const { hasBulkSelection, isSelected, toggleSelected } =

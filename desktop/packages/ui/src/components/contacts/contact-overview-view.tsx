@@ -402,27 +402,34 @@ export function ContactOverviewView({
             onBlur={() => persist({ address: address.trim() || null })}
           />
         </DetailsField>
-        <div className="entity-overview-field-row">
-          <DetailsField label="City" htmlFor="contact-city">
+        <div className="entity-overview-field">
+          <span className="entity-overview-field__label" aria-hidden="true" />
+          <div className="entity-overview-address-locality">
             <input
               id="contact-city"
               type="text"
               className="entity-overview-input"
               value={city}
+              placeholder="City"
+              aria-label="City"
+              autoComplete="address-level2"
               onChange={(event) => setCity(event.target.value)}
               onBlur={() => persist({ city: city.trim() || null })}
             />
-          </DetailsField>
-          <DetailsField label="Postal code" htmlFor="contact-postal">
             <input
               id="contact-postal"
               type="text"
               className="entity-overview-input"
               value={postalCode}
+              placeholder="Postal code"
+              aria-label="Postal code"
+              autoComplete="postal-code"
               onChange={(event) => setPostalCode(event.target.value)}
-              onBlur={() => persist({ postalCode: postalCode.trim() || null })}
+              onBlur={() =>
+                persist({ postalCode: postalCode.trim() || null })
+              }
             />
-          </DetailsField>
+          </div>
         </div>
         <DetailsField label="Country" htmlFor="contact-country">
           <input

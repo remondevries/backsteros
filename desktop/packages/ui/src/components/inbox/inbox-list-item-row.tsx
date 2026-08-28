@@ -26,9 +26,22 @@ import { InboxItemTypeIcon } from "./inbox-item-type-icon.js";
 import { DeferredSearchableDropdown } from "../dropdowns/deferred-searchable-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { TaskListPropertyFields } from "../tasks/task-list-property-fields.js";
+import {
+  getTaskStatusLabel,
+  migrateLegacyTaskStatus,
+  TASK_STATUS_ORDER,
+  type TaskStatus,
+} from "../../tasks/task-status.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import { stopFieldEvent } from "../../shared/stop-field-event.js";
 import { Tooltip } from "../shared/tooltip.js";
+
+const STATUS_OPTIONS = TASK_STATUS_ORDER.map((value) => ({
+  value,
+  label: getTaskStatusLabel(value),
+  searchTerms: `${value.replaceAll("_", " ")} ${getTaskStatusLabel(value)}`,
+  icon: <TaskStatusIcon status={value} size={14} />,
+}));
 
 export type InboxListItemLinkComponent = ComponentType<{
   to: string;
@@ -51,6 +64,7 @@ export type InboxListItemRowProps = {
   titleTrailing?: ReactNode;
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeOptions?: SearchableDropdownOption<string>[];
+  onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
@@ -90,6 +104,7 @@ export function InboxListItemRowComponent({
   titleTrailing = null,
   projectOptions = [],
   assigneeOptions = [],
+  onStatusChange,
   onPriorityChange,
   onDueDateChange,
   onProjectChange,
@@ -162,9 +177,16 @@ export function InboxListItemRowComponent({
   const hasProjectMeta = Boolean(
     item.projectId || item.projectName || item.projectKey,
   );
+  const hasProject = Boolean(item.projectId || item.projectKey);
   const dueDate = item.kind === "meeting" ? null : item.dueDate;
   const assigneeId = item.kind === "meeting" ? null : item.assigneeId;
   const hasDueMeta = dueDate != null;
+  const status = migrateLegacyTaskStatus(item.status);
+  // Emails always; tasks only once assigned to a project (matches detail rail).
+  const canEditStatus =
+    Boolean(onStatusChange) &&
+    item.kind !== "meeting" &&
+    (isEmail || hasProject);
   const canEditAssignee =
     assigneeOptions.length > 0 && Boolean(onAssigneeChange);
   const showAssignee = canEditAssignee || Boolean(assigneeId);
@@ -191,7 +213,55 @@ export function InboxListItemRowComponent({
           className="inbox-list-item-hit-area"
         />
         <div className="app-side-panel-item-row-primary inbox-list-item-card-layer">
-          {isEmail ? (
+          {canEditStatus ? (
+            <span className="inbox-list-item-field">
+              <DeferredSearchableDropdown
+                value={status}
+                options={STATUS_OPTIONS}
+                onChange={(next) => onStatusChange!(item.id, next)}
+                searchPlaceholder="Change status…"
+                searchShortcutLabel="S"
+                ariaLabel={`Change status: ${getTaskStatusLabel(status)}`}
+                taskPropertyDropdownId="status"
+                panelAlign="start"
+                panelWidth={280}
+                renderTrigger={({ open, disabled, triggerId, onToggle }) => (
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className={
+                      isEmail
+                        ? "inbox-list-item-email-mark"
+                        : "task-item-row__icon-trigger"
+                    }
+                    title={
+                      isEmail ? "Email" : getTaskStatusLabel(status)
+                    }
+                    tabIndex={-1}
+                    disabled={disabled}
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-label={`Change status: ${getTaskStatusLabel(status)}`}
+                    onMouseDown={stopFieldEvent}
+                    onClick={(event) => {
+                      stopFieldEvent(event);
+                      onToggle();
+                    }}
+                  >
+                    {isEmail ? (
+                      <InboxItemTypeIcon
+                        kind="email"
+                        size={14}
+                        style={emailIconStyle}
+                      />
+                    ) : (
+                      <TaskStatusIcon status={status} size={14} />
+                    )}
+                  </button>
+                )}
+              />
+            </span>
+          ) : isEmail ? (
             <span
               className="inbox-list-item-email-mark"
               title="Email"
@@ -204,7 +274,7 @@ export function InboxListItemRowComponent({
               />
             </span>
           ) : (
-            <TaskStatusIcon status={item.status} size={14} />
+            <TaskStatusIcon status={status} size={14} />
           )}
           <span className="inbox-list-item-title-wrap">
             <span className="inbox-list-item-title">{item.title}</span>

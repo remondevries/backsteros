@@ -7,6 +7,7 @@ import {
   writeDocumentContentCache,
 } from "./document-content-cache";
 import { usePowerSyncQuery } from "./powersync-context";
+import { DOCUMENT_VERSION_ROW_COMPARATOR } from "./powersync-row-comparators";
 
 export {
   peekDocumentContentCache,
@@ -69,6 +70,7 @@ export function useDesktopDocumentContent(
       ? "SELECT content_version FROM documents WHERE id = ?"
       : null,
     enabled && documentId ? [documentId] : [],
+    { rowComparator: DOCUMENT_VERSION_ROW_COMPARATOR },
   );
   const syncedContentVersion = asContentVersion(
     syncedVersionRows.data?.[0]?.content_version ??
@@ -176,6 +178,7 @@ export function useDesktopDocumentContent(
       const data = await client.requestJson<{
         content: string;
         contentVersion: number;
+        checksum?: string | null;
       }>(`/api/v1/documents/${encodeURIComponent(documentId)}/content`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -187,6 +190,7 @@ export function useDesktopDocumentContent(
       writeDocumentContentCache(documentId, {
         content: data.content,
         contentVersion: data.contentVersion,
+        checksum: data.checksum ?? null,
       });
       setInitialBody(data.content);
       setContentVersion(data.contentVersion);

@@ -27,7 +27,9 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
+import { useDesktopTaskDescription } from "../lib/use-task-description";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import {
   buildDocumentLinkOptions,
@@ -44,7 +46,7 @@ import {
 import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
-  useDesktopWorkspaceMeta,
+  useDesktopWorkspaceInboxItems,
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
   useDesktopWorkspaceTasks,
@@ -58,9 +60,8 @@ type MovedToProjectNotice = {
 };
 
 function resolveInboxTaskFromWorkspace(
-  inboxItems: ReturnType<typeof useDesktopWorkspaceMeta>["inboxItems"],
+  inboxItems: ReturnType<typeof useDesktopWorkspaceInboxItems>,
   allTasks: ReturnType<typeof useDesktopWorkspaceTasks>["allTasks"],
-  taskDescriptions: ReturnType<typeof useDesktopWorkspaceTasks>["taskDescriptions"],
   itemId: string): InboxTaskListItem | null {
   const fromList = findInboxItemBySlugOrId(inboxItems, itemId);
   if (fromList?.kind === "task") return fromList;
@@ -93,7 +94,8 @@ function resolveInboxTaskFromWorkspace(
           ? full.dueDate.getTime()
           : null,
     updatedAt: full.updatedAt ?? Date.now(),
-    description: taskDescriptions[full.id] ?? null,
+    // List SQL omits description — useDesktopTaskDescription loads from SQLite.
+    description: null,
     projectId: full.projectId,
     projectKey: full.projectKey ?? null,
     projectName: full.projectName ?? null,
@@ -112,8 +114,8 @@ function InboxPageBody() {
   const { itemId: routeItemId } = useShellParams() as { itemId?: string };
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
-  const { inboxItems } = useDesktopWorkspaceMeta();
-  const { allTasks, taskDescriptions, taskDetails } =
+  const inboxItems = useDesktopWorkspaceInboxItems();
+  const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
   const { documents } = useDesktopWorkspaceDocuments();
   const { contacts } = useDesktopWorkspacePeople();
@@ -130,6 +132,7 @@ function InboxPageBody() {
     [agentMail.messages, keepAliveFrozen]);
   const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
     null);
+  const [activityFeedBump, setActivityFeedBump] = useState(0);
 
   const firstInboxHref = getFirstInboxItemHref(inboxItems);
   const firstInboxItemId =
@@ -138,25 +141,56 @@ function InboxPageBody() {
       : undefined;
   const itemId = routeItemId ?? firstInboxItemId;
 
-  const selectedTask = itemId
-    ? resolveInboxTaskFromWorkspace(
-        inboxItems,
-        allTasks,
-        taskDescriptions,
-        itemId)
-    : null;
+  // Match contacts: when the route is the section root, open the first row so
+  // the side panel selection and detail stay in sync with the URL.
+  useEffect(() => {
+    if (!keepAliveActive || routeItemId || !firstInboxHref) return;
+    if (!firstInboxHref.startsWith("/inbox/")) return;
+    navigateToHref(navigate, firstInboxHref, { replace: true });
+  }, [firstInboxHref, keepAliveActive, navigate, routeItemId]);
 
-  const inList = selectedTask
-    ? inboxItems.some((item) => item.id === selectedTask.id)
-    : false;
+  const selectedTask = useMemo(() => {
+    if (!itemId) return null;
+    return resolveInboxTaskFromWorkspace(
+      inboxItems,
+      allTasks,
+      itemId);
+  }, [allTasks, inboxItems, itemId]);
+
+  const inList = useMemo(
+    () =>
+      selectedTask
+        ? inboxItems.some((item) => item.id === selectedTask.id)
+        : false,
+    [inboxItems, selectedTask],
+  );
 
   // Inbox list items omit assignee; join full task row for detail chrome.
-  const selectedTaskRecord = selectedTask
-    ? (allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
-    : null;
+  const selectedTaskRecord = useMemo(
+    () =>
+      selectedTask
+        ? (allTasks.find((entry) => entry.id === selectedTask.id) ?? null)
+        : null,
+    [allTasks, selectedTask],
+  );
 
   useEnsureProjectVault(
     keepAliveActive ? selectedTaskRecord?.projectId : null);
+
+  const bumpActivityFeed = useCallback(() => {
+    setActivityFeedBump((n) => n + 1);
+  }, []);
+  const postTimerActivity = usePostTaskTimerActivity(
+    selectedTask?.id,
+    bumpActivityFeed,
+  );
+
+  const {
+    description: fetchedDescription,
+    rememberDescription,
+  } = useDesktopTaskDescription(selectedTask?.id, {
+    enabled: keepAliveActive && Boolean(selectedTask?.id),
+  });
 
   const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
     selectedTask?.id ?? "");
@@ -335,10 +369,7 @@ function InboxPageBody() {
         taskSummary={{
           number: selectedTask.number ?? 0,
           title: selectedTask.title,
-          description:
-            taskDescriptions[selectedTask.id] ??
-            selectedTask.description ??
-            null,
+          description: fetchedDescription || null,
           projectKey: resolvedProjectKey,
           projectId: project?.id ?? null,
           projectName: project?.name ?? selectedTask.projectName ?? null,
@@ -391,10 +422,7 @@ function InboxPageBody() {
             selectedTaskRecord?.trackedDurationSeconds ??
             selectedTask.trackedDurationSeconds ??
             null,
-          description:
-            taskDescriptions[selectedTask.id] ??
-            selectedTask.description ??
-            "",
+          description: fetchedDescription,
           links: parseTaskLinks(
             taskDetails[selectedTask.id]?.links),
           displayId: getInboxItemDisplayId(selectedTask),
@@ -418,6 +446,7 @@ function InboxPageBody() {
             trackedMinutes,
           });
         }}
+        onTimerSessionChange={postTimerActivity}
         timerSession={{
           kind: "task",
           entityId: selectedTask.id,
@@ -436,6 +465,7 @@ function InboxPageBody() {
         }}
         onProjectChange={handleProjectChange}
         onSaveDescription={(description) => {
+          rememberDescription(description);
           void workspace.patchTask(selectedTask.id, { description });
         }}
         onUploadImages={onUploadImages}
@@ -506,13 +536,11 @@ function InboxPageBody() {
             patchTaskValues={async (values) => {
               await workspace.patchTask(selectedTask.id, values);
             }}
+            activityFeedBump={activityFeedBump}
             taskSummary={{
               number: selectedTask.number ?? 0,
               title: selectedTask.title,
-              description:
-                taskDescriptions[selectedTask.id] ??
-                selectedTask.description ??
-                null,
+              description: fetchedDescription || null,
               projectKey: resolvedProjectKey,
               projectId: project?.id ?? null,
               projectName: project?.name ?? selectedTask.projectName ?? null,

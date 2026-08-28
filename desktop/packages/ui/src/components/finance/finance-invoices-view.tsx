@@ -404,249 +404,251 @@ export function FinanceInvoicesView({
         }
       >
         <div className="finance-categories-view__list-pane finance-invoices-view__list-pane">
-          <FinanceYearNavigator
-            year={year}
-            latestYear={latestYear}
-            onChange={setYear}
-            aria-label="Invoice year"
-          />
-
-          {!embedded && connected ? (
-            <AccountIncomeExpenseChart
-              className="finance-invoices-view__chart"
-              cashflowYear={year}
-              cashflowMonths={revenueMonths}
-              loading={revenueLoading}
-              fullYear
-              incomeColor={MONEYBIRD_INVOICE_INCOME_COLOR}
-              incomeSeriesLabel="Invoiced"
-              expenseSeriesLabel="Expenses"
-              ariaLabel="Monthly invoiced revenue and account expenses"
-              emptyMessage={`No invoiced revenue or account expenses in ${year} yet.`}
+          <div className="finance-invoices-view__scroll">
+            <FinanceYearNavigator
+              year={year}
+              latestYear={latestYear}
+              onChange={setYear}
+              aria-label="Invoice year"
             />
-          ) : null}
 
-          {!connected && onOpenSettings ? (
-            <div className="finance-invoices-view__toolbar">
-              <div className="finance-invoices-view__actions">
-                <button type="button" onClick={onOpenSettings}>
-                  Open Moneybird settings
-                </button>
-              </div>
-            </div>
-          ) : null}
+            {!embedded && connected ? (
+              <AccountIncomeExpenseChart
+                className="finance-invoices-view__chart"
+                cashflowYear={year}
+                cashflowMonths={revenueMonths}
+                loading={revenueLoading}
+                fullYear
+                incomeColor={MONEYBIRD_INVOICE_INCOME_COLOR}
+                incomeSeriesLabel="Invoiced"
+                expenseSeriesLabel="Expenses"
+                ariaLabel="Monthly invoiced revenue and account expenses"
+                emptyMessage={`No invoiced revenue or account expenses in ${year} yet.`}
+              />
+            ) : null}
 
-          {error && connected ? (
-            <p className="finance-empty" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          {!loading && invoices.length === 0 ? (
-            <p className="finance-empty">{emptyMessage}</p>
-          ) : null}
-
-          {!loading &&
-          invoices.length > 0 &&
-          filteredInvoices.length === 0 &&
-          hasClientFilters ? (
-            <p className="finance-empty">No matching invoices.</p>
-          ) : null}
-
-          {filteredInvoices.length > 0 ? (
-            <div className="finance-invoices-table-shell">
-              <div
-                className="status-group-header-row finance-invoices-columns-header"
-                style={getTaskStatusHeaderGradientStyle("ready_to_start")}
-              >
-                <div className="finance-invoices-columns-header__cols">
-                  {INVOICE_COLUMN_HEADERS.map((column, index) => (
-                    <InvoiceColumnHeader
-                      key={column.id}
-                      label={column.label}
-                      align={"align" in column ? column.align : "start"}
-                      showGap={
-                        "showGap" in column
-                          ? column.showGap
-                          : index < INVOICE_COLUMN_HEADERS.length - 1
-                      }
-                    />
-                  ))}
+            {!connected && onOpenSettings ? (
+              <div className="finance-invoices-view__toolbar">
+                <div className="finance-invoices-view__actions">
+                  <button type="button" onClick={onOpenSettings}>
+                    Open Moneybird settings
+                  </button>
                 </div>
               </div>
-              <ul className="finance-tx-list finance-invoices-list" role="list">
-                {filteredInvoices.map((invoice) => {
-                  const moneybirdContactId =
-                    invoice.contactId?.trim() || null;
-                  const linkedOrg = resolveLinkedOrg(moneybirdContactId);
-                  const fallbackLabel =
-                    invoice.contactName?.trim() || "No organization";
-                  const isSelected = selectedInvoiceId === invoice.id;
+            ) : null}
 
-                  return (
-                    <li
-                      key={invoice.id}
-                      className={[
-                        "finance-tx-row",
-                        "finance-invoices-row",
-                        isSelected ? "is-panel-selected" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      <div
-                        className="finance-tx-row__line"
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={isSelected}
-                        onClick={() => setSelectedInvoiceId(invoice.id)}
-                        onKeyDown={(event) => {
-                          if (!isDirectRoleButtonActivationKey(event)) return;
-                          event.preventDefault();
-                          setSelectedInvoiceId(invoice.id);
-                        }}
+            {error && connected ? (
+              <p className="finance-empty" role="alert">
+                {error}
+              </p>
+            ) : null}
+
+            {!loading && invoices.length === 0 ? (
+              <p className="finance-empty">{emptyMessage}</p>
+            ) : null}
+
+            {!loading &&
+            invoices.length > 0 &&
+            filteredInvoices.length === 0 &&
+            hasClientFilters ? (
+              <p className="finance-empty">No matching invoices.</p>
+            ) : null}
+
+            {filteredInvoices.length > 0 ? (
+              <div className="finance-invoices-table-shell">
+                <div
+                  className="status-group-header-row finance-invoices-columns-header"
+                  style={getTaskStatusHeaderGradientStyle("ready_to_start")}
+                >
+                  <div className="finance-invoices-columns-header__cols">
+                    {INVOICE_COLUMN_HEADERS.map((column, index) => (
+                      <InvoiceColumnHeader
+                        key={column.id}
+                        label={column.label}
+                        align={"align" in column ? column.align : "start"}
+                        showGap={
+                          "showGap" in column
+                            ? column.showGap
+                            : index < INVOICE_COLUMN_HEADERS.length - 1
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+                <ul className="finance-tx-list finance-invoices-list" role="list">
+                  {filteredInvoices.map((invoice) => {
+                    const moneybirdContactId =
+                      invoice.contactId?.trim() || null;
+                    const linkedOrg = resolveLinkedOrg(moneybirdContactId);
+                    const fallbackLabel =
+                      invoice.contactName?.trim() || "No organization";
+                    const isSelected = selectedInvoiceId === invoice.id;
+
+                    return (
+                      <li
+                        key={invoice.id}
+                        className={[
+                          "finance-tx-row",
+                          "finance-invoices-row",
+                          isSelected ? "is-panel-selected" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                       >
-                        <div className="finance-tx-row__data finance-invoices-row__data">
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--id">
-                            <span className="finance-invoices-row__primary">
-                              {invoice.invoiceId ?? "Draft"}
-                            </span>
-                          </div>
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--reference">
-                            {invoice.reference ?? "—"}
-                          </div>
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--date">
-                            <span className="finance-tx-row__date">
-                              {invoice.invoiceDate ?? "—"}
-                            </span>
-                          </div>
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--org finance-tx-row__cell finance-tx-row__cell--org">
-                            <div className="finance-tx-row__cell-inner finance-tx-row__cell-inner--org">
-                              {onLinkMoneybirdContact &&
-                              moneybirdContactId &&
-                              !hideOrganizationFilter ? (
-                                <SearchableDropdown
-                                  ariaLabel="Organization"
-                                  className="property-dropdown"
-                                  triggerClassName="property-dropdown-trigger--inline-chip finance-tx-row__dropdown-trigger finance-tx-row__org-trigger"
-                                  value={
-                                    linkedOrg?.id ?? DROPDOWN_NONE_VALUE
-                                  }
-                                  options={orgOptions}
-                                  searchPlaceholder="Organization"
-                                  panelWidth={260}
-                                  createFromQueryLabel={
-                                    createOrganizationFromQueryLabel
-                                  }
-                                  onCreateFromQuery={
-                                    onCreateOrganizationFromQuery
-                                      ? (query) => {
-                                          void Promise.resolve(
-                                            onCreateOrganizationFromQuery(
-                                              query,
-                                            ),
-                                          ).then((created) => {
-                                            if (!created?.id) return;
-                                            setLinkOverrides((current) => ({
-                                              ...current,
-                                              [moneybirdContactId]:
+                        <div
+                          className="finance-tx-row__line"
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={isSelected}
+                          onClick={() => setSelectedInvoiceId(invoice.id)}
+                          onKeyDown={(event) => {
+                            if (!isDirectRoleButtonActivationKey(event)) return;
+                            event.preventDefault();
+                            setSelectedInvoiceId(invoice.id);
+                          }}
+                        >
+                          <div className="finance-tx-row__data finance-invoices-row__data">
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--id">
+                              <span className="finance-invoices-row__primary">
+                                {invoice.invoiceId ?? "Draft"}
+                              </span>
+                            </div>
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--reference">
+                              {invoice.reference ?? "—"}
+                            </div>
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--date">
+                              <span className="finance-tx-row__date">
+                                {invoice.invoiceDate ?? "—"}
+                              </span>
+                            </div>
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--org finance-tx-row__cell finance-tx-row__cell--org">
+                              <div className="finance-tx-row__cell-inner finance-tx-row__cell-inner--org">
+                                {onLinkMoneybirdContact &&
+                                moneybirdContactId &&
+                                !hideOrganizationFilter ? (
+                                  <SearchableDropdown
+                                    ariaLabel="Organization"
+                                    className="property-dropdown"
+                                    triggerClassName="property-dropdown-trigger--inline-chip finance-tx-row__dropdown-trigger finance-tx-row__org-trigger"
+                                    value={
+                                      linkedOrg?.id ?? DROPDOWN_NONE_VALUE
+                                    }
+                                    options={orgOptions}
+                                    searchPlaceholder="Organization"
+                                    panelWidth={260}
+                                    createFromQueryLabel={
+                                      createOrganizationFromQueryLabel
+                                    }
+                                    onCreateFromQuery={
+                                      onCreateOrganizationFromQuery
+                                        ? (query) => {
+                                            void Promise.resolve(
+                                              onCreateOrganizationFromQuery(
+                                                query,
+                                              ),
+                                            ).then((created) => {
+                                              if (!created?.id) return;
+                                              setLinkOverrides((current) => ({
+                                                ...current,
+                                                [moneybirdContactId]:
+                                                  created.id,
+                                              }));
+                                              void onLinkMoneybirdContact(
+                                                moneybirdContactId,
                                                 created.id,
-                                            }));
-                                            void onLinkMoneybirdContact(
-                                              moneybirdContactId,
-                                              created.id,
-                                            );
-                                          });
+                                              );
+                                            });
+                                          }
+                                        : undefined
+                                    }
+                                    renderTrigger={({
+                                      selected,
+                                      open,
+                                      disabled,
+                                      triggerId,
+                                      onToggle,
+                                    }) => (
+                                      <button
+                                        type="button"
+                                        id={triggerId}
+                                        className={[
+                                          "property-dropdown-trigger",
+                                          "property-dropdown-trigger--inline-chip",
+                                          "finance-tx-row__dropdown-trigger",
+                                          "finance-tx-row__org-trigger",
+                                          linkedOrg ? "is-filled" : "is-empty",
+                                          open ? "is-open" : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ")}
+                                        disabled={disabled}
+                                        aria-haspopup="listbox"
+                                        aria-expanded={open}
+                                        aria-label="Organization"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          onToggle();
+                                        }}
+                                        onMouseDown={(event) =>
+                                          event.stopPropagation()
                                         }
-                                      : undefined
-                                  }
-                                  renderTrigger={({
-                                    selected,
-                                    open,
-                                    disabled,
-                                    triggerId,
-                                    onToggle,
-                                  }) => (
-                                    <button
-                                      type="button"
-                                      id={triggerId}
-                                      className={[
-                                        "property-dropdown-trigger",
-                                        "property-dropdown-trigger--inline-chip",
-                                        "finance-tx-row__dropdown-trigger",
-                                        "finance-tx-row__org-trigger",
-                                        linkedOrg ? "is-filled" : "is-empty",
-                                        open ? "is-open" : null,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" ")}
-                                      disabled={disabled}
-                                      aria-haspopup="listbox"
-                                      aria-expanded={open}
-                                      aria-label="Organization"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        onToggle();
-                                      }}
-                                      onMouseDown={(event) =>
-                                        event.stopPropagation()
-                                      }
-                                    >
-                                      <span className="property-dropdown-trigger__label">
-                                        {linkedOrg
-                                          ? (selected?.label ??
-                                            linkedOrg.name)
-                                          : fallbackLabel}
-                                      </span>
-                                    </button>
-                                  )}
-                                  onChange={(value) => {
-                                    const nextOrgId =
-                                      !value || value === DROPDOWN_NONE_VALUE
-                                        ? null
-                                        : value;
-                                    setLinkOverrides((current) => ({
-                                      ...current,
-                                      [moneybirdContactId]: nextOrgId,
-                                    }));
-                                    void onLinkMoneybirdContact(
-                                      moneybirdContactId,
-                                      nextOrgId,
-                                    );
-                                  }}
-                                />
-                              ) : (
-                                <span className="finance-invoices-row__org-fallback">
-                                  {linkedOrg?.name ??
-                                    invoice.contactName ??
-                                    "—"}
-                                </span>
-                              )}
+                                      >
+                                        <span className="property-dropdown-trigger__label">
+                                          {linkedOrg
+                                            ? (selected?.label ??
+                                              linkedOrg.name)
+                                            : fallbackLabel}
+                                        </span>
+                                      </button>
+                                    )}
+                                    onChange={(value) => {
+                                      const nextOrgId =
+                                        !value || value === DROPDOWN_NONE_VALUE
+                                          ? null
+                                          : value;
+                                      setLinkOverrides((current) => ({
+                                        ...current,
+                                        [moneybirdContactId]: nextOrgId,
+                                      }));
+                                      void onLinkMoneybirdContact(
+                                        moneybirdContactId,
+                                        nextOrgId,
+                                      );
+                                    }}
+                                  />
+                                ) : (
+                                  <span className="finance-invoices-row__org-fallback">
+                                    {linkedOrg?.name ??
+                                      invoice.contactName ??
+                                      "—"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--amount">
+                              <span className="finance-tx-row__amount is-credit">
+                                {formatInvoiceAmount(
+                                  invoice.totalPriceInclTax,
+                                  invoice.currency,
+                                )}
+                              </span>
+                            </div>
+                            <div className="finance-invoices-row__cell finance-invoices-row__cell--status">
+                              <span
+                                className={invoiceStateClassName(invoice.state)}
+                              >
+                                {formatInvoiceState(invoice.state)}
+                              </span>
                             </div>
                           </div>
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--amount">
-                            <span className="finance-tx-row__amount is-credit">
-                              {formatInvoiceAmount(
-                                invoice.totalPriceInclTax,
-                                invoice.currency,
-                              )}
-                            </span>
-                          </div>
-                          <div className="finance-invoices-row__cell finance-invoices-row__cell--status">
-                            <span
-                              className={invoiceStateClassName(invoice.state)}
-                            >
-                              {formatInvoiceState(invoice.state)}
-                            </span>
-                          </div>
                         </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+          </div>
 
           {showFilterBar ? (
             <div className="finance-bulk-bar-dock finance-tx-chrome-dock finance-invoices-view__filter-dock">

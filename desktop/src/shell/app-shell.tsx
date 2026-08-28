@@ -27,7 +27,10 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     setComposeOpen,
     sidePanelCollapsed,
     setSidePanelCollapsed,
+    sidePanelAnimating,
+    toggleSidePanelCollapsed,
     sidebarCollapsed,
+    sidebarAnimating,
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,
@@ -38,6 +41,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
   const sidePanelHost = useShellSidePanelHost({
     composeOpen,
     sidePanelCollapsed,
+    sidePanelAnimating,
     setSidePanelCollapsed,
     onNavigate: tabs.navigateTo,
   });
@@ -65,7 +69,7 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         setComposeOpen={setComposeOpen}
         showSidePanel={panel.showSidePanel}
         panelPathname={panel.panelPathname}
-        setSidePanelCollapsed={setSidePanelCollapsed}
+        toggleSidePanelCollapsed={toggleSidePanelCollapsed}
       />
       <ShellChrome
         tabs={tabs}
@@ -77,7 +81,9 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         showSidePanel={panel.showSidePanel}
         financeRail={sidePanelHost.financeRail}
         sidePanelCollapsed={sidePanelCollapsed}
+        sidePanelAnimating={sidePanelAnimating}
         sidebarCollapsed={sidebarCollapsed}
+        sidebarAnimating={sidebarAnimating}
         windowFullscreen={windowFullscreen}
         onComposeOpen={() => setComposeOpen(true)}
       >

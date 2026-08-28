@@ -37,7 +37,6 @@ import {
   mapApiTaskToRow,
   withDisplayId,
 } from "../../../lib/map-task-row";
-import { fillMissingTaskFieldsFromApi } from "../../../lib/merge-task-fields";
 import { useMobilePowerSync } from "../../../lib/powersync-context";
 import { TASK_LIST_SELECT } from "../../../lib/task-list-query";
 import {
@@ -210,19 +209,17 @@ export default function TasksScreen() {
     }
   }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated, refreshHabitRollover]);
 
-  useRestListHydration(reloadRest);
+  useRestListHydration(reloadRest, true, localRows.length > 0);
 
-  const allRows = useMemo(() => {
-    const rows = resolveSyncedOrRestRows({
-      localRows,
-      restRows,
-      connected: powerSync.connected,
-    });
-    if (powerSync.connected && localRows.length > 0 && restRows != null) {
-      return fillMissingTaskFieldsFromApi(rows, restRows);
-    }
-    return rows;
-  }, [localRows, powerSync.connected, restRows]);
+  const allRows = useMemo(
+    () =>
+      resolveSyncedOrRestRows({
+        localRows,
+        restRows,
+        connected: powerSync.connected,
+      }),
+    [localRows, powerSync.connected, restRows],
+  );
 
   // Email thread rows alongside tasks — desktop Tasks page parity. The due
   // filter applies the same way (emails without a due date show under All).
