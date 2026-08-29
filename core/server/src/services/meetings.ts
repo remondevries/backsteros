@@ -14,6 +14,10 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { toIso } from "../lib/mappers.js";
+import {
+  softDeleteMeetingCrmActivities,
+  syncMeetingCrmActivities,
+} from "./crm-activities.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -84,6 +88,7 @@ export function toMeeting(row: DbMeeting): Meeting {
     attendeeContactIds: attendeeIds,
     startAt: row.startAt.toISOString(),
     endAt: row.endAt.toISOString(),
+    format: (row.format ?? "video_call") as Meeting["format"],
     trackedMinutes: row.trackedMinutes ?? null,
     trackedDurationSeconds: row.trackedDurationSeconds ?? null,
     sortOrder: row.sortOrder,
@@ -165,6 +170,7 @@ export async function createMeetingRow(
       projectId: input.projectId ?? null,
       organizationId: input.organizationId ?? null,
       attendeeContactIds: input.attendeeContactIds ?? [],
+      format: input.format ?? "video_call",
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
       startAt,
@@ -172,7 +178,22 @@ export async function createMeetingRow(
       sortOrder: Date.now(),
     })
     .returning();
-  return row!;
+  const created = row!;
+  await syncMeetingCrmActivities(
+    workspaceId,
+    {
+      meetingId: created.id,
+      startAt: created.startAt,
+      attendeeContactIds: Array.isArray(created.attendeeContactIds)
+        ? created.attendeeContactIds.filter(
+            (cid): cid is string => typeof cid === "string",
+          )
+        : [],
+      organizationId: created.organizationId,
+    },
+    executor,
+  );
+  return created;
 }
 
 export async function createMeeting(
@@ -221,6 +242,7 @@ export async function updateMeeting(
       ...(input.attendeeContactIds !== undefined
         ? { attendeeContactIds: input.attendeeContactIds }
         : {}),
+      ...(input.format !== undefined ? { format: input.format } : {}),
       ...(input.trackedMinutes !== undefined
         ? { trackedMinutes: input.trackedMinutes }
         : {}),
@@ -235,7 +257,18 @@ export async function updateMeeting(
       and(eq(meetings.workspaceId, workspaceId), eq(meetings.id, id)),
     )
     .returning();
-  return row ? toMeeting(row) : null;
+  if (!row) return null;
+  await syncMeetingCrmActivities(workspaceId, {
+    meetingId: row.id,
+    startAt: row.startAt,
+    attendeeContactIds: Array.isArray(row.attendeeContactIds)
+      ? row.attendeeContactIds.filter(
+          (cid): cid is string => typeof cid === "string",
+        )
+      : [],
+    organizationId: row.organizationId,
+  }, executor);
+  return toMeeting(row);
 }
 
 export async function deleteMeetingRow(
@@ -254,6 +287,9 @@ export async function deleteMeetingRow(
       ),
     )
     .returning();
+  if (row) {
+    await softDeleteMeetingCrmActivities(workspaceId, id, executor);
+  }
   return row ?? null;
 }
 

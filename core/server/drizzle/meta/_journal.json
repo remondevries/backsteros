@@ -491,6 +491,34 @@
       "when": 1790500000000,
       "tag": "0078_core_sync_event_replication_state",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790600000000,
+      "tag": "0079_crm_phase1",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0080_contact_first_last_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790800000000,
+      "tag": "0081_mapbox_and_contact_coords",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790900000000,
+      "tag": "0082_contact_region",
+      "breakpoints": true
     }
   ]
 }

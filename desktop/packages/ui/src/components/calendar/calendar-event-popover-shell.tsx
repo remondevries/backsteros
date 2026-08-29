@@ -117,9 +117,18 @@ export function useCalendarEventPopoverPosition({
     if (!open) return;
 
     function handlePointerDown(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (!target) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
       if (panelRef.current?.contains(target)) return;
+      // Don't close on mousedown over a calendar event — that swallows the
+      // subsequent click that should open/toggle the popover.
+      if (
+        target.closest(
+          ".fc-event, .fc-daygrid-event-harness, .fc-list-event, [data-calendar-grid-keyboard-item]",
+        )
+      ) {
+        return;
+      }
       onClose();
     }
 

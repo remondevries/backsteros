@@ -98,7 +98,9 @@ export type DesktopWorkspaceData = {
     name: string;
   }) => Promise<{ id: string; key: string }>;
   createContact: (input: {
-    name: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string | null;
     organizationId?: string | null;
     email?: string | null;
   }) => Promise<{ id: string; key: string }>;

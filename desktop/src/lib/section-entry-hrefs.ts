@@ -121,7 +121,7 @@ export function rememberWorkspaceSectionEntries(input: {
     seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
   }
   if (peekSectionEntryHref("contacts") == null) {
-    seed.contacts = firstContactHref(input.contacts);
+    seed.contacts = "/contacts";
   }
   if (peekSectionEntryHref("organizations") == null) {
     seed.organizations = firstOrganizationHref(input.organizations);

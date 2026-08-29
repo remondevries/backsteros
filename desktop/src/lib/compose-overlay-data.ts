@@ -95,6 +95,7 @@ export async function loadComposeOverlayContext(
       id: contact.id,
       name: contact.name,
       email: contact.email ?? null,
+      emails: contact.emails ?? [],
       organizationName: null,
       avatarSrc: null,
     }),

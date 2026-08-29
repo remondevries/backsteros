@@ -82,8 +82,49 @@
 }
 
 .avatar-upload__button:hover .avatar-upload__overlay,
-.avatar-upload__button:focus-visible .avatar-upload__overlay {
+.avatar-upload__button:focus-visible .avatar-upload__overlay,
+.avatar-upload__frame:hover .avatar-upload__overlay,
+.avatar-upload__frame:focus-within .avatar-upload__overlay {
   opacity: 1;
+}
+
+.avatar-upload__trash {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  z-index: 2;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, #ef4444 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #0a0a0a 72%, #ef4444 28%);
+  color: #f87171;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.avatar-upload__frame:hover .avatar-upload__trash,
+.avatar-upload__frame:focus-within .avatar-upload__trash,
+.avatar-upload__trash:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.avatar-upload__trash:hover:not(:disabled) {
+  background: color-mix(in srgb, #ef4444 88%, #0a0a0a);
+  color: #fff;
+}
+
+.avatar-upload__trash:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .avatar-upload__file {

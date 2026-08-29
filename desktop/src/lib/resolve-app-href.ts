@@ -182,8 +182,7 @@ export function resolveAppHref(href: string): ResolvedAppHref {
     const first = peekSectionEntryHref("inbox");
     if (first) withEntry(first);
   } else if (pathname === "/contacts") {
-    const first = peekSectionEntryHref("contacts");
-    if (first) withEntry(first);
+    // Contacts catalog lives in main content (no auto-open of last contact).
   } else if (pathname === "/organizations") {
     const first = peekSectionEntryHref("organizations");
     if (first) withEntry(first);

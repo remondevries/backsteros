@@ -5,6 +5,7 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   type MeetingDetailViewProps,
+  type MeetingFormat,
   type MeetingListItem,
   type MeetingPropertiesMeeting,
 } from "@backsteros/ui";
@@ -26,6 +27,8 @@ export function useMeetingDetailViewProps(
 ): Pick<
   MeetingDetailViewProps,
   | "meeting"
+  | "format"
+  | "onFormatChange"
   | "onStatusChange"
   | "onStartChange"
   | "onEndChange"
@@ -110,6 +113,8 @@ export function useMeetingDetailViewProps(
 
   return {
     meeting: meetingProperties,
+    format: meeting?.format ?? "video_call",
+    onFormatChange: (next: MeetingFormat) => patchMeeting({ format: next }),
     onStatusChange: (status) => patchMeeting({ status }),
     onStartChange: (value) => {
       if (!value) return;

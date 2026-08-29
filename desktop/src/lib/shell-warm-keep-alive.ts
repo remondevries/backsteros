@@ -70,15 +70,16 @@ function assignVisibleKeepAliveSurface(
   return true;
 }
 
-function followWarmKeepAliveUrl(href: string): void {
+function followWarmKeepAliveUrl(href: string, replace = false): void {
   if (typeof window === "undefined") return;
   const next = normalizeNavigationHref(href);
   if (currentWindowNavigationHref() === next) return;
-  // TanStack's createBrowserHistory patches window.history.pushState and
-  // notifies the router on every call. Same-surface warm flips must update
+  // TanStack's createBrowserHistory patches window.history.pushState/replaceState
+  // and notifies the router on every call. Same-surface warm flips must update
   // the address bar without rematching routes — that remounts ShellRouteContent
   // and destroys keep-alive panes.
-  History.prototype.pushState.call(window.history, window.history.state, "", next);
+  const method = replace ? "replaceState" : "pushState";
+  History.prototype[method].call(window.history, window.history.state, "", next);
 }
 
 export function shouldKeepAliveSurface(
@@ -289,12 +290,16 @@ export function isWarmKeepAliveSectionFlip(href: string): boolean {
 
 /**
  * Show an already-mounted keep-alive section without TanStack `navigate()`.
- * URL can follow via `history.pushState`. Same-pane query (`/tasks?due=`)
- * also wins once that pane is mounted. Returns false on first visit or Outlet.
+ * URL can follow via `history.pushState` / `replaceState`. Same-pane query
+ * (`/tasks?due=`, `/calendar?meeting=`) also wins once that pane is mounted.
+ * Returns false on first visit or Outlet.
  *
  * `href` may be a logical click target — resolved once via {@link resolveAppHref}.
  */
-export function tryWarmKeepAliveFlip(href: string): boolean {
+export function tryWarmKeepAliveFlip(
+  href: string,
+  options?: { replace?: boolean },
+): boolean {
   ensureWarmKeepAlivePopstate();
   const resolved = resolveAppHref(href);
   if (
@@ -304,9 +309,10 @@ export function tryWarmKeepAliveFlip(href: string): boolean {
     return false;
   }
   const nextHref = formatResolvedAppHref(resolved);
+  const replace = options?.replace ?? false;
   const alreadyVisible = visibleKeepAliveSurface === resolved.surface;
   if (alreadyVisible && lastKeepAliveHref.get(resolved.surface) === nextHref) {
-    followWarmKeepAliveUrl(nextHref);
+    followWarmKeepAliveUrl(nextHref, replace);
     // Surface unchanged — still emit so panes re-read lastHref (native push
     // no longer wakes the router).
     emitWarmKeepAlive();
@@ -315,7 +321,7 @@ export function tryWarmKeepAliveFlip(href: string): boolean {
   }
   rememberKeepAliveHref(resolved.surface, resolved.pathname, resolved.search);
   assignVisibleKeepAliveSurface(resolved.surface);
-  followWarmKeepAliveUrl(nextHref);
+  followWarmKeepAliveUrl(nextHref, replace);
   emitWarmKeepAlive();
   rememberSectionEntryFromNav(nextHref);
   return true;

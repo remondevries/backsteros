@@ -17,6 +17,7 @@ import {
   workspaceSettings,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
+import { normalizeContactEmailsInput } from "@backsteros/contracts";
 import {
   assertPrivateStorageKey,
   buildLetterPdfStorageKey,
@@ -56,8 +57,12 @@ type ContactInput = {
   number?: number | null;
   key: string;
   organizationId?: string | null;
-  name: string;
+  firstName?: string;
+  lastName?: string | null;
+  /** Legacy full name — treated as firstName when firstName is omitted. */
+  name?: string;
   email?: string | null;
+  emails?: { label: "personal" | "work" | "other"; address: string }[];
   title?: string | null;
   summary?: string | null;
   avatarStorageKey?: string | null;
@@ -70,8 +75,35 @@ type ContactInput = {
   city?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  region?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   socialAccounts?: ContactSocialAccount[];
+  birthday?: string | null;
 };
+
+function formatContactDisplayName(
+  firstName: string,
+  lastName?: string | null,
+): string {
+  return [firstName.trim(), (lastName ?? "").trim()]
+    .filter((part) => part.length > 0)
+    .join(" ");
+}
+
+function resolveContactNameFields(input: {
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
+}): { firstName: string; lastName: string; name: string } {
+  const firstName = (input.firstName ?? input.name ?? "").trim();
+  const lastName = (input.lastName ?? "").trim();
+  return {
+    firstName,
+    lastName,
+    name: formatContactDisplayName(firstName, lastName) || firstName,
+  };
+}
 type AreaInput = {
   name: string;
   parent: "personal" | "business" | "clients";
@@ -310,7 +342,18 @@ export function listContacts(
   if (filters.organizationId) conditions.push(eq(contacts.organizationId, filters.organizationId));
   if (filters.q) {
     const pattern = `%${filters.q}%`;
-    conditions.push(or(ilike(contacts.name, pattern), ilike(contacts.email, pattern))!);
+    conditions.push(
+      or(
+        ilike(contacts.name, pattern),
+        ilike(contacts.firstName, pattern),
+        ilike(contacts.lastName, pattern),
+        ilike(contacts.email, pattern),
+        sql`exists (
+          select 1 from jsonb_array_elements(${contacts.emails}) as e(value)
+          where coalesce(e.value->>'address', e.value #>> '{}') ilike ${pattern}
+        )`,
+      )!,
+    );
   }
   return db.select().from(contacts).where(and(...conditions)).orderBy(contacts.sortOrder, contacts.name);
 }
@@ -327,10 +370,20 @@ export async function createContact(
   ) {
     throw new Error("ORGANIZATION_NOT_FOUND");
   }
+  const names = resolveContactNameFields(input);
+  if (!names.firstName) {
+    throw new Error("CONTACT_NAME_REQUIRED");
+  }
   const number = input.number ?? (await nextEntityNumber(workspaceId, "contact", executor));
+  const { name: _legacyName, firstName: _f, lastName: _l, email, emails, ...rest } =
+    input;
+  const emailFields = normalizeContactEmailsInput({
+    email: email ?? null,
+    emails: emails ?? [],
+  });
   const [row] = await executor
     .insert(contacts)
-    .values({ id, workspaceId, ...input, number })
+    .values({ id, workspaceId, ...rest, ...names, ...emailFields, number })
     .returning();
   return row!;
 }
@@ -404,9 +457,55 @@ export async function updateContact(
   ) {
     throw new Error("ORGANIZATION_NOT_FOUND");
   }
+  const touchesNames =
+    input.firstName !== undefined ||
+    input.lastName !== undefined ||
+    input.name !== undefined;
+  const touchesEmails =
+    input.email !== undefined || input.emails !== undefined;
+  let namePatch: { firstName: string; lastName: string; name: string } | null =
+    null;
+  let emailPatch: {
+    email: string | null;
+    emails: { label: "personal" | "work" | "other"; address: string }[];
+  } | null = null;
+  if (touchesNames || touchesEmails) {
+    const existing = await getContactById(workspaceId, id, executor);
+    if (!existing) return null;
+    if (touchesNames) {
+      namePatch = resolveContactNameFields({
+        firstName:
+          input.firstName !== undefined ? input.firstName : existing.firstName,
+        lastName:
+          input.lastName !== undefined ? input.lastName : existing.lastName,
+        name:
+          input.firstName === undefined &&
+          input.lastName === undefined &&
+          input.name !== undefined
+            ? input.name
+            : undefined,
+      });
+      if (!namePatch.firstName) {
+        throw new Error("CONTACT_NAME_REQUIRED");
+      }
+    }
+    if (touchesEmails) {
+      emailPatch = normalizeContactEmailsInput({
+        email: input.email !== undefined ? input.email : existing.email,
+        emails: input.emails !== undefined ? input.emails : existing.emails,
+      });
+    }
+  }
+  const { name: _legacyName, firstName: _f, lastName: _l, email: _e, emails: _es, ...rest } =
+    input;
   const [row] = await executor
     .update(contacts)
-    .set({ ...input, updatedAt: new Date() })
+    .set({
+      ...rest,
+      ...(namePatch ?? {}),
+      ...(emailPatch ?? {}),
+      updatedAt: new Date(),
+    })
     .where(
       and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, id), isNull(contacts.deletedAt)),
     )
@@ -1487,7 +1586,16 @@ export async function globalSearch(
   const contactConditions = [
     eq(contacts.workspaceId, workspaceId),
     isNull(contacts.deletedAt),
-    or(ilike(contacts.name, pattern), ilike(contacts.email, pattern)),
+    or(
+      ilike(contacts.name, pattern),
+      ilike(contacts.firstName, pattern),
+      ilike(contacts.lastName, pattern),
+      ilike(contacts.email, pattern),
+      sql`exists (
+        select 1 from jsonb_array_elements(${contacts.emails}) as e(value)
+        where coalesce(e.value->>'address', e.value #>> '{}') ilike ${pattern}
+      )`,
+    ),
   ];
   if (scope.contactOrganizationId) {
     contactConditions.push(eq(contacts.organizationId, scope.contactOrganizationId));

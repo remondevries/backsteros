@@ -1,5 +1,7 @@
 "use client";
 
+import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+
 export type ContactSocialAccount = {
   platform: string;
   url: string;
@@ -13,6 +15,11 @@ const PLATFORM_OPTIONS = [
   "Website",
   "Other",
 ] as const;
+
+const PLATFORM_DROPDOWN_OPTIONS = PLATFORM_OPTIONS.map((value) => ({
+  value,
+  label: value,
+}));
 
 export type ContactSocialAccountsEditorProps = {
   value: ContactSocialAccount[];
@@ -72,12 +79,17 @@ export function ContactSocialAccountsEditor({
             className="contact-social-accounts__row"
           >
             <div className="contact-social-accounts__row-top">
-              <select
-                aria-label={`Social platform ${index + 1}`}
+              <SearchableDropdown
                 value={selectValue}
+                options={PLATFORM_DROPDOWN_OPTIONS}
                 disabled={disabled}
-                onChange={(event) => {
-                  const nextPlatform = event.target.value;
+                searchPlaceholder="Platform…"
+                ariaLabel={`Social platform ${index + 1}`}
+                panelAlign="start"
+                panelWidth={180}
+                showIcon={false}
+                className="entity-overview-dropdown contact-social-accounts__platform"
+                onChange={(nextPlatform) => {
                   if (nextPlatform === "Other") {
                     updateRow(index, {
                       platform: useCustomPlatform ? entry.platform : "",
@@ -85,15 +97,46 @@ export function ContactSocialAccountsEditor({
                     return;
                   }
                   updateRow(index, { platform: nextPlatform });
+                  if (entry.url.trim()) {
+                    const next = value.map((row, rowIndex) =>
+                      rowIndex === index
+                        ? { ...row, platform: nextPlatform }
+                        : row,
+                    );
+                    onSave(next);
+                  }
                 }}
-                className="entity-overview-input contact-social-accounts__platform"
-              >
-                {PLATFORM_OPTIONS.map((platform) => (
-                  <option key={platform} value={platform}>
-                    {platform}
-                  </option>
-                ))}
-              </select>
+                renderTrigger={({ selected, open, triggerId, onToggle }) => {
+                  const label = selected?.label ?? selectValue;
+                  return (
+                    <button
+                      type="button"
+                      id={triggerId}
+                      disabled={disabled}
+                      aria-haspopup="listbox"
+                      aria-expanded={open}
+                      aria-label={`Social platform: ${label}`}
+                      title={label}
+                      onClick={onToggle}
+                      className={[
+                        "entity-overview-input",
+                        "entity-overview-dropdown-trigger",
+                        "contact-social-accounts__platform-trigger",
+                      ].join(" ")}
+                    >
+                      <span className="entity-overview-dropdown-trigger__label">
+                        {label}
+                      </span>
+                      <span
+                        className="entity-overview-dropdown-trigger__chevron"
+                        aria-hidden="true"
+                      >
+                        ▾
+                      </span>
+                    </button>
+                  );
+                }}
+              />
               <button
                 type="button"
                 className="contact-social-accounts__remove"

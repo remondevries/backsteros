@@ -26,7 +26,12 @@ export const DROPDOWN_NO_RECURRING_VALUE = "__no_recurring__";
 export type AssigneeDropdownContact = {
   id: string;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   email?: string | null;
+  emails?:
+    | Array<{ label?: string | null; address?: string | null } | string>
+    | null;
   organizationName?: string | null;
   avatarSrc?: string | null;
 };
@@ -34,6 +39,8 @@ export type AssigneeDropdownContact = {
 export type OrganizationDropdownItem = {
   id: string;
   name: string;
+  number?: number | null;
+  key?: string | null;
   avatarSrc?: string | null;
 };
 
@@ -95,7 +102,16 @@ export function buildAssigneeDropdownOptions(
     ...contacts.map((contact) => ({
       value: contact.id,
       label: contact.name,
-      searchTerms: [contact.name, contact.email ?? "", contact.organizationName ?? ""]
+      searchTerms: [
+        contact.name,
+        contact.firstName ?? "",
+        contact.lastName ?? "",
+        contact.email ?? "",
+        ...(contact.emails ?? []).map((entry) =>
+          typeof entry === "string" ? entry : (entry.address ?? ""),
+        ),
+        contact.organizationName ?? "",
+      ]
         .filter(Boolean)
         .join(" "),
       icon: personIcon(iconSize, contact.avatarSrc),
@@ -137,6 +153,7 @@ export function buildOrganizationDropdownOptions(
     label: organization.name,
     searchTerms: organization.name,
     icon: orgIcon(iconSize, organization.avatarSrc),
+    avatarSrc: organization.avatarSrc ?? null,
   }));
   if (!includeNone) return rows;
   return [

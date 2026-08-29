@@ -34,7 +34,8 @@ export function normalizeTabHref(href: string): string {
 
 /**
  * Query keys worth keeping on a product tab when returning to Calendar.
- * Ephemeral overlay ids (`task`, `meeting`) are intentionally omitted.
+ * Includes open meeting overlay (`meeting` / `meetingLayout`) so tab switches
+ * and refresh restore the note. Task overlays stay ephemeral.
  */
 const CALENDAR_TAB_SEARCH_KEYS = [
   "mode",
@@ -42,12 +43,14 @@ const CALENDAR_TAB_SEARCH_KEYS = [
   "date",
   "week",
   "month",
+  "meeting",
+  "meetingLayout",
 ] as const;
 
 /**
  * Build the href stored on a product tab. Most routes are pathname-only;
- * `/calendar` keeps mode / view / Timetracking period so tab switches restore
- * Calendar vs Timetracking vs Availability.
+ * `/calendar` keeps mode / view / Timetracking period / open meeting so tab
+ * switches restore Calendar chrome and the meeting note overlay.
  */
 export function buildProductTabHref(pathname: string, search = ""): string {
   const path = normalizeTabHref(pathname);

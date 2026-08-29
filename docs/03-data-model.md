@@ -32,7 +32,10 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 | --- | --- | --- | --- |
 | Task | A | — | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task — distinct from future blob Attachment entities. `agentChatId` (Cursor chat id) is Tier A metadata for desktop/mobile; the PTY process stays on the local computer (desktop + Tailscale-trusted iPad viewers). |
 | Project | A | — | |
-| Contact / Organization | A | — | |
+| Contact / Organization | A | — | Contact has `first_name` + `last_name` (display `name` derived); optional `birthday` (YYYY-MM-DD, year required); primary `email` plus optional `emails` jsonb (`{ label, address }[]`, labels personal/work/other); address fields include optional `region` (state/province) and geocoded `latitude` / `longitude` via Mapbox. Country is stored as ISO 3166-1 alpha-2 when picked from the dropdown. |
+| Contact relationship | A | — | Directed person↔person edges (`contact_relationships`); inverse labels in UI. |
+| CRM group / member | A | — | Custom groups; polymorphic members (contact or organization). Group merged feed deferred. |
+| CRM activity | A | — | Notes (body capped ≤8KB) + meeting pointers; feed via REST. Not a second meetings store. |
 | Document (project/knowledge) | B | D (body in object storage) | |
 | Journal entry | B | D | One file per day |
 | Letter | B | D (PDF) | |

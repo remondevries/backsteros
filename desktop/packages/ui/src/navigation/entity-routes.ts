@@ -92,15 +92,21 @@ export function organizationMatchesSlug(
 export type ContactListItem = {
   id: string;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   number?: number | null;
   key?: string | null;
   organizationId?: string | null;
   organizationName?: string | null;
   email?: string | null;
+  /** Additional addresses beyond primary `email`. */
+  emails?: Array<{ label: "personal" | "work" | "other"; address: string }> | null;
   title?: string | null;
   avatarStorageKey?: string | null;
   avatarUpdatedAt?: number | null;
   avatarSrc?: string | null;
+  /** YYYY-MM-DD birthday for calendar markers. */
+  birthday?: string | null;
 };
 
 export function getContactsHref(numberOrId?: number | string): string {

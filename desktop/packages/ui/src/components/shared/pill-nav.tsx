@@ -12,6 +12,7 @@ export type PillNavProps<T extends string> = {
   value: T;
   onChange: (value: T) => void;
   ariaLabel: string;
+  className?: string;
 };
 
 export function PillNav<T extends string>({
@@ -19,10 +20,13 @@ export function PillNav<T extends string>({
   value,
   onChange,
   ariaLabel,
+  className = "",
 }: PillNavProps<T>) {
   return (
-    <nav className="app-pill-nav" aria-label={ariaLabel}>
-      {items.map((item) => {
+    <nav
+      className={["app-pill-nav", className].filter(Boolean).join(" ")}
+      aria-label={ariaLabel}
+    >      {items.map((item) => {
         const isActive = item.value === value;
         const count =
           item.count === null || item.count === undefined

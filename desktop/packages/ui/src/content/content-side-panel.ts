@@ -60,11 +60,11 @@ export function getContentSidePanelWidthKey(pathname: string): string {
   if (isKnowledgeSectionPath(pathname)) {
     return KNOWLEDGE_LIST_PANEL_WIDTH_KEY;
   }
-  if (isContactSectionPath(pathname)) {
-    return CONTACTS_LIST_PANEL_WIDTH_KEY;
-  }
   if (isOrganizationSectionPath(pathname)) {
     return ORGANIZATIONS_LIST_PANEL_WIDTH_KEY;
+  }
+  if (isContactSectionPath(pathname)) {
+    return CONTACTS_LIST_PANEL_WIDTH_KEY;
   }
   if (isFinanceSectionPath(pathname)) {
     return FINANCE_LIST_PANEL_WIDTH_KEY;

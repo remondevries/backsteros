@@ -16,16 +16,13 @@ import {
 import {
   defaultNewMeetingTimes,
   withCalendarMeetingSearch,
-  getCalendarMeetingOverlayHref,
   readCalendarViewModeFromSearch,
-  readCalendarPageModeFromSearch,
   unscheduledCalendarTasks,
   withCalendarViewSearch,
   type CalendarSidePanelHabitItem,
 } from "@backsteros/ui/calendar";
-import { getFirstInboxItemHref, getJournalHref } from "@backsteros/ui";
+import { getFirstInboxItemHref, getJournalHref, parseCrmGroupId } from "@backsteros/ui";
 import {
-  getContactsHref,
   getKnowledgeHref,
   getLettersHref,
   getOrganizationsHref,
@@ -41,7 +38,6 @@ import { useDesktopApi } from "../lib/api-context";
 import { useAgentMail } from "../lib/agentmail-context";
 import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
 import {
-  firstContactHref,
   firstKnowledgeHref,
   firstLetterHref,
   firstOrganizationHref,
@@ -67,6 +63,7 @@ import {
   useShellLocation,
 } from "../lib/shell-route-keep-alive";
 import type { PendingPageSurface as Surface } from "../lib/pending-navigation-routes";
+import { useCrmGroupsCatalog } from "../lib/use-crm-data";
 import {
   useDesktopWorkspaceActions,
   useDesktopWorkspaceDocuments,
@@ -574,7 +571,6 @@ export function CalendarKeepAliveSidePanel({
   }, [allTasks, frozen, habits]);
 
   const calendarViewMode = readCalendarViewModeFromSearch(search);
-  const calendarPageMode = readCalendarPageModeFromSearch(search);
 
   return (
     <DesktopCalendarSidePanel
@@ -595,19 +591,11 @@ export function CalendarKeepAliveSidePanel({
             endAt,
           })
           .then((created) => {
-            onNavigate(
-              calendarPageMode === "calendar"
-                ? getCalendarMeetingOverlayHref(created.id, calendarViewMode)
-                : withCalendarMeetingSearch(created.id, search),
-            );
+            onNavigate(withCalendarMeetingSearch(created.id, search));
           });
       }}
       onMeetingOpen={(meetingId) =>
-        onNavigate(
-          calendarPageMode === "calendar"
-            ? getCalendarMeetingOverlayHref(meetingId, calendarViewMode)
-            : withCalendarMeetingSearch(meetingId, search),
-        )
+        onNavigate(withCalendarMeetingSearch(meetingId, search))
       }
       onTaskOpen={(taskId) =>
         onNavigate(
@@ -864,36 +852,22 @@ export function ContactsKeepAliveSidePanel({
 }: {
   onNavigate: PanelNav;
 }) {
-  const frozen = useKeepAliveFrozen();
-  const { pathname } = useShellLocation();
-  const { contacts } = useDesktopWorkspacePeople();
-  const workspaceActions = useDesktopWorkspaceActions();
-  const contactAvatarSrc = useDesktopAvatarSrcMap(
-    "contact",
-    frozen ? NO_ENTITIES : contacts,
-  );
-  const items = useMemo(
-    () => (frozen ? contacts : withAvatarSrc(contacts, contactAvatarSrc)),
-    [contactAvatarSrc, contacts, frozen],
-  );
-  const firstHref = firstContactHref(contacts);
+  const { searchStr } = useShellLocation();
+  const catalog = useCrmGroupsCatalog(true);
+  const selectedGroupId = parseCrmGroupId(searchStr ?? "");
 
   return (
     <DesktopContactsSidePanel
       onNavigate={onNavigate}
-      pathname={panePathnameWithFirstItem(
-        pathname,
-        firstHref,
-        pathname.startsWith("/contacts/"),
-      )}
-      items={items}
+      selectedGroupId={selectedGroupId}
+      groups={catalog.groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        color: group.color,
+      }))}
       Link={RouterLink}
-      onAdd={() => {
-        void workspaceActions
-          .createContact({ name: "New contact" })
-          .then((created) => {
-            onNavigate(getContactsHref(created.id));
-          });
+      onCreateGroup={(input) => {
+        void catalog.createGroup(input);
       }}
     />
   );

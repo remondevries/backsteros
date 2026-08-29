@@ -44,6 +44,9 @@ import {
   updateCashflowPlannerEntrySchema,
   updateFinancialTransactionSchema,
   updateMoneybirdSettingsSchema,
+  updateMapboxSettingsSchema,
+  mapboxGeocodeQuerySchema,
+  mapboxStaticMapQuerySchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
@@ -58,6 +61,13 @@ import {
   moneybirdSalesInvoicesQuerySchema,
   moneybirdInvoiceRevenueQuerySchema,
   researchRequestSchema,
+  contactRelationshipInputSchema,
+  updateContactRelationshipSchema,
+  crmGroupInputSchema,
+  updateCrmGroupSchema,
+  crmGroupMemberInputSchema,
+  createCrmActivityNoteSchema,
+  crmActivityFeedQuerySchema,
 } from "@backsteros/contracts";
 
 import {
@@ -95,9 +105,11 @@ import * as circleService from "../services/circle-domain.js";
 import * as financeService from "../services/finance/finance.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
+import * as mapboxSettingsService from "../services/mapbox-settings.js";
 import * as agentmailSettingsService from "../services/agentmail-settings.js";
 import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
+import { MapboxApiError } from "../lib/mapbox-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
 import {
@@ -117,6 +129,8 @@ import {
 import * as habitService from "../services/habits.js";
 import * as meetingService from "../services/meetings.js";
 import * as meetingSchedulingService from "../services/meeting-scheduling.js";
+import * as crmGroupsService from "../services/crm-groups.js";
+import * as crmActivitiesService from "../services/crm-activities.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
@@ -187,8 +201,19 @@ const contactSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
   organizationId: z.string().nullable().optional(),
-  name: z.string().min(1).max(255),
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().max(255).nullable().optional(),
+  name: z.string().min(1).max(255).optional(),
   email: z.string().email().nullable().optional(),
+  emails: z
+    .array(
+      z.object({
+        label: z.enum(["personal", "work", "other"]),
+        address: z.string().email(),
+      }),
+    )
+    .max(20)
+    .optional(),
   title: z.string().max(255).nullable().optional(),
   summary: z.string().max(2000).nullable().optional(),
   sortOrder: z.number().int().optional(),
@@ -199,7 +224,15 @@ const contactSchema = z.object({
   city: z.string().max(255).nullable().optional(),
   postalCode: z.string().max(32).nullable().optional(),
   country: z.string().max(128).nullable().optional(),
+  region: z.string().max(128).nullable().optional(),
+  latitude: z.number().finite().min(-90).max(90).nullable().optional(),
+  longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
+  birthday: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+    .nullable()
+    .optional(),
 });
 const areaSchema = z.object({
   name: z.string().min(1).max(255),
@@ -2735,6 +2768,339 @@ export function registerApiRoutes(app: Hono) {
     return c.body(null, 204);
   });
 
+  app.get("/api/v1/contacts/:id/relationships", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const result = await crmGroupsService.listContactRelationships(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return result
+      ? c.json({ relationships: result })
+      : c.json(notFound("Contact"), 404);
+  });
+  app.post(
+    "/api/v1/contacts/:id/relationships",
+    zValidator("json", contactRelationshipInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      try {
+        const row = await crmGroupsService.createContactRelationship(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return c.json(row, 201);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        if (error.message === "CONTACT_NOT_FOUND") {
+          return c.json(notFound("Contact"), 404);
+        }
+        if (error.message === "RELATED_CONTACT_NOT_FOUND") {
+          return c.json(notFound("Related contact"), 404);
+        }
+        if (
+          error.message === "SELF_RELATIONSHIP" ||
+          error.message === "RELATIONSHIP_EXISTS"
+        ) {
+          return c.json(
+            {
+              error: {
+                code: error.message,
+                message:
+                  error.message === "SELF_RELATIONSHIP"
+                    ? "A contact cannot relate to itself."
+                    : "Relationship already exists.",
+              },
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+  app.patch(
+    "/api/v1/contact-relationships/:id",
+    zValidator("json", updateContactRelationshipSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      const row = await crmGroupsService.updateContactRelationship(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row ? c.json(row) : c.json(notFound("Relationship"), 404);
+    },
+  );
+  app.delete("/api/v1/contact-relationships/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+    const ok = await crmGroupsService.deleteContactRelationship(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return ok ? c.body(null, 204) : c.json(notFound("Relationship"), 404);
+  });
+
+  app.get("/api/v1/crm-groups", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read") && !can(auth, "organizations:read")) {
+      return c.json(forbidden(), 403);
+    }
+    return c.json({
+      groups: await crmGroupsService.listCrmGroups(auth.workspaceId),
+    });
+  });
+  app.get("/api/v1/crm-groups/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read") && !can(auth, "organizations:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const row = await crmGroupsService.getCrmGroupById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return row ? c.json(row) : c.json(notFound("Group"), 404);
+  });
+  app.post(
+    "/api/v1/crm-groups",
+    zValidator("json", crmGroupInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write") && !can(auth, "organizations:write")) {
+        return c.json(forbidden(), 403);
+      }
+      const row = await crmGroupsService.createCrmGroup(
+        auth.workspaceId,
+        c.req.valid("json"),
+      );
+      return c.json(row, 201);
+    },
+  );
+  app.patch(
+    "/api/v1/crm-groups/:id",
+    zValidator("json", updateCrmGroupSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write") && !can(auth, "organizations:write")) {
+        return c.json(forbidden(), 403);
+      }
+      const row = await crmGroupsService.updateCrmGroup(
+        auth.workspaceId,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return row ? c.json(row) : c.json(notFound("Group"), 404);
+    },
+  );
+  app.delete("/api/v1/crm-groups/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write") && !can(auth, "organizations:write")) {
+      return c.json(forbidden(), 403);
+    }
+    const ok = await crmGroupsService.deleteCrmGroup(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return ok ? c.body(null, 204) : c.json(notFound("Group"), 404);
+  });
+  app.get("/api/v1/crm-groups/:id/members", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read") && !can(auth, "organizations:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const members = await crmGroupsService.listCrmGroupMembers(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return members
+      ? c.json({ members })
+      : c.json(notFound("Group"), 404);
+  });
+  app.post(
+    "/api/v1/crm-groups/:id/members",
+    zValidator("json", crmGroupMemberInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write") && !can(auth, "organizations:write")) {
+        return c.json(forbidden(), 403);
+      }
+      try {
+        const row = await crmGroupsService.addCrmGroupMember(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json"),
+        );
+        return c.json(row, 201);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        if (error.message === "GROUP_NOT_FOUND") {
+          return c.json(notFound("Group"), 404);
+        }
+        if (error.message === "SUBJECT_NOT_FOUND") {
+          return c.json(notFound("Member subject"), 404);
+        }
+        throw error;
+      }
+    },
+  );
+  app.delete("/api/v1/crm-groups/:groupId/members/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write") && !can(auth, "organizations:write")) {
+      return c.json(forbidden(), 403);
+    }
+    const ok = await crmGroupsService.removeCrmGroupMember(
+      auth.workspaceId,
+      c.req.param("groupId"),
+      c.req.param("id"),
+    );
+    return ok ? c.body(null, 204) : c.json(notFound("Member"), 404);
+  });
+  app.get("/api/v1/contacts/:id/groups", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const groups = await crmGroupsService.listCrmGroupsForSubject(
+      auth.workspaceId,
+      "contact",
+      c.req.param("id"),
+    );
+    return groups
+      ? c.json({ groups })
+      : c.json(notFound("Contact"), 404);
+  });
+  app.get("/api/v1/organizations/:id/groups", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
+    const groups = await crmGroupsService.listCrmGroupsForSubject(
+      auth.workspaceId,
+      "organization",
+      c.req.param("id"),
+    );
+    return groups
+      ? c.json({ groups })
+      : c.json(notFound("Organization"), 404);
+  });
+
+  app.get("/api/v1/contacts/:id/activity", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    const contact = await circleService.getContactById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!contact) return c.json(notFound("Contact"), 404);
+    const query = crmActivityFeedQuerySchema.parse({
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    });
+    const feed = await crmActivitiesService.listCrmActivityFeed(
+      auth.workspaceId,
+      { subjectType: "contact", subjectId: contact.id },
+      query,
+    );
+    return c.json(feed);
+  });
+  app.post(
+    "/api/v1/contacts/:id/activity",
+    zValidator("json", createCrmActivityNoteSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      const contact = await circleService.getContactById(
+        auth.workspaceId,
+        c.req.param("id"),
+      );
+      if (!contact) return c.json(notFound("Contact"), 404);
+      try {
+        const row = await crmActivitiesService.createCrmActivityNote(
+          auth.workspaceId,
+          { subjectType: "contact", subjectId: contact.id },
+          c.req.valid("json"),
+          auth.userId ?? null,
+        );
+        return c.json(row, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_NOTE_BODY" ||
+            error.message === "INVALID_OCCURRED_AT")
+        ) {
+          return c.json(
+            {
+              error: {
+                code: error.message,
+                message: "Invalid note activity payload.",
+              },
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+  app.get("/api/v1/organizations/:id/activity", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "organizations:read")) return c.json(forbidden(), 403);
+    const organization = await circleService.getOrganizationById(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    if (!organization) return c.json(notFound("Organization"), 404);
+    const query = crmActivityFeedQuerySchema.parse({
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    });
+    const feed = await crmActivitiesService.listCrmActivityFeed(
+      auth.workspaceId,
+      { subjectType: "organization", subjectId: organization.id },
+      query,
+    );
+    return c.json(feed);
+  });
+  app.post(
+    "/api/v1/organizations/:id/activity",
+    zValidator("json", createCrmActivityNoteSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "organizations:write")) return c.json(forbidden(), 403);
+      const organization = await circleService.getOrganizationById(
+        auth.workspaceId,
+        c.req.param("id"),
+      );
+      if (!organization) return c.json(notFound("Organization"), 404);
+      try {
+        const row = await crmActivitiesService.createCrmActivityNote(
+          auth.workspaceId,
+          { subjectType: "organization", subjectId: organization.id },
+          c.req.valid("json"),
+          auth.userId ?? null,
+        );
+        return c.json(row, 201);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "INVALID_NOTE_BODY" ||
+            error.message === "INVALID_OCCURRED_AT")
+        ) {
+          return c.json(
+            {
+              error: {
+                code: error.message,
+                message: "Invalid note activity payload.",
+              },
+            },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
   app.get("/api/v1/areas", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "projects:read")) return c.json(forbidden(), 403);
@@ -3317,6 +3683,96 @@ export function registerApiRoutes(app: Hono) {
       await moneybirdSettingsService.testMoneybirdConnection(auth.workspaceId),
     );
   });
+  app.get("/api/v1/settings/mapbox", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await mapboxSettingsService.getMapboxSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/mapbox", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateMapboxSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid Mapbox settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await mapboxSettingsService.updateMapboxSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/mapbox/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await mapboxSettingsService.testMapboxConnection(auth.workspaceId),
+    );
+  });
+  app.get(
+    "/api/v1/mapbox/geocode",
+    zValidator("query", mapboxGeocodeQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read") && !can(auth, "contacts:write")) {
+        return c.json(forbidden(), 403);
+      }
+      const { q, country } = c.req.valid("query");
+      try {
+        const result = await mapboxSettingsService.geocodeQuery(
+          auth.workspaceId,
+          q,
+          { country },
+        );
+        return c.json({ result });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Mapbox geocode failed";
+        const status =
+          error instanceof MapboxApiError && error.status === 401 ? 400 : 400;
+        return c.json({ error: message, code: "bad_request" }, status);
+      }
+    },
+  );
+  app.get(
+    "/api/v1/mapbox/static-map",
+    zValidator("query", mapboxStaticMapQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "settings:read") && !can(auth, "contacts:read")) {
+        return c.json(forbidden(), 403);
+      }
+      const query = c.req.valid("query");
+      try {
+        const png = await mapboxSettingsService.fetchStaticMapPng(
+          auth.workspaceId,
+          {
+            latitude: query.lat,
+            longitude: query.lng,
+            zoom: query.z,
+            width: query.width,
+            height: query.height,
+          },
+        );
+        return new Response(png, {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "cache-control": "private, max-age=3600",
+          },
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Mapbox static map failed";
+        return c.json({ error: message, code: "bad_request" }, 400);
+      }
+    },
+  );
   app.get("/api/v1/settings/agentmail", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);

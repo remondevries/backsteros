@@ -227,6 +227,8 @@ test("tasks-list and standalone /projects stay in the keep-alive side-panel set"
   assert.equal(keepAliveDestinationShowsSidePanel("/tasks"), false);
   assert.equal(keepAliveDestinationShowsSidePanel("/projects"), false);
   assert.equal(keepAliveDestinationShowsSidePanel("/projects/CA"), true);
+  assert.equal(keepAliveDestinationShowsSidePanel("/contacts"), true);
+  assert.equal(keepAliveDestinationShowsSidePanel("/contacts/1"), true);
   assert.equal(keepAliveDestinationShowsSidePanel("/letters"), true);
 });
 

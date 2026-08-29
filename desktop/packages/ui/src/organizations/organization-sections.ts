@@ -6,6 +6,7 @@ import {
 
 export const ORGANIZATION_SECTION_IDS = [
   "overview",
+  "activity",
   "projects",
   "letters",
   "contacts",
@@ -22,6 +23,7 @@ export type OrganizationSectionConfig = {
 
 export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "overview", label: "Overview" },
+  { id: "activity", label: "Activity" },
   { id: "projects", label: "Projects" },
   { id: "letters", label: "Letters" },
   { id: "contacts", label: "Contacts" },
@@ -32,6 +34,7 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
 /** Always-visible org tabs (finance tabs are opt-in when linked data exists). */
 export const ORGANIZATION_BASE_SECTION_IDS = [
   "overview",
+  "activity",
   "projects",
   "letters",
   "contacts",

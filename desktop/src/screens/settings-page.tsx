@@ -53,6 +53,7 @@ import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { projectFs } from "../lib/project-fs";
 import { SettingsCursorTab } from "../components/settings-cursor-tab";
 import { SettingsMoneybirdTab } from "../components/settings-moneybird-tab";
+import { SettingsMapboxTab } from "../components/settings-mapbox-tab";
 import { SettingsEmailTab } from "../components/settings-email-tab";
 
 function ClerkAccountEmailCard() {
@@ -841,6 +842,11 @@ export function SettingsPage() {
         <SettingsWhoopTab title={meta.label} description={meta.description} />
       ) : activeTab === "moneybird" ? (
         <SettingsMoneybirdTab
+          title={meta.label}
+          description={meta.description}
+        />
+      ) : activeTab === "mapbox" ? (
+        <SettingsMapboxTab
           title={meta.label}
           description={meta.description}
         />

@@ -63,8 +63,9 @@ describe("resolveAppHref section roots", () => {
       knowledge: "/knowledge/note",
     });
     expect(formatResolvedAppHref(resolveAppHref("/inbox"))).toBe("/inbox/in-1");
+    // Contacts catalog is main-content (no last-contact redirect).
     expect(formatResolvedAppHref(resolveAppHref("/contacts"))).toBe(
-      "/contacts/1",
+      "/contacts",
     );
     expect(formatResolvedAppHref(resolveAppHref("/organizations"))).toBe(
       "/organizations/2",

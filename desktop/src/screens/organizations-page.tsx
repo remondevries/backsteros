@@ -24,6 +24,9 @@ import {
   RegisterPageTitle,
   ScopedLettersListView,
   ProjectsOverviewView,
+  CrmActivityFeedView,
+  CrmGroupsChips,
+  CrmGroupsManagePanel,
   buildOrganizationProjectsHref,
   getLettersHref,
   getOrganizationContactHref,
@@ -56,6 +59,10 @@ import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
 } from "../lib/avatar-upload";
+import {
+  useCrmActivityFeed,
+  useCrmGroupsForSubject,
+} from "../lib/use-crm-data";
 import { firstOrganizationRouteParam } from "../lib/section-entry-hrefs";
 import {
   useKeepAliveActive,
@@ -166,6 +173,16 @@ function OrganizationsPageBody() {
     : null;
 
   const activeSection = parseOrganizationSectionId(sectionParam);
+  const activityFeed = useCrmActivityFeed(
+    "organization",
+    selected?.id ?? null,
+    keepAliveActive && activeSection === "activity",
+  );
+  const crmGroups = useCrmGroupsForSubject(
+    "organization",
+    selected?.id ?? null,
+    keepAliveActive && Boolean(selected),
+  );
   const [hasTransactions, setHasTransactions] = useState(false);
   const [hasInvoices, setHasInvoices] = useState(false);
   const [financeProbeReady, setFinanceProbeReady] = useState(false);
@@ -640,6 +657,22 @@ function OrganizationsPageBody() {
   }
 
   function renderSection(sectionId: OrganizationSectionId) {
+    if (sectionId === "activity") {
+      return (
+        <CrmActivityFeedView
+          items={activityFeed.items}
+          loading={activityFeed.loading}
+          error={activityFeed.error}
+          nextCursor={activityFeed.nextCursor}
+          onLoadMore={activityFeed.loadMore}
+          onSubmitNote={activityFeed.submitNote}
+          onOpenMeeting={(meetingId) =>
+            navigate(`/calendar/meetings/${encodeURIComponent(meetingId)}`)
+          }
+        />
+      );
+    }
+
     if (sectionId === "projects") {
       return (
         <ProjectsOverviewView
@@ -863,6 +896,20 @@ function OrganizationsPageBody() {
         section={activeSection}
         onSectionChange={handleSectionChange}
         renderSection={renderSection}
+        groupsSlot={
+          <div>
+            <CrmGroupsChips groups={crmGroups.memberGroups} />
+            <CrmGroupsManagePanel
+              groups={crmGroups.allGroups}
+              subjectType="organization"
+              subjectId={organization.id}
+              memberGroupIds={crmGroups.memberGroups.map((group) => group.id)}
+              onCreateGroup={crmGroups.createGroup}
+              onToggleMembership={crmGroups.toggleMembership}
+              onDeleteGroup={crmGroups.deleteGroup}
+            />
+          </div>
+        }
         overviewHeaderAccessory={
           <AvatarUpload
             displayName={organization.name}

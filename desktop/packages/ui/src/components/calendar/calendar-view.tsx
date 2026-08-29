@@ -48,6 +48,10 @@ import {
   type CalendarMeetingPopoverMeeting,
 } from "./calendar-meeting-event-popover.js";
 import {
+  CalendarBirthdayEventPopover,
+  type CalendarBirthdayPopoverContact,
+} from "./calendar-birthday-event-popover.js";
+import {
   CalendarTaskEventPopover,
   type CalendarTaskPopoverTask,
 } from "./calendar-task-event-popover.js";
@@ -85,7 +89,17 @@ export type CalendarViewProps = {
   resolveMeeting?: (
     meetingId: string,
   ) => CalendarMeetingPopoverMeeting | null | undefined;
+  /** When set, clicking a birthday marker opens an anchored contact popover. */
+  resolveBirthdayContact?: (
+    contactId: string,
+  ) => CalendarBirthdayPopoverContact | null | undefined;
   onTaskOpen?: (taskId: string) => void;
+  /** Opens the contact profile for a birthday marker (View profile / fallback). */
+  onBirthdayOpen?: (contactId: string) => void;
+  onBirthdayAddNote?: (contactId: string) => void;
+  onBirthdayAddTask?: (contactId: string) => void;
+  onBirthdayAddMeeting?: (contactId: string) => void;
+  onBirthdaySendEmail?: (contactId: string) => void;
   /** Opens the meeting detail overlay (narrow panel by default). */
   onMeetingOpen?: (meetingId: string) => void;
   /** Habit day tasks keyed by local `YYYY-MM-DD` (shown above each day's events). */
@@ -133,7 +147,13 @@ export function CalendarView({
   resolveTask,
   onTaskPopoverChange,
   resolveMeeting,
+  resolveBirthdayContact,
   onTaskOpen,
+  onBirthdayOpen,
+  onBirthdayAddNote,
+  onBirthdayAddTask,
+  onBirthdayAddMeeting,
+  onBirthdaySendEmail,
   onMeetingOpen,
   dayHabitsByDate,
   onToggleDayHabit,
@@ -155,6 +175,11 @@ export function CalendarView({
     useState<OpenTaskPopoverState | null>(null);
   const [openMeetingPopover, setOpenMeetingPopover] =
     useState<OpenMeetingPopoverState | null>(null);
+  const [openBirthdayPopover, setOpenBirthdayPopover] = useState<{
+    contact: CalendarBirthdayPopoverContact;
+    occurrenceDate: string | null;
+    anchorRect: DOMRect;
+  } | null>(null);
   const [visibleRange, setVisibleRange] = useState<{
     start: Date;
     end: Date;
@@ -190,6 +215,7 @@ export function CalendarView({
   const closePopovers = useCallback(() => {
     setOpenTaskPopover(null);
     setOpenMeetingPopover(null);
+    setOpenBirthdayPopover(null);
   }, []);
 
   useEffect(() => {
@@ -197,7 +223,9 @@ export function CalendarView({
   }, [onTaskPopoverChange, openTaskPopover?.task.id]);
 
   const calendarEntityPopoverOpen =
-    openTaskPopover != null || openMeetingPopover != null;
+    openTaskPopover != null ||
+    openMeetingPopover != null ||
+    openBirthdayPopover != null;
 
   useListDismissDetailShortcut({
     enabled: calendarEntityPopoverOpen,
@@ -205,21 +233,25 @@ export function CalendarView({
   });
 
   const openCalendarEvent = useCallback(
-    (eventId: string, anchorRect: DOMRect) => {
-      const event = events.find((entry) => entry.id === eventId);
-      if (!event) return;
-
+    (
+      eventLike: {
+        id: string;
+        start?: string | Date | null;
+        extendedProps: Record<string, unknown>;
+      },
+      anchorRect: DOMRect,
+    ) => {
       const habitId =
-        event.extendedProps.entityType === "task"
-          ? event.extendedProps.habitId
+        eventLike.extendedProps.entityType === "task"
+          ? eventLike.extendedProps.habitId
           : null;
       if (typeof habitId === "string" && habitId.trim()) {
         return;
       }
 
       const entity = calendarEntityFromEvent({
-        id: event.id,
-        extendedProps: event.extendedProps,
+        id: eventLike.id,
+        extendedProps: eventLike.extendedProps,
       });
 
       if (entity.entityType === "meeting") {
@@ -235,6 +267,30 @@ export function CalendarView({
         return;
       }
 
+      if (entity.entityType === "birthday") {
+        if (openBirthdayPopover?.contact.id === entity.entityId) {
+          closePopovers();
+          return;
+        }
+        if (resolveBirthdayContact) {
+          const contact = resolveBirthdayContact(entity.entityId);
+          if (contact) {
+            closePopovers();
+            const start = eventLike.start;
+            const occurrenceDate =
+              typeof start === "string" && start.length >= 10
+                ? start.slice(0, 10)
+                : start instanceof Date && !Number.isNaN(start.getTime())
+                  ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`
+                  : null;
+            setOpenBirthdayPopover({ contact, occurrenceDate, anchorRect });
+            return;
+          }
+        }
+        onBirthdayOpen?.(entity.entityId);
+        return;
+      }
+
       if (resolveTask) {
         const task = resolveTask(entity.entityId);
         if (task) {
@@ -247,9 +303,11 @@ export function CalendarView({
     },
     [
       closePopovers,
-      events,
+      onBirthdayOpen,
       onMeetingOpen,
       onTaskOpen,
+      openBirthdayPopover?.contact.id,
+      resolveBirthdayContact,
       resolveMeeting,
       resolveTask,
     ],
@@ -274,6 +332,15 @@ export function CalendarView({
           onMeetingOpen(entity.entityId);
           return;
         }
+      } else if (entity.entityType === "birthday") {
+        if (
+          openBirthdayPopover?.contact.id === entity.entityId &&
+          onBirthdayOpen
+        ) {
+          closePopovers();
+          onBirthdayOpen(entity.entityId);
+          return;
+        }
       } else if (openTaskPopover?.task.id === entity.entityId && onTaskOpen) {
         closePopovers();
         onTaskOpen(entity.entityId);
@@ -288,13 +355,22 @@ export function CalendarView({
         document.body.querySelector<HTMLElement>(
           `[${CALENDAR_GRID_KEYBOARD_ITEM_ATTR}="${CSS.escape(eventId)}"]`,
         );
-      openCalendarEvent(eventId, anchorEl?.getBoundingClientRect() ?? new DOMRect());
+      openCalendarEvent(
+        {
+          id: event.id,
+          start: event.start,
+          extendedProps: event.extendedProps,
+        },
+        anchorEl?.getBoundingClientRect() ?? new DOMRect(),
+      );
     },
     [
       closePopovers,
       events,
+      onBirthdayOpen,
       onMeetingOpen,
       onTaskOpen,
+      openBirthdayPopover,
       openCalendarEvent,
       openMeetingPopover,
       openTaskPopover,
@@ -396,6 +472,10 @@ export function CalendarView({
     revert: () => void,
   ) => {
     const entity = calendarEntityFromEvent(event);
+    if (entity.entityType === "birthday") {
+      revert();
+      return;
+    }
     if (entity.entityType === "meeting") {
       const patch = calendarChangeToMeetingPatch({
         start: event.start,
@@ -438,6 +518,10 @@ export function CalendarView({
   const handleEventReceive = (info: EventReceiveArg) => {
     closePopovers();
     const entity = calendarEntityFromEvent(info.event);
+    if (entity.entityType === "birthday") {
+      info.revert();
+      return;
+    }
     if (entity.entityType === "meeting") {
       const patch = calendarChangeToMeetingPatch({
         start: info.event.start,
@@ -502,7 +586,15 @@ export function CalendarView({
       return;
     }
     info.jsEvent.preventDefault();
-    openCalendarEvent(info.event.id, info.el.getBoundingClientRect());
+    info.jsEvent.stopPropagation();
+    openCalendarEvent(
+      {
+        id: info.event.id,
+        start: info.event.startStr || info.event.start,
+        extendedProps: info.event.extendedProps as Record<string, unknown>,
+      },
+      info.el.getBoundingClientRect(),
+    );
   };
 
   const popoverTask =
@@ -515,6 +607,12 @@ export function CalendarView({
       ? (resolveMeeting(openMeetingPopover.meeting.id) ??
         openMeetingPopover.meeting)
       : openMeetingPopover?.meeting;
+
+  const popoverBirthdayContact =
+    openBirthdayPopover && resolveBirthdayContact
+      ? (resolveBirthdayContact(openBirthdayPopover.contact.id) ??
+        openBirthdayPopover.contact)
+      : openBirthdayPopover?.contact;
 
   return (
     <div className="calendar-view" data-calendar-view>
@@ -545,6 +643,10 @@ export function CalendarView({
           eventStartEditable
           eventDurationEditable
           eventResizableFromStart
+          eventDragMinDistance={8}
+          eventAllow={(_span, moving) =>
+            moving?.extendedProps?.entityType !== "birthday"
+          }
           droppable
           selectable={selectEnabled}
           selectMirror={selectEnabled}
@@ -585,6 +687,18 @@ export function CalendarView({
         anchorRect={openMeetingPopover?.anchorRect ?? null}
         onClose={() => setOpenMeetingPopover(null)}
         onOpenMeeting={onMeetingOpen}
+      />
+      <CalendarBirthdayEventPopover
+        open={openBirthdayPopover != null}
+        contact={popoverBirthdayContact ?? null}
+        occurrenceDate={openBirthdayPopover?.occurrenceDate ?? null}
+        anchorRect={openBirthdayPopover?.anchorRect ?? null}
+        onClose={() => setOpenBirthdayPopover(null)}
+        onViewProfile={onBirthdayOpen}
+        onAddNote={onBirthdayAddNote}
+        onAddTask={onBirthdayAddTask}
+        onAddMeeting={onBirthdayAddMeeting}
+        onSendEmail={onBirthdaySendEmail}
       />
     </div>
   );

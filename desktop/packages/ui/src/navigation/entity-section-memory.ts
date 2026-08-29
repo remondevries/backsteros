@@ -32,6 +32,8 @@ export function rememberContactSection(section: ContactSectionId): void {
 export function getRememberedContactSection(): ContactSectionId | null {
   if (typeof window === "undefined") return null;
   const stored = sessionStorage.getItem(CONTACT_SECTION_STORAGE_KEY);
-  if (!stored || !isContactSectionId(stored)) return null;
+  if (!stored) return null;
+  if (stored === "activity" || stored === "relationships") return "details";
+  if (!isContactSectionId(stored)) return null;
   return stored;
 }

@@ -41,6 +41,8 @@ export type MeetingListItem = {
   notes?: string | null;
   transcription?: string | null;
   status?: string;
+  /** video_call | in_person | phone_call */
+  format?: string;
   priority?: number;
   projectId?: string | null;
   projectKey?: string | null;

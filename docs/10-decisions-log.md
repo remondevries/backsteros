@@ -449,3 +449,66 @@ fork of the Next deployment pipeline.
 
 ---
 
+## ADR-031: CRM Phase 1 — contacts/orgs foundation
+
+**Status:** Accepted (2026-08)  
+**Context:** BacksterOS needs Clay/Dex-style personal CRM basics (birthdays, relationships, groups, activity feed) without social OAuth, enrichment, or reach-out automation.  
+**Decision:**
+
+- **Birthday:** nullable `contacts.birthday` as full `YYYY-MM-DD` (year required). Yearless birthdays deferred. Calendar shows **virtual** yearly all-day markers derived from the field — not meetings.
+- **Relationships:** directed `contact_relationships` edges; UI lists both directions with inverse labels (no duplicate edges). Separate from `GET /contacts/:id/relations` (org/tasks/letters).
+- **Groups:** `crm_groups` + polymorphic `crm_group_members` (`contact` | `organization`). Desktop manage/chips on detail; group merged feed deferred (TODO).
+- **Activity:** `crm_activities` with `note` (body capped ≤8KB, Tier A) and `meeting` (materialized pointers synced on meeting write/delete). Feed APIs paginate reverse-chronologically; desktop Activity tabs use REST.
+- **Scopes:** reuse `contacts:*` / `organizations:*`. Desktop-first; mobile parity TODO.
+- **Out of scope:** social connectors, Clay enrichment, auto reach-out tasks.
+
+**Consequences:** Re-run `db:migrate` + `db:powersync-setup` after deploy. Meeting feed rows stay in sync via meeting domain writes.
+
+---
+
+## ADR-032: Contact first + last name
+
+**Status:** Accepted (2026-08)  
+**Context:** A single `contacts.name` field blocks last-name-only search and a proper given/family identity header.  
+**Decision:**
+
+- Add `first_name` (required) and `last_name` (required, default `''`).
+- Migrate existing `name` → `first_name`; keep `name` as the derived display string `trim(first + ' ' + last)` updated on write.
+- API create/update accept `firstName` / `lastName` (legacy `name` alone still maps to firstName).
+- Search matches `name`, `first_name`, `last_name`, and `email`.
+
+**Consequences:** Clients should edit first/last separately; list labels continue to use display `name`. Re-run migrate + PowerSync setup so Tier A sync includes the new columns.
+
+---
+
+## ADR-033: Contact additional email addresses
+
+**Status:** Accepted (2026-08)  
+**Context:** Matching inbound/outbound mail to a contact fails when people use aliases or secondary addresses beyond a single primary `contacts.email`.  
+**Decision:**
+
+- Keep `contacts.email` as the primary address.
+- Store additional addresses in `contacts.emails` (`jsonb` array of `{ label, address }`, labels `personal` | `work` | `other`, max 20). Column already migrated in `0071_contact_emails.sql` (legacy string entries coerced on read/write).
+- Normalize on write (trim, dedupe case-insensitively, drop aliases that match primary). Shared helpers live in `@backsteros/contracts` (`getContactEmailAddresses`, `contactMatchesEmailAddress`, …).
+- Desktop contact overview edits primary + additional rows with a label dropdown; email UI search/match uses the full address set.
+- The primary address also stores its Personal/Work/Other label inside `emails` (same address as `email`); clients render one unified list with index 0 as primary.
+
+**Consequences:** Re-deploy PowerSync sync-config so clients receive `emails`. Email linking should prefer any matching address, not only primary.
+
+---
+
+## ADR-034: Mapbox — access token for geocode + contact maps
+
+**Status:** Accepted (2026-08)  
+**Context:** Contact (and future meeting) locations are free-text address fields with no validation or map. We want autocomplete-quality geocoding later and a map pin now, without putting third-party secrets in PowerSync.  
+**Decision:**
+
+- Store the Mapbox access token in `workspace_integration_secrets.mapbox_access_token` (same pattern as Moneybird / Cursor — ADR-027). Settings responses expose only `accessTokenConfigured` + masked preview.
+- Thin server client (`mapbox-client.ts`) proxies Geocoding and Static Images; desktop never embeds the token for these calls.
+- Persist `contacts.latitude` / `contacts.longitude` (Tier A / PowerSync) when Location details are saved and geocode succeeds; clear when address fields are emptied. Static map PNG is fetched on demand via `GET /api/v1/mapbox/static-map`.
+- Settings → Integrations → Mapbox for token save/test. Address autocomplete and meeting locations are deferred; reuse the geocode/place contracts when added.
+
+**Consequences:** Re-run migrate + PowerSync setup so clients receive lat/lng. Prefer a URL-restricted `pk.` token or a server `sk.` token; both work server-side.
+
+---
+

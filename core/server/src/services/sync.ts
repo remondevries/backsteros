@@ -12,6 +12,7 @@ import type {
 import {
   bankAccountInputSchema,
   contactInputSchema,
+  updateContactSchema,
   createHabitSchema,
   createMeetingSchema,
   updateHabitSchema,
@@ -195,13 +196,34 @@ function organizationSnapshot(row: typeof organizations.$inferSelect) {
 
 function contactSnapshot(row: typeof contacts.$inferSelect) {
   return {
-    id: row.id, number: row.number, key: row.key, organization_id: row.organizationId,
-    name: row.name, email: row.email, title: row.title, summary: row.summary,
-    avatar_storage_key: row.avatarStorageKey, avatar_content_type: row.avatarContentType,
-    sort_order: row.sortOrder, phone: row.phone, role: row.role, notes: row.notes,
-    address: row.address, city: row.city, postal_code: row.postalCode, country: row.country,
+    id: row.id,
+    number: row.number,
+    key: row.key,
+    organization_id: row.organizationId,
+    name: row.name,
+    first_name: row.firstName,
+    last_name: row.lastName,
+    email: row.email,
+    emails: JSON.stringify(row.emails ?? []),
+    title: row.title,
+    summary: row.summary,
+    avatar_storage_key: row.avatarStorageKey,
+    avatar_content_type: row.avatarContentType,
+    sort_order: row.sortOrder,
+    phone: row.phone,
+    role: row.role,
+    notes: row.notes,
+    address: row.address,
+    city: row.city,
+    postal_code: row.postalCode,
+    country: row.country,
+    region: row.region ?? null,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
     social_accounts: JSON.stringify(row.socialAccounts ?? []),
-    created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
+    birthday: row.birthday ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
     deleted_at: row.deletedAt?.toISOString() ?? null,
   };
 }
@@ -661,11 +683,29 @@ const organizationKeys = {
   postal_code: "postalCode", country: "country", sort_order: "sortOrder", notes: "notes",
 };
 const contactKeys = {
-  number: "number", key: "key", organization_id: "organizationId", name: "name",
-  email: "email", title: "title", summary: "summary", sort_order: "sortOrder",
-  phone: "phone", role: "role", notes: "notes",
-  address: "address", city: "city", postal_code: "postalCode", country: "country",
+  number: "number",
+  key: "key",
+  organization_id: "organizationId",
+  name: "name",
+  first_name: "firstName",
+  last_name: "lastName",
+  email: "email",
+  emails: "emails",
+  title: "title",
+  summary: "summary",
+  sort_order: "sortOrder",
+  phone: "phone",
+  role: "role",
+  notes: "notes",
+  address: "address",
+  city: "city",
+  postal_code: "postalCode",
+  country: "country",
+  region: "region",
+  latitude: "latitude",
+  longitude: "longitude",
   social_accounts: "socialAccounts",
+  birthday: "birthday",
 };
 
 function normalizeContactSyncPayload(
@@ -677,6 +717,13 @@ function normalizeContactSyncPayload(
       next.socialAccounts = JSON.parse(next.socialAccounts);
     } catch {
       next.socialAccounts = [];
+    }
+  }
+  if (typeof next.emails === "string") {
+    try {
+      next.emails = JSON.parse(next.emails);
+    } catch {
+      next.emails = [];
     }
   }
   return next;
@@ -1301,7 +1348,7 @@ export async function applySyncChange(
         camelizePayload(change.payload, contactKeys),
       );
       if (existing) {
-        const parsed = contactInputSchema.partial().safeParse(payload);
+        const parsed = updateContactSchema.safeParse(payload);
         if (!parsed.success) throw new Error("INVALID_CONTACT");
         const row = await circleService.updateContact(
           workspaceId, change.entity_id, parsed.data, executor,

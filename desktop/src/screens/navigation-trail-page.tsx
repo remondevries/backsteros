@@ -35,6 +35,10 @@ import {
 import { useDesktopDocumentContent } from "../lib/use-document-content";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useKeepAliveActive } from "../lib/shell-route-keep-alive";
+import {
+  useDesktopAvatarSrcMap,
+  withAvatarSrc,
+} from "../lib/avatar-src";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { LettersPage } from "./letters-page";
 import { TaskDetailPage } from "./task-detail-page";
@@ -542,6 +546,10 @@ function TrailProjectLeaf({
     [routerNavigate],
   );
   const location = useLocation();
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    workspace.organizations,
+  );
   const tasks = workspace.allTasks.filter(
     (task) => task.projectId === project.id,
   );
@@ -609,7 +617,7 @@ function TrailProjectLeaf({
         void workspace.patchProject(project.id, { type });
       }}
       organizationOptions={buildOrganizationDropdownOptions(
-        workspace.organizations,
+        withAvatarSrc(workspace.organizations, organizationAvatarSrc),
       )}
       organizationNavigateHref={
         project.organizationId
@@ -645,20 +653,30 @@ function TrailContactLeaf({
   workspace: ReturnType<typeof useDesktopWorkspaceData>;
 }) {
   useDesktopSectionBreadcrumb(breadcrumbItems);
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    workspace.organizations,
+  );
 
   return (
     <ContactOverviewView
       contact={{
         id: contact.id,
         name: contact.name,
+        firstName: contact.firstName ?? null,
+        lastName: contact.lastName ?? null,
         email: contact.email,
         title: contact.title,
         organizationId: contact.organizationId,
         organizationName: contact.organizationName,
       }}
-      organizationOptions={workspace.organizations.map((org) => ({
+      organizationOptions={withAvatarSrc(
+        workspace.organizations,
+        organizationAvatarSrc,
+      ).map((org) => ({
         id: org.id,
         name: org.name,
+        avatarSrc: org.avatarSrc,
       }))}
       onCreateOrganizationFromQuery={(query) => {
         void workspace.createOrganization({ name: query }).then((created) => {
@@ -668,8 +686,12 @@ function TrailContactLeaf({
           });
         });
       }}
-      onSaveName={(name) => {
-        void workspace.patchContact(contact.id, { name });
+      onSaveFirstName={(firstName) => {
+        void workspace.patchContact(contact.id, { firstName });
+        return { ok: true as const };
+      }}
+      onSaveLastName={(lastName) => {
+        void workspace.patchContact(contact.id, { lastName });
         return { ok: true as const };
       }}
     />

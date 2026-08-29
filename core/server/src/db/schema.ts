@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   date,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -119,6 +120,7 @@ export const workspaceIntegrationSecrets = pgTable(
     agentmailWebhookId: text("agentmail_webhook_id"),
     agentmailWebhookSecret: text("agentmail_webhook_secret"),
     agentmailWebhookUrl: text("agentmail_webhook_url"),
+    mapboxAccessToken: text("mapbox_access_token"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()
@@ -173,7 +175,14 @@ export const contacts = pgTable(
     number: integer("number"),
     key: text("key").notNull(),
     name: text("name").notNull(),
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name").notNull().default(""),
     email: text("email"),
+    /** Labeled addresses (`{ label, address }[]`), including primary for its type. */
+    emails: jsonb("emails")
+      .$type<{ label: "personal" | "work" | "other"; address: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     title: text("title"),
     summary: text("summary"),
     avatarStorageKey: text("avatar_storage_key"),
@@ -186,10 +195,17 @@ export const contacts = pgTable(
     city: text("city"),
     postalCode: text("postal_code"),
     country: text("country"),
+    /** State / province / region (Mapbox `region`); optional. */
+    region: text("region"),
+    /** Geocoded from address fields (Mapbox); null until resolved. */
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
     socialAccounts: jsonb("social_accounts")
       .$type<{ platform: string; url: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
+    birthday: date("birthday", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -200,6 +216,89 @@ export const contacts = pgTable(
     index("contacts_workspace_number_idx").on(table.workspaceId, table.number),
     index("contacts_organization_id_idx").on(table.organizationId),
     index("contacts_email_idx").on(table.workspaceId, table.email),
+    index("contacts_birthday_idx").on(table.workspaceId, table.birthday),
+    index("contacts_first_name_idx").on(table.workspaceId, table.firstName),
+    index("contacts_last_name_idx").on(table.workspaceId, table.lastName),
+  ],
+);
+
+/** Directed contact↔contact edges (Spouse, Child, etc.). Inverse shown in UI without duplicating rows. */
+export const contactRelationships = pgTable(
+  "contact_relationships",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    fromContactId: text("from_contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    toContactId: text("to_contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("contact_relationships_workspace_id_idx").on(table.workspaceId),
+    index("contact_relationships_from_contact_id_idx").on(table.fromContactId),
+    index("contact_relationships_to_contact_id_idx").on(table.toContactId),
+    index("contact_relationships_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+/** User-curated CRM groups (contacts and/or organizations). */
+export const crmGroups = pgTable(
+  "crm_groups",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    color: text("color"),
+    icon: text("icon"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("crm_groups_workspace_id_idx").on(table.workspaceId),
+    index("crm_groups_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const crmGroupMembers = pgTable(
+  "crm_group_members",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => crmGroups.id, { onDelete: "cascade" }),
+    /** contact | organization */
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("crm_group_members_workspace_id_idx").on(table.workspaceId),
+    index("crm_group_members_group_id_idx").on(table.groupId),
+    index("crm_group_members_subject_idx").on(
+      table.workspaceId,
+      table.subjectType,
+      table.subjectId,
+    ),
+    index("crm_group_members_deleted_at_idx").on(table.deletedAt),
   ],
 );
 
@@ -568,6 +667,46 @@ export const meetings = pgTable(
     index("meetings_workspace_id_idx").on(table.workspaceId),
     index("meetings_workspace_number_idx").on(table.workspaceId, table.number),
     index("meetings_workspace_start_at_idx").on(table.workspaceId, table.startAt),
+  ],
+);
+
+/**
+ * Unified CRM activity feed items (notes + meeting pointers).
+ * Note bodies are capped (Tier A); meeting rows are projections onto meetings.
+ */
+export const crmActivities = pgTable(
+  "crm_activities",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** contact | organization */
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    /** note | meeting */
+    kind: text("kind").notNull(),
+    body: text("body"),
+    bodyPreview: text("body_preview"),
+    meetingId: text("meeting_id").references(() => meetings.id, {
+      onDelete: "set null",
+    }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("crm_activities_workspace_id_idx").on(table.workspaceId),
+    index("crm_activities_subject_idx").on(
+      table.workspaceId,
+      table.subjectType,
+      table.subjectId,
+    ),
+    index("crm_activities_occurred_at_idx").on(table.occurredAt),
+    index("crm_activities_meeting_id_idx").on(table.meetingId),
+    index("crm_activities_deleted_at_idx").on(table.deletedAt),
   ],
 );
 

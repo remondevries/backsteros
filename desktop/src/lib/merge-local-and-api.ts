@@ -375,6 +375,7 @@ export function fillMissingMeetingPropertiesFromApi<
     projectId?: string | null;
     organizationId?: string | null;
     attendeeContactIds?: unknown;
+    format?: string | null;
     updatedAt?: string | number | Date | null;
   },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
@@ -427,6 +428,20 @@ export function fillMissingMeetingPropertiesFromApi<
       updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)
     ) {
       next = { ...next, attendeeContactIds: api.attendeeContactIds };
+    }
+
+    const localFormat =
+      typeof row.format === "string" ? row.format.trim() : "";
+    const apiFormat =
+      typeof api.format === "string" ? api.format.trim() : "";
+    if (!localFormat && apiFormat) {
+      next = { ...next, format: api.format };
+    } else if (
+      apiFormat &&
+      apiFormat !== localFormat &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, format: api.format };
     }
 
     return next;

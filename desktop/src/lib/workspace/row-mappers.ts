@@ -219,6 +219,7 @@ export function mapMeeting(
     notes: meeting.notes ?? null,
     transcription: meeting.transcription ?? null,
     status: meeting.status,
+    format: meeting.format ?? "video_call",
     projectId: meeting.projectId ?? null,
     projectName: project?.name ?? null,
     organizationId: meeting.organizationId ?? null,
@@ -237,17 +238,84 @@ export function mapContact(
   const organization = contact.organizationId
     ? organizationsById.get(contact.organizationId) ?? null
     : null;
+  let emails: Array<{ label: "personal" | "work" | "other"; address: string }> =
+    [];
+  const rawEmails = contact.emails as unknown;
+  if (typeof rawEmails === "string") {
+    try {
+      const parsed = JSON.parse(rawEmails) as unknown;
+      if (Array.isArray(parsed)) {
+        emails = parsed.flatMap((entry) => {
+          if (typeof entry === "string" && entry.trim()) {
+            return [{ label: "other" as const, address: entry.trim() }];
+          }
+          if (entry != null && typeof entry === "object") {
+            const record = entry as {
+              label?: unknown;
+              address?: unknown;
+              email?: unknown;
+            };
+            const address = String(record.address ?? record.email ?? "").trim();
+            if (!address) return [];
+            const rawLabel = String(record.label ?? "")
+              .trim()
+              .toLowerCase();
+            const label =
+              rawLabel === "personal" ||
+              rawLabel === "work" ||
+              rawLabel === "other"
+                ? rawLabel
+                : ("other" as const);
+            return [{ label, address }];
+          }
+          return [];
+        });
+      }
+    } catch {
+      emails = [];
+    }
+  } else if (Array.isArray(rawEmails)) {
+    emails = rawEmails.flatMap((entry) => {
+      if (typeof entry === "string" && entry.trim()) {
+        return [{ label: "other" as const, address: entry.trim() }];
+      }
+      if (entry != null && typeof entry === "object") {
+        const record = entry as {
+          label?: unknown;
+          address?: unknown;
+          email?: unknown;
+        };
+        const address = String(record.address ?? record.email ?? "").trim();
+        if (!address) return [];
+        const rawLabel = String(record.label ?? "")
+          .trim()
+          .toLowerCase();
+        const label =
+          rawLabel === "personal" ||
+          rawLabel === "work" ||
+          rawLabel === "other"
+            ? rawLabel
+            : ("other" as const);
+        return [{ label, address }];
+      }
+      return [];
+    });
+  }
   return {
     id: contact.id,
     name: contact.name,
+    firstName: contact.firstName ?? undefined,
+    lastName: contact.lastName ?? undefined,
     number: contact.number ?? undefined,
     key: contact.key ?? undefined,
     organizationId: contact.organizationId ?? undefined,
     organizationName: organization?.name,
     email: contact.email ?? null,
+    emails,
     title: contact.title ?? null,
     avatarStorageKey: contact.avatarStorageKey ?? null,
     avatarUpdatedAt: asEpoch(contact.updatedAt),
+    birthday: contact.birthday ?? null,
   };
 }
 

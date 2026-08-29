@@ -492,6 +492,11 @@ mark.spellcheck-fix-mark,
   transition: opacity 120ms ease;
 }
 
+.overview-name-editor__placeholder {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 500;
+}
+
 .overview-name-editor__button:hover {
   opacity: 0.9;
 }

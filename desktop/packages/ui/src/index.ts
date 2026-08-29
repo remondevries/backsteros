@@ -545,7 +545,10 @@ export {
   meetingsToCalendarEvents,
   meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
+  birthdaysToCalendarEvents,
+  normalizeBirthdayYmd,
   unscheduledCalendarTasks,
+  type BirthdayCalendarLike,
   type CalendarEventChange,
   type CalendarTaskLike,
   type MeetingCalendarLike,
@@ -735,6 +738,12 @@ export {
   type CalendarMeetingEventPopoverProps,
   type CalendarMeetingPopoverMeeting,
 } from "./components/calendar/calendar-meeting-event-popover.js";
+
+export {
+  CalendarBirthdayEventPopover,
+  type CalendarBirthdayEventPopoverProps,
+  type CalendarBirthdayPopoverContact,
+} from "./components/calendar/calendar-birthday-event-popover.js";
 
 export {
   CalendarHabitsIconRow,
@@ -1113,6 +1122,25 @@ export {
   MeetingDetailView,
   type MeetingDetailViewProps,
 } from "./components/meetings/meeting-detail-view.js";
+
+export {
+  MeetingFormatToggle,
+  type MeetingFormatToggleProps,
+} from "./components/meetings/meeting-format-toggle.js";
+
+export {
+  MeetingFormatIcon,
+} from "./components/meetings/meeting-format-icons.js";
+
+export {
+  DEFAULT_MEETING_FORMAT,
+  getMeetingFormatLabel,
+  isMeetingFormat,
+  MEETING_FORMAT_OPTIONS,
+  MEETING_FORMATS,
+  normalizeMeetingFormat,
+  type MeetingFormat,
+} from "./meetings/meeting-format.js";
 
 export {
   MeetingPropertiesDisplay,
@@ -1506,7 +1534,10 @@ export {
 
 export {
   ContactsSidePanelView,
+  CONTACTS_SIDE_PANEL_ALL_ID,
   type ContactsSidePanelViewProps,
+  type ContactsSidePanelGroupItem,
+  type ContactsSidePanelLinkComponent,
 } from "./components/contacts/contacts-side-panel-view.js";
 
 export {
@@ -2668,11 +2699,26 @@ export {
 
 export {
   ContactOverviewView,
+  formatContactAddressLine,
   type ContactOverviewViewProps,
   type ContactOverviewViewContact,
   type ContactOverviewDetails,
+  type ContactLocationParts,
+  type ContactGroupDropdownItem,
   type ContactSocialAccount,
 } from "./components/contacts/contact-overview-view.js";
+
+export {
+  listCountries,
+  listRegionsForCountry,
+  countryHasRegions,
+  resolveCountryOption,
+  resolveRegionOption,
+  formatCountryLabel,
+  formatRegionLabel,
+  type CountryOption,
+  type RegionOption,
+} from "./geo/country-region.js";
 
 export {
   ContactSocialAccountsEditor,
@@ -2680,14 +2726,86 @@ export {
 } from "./components/contacts/contact-social-accounts-editor.js";
 
 export {
+  ContactEmailsEditor,
+  type ContactEmailsEditorProps,
+  type ContactEmailEntry,
+  type ContactEmailLabel,
+} from "./components/contacts/contact-emails-editor.js";
+
+export {
   ContactDetailView,
   type ContactDetailViewProps,
 } from "./components/contacts/contact-detail-view.js";
 
 export {
+  ContactsOverviewView,
+  type ContactsOverviewViewProps,
+} from "./components/contacts/contacts-overview-view.js";
+
+export {
+  ContactDetailOverlay,
+  type ContactDetailOverlayProps,
+} from "./components/contacts/contact-detail-overlay.js";
+
+export {
+  CONTACT_DETAIL_PANEL_WIDTH_KEY,
+  CONTACT_OVERLAY_LAYOUT_PARAM,
+  getContactOverlayHref,
+  parseContactOverlayLayout,
+  type ContactOverlayLayout,
+} from "./contacts/contact-overlay.js";
+
+export {
+  CRM_GROUP_PARAM,
+  getContactsGroupHref,
+  mergeHrefSearch,
+  parseCrmGroupId,
+  withCrmGroupSearch,
+} from "./contacts/contact-group-filter.js";
+
+export {
   ContactTasksListView,
   type ContactTasksListViewProps,
 } from "./components/contacts/contact-tasks-list-view.js";
+
+export {
+  ContactRelationshipsListView,
+  type ContactRelationshipsListViewProps,
+  type ContactRelationshipListItemView,
+} from "./components/contacts/contact-relationships-list-view.js";
+
+export {
+  CrmActivityFeedView,
+  type CrmActivityFeedViewProps,
+  type CrmActivityFeedItem,
+} from "./components/crm/crm-activity-feed-view.js";
+
+export {
+  CrmGroupsChips,
+  CrmGroupsManagePanel,
+  type CrmGroupsChipsProps,
+  type CrmGroupsManagePanelProps,
+  type CreateCrmGroupInput,
+} from "./components/crm/crm-groups-manage-panel.js";
+
+export {
+  CrmGroupColorDot,
+  CrmGroupLabel,
+  type CrmGroupColorDotProps,
+  type CrmGroupLabelProps,
+} from "./components/crm/crm-group-label.js";
+
+export {
+  CrmGroupColorPicker,
+  type CrmGroupColorPickerProps,
+} from "./components/crm/crm-group-color-picker.js";
+
+export {
+  CRM_GROUP_COLOR_PRESETS,
+  DEFAULT_CRM_GROUP_COLOR,
+  nextCrmGroupPresetColor,
+  resolveCrmGroupColor,
+} from "./crm/crm-group-color.js";
 
 export {
   OrganizationOverviewView,

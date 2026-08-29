@@ -18,7 +18,10 @@ export type AvatarUploadProps = {
   allowSvg?: boolean;
   /** Hide format hint under the control. */
   showHint?: boolean;
-  /** Show the "Remove avatar" text control. Default true when onRemove is set. */
+  /**
+   * When true, show a text “Remove avatar” control under the frame.
+   * Prefer the hover trash button (default when `onRemove` is set).
+   */
   showRemove?: boolean;
 };
 
@@ -28,6 +31,24 @@ function AvatarPlaceholder({ name }: { name: string }) {
     <span aria-hidden="true" className="avatar-upload__placeholder">
       {initial}
     </span>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6.5 2.75h3M3.5 4.25h9M5.25 4.25V12.5a1 1 0 0 0 1 1h3.5a1 1 0 0 0 1-1V4.25M6.75 6.5v4.5M9.25 6.5v4.5" />
+    </svg>
   );
 }
 
@@ -44,7 +65,7 @@ export function AvatarUpload({
   shape = "circle",
   allowSvg = false,
   showHint = true,
-  showRemove,
+  showRemove = false,
 }: AvatarUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,18 +78,15 @@ export function AvatarUpload({
 
   const hasAvatar = Boolean(avatarSrc);
   const showImage = Boolean(avatarSrc) && !imageFailed;
-  const canShowRemove = (showRemove ?? Boolean(onRemove)) && Boolean(onRemove);
+  const canRemove = Boolean(onRemove) && hasAvatar;
+  const showTextRemove = showRemove && canRemove;
   const accept = allowSvg
     ? "image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg"
     : "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif";
   const hint = allowSvg
     ? "JPG, PNG, WebP, GIF, or SVG up to 5 MB"
     : "JPG, PNG, WebP, or GIF up to 5 MB";
-  const overlayLabel = pending
-    ? "Saving…"
-    : hasAvatar
-      ? "Change"
-      : "Upload";
+  const overlayLabel = pending ? "Saving…" : "Edit";
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -113,7 +131,7 @@ export function AvatarUpload({
     }
   }
 
-  const showMeta = showHint || (canShowRemove && hasAvatar) || Boolean(error);
+  const showMeta = showHint || showTextRemove || Boolean(error);
 
   return (
     <div className="avatar-upload">
@@ -131,7 +149,7 @@ export function AvatarUpload({
             .join(" ")}
           onClick={() => fileInputRef.current?.click()}
           disabled={pending}
-          aria-label={hasAvatar ? "Change avatar" : "Upload avatar"}
+          aria-label={hasAvatar ? "Edit avatar" : "Upload avatar"}
         >
           {showImage ? (
             <img
@@ -145,6 +163,22 @@ export function AvatarUpload({
           )}
           <span className="avatar-upload__overlay">{overlayLabel}</span>
         </button>
+        {canRemove ? (
+          <button
+            type="button"
+            className="avatar-upload__trash"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void handleRemove();
+            }}
+            disabled={pending}
+            aria-label="Remove avatar"
+            title="Remove avatar"
+          >
+            <TrashIcon />
+          </button>
+        ) : null}
         <input
           ref={fileInputRef}
           type="file"
@@ -160,7 +194,7 @@ export function AvatarUpload({
       {showMeta ? (
         <div className="avatar-upload__meta">
           {showHint ? <p className="avatar-upload__hint">{hint}</p> : null}
-          {canShowRemove && hasAvatar ? (
+          {showTextRemove ? (
             <button
               type="button"
               className="avatar-upload__remove"

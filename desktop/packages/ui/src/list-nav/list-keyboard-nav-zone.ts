@@ -67,6 +67,17 @@ export function isProjectsRootKeyboardPathname(pathname: string): boolean {
   return path === "/projects";
 }
 
+/**
+ * Contacts catalog (list in main + optional profile overlay).
+ * Nested task/letter detail routes are excluded.
+ */
+export function isContactsCatalogKeyboardPathname(pathname: string): boolean {
+  const path = normalizeListKeyboardPathname(pathname);
+  if (path === "/contacts") return true;
+  if (!path.startsWith("/contacts/")) return false;
+  return !/^\/contacts\/[^/]+\/(tasks|letters)(\/|$)/.test(path);
+}
+
 /** Flags for {@link resolveZonePolicy}. Calendar mode is passed in — not read from the DOM here. */
 export type ResolveZonePolicyFlags = {
   /** Value of `[data-calendar-page-mode]` when on a calendar route. */
@@ -120,6 +131,11 @@ const ZONE_POLICY_ROWS: readonly ZonePolicyRow[] = [
   },
   {
     match: isProjectsRootKeyboardPathname,
+    defaultZone: "main",
+    autoSwitchJkToMain: true,
+  },
+  {
+    match: isContactsCatalogKeyboardPathname,
     defaultZone: "main",
     autoSwitchJkToMain: true,
   },

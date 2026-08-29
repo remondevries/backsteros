@@ -1,4 +1,9 @@
-export const CONTACT_SECTION_IDS = ["overview", "tasks", "letters"] as const;
+export const CONTACT_SECTION_IDS = [
+  "overview",
+  "details",
+  "tasks",
+  "letters",
+] as const;
 
 export type ContactSectionId = (typeof CONTACT_SECTION_IDS)[number];
 
@@ -10,7 +15,13 @@ export type ContactSectionConfig = {
 };
 
 export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
-  { id: "overview", label: "Overview", segment: "", supportsDetail: false },
+  { id: "overview", label: "Activity", segment: "", supportsDetail: false },
+  {
+    id: "details",
+    label: "Details",
+    segment: "details",
+    supportsDetail: false,
+  },
   { id: "tasks", label: "Tasks", segment: "tasks", supportsDetail: true },
   { id: "letters", label: "Letters", segment: "letters", supportsDetail: true },
 ];
@@ -24,10 +35,14 @@ export function parseContactSectionId(
   value: string | null | undefined,
 ): ContactSectionId {
   if (!value || value === "overview") return "overview";
+  // Legacy feed tab lived at /activity, then became Details.
+  if (value === "activity") return "details";
+  // Relationships folded into Details.
+  if (value === "relationships") return "details";
   return isContactSectionId(value) ? value : "overview";
 }
 
-/** Path after `/contacts/{slug}` — empty for overview. */
+/** Path after `/contacts/{slug}` — empty for overview (Activity tab). */
 export function getContactSectionSegment(section: ContactSectionId): string {
   return section === "overview" ? "" : section;
 }

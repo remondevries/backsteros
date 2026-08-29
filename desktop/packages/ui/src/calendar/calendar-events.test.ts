@@ -14,6 +14,7 @@ import {
   meetingToCalendarEvent,
   meetingsToCalendarEventsForDate,
   mergeCalendarGridEvents,
+  birthdaysToCalendarEvents,
   unscheduledCalendarTasks,
 } from "../../dist/calendar/calendar-events.js";
 
@@ -337,4 +338,38 @@ test("mergeCalendarGridEvents includes tasks and meetings", () => {
     [{ id: "m-1", title: "Sync", startAt: start, endAt: end }],
   );
   assert.equal(events.length, 2);
+});
+
+test("birthdaysToCalendarEvents emits yearly all-day markers", () => {
+  const events = birthdaysToCalendarEvents(
+    [{ id: "c1", name: "Ada", birthday: "1990-03-15" }],
+    2026,
+    2027,
+  );
+  assert.equal(events.length, 2);
+  assert.equal(events[0]?.id, "birthday:c1:2026");
+  assert.equal(events[0]?.allDay, true);
+  assert.equal(events[0]?.start, "2026-03-15");
+  assert.equal(events[0]?.extendedProps.entityType, "birthday");
+});
+
+test("birthdaysToCalendarEvents accepts ISO datetime birthday strings", () => {
+  const events = birthdaysToCalendarEvents(
+    [{ id: "c1", name: "Ada", birthday: "1990-03-15T00:00:00.000Z" }],
+    2026,
+    2026,
+  );
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.start, "2026-03-15");
+});
+
+test("mergeCalendarGridEvents includes birthday markers", () => {
+  const events = mergeCalendarGridEvents(
+    [],
+    [],
+    new Date(2026, 7, 28),
+    [{ id: "c1", name: "Remon", birthday: "1990-08-28" }],
+  );
+  assert.equal(events.length, 3);
+  assert.ok(events.some((event) => event.start === "2026-08-28"));
 });

@@ -26,6 +26,7 @@ export type OrganizationDetailViewProps = {
     details: OrganizationOverviewDetails,
   ) => void | Promise<void>;
   overviewHeaderAccessory?: ReactNode;
+  groupsSlot?: ReactNode;
   section?: OrganizationSectionId;
   onSectionChange?: (section: OrganizationSectionId) => void;
   initialSection?: OrganizationSectionId;
@@ -42,7 +43,7 @@ export type OrganizationDetailViewProps = {
 };
 
 /**
- * Organization detail shell — Overview / Projects / Letters / Contacts
+ * Organization detail shell — Overview / Activity / Projects / Letters / Contacts
  * (+ Transactions / Invoices when linked finance data exists).
  */
 export function OrganizationDetailView({
@@ -50,6 +51,7 @@ export function OrganizationDetailView({
   onSaveName,
   onSaveDetails,
   overviewHeaderAccessory,
+  groupsSlot,
   section: controlledSection,
   onSectionChange,
   initialSection = "overview",
@@ -138,6 +140,7 @@ export function OrganizationDetailView({
                 </span>
               )
             }
+            groupsSlot={groupsSlot}
           />
         </div>
       )}

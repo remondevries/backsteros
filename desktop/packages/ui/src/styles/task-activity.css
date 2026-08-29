@@ -1118,3 +1118,197 @@
   fill: rgb(255 255 255 / 0.22) !important;
   opacity: 1 !important;
 }
+
+/* Contact / org CRM activity timeline — larger type icons, time above detail. */
+.crm-activity__composer {
+  width: 100%;
+  margin: 0;
+}
+
+.crm-activity-timeline .crm-activity-event {
+  --activity-marker-size: 28px;
+  --crm-activity-pad: 10px;
+  grid-template-columns: var(--activity-marker-size) minmax(0, 1fr);
+  padding-block: var(--crm-activity-pad);
+  column-gap: 14px;
+}
+
+.crm-activity-timeline .crm-activity-event--add {
+  align-items: start;
+}
+
+.crm-activity-timeline .crm-activity-event--add .crm-activity-event__body {
+  min-height: var(--activity-marker-size);
+  justify-content: center;
+}
+
+.crm-activity-timeline .crm-activity-event--add .task-activity__empty {
+  margin: 0;
+}
+
+.crm-activity-event__marker--add {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: color-mix(
+    in srgb,
+    var(--foreground) 8%,
+    var(--background, #0d0d0d)
+  );
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+button.crm-activity-event__marker--add:hover {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--foreground) 14%,
+    var(--background, #0d0d0d)
+  );
+}
+
+.crm-activity-event__marker--add > svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.crm-activity-timeline .task-activity-event__leading {
+  align-self: stretch;
+}
+
+.crm-activity-timeline .task-activity-event__rail {
+  padding-top: 0;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/*
+ * Extend the spine through vertical padding so consecutive items connect.
+ * First/last still trim to the marker center.
+ */
+.crm-activity-timeline .task-activity-event__rail::before {
+  top: calc(-1 * var(--crm-activity-pad));
+  bottom: calc(-1 * var(--crm-activity-pad));
+}
+
+.crm-activity-timeline
+  > .crm-activity-event:first-child
+  .task-activity-event__rail::before {
+  top: calc(var(--activity-marker-size) / 2);
+}
+
+.crm-activity-timeline
+  > .crm-activity-event:last-child
+  .task-activity-event__rail::before,
+.crm-activity-timeline
+  > .crm-activity-event:has(+ .task-activity-more)
+  .task-activity-event__rail::before {
+  bottom: calc(100% - var(--activity-marker-size) / 2);
+}
+
+/* Solo add marker (empty feed) — no dangling spine. */
+.crm-activity-timeline
+  > .crm-activity-event--add:last-child
+  .task-activity-event__rail::before {
+  content: none;
+}
+
+.crm-activity-event__marker {
+  width: var(--activity-marker-size);
+  height: var(--activity-marker-size);
+  border-radius: 999px;
+  /* Opaque fill so the spine doesn't show through the circle. */
+  background: color-mix(
+    in srgb,
+    var(--foreground) 8%,
+    var(--background, #0d0d0d)
+  );
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--background, #0d0d0d);
+}
+
+.crm-activity-event__marker--note {
+  background: color-mix(in srgb, #6ea8fe 22%, var(--background, #0d0d0d));
+  color: #6ea8fe;
+}
+
+.crm-activity-event__marker--meeting {
+  background: color-mix(in srgb, #d2a8ff 22%, var(--background, #0d0d0d));
+  color: #d2a8ff;
+}
+
+.crm-activity-event__marker--task {
+  background: color-mix(in srgb, #3fb950 22%, var(--background, #0d0d0d));
+  color: #3fb950;
+}
+
+.crm-activity-event__marker--letter {
+  background: color-mix(in srgb, #f2cc60 22%, var(--background, #0d0d0d));
+  color: #f2cc60;
+}
+
+.crm-activity-event__glyph {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.crm-activity-event__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  grid-column: 2;
+}
+
+.crm-activity-event__when {
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.crm-activity-event__detail {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.crm-activity-event__detail strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.crm-activity-event__note {
+  white-space: pre-wrap;
+  color: var(--foreground);
+}
+
+.crm-activity-event__link {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.crm-activity-event__link:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.crm-activity-event__marker > svg,
+.crm-activity-event__marker .crm-activity-event__glyph {
+  width: 14px !important;
+  height: 14px !important;
+}

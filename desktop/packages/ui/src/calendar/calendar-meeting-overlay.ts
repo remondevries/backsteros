@@ -1,7 +1,6 @@
 import {
   CALENDAR_MEETING_OVERLAY_PARAM,
   formatMeetingDisplayId,
-  getCalendarMeetingOverlayHref,
 } from "../meetings/meetings.js";
 import { toApiDueDateIso } from "../tasks/task-due-date.js";
 import type { InboxListItem } from "../inbox/inbox-items.js";
@@ -29,15 +28,19 @@ export function parseCalendarMeetingOverlayLayout(
 export function withCalendarMeetingSearch(
   meetingId: string,
   search = "",
+  layout: CalendarMeetingOverlayLayout = "panel",
 ): string {
   const params = new URLSearchParams(
     search.startsWith("?") ? search.slice(1) : search,
   );
   params.set(CALENDAR_MEETING_OVERLAY_PARAM, meetingId);
+  if (layout === "page") {
+    params.set(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM, "page");
+  } else {
+    params.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
+  }
   const qs = params.toString();
-  const path = getCalendarMeetingOverlayHref(meetingId).split("?")[0] ?? "/calendar";
-  // Prefer keeping the caller on /calendar with search params (overlay mode).
-  return qs ? `/calendar?${qs}` : path;
+  return qs ? `/calendar?${qs}` : "/calendar";
 }
 
 /** Calendar list / meetings panel (not task/meeting detail routes). */

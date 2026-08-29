@@ -126,7 +126,10 @@ const contacts = new Table(
     key: column.text,
     organization_id: column.text,
     name: column.text,
+    first_name: column.text,
+    last_name: column.text,
     email: column.text,
+    emails: column.text,
     title: column.text,
     summary: column.text,
     avatar_storage_key: column.text,
@@ -139,7 +142,11 @@ const contacts = new Table(
     city: column.text,
     postal_code: column.text,
     country: column.text,
+    region: column.text,
+    latitude: column.real,
+    longitude: column.real,
     social_accounts: column.text,
+    birthday: column.text,
     ...commonDates,
   },
   { indexes: { organization: ["organization_id"] } },
@@ -289,6 +296,7 @@ const meetings = new Table({
   notes: column.text,
   transcription: column.text,
   status: column.text,
+  format: column.text,
   project_id: column.text,
   organization_id: column.text,
   attendee_contact_ids: column.text,
@@ -314,6 +322,67 @@ const task_comments = new Table(
   { indexes: { task: ["task_id"], parent: ["parent_comment_id"] } },
 );
 
+const contact_relationships = new Table(
+  {
+    from_contact_id: column.text,
+    to_contact_id: column.text,
+    type: column.text,
+    note: column.text,
+    ...commonDates,
+  },
+  {
+    indexes: {
+      from_contact: ["from_contact_id"],
+      to_contact: ["to_contact_id"],
+    },
+  },
+);
+
+const crm_groups = new Table({
+  name: column.text,
+  description: column.text,
+  color: column.text,
+  icon: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
+
+const crm_group_members = new Table(
+  {
+    group_id: column.text,
+    subject_type: column.text,
+    subject_id: column.text,
+    ...commonDates,
+  },
+  {
+    indexes: {
+      group: ["group_id"],
+      subject: ["subject_type", "subject_id"],
+    },
+  },
+);
+
+/** Note bodies capped Tier A; meeting rows are pointers only. */
+const crm_activities = new Table(
+  {
+    subject_type: column.text,
+    subject_id: column.text,
+    kind: column.text,
+    body: column.text,
+    body_preview: column.text,
+    meeting_id: column.text,
+    occurred_at: column.text,
+    created_by: column.text,
+    ...commonDates,
+  },
+  {
+    indexes: {
+      subject: ["subject_type", "subject_id"],
+      meeting: ["meeting_id"],
+    },
+  },
+);
+
 export const appSchema = new Schema({
   projects,
   tasks,
@@ -333,6 +402,10 @@ export const appSchema = new Schema({
   habits,
   meetings,
   task_comments,
+  contact_relationships,
+  crm_groups,
+  crm_group_members,
+  crm_activities,
 });
 
 export type UploadEntry = {

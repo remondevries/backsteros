@@ -39,6 +39,7 @@ export type OrganizationOverviewViewProps = {
     details: OrganizationOverviewDetails,
   ) => void | Promise<void>;
   headerAccessory?: ReactNode;
+  groupsSlot?: ReactNode;
 };
 
 function DetailsField({
@@ -73,6 +74,7 @@ export function OrganizationOverviewView({
   onSaveName,
   onSaveDetails,
   headerAccessory,
+  groupsSlot,
 }: OrganizationOverviewViewProps) {
   const remotePhone = organization.phone ?? "";
   const remoteEmail = organization.email ?? "";
@@ -342,6 +344,9 @@ export function OrganizationOverviewView({
             }
           />
         </DetailsField>
+        {groupsSlot ? (
+          <DetailsField label="Groups">{groupsSlot}</DetailsField>
+        ) : null}
         <DetailsField label="Notes" htmlFor="organization-notes">
           <textarea
             id="organization-notes"

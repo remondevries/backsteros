@@ -113,11 +113,18 @@ export function useWorkspaceEntityCreation({
   );
 
   const createContact = useCallback(
-    async (input: { name: string; organizationId?: string | null }) => {
-      const name = input.name.trim();
-      if (!name) throw new Error("Contact name is required.");
+    async (input: {
+      name?: string;
+      firstName?: string;
+      lastName?: string | null;
+      organizationId?: string | null;
+    }) => {
+      const firstName = (input.firstName ?? input.name ?? "").trim();
+      const lastName = (input.lastName ?? "").trim();
+      const name = [firstName, lastName].filter(Boolean).join(" ");
+      if (!firstName) throw new Error("Contact first name is required.");
       if (!authenticated) throw new Error("Sign in to create contacts.");
-      const key = entityKeyFromName(name, "person");
+      const key = entityKeyFromName(name || firstName, "person");
       if (powerSync.ready && powerSync.createMetadata) {
         const id = crypto.randomUUID().replace(/-/g, "");
         const now = new Date().toISOString();
@@ -125,6 +132,8 @@ export function useWorkspaceEntityCreation({
           id,
           key,
           name,
+          firstName,
+          lastName,
           organizationId: input.organizationId ?? null,
           sortOrder: Date.now(),
           createdAt: now,
@@ -143,6 +152,8 @@ export function useWorkspaceEntityCreation({
             toSnakeFields({
               key,
               name,
+              firstName,
+              lastName,
               organizationId: contact.organizationId,
               sortOrder: contact.sortOrder,
             }),
@@ -159,7 +170,8 @@ export function useWorkspaceEntityCreation({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           key,
-          name,
+          firstName,
+          lastName,
           organizationId: input.organizationId ?? null,
           sortOrder: Date.now(),
         }),

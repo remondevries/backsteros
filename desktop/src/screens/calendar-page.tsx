@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { getContactEmailAddresses } from "@backsteros/contracts";
 
 import {
   CalendarAvailabilityView,
@@ -24,6 +25,10 @@ import {
   formatMeetingDisplayId,
   getSelectedCalendarGridEventId,
   getTaskDisplayId,
+  getContactsHref,
+  getUniqueListItemRouteParam,
+  getContactSectionHref,
+  getEmailComposeHref,
   MeetingDetailView,
   mergeCalendarGridEvents,
   parseCalendarMeetingOverlayId,
@@ -36,10 +41,12 @@ import {
   RegisterPageTitle,
   ResizableSidePanel,
   ProjectOcticon,
+  requestOpenComposeModal,
   useListDismissDetailShortcut,
   useListKeyboardNavigationZone,
   useCalendarDateNavigationShortcuts,
   type CalendarHabitIconItem,
+  type CalendarBirthdayPopoverContact,
   type CalendarMeetingPopoverMeeting,
   type CalendarMeetingOverlayLayout,
   type CalendarTaskPopoverTask,
@@ -67,6 +74,11 @@ import {
   peekTaskDescriptionCache,
   useDesktopTaskDescription,
 } from "../lib/use-task-description";
+import {
+  resetEmailComposeSession,
+  writeEmailComposeSession,
+} from "../lib/email-compose-session";
+import { navigateToHref } from "../router/navigate-href";
 import { TaskDetailPage } from "./task-detail-page";
 
 /** Subset of FullCalendar API used for date-nav (matches UI CalendarDateNavApi). */
@@ -110,9 +122,10 @@ function CalendarPageBody() {
           ? resolved
           : new URLSearchParams(resolved);
       if (next.toString() === prev.toString()) return;
-      navigate({
-        to: ".",
-        search: Object.fromEntries(next.entries()),
+      // Absolute /calendar?... so keep-alive lastHref + address bar stay in sync
+      // even when TanStack's match is stale after a warm section flip.
+      const query = next.toString();
+      navigateToHref(navigate, query ? `/calendar?${query}` : "/calendar", {
         replace: navigateOpts?.replace ?? false,
       });
     },
@@ -363,6 +376,123 @@ function CalendarPageBody() {
     [setOpenTaskId],
   );
 
+  const openBirthdayFromGrid = useCallback(
+    (contactId: string) => {
+      const contact = workspace.contacts.find((entry) => entry.id === contactId);
+      if (!contact) return;
+      const slug = getUniqueListItemRouteParam(contact, workspace.contacts);
+      navigate(getContactsHref(slug));
+    },
+    [navigate, workspace.contacts],
+  );
+
+  const resolveBirthdayContact = useCallback(
+    (contactId: string): CalendarBirthdayPopoverContact | null => {
+      const contact = workspace.contacts.find((entry) => entry.id === contactId);
+      if (!contact) return null;
+      const details = workspace.contactDetails[contactId];
+      return {
+        id: contact.id,
+        name: contact.name,
+        firstName: contact.firstName ?? details?.firstName ?? null,
+        lastName: contact.lastName ?? details?.lastName ?? null,
+        title: contact.title ?? details?.title ?? null,
+        organizationName: contact.organizationName ?? null,
+        email: contact.email ?? details?.email ?? null,
+        birthday: contact.birthday ?? details?.birthday ?? null,
+        avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
+      };
+    },
+    [contactAvatarSrc, workspace.contactDetails, workspace.contacts],
+  );
+
+  const openBirthdayContactSection = useCallback(
+    (contactId: string, section: "overview" | "details" | "tasks") => {
+      const contact = workspace.contacts.find((entry) => entry.id === contactId);
+      if (!contact) return;
+      const slug = getUniqueListItemRouteParam(contact, workspace.contacts);
+      navigate(
+        section === "overview"
+          ? getContactsHref(slug)
+          : getContactSectionHref(slug, section),
+      );
+    },
+    [navigate, workspace.contacts],
+  );
+
+  const handleBirthdayAddNote = useCallback(
+    (contactId: string) => {
+      openBirthdayContactSection(contactId, "overview");
+    },
+    [openBirthdayContactSection],
+  );
+
+  const handleBirthdayAddTask = useCallback(
+    (contactId: string) => {
+      openBirthdayContactSection(contactId, "tasks");
+      requestOpenComposeModal();
+    },
+    [openBirthdayContactSection],
+  );
+
+  const handleBirthdayAddMeeting = useCallback(
+    (contactId: string) => {
+      const contact = workspace.contacts.find((entry) => entry.id === contactId);
+      const start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      void workspace
+        .createMeeting({
+          title: contact
+            ? `Meeting with ${contact.name}`
+            : "Meeting",
+          status: "triage",
+          startAt: start.toISOString(),
+          endAt: end.toISOString(),
+        })
+        .then((created) => {
+          navigate(`/calendar/meetings/${encodeURIComponent(created.id)}`);
+        });
+    },
+    [navigate, workspace],
+  );
+
+  const handleBirthdaySendEmail = useCallback(
+    (contactId: string) => {
+      const contact = workspace.contacts.find((entry) => entry.id === contactId);
+      const details = workspace.contactDetails[contactId];
+      const rawEmails = details?.emails ?? contact?.emails ?? [];
+      const emails =
+        typeof rawEmails === "string"
+          ? (() => {
+              try {
+                const parsed = JSON.parse(rawEmails) as unknown;
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })()
+          : Array.isArray(rawEmails)
+            ? rawEmails
+            : [];
+      const to =
+        getContactEmailAddresses({
+          email: details?.email ?? contact?.email,
+          emails,
+        })[0] || undefined;
+      resetEmailComposeSession();
+      writeEmailComposeSession({
+        sessionId: crypto.randomUUID(),
+        draftId: null,
+        inboxId: null,
+        prefill: to ? { to } : null,
+      });
+      navigate(getEmailComposeHref());
+    },
+    [navigate, workspace.contactDetails, workspace.contacts],
+  );
+
   const setMeetingOverlayLayout = useCallback(
     (layout: CalendarMeetingOverlayLayout) => {
       setSearchParams(
@@ -402,6 +532,12 @@ function CalendarPageBody() {
     const next = mergeCalendarGridEvents(
       tasksWithHabitIcons,
       workspace.meetings,
+      new Date(),
+      workspace.contacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        birthday: contact.birthday ?? null,
+      })),
     );
     frozenEventsRef.current = next;
     return next;
@@ -410,6 +546,7 @@ function CalendarPageBody() {
     workspace.allTasks,
     workspace.habits,
     workspace.meetings,
+    workspace.contacts,
   ]);
 
   const dayHabitsByDate = useMemo(() => {
@@ -831,7 +968,13 @@ function CalendarPageBody() {
           resolveTask={resolveTask}
           onTaskPopoverChange={setPopoverTaskId}
           resolveMeeting={resolveMeeting}
+          resolveBirthdayContact={resolveBirthdayContact}
           onTaskOpen={openTaskFromGrid}
+          onBirthdayOpen={openBirthdayFromGrid}
+          onBirthdayAddNote={handleBirthdayAddNote}
+          onBirthdayAddTask={handleBirthdayAddTask}
+          onBirthdayAddMeeting={handleBirthdayAddMeeting}
+          onBirthdaySendEmail={handleBirthdaySendEmail}
           onMeetingOpen={openMeetingFromGrid}
           dayHabitsByDate={dayHabitsByDate}
           onToggleDayHabit={handleToggleDayHabit}

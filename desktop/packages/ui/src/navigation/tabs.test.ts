@@ -32,15 +32,18 @@ describe("syncActiveTabToPath", () => {
     assert.equal(next.tabs[0]?.title, "Backsteros");
   });
 
-  test("preserves calendar mode and view on the active tab href", () => {
+  test("preserves calendar mode, view, and meeting overlay on the active tab href", () => {
     clearPrimedTabTitles();
     const state = createDefaultTabsState("/calendar");
     const next = syncActiveTabToPath(
       state,
       "/calendar",
-      "?mode=timetracking&view=week&task=abc",
+      "?mode=timetracking&view=week&meeting=m-1&meetingLayout=page&task=abc",
     );
-    assert.equal(next.tabs[0]?.href, "/calendar?mode=timetracking&view=week");
+    assert.equal(
+      next.tabs[0]?.href,
+      "/calendar?mode=timetracking&view=week&meeting=m-1&meetingLayout=page",
+    );
   });
 
   test("updates calendar query in place without changing title", () => {
@@ -61,11 +64,14 @@ describe("syncActiveTabToPath", () => {
 });
 
 describe("buildProductTabHref", () => {
-  test("keeps calendar chrome params and drops overlays", () => {
+  test("keeps calendar chrome params and meeting overlay", () => {
     assert.equal(buildProductTabHref("/inbox", "?foo=1"), "/inbox");
     assert.equal(
-      buildProductTabHref("/calendar", "?mode=timetracking&meeting=x&date=2026-03-25"),
-      "/calendar?mode=timetracking&date=2026-03-25",
+      buildProductTabHref(
+        "/calendar",
+        "?mode=timetracking&meeting=x&meetingLayout=page&date=2026-03-25&task=abc",
+      ),
+      "/calendar?mode=timetracking&date=2026-03-25&meeting=x&meetingLayout=page",
     );
   });
 });

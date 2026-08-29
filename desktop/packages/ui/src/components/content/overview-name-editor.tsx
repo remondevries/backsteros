@@ -1,9 +1,23 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { CONTENT_DETAIL_TITLE_CLASS } from "./content-detail-title-header.js";
 import { ENTITY_TITLE_INPUT_ATTRIBUTE } from "../../list-nav/use-list-clear-selection-shortcut.js";
+
+/** "First name" stays as-is; "Task" becomes "Task name". */
+function entityNamePhrase(entityLabel: string): string {
+  return /\bname$/i.test(entityLabel.trim())
+    ? entityLabel.trim()
+    : `${entityLabel} name`;
+}
 
 export type OverviewNameEditorProps = {
   value: string;
@@ -22,6 +36,13 @@ export type OverviewNameEditorProps = {
   highlightContent?: ReactNode;
   /** Called when the user starts editing (e.g. clear spellcheck highlights). */
   onBeginEdit?: () => void;
+  /** When true, empty values are allowed (e.g. contact last name). */
+  allowEmpty?: boolean;
+  /**
+   * Shrink-wrap the editing input to the typed text (contact first/last name
+   * side-by-side). Full-bleed titles leave this off.
+   */
+  fitContent?: boolean;
   onSave: (
     name: string,
   ) =>
@@ -30,6 +51,82 @@ export type OverviewNameEditorProps = {
     | { ok: false; error: string };
   onSaved?: (name: string) => void;
 };
+
+type NameInputProps = {
+  inputRef: RefObject<HTMLInputElement | null>;
+  draft: string;
+  entityLabel: string;
+  isPending: boolean;
+  onDraftChange?: (draft: string) => void;
+  setDraft: (next: string) => void;
+  setError: (error: string | null) => void;
+  cancelEditing: () => void;
+  save: () => void;
+  commitTitleAndLeave: (reason: "enter" | "escape" | "tab") => void;
+  onLeaveTitle?: (reason: "enter" | "escape" | "tab") => void;
+  /** Optional HTML size attr — keep at 1 when a sizer span owns width. */
+  size?: number;
+};
+
+function NameInput({
+  inputRef,
+  draft,
+  entityLabel,
+  isPending,
+  onDraftChange,
+  setDraft,
+  setError,
+  cancelEditing,
+  save,
+  commitTitleAndLeave,
+  onLeaveTitle,
+  size,
+}: NameInputProps) {
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      size={size}
+      {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        onDraftChange?.(next);
+        setError(null);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          event.nativeEvent.stopImmediatePropagation();
+          cancelEditing();
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (onLeaveTitle) {
+            commitTitleAndLeave("enter");
+            return;
+          }
+          save();
+        }
+        if (event.key === "Tab" && !event.shiftKey && onLeaveTitle) {
+          event.preventDefault();
+          commitTitleAndLeave("tab");
+        }
+      }}
+      onBlur={() => {
+        if (!isPending) {
+          save();
+        }
+      }}
+      disabled={isPending}
+      aria-label={entityNamePhrase(entityLabel)}
+      className="overview-name-editor__input"
+    />
+  );
+}
 
 export function OverviewNameEditor({
   value,
@@ -42,6 +139,8 @@ export function OverviewNameEditor({
   titleClassName = CONTENT_DETAIL_TITLE_CLASS,
   highlightContent,
   onBeginEdit,
+  allowEmpty = false,
+  fitContent = false,
   onSave,
   onSaved,
 }: OverviewNameEditorProps) {
@@ -122,7 +221,25 @@ export function OverviewNameEditor({
     }
 
     if (!trimmed) {
-      setError(`${entityLabel} name is required.`);
+      if (allowEmpty) {
+        if (value === "") {
+          setEditing(false);
+          setError(null);
+          return;
+        }
+        startTransition(async () => {
+          setError(null);
+          const result = await onSave("");
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
+          setEditing(false);
+          onSaved?.("");
+        });
+        return;
+      }
+      setError(`${entityNamePhrase(entityLabel)} is required.`);
       return;
     }
 
@@ -145,7 +262,27 @@ export function OverviewNameEditor({
     setDraft(trimmed);
 
     if (!trimmed) {
-      setError(`${entityLabel} name is required.`);
+      if (allowEmpty) {
+        if (value !== "") {
+          startTransition(async () => {
+            setError(null);
+            const result = await onSave("");
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setEditing(false);
+            onSaved?.("");
+            onLeaveTitle?.(reason);
+          });
+          return;
+        }
+        setEditing(false);
+        setError(null);
+        onLeaveTitle?.(reason);
+        return;
+      }
+      setError(`${entityNamePhrase(entityLabel)} is required.`);
       return;
     }
 
@@ -171,51 +308,40 @@ export function OverviewNameEditor({
     });
   }
 
+  const editorClassName = fitContent
+    ? "overview-name-editor overview-name-editor--fit-content"
+    : "overview-name-editor";
+
+  const inputProps: NameInputProps = {
+    inputRef,
+    draft,
+    entityLabel,
+    isPending,
+    onDraftChange,
+    setDraft,
+    setError,
+    cancelEditing,
+    save,
+    commitTitleAndLeave,
+    onLeaveTitle,
+  };
+
   if (editing) {
+    const sizerText = draft.length > 0 ? draft : entityLabel;
     return (
-      <div className="overview-name-editor">
-      <h1 className={titleClassName}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={draft}
-          {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}
-            onChange={(event) => {
-              const next = event.target.value;
-              setDraft(next);
-              onDraftChange?.(next);
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                event.nativeEvent.stopImmediatePropagation();
-                cancelEditing();
-                return;
-              }
-              if (event.key === "Enter") {
-                event.preventDefault();
-                if (onLeaveTitle) {
-                  commitTitleAndLeave("enter");
-                  return;
-                }
-                save();
-              }
-              if (event.key === "Tab" && !event.shiftKey && onLeaveTitle) {
-                event.preventDefault();
-                commitTitleAndLeave("tab");
-              }
-            }}
-            onBlur={() => {
-              if (!isPending) {
-                save();
-              }
-            }}
-            disabled={isPending}
-            aria-label={`${entityLabel} name`}
-            className="overview-name-editor__input"
-          />
+      <div className={editorClassName}>
+        <h1 className={titleClassName}>
+          {fitContent ? (
+            <span className="overview-name-editor__fit">
+              {/* Sizer drives width; input fills it. Inputs ignore width:auto. */}
+              <span className="overview-name-editor__sizer" aria-hidden="true">
+                {sizerText || "\u00a0"}
+              </span>
+              <NameInput {...inputProps} size={1} />
+            </span>
+          ) : (
+            <NameInput {...inputProps} />
+          )}
         </h1>
         {error ? (
           <p className="overview-name-editor__error" role="alert">
@@ -227,7 +353,7 @@ export function OverviewNameEditor({
   }
 
   return (
-    <div className="overview-name-editor">
+    <div className={editorClassName}>
       <h1 className={titleClassName}>
         <button
           ref={buttonRef}
@@ -238,9 +364,17 @@ export function OverviewNameEditor({
             setError(null);
           }}
           className="overview-name-editor__button"
-          aria-label={`Edit ${entityLabel.toLowerCase()} name: ${value}`}
+          aria-label={`Edit ${entityNamePhrase(entityLabel).toLowerCase()}: ${value}`}
         >
-          {highlightContent ?? value}
+          {highlightContent ??
+            (value ||
+              (allowEmpty || fitContent ? (
+                <span className="overview-name-editor__placeholder">
+                  {entityLabel}
+                </span>
+              ) : (
+                value
+              )))}
         </button>
       </h1>
       {error ? (

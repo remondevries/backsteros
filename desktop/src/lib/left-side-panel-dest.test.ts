@@ -58,6 +58,24 @@ test("warm dests resolve to keep-alive surfaces", () => {
     }),
     "calendar",
   );
+  assert.equal(
+    resolveLeftSidePanelDest({
+      pathname: "/contacts",
+      inInboxPanel: false,
+      financeSection: false,
+      showSidePanel: true,
+    }),
+    "contacts",
+  );
+  assert.equal(
+    resolveLeftSidePanelDest({
+      pathname: "/contacts/1",
+      inInboxPanel: false,
+      financeSection: false,
+      showSidePanel: true,
+    }),
+    "contacts",
+  );
 });
 
 test("finance remounts live; settings/tasks have no left list dest", () => {

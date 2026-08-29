@@ -15,6 +15,7 @@ import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
+import { PillNav } from "../shared/pill-nav.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import type { PropertyDropdownTriggerVariant } from "../dropdowns/property-dropdown.js";
 import { CollapseLayoutIcon } from "../icons/collapse-layout-icon.js";
@@ -26,6 +27,8 @@ import {
   MeetingPropertiesInlineChips,
   type MeetingPropertiesInlineChipsProps,
 } from "./meeting-properties-inline-chips.js";
+import { MeetingFormatToggle } from "./meeting-format-toggle.js";
+import type { MeetingFormat } from "../../meetings/meeting-format.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
 
 export type MeetingContentTab = "summary" | "notes" | "transcription";
@@ -148,8 +151,10 @@ export type MeetingDetailViewProps = {
   summary: string;
   notes: string;
   transcription: string;
+  format?: MeetingFormat | string | null;
   meeting: MeetingPropertiesInlineChipsProps["meeting"];
   onTitleChange: (title: string) => void;
+  onFormatChange?: (format: MeetingFormat) => void;
   onSummaryChange: (summary: string) => void;
   onNotesChange: (notes: string) => void;
   onTranscriptionChange: (transcription: string) => void;
@@ -184,8 +189,10 @@ export function MeetingDetailView({
   summary,
   notes,
   transcription,
+  format,
   meeting,
   onTitleChange,
+  onFormatChange,
   onSummaryChange,
   onNotesChange,
   onTranscriptionChange,
@@ -257,27 +264,26 @@ export function MeetingDetailView({
   };
 
   const contentTabs = (
-    <div
-      className="meeting-detail-view__tabs"
-      role="tablist"
-      aria-label="Meeting content"
-    >
-      {MEETING_CONTENT_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          id={`meeting-tab-${tab.id}`}
-          className={`meeting-detail-view__tab${
-            activeTab === tab.id ? " is-active" : ""
-          }`}
-          aria-selected={activeTab === tab.id}
-          onClick={() => setActiveTab(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="meeting-detail-view__tabs">
+      <PillNav
+        className="meeting-detail-view__tabs-nav"
+        ariaLabel="Meeting content"
+        items={MEETING_CONTENT_TABS.map((tab) => ({
+          value: tab.id,
+          label: tab.label,
+        }))}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
     </div>
+  );
+
+  const formatToggle = (
+    <MeetingFormatToggle
+      value={format}
+      onChange={onFormatChange}
+      disabled={meeting == null}
+    />
   );
 
   const layoutAction =
@@ -306,8 +312,8 @@ export function MeetingDetailView({
   const contentEditor = (
     <div
       className="meeting-detail-view__editor-shell"
-      role="tabpanel"
-      aria-labelledby={`meeting-tab-${activeTab}`}
+      role="region"
+      aria-label={tabAriaLabel}
     >
       <MeetingContentTabEditor
         key={activeTab}
@@ -386,6 +392,7 @@ export function MeetingDetailView({
                       return { ok: true as const };
                     }}
                   />
+                  {formatToggle}
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
                   {contentTabs}
@@ -428,6 +435,7 @@ export function MeetingDetailView({
           aria-label="Meeting title"
           onChange={(event) => onTitleChange(event.target.value)}
         />
+        {formatToggle}
       </header>
       <MeetingPropertiesInlineChips
         {...propertiesProps}

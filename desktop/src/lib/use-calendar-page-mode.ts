@@ -84,9 +84,8 @@ export function useCalendarPageModeControls() {
         next.delete(CALENDAR_TIMETRACKING_DATE_PARAM);
       }
       if (next.toString() === searchParams.toString()) return;
-      navigate({
-        to: ".",
-        search: Object.fromEntries(next.entries()),
+      const query = next.toString();
+      navigateToHref(navigate, query ? `/calendar?${query}` : "/calendar", {
         replace: true,
       });
     },

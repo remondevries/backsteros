@@ -70,6 +70,10 @@ export type TaskCalendarEvent = {
   start: string;
   end?: string;
   allDay: boolean;
+  /** Birthdays are display-only markers. */
+  editable?: boolean;
+  startEditable?: boolean;
+  durationEditable?: boolean;
   classNames: string[];
   extendedProps:
     | {
@@ -88,6 +92,11 @@ export type TaskCalendarEvent = {
         status?: string | null;
         endAt?: string;
         finished?: boolean;
+      }
+    | {
+        entityType: "birthday";
+        contactId: string;
+        contactName: string;
       };
   /** Optional — timeline blocks use `.task-calendar-event` CSS instead. */
   backgroundColor?: string;
@@ -366,12 +375,18 @@ export function meetingsToCalendarEventsForDate(
 export function calendarEntityFromEvent(event: {
   id: string;
   extendedProps: Record<string, unknown>;
-}): { entityType: "task" | "meeting"; entityId: string } {
+}): { entityType: "task" | "meeting" | "birthday"; entityId: string } {
   const props = event.extendedProps;
   if (props.entityType === "meeting") {
     const meetingId = props.meetingId;
     if (typeof meetingId === "string" && meetingId) {
       return { entityType: "meeting", entityId: meetingId };
+    }
+  }
+  if (props.entityType === "birthday") {
+    const contactId = props.contactId;
+    if (typeof contactId === "string" && contactId) {
+      return { entityType: "birthday", entityId: contactId };
     }
   }
   const taskId = props.taskId;
@@ -424,16 +439,77 @@ export function calendarSelectionToMeetingRange(
   };
 }
 
-/** Merge task and meeting events for a single FullCalendar feed. */
+/** Merge task, meeting, and optional birthday events for a single FullCalendar feed. */
 export function mergeCalendarGridEvents(
   tasks: CalendarTaskLike[],
   meetings: MeetingCalendarLike[],
   now = new Date(),
+  birthdays: BirthdayCalendarLike[] = [],
+  yearSpan?: { fromYear: number; toYear: number },
 ): TaskCalendarEvent[] {
+  const year = now.getFullYear();
+  const fromYear = yearSpan?.fromYear ?? year - 1;
+  const toYear = yearSpan?.toYear ?? year + 1;
   return [
     ...tasksToCalendarEvents(tasks),
     ...meetingsToCalendarEvents(meetings, now),
+    ...birthdaysToCalendarEvents(birthdays, fromYear, toYear),
   ];
+}
+
+export type BirthdayCalendarLike = {
+  id: string;
+  name: string;
+  /** YYYY-MM-DD */
+  birthday: string | null | undefined;
+};
+
+/** Normalize contact.birthday to `YYYY-MM-DD` (PowerSync may send ISO datetimes). */
+export function normalizeBirthdayYmd(
+  value: string | null | undefined,
+): string | null {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const isoDay = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  if (isoDay?.[1]) return isoDay[1];
+  return null;
+}
+
+/** Virtual yearly all-day birthday markers derived from contact.birthday. */
+export function birthdaysToCalendarEvents(
+  contacts: BirthdayCalendarLike[],
+  fromYear: number,
+  toYear: number,
+): TaskCalendarEvent[] {
+  const events: TaskCalendarEvent[] = [];
+  for (const contact of contacts) {
+    const ymd = normalizeBirthdayYmd(contact.birthday);
+    if (!ymd) continue;
+    const monthDay = ymd.slice(5);
+    for (let year = fromYear; year <= toYear; year += 1) {
+      const start = `${year}-${monthDay}`;
+      // Skip impossible calendar days (e.g. Feb 29 in non-leap years).
+      if (Number.isNaN(Date.parse(`${start}T12:00:00`))) continue;
+      events.push({
+        id: `birthday:${contact.id}:${year}`,
+        title: `${contact.name.trim() || "Contact"}'s birthday`,
+        start,
+        allDay: true,
+        editable: false,
+        startEditable: false,
+        durationEditable: false,
+        classNames: ["task-calendar-event", "birthday-calendar-event"],
+        extendedProps: {
+          entityType: "birthday",
+          contactId: contact.id,
+          contactName: contact.name,
+        },
+      });
+    }
+  }
+  return events;
 }
 
 /** Human-readable schedule line for calendar task popovers. */

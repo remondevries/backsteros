@@ -44,7 +44,7 @@ export function navigateToHref(
   options?: { replace?: boolean; state?: unknown },
 ): void {
   const target = formatResolvedAppHref(resolveAppHref(href));
-  if (tryWarmKeepAliveFlip(target)) {
+  if (tryWarmKeepAliveFlip(target, { replace: options?.replace })) {
     return;
   }
   rememberSectionEntryFromNav(target);

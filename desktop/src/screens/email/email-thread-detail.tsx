@@ -1,6 +1,11 @@
 import { Fragment, useCallback, useMemo } from "react";
 import type { AgentMailMessageDetail } from "@backsteros/contracts";
 import {
+  contactMatchesEmailAddress,
+  getContactEmailAddresses,
+  resolveContactEmailForAddress,
+} from "@backsteros/contracts";
+import {
   EmailDraftActions,
   EmailComposeChrome,
   EmailThreadMessageCard,
@@ -292,7 +297,13 @@ export function EmailThreadDetail({
       linkedContactForFrom?.name?.trim() ||
       message.threadMetadata?.contactName?.trim() ||
       null,
-    contactEmail: linkedContactForFrom?.email?.trim() || null,
+    contactEmail:
+      resolveContactEmailForAddress(
+        linkedContactForFrom,
+        typeof message.from === "string" ? message.from : null,
+      ) ??
+      linkedContactForFrom?.email?.trim() ??
+      null,
     contactAvatarSrc: contactId
       ? contactAvatarSrc[contactId] ?? null
       : null,
@@ -382,7 +393,8 @@ export function EmailThreadDetail({
           if (!next) return;
           const selected =
             contacts.find((entry) => entry.id === next) ?? null;
-          const email = selected?.email?.trim();
+          const email =
+            getContactEmailAddresses(selected ?? {})[0]?.trim() || null;
           if (email) setReplyTo(email);
         },
       }}
@@ -412,7 +424,11 @@ export function EmailThreadDetail({
       const parsed = Date.parse(entry.timestamp);
       const fromEmail = parseReplyToAddress(entry.from).toLowerCase();
       const linkedContactEmail =
-        linkedContactForFrom?.email?.trim().toLowerCase() || null;
+        resolveContactEmailForAddress(linkedContactForFrom, entry.from) ??
+        getContactEmailAddresses(linkedContactForFrom ?? {})[0] ??
+        null;
+      const linkedContactEmailNormalized =
+        linkedContactEmail?.trim().toLowerCase() || null;
       const isFromOurMailbox = Boolean(
         fromEmail && ourMailboxEmails.has(fromEmail),
       );
@@ -433,10 +449,27 @@ export function EmailThreadDetail({
       // Always put the thread-contact picker on the other-party side:
       // From for inbound, To for our outbound (and when the contact email is there).
       const contactField: "from" | "to" = (() => {
-        if (linkedContactEmail && fromEmail === linkedContactEmail) {
+        if (
+          linkedContactForFrom &&
+          contactMatchesEmailAddress(linkedContactForFrom, entry.from)
+        ) {
           return "from";
         }
-        if (linkedContactEmail && toEmails.includes(linkedContactEmail)) {
+        if (
+          linkedContactForFrom &&
+          toList.some((address) =>
+            contactMatchesEmailAddress(linkedContactForFrom, address),
+          )
+        ) {
+          return "to";
+        }
+        if (linkedContactEmailNormalized && fromEmail === linkedContactEmailNormalized) {
+          return "from";
+        }
+        if (
+          linkedContactEmailNormalized &&
+          toEmails.includes(linkedContactEmailNormalized)
+        ) {
           return "to";
         }
         if (isFromOurMailbox) {

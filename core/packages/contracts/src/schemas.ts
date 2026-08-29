@@ -727,12 +727,37 @@ export const contactSocialAccountSchema = z.object({
   url: z.string().min(1).max(500),
 });
 
-export const contactInputSchema = z.object({
+/** Calendar day YYYY-MM-DD (finance ledger booked_on, contact birthday). */
+export const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+
+const contactWritableFieldsSchema = z.object({
   number: z.number().int().positive().nullable().optional(),
   key: z.string().min(1).max(64),
   organizationId: z.string().nullable().optional(),
-  name: z.string().min(1).max(255),
+  /**
+   * Preferred given name. When omitted on create, `name` is treated as firstName
+   * (legacy clients).
+   */
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().max(255).nullable().optional(),
+  /**
+   * Full display name. Preferred to derive from firstName + lastName; accepted
+   * alone for legacy create/patch as firstName when firstName is omitted.
+   */
+  name: z.string().min(1).max(255).optional(),
   email: z.string().email().nullable().optional(),
+  /** Labeled addresses including primary (`{ label, address }[]`, max 20). */
+  emails: z
+    .array(
+      z.object({
+        label: z.enum(["personal", "work", "other"]),
+        address: z.string().email(),
+      }),
+    )
+    .max(20)
+    .optional(),
   title: z.string().max(255).nullable().optional(),
   summary: z.string().max(2000).nullable().optional(),
   sortOrder: z.number().int().optional(),
@@ -743,9 +768,28 @@ export const contactInputSchema = z.object({
   city: z.string().max(255).nullable().optional(),
   postalCode: z.string().max(32).nullable().optional(),
   country: z.string().max(128).nullable().optional(),
+  /** State / province / region name or code. */
+  region: z.string().max(128).nullable().optional(),
+  /** Geocoded coordinates from Mapbox (null until resolved). */
+  latitude: z.number().finite().min(-90).max(90).nullable().optional(),
+  longitude: z.number().finite().min(-180).max(180).nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
+  /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
+  birthday: calendarDateSchema.nullable().optional(),
 });
-export const updateContactSchema = contactInputSchema.partial();
+
+export const contactInputSchema = contactWritableFieldsSchema.superRefine(
+  (value, ctx) => {
+    if (!(value.firstName?.trim() || value.name?.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "firstName or name is required",
+        path: ["firstName"],
+      });
+    }
+  },
+);
+export const updateContactSchema = contactWritableFieldsSchema.partial();
 export const contactSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -753,7 +797,15 @@ export const contactSchema = z.object({
   number: z.number().int().nullable(),
   key: z.string(),
   name: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
   email: z.string().nullable(),
+  emails: z.array(
+    z.object({
+      label: z.enum(["personal", "work", "other"]),
+      address: z.string(),
+    }),
+  ),
   title: z.string().nullable(),
   summary: z.string().nullable(),
   avatarStorageKey: z.string().nullable(),
@@ -766,16 +818,146 @@ export const contactSchema = z.object({
   city: z.string().nullable(),
   postalCode: z.string().nullable(),
   country: z.string().nullable(),
+  region: z.string().nullable().optional(),
+  latitude: z.number().finite().nullable().optional(),
+  longitude: z.number().finite().nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema),
+  birthday: calendarDateSchema.nullable().optional(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
   deletedAt: nullableIsoDateSchema,
 });
 
-/** Calendar day YYYY-MM-DD (finance ledger booked_on). */
-export const calendarDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+/** Compose full contact display name from given + family name. */
+export function formatContactDisplayName(
+  firstName: string,
+  lastName?: string | null,
+): string {
+  return [firstName.trim(), (lastName ?? "").trim()]
+    .filter((part) => part.length > 0)
+    .join(" ");
+}
+
+/** Directed contact↔contact relationship types (user-curated). */
+export const contactRelationshipTypeSchema = z.enum([
+  "spouse",
+  "partner",
+  "child",
+  "parent",
+  "sibling",
+  "friend",
+  "colleague",
+  "reports_to",
+  "other",
+]);
+
+export const contactRelationshipInputSchema = z.object({
+  toContactId: z.string().min(1),
+  type: contactRelationshipTypeSchema,
+  note: z.string().max(2000).nullable().optional(),
+});
+export const updateContactRelationshipSchema = z.object({
+  type: contactRelationshipTypeSchema.optional(),
+  note: z.string().max(2000).nullable().optional(),
+});
+export const contactRelationshipSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  fromContactId: z.string(),
+  toContactId: z.string(),
+  type: contactRelationshipTypeSchema,
+  note: z.string().nullable(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+/** List item for a contact's relationships (both edge directions). */
+export const contactRelationshipListItemSchema = contactRelationshipSchema.extend({
+  direction: z.enum(["outgoing", "incoming"]),
+  typeLabel: z.string(),
+  relatedContactId: z.string(),
+  relatedContactName: z.string(),
+});
+
+export const crmGroupSubjectTypeSchema = z.enum(["contact", "organization"]);
+
+export const crmGroupInputSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(2000).nullable().optional(),
+  color: z.string().max(32).nullable().optional(),
+  icon: z.string().max(64).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+export const updateCrmGroupSchema = crmGroupInputSchema.partial();
+export const crmGroupSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  color: z.string().nullable(),
+  icon: z.string().nullable(),
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+export const crmGroupMemberInputSchema = z.object({
+  subjectType: crmGroupSubjectTypeSchema,
+  subjectId: z.string().min(1),
+});
+export const crmGroupMemberSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  groupId: z.string(),
+  subjectType: crmGroupSubjectTypeSchema,
+  subjectId: z.string(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+/** Cap note bodies so they stay Tier A (no object-storage Tier C/D). */
+export const CRM_ACTIVITY_NOTE_MAX_CHARS = 8192;
+export const CRM_ACTIVITY_PREVIEW_MAX_CHARS = 240;
+
+export const crmActivityKindSchema = z.enum(["note", "meeting"]);
+export const crmActivitySubjectTypeSchema = z.enum(["contact", "organization"]);
+
+export const createCrmActivityNoteSchema = z.object({
+  kind: z.literal("note"),
+  body: z.string().min(1).max(CRM_ACTIVITY_NOTE_MAX_CHARS),
+  occurredAt: isoDateSchema.optional(),
+});
+
+export const crmActivitySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  subjectType: crmActivitySubjectTypeSchema,
+  subjectId: z.string(),
+  kind: crmActivityKindSchema,
+  body: z.string().nullable(),
+  bodyPreview: z.string().nullable(),
+  meetingId: z.string().nullable(),
+  /** Meeting title when kind=meeting (joined; not stored as SoT). */
+  meetingTitle: z.string().nullable().optional(),
+  /** Meeting start when kind=meeting (joined). */
+  meetingStartAt: isoDateSchema.nullable().optional(),
+  occurredAt: isoDateSchema,
+  createdBy: z.string().nullable(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+
+export const crmActivityFeedQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export const crmActivityFeedResponseSchema = z.object({
+  activities: z.array(crmActivitySchema),
+  nextCursor: z.string().nullable(),
+});
 
 export const bankAccountInputSchema = z.object({
   key: z.string().min(1).max(64),
@@ -1436,6 +1618,42 @@ export const moneybirdTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
   administrationName: z.string().nullable(),
   invoiceSampleCount: z.number().int().nullable(),
+});
+
+/** Mapbox integration (access token for geocode + static maps). */
+export const mapboxSettingsSchema = z.object({
+  accessTokenConfigured: z.boolean(),
+  accessTokenPreview: z.string().nullable(),
+  connected: z.boolean(),
+});
+export const updateMapboxSettingsSchema = z.object({
+  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
+  accessToken: z.string().optional(),
+});
+export const mapboxTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+});
+
+/** Shared place/geocode result for contacts (and later meetings). */
+export const mapboxGeocodeResultSchema = z.object({
+  latitude: z.number().finite(),
+  longitude: z.number().finite(),
+  formatted: z.string(),
+  relevance: z.number().finite().nullable(),
+  placeName: z.string().nullable(),
+});
+export const mapboxGeocodeQuerySchema = z.object({
+  q: z.string().min(1).max(500),
+  /** Optional ISO 3166-1 alpha-2 to bias Mapbox results. */
+  country: z.string().min(2).max(2).optional(),
+});
+export const mapboxStaticMapQuerySchema = z.object({
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lng: z.coerce.number().finite().min(-180).max(180),
+  z: z.coerce.number().finite().min(0).max(22).optional(),
+  width: z.coerce.number().int().min(1).max(1280).optional(),
+  height: z.coerce.number().int().min(1).max(1280).optional(),
 });
 
 /** AgentMail integration (API key + inbox). */
@@ -2335,6 +2553,23 @@ export type DocumentType = z.infer<typeof documentTypeSchema>;
 export type Organization = z.infer<typeof organizationSchema>;
 export type Contact = z.infer<typeof contactSchema>;
 export type ContactSocialAccount = z.infer<typeof contactSocialAccountSchema>;
+export type ContactRelationshipType = z.infer<typeof contactRelationshipTypeSchema>;
+export type ContactRelationship = z.infer<typeof contactRelationshipSchema>;
+export type ContactRelationshipListItem = z.infer<
+  typeof contactRelationshipListItemSchema
+>;
+export type ContactRelationshipInput = z.infer<typeof contactRelationshipInputSchema>;
+export type UpdateContactRelationshipInput = z.infer<
+  typeof updateContactRelationshipSchema
+>;
+export type CrmGroup = z.infer<typeof crmGroupSchema>;
+export type CrmGroupInput = z.infer<typeof crmGroupInputSchema>;
+export type CrmGroupMember = z.infer<typeof crmGroupMemberSchema>;
+export type CrmGroupMemberInput = z.infer<typeof crmGroupMemberInputSchema>;
+export type CrmGroupSubjectType = z.infer<typeof crmGroupSubjectTypeSchema>;
+export type CrmActivity = z.infer<typeof crmActivitySchema>;
+export type CrmActivityKind = z.infer<typeof crmActivityKindSchema>;
+export type CreateCrmActivityNoteInput = z.infer<typeof createCrmActivityNoteSchema>;
 export type BankAccount = z.infer<typeof bankAccountSchema>;
 export type BankAccountInput = z.infer<typeof bankAccountInputSchema>;
 export type BankAccountInstitution = z.infer<typeof bankAccountInstitutionSchema>;
@@ -2411,6 +2646,14 @@ export type MoneybirdAdministrationSummary = z.infer<
 export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
+export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
+export type UpdateMapboxSettingsInput = z.infer<
+  typeof updateMapboxSettingsSchema
+>;
+export type MapboxTestConnectionResult = z.infer<
+  typeof mapboxTestConnectionResultSchema
+>;
+export type MapboxGeocodeResult = z.infer<typeof mapboxGeocodeResultSchema>;
 export type AgentMailSettings = z.infer<typeof agentMailSettingsSchema>;
 export type UpdateAgentMailSettingsInput = z.infer<
   typeof updateAgentMailSettingsSchema

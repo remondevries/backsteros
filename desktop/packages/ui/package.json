@@ -87,6 +87,7 @@
     "canvas-confetti": "^1.9.4",
     "chrono-node": "^2.10.0",
     "cmdk": "^1.1.1",
+    "country-region-data": "4.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

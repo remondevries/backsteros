@@ -15,6 +15,7 @@ import type {
   Meeting as ApiMeeting,
   Task as ApiTask,
 } from "@backsteros/contracts";
+import { formatContactDisplayName } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
   sortInboxItemsByAttentionStatus,
@@ -336,18 +337,22 @@ function useDesktopWorkspaceDataImpl(): {
   }, [apiLetters, localLetters.data]);
 
   const rawMeetings = useMemo(() => {
+    // On a broken local watch (e.g. SELECT of a column not yet in SQLite),
+    // ignore local and fall back to REST so the calendar side panel stays populated.
     const localMapped =
-      localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting) ?? null;
-    const fillFrom = apiFillSourceForColdStart(localMapped, apiMeetings);
+      localMeetings.error != null
+        ? null
+        : (localMeetings.data?.map((row) => snakeRow(row) as ApiMeeting) ??
+          null);
     return fillMissingLongTextFromApi(
       fillMissingMeetingPropertiesFromApi(
         resolveLocalOrApiRows(localMapped, apiMeetings),
-        fillFrom,
+        apiMeetings,
       ),
       apiMeetings,
       ["summary", "notes", "transcription"],
     );
-  }, [apiMeetings, localMeetings.data]);
+  }, [apiMeetings, localMeetings.data, localMeetings.error]);
 
   const rawContacts = useMemo(() => {
     const localMapped =
@@ -355,7 +360,8 @@ function useDesktopWorkspaceDataImpl(): {
     return fillMissingLongTextFromApi(
       resolveLocalOrApiRows(localMapped, apiContacts),
       apiContacts,
-      ["summary", "notes"],
+      // birthday / names / emails: fill when local SQLite is still missing new CRM columns
+      ["summary", "notes", "birthday", "firstName", "lastName", "emails"],
     );
   }, [apiContacts, localContacts.data]);
 
@@ -817,9 +823,49 @@ function useDesktopWorkspaceDataImpl(): {
   );
   const patchContact = useCallback(
     async (id: string, values: Record<string, unknown>) => {
-      await patchViaPowerSyncOrApi("contacts", id, values);
+      const touchesNames =
+        values.firstName !== undefined ||
+        values.lastName !== undefined ||
+        values.name !== undefined;
+      let next = values;
+      if (touchesNames) {
+        const existing = rawContacts.find((contact) => contact.id === id);
+        if (existing) {
+          if (
+            values.firstName === undefined &&
+            values.lastName === undefined &&
+            values.name !== undefined
+          ) {
+            const firstName = String(values.name ?? "").trim();
+            next = {
+              ...values,
+              firstName,
+              lastName: "",
+              name: firstName,
+            };
+          } else {
+            const firstName = String(
+              values.firstName !== undefined
+                ? values.firstName
+                : (existing.firstName ?? existing.name ?? ""),
+            ).trim();
+            const lastName = String(
+              values.lastName !== undefined
+                ? (values.lastName ?? "")
+                : (existing.lastName ?? ""),
+            ).trim();
+            next = {
+              ...values,
+              firstName,
+              lastName,
+              name: formatContactDisplayName(firstName, lastName) || firstName,
+            };
+          }
+        }
+      }
+      await patchViaPowerSyncOrApi("contacts", id, next);
     },
-    [patchViaPowerSyncOrApi],
+    [patchViaPowerSyncOrApi, rawContacts],
   );
   const patchOrganization = useCallback(
     async (id: string, values: Record<string, unknown>) => {
