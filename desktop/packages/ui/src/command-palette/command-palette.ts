@@ -242,3 +242,33 @@ export type CommandPaletteHit = {
   href: string;
   section: CommandPaletteResultSection;
 };
+
+/** Empty-query contacts list when the palette is scoped to Contacts. */
+export const COMMAND_PALETTE_RECENT_CONTACTS_LIMIT = 10;
+
+export type CommandPaletteRecentContact = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  href: string;
+  /** Epoch ms — higher = more recent. */
+  updatedAt?: number | null;
+};
+
+export function selectRecentCommandPaletteContacts(
+  contacts: readonly CommandPaletteRecentContact[],
+  limit = COMMAND_PALETTE_RECENT_CONTACTS_LIMIT,
+): CommandPaletteRecentContact[] {
+  return [...contacts]
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, Math.max(0, limit));
+}
+
+/** True when empty-query results should be contacts (not Navigate). */
+export function isCommandPaletteContactsListScope(options: {
+  filterMode: CommandPaletteFilterMode;
+  searchContext: { kind: string } | null;
+}): boolean {
+  if (options.filterMode === "contacts") return true;
+  return options.searchContext?.kind === "contacts";
+}

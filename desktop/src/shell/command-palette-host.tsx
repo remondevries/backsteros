@@ -4,10 +4,13 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CommandPaletteView,
   contactMatchesSlug,
+  getContactsHref,
   getProjectRouteParamFromPathname,
   getSelectedContactSlugFromPathname,
   getSelectedOrganizationSlugFromPathname,
+  getUniqueListItemRouteParam,
   organizationMatchesSlug,
+  selectRecentCommandPaletteContacts,
   useCommandPaletteState,
 } from "@backsteros/ui";
 
@@ -36,6 +39,22 @@ export function CommandPaletteHost() {
   const searchFn = useCommandPaletteSearchFn();
   const { projects } = useDesktopWorkspaceProjects();
   const { contacts, organizations } = useDesktopWorkspacePeople();
+
+  const recentContacts = useMemo(
+    () =>
+      selectRecentCommandPaletteContacts(
+        contacts.map((contact) => ({
+          id: contact.id,
+          title: contact.name,
+          subtitle: contact.organizationName ?? null,
+          href: getContactsHref(
+            getUniqueListItemRouteParam(contact, contacts),
+          ),
+          updatedAt: contact.updatedAt ?? contact.avatarUpdatedAt ?? null,
+        })),
+      ),
+    [contacts],
+  );
 
   const paletteEntityNames = useMemo(() => {
     if (mode !== "search") {
@@ -127,6 +146,7 @@ export function CommandPaletteHost() {
       entityNames={paletteEntityNames}
       resolveContextIds={resolvePaletteContextIds}
       search={searchFn}
+      recentContacts={recentContacts}
     />
   );
 }

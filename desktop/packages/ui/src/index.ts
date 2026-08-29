@@ -2419,6 +2419,7 @@ export {
 } from "./documents/document-frontmatter.js";
 
 export {
+  COMMAND_PALETTE_RECENT_CONTACTS_LIMIT,
   COMMAND_PALETTE_RESULT_SECTIONS,
   DEFAULT_GO_NAVIGATION_ITEMS,
   NAVIGATION_GO_LETTER_HINT,
@@ -2428,12 +2429,15 @@ export {
   commandPaletteSectionsForMode,
   createDefaultCommandPaletteFilterState,
   goNavigationItemSearchValue,
+  isCommandPaletteContactsListScope,
   isScopedFilterMode,
   resolveFilterModeFromTabInput,
   sectionForSearchResultType,
+  selectRecentCommandPaletteContacts,
   type CommandPaletteFilterMode,
   type CommandPaletteFilterState,
   type CommandPaletteHit,
+  type CommandPaletteRecentContact,
   type CommandPaletteResultSection,
   type GoNavigationItem,
 } from "./command-palette/command-palette.js";

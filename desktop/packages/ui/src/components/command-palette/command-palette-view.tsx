@@ -12,11 +12,13 @@ import {
   createDefaultCommandPaletteFilterState,
   DEFAULT_GO_NAVIGATION_ITEMS,
   goNavigationItemSearchValue,
+  isCommandPaletteContactsListScope,
   isScopedFilterMode,
   NAVIGATION_GO_LETTER_HINT,
   type CommandPaletteFilterMode,
   type CommandPaletteFilterState,
   type CommandPaletteHit,
+  type CommandPaletteRecentContact,
   type GoNavigationItem,
 } from "../../command-palette/command-palette.js";
 import {
@@ -36,6 +38,7 @@ import {
 } from "../../finance/finance-nav.js";
 import { clearGoFinanceChord } from "../../finance/go-finance-chord-gate.js";
 import { clearGoLeaderSequence } from "../../shortcuts/go-leader-sequence-gate.js";
+import { isContactSectionPath } from "../../navigation/entity-routes.js";
 import { navigation } from "../../navigation/navigation.js";
 import { isCommandPaletteToggleKey } from "../../command-palette/command-palette-toggle-key.js";
 import {
@@ -44,7 +47,7 @@ import {
 } from "./command-palette-context.js";
 import { FinanceSectionNavIcon } from "../finance/finance-side-panel-nav-view.js";
 import { NavigationItemIcon } from "../navigation/navigation-item-icon.js";
-import { SearchNavIcon } from "../shell/sidebar-nav-icons.js";
+import { ContactsNavIcon, SearchNavIcon } from "../shell/sidebar-nav-icons.js";
 import { dismissInstantCommandOverlay, revealCommandPaletteChrome } from "../../command-palette/conceal-command-palette-chrome.js";
 
 /** Native desktop menus (Tauri) dispatch this when ⌘K / Ctrl+K is pressed. */
@@ -78,6 +81,8 @@ export type CommandPaletteViewProps = {
     query: string,
     options?: { searchParams?: URLSearchParams },
   ) => Promise<CommandPaletteHit[]> | CommandPaletteHit[];
+  /** Most recent contacts for empty-query Contacts scope (already limited). */
+  recentContacts?: readonly CommandPaletteRecentContact[];
   goItems?: GoNavigationItem[];
   financeGoItems?: readonly FinanceGoNavigationItem[];
   destinations?: {
@@ -119,6 +124,7 @@ export function CommandPaletteView({
   entityNames,
   resolveContextIds,
   search,
+  recentContacts = [],
   goItems = DEFAULT_GO_NAVIGATION_ITEMS,
   financeGoItems = DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
   destinations,
@@ -233,20 +239,32 @@ export function CommandPaletteView({
     };
   }, [toggle]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = open;
-    // Reset only when the palette closes — not on every mount while closed.
-    if (open || !wasOpen) return;
-    setFilter(createDefaultCommandPaletteFilterState());
-    setGoQuery("");
-    setHits([]);
-    setLoading(false);
-    setRemoteError(null);
-    setManualContext(null);
-    setRouteContextOverride(null);
-    setContextDismissed(false);
-  }, [open]);
+
+    if (!open) {
+      // Reset only when the palette closes — not on every mount while closed.
+      if (!wasOpen) return;
+      setFilter(createDefaultCommandPaletteFilterState());
+      setGoQuery("");
+      setHits([]);
+      setLoading(false);
+      setRemoteError(null);
+      setManualContext(null);
+      setRouteContextOverride(null);
+      setContextDismissed(false);
+      return;
+    }
+
+    // Opening from Contacts scopes to the contact list (not Navigate).
+    if (!wasOpen && isContactSectionPath(pathname)) {
+      setFilter({ mode: "contacts", searchTerm: "" });
+      setManualContext(null);
+      setRouteContextOverride(null);
+      setContextDismissed(false);
+    }
+  }, [open, pathname]);
 
   useEffect(() => {
     setContextDismissed((current) => (current ? false : current));
@@ -426,6 +444,13 @@ export function CommandPaletteView({
 
   const trimmed = filter.searchTerm.trim();
   const showWorkspaceResults = !isLeaderNavMode && trimmed.length > 0;
+  const showContactsListResults =
+    !isLeaderNavMode &&
+    !showWorkspaceResults &&
+    isCommandPaletteContactsListScope({
+      filterMode: filter.mode,
+      searchContext: activeSearchContext,
+    });
   const sections = commandPaletteSectionsForMode(filter.mode);
   const groupedResults = useMemo(() => {
     const grouped = Object.fromEntries(
@@ -446,7 +471,7 @@ export function CommandPaletteView({
     : isFinanceGoMode
       ? `Type a letter… ${FINANCE_GO_LETTER_HINT}`
       : (FILTER_PLACEHOLDERS[filter.mode] ??
-        "Search everything… (p t d l k c o f + Tab or space)");
+        "Search…");
 
   const showContextBreadcrumb = !isLeaderNavMode && contextBreadcrumb.length > 0;
 
@@ -764,43 +789,69 @@ export function CommandPaletteView({
           ) : (
             <>
               {!showWorkspaceResults ? (
-                <>
-                  <Command.Empty className="command-empty">
-                    No destination found.
-                  </Command.Empty>
-                  <Command.Group heading="Navigate">
-                    {navDestinations.map((item) => (
-                      <Command.Item
-                        key={item.href}
-                        value={`${item.label} ${item.href}`}
-                        className="command-item"
-                        onSelect={() => {
-                          if (item.filterMode) {
-                            setFilter({
-                              mode: item.filterMode,
-                              searchTerm: "",
-                            });
-                            setManualContext(null);
-                            setContextDismissed(true);
-                            setRouteContextOverride(null);
-                            return;
-                          }
-                          closeAndNavigate(item.href);
-                        }}
-                      >
-                        {item.iconId ? (
-                          <NavigationItemIcon navId={item.iconId} />
-                        ) : null}
-                        <span className="command-item-label">{item.label}</span>
-                        <small>
-                          {item.filterMode
-                            ? `Search ${item.label.toLowerCase()}`
-                            : item.href}
-                        </small>
-                      </Command.Item>
-                    ))}
-                  </Command.Group>
-                </>
+                showContactsListResults ? (
+                  <>
+                    <Command.Empty className="command-empty">
+                      No contacts found.
+                    </Command.Empty>
+                    <Command.Group heading="Contacts">
+                      {recentContacts.map((contact) => (
+                        <Command.Item
+                          key={contact.id}
+                          value={`${contact.title} ${contact.subtitle ?? ""} ${contact.id}`}
+                          className="command-item"
+                          onSelect={() => closeAndNavigate(contact.href)}
+                        >
+                          <span className="nav-icon" aria-hidden="true">
+                            <ContactsNavIcon />
+                          </span>
+                          <span className="command-item-label">
+                            {contact.title}
+                          </span>
+                          <small>{contact.subtitle ?? "contact"}</small>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                ) : (
+                  <>
+                    <Command.Empty className="command-empty">
+                      No destination found.
+                    </Command.Empty>
+                    <Command.Group heading="Navigate">
+                      {navDestinations.map((item) => (
+                        <Command.Item
+                          key={item.href}
+                          value={`${item.label} ${item.href}`}
+                          className="command-item"
+                          onSelect={() => {
+                            if (item.filterMode) {
+                              setFilter({
+                                mode: item.filterMode,
+                                searchTerm: "",
+                              });
+                              setManualContext(null);
+                              setContextDismissed(true);
+                              setRouteContextOverride(null);
+                              return;
+                            }
+                            closeAndNavigate(item.href);
+                          }}
+                        >
+                          {item.iconId ? (
+                            <NavigationItemIcon navId={item.iconId} />
+                          ) : null}
+                          <span className="command-item-label">{item.label}</span>
+                          <small>
+                            {item.filterMode
+                              ? `Search ${item.label.toLowerCase()}`
+                              : item.href}
+                          </small>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                )
               ) : (
                 <>
                   {loading ? (
