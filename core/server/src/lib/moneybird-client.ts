@@ -4,6 +4,8 @@
  * @see https://developer.moneybird.com/introduction
  */
 
+import { enqueueMoneybirdRequest } from "./moneybird-request-gate.js";
+
 const MONEYBIRD_API_BASE = "https://moneybird.com/api/v2";
 
 export type MoneybirdAdministration = {
@@ -88,6 +90,39 @@ export type MoneybirdTaxRate = {
   id: string;
   percentage: string | null;
   name: string | null;
+};
+
+export type MoneybirdFinancialAccount = {
+  id: string;
+  type: string | null;
+  name: string;
+  identifier: string | null;
+  currency: string | null;
+  provider: string | null;
+  moneybirdAccount: boolean;
+  active: boolean;
+};
+
+export type MoneybirdFinancialMutationSyncId = {
+  id: string;
+  version: number | null;
+};
+
+export type MoneybirdFinancialMutation = {
+  id: string;
+  amount: string;
+  code: string | null;
+  date: string;
+  message: string | null;
+  contraAccountName: string | null;
+  contraAccountNumber: string | null;
+  state: string | null;
+  settlementState: string | null;
+  financialAccountId: string | null;
+  currency: string | null;
+  accountServicerTransactionId: string | null;
+  version: number | null;
+  raw: Record<string, unknown>;
 };
 
 export class MoneybirdApiError extends Error {
@@ -218,6 +253,87 @@ export function mapMoneybirdIdentity(
   return {
     id,
     ...mapMoneybirdInvoiceParty(raw),
+  };
+}
+
+export function mapMoneybirdFinancialAccount(
+  raw: Record<string, unknown>,
+): MoneybirdFinancialAccount {
+  const id = asStringId(raw.id);
+  if (!id) {
+    throw new Error("Moneybird financial account missing id");
+  }
+  return {
+    id,
+    type: asOptionalString(raw.type),
+    name: asOptionalString(raw.name) ?? "Financial account",
+    identifier: asOptionalString(raw.identifier),
+    currency: asOptionalString(raw.currency),
+    provider: asOptionalString(raw.provider),
+    moneybirdAccount: Boolean(raw.moneybird_account),
+    active: raw.active === undefined ? true : Boolean(raw.active),
+  };
+}
+
+export function mapMoneybirdFinancialMutationSyncId(
+  raw: Record<string, unknown>,
+): MoneybirdFinancialMutationSyncId {
+  const id = asStringId(raw.id);
+  if (!id) {
+    throw new Error("Moneybird financial mutation sync id missing id");
+  }
+  const versionRaw = raw.version;
+  const version =
+    typeof versionRaw === "number" && Number.isFinite(versionRaw)
+      ? versionRaw
+      : typeof versionRaw === "string" && versionRaw.trim()
+        ? Number(versionRaw)
+        : null;
+  return {
+    id,
+    version: version != null && Number.isFinite(version) ? version : null,
+  };
+}
+
+export function mapMoneybirdFinancialMutation(
+  raw: Record<string, unknown>,
+): MoneybirdFinancialMutation {
+  const id = asStringId(raw.id);
+  if (!id) {
+    throw new Error("Moneybird financial mutation missing id");
+  }
+  const amount = asMoneyAmount(raw.amount) ?? asOptionalString(raw.amount);
+  if (!amount) {
+    throw new Error(`Moneybird financial mutation ${id} missing amount`);
+  }
+  const date = asOptionalString(raw.date);
+  if (!date) {
+    throw new Error(`Moneybird financial mutation ${id} missing date`);
+  }
+  const versionRaw = raw.version;
+  const version =
+    typeof versionRaw === "number" && Number.isFinite(versionRaw)
+      ? versionRaw
+      : typeof versionRaw === "string" && versionRaw.trim()
+        ? Number(versionRaw)
+        : null;
+  return {
+    id,
+    amount,
+    code: asOptionalString(raw.code),
+    date,
+    message: asOptionalString(raw.message),
+    contraAccountName: asOptionalString(raw.contra_account_name),
+    contraAccountNumber: asOptionalString(raw.contra_account_number),
+    state: asOptionalString(raw.state),
+    settlementState: asOptionalString(raw.settlement_state),
+    financialAccountId: asStringId(raw.financial_account_id),
+    currency: asOptionalString(raw.currency),
+    accountServicerTransactionId: asOptionalString(
+      raw.account_servicer_transaction_id,
+    ),
+    version: version != null && Number.isFinite(version) ? version : null,
+    raw,
   };
 }
 
@@ -371,28 +487,30 @@ export class MoneybirdClient {
     path: string,
     init?: RequestInit,
   ): Promise<T> {
-    const url = `${MONEYBIRD_API_BASE}${path}`;
-    const response = await this.fetchImpl(url, {
-      ...init,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiToken}`,
-        ...(init?.headers ?? {}),
-      },
+    return enqueueMoneybirdRequest(async () => {
+      const url = `${MONEYBIRD_API_BASE}${path}`;
+      const response = await this.fetchImpl(url, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiToken}`,
+          ...(init?.headers ?? {}),
+        },
+      });
+      const body = await response.text();
+      if (!response.ok) {
+        throw new MoneybirdApiError(
+          response.status,
+          body,
+          `Moneybird request failed (${response.status}) for ${path}`,
+        );
+      }
+      if (!body) {
+        return undefined as T;
+      }
+      return JSON.parse(body) as T;
     });
-    const body = await response.text();
-    if (!response.ok) {
-      throw new MoneybirdApiError(
-        response.status,
-        body,
-        `Moneybird request failed (${response.status}) for ${path}`,
-      );
-    }
-    if (!body) {
-      return undefined as T;
-    }
-    return JSON.parse(body) as T;
   }
 
   async listAdministrations(): Promise<MoneybirdAdministration[]> {
@@ -441,6 +559,42 @@ export class MoneybirdClient {
       .map(mapMoneybirdSalesInvoice);
   }
 
+  async getContact(contactId: string): Promise<{
+    id: string;
+    chamberOfCommerce: string | null;
+    taxNumber: string | null;
+    address1: string | null;
+    address2: string | null;
+    zipcode: string | null;
+    city: string | null;
+    country: string | null;
+    phone: string | null;
+    email: string | null;
+  }> {
+    const administrationId = this.requireAdministrationId();
+    const path = `/${encodeURIComponent(administrationId)}/contacts/${encodeURIComponent(contactId)}.json`;
+    const raw = await this.requestJson<Record<string, unknown>>(path);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new MoneybirdApiError(404, "", "Moneybird contact not found");
+    }
+    const id = asStringId(raw.id);
+    if (!id) {
+      throw new MoneybirdApiError(404, "", "Moneybird contact missing id");
+    }
+    return {
+      id,
+      chamberOfCommerce: asOptionalString(raw.chamber_of_commerce),
+      taxNumber: asOptionalString(raw.tax_number),
+      address1: asOptionalString(raw.address1),
+      address2: asOptionalString(raw.address2),
+      zipcode: asOptionalString(raw.zipcode),
+      city: asOptionalString(raw.city),
+      country: asOptionalString(raw.country),
+      phone: asOptionalString(raw.phone),
+      email: asOptionalString(raw.email),
+    };
+  }
+
   async getSalesInvoice(invoiceId: string): Promise<MoneybirdSalesInvoiceDetail> {
     const administrationId = this.requireAdministrationId();
     const path = `/${encodeURIComponent(administrationId)}/sales_invoices/${encodeURIComponent(invoiceId)}.json`;
@@ -472,6 +626,78 @@ export class MoneybirdClient {
           Boolean(row) && typeof row === "object" && !Array.isArray(row),
       )
       .map(mapMoneybirdTaxRate);
+  }
+
+  async listFinancialAccounts(): Promise<MoneybirdFinancialAccount[]> {
+    const administrationId = this.requireAdministrationId();
+    const path = `/${encodeURIComponent(administrationId)}/financial_accounts.json`;
+    const raw = await this.requestJson<unknown[]>(path);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row),
+      )
+      .map(mapMoneybirdFinancialAccount);
+  }
+
+  async listFinancialMutationSyncIds(options?: {
+    financialAccountId?: string;
+    period?: string;
+    state?: string;
+  }): Promise<MoneybirdFinancialMutationSyncId[]> {
+    const administrationId = this.requireAdministrationId();
+    const filterParts: string[] = [];
+    filterParts.push(`period:${options?.period?.trim() || "this_year"}`);
+    if (options?.state?.trim()) {
+      filterParts.push(`state:${options.state.trim()}`);
+    } else {
+      filterParts.push("state:all");
+    }
+    if (options?.financialAccountId?.trim()) {
+      filterParts.push(
+        `financial_account_id:${options.financialAccountId.trim()}`,
+      );
+    }
+    const params = new URLSearchParams();
+    params.set("filter", filterParts.join(","));
+    const path = `/${encodeURIComponent(administrationId)}/financial_mutations/synchronization.json?${params.toString()}`;
+    const raw = await this.requestJson<unknown[]>(path);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row),
+      )
+      .map(mapMoneybirdFinancialMutationSyncId);
+  }
+
+  /**
+   * Fetch mutation details for the given ids (max 100 per Moneybird request).
+   * Callers should chunk larger sets.
+   */
+  async fetchFinancialMutationsByIds(
+    ids: string[],
+  ): Promise<MoneybirdFinancialMutation[]> {
+    const administrationId = this.requireAdministrationId();
+    if (ids.length === 0) return [];
+    if (ids.length > 100) {
+      throw new Error(
+        "Moneybird fetchFinancialMutationsByIds accepts at most 100 ids",
+      );
+    }
+    const path = `/${encodeURIComponent(administrationId)}/financial_mutations/synchronization.json`;
+    const raw = await this.requestJson<unknown[]>(path, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row),
+      )
+      .map(mapMoneybirdFinancialMutation);
   }
 }
 

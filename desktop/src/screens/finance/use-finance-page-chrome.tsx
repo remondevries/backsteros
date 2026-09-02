@@ -51,6 +51,8 @@ export function useFinancePageChrome({
   setCsvFile,
   setImportAccountId,
   setImportOpen,
+  moneybirdSyncPending,
+  syncMoneybirdAccount,
   enabled = true,
 }: Pick<
   FinanceMoneybirdInvoicesData,
@@ -63,6 +65,8 @@ export function useFinancePageChrome({
     | "setCsvFile"
     | "setImportAccountId"
     | "setImportOpen"
+    | "moneybirdSyncPending"
+    | "syncMoneybirdAccount"
   > & {
     navId: FinanceNavId | null;
     showTransactions: boolean;
@@ -107,6 +111,30 @@ export function useFinancePageChrome({
       );
     }
     if (!showTransactions) return null;
+    if (selected?.moneybirdFinancialAccountId) {
+      return (
+        <div className="finance-chrome-actions">
+          <button
+            type="button"
+            className="finance-chrome-actions__button"
+            disabled={moneybirdSyncPending}
+            aria-label="Sync Moneybird transactions"
+            title="Sync Moneybird transactions"
+            onClick={() => {
+              void syncMoneybirdAccount({ force: true });
+            }}
+          >
+            <FinanceSyncIcon
+              className={
+                moneybirdSyncPending
+                  ? "finance-chrome-actions__sync-icon is-spinning"
+                  : "finance-chrome-actions__sync-icon"
+              }
+            />
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="finance-chrome-actions">
         <button
@@ -127,9 +155,12 @@ export function useFinancePageChrome({
   }, [
     loadMoneybirdInvoicesPage,
     moneybirdInvoicesLoading,
+    moneybirdSyncPending,
     navId,
     selected?.id,
+    selected?.moneybirdFinancialAccountId,
     showTransactions,
+    syncMoneybirdAccount,
   ]);
 
   const breadcrumbLabel =

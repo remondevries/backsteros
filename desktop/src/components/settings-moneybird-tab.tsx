@@ -128,8 +128,10 @@ export function SettingsMoneybirdTab({
             >
               personal Moneybird API token
             </a>{" "}
-            with the <code>sales_invoices</code> scope. Tokens are stored in
-            core (not synced via PowerSync) and used to load invoices in Finance.
+            with the <code>sales_invoices</code>, <code>bank</code>, and{" "}
+            <code>settings</code> scopes. Tokens are stored in core (not synced
+            via PowerSync) and used for Finance invoices and bank transaction
+            sync.
           </p>
         }
         statusLabel={
@@ -202,8 +204,9 @@ export function SettingsMoneybirdTab({
       <section className="settings-card">
         <h2>API token</h2>
         <p>
-          Create a personal API token in Moneybird and store it here. Prefer
-          scoping to <code>sales_invoices</code> for invoice access.
+          Create a personal API token in Moneybird and store it here. Include{" "}
+          <code>sales_invoices</code> (invoices), <code>bank</code> (mutations),
+          and <code>settings</code> (financial accounts) for full Finance access.
         </p>
         <label className="settings-field">
           Moneybird API token

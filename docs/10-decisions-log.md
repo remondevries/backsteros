@@ -384,21 +384,23 @@ fork of the Next deployment pipeline.
 
 ---
 
-## ADR-027: Moneybird — personal API token for Finance invoices
+## ADR-027: Moneybird — personal API token for Finance invoices + bank sync
 
-**Status:** Accepted (2026-08)  
-**Context:** Finance needs access to Moneybird sales invoices. Community SDKs are incomplete; Apideck adds a third-party proxy. Moneybird documents personal API tokens and OAuth; BacksterOS is a personal local-computer host.  
+**Status:** Accepted (2026-08); amended (2026-09) for bank mutations  
+**Context:** Finance needs access to Moneybird sales invoices and (later) bank mutations. Community SDKs are incomplete; Apideck adds a third-party proxy. Moneybird documents personal API tokens and OAuth; BacksterOS is a personal local-computer host.  
 **Decision:**
 
 - Use a **thin first-party Moneybird REST client** in `core/server` (Bearer token, API v2)
 - Store **API token + administration id** in `workspace_integration_secrets` (same pattern as Cursor; not PowerSync)
 - Settings → Integrations → **Moneybird**: save token, pick administration, test connection
 - Finance → **Invoices** lists sales invoices live via `GET /api/v1/finance/moneybird/invoices` (no local invoice table yet)
-- Prefer personal API token with `sales_invoices` scope for v1; OAuth deferred
+- Finance → bank accounts may link a Moneybird **financial account**; `POST /api/v1/bank-accounts/:id/moneybird-sync` ingests mutations into Tier C `financial_transactions` (insert-only by Moneybird mutation id / `external_id`) on view load + manual Sync
+- Prefer personal API token with `sales_invoices`, `bank`, and `settings` scopes; OAuth deferred
+- Moneybird HTTP calls are serialized via an in-process rate gate (150 req / 5 min)
 
-**Alternatives rejected:** Apideck accounting SDK; `@print-one/moneybird-js` as hard dependency; OAuth-only flow for v1.
+**Alternatives rejected:** Apideck accounting SDK; `@print-one/moneybird-js` as hard dependency; OAuth-only flow for v1; live-proxy bank ledger without local storage (classification needs local rows).
 
-**Consequences:** Invoice sync/cache into Postgres can come later. Purchase invoices / bank mutations are out of scope until scopes expand.
+**Consequences:** Invoice sync/cache into Postgres can come later. Classification (merchant/category) stays local and is not written back to Moneybird bookings in v1.
 
 ---
 

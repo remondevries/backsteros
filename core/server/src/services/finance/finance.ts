@@ -790,6 +790,7 @@ export async function createBankAccount(
       currency: input.currency ?? "EUR",
       type: input.type ?? "bank_account",
       color: input.color ?? null,
+      moneybirdFinancialAccountId: input.moneybirdFinancialAccountId ?? null,
       sortOrder: input.sortOrder ?? Date.now(),
     })
     .returning();
@@ -811,6 +812,9 @@ export async function updateBankAccount(
       ...(input.currency !== undefined ? { currency: input.currency } : {}),
       ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.color !== undefined ? { color: input.color } : {}),
+      ...(input.moneybirdFinancialAccountId !== undefined
+        ? { moneybirdFinancialAccountId: input.moneybirdFinancialAccountId }
+        : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
       updatedAt: new Date(),
     })

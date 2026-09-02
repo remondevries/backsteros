@@ -139,6 +139,7 @@ export {
   JournalNavIcon,
   KnowledgeBaseNavIcon,
   ContactsNavIcon,
+  SocialNavIcon,
   LettersNavIcon,
   OrganizationsNavIcon,
   AreasNavIcon,
@@ -245,6 +246,8 @@ export {
   CONTACTS_LIST_PANEL_WIDTH_KEY,
   ORGANIZATIONS_LIST_PANEL_WIDTH_KEY,
   LETTERS_LIST_PANEL_WIDTH_KEY,
+  FINANCE_LIST_PANEL_WIDTH_KEY,
+  SOCIAL_LIST_PANEL_WIDTH_KEY,
   shouldShowContentSidePanel,
   getContentSidePanelWidthKey,
   isInboxPath,
@@ -746,6 +749,11 @@ export {
 } from "./components/calendar/calendar-birthday-event-popover.js";
 
 export {
+  BirthdayCalendarIcon,
+  type BirthdayCalendarIconProps,
+} from "./components/calendar/birthday-calendar-icon.js";
+
+export {
   CalendarHabitsIconRow,
   type CalendarHabitsIconRowProps,
   type CalendarHabitIconItem,
@@ -776,6 +784,9 @@ export {
   isCalendarMeetingsPanelPath,
   formatMeetingBreadcrumbLabel,
   resolveInboxSidebarIndicator,
+  resolveInboxSidebarIndicatorTone,
+  inboxSidebarIndicatorColor,
+  INBOX_SIDEBAR_INDICATOR_COLORS,
   buildTaskDueDatePatch,
   type CalendarMeetingOverlayLayout,
 } from "./calendar/calendar-meeting-overlay.js";
@@ -1086,7 +1097,9 @@ export {
   CALENDAR_MEETING_OVERLAY_PARAM,
   parseCalendarMeetingOverlayId,
   sortMeetingsByStart,
+  groupMeetingsByStatus,
   type MeetingListItem,
+  type MeetingStatusGroup,
 } from "./meetings/meetings.js";
 
 export {
@@ -1121,7 +1134,15 @@ export {
 export {
   MeetingDetailView,
   type MeetingDetailViewProps,
+  type MeetingContentTab,
 } from "./components/meetings/meeting-detail-view.js";
+
+export {
+  MEETING_CONTENT_TAB_ORDER,
+  resolveMeetingContentTabFromShortcutKey,
+} from "./meetings/meeting-content-tab-shortcuts.js";
+
+export { useMeetingContentTabShortcuts } from "./meetings/use-meeting-content-tab-shortcuts.js";
 
 export {
   MeetingFormatToggle,
@@ -1174,6 +1195,7 @@ export {
   isContactSectionPath,
   contactMatchesSlug,
   getUniqueListItemRouteParam,
+  resolveListItemFromSlug,
   getKnowledgeHref,
   getKnowledgeV2Href,
   getSelectedKnowledgeSlugFromPathname,
@@ -1232,6 +1254,7 @@ export {
   FinanceBankAccountModal,
   type FinanceBankAccountModalProps,
   type FinanceBankAccountModalValues,
+  type FinanceMoneybirdAccountOption,
 } from "./components/finance/finance-bank-account-modal.js";
 
 export {
@@ -1538,6 +1561,7 @@ export {
   type ContactsSidePanelViewProps,
   type ContactsSidePanelGroupItem,
   type ContactsSidePanelLinkComponent,
+  type UpdateCrmGroupInput,
 } from "./components/contacts/contacts-side-panel-view.js";
 
 export {
@@ -2227,13 +2251,20 @@ export {
   getContactRouteScopeFromPathname,
   getOrganizationContactHref,
   getScopedContactBasePath,
+  getScopedContactEmailHref,
+  getScopedContactEmailsListHref,
   getScopedContactLetterHref,
+  getScopedContactMeetingHref,
+  getScopedContactMeetingsListHref,
   getScopedContactSectionHref,
   getScopedContactTaskHref,
   getScopedContactsListHref,
+  isContactScopedEntityDetailPath,
   isOrganizationContactDetailPath,
+  parseContactScopedEntityDetail,
   parseOrganizationContactRoute,
   type ContactRouteScope,
+  type ContactScopedEntityDetail,
 } from "./contacts/contact-route-scope.js";
 
 export {
@@ -2303,6 +2334,7 @@ export {
 } from "./components/documents/document-mention-menu.js";
 
 export { MentionLeadingIcon } from "./components/mentions/mention-leading-icon.js";
+export { NamedLinkChip } from "./components/mentions/named-link-chip.js";
 
 export {
   MentionCatalogProvider,
@@ -2329,7 +2361,9 @@ export {
   buildMentionToken,
   getMentionTokenCacheKey,
   KNOWLEDGE_MENTION_PROJECT_KEY,
+  preferredContactMentionDisplayId,
   resolveMentionHref,
+  rewriteContactMentionTokensToDisplayIds,
 } from "./mentions/tokens.js";
 
 export {
@@ -2355,6 +2389,7 @@ export {
   createMentionExtensions,
   MentionMenuController,
   computeMentionTriggerState,
+  namedLinkDecorations,
   type MentionMenuKeyHandlers,
 } from "./mentions/codemirror/index.js";
 
@@ -2371,6 +2406,11 @@ export type {
   MentionMenuTriggerState,
   MentionSection,
 } from "./mentions/mention-menu-types.js";
+
+export {
+  ContentMarkdownDescriptionLayout,
+  type ContentMarkdownDescriptionLayoutProps,
+} from "./components/content/content-markdown-description-layout.js";
 
 export {
   ContentMarkdownViewLayout,
@@ -2419,7 +2459,18 @@ export {
 } from "./documents/document-frontmatter.js";
 
 export {
+  compactDocumentHeadingPreview,
+  deriveDocumentHeadingMinimapItems,
+  documentHeadingMinimapSectionId,
+  resolveDocumentHeadingMinimapHasPersistentGutter,
+  resolveDocumentHeadingMinimapHitStripWidth,
+  type DocumentHeadingLevel,
+  type DocumentHeadingMinimapItem,
+} from "./documents/document-heading-minimap.js";
+
+export {
   COMMAND_PALETTE_RECENT_CONTACTS_LIMIT,
+  COMMAND_PALETTE_RECENT_ORGANIZATIONS_LIMIT,
   COMMAND_PALETTE_RESULT_SECTIONS,
   DEFAULT_GO_NAVIGATION_ITEMS,
   NAVIGATION_GO_LETTER_HINT,
@@ -2430,14 +2481,17 @@ export {
   createDefaultCommandPaletteFilterState,
   goNavigationItemSearchValue,
   isCommandPaletteContactsListScope,
+  isCommandPaletteOrganizationsListScope,
   isScopedFilterMode,
   resolveFilterModeFromTabInput,
   sectionForSearchResultType,
   selectRecentCommandPaletteContacts,
+  selectRecentCommandPaletteOrganizations,
   type CommandPaletteFilterMode,
   type CommandPaletteFilterState,
   type CommandPaletteHit,
   type CommandPaletteRecentContact,
+  type CommandPaletteRecentOrganization,
   type CommandPaletteResultSection,
   type GoNavigationItem,
 } from "./command-palette/command-palette.js";
@@ -2502,14 +2556,19 @@ export {
   coerceSparkEmailUrl,
   isAppDocumentTaskLinkUrl,
   isAppEmailTaskLinkUrl,
+  isAppLetterTaskLinkUrl,
   isGithubTaskLinkUrl,
   isSparkEmailTaskLinkUrl,
   normalizeTaskLinkUrl,
+  resolveTaskLinkAttachmentLabel,
   taskLinkDisplayLabel,
+  type TaskFileAttachmentItem,
   type TaskLinkAttachmentKind,
   type TaskLinkAttachmentsProps,
   type TaskLinkPickerOption,
 } from "./components/tasks/task-link-attachments.js";
+
+export { PdfFileIcon } from "./components/tasks/pdf-file-icon.js";
 
 export {
   ADD_TASK_LINK_SHORTCUT_HINT,
@@ -2645,6 +2704,11 @@ export {
 } from "./components/documents/document-markdown-preview.js";
 
 export {
+  DocumentHeadingMinimap,
+  type DocumentHeadingMinimapProps,
+} from "./components/documents/document-heading-minimap.js";
+
+export {
   collectImageFiles,
   createMarkdownImagePasteExtensions,
   markdownImageSnippet,
@@ -2665,9 +2729,11 @@ export {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
+  useHoverCardClose,
 } from "./components/shared/hover-card.js";
 
 export {
+  contactMatchesMentionRef,
   resolveMentionCatalogTask,
   resolveMentionCatalogProject,
   resolveMentionCatalogContact,
@@ -2699,7 +2765,15 @@ export {
   type MentionKind,
   type MentionSegment,
   type ParsedMentionToken,
+  type ParsedNamedLinkToken,
 } from "./mentions/mention-tokens.js";
+
+export {
+  parseNamedLinkToken,
+  normalizeNamedLinkUrl,
+  faviconHostForNamedLinkUrl,
+  NAMED_LINK_TOKEN_RE,
+} from "./mentions/named-link-tokens.js";
 
 export {
   ContactOverviewView,
@@ -2711,6 +2785,16 @@ export {
   type ContactGroupDropdownItem,
   type ContactSocialAccount,
 } from "./components/contacts/contact-overview-view.js";
+
+export {
+  ContactPeekCard,
+  formatContactPeekJobSubtitle,
+  splitContactPeekName,
+  type ContactPeekCardProps,
+  type ContactPeekCardContact,
+  type ContactPeekCardAction,
+  type ContactPeekSocialAccount,
+} from "./components/contacts/contact-peek-card.js";
 
 export {
   listCountries,
@@ -2730,11 +2814,62 @@ export {
 } from "./components/contacts/contact-social-accounts-editor.js";
 
 export {
+  ContactSocialLabel,
+  type ContactSocialLabelProps,
+} from "./components/contacts/contact-social-label.js";
+
+export {
+  SocialPlatformIcon,
+} from "./components/social/social-platform-icon.js";
+
+export {
+  SocialSidePanelView,
+  type SocialSidePanelViewProps,
+  type SocialSidePanelLinkComponent,
+} from "./components/social/social-side-panel-view.js";
+
+export {
+  SocialContactDetailView,
+  type SocialContactDetailViewProps,
+  type SocialContactDetailViewContact,
+} from "./components/social/social-contact-detail-view.js";
+
+export {
+  normalizeContactSocialAccounts,
+  contactHasSocialAccounts,
+  getSocialHref,
+  getSelectedSocialSlugFromPathname,
+  isSocialSectionPath,
+  socialContactMatchesSlug,
+  primarySocialAccount,
+  normalizeSocialPlatform,
+  type SocialContactListItem,
+  type SocialPlatformId,
+} from "./social/social-contacts.js";
+
+export {
   ContactEmailsEditor,
   type ContactEmailsEditorProps,
   type ContactEmailEntry,
   type ContactEmailLabel,
 } from "./components/contacts/contact-emails-editor.js";
+
+export {
+  ContactPhonesEditor,
+  type ContactPhonesEditorProps,
+  type ContactPhoneEntry,
+  type ContactPhoneLabel,
+} from "./components/contacts/contact-phones-editor.js";
+
+export {
+  ContactLanguageFlagIcon,
+  type ContactLanguageFlagIconProps,
+} from "./components/contacts/contact-language-flag-icon.js";
+
+export {
+  ContactLanguagesEditor,
+  type ContactLanguagesEditorProps,
+} from "./components/contacts/contact-languages-editor.js";
 
 export {
   ContactDetailView,
@@ -2752,16 +2887,25 @@ export {
 } from "./components/contacts/contact-detail-overlay.js";
 
 export {
+  CONTACT_DETAIL_COLLAPSE_DURATION_MS,
+  CONTACT_DETAIL_CONTENT_FADE_MS,
+  CONTACT_DETAIL_EXPAND_FADE_MS,
+  CONTACT_DETAIL_PANEL_WIDTH,
   CONTACT_DETAIL_PANEL_WIDTH_KEY,
+  CONTACT_DETAIL_STRIP_WIDTH_PX,
+  CONTACT_EXPANDED_WORKSPACE_TAB_IDS,
+  CONTACT_EXPANDED_WORKSPACE_TABS,
   CONTACT_OVERLAY_LAYOUT_PARAM,
   getContactOverlayHref,
   parseContactOverlayLayout,
+  type ContactExpandedWorkspaceTabId,
   type ContactOverlayLayout,
 } from "./contacts/contact-overlay.js";
 
 export {
   CRM_GROUP_PARAM,
   getContactsGroupHref,
+  getOrganizationsGroupHref,
   mergeHrefSearch,
   parseCrmGroupId,
   withCrmGroupSearch,
@@ -2773,15 +2917,33 @@ export {
 } from "./components/contacts/contact-tasks-list-view.js";
 
 export {
+  ContactMeetingsListView,
+  type ContactMeetingsListViewProps,
+} from "./components/contacts/contact-meetings-list-view.js";
+
+export {
+  ContactEmailsListView,
+  type ContactEmailsListViewProps,
+} from "./components/contacts/contact-emails-list-view.js";
+
+export {
   ContactRelationshipsListView,
   type ContactRelationshipsListViewProps,
   type ContactRelationshipListItemView,
 } from "./components/contacts/contact-relationships-list-view.js";
 
 export {
+  RelationshipLabelEditModal,
+  type RelationshipLabelEditModalProps,
+  type RelationshipLabelEditValues,
+} from "./components/contacts/relationship-label-edit-modal.js";
+
+export {
   CrmActivityFeedView,
   type CrmActivityFeedViewProps,
   type CrmActivityFeedItem,
+  type CrmActivityTaskRelation,
+  type CrmActivityCreateKind,
 } from "./components/crm/crm-activity-feed-view.js";
 
 export {
@@ -2816,12 +2978,39 @@ export {
   type OrganizationOverviewViewProps,
   type OrganizationOverviewViewOrganization,
   type OrganizationOverviewDetails,
+  type OrganizationLocationParts,
+  type OrganizationGroupDropdownItem,
 } from "./components/organizations/organization-overview-view.js";
 
 export {
   OrganizationDetailView,
   type OrganizationDetailViewProps,
 } from "./components/organizations/organization-detail-view.js";
+
+export {
+  OrganizationsOverviewView,
+  type OrganizationsOverviewViewProps,
+} from "./components/organizations/organizations-overview-view.js";
+
+export {
+  OrganizationDetailOverlay,
+  type OrganizationDetailOverlayProps,
+} from "./components/organizations/organization-detail-overlay.js";
+
+export {
+  ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
+  ORGANIZATION_DETAIL_CONTENT_FADE_MS,
+  ORGANIZATION_DETAIL_EXPAND_FADE_MS,
+  ORGANIZATION_DETAIL_PANEL_WIDTH,
+  ORGANIZATION_DETAIL_STRIP_WIDTH_PX,
+  ORGANIZATION_EXPANDED_WORKSPACE_TAB_IDS,
+  ORGANIZATION_EXPANDED_WORKSPACE_TABS,
+  ORGANIZATION_OVERLAY_LAYOUT_PARAM,
+  getOrganizationOverlayHref,
+  parseOrganizationOverlayLayout,
+  type OrganizationExpandedWorkspaceTabId,
+  type OrganizationOverlayLayout,
+} from "./organizations/organization-overlay.js";
 
 export {
   OrganizationTransactionsSection,
@@ -2839,11 +3028,13 @@ export {
 } from "./components/letters/scoped-letters-list-view.js";
 
 export {
+  CONTACT_CARD_SECTIONS,
   CONTACT_SECTIONS,
   CONTACT_SECTION_IDS,
   getActiveContactSection,
   getContactSectionHref,
   getContactSectionSegment,
+  isContactCardSectionId,
   isContactSectionDetailPath,
   isContactSectionId,
   parseContactSectionId,
@@ -2853,6 +3044,7 @@ export {
 } from "./contacts/contact-sections.js";
 
 export {
+  ORGANIZATION_CARD_SECTIONS,
   ORGANIZATION_SECTIONS,
   ORGANIZATION_SECTION_IDS,
   ORGANIZATION_BASE_SECTION_IDS,
@@ -2861,9 +3053,11 @@ export {
   getOrganizationIdFromProjectsPathname,
   getOrganizationSectionHref,
   getOrganizationSectionSegment,
+  isOrganizationCardSectionId,
   isOrganizationProjectsListPathname,
   isOrganizationSectionId,
   parseOrganizationSectionId,
+  resolveOrganizationWorkspaceTabs,
   resolveVisibleOrganizationSections,
   type OrganizationSectionConfig,
   type OrganizationSectionId,
@@ -3014,6 +3208,22 @@ export {
   type TaskPropertyDropdownShortcutKey,
 } from "./tasks/task-property-dropdown-keys.js";
 
+export {
+  TaskRelatedChips,
+  type TaskRelatedChipsProps,
+} from "./components/tasks/task-related-chips.js";
+
+export {
+  encodeTaskRelatedValue,
+  decodeTaskRelatedValue,
+  encodeTaskRelatedValues,
+  decodeTaskRelatedValues,
+  buildTaskRelatedDropdownOptions,
+  formatTaskRelatedSelectionLabel,
+  type TaskRelatedKind,
+  type TaskRelatedSelection,
+} from "./tasks/task-related-entities.js";
+
 export { isListKeyboardActivateKey } from "./list-nav/is-list-keyboard-activate-key.js";
 
 export { createId } from "./shared/create-id.js";
@@ -3137,6 +3347,7 @@ export {
   hasCmdShiftArrowShortcutModifiers,
   requestOpenComposeModal,
   type ComposeKind,
+  type OpenComposeModalDetail,
   type HorizontalArrowDirection,
 } from "./compose/compose-modal-events.js";
 
@@ -3454,6 +3665,7 @@ export {
   RegisterPageIcon,
   RegisterPageTitle,
   RegisterPageTitleProvider,
+  shouldApplyPageTitleToChrome,
   useRegisterPageTitleContext,
   type RegisterPageTitleContextValue,
 } from "./navigation-history/register-page-title.js";
@@ -3682,3 +3894,16 @@ export {
   parseCodebaseWorkbenchPath,
   type CodebaseWorkbenchSelection,
 } from "./codebase/codebase-workbench-path.js";
+
+export {
+  isCodebaseDetailEditorFocused,
+  registerCodebaseDetailEnterFocus,
+  registerCodebaseDetailLeaveFocus,
+  requestCodebaseDetailEnterFocus,
+  requestCodebaseDetailLeaveFocus,
+} from "./codebase/codebase-detail-focus.js";
+
+export {
+  isCodebaseDetailHotkeysActive,
+  setCodebaseDetailHotkeysActive,
+} from "./codebase/codebase-detail-hotkeys.js";

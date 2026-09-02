@@ -5,6 +5,8 @@ import {
   applyTaxPercentagesToDetail,
   findLastInvoicePageNumber,
   mapMoneybirdAdministration,
+  mapMoneybirdFinancialAccount,
+  mapMoneybirdFinancialMutation,
   mapMoneybirdIdentity,
   mapMoneybirdSalesInvoice,
   mapMoneybirdSalesInvoiceDetail,
@@ -256,5 +258,38 @@ describe("findLastInvoicePageNumber", () => {
     });
     assert.equal(total, 24);
     assert.ok(probed.length < 24, "should not linearly scan every page");
+  });
+
+  it("maps financial accounts and mutations", () => {
+    const account = mapMoneybirdFinancialAccount({
+      id: "111",
+      type: "bank_account",
+      name: "Moneybird Betaalrekening",
+      identifier: "NL00BUNQ123",
+      currency: "EUR",
+      provider: "moneybird",
+      moneybird_account: true,
+      active: true,
+    });
+    assert.equal(account.id, "111");
+    assert.equal(account.identifier, "NL00BUNQ123");
+    assert.equal(account.moneybirdAccount, true);
+
+    const mutation = mapMoneybirdFinancialMutation({
+      id: "222",
+      amount: "-10.25",
+      date: "2026-09-01",
+      message: "Coffee",
+      contra_account_name: "Cafe",
+      contra_account_number: "NL11",
+      state: "processed",
+      financial_account_id: "111",
+      currency: "EUR",
+      version: 9,
+    });
+    assert.equal(mutation.id, "222");
+    assert.equal(mutation.amount, "-10.25");
+    assert.equal(mutation.contraAccountName, "Cafe");
+    assert.equal(mutation.financialAccountId, "111");
   });
 });

@@ -1,10 +1,15 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
-import type { BankAccount } from "@backsteros/contracts";
+import type { BankAccount, MoneybirdFinancialAccount } from "@backsteros/contracts";
 import {
   FinanceBankAccountModal,
   FinanceImportModal,
 } from "@backsteros/ui";
-import type { Dispatch, SetStateAction } from "react";
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import {
   removeDesktopAvatar,
@@ -89,11 +94,45 @@ export function FinancePageModals({
     pageAccountModalError: string | null;
     setPageAccountModalError: Dispatch<SetStateAction<string | null>>;
   }) {
+  const [moneybirdAccounts, setMoneybirdAccounts] = useState<
+    MoneybirdFinancialAccount[]
+  >([]);
+  const [moneybirdAccountsLoading, setMoneybirdAccountsLoading] =
+    useState(false);
+
+  useEffect(() => {
+    if (!pageAccountModal) return;
+    let cancelled = false;
+    setMoneybirdAccountsLoading(true);
+    void client
+      .requestJson<{ financialAccounts: MoneybirdFinancialAccount[] }>(
+        "/api/v1/finance/moneybird/financial-accounts",
+      )
+      .then((body) => {
+        if (cancelled) return;
+        setMoneybirdAccounts(body.financialAccounts ?? []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMoneybirdAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMoneybirdAccountsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, pageAccountModal]);
+
+  const importAccounts = accounts.filter(
+    (account) => !account.moneybirdFinancialAccountId,
+  );
+
   return (
     <>
       <FinanceImportModal
         open={importOpen}
-        accounts={accounts}
+        accounts={importAccounts}
         defaultAccountId={importAccountId ?? selected?.id ?? null}
         imports={imports}
         csvFile={csvFile}
@@ -133,6 +172,9 @@ export function FinancePageModals({
                 name: pageAccountModal.account.name,
                 ibanOrMask: pageAccountModal.account.ibanOrMask,
                 type: pageAccountModal.account.type,
+                currency: pageAccountModal.account.currency,
+                moneybirdFinancialAccountId:
+                  pageAccountModal.account.moneybirdFinancialAccountId,
               }
             : {
                 name: "",
@@ -145,6 +187,8 @@ export function FinancePageModals({
         }
         pending={pageAccountModalPending}
         error={pageAccountModalError}
+        moneybirdAccounts={moneybirdAccounts}
+        moneybirdAccountsLoading={moneybirdAccountsLoading}
         avatarSrc={
           pageAccountModal?.mode === "edit"
             ? (accountAvatarSrcById[pageAccountModal.account.id] ?? null)

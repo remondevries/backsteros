@@ -26,9 +26,10 @@ import {
   type FinanceRecurringCreateInput,
   type FinanceRecurringUpdateInput,
 } from "@backsteros/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDesktopAvatarSrcMap } from "../../lib/avatar-src";
 import { uploadDesktopAvatar } from "../../lib/avatar-upload";
+import { createMoneybirdBankLogoFile } from "../../assets/moneybird-bank-logo";
 import {
   accountSlug,
   applyRecurringReorderGroup,
@@ -182,6 +183,8 @@ export function useFinanceCoreData({
       name: string;
       ibanOrMask: string | null;
       type: BankAccount["type"];
+      currency?: string;
+      moneybirdFinancialAccountId?: string | null;
       avatarFile?: File | null;
     }) => {
       const baseKey = input.name
@@ -199,17 +202,24 @@ export function useFinanceCoreData({
             name: input.name,
             ibanOrMask: input.ibanOrMask,
             type: input.type,
-            currency: "EUR",
+            currency: input.currency ?? "EUR",
+            moneybirdFinancialAccountId:
+              input.moneybirdFinancialAccountId ?? null,
             sortOrder: Date.now(),
           }),
         });
       let nextAccount = created;
-      if (input.avatarFile) {
+      const avatarFile =
+        input.avatarFile ??
+        (input.moneybirdFinancialAccountId
+          ? createMoneybirdBankLogoFile()
+          : null);
+      if (avatarFile) {
         const avatarResult = await uploadDesktopAvatar(
           client,
           "bank_account",
           created.id,
-          input.avatarFile);
+          avatarFile);
         if (avatarResult.ok) {
           const refreshed = await client.requestJson<BankAccount>(
             `/api/v1/bank-accounts/${encodeURIComponent(created.id)}`);
@@ -259,21 +269,71 @@ export function useFinanceCoreData({
         ibanOrMask?: string | null;
         type?: BankAccount["type"];
         color?: string | null;
+        currency?: string;
+        moneybirdFinancialAccountId?: string | null;
         sortOrder?: number;
       }) => {
-      const updated = await client.requestJson<BankAccount>(
+      const previous = accounts.find((row) => row.id === accountId) ?? null;
+      let updated = await client.requestJson<BankAccount>(
         `/api/v1/bank-accounts/${encodeURIComponent(accountId)}`,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(patch),
         });
+      const linkedMoneybird =
+        Boolean(updated.moneybirdFinancialAccountId) &&
+        !previous?.moneybirdFinancialAccountId;
+      if (linkedMoneybird && !updated.avatarStorageKey) {
+        const avatarResult = await uploadDesktopAvatar(
+          client,
+          "bank_account",
+          updated.id,
+          createMoneybirdBankLogoFile(),
+        );
+        if (avatarResult.ok) {
+          updated = await client.requestJson<BankAccount>(
+            `/api/v1/bank-accounts/${encodeURIComponent(updated.id)}`,
+          );
+        }
+      }
       setAccounts((rows) =>
         rows.map((row) => (row.id === updated.id ? updated : row)));
       notifyBankAccountsChanged();
       return updated;
     },
-    [client]);
+    [accounts, client]);
+
+  const moneybirdLogoSeededRef = useRef(false);
+  useEffect(() => {
+    if (moneybirdLogoSeededRef.current) return;
+    const missing = accounts.filter(
+      (account) =>
+        account.moneybirdFinancialAccountId && !account.avatarStorageKey,
+    );
+    if (missing.length === 0) return;
+    moneybirdLogoSeededRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      let changed = false;
+      for (const account of missing) {
+        const result = await uploadDesktopAvatar(
+          client,
+          "bank_account",
+          account.id,
+          createMoneybirdBankLogoFile(),
+        );
+        if (result.ok) changed = true;
+      }
+      if (!cancelled && changed) {
+        await refreshAccounts().catch(() => undefined);
+        notifyBankAccountsChanged();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accounts, client, refreshAccounts]);
 
   const handleReorderAccounts = useCallback(
     (request: FinanceListReorderRequest) => {

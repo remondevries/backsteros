@@ -26,6 +26,7 @@ import { useDesktopApi } from "../lib/api-context";
 import {
   useKeepAliveActive,
   useRoutePathActive,
+  useShellLocation,
   useShellParams,
 } from "../lib/shell-route-keep-alive";
 import {
@@ -61,6 +62,7 @@ function FinancePageBody() {
     },
     [routerNavigate]);
   const keepAliveActive = useKeepAliveActive();
+  const { pathname } = useShellLocation();
   const { slug, section: sectionParam } = useShellParams() as {
     slug?: string;
     section?: string;
@@ -281,6 +283,10 @@ function FinancePageBody() {
     handleBulkDelete,
     handleDeleteTransaction,
     deleteTransactionsByIds,
+    moneybirdAccounts,
+    moneybirdAccountsLoading,
+    moneybirdSyncPending,
+    syncMoneybirdAccount,
   } = useFinanceTransactions({
     client,
     navigate,
@@ -294,6 +300,7 @@ function FinancePageBody() {
     setCategoryMetrics,
     setAccountMetrics,
     setRecurringMetrics,
+    refreshAccounts,
   });
 
   const {
@@ -346,6 +353,8 @@ function FinancePageBody() {
     setCsvFile,
     setImportAccountId,
     setImportOpen,
+    moneybirdSyncPending,
+    syncMoneybirdAccount,
   });
 
   let main: ReactNode = null;
@@ -669,6 +678,11 @@ function FinancePageBody() {
           return result;
         }}
         onDeleteAccount={handleDeleteAccount}
+        onUpdateAccount={async (accountId, patch) => {
+          await handleUpdateAccount(accountId, patch);
+        }}
+        moneybirdAccounts={moneybirdAccounts}
+        moneybirdAccountsLoading={moneybirdAccountsLoading}
         transactions={transactions}
         organizations={organizations}
         projects={projects}
@@ -711,9 +725,6 @@ function FinancePageBody() {
         onLoadMore={() => {
           void loadTransactions({ cursor: nextCursor, append: true });
         }}
-        onUpdateAccount={(accountId, patch) => {
-          void handleUpdateAccount(accountId, patch);
-        }}
         onChromeStateChange={setTransactionsChrome}
       />
     );
@@ -721,7 +732,13 @@ function FinancePageBody() {
 
   return (
     <>
-      {keepAliveActive ? <RegisterPageTitle title={breadcrumbLabel} /> : null}
+      {keepAliveActive ? (
+        <RegisterPageTitle
+          active={keepAliveActive}
+          href={pathname}
+          title={breadcrumbLabel}
+        />
+      ) : null}
       {main}
 
       <FinancePageModals

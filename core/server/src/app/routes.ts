@@ -32,6 +32,7 @@ import {
   projectFsCreateEntrySchema,
   projectFsWriteFileSchema,
   reorderLetterAttachmentsSchema,
+  reorderTaskAttachmentsSchema,
   spellcheckRequestSchema,
   updateApiKeySchema,
   updateBankAccountSchema,
@@ -60,9 +61,12 @@ import {
   updateVaultStorageSettingsSchema,
   moneybirdSalesInvoicesQuerySchema,
   moneybirdInvoiceRevenueQuerySchema,
+  moneybirdBankAccountSyncQuerySchema,
   researchRequestSchema,
   contactRelationshipInputSchema,
   updateContactRelationshipSchema,
+  crmRelationshipLabelInputSchema,
+  updateCrmRelationshipLabelSchema,
   crmGroupInputSchema,
   updateCrmGroupSchema,
   crmGroupMemberInputSchema,
@@ -94,6 +98,7 @@ import {
   resolveAvatarContentType,
   sniffAvatarContentType,
 } from "../lib/avatar-content-type.js";
+import { resolveTaskAttachmentContentType } from "../lib/task-attachment-content-type.js";
 import {
   MAX_AVATAR_BYTES,
   MAX_TASK_IMAGE_BYTES,
@@ -103,6 +108,7 @@ import * as apiKeyService from "../services/api-keys.js";
 import * as documentService from "../services/documents.js";
 import * as circleService from "../services/circle-domain.js";
 import * as financeService from "../services/finance/finance.js";
+import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js";
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as mapboxSettingsService from "../services/mapbox-settings.js";
@@ -112,6 +118,11 @@ import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { MapboxApiError } from "../lib/mapbox-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
+import {
+  publishDocumentWorkspaceUpdated,
+  subscribeWorkspaceUpdated,
+} from "../lib/workspace-events.js";
+import { notifyPeerOfDocumentWrite } from "../services/core-replication/nudge.js";
 import {
   handleAgentMailWebhookDelivery,
   svixHeadersFromRequest,
@@ -130,6 +141,7 @@ import * as habitService from "../services/habits.js";
 import * as meetingService from "../services/meetings.js";
 import * as meetingSchedulingService from "../services/meeting-scheduling.js";
 import * as crmGroupsService from "../services/crm-groups.js";
+import * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 import * as crmActivitiesService from "../services/crm-activities.js";
 import * as githubService from "../services/github.js";
 import * as projectFsService from "../services/project-fs.js";
@@ -137,12 +149,14 @@ import * as projectVaultService from "../services/project-vault.js";
 import * as taskActivityService from "../services/task-activities.js";
 import * as taskCommentService from "../services/task-comments.js";
 import * as taskImageService from "../services/task-images.js";
+import * as taskAttachmentService from "../services/task-attachments.js";
 import * as taskProjectService from "../services/tasks-projects.js";
 import {
   recordAreaRestSyncEvent,
   recordBankAccountRestSyncEvent,
   recordCashflowPlannerRestSyncEvent,
   recordContactRestSyncEvent,
+  recordDocumentRestSyncEvent,
   recordFinancialCategoryRestSyncEvent,
   recordFinancialGoalRestSyncEvent,
   recordFinancialRecurringRestSyncEvent,
@@ -184,11 +198,44 @@ const organizationSchema = z.object({
   summary: z.string().max(2000).nullable().optional(),
   phone: z.string().max(64).nullable().optional(),
   email: z.string().email().nullable().optional(),
+  emails: z
+    .array(
+      z.object({
+        label: z.enum(["general", "support", "other"]),
+        address: z.string().email().max(320),
+      }),
+    )
+    .max(20)
+    .optional(),
+  phones: z
+    .array(
+      z.object({
+        label: z.enum(["general", "support", "other"]),
+        number: z.string().min(1).max(64),
+      }),
+    )
+    .max(20)
+    .optional(),
   website: z.string().url().nullable().optional(),
   address: z.string().max(500).nullable().optional(),
   city: z.string().max(255).nullable().optional(),
   postalCode: z.string().max(32).nullable().optional(),
   country: z.string().max(128).nullable().optional(),
+  region: z.string().max(128).nullable().optional(),
+  latitude: z.number().finite().nullable().optional(),
+  longitude: z.number().finite().nullable().optional(),
+  size: z.string().max(64).nullable().optional(),
+  socialAccounts: z
+    .array(
+      z.object({
+        platform: z.string().min(1).max(64),
+        url: z.string().min(1).max(2048),
+      }),
+    )
+    .max(20)
+    .optional(),
+  chamberOfCommerce: z.string().max(64).nullable().optional(),
+  taxNumber: z.string().max(64).nullable().optional(),
   sortOrder: z.number().int().optional(),
   notes: z.string().max(20_000).nullable().optional(),
   moneybirdContactId: z.string().max(64).nullable().optional(),
@@ -218,6 +265,15 @@ const contactSchema = z.object({
   summary: z.string().max(2000).nullable().optional(),
   sortOrder: z.number().int().optional(),
   phone: z.string().max(64).nullable().optional(),
+  phones: z
+    .array(
+      z.object({
+        label: z.enum(["personal", "work", "other"]),
+        number: z.string().min(1).max(64),
+      }),
+    )
+    .max(20)
+    .optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(20_000).nullable().optional(),
   address: z.string().max(500).nullable().optional(),
@@ -232,6 +288,10 @@ const contactSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
     .nullable()
+    .optional(),
+  languages: z
+    .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
+    .max(5)
     .optional(),
 });
 const areaSchema = z.object({
@@ -313,6 +373,41 @@ async function withAuth(c: Context, next: Next) {
 
 function getAuth(c: Context): AuthContext {
   return c.get("auth");
+}
+
+/**
+ * Agent API-key writes → workspace SSE on this core + nudge the peer core
+ * (cloud↔local) so the other side refreshes without waiting for the tick.
+ * Clerk/desktop saves already update local SQLite optimistically; content
+ * still nudges the peer so cloud vault/SSE stay live.
+ */
+function publishDocumentLiveFromAgent(
+  auth: AuthContext,
+  documentId: string,
+  input?: {
+    projectId?: string | null;
+    contentVersion?: number | null;
+    operation?: "upsert" | "delete";
+    storageKey?: string | null;
+  },
+): void {
+  if (auth.kind === "api_key") {
+    publishDocumentWorkspaceUpdated(auth.workspaceId, documentId, {
+      projectId: input?.projectId,
+      contentVersion: input?.contentVersion,
+      operation: input?.operation,
+    });
+  }
+  notifyPeerOfDocumentWrite({
+    workspaceId: auth.workspaceId,
+    reason: "document",
+    entity: "document",
+    entityId: documentId,
+    storageKey: input?.storageKey ?? null,
+    contentVersion: input?.contentVersion ?? null,
+    operation: input?.operation ?? "upsert",
+    projectId: input?.projectId ?? null,
+  });
 }
 
 export function registerApiRoutes(app: Hono) {
@@ -1434,6 +1529,7 @@ export function registerApiRoutes(app: Hono) {
       projectId: c.req.query("projectId"),
       contactId: c.req.query("contactId"),
       assigneeId: c.req.query("assigneeId"),
+      relatedContactId: c.req.query("relatedContactId"),
       status: c.req.query("status"),
       inbox:
         c.req.query("inbox") === undefined
@@ -1655,6 +1751,30 @@ export function registerApiRoutes(app: Hono) {
             400,
           );
         }
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Related contact not found",
+              code: "related_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_ORGANIZATION_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Related organization not found",
+              code: "related_organization_not_found",
+            },
+            400,
+          );
+        }
         if (error instanceof Error && error.message === "CONTACT_NOT_FOUND") {
           return c.json(notFound("Contact"), 404);
         }
@@ -1716,6 +1836,30 @@ export function registerApiRoutes(app: Hono) {
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
           return c.json(notFound("Project"), 404);
+        }
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_CONTACT_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Related contact not found",
+              code: "related_contact_not_found",
+            },
+            400,
+          );
+        }
+        if (
+          error instanceof Error &&
+          error.message === "RELATED_ORGANIZATION_NOT_FOUND"
+        ) {
+          return c.json(
+            {
+              error: "Related organization not found",
+              code: "related_organization_not_found",
+            },
+            400,
+          );
         }
         throw error;
       }
@@ -1824,6 +1968,152 @@ export function registerApiRoutes(app: Hono) {
     );
   });
 
+  app.get("/api/v1/tasks/:id/attachments", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    const attachments = await taskAttachmentService.listTaskAttachments(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return attachments
+      ? c.json({ attachments })
+      : c.json(notFound("Task"), 404);
+  });
+
+  app.post("/api/v1/tasks/:id/attachments", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Task attachments can only be stored on local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 25_000_000) {
+      return c.json(
+        {
+          error: "Attachment must be between 1 byte and 25 MB",
+          code: "bad_request",
+        },
+        400,
+      );
+    }
+    const filename = (c.req.header("X-Filename") ?? "attachment.bin").trim();
+    if (!filename) {
+      return c.json(
+        { error: "X-Filename is required", code: "bad_request" },
+        400,
+      );
+    }
+    const contentType = resolveTaskAttachmentContentType(
+      c.req.header("Content-Type"),
+      filename,
+    );
+    const attachment = await taskAttachmentService.createTaskAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      bytes,
+      filename,
+      contentType,
+    );
+    return attachment
+      ? c.json(attachment, 201)
+      : c.json(notFound("Task"), 404);
+  });
+
+  app.post(
+    "/api/v1/tasks/:id/attachments/reorder",
+    zValidator("json", reorderTaskAttachmentsSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+      try {
+        const rows = await taskAttachmentService.reorderTaskAttachments(
+          auth.workspaceId,
+          c.req.param("id"),
+          c.req.valid("json").orderedIds,
+        );
+        if (!rows) return c.json(notFound("Task"), 404);
+        return c.json({ attachments: rows });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message === "ATTACHMENT_NOT_FOUND" ||
+            error.message === "ATTACHMENT_IDS_INVALID")
+        ) {
+          return c.json(
+            { error: "Invalid attachment order", code: "bad_request" },
+            400,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
+    if (process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() === "cloud") {
+      return c.json(
+        {
+          error: "Task attachments are only available from local-core",
+          code: "pdf_requires_local_core",
+        },
+        503,
+      );
+    }
+    const result = await taskAttachmentService.getTaskAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+    );
+    if (!result) return c.json(notFound("Attachment"), 404);
+    c.header("Content-Type", result.row.contentType);
+    c.header(
+      "Content-Disposition",
+      `inline; filename="${(result.row.originalFilename || "attachment.bin").replaceAll('"', "")}"`,
+    );
+    return c.body(Uint8Array.from(result.bytes).buffer);
+  });
+
+  app.patch("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const body = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({ originalFilename: z.string().trim().min(1).max(255) })
+      .safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "originalFilename is required", code: "bad_request" },
+        400,
+      );
+    }
+    const row = await taskAttachmentService.updateTaskAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+      parsed.data,
+    );
+    return row ? c.json(row) : c.json(notFound("PDF"), 404);
+  });
+
+  app.delete("/api/v1/tasks/:id/attachments/:attachmentId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "tasks:write")) return c.json(forbidden(), 403);
+    const row = await taskAttachmentService.deleteTaskAttachment(
+      auth.workspaceId,
+      c.req.param("id"),
+      c.req.param("attachmentId"),
+    );
+    return row ? c.json(row) : c.json(notFound("PDF"), 404);
+  });
+
   app.get("/api/v1/documents", async (c) => {
     const auth = getAuth(c);
     if (!requireScope("documents:read")(auth)) {
@@ -1870,6 +2160,11 @@ export function registerApiRoutes(app: Hono) {
           auth.workspaceId,
           c.req.valid("json"),
         );
+        await recordDocumentRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishDocumentLiveFromAgent(auth, row.id, {
+          projectId: row.projectId,
+          storageKey: row.storageKey,
+        });
         return c.json(toDocument(row), 201);
       } catch (error) {
         if (error instanceof Error && error.message === "PROJECT_NOT_FOUND") {
@@ -1913,6 +2208,11 @@ export function registerApiRoutes(app: Hono) {
         if (!row) {
           return c.json(notFound("Document"), 404);
         }
+        await recordDocumentRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishDocumentLiveFromAgent(auth, row.id, {
+          projectId: row.projectId,
+          storageKey: row.storageKey,
+        });
         return c.json(toDocument(row));
       } catch (error) {
         if (error instanceof Error && error.message === "DOCUMENT_PATH_EXISTS") {
@@ -1949,6 +2249,12 @@ export function registerApiRoutes(app: Hono) {
       return c.json(notFound("Document"), 404);
     }
 
+    await recordDocumentRestSyncEvent(auth.workspaceId, row, "delete");
+    publishDocumentLiveFromAgent(auth, row.id, {
+      projectId: row.projectId,
+      operation: "delete",
+      storageKey: row.storageKey,
+    });
     return c.body(null, 204);
   });
 
@@ -2013,6 +2319,11 @@ export function registerApiRoutes(app: Hono) {
           if (!row) {
             return c.json(notFound("Document"), 404);
           }
+          publishDocumentLiveFromAgent(auth, documentId, {
+            projectId: row.projectId,
+            contentVersion: result.contentVersion,
+            storageKey: row.storageKey,
+          });
           return c.json({
             content: body.content,
             contentType: row.contentType,
@@ -2031,6 +2342,11 @@ export function registerApiRoutes(app: Hono) {
         if (!row) {
           return c.json(notFound("Document"), 404);
         }
+        publishDocumentLiveFromAgent(auth, row.id, {
+          projectId: row.projectId,
+          contentVersion: row.contentVersion,
+          storageKey: row.storageKey,
+        });
 
         return c.json({
           content: body.content,
@@ -2569,6 +2885,13 @@ export function registerApiRoutes(app: Hono) {
         auth.workspaceId,
         c.req.valid("json").orderedIds,
       );
+      for (const row of rows) {
+        await recordDocumentRestSyncEvent(auth.workspaceId, row, "upsert");
+        publishDocumentLiveFromAgent(auth, row.id, {
+          projectId: row.projectId,
+          storageKey: row.storageKey,
+        });
+      }
       return c.json({ documents: rows.map(toDocument) });
     },
   );
@@ -2584,6 +2907,11 @@ export function registerApiRoutes(app: Hono) {
       parsed.data.parentId,
     );
     if (!row) return c.json(notFound("Document"), 404);
+    await recordDocumentRestSyncEvent(auth.workspaceId, row, "upsert");
+    publishDocumentLiveFromAgent(auth, row.id, {
+      projectId: row.projectId,
+      storageKey: row.storageKey,
+    });
     return c.json(toDocument(row));
   });
 
@@ -2845,6 +3173,79 @@ export function registerApiRoutes(app: Hono) {
     return ok ? c.body(null, 204) : c.json(notFound("Relationship"), 404);
   });
 
+  app.get("/api/v1/crm-relationship-labels", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:read")) return c.json(forbidden(), 403);
+    return c.json({
+      labels: await crmRelationshipLabelsService.listCrmRelationshipLabels(
+        auth.workspaceId,
+      ),
+    });
+  });
+
+  app.post(
+    "/api/v1/crm-relationship-labels",
+    zValidator("json", crmRelationshipLabelInputSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      try {
+        const row =
+          await crmRelationshipLabelsService.createCrmRelationshipLabel(
+            auth.workspaceId,
+            c.req.valid("json"),
+          );
+        return c.json(row, 201);
+      } catch (err) {
+        if (err instanceof Error && err.message === "LABEL_SLUG_CONFLICT") {
+          return c.json({ error: "Label slug already exists" }, 409);
+        }
+        if (err instanceof Error && err.message === "INVALID_LABEL") {
+          return c.json({ error: "Invalid label" }, 400);
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.patch(
+    "/api/v1/crm-relationship-labels/:id",
+    zValidator("json", updateCrmRelationshipLabelSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+      try {
+        const row =
+          await crmRelationshipLabelsService.updateCrmRelationshipLabel(
+            auth.workspaceId,
+            c.req.param("id"),
+            c.req.valid("json"),
+          );
+        return row ? c.json(row) : c.json(notFound("Relationship label"), 404);
+      } catch (err) {
+        if (err instanceof Error && err.message === "LABEL_SLUG_CONFLICT") {
+          return c.json({ error: "Label slug already exists" }, 409);
+        }
+        if (err instanceof Error && err.message === "INVALID_LABEL") {
+          return c.json({ error: "Invalid label" }, 400);
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.delete("/api/v1/crm-relationship-labels/:id", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "contacts:write")) return c.json(forbidden(), 403);
+    const ok = await crmRelationshipLabelsService.deleteCrmRelationshipLabel(
+      auth.workspaceId,
+      c.req.param("id"),
+    );
+    return ok
+      ? c.body(null, 204)
+      : c.json(notFound("Relationship label"), 404);
+  });
+
   app.get("/api/v1/crm-groups", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "contacts:read") && !can(auth, "organizations:read")) {
@@ -2967,9 +3368,8 @@ export function registerApiRoutes(app: Hono) {
       "contact",
       c.req.param("id"),
     );
-    return groups
-      ? c.json({ groups })
-      : c.json(notFound("Contact"), 404);
+    // Local-first: contact may not be in Postgres yet — empty membership is fine.
+    return c.json({ groups: groups ?? [] });
   });
   app.get("/api/v1/organizations/:id/groups", async (c) => {
     const auth = getAuth(c);
@@ -2979,9 +3379,7 @@ export function registerApiRoutes(app: Hono) {
       "organization",
       c.req.param("id"),
     );
-    return groups
-      ? c.json({ groups })
-      : c.json(notFound("Organization"), 404);
+    return c.json({ groups: groups ?? [] });
   });
 
   app.get("/api/v1/contacts/:id/activity", async (c) => {
@@ -3899,6 +4297,51 @@ export function registerApiRoutes(app: Hono) {
     });
   });
 
+  /** Live entity hints for open shells (agent document writes → Tier D refetch). */
+  app.get("/api/v1/workspace/events", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("documents:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const workspaceId = auth.workspaceId;
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      const unsubscribe = subscribeWorkspaceUpdated(workspaceId, (event) => {
+        if (closed) return;
+        void stream.writeSSE({
+          event: "workspace.updated",
+          data: JSON.stringify({
+            kind: event.kind,
+            entityId: event.entityId,
+            projectId: event.projectId ?? null,
+            reason: event.reason ?? null,
+            contentVersion: event.contentVersion ?? null,
+            operation: event.operation ?? "upsert",
+          }),
+        });
+      });
+      stream.onAbort(() => {
+        closed = true;
+        unsubscribe();
+      });
+      await stream.writeSSE({
+        event: "ready",
+        data: JSON.stringify({ ok: true }),
+      });
+      while (!closed) {
+        await stream.sleep(15_000);
+        if (closed) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "{}" });
+        } catch {
+          closed = true;
+          break;
+        }
+      }
+      unsubscribe();
+    });
+  });
+
   app.post("/api/v1/webhooks/agentmail", async (c) => {
     const rawBody = await c.req.text();
     const headers = svixHeadersFromRequest((name) => c.req.header(name));
@@ -4505,6 +4948,33 @@ export function registerApiRoutes(app: Hono) {
       return c.json({ error: message, code: "bad_request" }, 400);
     }
   });
+  app.get("/api/v1/finance/moneybird/contacts/:contactId", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read") && !can(auth, "organizations:read")) {
+      return c.json(forbidden(), 403);
+    }
+    const contactId = c.req.param("contactId")?.trim() ?? "";
+    if (!contactId) {
+      return c.json({ error: "Contact id is required", code: "bad_request" }, 400);
+    }
+    try {
+      return c.json(
+        await moneybirdSettingsService.getMoneybirdContact(
+          auth.workspaceId,
+          contactId,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof MoneybirdApiError && error.status === 404) {
+        return c.json({ error: "Contact not found", code: "not_found" }, 404);
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not load Moneybird contact";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
   app.get(
     "/api/v1/finance/moneybird/invoice-revenue",
     zValidator("query", moneybirdInvoiceRevenueQuerySchema),
@@ -4528,6 +4998,23 @@ export function registerApiRoutes(app: Hono) {
       }
     },
   );
+  app.get("/api/v1/finance/moneybird/financial-accounts", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "finance:read")) return c.json(forbidden(), 403);
+    try {
+      const financialAccounts =
+        await moneybirdSettingsService.listMoneybirdFinancialAccounts(
+          auth.workspaceId,
+        );
+      return c.json({ financialAccounts });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not list Moneybird financial accounts";
+      return c.json({ error: message, code: "bad_request" }, 400);
+    }
+  });
   app.get("/api/v1/agent-pty/connection", async (c) => {
     const auth = getAuth(c);
     if (!can(auth, "tasks:read")) return c.json(forbidden(), 403);
@@ -5268,6 +5755,45 @@ export function registerApiRoutes(app: Hono) {
           },
           400,
         );
+      }
+    },
+  );
+
+  app.post(
+    "/api/v1/bank-accounts/:id/moneybird-sync",
+    zValidator("query", moneybirdBankAccountSyncQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!can(auth, "finance:write")) return c.json(forbidden(), 403);
+      try {
+        const result =
+          await moneybirdBankSyncService.syncBankAccountFromMoneybird(
+            auth.workspaceId,
+            c.req.param("id"),
+            { period: c.req.valid("query").period },
+          );
+        if (!result) return c.json(notFound("Bank account"), 404);
+        const account = await financeService.getBankAccountById(
+          auth.workspaceId,
+          c.req.param("id"),
+        );
+        if (account) {
+          await recordBankAccountRestSyncEvent(
+            auth.workspaceId,
+            account,
+            "upsert",
+          );
+        }
+        return c.json(result);
+      } catch (error) {
+        if (error instanceof MoneybirdApiError && error.status === 404) {
+          return c.json({ error: error.message, code: "not_found" }, 404);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Moneybird bank sync failed";
+        return c.json({ error: message, code: "bad_request" }, 400);
       }
     },
   );

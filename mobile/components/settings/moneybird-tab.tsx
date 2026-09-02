@@ -120,7 +120,7 @@ export function SettingsMoneybirdTab() {
     <>
       <SettingsCard
         title="Connection"
-        description="Connect a personal Moneybird API token with the sales_invoices scope. Tokens are stored in core (not synced via PowerSync)."
+        description="Connect a personal Moneybird API token with the sales_invoices, bank, and settings scopes. Tokens are stored in core (not synced via PowerSync)."
       >
         <SettingsFieldRow
           label="Status"

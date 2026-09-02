@@ -12,10 +12,19 @@ import {
   type AvatarActionResult,
 } from "../entity/avatar-upload.js";
 
+export type FinanceMoneybirdAccountOption = {
+  id: string;
+  name: string;
+  identifier: string | null;
+  currency: string | null;
+};
+
 export type FinanceBankAccountModalValues = {
   name: string;
   ibanOrMask: string | null;
   type: BankAccountType;
+  currency?: string;
+  moneybirdFinancialAccountId?: string | null;
   /**
    * Logo picked during create mode. Uploaded by the caller after the account
    * exists (no id yet at create time). Always null in edit mode, where the
@@ -31,12 +40,16 @@ export type FinanceBankAccountModalProps = {
   pending?: boolean;
   error?: string | null;
   avatarSrc?: string | null;
+  moneybirdAccounts?: FinanceMoneybirdAccountOption[];
+  moneybirdAccountsLoading?: boolean;
   onUploadAvatar?: (file: File) => Promise<AvatarActionResult>;
   onRemoveAvatar?: () => Promise<AvatarActionResult>;
   onDelete?: () => void | Promise<void>;
   onClose: () => void;
   onSubmit: (values: FinanceBankAccountModalValues) => void | Promise<void>;
 };
+
+const MONEYBIRD_NONE_VALUE = "";
 
 function isBankAccountType(value: string): value is BankAccountType {
   return BANK_ACCOUNT_TYPE_OPTIONS.some((entry) => entry.value === value);
@@ -49,6 +62,8 @@ export function FinanceBankAccountModal({
   pending = false,
   error = null,
   avatarSrc = null,
+  moneybirdAccounts = [],
+  moneybirdAccountsLoading = false,
   onUploadAvatar,
   onRemoveAvatar,
   onDelete,
@@ -61,6 +76,9 @@ export function FinanceBankAccountModal({
   const [type, setType] = useState<BankAccountType>(
     initialValues?.type ?? "bank_account",
   );
+  const [currency, setCurrency] = useState(initialValues?.currency ?? "EUR");
+  const [moneybirdFinancialAccountId, setMoneybirdFinancialAccountId] =
+    useState(initialValues?.moneybirdFinancialAccountId ?? "");
   const [deletePending, setDeletePending] = useState(false);
   // Create mode has no account id yet, so we buffer the picked logo locally and
   // hand it back on submit for the caller to upload after creation.
@@ -74,6 +92,10 @@ export function FinanceBankAccountModal({
     setName(initialValues?.name ?? "");
     setIbanOrMask(initialValues?.ibanOrMask ?? "");
     setType(initialValues?.type ?? "bank_account");
+    setCurrency(initialValues?.currency ?? "EUR");
+    setMoneybirdFinancialAccountId(
+      initialValues?.moneybirdFinancialAccountId ?? "",
+    );
     setDeletePending(false);
     setPendingAvatarFile(null);
     setPendingAvatarPreview((prev) => {
@@ -81,7 +103,9 @@ export function FinanceBankAccountModal({
       return null;
     });
   }, [
+    initialValues?.currency,
     initialValues?.ibanOrMask,
+    initialValues?.moneybirdFinancialAccountId,
     initialValues?.name,
     initialValues?.type,
     open,
@@ -98,61 +122,64 @@ export function FinanceBankAccountModal({
 
   useEffect(() => {
     if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (pending || deletePending) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [deletePending, onClose, open, pending]);
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [onClose, open]);
-
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   const title = mode === "create" ? "Create bank account" : "Edit bank account";
   const confirmLabel = mode === "create" ? "Create" : "Save";
   const busy = pending || deletePending;
-  const isEdit = mode === "edit";
-
-  // When the caller doesn't wire an upload handler (create mode on the accounts
-  // page), buffer the picked logo locally so the option is always available and
-  // hand the file back on submit. Callers that already buffer (transactions
-  // page create) keep owning the flow via their own `onUploadAvatar`.
-  const usingInternalBuffer = !isEdit && !onUploadAvatar;
-
-  const handleAvatarUpload =
-    onUploadAvatar ??
-    (usingInternalBuffer
-      ? async (file: File): Promise<AvatarActionResult> => {
-          setPendingAvatarFile(file);
-          setPendingAvatarPreview((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return URL.createObjectURL(file);
-          });
-          return { ok: true };
-        }
-      : undefined);
-  const handleAvatarRemove =
-    onRemoveAvatar ??
-    (usingInternalBuffer
-      ? async (): Promise<AvatarActionResult> => {
-          setPendingAvatarFile(null);
-          setPendingAvatarPreview((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return null;
-          });
-          return { ok: true };
-        }
-      : undefined);
+  const showMoneybirdLink = moneybirdAccountsLoading || moneybirdAccounts.length > 0;
+  const usingInternalBuffer = mode === "create";
+  const handleAvatarUpload = usingInternalBuffer
+    ? async (file: File): Promise<AvatarActionResult> => {
+        setPendingAvatarFile(file);
+        setPendingAvatarPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(file);
+        });
+        return { ok: true };
+      }
+    : onUploadAvatar;
+  const handleAvatarRemove = usingInternalBuffer
+    ? async (): Promise<AvatarActionResult> => {
+        setPendingAvatarFile(null);
+        setPendingAvatarPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        return { ok: true };
+      }
+    : onRemoveAvatar;
   const effectiveAvatarSrc = usingInternalBuffer
     ? pendingAvatarPreview
     : avatarSrc;
   const showAvatar = Boolean(handleAvatarUpload);
+
+  const applyMoneybirdAccount = (accountId: string) => {
+    setMoneybirdFinancialAccountId(accountId);
+    if (!accountId) return;
+    const match = moneybirdAccounts.find((entry) => entry.id === accountId);
+    if (!match) return;
+    if (!name.trim()) {
+      setName(match.name);
+    }
+    if (match.identifier) {
+      setIbanOrMask(match.identifier);
+    }
+    if (match.currency) {
+      setCurrency(match.currency);
+    }
+  };
 
   return createPortal(
     <div
@@ -185,6 +212,9 @@ export function FinanceBankAccountModal({
               name: trimmed,
               ibanOrMask: ibanOrMask.trim() || null,
               type,
+              currency: currency.trim().toUpperCase() || "EUR",
+              moneybirdFinancialAccountId:
+                moneybirdFinancialAccountId.trim() || null,
               avatarFile: usingInternalBuffer ? pendingAvatarFile : null,
             });
           }}
@@ -205,6 +235,32 @@ export function FinanceBankAccountModal({
               </div>
             ) : null}
 
+            {showMoneybirdLink ? (
+              <label className="finance-bank-account-modal__field">
+                <span className="finance-bank-account-modal__label">
+                  Moneybird account
+                </span>
+                <select
+                  className="finance-bank-account-modal__input"
+                  value={moneybirdFinancialAccountId}
+                  disabled={busy || moneybirdAccountsLoading}
+                  onChange={(event) => applyMoneybirdAccount(event.target.value)}
+                >
+                  <option value={MONEYBIRD_NONE_VALUE}>
+                    {moneybirdAccountsLoading
+                      ? "Loading Moneybird accounts…"
+                      : "No Moneybird link (CSV import)"}
+                  </option>
+                  {moneybirdAccounts.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                      {entry.identifier ? ` · ${entry.identifier}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
             <label className="finance-bank-account-modal__field">
               <span className="finance-bank-account-modal__label">Name</span>
               <input
@@ -212,7 +268,7 @@ export function FinanceBankAccountModal({
                 value={name}
                 autoFocus
                 disabled={busy}
-                placeholder="ING Personal"
+                placeholder="Business Moneybird"
                 onChange={(event) => setName(event.target.value)}
               />
             </label>

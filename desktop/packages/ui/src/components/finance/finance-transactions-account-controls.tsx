@@ -23,6 +23,8 @@ export type FinanceBankAccountCreateInput = {
   name: string;
   ibanOrMask: string | null;
   type: BankAccountType;
+  currency?: string;
+  moneybirdFinancialAccountId?: string | null;
   avatarFile?: File | null;
 };
 
@@ -38,6 +40,8 @@ export function useFinanceTransactionsAccountControls({
   onUploadAccountAvatar,
   onRemoveAccountAvatar,
   onDeleteAccount,
+  moneybirdAccounts = [],
+  moneybirdAccountsLoading = false,
 }: {
   account: BankAccount | null;
   allAccountsSelected: boolean;
@@ -52,8 +56,17 @@ export function useFinanceTransactionsAccountControls({
       name?: string;
       ibanOrMask?: string | null;
       type?: BankAccountType;
+      currency?: string;
+      moneybirdFinancialAccountId?: string | null;
     },
   ) => void | Promise<void>;
+  moneybirdAccounts?: Array<{
+    id: string;
+    name: string;
+    identifier: string | null;
+    currency: string | null;
+  }>;
+  moneybirdAccountsLoading?: boolean;
   onUploadAccountAvatar?: (
     accountId: string,
     file: File,
@@ -302,12 +315,17 @@ export function useFinanceTransactionsAccountControls({
               name: accountModal.account.name,
               ibanOrMask: accountModal.account.ibanOrMask,
               type: accountModal.account.type,
+              currency: accountModal.account.currency,
+              moneybirdFinancialAccountId:
+                accountModal.account.moneybirdFinancialAccountId,
             }
           : { name: "", ibanOrMask: null, type: "bank_account" }
       }
       pending={accountModalPending}
       error={accountModalError}
       avatarSrc={modalAvatarSrc}
+      moneybirdAccounts={moneybirdAccounts}
+      moneybirdAccountsLoading={moneybirdAccountsLoading}
       onUploadAvatar={async (file) => {
         if (accountModal?.mode === "edit") {
           if (!onUploadAccountAvatar) {

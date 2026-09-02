@@ -368,6 +368,10 @@ export const taskSchema = z.object({
   projectId: z.string().nullable(),
   contactId: z.string().nullable(),
   assigneeId: z.string().nullable(),
+  /** Contacts this task is about / for (not the assignee). */
+  relatedContactIds: z.array(z.string()).default([]),
+  /** Organizations this task is about / for (same Related UI field as contacts). */
+  relatedOrganizationIds: z.array(z.string()).default([]),
   number: z.number().int().positive(),
   title: z.string(),
   description: z.string().nullable(),
@@ -393,6 +397,8 @@ export const taskSchema = z.object({
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   /** Manual / timer tracked duration (whole seconds). */
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
@@ -402,6 +408,8 @@ export const createTaskSchema = z.object({
   projectId: z.string().nullable().optional(),
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),
+  relatedContactIds: z.array(z.string()).optional(),
+  relatedOrganizationIds: z.array(z.string()).optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(10000).nullable().optional(),
   status: taskStatusSchema.optional(),
@@ -431,13 +439,20 @@ export const updateTaskSchema = createTaskSchema
     agentInboxApproved: z.boolean().optional(),
     /** Replicated from client sync; prefer {@link agentInboxApproved} on REST. */
     agentInboxApprovedAt: z.string().datetime().nullable().optional(),
+    /** Clear the Updated inbox flag after the user views the item. */
+    acknowledgeInboxUpdate: z.boolean().optional(),
+    inboxUpdatedAt: z.string().datetime().nullable().optional(),
   })
   .refine(
     (value) =>
       Object.keys(value).filter(
-        (key) => key !== "activityActor" && key !== "agentInboxApproved",
+        (key) =>
+          key !== "activityActor" &&
+          key !== "agentInboxApproved" &&
+          key !== "acknowledgeInboxUpdate",
       ).length > 0 ||
-      value.agentInboxApproved === true,
+      value.agentInboxApproved === true ||
+      value.acknowledgeInboxUpdate === true,
     {
       message: "At least one field is required",
     },
@@ -484,6 +499,8 @@ export const taskActivityTypeSchema = z.enum([
   "created",
   "status_changed",
   "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
   "priority_changed",
   "due_date_changed",
   "project_changed",
@@ -687,11 +704,48 @@ export const organizationInputSchema = z.object({
   summary: z.string().max(2000).nullable().optional(),
   phone: z.string().max(64).nullable().optional(),
   email: z.string().email().nullable().optional(),
-  website: z.string().url().nullable().optional(),
+  emails: z
+    .array(
+      z.object({
+        label: z.enum(["general", "support", "other"]),
+        address: z.string().email().max(320),
+      }),
+    )
+    .max(20)
+    .optional(),
+  phones: z
+    .array(
+      z.object({
+        label: z.enum(["general", "support", "other"]),
+        number: z.string().min(1).max(64),
+      }),
+    )
+    .max(20)
+    .optional(),
+  website: z
+    .union([z.string().url(), z.literal(""), z.null()])
+    .nullable()
+    .optional()
+    .transform((value) => (value === "" ? null : value)),
   address: z.string().max(500).nullable().optional(),
   city: z.string().max(255).nullable().optional(),
   postalCode: z.string().max(32).nullable().optional(),
   country: z.string().max(128).nullable().optional(),
+  region: z.string().max(128).nullable().optional(),
+  latitude: z.number().finite().nullable().optional(),
+  longitude: z.number().finite().nullable().optional(),
+  size: z.string().max(64).nullable().optional(),
+  socialAccounts: z
+    .array(
+      z.object({
+        platform: z.string().min(1).max(64),
+        url: z.string().min(1).max(2048),
+      }),
+    )
+    .max(20)
+    .optional(),
+  chamberOfCommerce: z.string().max(64).nullable().optional(),
+  taxNumber: z.string().max(64).nullable().optional(),
   sortOrder: z.number().int().optional(),
   notes: z.string().max(20_000).nullable().optional(),
   /** Moneybird contact id (string — large integer). */
@@ -707,11 +761,35 @@ export const organizationSchema = z.object({
   summary: z.string().nullable(),
   phone: z.string().nullable(),
   email: z.string().nullable(),
+  emails: z.array(
+    z.object({
+      label: z.enum(["general", "support", "other"]),
+      address: z.string(),
+    }),
+  ),
+  phones: z.array(
+    z.object({
+      label: z.enum(["general", "support", "other"]),
+      number: z.string(),
+    }),
+  ),
   website: z.string().nullable(),
   address: z.string().nullable(),
   city: z.string().nullable(),
   postalCode: z.string().nullable(),
   country: z.string().nullable(),
+  region: z.string().nullable(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
+  size: z.string().nullable(),
+  socialAccounts: z.array(
+    z.object({
+      platform: z.string(),
+      url: z.string(),
+    }),
+  ),
+  chamberOfCommerce: z.string().nullable(),
+  taxNumber: z.string().nullable(),
   avatarStorageKey: z.string().nullable(),
   avatarContentType: z.string().nullable(),
   sortOrder: z.number().int(),
@@ -762,6 +840,16 @@ const contactWritableFieldsSchema = z.object({
   summary: z.string().max(2000).nullable().optional(),
   sortOrder: z.number().int().optional(),
   phone: z.string().max(64).nullable().optional(),
+  /** Labeled numbers including primary (`{ label, number }[]`, max 20). */
+  phones: z
+    .array(
+      z.object({
+        label: z.enum(["personal", "work", "other"]),
+        number: z.string().min(1).max(64),
+      }),
+    )
+    .max(20)
+    .optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(20_000).nullable().optional(),
   address: z.string().max(500).nullable().optional(),
@@ -776,6 +864,11 @@ const contactWritableFieldsSchema = z.object({
   socialAccounts: z.array(contactSocialAccountSchema).max(20).optional(),
   /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
   birthday: calendarDateSchema.nullable().optional(),
+  /** Spoken / preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
+  languages: z
+    .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
+    .max(5)
+    .optional(),
 });
 
 export const contactInputSchema = contactWritableFieldsSchema.superRefine(
@@ -812,6 +905,12 @@ export const contactSchema = z.object({
   avatarContentType: z.string().nullable(),
   sortOrder: z.number().int(),
   phone: z.string().nullable(),
+  phones: z.array(
+    z.object({
+      label: z.enum(["personal", "work", "other"]),
+      number: z.string(),
+    }),
+  ),
   role: z.string().nullable(),
   notes: z.string().nullable(),
   address: z.string().nullable(),
@@ -823,6 +922,7 @@ export const contactSchema = z.object({
   longitude: z.number().finite().nullable().optional(),
   socialAccounts: z.array(contactSocialAccountSchema),
   birthday: calendarDateSchema.nullable().optional(),
+  languages: z.array(z.enum(["nl", "en", "de", "es", "fr", "pl"])),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
   deletedAt: nullableIsoDateSchema,
@@ -838,8 +938,8 @@ export function formatContactDisplayName(
     .join(" ");
 }
 
-/** Directed contact↔contact relationship types (user-curated). */
-export const contactRelationshipTypeSchema = z.enum([
+/** Directed contact↔contact relationship types (presets + custom slugs). */
+export const CONTACT_RELATIONSHIP_PRESET_TYPES = [
   "spouse",
   "partner",
   "child",
@@ -849,7 +949,25 @@ export const contactRelationshipTypeSchema = z.enum([
   "colleague",
   "reports_to",
   "other",
-]);
+] as const;
+
+export const contactRelationshipPresetTypeSchema = z.enum(
+  CONTACT_RELATIONSHIP_PRESET_TYPES,
+);
+
+/**
+ * Preset snake_case values, or a custom slug (`son`, `best_friend`, …).
+ * Display labels are derived / stored separately in the UI.
+ */
+export const contactRelationshipTypeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/,
+    "Use a lowercase slug (letters, numbers, underscores)",
+  );
 
 export const contactRelationshipInputSchema = z.object({
   toContactId: z.string().min(1),
@@ -877,6 +995,31 @@ export const contactRelationshipListItemSchema = contactRelationshipSchema.exten
   typeLabel: z.string(),
   relatedContactId: z.string(),
   relatedContactName: z.string(),
+});
+
+/** Workspace catalog of bidirectional relationship labels (Parent ↔ Child). */
+export const crmRelationshipLabelInputSchema = z.object({
+  sideALabel: z.string().trim().min(1).max(64),
+  sideBLabel: z.string().trim().min(1).max(64),
+  sideASlug: contactRelationshipTypeSchema.optional(),
+  sideBSlug: contactRelationshipTypeSchema.optional(),
+  color: z.string().max(32).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+export const updateCrmRelationshipLabelSchema =
+  crmRelationshipLabelInputSchema.partial();
+export const crmRelationshipLabelSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  sideALabel: z.string(),
+  sideASlug: contactRelationshipTypeSchema,
+  sideBLabel: z.string(),
+  sideBSlug: contactRelationshipTypeSchema,
+  color: z.string().nullable(),
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
 });
 
 export const crmGroupSubjectTypeSchema = z.enum(["contact", "organization"]);
@@ -971,6 +1114,8 @@ export const bankAccountInputSchema = z.object({
     .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
     .nullable()
     .optional(),
+  /** Link to a Moneybird financial account for mutation sync. */
+  moneybirdFinancialAccountId: z.string().min(1).max(64).nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
 export const updateBankAccountSchema = bankAccountInputSchema.partial();
@@ -985,6 +1130,8 @@ export const bankAccountSchema = z.object({
   avatarStorageKey: z.string().nullable(),
   avatarContentType: z.string().nullable(),
   color: z.string().nullable(),
+  moneybirdFinancialAccountId: z.string().nullable(),
+  moneybirdLastSyncedAt: nullableIsoDateSchema,
   sortOrder: z.number().int(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
@@ -1490,6 +1637,35 @@ export const reorderLetterAttachmentsSchema = z.object({
   orderedIds: z.array(z.string()).min(1).max(100),
 });
 
+export const taskAttachmentSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  taskId: z.string(),
+  storageKey: z.string(),
+  originalFilename: z.string(),
+  contentType: z.string(),
+  byteSize: z.number().int().nonnegative(),
+  checksum: z.string().nullable(),
+  contentEtag: z.string().nullable(),
+  sortOrder: z.number().int(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: nullableIsoDateSchema,
+});
+export const taskAttachmentParamsSchema = z.object({
+  id: z.string(),
+  attachmentId: z.string(),
+});
+export const taskAttachmentsResponseSchema = z.object({
+  attachments: z.array(taskAttachmentSchema),
+});
+export const updateTaskAttachmentSchema = z.object({
+  originalFilename: z.string().trim().min(1).max(255),
+});
+export const reorderTaskAttachmentsSchema = z.object({
+  orderedIds: z.array(z.string()).min(1).max(100),
+});
+
 export const avatarParamsSchema = z.object({
   entityType: z.string(),
   entityId: z.string(),
@@ -1738,6 +1914,8 @@ export const agentMailMessageSchema = z.object({
   conceptPreview: z.string().nullable().optional(),
   subject: z.string(),
   from: z.string(),
+  /** Recipients when the list/detail payload includes them (AgentMail). */
+  to: z.array(z.string()).optional(),
   preview: z.string().nullable(),
   timestamp: z.string(),
   /** Workspace email thread row id (when registered). */
@@ -1758,6 +1936,8 @@ export const agentMailMessageSchema = z.object({
   projectId: z.string().nullable().optional(),
   projectName: z.string().nullable().optional(),
   projectKey: z.string().nullable().optional(),
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
 });
 export const agentMailMessagesResponseSchema = z.object({
   messages: z.array(agentMailMessageSchema),
@@ -1780,6 +1960,8 @@ export const emailThreadMetadataSchema = z.object({
   status: taskStatusSchema,
   priority: z.number().int().min(0).max(4),
   dueDate: z.string().datetime().nullable(),
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -1791,6 +1973,9 @@ export const updateEmailThreadMetadataSchema = z.object({
   status: taskStatusSchema.optional(),
   priority: z.number().int().min(0).max(4).optional(),
   dueDate: z.string().datetime().nullable().optional(),
+  /** Clear the Updated inbox flag after the user views the item. */
+  acknowledgeInboxUpdate: z.boolean().optional(),
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
 });
 export const emailThreadCommentAuthorSchema = z.enum(["user", "agent"]);
 export const emailThreadCommentSchema = z.object({
@@ -2004,6 +2189,36 @@ export const moneybirdInvoiceRevenueQuerySchema = z.object({
 export const moneybirdInvoiceRevenueResponseSchema = z.object({
   year: z.number().int(),
   months: z.array(bankAccountCashflowMonthSchema),
+});
+
+/** Active Moneybird financial accounts (bank / card / payment rails). */
+export const moneybirdFinancialAccountSchema = z.object({
+  id: z.string(),
+  type: z.string().nullable(),
+  name: z.string(),
+  identifier: z.string().nullable(),
+  currency: z.string().nullable(),
+  provider: z.string().nullable(),
+  moneybirdAccount: z.boolean(),
+  active: z.boolean(),
+});
+export const moneybirdFinancialAccountsResponseSchema = z.object({
+  financialAccounts: z.array(moneybirdFinancialAccountSchema),
+});
+
+/** Result of ingesting Moneybird financial mutations into a bank account. */
+export const moneybirdBankAccountSyncResultSchema = z.object({
+  bankAccountId: z.string(),
+  moneybirdFinancialAccountId: z.string(),
+  fetched: z.number().int().nonnegative(),
+  inserted: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
+  lastSyncedAt: isoDateSchema,
+});
+
+export const moneybirdBankAccountSyncQuerySchema = z.object({
+  /** Moneybird period filter; defaults to this_year. */
+  period: z.string().min(1).max(64).optional(),
 });
 
 export const vaultStorageSettingsSchema = z.object({
@@ -2370,6 +2585,8 @@ export const createMeetingSchema = z.object({
   startAt: isoDateSchema,
   endAt: isoDateSchema,
   format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
+  location: z.string().max(2000).nullable().optional(),
+  locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
 });
@@ -2387,6 +2604,8 @@ export const updateMeetingSchema = z
     startAt: isoDateSchema.optional(),
     endAt: isoDateSchema.optional(),
     format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
+    location: z.string().max(2000).nullable().optional(),
+    locationOrganizationId: z.string().nullable().optional(),
     trackedMinutes: z.number().int().nonnegative().nullable().optional(),
     trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   })
@@ -2408,6 +2627,8 @@ export const meetingSchema = z.object({
   startAt: isoDateSchema,
   endAt: isoDateSchema,
   format: z.enum(["video_call", "in_person", "phone_call"]).optional(),
+  location: z.string().nullable().optional(),
+  locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
   sortOrder: z.number().int(),
@@ -2562,6 +2783,13 @@ export type ContactRelationshipInput = z.infer<typeof contactRelationshipInputSc
 export type UpdateContactRelationshipInput = z.infer<
   typeof updateContactRelationshipSchema
 >;
+export type CrmRelationshipLabel = z.infer<typeof crmRelationshipLabelSchema>;
+export type CrmRelationshipLabelInput = z.infer<
+  typeof crmRelationshipLabelInputSchema
+>;
+export type UpdateCrmRelationshipLabelInput = z.infer<
+  typeof updateCrmRelationshipLabelSchema
+>;
 export type CrmGroup = z.infer<typeof crmGroupSchema>;
 export type CrmGroupInput = z.infer<typeof crmGroupInputSchema>;
 export type CrmGroupMember = z.infer<typeof crmGroupMemberSchema>;
@@ -2630,6 +2858,7 @@ export type AreaParent = z.infer<typeof areaParentSchema>;
 export type AreaInput = z.infer<typeof areaInputSchema>;
 export type Letter = z.infer<typeof letterSchema>;
 export type LetterAttachment = z.infer<typeof letterAttachmentSchema>;
+export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
 export type Avatar = z.infer<typeof avatarSchema>;
 export type TaskImage = z.infer<typeof taskImageSchema>;
 export type Mention = z.infer<typeof mentionSchema>;
@@ -2722,6 +2951,12 @@ export type MoneybirdSalesInvoiceDetail = z.infer<
 >;
 export type MoneybirdInvoiceRevenue = z.infer<
   typeof moneybirdInvoiceRevenueResponseSchema
+>;
+export type MoneybirdFinancialAccount = z.infer<
+  typeof moneybirdFinancialAccountSchema
+>;
+export type MoneybirdBankAccountSyncResult = z.infer<
+  typeof moneybirdBankAccountSyncResultSchema
 >;
 export type VaultStorageSettings = z.infer<typeof vaultStorageSettingsSchema>;
 export type ProjectVaultEnsure = z.infer<typeof projectVaultEnsureSchema>;

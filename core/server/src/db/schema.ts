@@ -141,11 +141,36 @@ export const organizations = pgTable(
     summary: text("summary"),
     phone: text("phone"),
     email: text("email"),
+    /** Labeled addresses (`{ label, address }[]`) — general | support | other. */
+    emails: jsonb("emails")
+      .$type<{ label: "general" | "support" | "other"; address: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Labeled numbers (`{ label, number }[]`) — general | support | other. */
+    phones: jsonb("phones")
+      .$type<{ label: "general" | "support" | "other"; number: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     website: text("website"),
     address: text("address"),
     city: text("city"),
     postalCode: text("postal_code"),
     country: text("country"),
+    /** State / province / region (Mapbox `region`); optional. */
+    region: text("region"),
+    /** Geocoded from address fields (Mapbox); null until resolved. */
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    /** Company size label (free text). */
+    size: text("size"),
+    socialAccounts: jsonb("social_accounts")
+      .$type<{ platform: string; url: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Chamber of Commerce / KvK (often from Moneybird). */
+    chamberOfCommerce: text("chamber_of_commerce"),
+    /** VAT / tax number (often from Moneybird). */
+    taxNumber: text("tax_number"),
     avatarStorageKey: text("avatar_storage_key"),
     avatarContentType: text("avatar_content_type"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -159,6 +184,9 @@ export const organizations = pgTable(
     index("organizations_workspace_id_idx").on(table.workspaceId),
     index("organizations_workspace_key_idx").on(table.workspaceId, table.key),
     index("organizations_workspace_number_idx").on(table.workspaceId, table.number),
+    uniqueIndex("organizations_workspace_number_unique")
+      .on(table.workspaceId, table.number)
+      .where(sql`${table.deletedAt} is null and ${table.number} is not null`),
   ],
 );
 
@@ -189,6 +217,11 @@ export const contacts = pgTable(
     avatarContentType: text("avatar_content_type"),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     phone: text("phone"),
+    /** Labeled numbers (`{ label, number }[]`), including primary for its type. */
+    phones: jsonb("phones")
+      .$type<{ label: "personal" | "work" | "other"; number: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     role: text("role"),
     notes: text("notes"),
     address: text("address"),
@@ -206,6 +239,11 @@ export const contacts = pgTable(
       .default(sql`'[]'::jsonb`),
     /** Full calendar date YYYY-MM-DD; year required (yearless deferred). */
     birthday: date("birthday", { mode: "string" }),
+    /** Preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
+    languages: jsonb("languages")
+      .$type<Array<"nl" | "en" | "de" | "es" | "fr" | "pl">>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -214,6 +252,9 @@ export const contacts = pgTable(
     index("contacts_workspace_id_idx").on(table.workspaceId),
     index("contacts_workspace_key_idx").on(table.workspaceId, table.key),
     index("contacts_workspace_number_idx").on(table.workspaceId, table.number),
+    uniqueIndex("contacts_workspace_number_unique")
+      .on(table.workspaceId, table.number)
+      .where(sql`${table.deletedAt} is null and ${table.number} is not null`),
     index("contacts_organization_id_idx").on(table.organizationId),
     index("contacts_email_idx").on(table.workspaceId, table.email),
     index("contacts_birthday_idx").on(table.workspaceId, table.birthday),
@@ -247,6 +288,38 @@ export const contactRelationships = pgTable(
     index("contact_relationships_from_contact_id_idx").on(table.fromContactId),
     index("contact_relationships_to_contact_id_idx").on(table.toContactId),
     index("contact_relationships_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+/** Bidirectional contact relationship label pairs (Parent ↔ Child, etc.). */
+export const crmRelationshipLabels = pgTable(
+  "crm_relationship_labels",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    sideALabel: text("side_a_label").notNull(),
+    sideASlug: text("side_a_slug").notNull(),
+    sideBLabel: text("side_b_label").notNull(),
+    sideBSlug: text("side_b_slug").notNull(),
+    color: text("color"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("crm_relationship_labels_workspace_id_idx").on(table.workspaceId),
+    index("crm_relationship_labels_deleted_at_idx").on(table.deletedAt),
+    index("crm_relationship_labels_side_a_slug_idx").on(
+      table.workspaceId,
+      table.sideASlug,
+    ),
+    index("crm_relationship_labels_side_b_slug_idx").on(
+      table.workspaceId,
+      table.sideBSlug,
+    ),
   ],
 );
 
@@ -459,6 +532,16 @@ export const tasks = pgTable(
     assigneeId: text("assignee_id").references(() => contacts.id, {
       onDelete: "set null",
     }),
+    /** Contacts this task is about / for (CRM Related; not the assignee). */
+    relatedContactIds: jsonb("related_contact_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Organizations this task is about / for (CRM Related; same UI field as contacts). */
+    relatedOrganizationIds: jsonb("related_organization_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     number: integer("number").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -648,6 +731,13 @@ export const meetings = pgTable(
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     /** video_call | in_person | phone_call */
     format: text("format").notNull().default("video_call"),
+    /** Free-text place snapshot (optional; prefer locationOrganizationId). */
+    location: text("location"),
+    /** Venue organization for in-person meetings (independent of organizationId). */
+    locationOrganizationId: text("location_organization_id").references(
+      () => organizations.id,
+      { onDelete: "set null" },
+    ),
     /** Manual / timer tracked duration (whole minutes; legacy). */
     trackedMinutes: integer("tracked_minutes"),
     /** Manual / timer tracked duration (whole seconds). */
@@ -957,6 +1047,35 @@ export const taskImages = pgTable(
   ],
 );
 
+/** Task PDF file attachments (Tier B metadata + Tier D blob; REST list, not PowerSync). */
+export const taskAttachments = pgTable(
+  "task_attachments",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    storageKey: text("storage_key").notNull(),
+    originalFilename: text("original_filename").notNull().default(""),
+    contentType: text("content_type").notNull().default("application/pdf"),
+    byteSize: integer("byte_size").notNull().default(0),
+    checksum: text("checksum"),
+    contentEtag: text("content_etag"),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("task_attachments_workspace_id_idx").on(table.workspaceId),
+    index("task_attachments_task_id_idx").on(table.taskId),
+    index("task_attachments_task_sort_idx").on(table.taskId, table.sortOrder),
+  ],
+);
+
 export const avatars = pgTable(
   "avatars",
   {
@@ -1130,6 +1249,11 @@ export const bankAccounts = pgTable(
     avatarContentType: text("avatar_content_type"),
     /** Optional chart / accent color (#RRGGBB). */
     color: text("color"),
+    /** Moneybird financial account id when this ledger is synced from Moneybird. */
+    moneybirdFinancialAccountId: text("moneybird_financial_account_id"),
+    moneybirdLastSyncedAt: timestamp("moneybird_last_synced_at", {
+      withTimezone: true,
+    }),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1140,6 +1264,11 @@ export const bankAccounts = pgTable(
       table.workspaceId,
       table.key,
     ),
+    uniqueIndex("bank_accounts_workspace_moneybird_financial_account_uidx")
+      .on(table.workspaceId, table.moneybirdFinancialAccountId)
+      .where(
+        sql`${table.moneybirdFinancialAccountId} IS NOT NULL AND ${table.deletedAt} IS NULL`,
+      ),
     index("bank_accounts_workspace_id_idx").on(table.workspaceId),
     index("bank_accounts_deleted_at_idx").on(table.deletedAt),
   ],
@@ -1443,6 +1572,7 @@ export type DbArea = typeof areas.$inferSelect;
 export type DbLetter = typeof letters.$inferSelect;
 export type DbAvatar = typeof avatars.$inferSelect;
 export type DbTaskImage = typeof taskImages.$inferSelect;
+export type DbTaskAttachment = typeof taskAttachments.$inferSelect;
 export type DbBankAccount = typeof bankAccounts.$inferSelect;
 export type DbFinancialCategory = typeof financialCategories.$inferSelect;
 export type DbFinancialGoal = typeof financialGoals.$inferSelect;

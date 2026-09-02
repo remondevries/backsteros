@@ -465,6 +465,32 @@ function requireMoneybirdClient(workspaceId: string): Promise<{
 }
 
 /**
+ * Moneybird contact lookup for org CoC / VAT / address sync.
+ */
+export async function getMoneybirdContact(
+  workspaceId: string,
+  contactId: string,
+): Promise<{
+  id: string;
+  chamberOfCommerce: string | null;
+  taxNumber: string | null;
+  address1: string | null;
+  address2: string | null;
+  zipcode: string | null;
+  city: string | null;
+  country: string | null;
+  phone: string | null;
+  email: string | null;
+}> {
+  const id = contactId.trim();
+  if (!id) {
+    throw new MoneybirdApiError(400, "", "Contact id is required");
+  }
+  const { client } = await requireMoneybirdClient(workspaceId);
+  return client.getContact(id);
+}
+
+/**
  * Full sales invoice for the finance detail panel: lines, tax totals,
  * recipient contact, and sender identity (when Moneybird provides one).
  */
@@ -532,4 +558,25 @@ export async function getMoneybirdSalesInvoiceDetail(
     lines: withTax.lines,
     taxTotals: withTax.taxTotals,
   };
+}
+
+export async function listMoneybirdFinancialAccounts(workspaceId: string) {
+  const { apiToken, administrationId } =
+    await getMoneybirdCredentials(workspaceId);
+  if (!apiToken) {
+    throw new MoneybirdApiError(
+      400,
+      "",
+      "Moneybird API token is not configured",
+    );
+  }
+  if (!administrationId) {
+    throw new MoneybirdApiError(
+      400,
+      "",
+      "Moneybird administration id is not configured",
+    );
+  }
+  const client = new MoneybirdClient({ apiToken, administrationId });
+  return client.listFinancialAccounts();
 }

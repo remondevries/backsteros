@@ -15,3 +15,15 @@ export function parseEuroAmountToCents(raw: string): number {
   if (!Number.isFinite(value)) throw new Error(`Invalid amount: ${raw}`);
   return Math.round(value * 100);
 }
+
+/**
+ * Parse amounts that already use a period as the decimal separator
+ * (Moneybird API: `100.0`, `-12.50`).
+ */
+export function parseDecimalAmountToCents(raw: string): number {
+  const trimmed = raw.trim().replace(/\s/g, "").replace(/^\+/, "");
+  if (!trimmed) throw new Error("Empty amount");
+  const value = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(value)) throw new Error(`Invalid amount: ${raw}`);
+  return Math.round(value * 100);
+}

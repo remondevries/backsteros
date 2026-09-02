@@ -1,4 +1,4 @@
-import { column, Schema, Table } from "@powersync/web";
+import { column, Schema, Table } from "@powersync/common";
 
 /**
  * Shared PowerSync client schema (Tier A/B metadata only).
@@ -41,6 +41,8 @@ const tasks = new Table(
     project_id: column.text,
     contact_id: column.text,
     assignee_id: column.text,
+    related_contact_ids: column.text,
+    related_organization_ids: column.text,
     number: column.integer,
     title: column.text,
     description: column.text,
@@ -57,6 +59,7 @@ const tasks = new Table(
     completed_at: column.text,
     agent_created_at: column.text,
     agent_inbox_approved_at: column.text,
+    inbox_updated_at: column.text,
     tracked_minutes: column.integer,
     tracked_duration_seconds: column.integer,
     ...commonDates,
@@ -107,11 +110,20 @@ const organizations = new Table({
   summary: column.text,
   phone: column.text,
   email: column.text,
+  emails: column.text,
+  phones: column.text,
   website: column.text,
   address: column.text,
   city: column.text,
   postal_code: column.text,
   country: column.text,
+  region: column.text,
+  latitude: column.real,
+  longitude: column.real,
+  size: column.text,
+  social_accounts: column.text,
+  chamber_of_commerce: column.text,
+  tax_number: column.text,
   avatar_storage_key: column.text,
   avatar_content_type: column.text,
   sort_order: column.integer,
@@ -136,6 +148,7 @@ const contacts = new Table(
     avatar_content_type: column.text,
     sort_order: column.integer,
     phone: column.text,
+    phones: column.text,
     role: column.text,
     notes: column.text,
     address: column.text,
@@ -147,6 +160,7 @@ const contacts = new Table(
     longitude: column.real,
     social_accounts: column.text,
     birthday: column.text,
+    languages: column.text,
     ...commonDates,
   },
   { indexes: { organization: ["organization_id"] } },
@@ -226,6 +240,8 @@ const bank_accounts = new Table({
   avatar_storage_key: column.text,
   avatar_content_type: column.text,
   color: column.text,
+  moneybird_financial_account_id: column.text,
+  moneybird_last_synced_at: column.text,
   sort_order: column.integer,
   ...commonDates,
 });
@@ -297,6 +313,8 @@ const meetings = new Table({
   transcription: column.text,
   status: column.text,
   format: column.text,
+  location: column.text,
+  location_organization_id: column.text,
   project_id: column.text,
   organization_id: column.text,
   attendee_contact_ids: column.text,
@@ -322,6 +340,22 @@ const task_comments = new Table(
   { indexes: { task: ["task_id"], parent: ["parent_comment_id"] } },
 );
 
+/** System activity rows (status/assignee/timer/agent) — Tier A metadata, no blobs. */
+const task_activities = new Table(
+  {
+    task_id: column.text,
+    type: column.text,
+    actor_user_id: column.text,
+    actor_contact_id: column.text,
+    actor_email: column.text,
+    actor_name: column.text,
+    /** JSON object stored as text (same as tasks.links). */
+    data: column.text,
+    created_at: column.text,
+  },
+  { indexes: { task: ["task_id"], type: ["type"] } },
+);
+
 const contact_relationships = new Table(
   {
     from_contact_id: column.text,
@@ -337,6 +371,16 @@ const contact_relationships = new Table(
     },
   },
 );
+
+const crm_relationship_labels = new Table({
+  side_a_label: column.text,
+  side_a_slug: column.text,
+  side_b_label: column.text,
+  side_b_slug: column.text,
+  color: column.text,
+  sort_order: column.integer,
+  ...commonDates,
+});
 
 const crm_groups = new Table({
   name: column.text,
@@ -402,7 +446,9 @@ export const appSchema = new Schema({
   habits,
   meetings,
   task_comments,
+  task_activities,
   contact_relationships,
+  crm_relationship_labels,
   crm_groups,
   crm_group_members,
   crm_activities,

@@ -4,6 +4,8 @@ import type {
   FinancialImportBatch,
   FinancialImportResult,
   FinancialTransaction,
+  MoneybirdBankAccountSyncResult,
+  MoneybirdFinancialAccount,
 } from "@backsteros/contracts";
 import {
   DROPDOWN_NONE_VALUE,
@@ -30,6 +32,8 @@ export type FinanceHrefNavigate = (
   options?: { replace?: boolean; state?: unknown },
 ) => void;
 
+const MONEYBIRD_SYNC_DEBOUNCE_MS = 60_000;
+
 export function useFinanceTransactions({
   client,
   navigate,
@@ -43,6 +47,7 @@ export function useFinanceTransactions({
   setCategoryMetrics,
   setAccountMetrics,
   setRecurringMetrics,
+  refreshAccounts,
 }: {
   client: BacksterosApiClient;
   navigate: FinanceHrefNavigate;
@@ -58,6 +63,7 @@ export function useFinanceTransactions({
   setRecurringMetrics: Dispatch<
     SetStateAction<FinanceRecurringMetrics | null>
   >;
+  refreshAccounts?: () => Promise<unknown>;
 }) {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [imports, setImports] = useState<FinancialImportBatch[]>([]);
@@ -86,6 +92,14 @@ export function useFinanceTransactions({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAllPending, setSelectAllPending] = useState(false);
   const lastClickedIdRef = useRef<string | null>(null);
+  const [moneybirdAccounts, setMoneybirdAccounts] = useState<
+    MoneybirdFinancialAccount[]
+  >([]);
+  const [moneybirdAccountsLoading, setMoneybirdAccountsLoading] =
+    useState(false);
+  const [moneybirdSyncPending, setMoneybirdSyncPending] = useState(false);
+  const moneybirdSyncAtByAccountRef = useRef<Record<string, number>>({});
+  const moneybirdSyncInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -213,6 +227,86 @@ export function useFinanceTransactions({
     if (!allAccountsSelected && !selected) return;
     void loadTransactions();
   }, [loadTransactions, selectionKey, showTransactions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMoneybirdAccountsLoading(true);
+    void client
+      .requestJson<{ financialAccounts: MoneybirdFinancialAccount[] }>(
+        "/api/v1/finance/moneybird/financial-accounts",
+      )
+      .then((body) => {
+        if (cancelled) return;
+        setMoneybirdAccounts(body.financialAccounts ?? []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMoneybirdAccounts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMoneybirdAccountsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  const syncMoneybirdAccount = useCallback(
+    async (opts?: { force?: boolean; accountId?: string }) => {
+      const accountId = opts?.accountId ?? selected?.id ?? null;
+      if (!accountId) return null;
+      const account =
+        accounts.find((entry) => entry.id === accountId) ??
+        (selected?.id === accountId ? selected : null);
+      if (!account?.moneybirdFinancialAccountId) return null;
+
+      const lastAt = moneybirdSyncAtByAccountRef.current[accountId] ?? 0;
+      if (
+        !opts?.force &&
+        Date.now() - lastAt < MONEYBIRD_SYNC_DEBOUNCE_MS
+      ) {
+        return null;
+      }
+      if (moneybirdSyncInFlightRef.current === accountId) return null;
+
+      moneybirdSyncInFlightRef.current = accountId;
+      setMoneybirdSyncPending(true);
+      try {
+        const result = await client.requestJson<MoneybirdBankAccountSyncResult>(
+          `/api/v1/bank-accounts/${encodeURIComponent(accountId)}/moneybird-sync`,
+          { method: "POST" },
+        );
+        moneybirdSyncAtByAccountRef.current[accountId] = Date.now();
+        if (result.inserted > 0) {
+          await loadTransactions();
+        }
+        await refreshAccounts?.().catch(() => undefined);
+        return result;
+      } catch {
+        return null;
+      } finally {
+        if (moneybirdSyncInFlightRef.current === accountId) {
+          moneybirdSyncInFlightRef.current = null;
+        }
+        setMoneybirdSyncPending(false);
+      }
+    },
+    [accounts, client, loadTransactions, refreshAccounts, selected],
+  );
+
+  useEffect(() => {
+    if (!showTransactions) return;
+    if (allAccountsSelected || !selected?.moneybirdFinancialAccountId) {
+      return;
+    }
+    void syncMoneybirdAccount();
+  }, [
+    allAccountsSelected,
+    selected?.id,
+    selected?.moneybirdFinancialAccountId,
+    showTransactions,
+    syncMoneybirdAccount,
+  ]);
 
   useEffect(() => {
     if (!importOpen) return;
@@ -597,6 +691,10 @@ export function useFinanceTransactions({
     selectAllPending,
     loadTransactions,
     handleImportCsv,
+    moneybirdAccounts,
+    moneybirdAccountsLoading,
+    moneybirdSyncPending,
+    syncMoneybirdAccount,
     handleToggleSelected,
     handleSetGroupSelected,
     handleSelectAllTransactions,

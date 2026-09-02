@@ -72,11 +72,23 @@ export function toProject(row: DbProject): Project {
 }
 
 export function toTask(row: DbTask): Task {
+  const relatedContactIds = Array.isArray(row.relatedContactIds)
+    ? row.relatedContactIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      )
+    : [];
+  const relatedOrganizationIds = Array.isArray(row.relatedOrganizationIds)
+    ? row.relatedOrganizationIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0,
+      )
+    : [];
   return {
     id: row.id,
     projectId: row.projectId,
     contactId: row.contactId,
     assigneeId: row.assigneeId,
+    relatedContactIds,
+    relatedOrganizationIds,
     number: row.number,
     title: row.title,
     description: row.description,
@@ -247,6 +259,8 @@ export function toBankAccount(row: DbBankAccount): BankAccount {
     avatarStorageKey: row.avatarStorageKey,
     avatarContentType: row.avatarContentType,
     color: row.color ?? null,
+    moneybirdFinancialAccountId: row.moneybirdFinancialAccountId ?? null,
+    moneybirdLastSyncedAt: toIso(row.moneybirdLastSyncedAt ?? null),
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

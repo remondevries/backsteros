@@ -202,8 +202,17 @@ export type FinanceTransactionsViewProps = {
       name?: string;
       ibanOrMask?: string | null;
       type?: BankAccountType;
+      currency?: string;
+      moneybirdFinancialAccountId?: string | null;
     },
   ) => void | Promise<void>;
+  moneybirdAccounts?: Array<{
+    id: string;
+    name: string;
+    identifier: string | null;
+    currency: string | null;
+  }>;
+  moneybirdAccountsLoading?: boolean;
   onChromeStateChange?: (state: FinanceTransactionsChromeState | null) => void;
 };
 
@@ -253,6 +262,8 @@ export function FinanceTransactionsView({
   onLoadMore,
   hasMore = false,
   onUpdateAccount,
+  moneybirdAccounts = [],
+  moneybirdAccountsLoading = false,
   onChromeStateChange,
 }: FinanceTransactionsViewProps) {
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>(
@@ -295,7 +306,11 @@ export function FinanceTransactionsView({
     onUploadAccountAvatar,
     onRemoveAccountAvatar,
     onDeleteAccount,
+    moneybirdAccounts,
+    moneybirdAccountsLoading,
   });
+
+  const isMoneybirdLinked = Boolean(account?.moneybirdFinancialAccountId);
 
   const {
     orgOptions,
@@ -578,11 +593,15 @@ export function FinanceTransactionsView({
           <p className="finance-empty">No matching transactions.</p>
         ) : !transactions.length ? (
           <div className="finance-tx-empty-dropzone">
-            <FinanceCsvDropzone
-              onFileSelect={(file) => {
-                if (file) onRequestImportWithFile?.(file);
-              }}
-            />
+            {isMoneybirdLinked ? (
+              <p className="finance-empty">No transactions yet.</p>
+            ) : (
+              <FinanceCsvDropzone
+                onFileSelect={(file) => {
+                  if (file) onRequestImportWithFile?.(file);
+                }}
+              />
+            )}
           </div>
         ) : (
           <FinanceTransactionsGroupedList

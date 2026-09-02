@@ -519,6 +519,90 @@
       "when": 1790900000000,
       "tag": "0082_contact_region",
       "breakpoints": true
+    },
+      {
+      "idx": 74,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0083_task_related_contact_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0084_contact_phones",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0085_crm_relationship_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0086_contact_languages",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1791400000000,
+      "tag": "0087_organization_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1791500000000,
+      "tag": "0088_unique_org_contact_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1791600000000,
+      "tag": "0089_organization_emails_phones",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0090_meeting_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1791800000000,
+      "tag": "0091_meeting_location_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1791900000000,
+      "tag": "0092_task_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792000000000,
+      "tag": "0093_task_related_organization_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1792100000000,
+      "tag": "0094_bank_account_moneybird",
+      "breakpoints": true
     }
   ]
 }
