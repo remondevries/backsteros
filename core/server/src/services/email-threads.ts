@@ -5,6 +5,7 @@ import type {
   EmailThreadMetadata,
   UpdateEmailThreadMetadataInput,
 } from "@backsteros/contracts";
+import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
@@ -166,7 +167,49 @@ async function getEmailThreadRow(
   return row ?? null;
 }
 
-async function toEmailThreadMetadata(
+export async function getEmailThreadById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<DbEmailThread | null> {
+  const [row] = await executor
+    .select()
+    .from(emailThreads)
+    .where(
+      and(eq(emailThreads.workspaceId, workspaceId), eq(emailThreads.id, id)),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function getEmailThreadByInboxKey(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  executor: DbExecutor = db,
+): Promise<DbEmailThread | null> {
+  return getEmailThreadRow(workspaceId, inboxId, threadKey, executor);
+}
+
+export async function getEmailThreadCommentRow(
+  workspaceId: string,
+  commentId: string,
+  executor: DbExecutor = db,
+): Promise<DbEmailThreadComment | null> {
+  const [row] = await executor
+    .select()
+    .from(emailThreadComments)
+    .where(
+      and(
+        eq(emailThreadComments.workspaceId, workspaceId),
+        eq(emailThreadComments.id, commentId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function toEmailThreadMetadata(
   workspaceId: string,
   row: DbEmailThread,
 ): Promise<EmailThreadMetadata> {
@@ -196,28 +239,38 @@ async function toEmailThreadMetadata(
     status: row.status as EmailThreadMetadata["status"],
     priority: row.priority ?? 0,
     dueDate: row.dueDate ? row.dueDate.toISOString() : null,
+    inboxUpdatedAt: row.inboxUpdatedAt
+      ? row.inboxUpdatedAt.toISOString()
+      : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-export async function getOrCreateEmailThreadMetadata(
+export type EnsureEmailThreadOptions = {
+  /** Prefer this id when inserting (sync / leader-first). */
+  id?: string;
+  /** Prefer this display number when inserting (sync apply). */
+  number?: number;
+  /**
+   * When true, insert locally even on local-core (apply path / transactions).
+   * Default: forward to cloud leader when hybrid is on and executor is the pool.
+   */
+  skipLeaderFirst?: boolean;
+};
+
+async function insertEmailThreadRow(
   workspaceId: string,
   inboxId: string,
   threadKey: string,
-  executor: DbExecutor = db,
-): Promise<EmailThreadMetadata> {
-  const existing = await getEmailThreadRow(
-    workspaceId,
-    inboxId,
-    threadKey,
-    executor,
-  );
-  if (existing) {
-    return toEmailThreadMetadata(workspaceId, existing);
-  }
-  const id = newId();
-  const number = await nextEmailThreadNumber(workspaceId, executor);
+  executor: DbExecutor,
+  options?: EnsureEmailThreadOptions,
+): Promise<typeof emailThreads.$inferSelect> {
+  const id = options?.id ?? newId();
+  const number =
+    typeof options?.number === "number" && Number.isInteger(options.number)
+      ? options.number
+      : await nextEmailThreadNumber(workspaceId, executor);
   const [row] = await executor
     .insert(emailThreads)
     .values({
@@ -230,7 +283,82 @@ export async function getOrCreateEmailThreadMetadata(
       priority: 0,
     })
     .returning();
-  return toEmailThreadMetadata(workspaceId, row!);
+  return row!;
+}
+
+async function commitNewEmailThreadLeaderFirst(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  id: string,
+): Promise<EmailThreadMetadata> {
+  const { commitRestEntityWrite, buildEmailThreadRestPayload } = await import(
+    "./rest-leader-write.js"
+  );
+  await commitRestEntityWrite({
+    workspaceId,
+    entity: "email_thread",
+    entityId: id,
+    operation: "upsert",
+    payload: buildEmailThreadRestPayload(id, inboxId, threadKey, {
+      status: "triage",
+      priority: 0,
+    }),
+  });
+  const row = await getEmailThreadById(workspaceId, id);
+  if (!row) {
+    const byKey = await getEmailThreadRow(workspaceId, inboxId, threadKey);
+    if (byKey) return toEmailThreadMetadata(workspaceId, byKey);
+    throw new Error("EMAIL_THREAD_CREATE_FAILED");
+  }
+  return toEmailThreadMetadata(workspaceId, row);
+}
+
+export async function getOrCreateEmailThreadMetadata(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  executor: DbExecutor = db,
+  options?: EnsureEmailThreadOptions,
+): Promise<EmailThreadMetadata> {
+  const existing = await getEmailThreadRow(
+    workspaceId,
+    inboxId,
+    threadKey,
+    executor,
+  );
+  if (existing) {
+    return toEmailThreadMetadata(workspaceId, existing);
+  }
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "./core-replication/leader-mutations.js"
+  );
+  if (
+    !options?.skipLeaderFirst &&
+    executor === db &&
+    shouldForwardMutationsToLeader()
+  ) {
+    return commitNewEmailThreadLeaderFirst(
+      workspaceId,
+      inboxId,
+      threadKey,
+      options?.id ?? newId(),
+    );
+  }
+
+  const row = await insertEmailThreadRow(
+    workspaceId,
+    inboxId,
+    threadKey,
+    executor,
+    options,
+  );
+  if (executor === db && !options?.skipLeaderFirst) {
+    const { recordEmailThreadRestSyncEvent } = await import("./sync.js");
+    await recordEmailThreadRestSyncEvent(workspaceId, row, "upsert");
+  }
+  return toEmailThreadMetadata(workspaceId, row);
 }
 
 export type EmailThreadRegistration = {
@@ -270,16 +398,52 @@ export async function ensureEmailThreadsRegistered(
     ),
   );
 
+  const missing: EmailThreadRegistration[] = [];
   for (const thread of unique.values()) {
     const key = emailThreadStatusLookupKey(thread.inboxId, thread.threadKey);
     if (existingKeys.has(key)) continue;
+    missing.push(thread);
+    existingKeys.add(key);
+  }
+  if (missing.length === 0) return;
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "./core-replication/leader-mutations.js"
+  );
+  if (
+    executor === db &&
+    shouldForwardMutationsToLeader()
+  ) {
+    const { commitRestEntityWriteBatch, buildEmailThreadRestPayload } =
+      await import("./rest-leader-write.js");
+    await commitRestEntityWriteBatch({
+      workspaceId,
+      changes: missing.map((thread) => {
+        const id = newId();
+        return {
+          entity: "email_thread" as const,
+          entityId: id,
+          operation: "upsert" as const,
+          payload: buildEmailThreadRestPayload(
+            id,
+            thread.inboxId,
+            thread.threadKey,
+            { status: "triage", priority: 0 },
+          ),
+        };
+      }),
+    });
+    return;
+  }
+
+  for (const thread of missing) {
     await getOrCreateEmailThreadMetadata(
       workspaceId,
       thread.inboxId,
       thread.threadKey,
       executor,
+      { skipLeaderFirst: executor !== db },
     );
-    existingKeys.add(key);
   }
 }
 
@@ -463,6 +627,10 @@ export async function updateEmailThreadMetadata(
   threadKey: string,
   input: UpdateEmailThreadMetadataInput,
   executor: DbExecutor = db,
+  /** When inserting a new thread row, use this id (sync / leader-first). */
+  id: string = newId(),
+  /** When inserting, prefer this display number from the leader snapshot. */
+  preferredNumber?: number,
 ): Promise<EmailThreadMetadata | null> {
   if (
     input.organizationId &&
@@ -502,6 +670,18 @@ export async function updateEmailThreadMetadata(
       : input.dueDate
         ? new Date(input.dueDate)
         : null;
+  let inboxUpdatedAt: Date | null | undefined = undefined;
+  if (
+    shouldClearInboxUpdatedOnUserWrite(input) ||
+    input.inboxUpdatedAt === null
+  ) {
+    inboxUpdatedAt = null;
+  } else if (typeof input.inboxUpdatedAt === "string") {
+    const parsed = new Date(input.inboxUpdatedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      inboxUpdatedAt = parsed;
+    }
+  }
   const patch = {
     organizationId:
       input.organizationId === undefined ? undefined : input.organizationId,
@@ -511,6 +691,7 @@ export async function updateEmailThreadMetadata(
     status: input.status,
     priority: input.priority,
     dueDate,
+    ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
     updatedAt: now,
   };
 
@@ -523,14 +704,18 @@ export async function updateEmailThreadMetadata(
     return row ? toEmailThreadMetadata(workspaceId, row) : null;
   }
 
+  const number =
+    typeof preferredNumber === "number" && Number.isInteger(preferredNumber)
+      ? preferredNumber
+      : await nextEmailThreadNumber(workspaceId, executor);
   const [row] = await executor
     .insert(emailThreads)
     .values({
-      id: newId(),
+      id,
       workspaceId,
       inboxId,
       threadKey,
-      number: await nextEmailThreadNumber(workspaceId, executor),
+      number,
       status: input.status ?? "triage",
       priority: input.priority ?? 0,
       dueDate: dueDate === undefined ? null : dueDate,
@@ -543,6 +728,50 @@ export async function updateEmailThreadMetadata(
     })
     .returning();
   return row ? toEmailThreadMetadata(workspaceId, row) : null;
+}
+
+/** Patch thread metadata leader-first when hybrid; otherwise local write + sync_event. */
+export async function patchEmailThreadMetadataLeaderAware(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+  patch: UpdateEmailThreadMetadataInput,
+): Promise<EmailThreadMetadata | null> {
+  const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
+  const { shouldForwardMutationsToLeader } = await import(
+    "./core-replication/leader-mutations.js"
+  );
+  if (shouldForwardMutationsToLeader()) {
+    const { commitRestEntityWrite, buildEmailThreadRestPayload } = await import(
+      "./rest-leader-write.js"
+    );
+    const id = existing?.id ?? newId();
+    await commitRestEntityWrite({
+      workspaceId,
+      entity: "email_thread",
+      entityId: id,
+      operation: "upsert",
+      payload: buildEmailThreadRestPayload(id, inboxId, threadKey, patch),
+    });
+    const row = await getEmailThreadRow(workspaceId, inboxId, threadKey);
+    return row ? toEmailThreadMetadata(workspaceId, row) : null;
+  }
+  const meta = await updateEmailThreadMetadata(
+    workspaceId,
+    inboxId,
+    threadKey,
+    patch,
+    db,
+    existing?.id,
+  );
+  if (meta) {
+    const row = await getEmailThreadById(workspaceId, meta.id);
+    if (row) {
+      const { recordEmailThreadRestSyncEvent } = await import("./sync.js");
+      await recordEmailThreadRestSyncEvent(workspaceId, row, "upsert");
+    }
+  }
+  return meta;
 }
 
 function toEmailThreadComment(row: DbEmailThreadComment): EmailThreadComment {
@@ -589,19 +818,25 @@ export async function createEmailThreadComment(
   inboxId: string,
   threadKey: string,
   input: { body: string; author?: "user" | "agent" },
+  id: string = newId(),
   executor: DbExecutor = db,
+  options?: { emailThreadId?: string },
 ): Promise<EmailThreadComment> {
   const metadata = await getOrCreateEmailThreadMetadata(
     workspaceId,
     inboxId,
     threadKey,
     executor,
+    {
+      id: options?.emailThreadId,
+      skipLeaderFirst: executor !== db,
+    },
   );
   const now = new Date();
   const [row] = await executor
     .insert(emailThreadComments)
     .values({
-      id: newId(),
+      id,
       workspaceId,
       emailThreadId: metadata.id,
       body: input.body.trim(),
@@ -663,8 +898,9 @@ export async function deleteEmailThreadLocal(
   workspaceId: string,
   inboxId: string,
   threadKey: string,
+  executor: DbExecutor = db,
 ): Promise<boolean> {
-  const deleted = await db
+  const deleted = await executor
     .delete(emailThreads)
     .where(
       and(
@@ -675,4 +911,46 @@ export async function deleteEmailThreadLocal(
     )
     .returning({ id: emailThreads.id });
   return deleted.length > 0;
+}
+
+/**
+ * Delete thread metadata leader-first when hybrid; otherwise local DELETE + sync_event.
+ * Twin LWW does not propagate hard deletes — callers must use this, not deleteEmailThreadLocal alone.
+ */
+export async function deleteEmailThreadLeaderAware(
+  workspaceId: string,
+  inboxId: string,
+  threadKey: string,
+): Promise<boolean> {
+  const existing = await getEmailThreadRow(workspaceId, inboxId, threadKey);
+  if (!existing) return false;
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "./core-replication/leader-mutations.js"
+  );
+  if (shouldForwardMutationsToLeader()) {
+    const { commitRestEntityWrite, buildEmailThreadRestPayload } = await import(
+      "./rest-leader-write.js"
+    );
+    await commitRestEntityWrite({
+      workspaceId,
+      entity: "email_thread",
+      entityId: existing.id,
+      operation: "delete",
+      payload: buildEmailThreadRestPayload(
+        existing.id,
+        inboxId,
+        threadKey,
+        {},
+      ),
+    });
+    return true;
+  }
+
+  const ok = await deleteEmailThreadLocal(workspaceId, inboxId, threadKey);
+  if (ok) {
+    const { recordEmailThreadRestSyncEvent } = await import("./sync.js");
+    await recordEmailThreadRestSyncEvent(workspaceId, existing, "delete");
+  }
+  return ok;
 }

@@ -9,8 +9,6 @@ import {
   WidgetType,
 } from "@codemirror/view";
 
-import { DOCUMENT_MARKER_COLOR } from "./document-editor-theme.js";
-
 /** Matches preview `ul { padding-left: 1.35em }` gutter for the disc. */
 export const LIST_BULLET_GUTTER = "1.35em";
 
@@ -87,7 +85,6 @@ class ListBulletWidget extends WidgetType {
 const bulletWidget = new ListBulletWidget();
 
 const listLineDeco = Decoration.line({ class: "cm-md-ul-item" });
-const editingMarkDeco = Decoration.mark({ class: "cm-list-mark-editing" });
 const bulletReplaceDeco = Decoration.replace({
   widget: bulletWidget,
   inclusive: false,
@@ -114,11 +111,6 @@ function buildListBulletDecorations(view: EditorView): DecorationSet {
           builder.add(line.from, line.from, listLineDeco);
         }
 
-        if (isCursorInRange(state, node.from, node.to)) {
-          builder.add(node.from, node.to, editingMarkDeco);
-          return;
-        }
-
         const replaceTo = listMarkReplaceTo(state, node.from, node.to);
         builder.add(node.from, replaceTo, bulletReplaceDeco);
       },
@@ -137,11 +129,7 @@ const listBulletPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (
-        update.docChanged ||
-        update.viewportChanged ||
-        update.selectionSet
-      ) {
+      if (update.docChanged || update.viewportChanged) {
         this.decorations = buildListBulletDecorations(update.view);
       }
     }
@@ -161,8 +149,8 @@ const listBulletPlugin = ViewPlugin.fromClass(
 
 /**
  * Preview-parity unordered lists in the markdown editor:
- * disc in a left gutter (no negative text-indent / clipping), raw `-`
- * revealed only while the caret is on the marker.
+ * disc in a left gutter (no negative text-indent / clipping). Markers stay
+ * replaced by the bullet widget so caret moves do not wiggle line layout.
  */
 export const documentEditorListBullets = [
   listBulletPlugin,
@@ -198,10 +186,6 @@ export const documentEditorListBullets = [
       height: "0.34em",
       borderRadius: "999px",
       backgroundColor: "currentColor",
-    },
-    ".cm-list-mark-editing": {
-      color: DOCUMENT_MARKER_COLOR,
-      fontWeight: "600",
     },
   }),
 ];

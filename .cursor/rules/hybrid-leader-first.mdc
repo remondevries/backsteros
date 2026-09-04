@@ -1,0 +1,17 @@
+---
+description: Hybrid leader-first write checklist for new core/server mutations
+globs: core/server/**/*.ts
+alwaysApply: false
+---
+
+# Hybrid leader-first checklist
+
+When adding or changing a **write** in `core/server/` (REST, PowerSync apply, ensure/seed, runner):
+
+1. **Shared IDs?** If the write invents or mutates a workspace row both cores see, use **cloud leader first** (`commitRestEntityWrite` / `commitRestEntityWriteBatch` / PowerSync upload → leader) so ordered `sync_events` exist. Do not INSERT on GET/list/ensure on local-core.
+2. **Apply path?** New `SYNC_ENTITIES` values need `applySyncChange` create + update + delete (or document why not).
+3. **Background spawner?** Run on cloud leader only (`CORE_REPLICATION_ROLE !== "local"`), same pattern as recurring tasks.
+4. **Twin-only OK?** Only if listed in [docs/13-hybrid-cloud-local-core.md](../../docs/13-hybrid-cloud-local-core.md) (push tokens, scheduling settings, attachment/PDF bytes, import batches, integration secrets). Do not silently add new twin-only invent-on-list paths.
+5. **Tests:** Extend `core/server/src/services/hybrid-write-bar.test.ts` (and the relevant `*-sync.test.ts`) so the new path cannot regress to local-first.
+
+Product bugs: investigate the failing write path first — do not start another open-ended hybrid sweep.

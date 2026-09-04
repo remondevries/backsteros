@@ -12,6 +12,7 @@ import {
   isTaskStatus,
   migrateLegacyProjectStatus,
   migrateLegacyTaskStatus,
+  normalizeContactSocialAccounts,
   type EmailListItem,
   type MentionCatalog,
   type MentionCatalogContact,
@@ -52,7 +53,10 @@ function mapWorkspaceLetter(
 ): MentionCatalogLetter {
   return {
     id: letter.id,
-    displayId: formatLetterDisplayId(letter.number),
+    displayId:
+      letter.number != null
+        ? formatLetterDisplayId(letter.number)
+        : letter.id,
     title: letter.title,
     status: isTaskStatus(letter.status)
       ? letter.status
@@ -194,6 +198,7 @@ export function buildMentionCatalogFromWorkspace(
     | "allTasks"
     | "projects"
     | "contacts"
+    | "contactDetails"
     | "organizations"
     | "knowledgeDocuments"
     | "projectDocuments"
@@ -260,51 +265,81 @@ export function buildMentionCatalogFromWorkspace(
   );
 
   const contacts: MentionCatalogContact[] = workspace.contacts
-    .filter((contact): contact is typeof contact & { key: string } =>
-      Boolean(contact.key),
-    )
     .map((contact) => {
+      // Prefer stable slug key; fall back to id so contacts without a key
+      // still appear in @ mention results (href resolution accepts id).
+      const key = (contact.key?.trim() || contact.id).trim();
+      if (!key) return null;
       const organization = contact.organizationId
         ? organizationsById.get(contact.organizationId)
         : null;
+      const details = workspace.contactDetails[contact.id];
+      const socialAccounts = normalizeContactSocialAccounts(
+        details?.socialAccounts ?? contact.socialAccounts,
+      );
       return {
         id: contact.id,
-        key: contact.key,
+        key,
         number: contact.number ?? null,
         displayId:
-          contact.number != null ? `C-${contact.number}` : contact.key,
+          contact.number != null ? `C-${contact.number}` : key,
         name: contact.name,
-        email: contact.email ?? null,
-        title: contact.title ?? null,
-        summary: null,
+        firstName:
+          contact.firstName ?? details?.firstName ?? null,
+        lastName: contact.lastName ?? details?.lastName ?? null,
+        email: details?.email ?? contact.email ?? null,
+        emails: (details?.emails as MentionCatalogContact["emails"]) ??
+          contact.emails ??
+          null,
+        phone: details?.phone ?? contact.phone ?? null,
+        phones: (details?.phones as MentionCatalogContact["phones"]) ??
+          contact.phones ??
+          null,
+        title: details?.title ?? contact.title ?? null,
+        summary: details?.summary ?? null,
+        address: details?.address ?? contact.address ?? null,
+        city: details?.city ?? contact.city ?? null,
+        postalCode: details?.postalCode ?? contact.postalCode ?? null,
+        region: details?.region ?? contact.region ?? null,
+        country: details?.country ?? contact.country ?? null,
+        socialAccounts: socialAccounts.length > 0 ? socialAccounts : null,
         avatarStorageKey: contact.avatarStorageKey ?? null,
         avatarUpdatedAt: contact.avatarUpdatedAt ?? 0,
+        avatarSrc: contact.avatarSrc ?? null,
         organizationId: contact.organizationId ?? null,
-        organizationKey: organization?.key ?? null,
+        organizationKey:
+          organization?.key?.trim() || organization?.id || null,
         organizationName:
           contact.organizationName ?? organization?.name ?? null,
+        organizationAvatarSrc: organization?.avatarSrc ?? null,
       };
-    });
+    })
+    .filter((contact): contact is MentionCatalogContact => contact != null);
 
   const organizations: MentionCatalogOrganization[] = workspace.organizations
+    .map((organization) => {
+      const key = (organization.key?.trim() || organization.id).trim();
+      if (!key) return null;
+      return {
+        id: organization.id,
+        key,
+        number: organization.number ?? null,
+        displayId:
+          organization.number != null
+            ? `O-${organization.number}`
+            : key,
+        name: organization.name,
+        email: null,
+        summary: null,
+        avatarStorageKey: organization.avatarStorageKey ?? null,
+        avatarUpdatedAt: organization.avatarUpdatedAt ?? 0,
+        avatarSrc: organization.avatarSrc ?? null,
+      };
+    })
     .filter(
-      (organization): organization is typeof organization & { key: string } =>
-        Boolean(organization.key),
-    )
-    .map((organization) => ({
-      id: organization.id,
-      key: organization.key,
-      number: organization.number ?? null,
-      displayId:
-        organization.number != null
-          ? `O-${organization.number}`
-          : organization.key,
-      name: organization.name,
-      email: null,
-      summary: null,
-      avatarStorageKey: organization.avatarStorageKey ?? null,
-      avatarUpdatedAt: organization.avatarUpdatedAt ?? 0,
-    }));
+      (organization): organization is MentionCatalogOrganization =>
+        organization != null,
+    );
 
   const documents: MentionCatalogDocument[] = [];
 

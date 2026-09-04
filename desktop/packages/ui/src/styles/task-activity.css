@@ -1240,11 +1240,21 @@ button.crm-activity-event__marker--add:hover {
 }
 
 .crm-activity-event__marker--meeting {
-  background: color-mix(in srgb, #d2a8ff 22%, var(--background, #0d0d0d));
-  color: #d2a8ff;
+  background: color-mix(in srgb, #da615d 22%, var(--background, #0d0d0d));
+  color: #da615d;
 }
 
 .crm-activity-event__marker--task {
+  background: color-mix(in srgb, #3fb950 22%, var(--background, #0d0d0d));
+  color: #3fb950;
+}
+
+.crm-activity-event__marker--task-assigned {
+  background: color-mix(in srgb, #58a6ff 22%, var(--background, #0d0d0d));
+  color: #58a6ff;
+}
+
+.crm-activity-event__marker--task-related {
   background: color-mix(in srgb, #3fb950 22%, var(--background, #0d0d0d));
   color: #3fb950;
 }

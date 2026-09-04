@@ -15,6 +15,7 @@ import {
 import {
   createMentionExtensions,
   MentionMenuController,
+  namedLinkDecorations,
 } from "../../mentions/codemirror/index.js";
 import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
 import type {
@@ -108,14 +109,14 @@ function createSpellcheckHighlightExtensions(
   ];
 }
 
-function ensureDocumentEditorNormalMode(view: EditorView) {
+function ensureDocumentEditorInsertMode(view: EditorView) {
   const cm = getCM(view);
   const vimState = cm?.state.vim;
-  if (!cm || !vimState?.insertMode) {
+  if (!cm || vimState?.insertMode) {
     return;
   }
 
-  Vim.exitInsertMode(cm as Parameters<typeof Vim.exitInsertMode>[0]);
+  Vim.handleKey(cm as Parameters<typeof Vim.handleKey>[0], "i");
 }
 
 function focusEditorView(view: EditorView, vimEnabled: boolean): void {
@@ -129,8 +130,9 @@ function focusEditorView(view: EditorView, vimEnabled: boolean): void {
   if (view.hasFocus && !view.dom.classList.contains("cm-focused")) {
     view.update([]);
   }
+  // Prose editors should open ready to type (thin caret), not vim normal block.
   if (!wasAlreadyFocused && vimEnabled) {
-    ensureDocumentEditorNormalMode(view);
+    ensureDocumentEditorInsertMode(view);
   }
 }
 
@@ -197,43 +199,22 @@ function measureEmptyCaretBox(
     return null;
   }
 
-  const cm = getCM(view);
-  const insertMode = Boolean(cm?.state.vim?.insertMode);
-  // Prefer the live vim fat-cursor box (even when we hide it) so size matches.
-  const fat = view.dom.querySelector(
-    ".cm-vimCursorLayer .cm-fat-cursor",
-  ) as HTMLElement | null;
   const charWidth = Math.max(1, view.defaultCharacterWidth || 8);
-  // Insert mode uses a thin bar (~CM .cm-cursor); normal mode uses a full cell.
-  const width = insertMode
-    ? Math.max(2, Math.round(charWidth * 0.2))
-    : fat && fat.offsetWidth > 4
-      ? fat.offsetWidth
-      : Math.round(charWidth);
+  // Always mimic CodeMirror's thin insert caret — never the vim block cell.
+  const width = Math.max(2, Math.round(charWidth * 0.12));
 
-  // Vim uses coords bottom-top only — do not expand to defaultLineHeight
-  // (line-height 1.75 makes that taller than the real block).
-  const height =
-    fat && fat.offsetHeight > 0
-      ? fat.offsetHeight
-      : Math.max(1, Math.round(coords.bottom - coords.top));
+  const height = Math.max(1, Math.round(coords.bottom - coords.top));
 
   const rootRect = root.getBoundingClientRect();
-  const top =
-    fat && fat.offsetParent
-      ? fat.getBoundingClientRect().top - rootRect.top + root.scrollTop
-      : coords.top - rootRect.top + root.scrollTop;
-  const left =
-    fat && fat.offsetParent
-      ? fat.getBoundingClientRect().left - rootRect.left + root.scrollLeft
-      : coords.left - rootRect.left + root.scrollLeft;
+  const top = coords.top - rootRect.top + root.scrollTop;
+  const left = coords.left - rootRect.left + root.scrollLeft;
 
   return {
     left,
     top,
     height,
     width,
-    insertMode,
+    insertMode: true,
   };
 }
 
@@ -283,6 +264,7 @@ export function DocumentMarkdownEditor({
       documentEditorSyntaxHighlighting,
       createDocumentEditorContentLayoutTheme(scrollWithContent),
       ...documentEditorListBullets,
+      ...namedLinkDecorations,
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
       ...(mentionsEnabled ? createMentionExtensions(mentionController) : []),

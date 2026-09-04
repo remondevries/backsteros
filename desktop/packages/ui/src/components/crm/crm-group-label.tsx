@@ -31,6 +31,8 @@ export type CrmGroupLabelProps = {
   name: string;
   color?: string | null;
   className?: string;
+  /** Denser chip for list rows (task-row style). */
+  compact?: boolean;
 };
 
 /** Pill label with color dot + name (chip / tag style). */
@@ -38,12 +40,19 @@ export function CrmGroupLabel({
   name,
   color,
   className = "",
+  compact = false,
 }: CrmGroupLabelProps) {
   return (
     <span
-      className={["crm-group-label", className].filter(Boolean).join(" ")}
+      className={[
+        "crm-group-label",
+        compact ? "crm-group-label--compact" : null,
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
-      <CrmGroupColorDot color={color} />
+      <CrmGroupColorDot color={color} size={compact ? 6 : 8} />
       <span className="crm-group-label__name">{name}</span>
     </span>
   );

@@ -36,17 +36,26 @@ export function ContactDetailRoute({ contactId: id }: Props) {
     mapLocal: (synced) => synced.map((row) => ({ name: row.name })),
     fetchRest: async () => {
       if (!id) return [];
-      const body = await client.requestJson<{ contacts: Contact[] }>(
-        "/api/v1/contacts",
-      );
-      const match = (body.contacts ?? []).find((contact) => contact.id === id);
-      return match ? [{ name: match.name ?? null }] : [];
+      try {
+        const contact = await client.requestJson<Contact>(
+          `/api/v1/contacts/${encodeURIComponent(id)}`,
+        );
+        return [{ name: contact.name ?? null }];
+      } catch {
+        const body = await client.requestJson<{ contacts: Contact[] }>(
+          "/api/v1/contacts",
+        );
+        const match = (body.contacts ?? []).find((contact) => contact.id === id);
+        return match ? [{ name: match.name ?? null }] : [];
+      }
     },
   });
 
-  const title = rows[0]?.name ?? "Contact";
+  const title = rows[0]?.name?.trim() || "Contact";
 
-  if (loading) {
+  // Keep the detail shell mounted once we have an id — flipping loading→screen
+  // remounts tabs/hooks and can trip React Navigation update-depth loops.
+  if (!id) {
     return (
       <View style={ui.centered}>
         <ActivityIndicator color={colors.muted} />
@@ -55,6 +64,9 @@ export function ContactDetailRoute({ contactId: id }: Props) {
   }
 
   return (
-    <ContactDetailScreen contactId={id} title={title || "Untitled"} />
+    <ContactDetailScreen
+      contactId={id}
+      title={loading && !rows[0] ? "Contact" : title}
+    />
   );
 }

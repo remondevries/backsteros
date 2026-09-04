@@ -27,7 +27,7 @@ type ShellChromeProps = {
   pathname: string;
   sidebarActivePathname: string;
   inboxSidebarIndicator: ReturnType<
-    typeof import("@backsteros/ui/inbox").resolveInboxSidebarIndicator
+    typeof import("@backsteros/ui/inbox").resolveInboxSidebarIndicatorTone
   >;
   sidePanel: ReactNode;
   showSidePanel: boolean;
@@ -80,7 +80,7 @@ function ShellChromeInner({
           canGoBack={history.canGoBack}
           canGoForward={history.canGoForward}
           footer={<CursorCreditsUsageBar />}
-          inboxIndicator={inboxSidebarIndicator}
+          inboxIndicatorTone={inboxSidebarIndicator}
           recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
             const display = resolveHistoryEntryDisplay(page.href, page.title);
             return {

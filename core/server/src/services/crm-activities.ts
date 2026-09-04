@@ -12,7 +12,7 @@ import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import { crmActivities, meetings } from "../db/schema.js";
-import { newId } from "../lib/crypto.js";
+import { meetingCrmActivityId, newId } from "../lib/crypto.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -80,11 +80,51 @@ function decodeFeedCursor(
   }
 }
 
+export async function getCrmActivityById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<CrmActivity | null> {
+  const [row] = await executor
+    .select()
+    .from(crmActivities)
+    .where(
+      and(
+        eq(crmActivities.workspaceId, workspaceId),
+        eq(crmActivities.id, id),
+        isNull(crmActivities.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ? mapActivityRow(row) : null;
+}
+
+export async function softDeleteCrmActivity(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<boolean> {
+  const now = new Date();
+  const [row] = await executor
+    .update(crmActivities)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(crmActivities.workspaceId, workspaceId),
+        eq(crmActivities.id, id),
+        isNull(crmActivities.deletedAt),
+      ),
+    )
+    .returning();
+  return Boolean(row);
+}
+
 export async function createCrmActivityNote(
   workspaceId: string,
   subject: CrmActivitySubject,
   input: CreateCrmActivityNoteInput,
   createdBy?: string | null,
+  entityId?: string,
   executor: DbExecutor = db,
 ): Promise<CrmActivity> {
   const body = input.body.trim();
@@ -95,7 +135,7 @@ export async function createCrmActivityNote(
   if (Number.isNaN(occurredAt.getTime())) {
     throw new Error("INVALID_OCCURRED_AT");
   }
-  const id = newId();
+  const id = entityId ?? newId();
   const [row] = await executor
     .insert(crmActivities)
     .values({
@@ -245,7 +285,11 @@ export async function syncMeetingCrmActivities(
       continue;
     }
     await executor.insert(crmActivities).values({
-      id: newId(),
+      id: meetingCrmActivityId(
+        input.meetingId,
+        subject.subjectType,
+        subject.subjectId,
+      ),
       workspaceId,
       subjectType: subject.subjectType,
       subjectId: subject.subjectId,
@@ -257,6 +301,103 @@ export async function syncMeetingCrmActivities(
       createdBy: null,
     });
   }
+}
+
+export async function listCrmActivitiesForMeeting(
+  workspaceId: string,
+  meetingId: string,
+  executor: DbExecutor = db,
+): Promise<Array<typeof crmActivities.$inferSelect>> {
+  return executor
+    .select()
+    .from(crmActivities)
+    .where(
+      and(
+        eq(crmActivities.workspaceId, workspaceId),
+        eq(crmActivities.meetingId, meetingId),
+        eq(crmActivities.kind, "meeting"),
+      ),
+    );
+}
+
+export function crmActivityToSyncPayload(
+  row: typeof crmActivities.$inferSelect,
+): Record<string, unknown> {
+  return {
+    id: row.id,
+    subject_type: row.subjectType,
+    subject_id: row.subjectId,
+    kind: row.kind,
+    body: row.body,
+    body_preview: row.bodyPreview,
+    meeting_id: row.meetingId,
+    occurred_at: row.occurredAt.toISOString(),
+    created_by: row.createdBy,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    deleted_at: row.deletedAt?.toISOString() ?? null,
+  };
+}
+
+export async function upsertMeetingKindCrmActivity(
+  workspaceId: string,
+  input: {
+    id: string;
+    subjectType: CrmGroupSubjectType;
+    subjectId: string;
+    meetingId: string;
+    occurredAt: string;
+    deletedAt?: string | null;
+  },
+  executor: DbExecutor = db,
+): Promise<void> {
+  const occurredAt = new Date(input.occurredAt);
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new Error("INVALID_OCCURRED_AT");
+  }
+  const deletedAt =
+    input.deletedAt != null && input.deletedAt !== ""
+      ? new Date(input.deletedAt)
+      : null;
+  const now = new Date();
+  const [existing] = await executor
+    .select({ id: crmActivities.id })
+    .from(crmActivities)
+    .where(
+      and(
+        eq(crmActivities.workspaceId, workspaceId),
+        eq(crmActivities.id, input.id),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await executor
+      .update(crmActivities)
+      .set({
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        kind: "meeting",
+        meetingId: input.meetingId,
+        occurredAt,
+        deletedAt,
+        updatedAt: now,
+      })
+      .where(eq(crmActivities.id, input.id));
+    return;
+  }
+  await executor.insert(crmActivities).values({
+    id: input.id,
+    workspaceId,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    kind: "meeting",
+    body: null,
+    bodyPreview: null,
+    meetingId: input.meetingId,
+    occurredAt,
+    createdBy: null,
+    deletedAt,
+  });
 }
 
 export async function softDeleteMeetingCrmActivities(

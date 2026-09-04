@@ -1,0 +1,168 @@
+.social-side-panel__avatar-stack {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.social-side-panel__avatar-fallback {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.social-side-panel__avatar-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  z-index: 1;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--background, #fff);
+  background: var(--background, #fff);
+  color: var(--foreground);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.social-platform-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.social-platform-icon--linkedin {
+  color: #0a66c2;
+}
+
+.social-platform-icon--x {
+  color: var(--foreground);
+}
+
+.social-platform-icon--instagram {
+  color: #e1306c;
+}
+
+.social-platform-icon--github {
+  color: var(--foreground);
+}
+
+.social-platform-icon--website,
+.social-platform-icon--other {
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.social-contact-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 36rem;
+  padding: 2rem 2.5rem 3rem;
+}
+
+.social-contact-detail__avatar {
+  margin-bottom: 4px;
+}
+
+.social-contact-detail__avatar-img,
+.social-contact-detail__avatar-fallback {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.social-contact-detail__avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+
+.social-contact-detail__name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.social-contact-detail__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
+.social-contact-detail__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.social-contact-detail__link {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+
+.social-contact-detail__link:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.social-contact-detail__summary {
+  margin: 8px 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  white-space: pre-wrap;
+}
+
+.social-contact-detail__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.social-contact-detail__meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
+.social-contact-detail__meta-row svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

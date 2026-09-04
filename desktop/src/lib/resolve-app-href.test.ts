@@ -26,10 +26,11 @@ test("resolveAppHref expands section roots from the entry store", () => {
     knowledge: "/knowledge/note",
   });
   assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
-  assert.equal(formatResolvedAppHref(resolveAppHref("/contacts")), "/contacts/1");
+  // Contacts / organizations catalogs stay on the list root.
+  assert.equal(formatResolvedAppHref(resolveAppHref("/contacts")), "/contacts");
   assert.equal(
     formatResolvedAppHref(resolveAppHref("/organizations")),
-    "/organizations/2",
+    "/organizations",
   );
   assert.equal(formatResolvedAppHref(resolveAppHref("/letters")), "/letters/l-3");
   assert.equal(

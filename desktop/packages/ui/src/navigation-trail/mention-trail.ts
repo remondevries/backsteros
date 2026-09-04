@@ -75,28 +75,12 @@ function mentionTrailRef(
         routeParam: project.key,
       };
     }
-    case "contact": {
-      const contact = catalog.contacts.find(
-        (entry) => entry.key.toLowerCase() === parsed.key.toLowerCase(),
-      );
-      if (!contact) return null;
-      return {
-        kind: "contact",
-        entityId: contact.id,
-        routeParam: contact.key,
-      };
-    }
-    case "organization": {
-      const organization = catalog.organizations.find(
-        (entry) => entry.key.toLowerCase() === parsed.key.toLowerCase(),
-      );
-      if (!organization) return null;
-      return {
-        kind: "organization",
-        entityId: organization.id,
-        routeParam: organization.key,
-      };
-    }
+    case "contact":
+    case "organization":
+      // Contacts/orgs always open their section page (`/contacts/…`). Appending a
+      // trail node from a keep-alive document only pushStates the URL — the shell
+      // trail outlet never mounts — so the chip appears to do nothing.
+      return null;
     case "document": {
       const document = catalog.documents.find(
         (entry) =>

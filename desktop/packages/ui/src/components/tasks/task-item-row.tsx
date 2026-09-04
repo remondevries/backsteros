@@ -29,7 +29,6 @@ import {
 import { keyboardNavItemProps, keyboardNavListItemClass } from "../../list-nav/keyboard-nav-item.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
 import { stopFieldEvent } from "../../shared/stop-field-event.js";
-import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import {
   getTaskStatusLabel,
   migrateLegacyTaskStatus,
@@ -54,7 +53,6 @@ import { InboxItemTypeIcon } from "../inbox/inbox-item-type-icon.js";
 import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
 import { ShimmerText } from "../shared/shimmer-text.js";
-import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { Tooltip } from "../shared/tooltip.js";
 
@@ -76,6 +74,10 @@ export type TaskItemRowTask = {
   projectName?: string | null;
   contactId?: string | null;
   assigneeId?: string | null;
+  /** Contacts this task is about / for (Related property). */
+  relatedContactIds?: string[] | null;
+  /** Organizations this task is about / for (Related property). */
+  relatedOrganizationIds?: string[] | null;
   ownerInitials?: string | null;
   sortOrder?: number;
   /** Epoch ms when known — used to refresh activity feeds after patches. */
@@ -297,7 +299,7 @@ function TaskItemRowComponent({
     dueDatePlacement === "leading" ||
     chromeOrder === "timetracking" ||
     hasLeadingStamp;
-  const showLeadingPriority = showPriority && !leadingDue;
+  const showLeadingPriority = showPriority && !leadingDue && !isMeeting;
   const showTrailingDue = showDueMeta && !leadingDue && !hasLeadingStamp;
   const iconBeforeId = chromeOrder === "timetracking";
   const statusOptions = TASK_ROW_STATUS_OPTIONS;
@@ -541,23 +543,13 @@ function TaskItemRowComponent({
             onMouseDown={stopFieldEvent}
             onClick={stopFieldEvent}
           >
-            {isMeeting && !onPriorityChange ? (
-              <span
-                className="task-item-row__icon-trigger"
-                title={getTaskPriorityLabel(task.priority)}
-                aria-label={getTaskPriorityLabel(task.priority)}
-              >
-                <TaskPriorityIcon priority={task.priority} size={14} />
-              </span>
-            ) : (
-              <TaskListPropertyFields
-                entityId={task.id}
-                priority={task.priority}
-                showDue={false}
-                onPriorityChange={onPriorityChange}
-                fieldClassName="task-item-row__dropdown"
-              />
-            )}
+            <TaskListPropertyFields
+              entityId={task.id}
+              priority={task.priority}
+              showDue={false}
+              onPriorityChange={onPriorityChange}
+              fieldClassName="task-item-row__dropdown"
+            />
           </span>
         ) : null}
 

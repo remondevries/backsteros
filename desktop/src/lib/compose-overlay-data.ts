@@ -137,6 +137,7 @@ export async function createComposeOverlayTask(
   client: BacksterosApiClient,
   input: ComposeModalCreateTaskInput,
   projectsById: Map<string, { id: string; key: string; name: string }>,
+  options?: { fromTasksDueList?: boolean },
 ): Promise<{ href: string }> {
   const title = input.title.trim();
   if (!title) {
@@ -165,20 +166,24 @@ export async function createComposeOverlayTask(
     return { href: `/tasks/${task.id}` };
   }
 
+  const fromTasksDueList = options?.fromTasksDueList === true;
   const body = {
     title,
     ...(input.description?.trim()
       ? { description: input.description.trim() }
       : {}),
-    status: input.status ?? "triage",
+    status: input.status ?? (fromTasksDueList ? "ready_to_start" : "triage"),
     priority: input.priority ?? 0,
     sortOrder: Date.now(),
     assigneeId: resolveCreateAssigneeId(input.assigneeId),
     dueDate: toApiDueDateIso(input.dueDate),
-    inbox: true,
+    inbox: !fromTasksDueList,
     projectId: null,
   };
   const task = await createTaskWithAssigneeFallback(client, body);
+  if (fromTasksDueList) {
+    return { href: `/tasks/${task.id}` };
+  }
   if (task.number != null) {
     return { href: getInboxTaskRouteHref({ number: task.number }) };
   }

@@ -5,14 +5,21 @@ export type OrganizationListItem = {
   key?: string | null;
   avatarStorageKey?: string | null;
   avatarUpdatedAt?: number | null;
+  /** Epoch ms for recency (command palette recent list). */
+  updatedAt?: number | null;
   avatarSrc?: string | null;
   /** Linked Moneybird contact id when set. */
   moneybirdContactId?: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+  country?: string | null;
 };
 
 export function getOrganizationsHref(numberOrId?: number | string): string {
   if (numberOrId == null) return "/organizations";
-  return `/organizations/${numberOrId}`;
+  return `/organizations/${encodeURIComponent(String(numberOrId))}`;
 }
 
 export function getSelectedOrganizationSlugFromPathname(
@@ -101,17 +108,37 @@ export type ContactListItem = {
   email?: string | null;
   /** Additional addresses beyond primary `email`. */
   emails?: Array<{ label: "personal" | "work" | "other"; address: string }> | null;
+  phone?: string | null;
+  /** Labeled numbers including primary (`{ label, number }[]`). */
+  phones?: Array<{ label: "personal" | "work" | "other"; number: string }> | null;
   title?: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+  country?: string | null;
   avatarStorageKey?: string | null;
   avatarUpdatedAt?: number | null;
+  /** Epoch ms for recency (command palette recent list). */
+  updatedAt?: number | null;
   avatarSrc?: string | null;
   /** YYYY-MM-DD birthday for calendar markers. */
   birthday?: string | null;
+  /** Preferred languages for Details chips. */
+  languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl"> | null;
+  /** Social profiles for list chips (right side of overview rows). */
+  socialAccounts?: Array<{ platform: string; url: string }> | null;
+  /** CRM groups for list chips (right side of overview rows). */
+  groups?: Array<{
+    id: string;
+    name: string;
+    color?: string | null;
+  }> | null;
 };
 
 export function getContactsHref(numberOrId?: number | string): string {
   if (numberOrId == null) return "/contacts";
-  return `/contacts/${numberOrId}`;
+  return `/contacts/${encodeURIComponent(String(numberOrId))}`;
 }
 
 /**
@@ -141,6 +168,33 @@ export function getUniqueListItemRouteParam(
     }
   }
   return item.id;
+}
+
+/**
+ * Resolve a route slug to at most one list item. Ambiguous number/key matches
+ * (duplicate keys from local-first creates) return null instead of the wrong row.
+ */
+export function resolveListItemFromSlug<
+  T extends { id: string; number?: number | null; key?: string | null },
+>(items: readonly T[], slug: string | null): T | null {
+  if (!slug) return null;
+
+  const byId = items.find((item) => item.id === slug);
+  if (byId) return byId;
+
+  const byNumber = items.filter(
+    (item) => item.number != null && String(item.number) === slug,
+  );
+  if (byNumber.length === 1) return byNumber[0]!;
+
+  const normalized = slug.toLowerCase();
+  const byKey = items.filter(
+    (item) =>
+      item.key != null && item.key.toLowerCase() === normalized,
+  );
+  if (byKey.length === 1) return byKey[0]!;
+
+  return null;
 }
 
 export function getSelectedContactSlugFromPathname(

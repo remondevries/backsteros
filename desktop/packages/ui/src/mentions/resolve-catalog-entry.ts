@@ -1,3 +1,4 @@
+import { parseContactSlug } from "../navigation/resolve-history-entry-display.js";
 import type { ParsedMentionToken } from "./mention-tokens.js";
 import type {
   MentionCatalog,
@@ -9,6 +10,33 @@ import type {
   MentionCatalogProject,
   MentionCatalogTask,
 } from "./mention-menu-types.js";
+
+/** Match a contact mention ref: `C-12`, legacy slug key, or uuid. */
+export function contactMatchesMentionRef(
+  contact: {
+    id?: string;
+    key: string;
+    number?: number | null;
+    displayId?: string | null;
+  },
+  ref: string,
+): boolean {
+  const normalized = ref.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (contact.key.toLowerCase() === normalized) {
+    return true;
+  }
+  if (contact.id && contact.id.toLowerCase() === normalized) {
+    return true;
+  }
+  if (contact.displayId && contact.displayId.toLowerCase() === normalized) {
+    return true;
+  }
+  const fromSlug = parseContactSlug(ref);
+  return fromSlug != null && contact.number === fromSlug;
+}
 
 export function resolveMentionCatalogTask(
   parsed: ParsedMentionToken,
@@ -50,8 +78,8 @@ export function resolveMentionCatalogContact(
   }
 
   return (
-    catalog.contacts.find(
-      (entry) => entry.key.toLowerCase() === parsed.key.toLowerCase(),
+    catalog.contacts.find((entry) =>
+      contactMatchesMentionRef(entry, parsed.key),
     ) ?? null
   );
 }
@@ -99,7 +127,8 @@ export function resolveMentionCatalogLetter(
   return (
     catalog.letters.find(
       (entry) =>
-        entry.displayId.toLowerCase() === parsed.displayId.toLowerCase(),
+        entry.displayId.toLowerCase() === parsed.displayId.toLowerCase() ||
+        entry.id.toLowerCase() === parsed.displayId.toLowerCase(),
     ) ?? null
   );
 }

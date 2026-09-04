@@ -10,7 +10,8 @@ import {
 } from "../../lib/moneybird-client.js";
 import { newId } from "../../lib/crypto.js";
 import { getMoneybirdCredentials } from "../moneybird-settings.js";
-import { getBankAccountById } from "./finance.js";
+import { getBankAccountById, commitFinancialTransactionCreates } from "./finance.js";
+import type { FinancialTransactionSyncCreateInput } from "./finance.js";
 import { mapMoneybirdMutationToLedgerRow } from "./moneybird-sync-map.js";
 
 export {
@@ -119,7 +120,9 @@ export async function syncBankAccountFromMoneybird(
   const missingIds = remoteIds.filter((id) => !existingIds.has(id));
   const duplicates = fetched - missingIds.length;
 
-  let inserted = 0;
+  const pending: Array<{ id: string } & FinancialTransactionSyncCreateInput> =
+    [];
+
   for (const idChunk of chunkIds(missingIds, MUTATION_FETCH_CHUNK)) {
     const mutations = await client.fetchFinancialMutationsByIds(idChunk);
     for (const mutation of mutations) {
@@ -131,38 +134,31 @@ export async function syncBankAccountFromMoneybird(
         continue;
       }
       const ledger = mapMoneybirdMutationToLedgerRow(mutation, account.type);
-      const result = await db
-        .insert(financialTransactions)
-        .values({
-          id: newId(),
-          workspaceId,
-          bankAccountId,
-          bookedOn: ledger.bookedOn,
-          amountCents: ledger.amountCents,
-          currency: ledger.currency,
-          payee: ledger.payee,
-          counterparty: ledger.counterparty,
-          memo: ledger.memo,
-          balanceAfterCents: null,
-          externalId: ledger.externalId,
-          fingerprint: ledger.fingerprint,
-          sourceCode: ledger.sourceCode,
-          sourceType: ledger.sourceType,
-          raw: ledger.raw,
-        })
-        .onConflictDoNothing({
-          target: [
-            financialTransactions.bankAccountId,
-            financialTransactions.fingerprint,
-          ],
-        })
-        .returning({ id: financialTransactions.id });
-      if (result.length > 0) {
-        inserted++;
-        existingIds.add(mutation.id);
-      }
+      const id = newId();
+      pending.push({
+        id,
+        bankAccountId,
+        bookedOn: ledger.bookedOn,
+        amountCents: ledger.amountCents,
+        currency: ledger.currency,
+        payee: ledger.payee,
+        counterparty: ledger.counterparty,
+        memo: ledger.memo,
+        balanceAfterCents: null,
+        externalId: ledger.externalId,
+        fingerprint: ledger.fingerprint,
+        sourceCode: ledger.sourceCode,
+        sourceType: ledger.sourceType,
+        raw: ledger.raw,
+      });
+      existingIds.add(mutation.id);
     }
   }
+
+  const inserted = await commitFinancialTransactionCreates(
+    workspaceId,
+    pending,
+  );
 
   const lastSyncedAt = new Date();
   await db
@@ -181,7 +177,7 @@ export async function syncBankAccountFromMoneybird(
     moneybirdFinancialAccountId,
     fetched,
     inserted,
-    duplicates: duplicates + (missingIds.length - inserted),
+    duplicates: duplicates + (pending.length - inserted),
     lastSyncedAt: lastSyncedAt.toISOString(),
   };
 }

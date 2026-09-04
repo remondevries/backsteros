@@ -452,6 +452,7 @@ export function MeetingDetailScreen({ meetingId }: Props) {
       />
       <AttendeesPropertySheet
         visible={picker === "attendees"}
+        searchPlaceholder="Search contacts…"
         options={attendeeOptions}
         selectedIds={attendeeIds}
         onChange={(ids) => {

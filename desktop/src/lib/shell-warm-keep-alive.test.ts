@@ -4,6 +4,7 @@ import { afterEach, test } from "node:test";
 import {
   dismissKeepAliveForOutletNavigation,
   getVisibleKeepAliveSurface,
+  getWarmKeepAliveEpoch,
   isWarmKeepAliveSectionFlip,
   keepAliveDestinationShowsSidePanel,
   keepAliveSidePanelSurface,
@@ -65,6 +66,16 @@ test("same mounted surface is not a warm section flip", () => {
   assert.equal(isWarmKeepAliveSectionFlip("/tasks"), false);
   assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
   assert.equal(tryWarmKeepAliveFlip("/tasks?due=overdue"), true);
+});
+
+test("same-href warm flip does not bump the epoch", () => {
+  markKeepAliveSurfaceMounted("tasks-list");
+  rememberKeepAliveHref("tasks-list", "/tasks", "");
+  syncVisibleKeepAliveSurfaceFromRoute("tasks-list");
+  assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
+  const epochAfterFirst = getWarmKeepAliveEpoch();
+  assert.equal(tryWarmKeepAliveFlip("/tasks"), true);
+  assert.equal(getWarmKeepAliveEpoch(), epochAfterFirst);
 });
 
 test("mounted knowledge and letters warm-flip from tasks", () => {
@@ -229,6 +240,22 @@ test("tasks-list and standalone /projects stay in the keep-alive side-panel set"
   assert.equal(keepAliveDestinationShowsSidePanel("/projects/CA"), true);
   assert.equal(keepAliveDestinationShowsSidePanel("/contacts"), true);
   assert.equal(keepAliveDestinationShowsSidePanel("/contacts/1"), true);
+  assert.equal(
+    keepAliveSidePanelSurface("/contacts/1/tasks/c-3"),
+    "contacts",
+  );
+  assert.equal(
+    keepAliveSidePanelSurface("/contacts/1/meetings/m-1"),
+    "contacts",
+  );
+  assert.equal(
+    keepAliveSidePanelSurface("/contacts/1/letters/l-1"),
+    "contacts",
+  );
+  assert.equal(
+    keepAliveDestinationShowsSidePanel("/contacts/1/tasks/c-3"),
+    true,
+  );
   assert.equal(keepAliveDestinationShowsSidePanel("/letters"), true);
 });
 

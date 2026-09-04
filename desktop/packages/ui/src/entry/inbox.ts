@@ -10,4 +10,10 @@ export {
   isEmailPath,
 } from "../content/content-side-panel.js";
 
-export { resolveInboxSidebarIndicator } from "../calendar/calendar-meeting-overlay.js";
+export {
+  INBOX_SIDEBAR_INDICATOR_COLORS,
+  inboxSidebarIndicatorColor,
+  resolveInboxSidebarIndicator,
+  resolveInboxSidebarIndicatorTone,
+  type InboxSidebarIndicatorTone,
+} from "../calendar/calendar-meeting-overlay.js";

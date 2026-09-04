@@ -34,9 +34,20 @@ function AppShellInner({ children }: { children?: ReactNode }) {
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,
+    composeAssigneeOverride,
+    setComposeAssigneeOverride,
+    composeRelatedContactIdsOverride,
+    setComposeRelatedContactIdsOverride,
   } = chromeState;
 
   useShellBootEffects({ setDefaultAssigneeIdState });
+
+  const effectiveComposeAssigneeId =
+    composeAssigneeOverride !== undefined
+      ? composeAssigneeOverride
+      : defaultAssigneeId;
+  const effectiveComposeRelatedContactIds =
+    composeRelatedContactIdsOverride ?? [];
 
   const sidePanelHost = useShellSidePanelHost({
     composeOpen,
@@ -67,6 +78,8 @@ function AppShellInner({ children }: { children?: ReactNode }) {
       <ShellShortcutHost
         tabs={tabs}
         setComposeOpen={setComposeOpen}
+        setComposeAssigneeOverride={setComposeAssigneeOverride}
+        setComposeRelatedContactIdsOverride={setComposeRelatedContactIdsOverride}
         showSidePanel={panel.showSidePanel}
         panelPathname={panel.panelPathname}
         toggleSidePanelCollapsed={toggleSidePanelCollapsed}
@@ -85,16 +98,27 @@ function AppShellInner({ children }: { children?: ReactNode }) {
         sidebarCollapsed={sidebarCollapsed}
         sidebarAnimating={sidebarAnimating}
         windowFullscreen={windowFullscreen}
-        onComposeOpen={() => setComposeOpen(true)}
+        onComposeOpen={() => {
+          setComposeAssigneeOverride(undefined);
+          setComposeRelatedContactIdsOverride(undefined);
+          setComposeOpen(true);
+        }}
       >
         {children}
       </ShellChrome>
       <AppShellOverlays
         composeOpen={composeOpen}
-        onComposeOpenChange={setComposeOpen}
+        onComposeOpenChange={(open) => {
+          setComposeOpen(open);
+          if (!open) {
+            setComposeAssigneeOverride(undefined);
+            setComposeRelatedContactIdsOverride(undefined);
+          }
+        }}
         pathname={pathname}
         search={search}
-        defaultAssigneeId={defaultAssigneeId}
+        defaultAssigneeId={effectiveComposeAssigneeId}
+        defaultRelatedContactIds={effectiveComposeRelatedContactIds}
         contactAvatarSrc={contactAvatarSrc}
       />
     </ShellRuntimeProviders>

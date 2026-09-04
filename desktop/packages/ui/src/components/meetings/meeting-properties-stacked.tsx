@@ -2,9 +2,7 @@
 
 import {
   getTaskStatusLabel,
-  type TaskStatus,
 } from "../../tasks/task-status.js";
-import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_PROJECT_VALUE,
@@ -23,13 +21,13 @@ import { EntityPropertiesSection } from "../entity/entity-properties-section.js"
 import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
-import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { trackedMinutesFromMeetingSchedule } from "@backsteros/contracts";
-import type {
-  MeetingPropertiesInlineChipsProps,
-  MeetingPropertiesMeeting,
-} from "./meeting-properties-inline-chips.js";
+import type { MeetingPropertiesInlineChipsProps } from "./meeting-properties-inline-chips.js";
+import {
+  formatAttendeeNames,
+  MeetingAttendeeLabels,
+} from "./meeting-attendee-labels.js";
 import { useMeetingPropertiesModel } from "./use-meeting-properties-model.js";
 import type { ReactNode } from "react";
 
@@ -37,30 +35,6 @@ export type MeetingPropertiesStackedProps = Omit<
   MeetingPropertiesInlineChipsProps,
   "triggerVariant"
 >;
-
-function formatAttendeeStackedLabel(
-  attendeeContactIds: string[],
-  attendeeOptions: SearchableDropdownOption<string>[],
-): string {
-  const names = attendeeContactIds
-    .map(
-      (id) =>
-        attendeeOptions.find((option) => option.value === id)?.label?.trim(),
-    )
-    .filter((name): name is string => Boolean(name));
-  if (names.length === 0) return "No attendees";
-  return names.join(", ");
-}
-
-function attendeeNamesFromMeeting(
-  meeting: MeetingPropertiesMeeting | null,
-  attendeeOptions: SearchableDropdownOption<string>[],
-): string {
-  return formatAttendeeStackedLabel(
-    meeting?.attendeeContactIds ?? [],
-    attendeeOptions,
-  );
-}
 
 function resolveOrganizationTriggerIcon(
   organizationId: string | null | undefined,
@@ -84,31 +58,22 @@ function renderAttendeeTriggerIcon(
   attendeeContactIds: string[],
   attendeeOptions: SearchableDropdownOption<string>[],
 ): ReactNode {
+  // Multi-attendee triggers render per-person labels with avatars — skip the
+  // leading stack so the row stays clean.
+  if (attendeeContactIds.length > 1) {
+    return null;
+  }
   if (attendeeContactIds.length === 0) {
     return <ContactPersonIcon size={14} />;
   }
 
-  const avatars = attendeeContactIds
-    .map((id) => attendeeOptions.find((option) => option.value === id))
-    .filter((option): option is SearchableDropdownOption<string> => Boolean(option))
-    .map((option) =>
-      option.avatarSrc ? (
-        <EntityListAvatar
-          key={option.value}
-          src={option.avatarSrc}
-          size={14}
-        />
-      ) : null,
-    )
-    .filter(Boolean);
-
-  if (avatars.length === 0) {
-    return <ContactPersonIcon size={14} />;
-  }
-
-  return (
-    <span className="meeting-properties-stacked__attendee-icons">{avatars}</span>
+  const option = attendeeOptions.find(
+    (entry) => entry.value === attendeeContactIds[0],
   );
+  if (option?.avatarSrc) {
+    return <EntityListAvatar src={option.avatarSrc} size={14} />;
+  }
+  return <ContactPersonIcon size={14} />;
 }
 
 function stackedTriggerClassName(
@@ -131,7 +96,6 @@ function stackedTriggerClassName(
 export function MeetingPropertiesStacked({
   meeting,
   onStatusChange,
-  onPriorityChange,
   onStartChange,
   onEndChange,
   onTrackedDurationSecondsChange,
@@ -149,11 +113,9 @@ export function MeetingPropertiesStacked({
   const {
     disabled,
     status,
-    priority,
     startAt,
     endAt,
     statusOptions,
-    priorityOptions,
     canEditOrg,
     canEditProject,
     canEditAttendees,
@@ -161,7 +123,6 @@ export function MeetingPropertiesStacked({
   } = useMeetingPropertiesModel({
     meeting,
     onStatusChange,
-    onPriorityChange,
     onOrganizationChange,
     onProjectChange,
     onAttendeeContactIdsChange,
@@ -170,8 +131,10 @@ export function MeetingPropertiesStacked({
     projectOptions,
   });
 
-  const attendeeLabel = attendeeNamesFromMeeting(meeting, attendeeOptions);
-  const hasAttendees = (meeting?.attendeeContactIds?.length ?? 0) > 0;
+  const attendeeIds = meeting?.attendeeContactIds ?? [];
+  const hasAttendees = attendeeIds.length > 0;
+  const attendeeAriaLabel = formatAttendeeNames(attendeeIds, attendeeOptions);
+  const attendeeIcon = renderAttendeeTriggerIcon(attendeeIds, attendeeOptions);
 
   return (
     <div
@@ -205,27 +168,9 @@ export function MeetingPropertiesStacked({
               <TaskStatusIcon
                 status={status}
                 size={14}
-                inboxUpdatedAt={meeting?.inboxUpdatedAt}
               />
             }
             fallbackLabel={getTaskStatusLabel(status)}
-            triggerVariant="default"
-            panelAlign="start"
-          />
-        </PropertyFieldGroup>
-
-        <PropertyFieldGroup label="Priority">
-          <PropertyDropdown
-            value={String(priority)}
-            options={priorityOptions}
-            onChange={(next) => onPriorityChange?.(Number(next))}
-            disabled={disabled || !onPriorityChange}
-            searchPlaceholder="Change priority…"
-            searchShortcutLabel="P"
-            ariaLabel="Priority"
-            taskPropertyDropdownId="priority"
-            fallbackIcon={<TaskPriorityIcon priority={priority} size={14} />}
-            fallbackLabel={getTaskPriorityLabel(priority)}
             triggerVariant="default"
             panelAlign="start"
           />
@@ -297,7 +242,7 @@ export function MeetingPropertiesStacked({
           {canEditAttendees ? (
             <SearchableDropdown
               multiple
-              values={meeting?.attendeeContactIds ?? []}
+              values={attendeeIds}
               options={attendeeOptions}
               onValuesChange={onAttendeeContactIdsChange}
               disabled={disabled}
@@ -329,23 +274,25 @@ export function MeetingPropertiesStacked({
                   disabled={isDisabled}
                   aria-haspopup="listbox"
                   aria-expanded={open}
-                  aria-label="Attendees"
+                  aria-label={attendeeAriaLabel}
                   onClick={(event) => {
                     event.stopPropagation();
                     onToggle();
                   }}
                 >
-                  <span
-                    className="property-dropdown-trigger__icon"
-                    aria-hidden="true"
-                  >
-                    {renderAttendeeTriggerIcon(
-                      meeting?.attendeeContactIds ?? [],
-                      attendeeOptions,
-                    )}
-                  </span>
+                  {attendeeIcon ? (
+                    <span
+                      className="property-dropdown-trigger__icon"
+                      aria-hidden="true"
+                    >
+                      {attendeeIcon}
+                    </span>
+                  ) : null}
                   <span className="property-dropdown-trigger__label">
-                    {attendeeLabel}
+                    <MeetingAttendeeLabels
+                      attendeeContactIds={attendeeIds}
+                      attendeeOptions={attendeeOptions}
+                    />
                   </span>
                 </button>
               )}
@@ -356,16 +303,22 @@ export function MeetingPropertiesStacked({
               className={stackedTriggerClassName(false, !hasAttendees)}
               data-task-property-dropdown="assignee"
               disabled={disabled}
+              aria-label={attendeeAriaLabel}
               onClick={() => onFieldActivate?.("attendees")}
             >
-              <span className="property-dropdown-trigger__icon" aria-hidden="true">
-                {renderAttendeeTriggerIcon(
-                  meeting?.attendeeContactIds ?? [],
-                  attendeeOptions,
-                )}
-              </span>
+              {attendeeIcon ? (
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  {attendeeIcon}
+                </span>
+              ) : null}
               <span className="property-dropdown-trigger__label">
-                {attendeeLabel}
+                <MeetingAttendeeLabels
+                  attendeeContactIds={attendeeIds}
+                  attendeeOptions={attendeeOptions}
+                />
               </span>
             </button>
           )}

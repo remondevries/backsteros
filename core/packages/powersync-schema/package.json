@@ -14,10 +14,10 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@powersync/web": "^1.39.0"
+    "@powersync/common": "^1.27.0"
   },
   "devDependencies": {
-    "@powersync/web": "^1.39.0",
+    "@powersync/common": "^1.57.2",
     "typescript": "^5.8.3"
   }
 }

@@ -10,10 +10,13 @@ export type GoNavigationHref =
   | "/calendar"
   | "/habits"
   | "/projects"
+  | "/areas"
+  | "/development"
   | "/letters"
   | "/finance"
   | "/contacts"
-  | "/organizations";
+  | "/organizations"
+  | "/email";
 
 export type GoNavigationItem = {
   id: string;
@@ -30,7 +33,9 @@ export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
   { id: "tasks", letter: "t", label: "Tasks", href: "/tasks" },
   { id: "calendar", letter: "m", label: "Calendar", href: "/calendar" },
   { id: "habits", letter: "h", label: "Habit Tracker", href: "/habits" },
+  { id: "areas", letter: "a", label: "Areas", href: "/areas" },
   { id: "projects", letter: "p", label: "Projects", href: "/projects" },
+  { id: "development", letter: "d", label: "Development", href: "/development" },
   { id: "letters", letter: "l", label: "Letters", href: "/letters" },
   { id: "finance", letter: "f", label: "Finance", href: "/finance" },
   { id: "contacts", letter: "c", label: "Contacts", href: "/contacts" },
@@ -40,6 +45,7 @@ export const GO_NAVIGATION_ITEMS: readonly GoNavigationItem[] = [
     label: "Organizations",
     href: "/organizations",
   },
+  { id: "email", letter: "e", label: "Email", href: "/email" },
 ];
 
 export function findGoItemByLetter(

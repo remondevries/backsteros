@@ -455,9 +455,20 @@ fn disable_api_tailscale_serve() {
     }
 }
 
+/// Rotate a service log when it grows past this size (replication spam can
+/// push `api.log` to hundreds of MB and slow Hub spawn/append).
+const LOG_ROTATE_BYTES: u64 = 32 * 1024 * 1024;
+
 fn open_log(service: ServiceId) -> std::io::Result<File> {
     ensure_dirs()?;
     let path = logs_dir().join(format!("{}.log", service.as_str()));
+    if let Ok(meta) = fs::metadata(&path) {
+        if meta.len() >= LOG_ROTATE_BYTES {
+            let rotated = logs_dir().join(format!("{}.log.prev", service.as_str()));
+            let _ = fs::remove_file(&rotated);
+            let _ = fs::rename(&path, &rotated);
+        }
+    }
     OpenOptions::new().create(true).append(true).open(path)
 }
 
@@ -624,22 +635,19 @@ fn api_phase() -> (ServicePhase, String) {
             format!(":{API_PORT} starting…"),
         );
     }
-    if is_marked_starting(ServiceId::Api) {
-        // Marked starting but no listener — pid may be zombie tsx; keep
-        // "starting…" only while the tracked process is still alive.
-        if let Some(pid) = get_pid(ServiceId::Api) {
-            if pid_alive(pid) {
-                return (ServicePhase::Starting, "starting…".into());
-            }
-            set_pid(ServiceId::Api, None);
-        }
-        clear_starting(&[ServiceId::Api]);
-    } else if let Some(pid) = get_pid(ServiceId::Api) {
-        // Leftover pid that never became healthy — do not pretend forever.
+    // Match PTY: alive spawn pid (or explicit starting mark) means Starting,
+    // even after start_api clears the mark before health is ready. Otherwise
+    // the menu flickers to "stopped" during `predev` contracts build + tsx boot.
+    let pid_starting = get_pid(ServiceId::Api).is_some_and(pid_alive);
+    if is_marked_starting(ServiceId::Api) || pid_starting {
+        return (ServicePhase::Starting, "starting…".into());
+    }
+    if let Some(pid) = get_pid(ServiceId::Api) {
         if !pid_alive(pid) {
             set_pid(ServiceId::Api, None);
         }
     }
+    clear_starting(&[ServiceId::Api]);
     (ServicePhase::Stopped, "stopped".into())
 }
 
@@ -869,12 +877,13 @@ fn stop_docker(repo_root: &Path) -> Result<String, String> {
 fn start_api(repo_root: &Path) -> Result<String, String> {
     if api_healthy() {
         enable_api_tailscale_serve();
+        clear_starting(&[ServiceId::Api]);
         return Ok("Core API already running".into());
     }
 
     // `tsx watch` can leave a parent pid alive after a failed restart while
-    // nothing listens on :8788. Treating that as "still starting" left Hub
-    // and desktop stuck indefinitely — kill the zombie and respawn.
+    // nothing listens on :8788. Kill the zombie and respawn — but keep the
+    // Starting mark so the menu does not briefly show "stopped".
     if let Some(pid) = get_pid(ServiceId::Api) {
         if pid_alive(pid) {
             append_log_line(
@@ -885,16 +894,21 @@ fn start_api(repo_root: &Path) -> Result<String, String> {
         }
         set_pid(ServiceId::Api, None);
     }
-    clear_starting(&[ServiceId::Api]);
     kill_port_listeners(API_PORT);
+    mark_starting(&[ServiceId::Api]);
 
     let pnpm = pnpm_bin();
     append_log_line(
         ServiceId::Api,
-        &format!("spawn {} --filter @backsteros/server dev (cwd={})", pnpm.display(), repo_root.display()),
+        &format!(
+            "spawn {} --filter @backsteros/server dev (cwd={})",
+            pnpm.display(),
+            repo_root.display()
+        ),
     );
     let mut cmd = Command::new(&pnpm);
     ensure_path_env(&mut cmd);
+    // `predev` rebuilds @backsteros/contracts — expect several seconds before bind.
     cmd.args(["--filter", "@backsteros/server", "dev"])
         .current_dir(repo_root)
         .env("FORCE_COLOR", "0");
@@ -902,7 +916,37 @@ fn start_api(repo_root: &Path) -> Result<String, String> {
     // Tailscale TCP forward is config in the daemon (not a listen on :8788),
     // so it is safe to enable before the API finishes binding.
     enable_api_tailscale_serve();
-    Ok(format!("Core API started (pid {pid})"))
+
+    // Wait for /health like Docker wait — Start should not finish "green"
+    // while the API is still compiling / binding.
+    const HEALTH_ATTEMPTS: u32 = 60; // ~30s
+    for attempt in 1..=HEALTH_ATTEMPTS {
+        if api_healthy() {
+            clear_starting(&[ServiceId::Api]);
+            append_log_line(
+                ServiceId::Api,
+                &format!("healthy after {attempt} probe(s) (pid {pid})"),
+            );
+            return Ok(format!("Core API started (pid {pid})"));
+        }
+        if !pid_alive(pid) && !port_open(API_PORT) {
+            clear_starting(&[ServiceId::Api]);
+            set_pid(ServiceId::Api, None);
+            return Err(format!(
+                "Core API process exited before becoming healthy (pid {pid}). See ~/.config/backsteros/hub/logs/api.log"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    // Process still alive — leave Starting mark; poller will flip to Running.
+    append_log_line(
+        ServiceId::Api,
+        &format!("still starting after {}s (pid {pid})", HEALTH_ATTEMPTS / 2),
+    );
+    Ok(format!(
+        "Core API spawned (pid {pid}, waiting for :{API_PORT}/health)"
+    ))
 }
 
 fn stop_api() -> Result<String, String> {

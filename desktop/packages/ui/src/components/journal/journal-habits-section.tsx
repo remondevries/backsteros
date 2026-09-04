@@ -1,6 +1,7 @@
 "use client";
 
 import { fireHabitCompleteConfetti } from "../../habits/habit-complete-confetti.js";
+import { PolishedCheckbox } from "../shared/polished-checkbox.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 
 export type JournalHabitDayItem = {

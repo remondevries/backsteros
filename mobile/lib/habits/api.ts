@@ -14,14 +14,23 @@ import {
   type MobileSoftDeletePowerSync,
 } from "../entity-mutations";
 import { getTodayJournalDateSlug } from "../journal";
-import { shouldSkipRestEntityWrite } from "../powersync-write-path";
+import {
+  shouldSkipRestEntityWrite,
+  shouldWriteEntityViaPowerSync,
+} from "../powersync-write-path";
 
 type ApiClient = ReturnType<typeof createApiClient>;
 
 export type MobileHabitPowerSync = {
   ready: boolean;
   connected: boolean;
+  preferRestWrites?: boolean;
   patchHabit: (id: string, values: Record<string, unknown>) => Promise<void>;
+  patchMetadata?: (
+    table: "tasks" | "habits",
+    id: string,
+    values: Record<string, unknown>,
+  ) => Promise<void>;
   createMetadata?: (
     table: "habits",
     values: Record<string, unknown>,
@@ -88,7 +97,7 @@ export async function createHabit(
   const title = input.title.trim();
   const icon = input.icon ?? null;
 
-  if (powerSync.ready && powerSync.createMetadata) {
+  if (shouldWriteEntityViaPowerSync(powerSync) && powerSync.createMetadata) {
     const id = await powerSync.createMetadata(
       "habits",
       toSnakeFields({
@@ -117,7 +126,10 @@ export async function updateHabit(
 ): Promise<Habit> {
   const sqliteValues = habitApiPatchToSqlite(input);
 
-  if (powerSync.ready && Object.keys(sqliteValues).length > 0) {
+  if (
+    shouldWriteEntityViaPowerSync(powerSync) &&
+    Object.keys(sqliteValues).length > 0
+  ) {
     try {
       await powerSync.patchHabit(id, sqliteValues);
     } catch {
@@ -149,7 +161,10 @@ export async function updateHabit(
     },
   );
 
-  if (powerSync.ready && Object.keys(sqliteValues).length > 0) {
+  if (
+    shouldWriteEntityViaPowerSync(powerSync) &&
+    Object.keys(sqliteValues).length > 0
+  ) {
     try {
       await powerSync.patchHabit(id, sqliteValues);
     } catch {
@@ -164,7 +179,34 @@ export async function recordHabitDay(
   client: ApiClient,
   habitId: string,
   input: RecordHabitDayInput,
+  powerSync?: MobileHabitPowerSync & { todayTaskId?: string | null },
 ): Promise<Task> {
+  const todayTaskId = powerSync?.todayTaskId;
+  if (
+    powerSync &&
+    todayTaskId &&
+    shouldSkipRestEntityWrite(powerSync) &&
+    powerSync.patchMetadata
+  ) {
+    const completedAt =
+      input.status === "completed" ? new Date().toISOString() : null;
+    const status = input.status === "completed" ? "completed" : "canceled";
+    await powerSync.patchMetadata("tasks", todayTaskId, {
+      status,
+      completed_at: completedAt,
+      due_date: input.dueYmd,
+      habit_id: habitId,
+    });
+    return {
+      id: todayTaskId,
+      title: "",
+      status,
+      completedAt,
+      dueDate: input.dueYmd,
+      habitId,
+    } as Task;
+  }
+
   return client.requestJson<Task>(
     `/api/v1/habits/${encodeURIComponent(habitId)}/days`,
     {

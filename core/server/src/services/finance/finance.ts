@@ -55,7 +55,7 @@ import {
 import { parseBankCsv } from "./detect-dialect.js";
 import { toCashflowAmountCents } from "./ledger-polarity.js";
 
-type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
 function normalizeIbanOrMask(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -816,6 +816,12 @@ export async function updateBankAccount(
         ? { moneybirdFinancialAccountId: input.moneybirdFinancialAccountId }
         : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+      ...(input.avatarStorageKey !== undefined
+        ? { avatarStorageKey: input.avatarStorageKey }
+        : {}),
+      ...(input.avatarContentType !== undefined
+        ? { avatarContentType: input.avatarContentType }
+        : {}),
       updatedAt: new Date(),
     })
     .where(
@@ -1703,8 +1709,12 @@ export async function listTransactions(
   };
 }
 
-export async function getTransactionById(workspaceId: string, id: string) {
-  const [row] = await db
+export async function getTransactionById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .select()
     .from(financialTransactions)
     .where(
@@ -1717,12 +1727,230 @@ export async function getTransactionById(workspaceId: string, id: string) {
   return row ?? null;
 }
 
+export type FinancialTransactionSyncCreateInput = {
+  bankAccountId: string;
+  bookedOn: string;
+  amountCents: number;
+  currency?: string;
+  payee?: string;
+  counterparty?: string | null;
+  memo?: string | null;
+  balanceAfterCents?: number | null;
+  externalId?: string | null;
+  fingerprint: string;
+  sourceCode?: string | null;
+  sourceType?: string | null;
+  raw?: unknown;
+  /** Always ignored on sync create — import batches are local-only. */
+  importBatchId?: string | null;
+};
+
+function asSyncString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asSyncNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asSyncNullableString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return typeof value === "string" ? value : undefined;
+}
+
+function asSyncNullableNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Insert a ledger row from sync / leader-first (idempotent on fingerprint). */
+export async function insertTransactionFromSync(
+  workspaceId: string,
+  id: string,
+  payload: Record<string, unknown>,
+  executor: DbExecutor = db,
+): Promise<DbFinancialTransaction | null> {
+  const bankAccountId = asSyncString(payload.bankAccountId)?.trim();
+  const bookedOn = asSyncString(payload.bookedOn)?.trim();
+  const fingerprint = asSyncString(payload.fingerprint)?.trim();
+  const amountCents = asSyncNumber(payload.amountCents);
+  if (!bankAccountId || !bookedOn || !fingerprint || amountCents === undefined) {
+    return null;
+  }
+  const account = await getBankAccountById(workspaceId, bankAccountId, executor);
+  if (!account) return null;
+
+  const currency = asSyncString(payload.currency)?.trim() || "EUR";
+  const payee = asSyncString(payload.payee) ?? "";
+  const counterparty = asSyncNullableString(payload.counterparty) ?? null;
+  const memo = asSyncNullableString(payload.memo) ?? null;
+  const balanceAfterCents =
+    asSyncNullableNumber(payload.balanceAfterCents) ?? null;
+  const externalId = asSyncNullableString(payload.externalId) ?? null;
+  const sourceCode = asSyncNullableString(payload.sourceCode) ?? null;
+  const sourceType = asSyncNullableString(payload.sourceType) ?? null;
+  const raw =
+    payload.raw && typeof payload.raw === "object" && !Array.isArray(payload.raw)
+      ? payload.raw
+      : {};
+
+  try {
+    const inserted = await executor
+      .insert(financialTransactions)
+      .values({
+        id,
+        workspaceId,
+        bankAccountId,
+        importBatchId: null,
+        bookedOn,
+        amountCents,
+        currency,
+        payee,
+        counterparty,
+        memo,
+        balanceAfterCents,
+        externalId,
+        fingerprint,
+        sourceCode,
+        sourceType,
+        raw,
+      })
+      .onConflictDoNothing({
+        target: [
+          financialTransactions.bankAccountId,
+          financialTransactions.fingerprint,
+        ],
+      })
+      .returning();
+    if (inserted[0]) return inserted[0];
+  } catch {
+    // external_id unique or PK replay — fall through to lookup
+  }
+
+  const byId = await getTransactionById(workspaceId, id, executor);
+  if (byId) return byId;
+
+  const [byFingerprint] = await executor
+    .select()
+    .from(financialTransactions)
+    .where(
+      and(
+        eq(financialTransactions.workspaceId, workspaceId),
+        eq(financialTransactions.bankAccountId, bankAccountId),
+        eq(financialTransactions.fingerprint, fingerprint),
+      ),
+    )
+    .limit(1);
+  return byFingerprint ?? null;
+}
+
+export function financialTransactionCreateSyncPayload(
+  id: string,
+  input: FinancialTransactionSyncCreateInput,
+): Record<string, unknown> {
+  return {
+    id,
+    bank_account_id: input.bankAccountId,
+    booked_on: input.bookedOn,
+    amount_cents: input.amountCents,
+    currency: input.currency ?? "EUR",
+    payee: input.payee ?? "",
+    counterparty: input.counterparty ?? null,
+    memo: input.memo ?? null,
+    balance_after_cents: input.balanceAfterCents ?? null,
+    external_id: input.externalId ?? null,
+    fingerprint: input.fingerprint,
+    source_code: input.sourceCode ?? null,
+    source_type: input.sourceType ?? null,
+    raw: input.raw ?? {},
+    import_batch_id: null,
+  };
+}
+
+const FINANCIAL_TX_LEADER_CHUNK = 40;
+
+/**
+ * Persist new ledger rows leader-first when hybrid; otherwise insert + sync_events.
+ * Returns how many rows were newly inserted (best-effort when forwarding).
+ */
+export async function commitFinancialTransactionCreates(
+  workspaceId: string,
+  rows: Array<{ id: string } & FinancialTransactionSyncCreateInput>,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const { shouldForwardMutationsToLeader } = await import(
+    "../core-replication/leader-mutations.js"
+  );
+  if (shouldForwardMutationsToLeader()) {
+    const { commitRestEntityWriteBatch } = await import(
+      "../rest-leader-write.js"
+    );
+    for (let i = 0; i < rows.length; i += FINANCIAL_TX_LEADER_CHUNK) {
+      const chunk = rows.slice(i, i + FINANCIAL_TX_LEADER_CHUNK);
+      await commitRestEntityWriteBatch({
+        workspaceId,
+        changes: chunk.map((row) => ({
+          entity: "financial_transaction" as const,
+          entityId: row.id,
+          operation: "upsert" as const,
+          payload: financialTransactionCreateSyncPayload(row.id, row),
+        })),
+      });
+    }
+    let inserted = 0;
+    for (const row of rows) {
+      const found = await getTransactionById(workspaceId, row.id);
+      if (found) inserted += 1;
+    }
+    return inserted;
+  }
+
+  const { recordFinancialTransactionRestSyncEvent } = await import(
+    "../sync.js"
+  );
+  let inserted = 0;
+  for (const row of rows) {
+    const created = await insertTransactionFromSync(
+      workspaceId,
+      row.id,
+      {
+        bankAccountId: row.bankAccountId,
+        bookedOn: row.bookedOn,
+        amountCents: row.amountCents,
+        currency: row.currency,
+        payee: row.payee,
+        counterparty: row.counterparty,
+        memo: row.memo,
+        balanceAfterCents: row.balanceAfterCents,
+        externalId: row.externalId,
+        fingerprint: row.fingerprint,
+        sourceCode: row.sourceCode,
+        sourceType: row.sourceType,
+        raw: row.raw,
+      },
+    );
+    if (created && created.id === row.id) {
+      inserted += 1;
+      await recordFinancialTransactionRestSyncEvent(
+        workspaceId,
+        created,
+        "upsert",
+      );
+    }
+  }
+  return inserted;
+}
+
 async function resolveBankAccountPatch(
   workspaceId: string,
   bankAccountId: string | undefined,
+  executor: DbExecutor = db,
 ): Promise<{ ok: true; bankAccountId?: string } | { ok: false }> {
   if (bankAccountId === undefined) return { ok: true };
-  const account = await getBankAccountById(workspaceId, bankAccountId);
+  const account = await getBankAccountById(workspaceId, bankAccountId, executor);
   if (!account) return { ok: false };
   return { ok: true, bankAccountId: account.id };
 }
@@ -1731,14 +1959,16 @@ export async function updateTransaction(
   workspaceId: string,
   id: string,
   patch: UpdateFinancialTransactionInput,
+  executor: DbExecutor = db,
 ): Promise<DbFinancialTransaction | null | "account_not_found"> {
   const accountPatch = await resolveBankAccountPatch(
     workspaceId,
     patch.bankAccountId,
+    executor,
   );
   if (!accountPatch.ok) return "account_not_found";
 
-  const [row] = await db
+  const [row] = await executor
     .update(financialTransactions)
     .set({
       ...(accountPatch.bankAccountId !== undefined
@@ -1775,15 +2005,17 @@ export async function batchUpdateTransactions(
   workspaceId: string,
   ids: string[],
   patch: UpdateFinancialTransactionInput,
+  executor: DbExecutor = db,
 ): Promise<DbFinancialTransaction[] | "account_not_found"> {
   if (ids.length === 0) return [];
   const accountPatch = await resolveBankAccountPatch(
     workspaceId,
     patch.bankAccountId,
+    executor,
   );
   if (!accountPatch.ok) return "account_not_found";
 
-  const rows = await db
+  const rows = await executor
     .update(financialTransactions)
     .set({
       ...(accountPatch.bankAccountId !== undefined
@@ -1819,9 +2051,10 @@ export async function batchUpdateTransactions(
 export async function batchDeleteTransactions(
   workspaceId: string,
   ids: string[],
+  executor: DbExecutor = db,
 ): Promise<number> {
   if (ids.length === 0) return 0;
-  const rows = await db
+  const rows = await executor
     .delete(financialTransactions)
     .where(
       and(
@@ -1871,12 +2104,34 @@ export async function importBankCsv(
     errorCount: errors,
   });
 
+  const pending: Array<
+    { id: string } & FinancialTransactionSyncCreateInput
+  > = [];
+
+  const existingFingerprints = new Set(
+    (
+      await db
+        .select({ fingerprint: financialTransactions.fingerprint })
+        .from(financialTransactions)
+        .where(
+          and(
+            eq(financialTransactions.workspaceId, workspaceId),
+            eq(financialTransactions.bankAccountId, bankAccountId),
+          ),
+        )
+    ).map((row) => row.fingerprint),
+  );
+
   for (const row of parsed.rows) {
     if (accountsConflict(account.ibanOrMask, row.sourceAccount)) {
       skippedAccountMismatch++;
       continue;
     }
     try {
+      if (existingFingerprints.has(row.fingerprint)) {
+        duplicates++;
+        continue;
+      }
       const id = newId();
       // Fingerprint stays source-polarity (from the parser) so re-imports dedupe;
       // stored amount uses cashflow polarity for credit_card accounts.
@@ -1885,33 +2140,49 @@ export async function importBankCsv(
         row.balanceAfterCents == null
           ? null
           : toCashflowAmountCents(row.balanceAfterCents, account.type);
-      const result = await db
-        .insert(financialTransactions)
-        .values({
-          id,
-          workspaceId,
-          bankAccountId,
-          importBatchId: batchId,
-          bookedOn: row.bookedOn,
-          amountCents,
-          currency: row.currency,
-          payee: row.payee,
-          counterparty: row.counterparty,
-          memo: row.memo,
-          balanceAfterCents,
-          externalId: row.externalId,
-          fingerprint: row.fingerprint,
-          sourceCode: row.sourceCode,
-          sourceType: row.sourceType,
-          raw: row.raw,
-        })
-        .onConflictDoNothing()
-        .returning({ id: financialTransactions.id });
-      if (result.length > 0) inserted++;
-      else duplicates++;
+      pending.push({
+        id,
+        bankAccountId,
+        bookedOn: row.bookedOn,
+        amountCents,
+        currency: row.currency,
+        payee: row.payee,
+        counterparty: row.counterparty,
+        memo: row.memo,
+        balanceAfterCents,
+        externalId: row.externalId,
+        fingerprint: row.fingerprint,
+        sourceCode: row.sourceCode,
+        sourceType: row.sourceType,
+        raw: row.raw,
+      });
+      existingFingerprints.add(row.fingerprint);
     } catch {
       errors++;
     }
+  }
+
+  try {
+    inserted = await commitFinancialTransactionCreates(workspaceId, pending);
+    duplicates += Math.max(0, pending.length - inserted);
+  } catch {
+    errors += pending.length;
+    inserted = 0;
+  }
+
+  // Local-only: attach import batch after leader/apply created the rows.
+  if (inserted > 0) {
+    const ids = pending.map((row) => row.id);
+    await db
+      .update(financialTransactions)
+      .set({ importBatchId: batchId })
+      .where(
+        and(
+          eq(financialTransactions.workspaceId, workspaceId),
+          inArray(financialTransactions.id, ids),
+          isNull(financialTransactions.importBatchId),
+        ),
+      );
   }
 
   await db

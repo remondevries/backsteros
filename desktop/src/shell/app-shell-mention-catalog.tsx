@@ -4,18 +4,15 @@ import {
   EMPTY_MENTION_CATALOG,
   MentionCatalogProvider,
   mergeMentionCatalogs,
-  isEmailPath,
-  isJournalSectionPath,
-  isKnowledgeSectionPath,
-  isLettersSectionPath,
-  isTaskDetailPath,
 } from "@backsteros/ui";
 
 import { useAgentMail } from "../lib/agentmail-context";
+import { useDesktopAvatarSrcMap, withAvatarSrc } from "../lib/avatar-src";
 import {
   buildMentionCatalogFromEmailMessages,
   buildMentionCatalogFromWorkspace,
 } from "../lib/mention-catalog";
+import { needsMentionCatalog } from "../lib/needs-mention-catalog";
 import {
   useDesktopWorkspaceDocuments,
   useDesktopWorkspaceInboxItems,
@@ -24,19 +21,7 @@ import {
   useDesktopWorkspaceTasks,
 } from "../lib/workspace-data";
 
-function needsMentionCatalog(
-  pathname: string,
-  composeOpen: boolean,
-): boolean {
-  if (composeOpen) return true;
-  if (isTaskDetailPath(pathname)) return true;
-  if (isKnowledgeSectionPath(pathname)) return true;
-  if (isLettersSectionPath(pathname)) return true;
-  if (isJournalSectionPath(pathname)) return true;
-  if (isEmailPath(pathname)) return true;
-  if (pathname.startsWith("/calendar/meetings/")) return true;
-  return false;
-}
+export { needsMentionCatalog } from "../lib/needs-mention-catalog";
 
 /**
  * Always the same component type around `children`. Switching between
@@ -68,18 +53,30 @@ function AppShellMentionCatalogTree({
   const inboxItems = useDesktopWorkspaceInboxItems();
   const { allTasks } = useDesktopWorkspaceTasks();
   const { projects, letters, projectSummaries } = useDesktopWorkspaceProjects();
-  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { contacts, organizations, contactDetails } =
+    useDesktopWorkspacePeople();
   const { knowledgeDocuments, projectDocuments } = useDesktopWorkspaceDocuments();
   const agentMail = useAgentMail();
+  const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    organizations,
+  );
 
   const liveCatalog = useMemo(() => {
+    const contactsWithAvatars = withAvatarSrc(contacts, contactAvatarSrc);
+    const organizationsWithAvatars = withAvatarSrc(
+      organizations,
+      organizationAvatarSrc,
+    );
     const base = buildMentionCatalogFromWorkspace({
       allTasks,
-      contacts,
+      contacts: contactsWithAvatars,
+      contactDetails,
       inboxItems,
       knowledgeDocuments,
       letters,
-      organizations,
+      organizations: organizationsWithAvatars,
       projectDocuments,
       projectSummaries,
       projects,
@@ -95,10 +92,13 @@ function AppShellMentionCatalogTree({
   }, [
     agentMail.messages,
     allTasks,
+    contactAvatarSrc,
+    contactDetails,
     contacts,
     inboxItems,
     knowledgeDocuments,
     letters,
+    organizationAvatarSrc,
     organizations,
     projectDocuments,
     projectSummaries,

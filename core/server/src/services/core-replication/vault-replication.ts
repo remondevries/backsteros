@@ -81,6 +81,46 @@ let vaultWatcher: FSWatcher | null = null;
 let vaultWatcherRoot: string | null = null;
 let ticksSinceFullScan = 0;
 
+/** Debounce local disk edits → Postgres content_version + SSE for open shells. */
+const VAULT_LOCAL_HEAL_DEBOUNCE_MS = 200;
+const pendingLocalHealPaths = new Set<string>();
+let localHealTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushPendingLocalVaultHeals(): Promise<void> {
+  const paths = [...pendingLocalHealPaths];
+  pendingLocalHealPaths.clear();
+  if (paths.length === 0) return;
+  try {
+    const { syncDocumentMetadataAfterVaultWrite } = await import(
+      "../vault-document-metadata.js"
+    );
+    for (const relativePath of paths) {
+      try {
+        await syncDocumentMetadataAfterVaultWrite(relativePath);
+      } catch (error) {
+        console.warn(
+          `[vault] local metadata heal failed for ${relativePath}:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(
+      "[vault] local metadata heal import failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+function scheduleLocalVaultMetadataHeal(relativePath: string): void {
+  pendingLocalHealPaths.add(relativePath.replace(/\\/g, "/"));
+  if (localHealTimer) clearTimeout(localHealTimer);
+  localHealTimer = setTimeout(() => {
+    localHealTimer = null;
+    void flushPendingLocalVaultHeals();
+  }, VAULT_LOCAL_HEAL_DEBOUNCE_MS);
+}
+
 /** Test / ops: mark paths dirty (`*` = force full walk). */
 export function markVaultMarkdownDirty(relativePath: string): void {
   dirtyMarkdownPaths.add(relativePath.replace(/\\/g, "/"));
@@ -90,6 +130,11 @@ export function markVaultMarkdownDirty(relativePath: string): void {
 export function resetVaultListingStateForTests(): void {
   dirtyMarkdownPaths.clear();
   ticksSinceFullScan = 0;
+  pendingLocalHealPaths.clear();
+  if (localHealTimer) {
+    clearTimeout(localHealTimer);
+    localHealTimer = null;
+  }
 }
 
 export function peekVaultDirtyPathsForTests(): string[] {
@@ -106,6 +151,10 @@ function noteVaultWatchEvent(filename: string | null): void {
   if (shouldSkipDirentName(base)) return;
   if (base.toLowerCase().endsWith(".md")) {
     dirtyMarkdownPaths.add(normalized);
+    // Agent / editor wrote the vault file directly — bump content_version +
+    // publish workspace SSE so open desktop shells refetch without waiting
+    // for replication or a later GET heal.
+    scheduleLocalVaultMetadataHeal(normalized);
     return;
   }
   // Directory / non-md change may mean a new .md appeared — force a walk.

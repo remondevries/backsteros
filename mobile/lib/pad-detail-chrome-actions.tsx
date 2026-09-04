@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   embeddedDismiss: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     // Cover the whole slide-over via a large hit target around the chrome.
     top: -400,
     right: -40,
@@ -234,11 +234,11 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   menuFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(28, 28, 30, 0.72)",
   },
   menuBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.12)",

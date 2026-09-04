@@ -76,6 +76,10 @@ export const financePage = createSharedLazyPage(
   () => import("../screens/finance-page"),
   "FinancePage",
 );
+export const socialPage = createSharedLazyPage(
+  () => import("../screens/social-page"),
+  "SocialPage",
+);
 export const organizationsPage = createSharedLazyPage(
   () => import("../screens/organizations-page"),
   "OrganizationsPage",
@@ -127,6 +131,7 @@ const ALL_PAGES = [
   knowledgePage,
   lettersPage,
   financePage,
+  socialPage,
   organizationsPage,
   projectsPage,
   settingsPage,

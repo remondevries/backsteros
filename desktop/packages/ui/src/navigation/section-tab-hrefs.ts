@@ -5,16 +5,22 @@ import {
 } from "../codebase/codebase-workbench-path.js";
 import {
   CONTACT_SECTIONS,
-  getContactSectionHref,
+  getActiveContactSection,
 } from "../contacts/contact-sections.js";
+import {
+  getContactOverlayHref,
+  parseContactOverlayLayout,
+} from "../contacts/contact-overlay.js";
+import { parseCrmGroupId } from "../contacts/contact-group-filter.js";
 import {
   getScopedContactSectionHref,
   parseOrganizationContactRoute,
 } from "../contacts/contact-route-scope.js";
 import {
-  getOrganizationSectionHref,
-  ORGANIZATION_SECTIONS,
-} from "../organizations/organization-sections.js";
+  getOrganizationOverlayHref,
+  parseOrganizationOverlayLayout,
+} from "../organizations/organization-overlay.js";
+import { getActiveOrganizationSection } from "../organizations/organization-sections.js";
 import {
   LIST_BOARD_VIEW_SEARCH_PARAM,
   parseListBoardViewFromSearchParam,
@@ -62,22 +68,6 @@ function parseViewFromSearch(search = ""): ListBoardView {
 export function isCodebaseWorkbenchMounted(): boolean {
   if (typeof document === "undefined") return false;
   return document.querySelector("[data-codebase-workbench]") != null;
-}
-
-/**
- * Visible org section tab hrefs from the mounted organization detail shell
- * (finance tabs are conditional). Pipe-separated in `data-organization-section-hrefs`.
- */
-function readOrganizationSectionTabHrefsFromDom(): string[] | null {
-  if (typeof document === "undefined") return null;
-  const host = document.querySelector("[data-organization-detail]");
-  const raw = host?.getAttribute("data-organization-section-hrefs");
-  if (!raw?.trim()) return null;
-  const hrefs = raw
-    .split("|")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return hrefs.length > 0 ? hrefs : null;
 }
 
 function resolveCodebaseListTabHrefs(
@@ -198,21 +188,45 @@ export function resolveDesktopSectionTabHrefs(
   const contactMatch = path.match(/^\/contacts\/([^/]+)(?:\/|$)/);
   if (contactMatch && contactMatch[1] !== "new") {
     const slug = decodeURIComponent(contactMatch[1]!);
-    return CONTACT_SECTIONS.map((section) =>
-      getContactSectionHref(slug, section.id),
-    );
+    // Expanded workspace: 1–5 are Meetings/Emails/… (handled on the page).
+    if (parseContactOverlayLayout(search) === "page") {
+      return null;
+    }
+    // Narrow card: 1 Activity, 2 Details, 3 More… (expand to page layout).
+    const groupId = parseCrmGroupId(search);
+    const section = getActiveContactSection(path, slug);
+    return [
+      getContactOverlayHref(slug, { groupId }),
+      getContactOverlayHref(slug, { section: "details", groupId }),
+      getContactOverlayHref(slug, {
+        section: section === "overview" ? undefined : section,
+        layout: "page",
+        groupId,
+      }),
+    ];
   }
 
   const organizationMatch = path.match(/^\/organizations\/([^/]+)(?:\/|$)/);
   if (organizationMatch && organizationMatch[1] !== "new") {
-    const fromDom = readOrganizationSectionTabHrefsFromDom();
-    if (fromDom) return fromDom;
     const slug = decodeURIComponent(organizationMatch[1]!);
-    // Fall back to every registered section when the detail shell is not mounted
-    // yet (e.g. early shortcut). Finance tabs may 404-redirect if empty.
-    return ORGANIZATION_SECTIONS.map((section) =>
-      getOrganizationSectionHref(slug, section.id),
-    );
+    // Expanded workspace: digit shortcuts handled on the page.
+    if (parseOrganizationOverlayLayout(search) === "page") {
+      return null;
+    }
+    // Narrow card: same as contacts — 1 Activity, 2 Details, 3 More… (expand).
+    // Do not read card section hrefs from the DOM: that list is only Activity /
+    // Details and would steal key `3` before this expand target.
+    const groupId = parseCrmGroupId(search);
+    const section = getActiveOrganizationSection(path, slug);
+    return [
+      getOrganizationOverlayHref(slug, { groupId }),
+      getOrganizationOverlayHref(slug, { section: "details", groupId }),
+      getOrganizationOverlayHref(slug, {
+        section: section === "overview" ? undefined : section,
+        layout: "page",
+        groupId,
+      }),
+    ];
   }
 
   return null;

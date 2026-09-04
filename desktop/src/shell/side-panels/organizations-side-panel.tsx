@@ -6,7 +6,7 @@ import {
   getSelectedOrganizationSlugFromPathname,
   getUniqueListItemRouteParam,
   groupItemsByAlphaLetter,
-  organizationMatchesSlug,
+  resolveListItemFromSlug,
   type OrganizationsSidePanelViewProps,
 } from "@backsteros/ui";
 
@@ -25,8 +25,7 @@ export function DesktopOrganizationsSidePanel({
   const { pathname, items } = viewProps;
   const selectedSlug = getSelectedOrganizationSlugFromPathname(pathname);
   const selectedId = selectedSlug
-    ? (items.find((item) => organizationMatchesSlug(item, selectedSlug))?.id ??
-      null)
+    ? (resolveListItemFromSlug(items, selectedSlug)?.id ?? null)
     : null;
   // Match DOM order from alpha-grouped rendering so j/k follows the visible list.
   const itemIds = groupItemsByAlphaLetter(items).flatMap(([, entries]) =>

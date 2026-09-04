@@ -40,6 +40,8 @@ import {
   fillMissingMoneybirdContactIdFromApi,
   fillMissingParentFromApi,
   fillMissingTypeFromApi,
+  mergeLocalDocumentsWithLiveApi,
+  mergeLocalWithPendingApiCreates,
   resolveLocalOrApiRows,
 } from "../merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "../powersync-context";
@@ -58,6 +60,7 @@ import {
   mapOrganization,
   mapProject,
   mapTask,
+  parseStringIdArray,
   snakeRow,
 } from "./row-mappers";
 import {
@@ -120,7 +123,14 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
   inboxTasks: ApiTask[] | null;
 } {
   if (rows == null) return { listTasks: null, inboxTasks: null };
-  const mapped = rows.map((row) => snakeRow(row) as ApiTask);
+  const mapped = rows.map((row) => {
+    const task = snakeRow(row) as ApiTask;
+    return {
+      ...task,
+      relatedContactIds: parseStringIdArray(task.relatedContactIds),
+      relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
+    };
+  });
   return {
     listTasks: mapped.filter(isTasksListTask),
     inboxTasks: mapped.filter((task) =>
@@ -227,6 +237,7 @@ function useDesktopWorkspaceDataImpl(): {
     setApiAreas,
     apiDocuments,
     setApiDocuments,
+    liveDeletedDocumentIds,
     apiHabits,
     setApiHabits,
     apiMeetings,
@@ -270,7 +281,25 @@ function useDesktopWorkspaceDataImpl(): {
         fillFrom,
       ),
       apiOrganizations,
-      ["summary", "notes"],
+      [
+        "summary",
+        "notes",
+        "size",
+        "socialAccounts",
+        "region",
+        "chamberOfCommerce",
+        "taxNumber",
+        // Coords may lag in SQLite after schema adds / Moneybird geocode writes
+        // to Postgres; fill from REST so the Details map can render.
+        "latitude",
+        "longitude",
+        "address",
+        "city",
+        "postalCode",
+        "country",
+        "emails",
+        "phones",
+      ],
     );
   }, [apiOrganizations, localOrganizations.data]);
 
@@ -290,7 +319,10 @@ function useDesktopWorkspaceDataImpl(): {
         fillMissingHabitIdFromApi(
           fillMissingAgentChatIdFromApi(
             fillMissingLinksFromApi(
-              resolveLocalOrApiRows(localMapped, apiTasks),
+              mergeLocalWithPendingApiCreates(
+                resolveLocalOrApiRows(localMapped, apiTasks),
+                apiTasks,
+              ),
               fillFrom,
             ),
             fillFrom,
@@ -312,7 +344,10 @@ function useDesktopWorkspaceDataImpl(): {
         fillMissingHabitIdFromApi(
           fillMissingAgentChatIdFromApi(
             fillMissingLinksFromApi(
-              resolveLocalOrApiRows(localMapped, apiInboxTasks),
+              mergeLocalWithPendingApiCreates(
+                resolveLocalOrApiRows(localMapped, apiInboxTasks),
+                apiInboxTasks,
+              ),
               fillFrom,
             ),
             fillFrom,
@@ -361,7 +396,7 @@ function useDesktopWorkspaceDataImpl(): {
       resolveLocalOrApiRows(localMapped, apiContacts),
       apiContacts,
       // birthday / names / emails: fill when local SQLite is still missing new CRM columns
-      ["summary", "notes", "birthday", "firstName", "lastName", "emails"],
+      ["summary", "notes", "birthday", "firstName", "lastName", "emails", "phones", "languages", "socialAccounts", "latitude", "longitude", "address", "city", "postalCode", "country", "region"],
     );
   }, [apiContacts, localContacts.data]);
 
@@ -375,14 +410,17 @@ function useDesktopWorkspaceDataImpl(): {
     );
   }, [apiAreas, localAreas.data]);
 
-  const rawDocuments = useMemo(
-    () =>
-      resolveLocalOrApiRows(
-        localDocuments.data?.map((row) => snakeRow(row) as ApiDocument),
-        apiDocuments,
-      ),
-    [apiDocuments, localDocuments.data],
-  );
+  const rawDocuments = useMemo(() => {
+    const localMapped =
+      localDocuments.data?.map((row) => snakeRow(row) as ApiDocument) ?? null;
+    // Overlay newer API metadata (agent move/rename) + pending creates; hide
+    // live deletes until PowerSync drops the SQLite row.
+    return mergeLocalDocumentsWithLiveApi(
+      resolveLocalOrApiRows(localMapped, apiDocuments),
+      apiDocuments,
+      { deletedIds: liveDeletedDocumentIds },
+    );
+  }, [apiDocuments, liveDeletedDocumentIds, localDocuments.data]);
 
   const habits = useMemo((): ApiHabit[] => {
     const localMapped =
@@ -467,6 +505,7 @@ function useDesktopWorkspaceDataImpl(): {
           dueDate: task.dueDate,
           agentCreatedAt: task.agentCreatedAt,
           agentInboxApprovedAt: task.agentInboxApprovedAt,
+          inboxUpdatedAt: task.inboxUpdatedAt,
         })
       ) {
         continue;
@@ -494,6 +533,7 @@ function useDesktopWorkspaceDataImpl(): {
         inbox: task.inbox ?? null,
         agentCreatedAt: task.agentCreatedAt,
         agentInboxApprovedAt: task.agentInboxApprovedAt,
+        inboxUpdatedAt: task.inboxUpdatedAt,
       });
     });
     return sortInboxItemsByAttentionStatus(inboxTaskItems);
@@ -504,6 +544,7 @@ function useDesktopWorkspaceDataImpl(): {
     patchViaPowerSyncOrApi,
     softDeleteViaPowerSyncOrApi,
     softRefreshApiTasks,
+    softRefreshApiDocuments,
   } = useWorkspaceEntityPatching({
     authenticated,
     client,
@@ -823,39 +864,42 @@ function useDesktopWorkspaceDataImpl(): {
   );
   const patchContact = useCallback(
     async (id: string, values: Record<string, unknown>) => {
+      // organizationName is display-only (joined from organizations); writing it
+      // as organization_name fails SQLite and aborts the PowerSync upload path.
+      const { organizationName: _organizationName, ...writable } = values;
       const touchesNames =
-        values.firstName !== undefined ||
-        values.lastName !== undefined ||
-        values.name !== undefined;
-      let next = values;
+        writable.firstName !== undefined ||
+        writable.lastName !== undefined ||
+        writable.name !== undefined;
+      let next = writable;
       if (touchesNames) {
         const existing = rawContacts.find((contact) => contact.id === id);
         if (existing) {
           if (
-            values.firstName === undefined &&
-            values.lastName === undefined &&
-            values.name !== undefined
+            writable.firstName === undefined &&
+            writable.lastName === undefined &&
+            writable.name !== undefined
           ) {
-            const firstName = String(values.name ?? "").trim();
+            const firstName = String(writable.name ?? "").trim();
             next = {
-              ...values,
+              ...writable,
               firstName,
               lastName: "",
               name: firstName,
             };
           } else {
             const firstName = String(
-              values.firstName !== undefined
-                ? values.firstName
+              writable.firstName !== undefined
+                ? writable.firstName
                 : (existing.firstName ?? existing.name ?? ""),
             ).trim();
             const lastName = String(
-              values.lastName !== undefined
-                ? (values.lastName ?? "")
+              writable.lastName !== undefined
+                ? (writable.lastName ?? "")
                 : (existing.lastName ?? ""),
             ).trim();
             next = {
-              ...values,
+              ...writable,
               firstName,
               lastName,
               name: formatContactDisplayName(firstName, lastName) || firstName,
@@ -1018,6 +1062,7 @@ function useDesktopWorkspaceDataImpl(): {
       moveDocument,
       reorderDocuments,
       deleteDocument,
+      softRefreshApiDocuments,
     }),
     [
       createArea,
@@ -1054,6 +1099,7 @@ function useDesktopWorkspaceDataImpl(): {
       softDeleteMeeting,
       softDeleteOrganization,
       softDeleteProject,
+      softRefreshApiDocuments,
       softDeleteTask,
       updateDocumentIcon,
       updateHabit,

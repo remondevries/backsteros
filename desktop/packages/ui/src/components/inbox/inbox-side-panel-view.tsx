@@ -66,10 +66,15 @@ export type InboxSidePanelViewProps = {
   onProjectChange?: (taskId: string, projectKey: string | null) => void;
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
   /**
-   * Group tasks into collapsible subgroups (Triage / On Hold / In Review / …)
+   * Group tasks into collapsible subgroups (Updated / Triage / On Hold / …)
    * with the shared label + rule line used on Projects/Areas.
    */
   groupByAttentionStatus?: boolean;
+  /**
+   * Keep session-pinned rows in the attention section they occupied when
+   * opened (so acknowledging Updated does not jump the row).
+   */
+  attentionGroupOverrides?: ReadonlyMap<string, string>;
   /**
    * Collapsed attention-group keys when `groupByAttentionStatus` is on.
    * Owned by the host so keyboard-nav item order can skip hidden rows.
@@ -114,6 +119,7 @@ export function InboxSidePanelView({
   onProjectChange,
   onAssigneeChange,
   groupByAttentionStatus = false,
+  attentionGroupOverrides,
   collapsedGroups = EMPTY_COLLAPSED_GROUPS,
   onToggleGroup,
   renderTitleTrailing,
@@ -151,9 +157,10 @@ export function InboxSidePanelView({
         ? groupInboxItemsByAttentionStatus(items, new Date(), {
             // Callers (shell merge + workspace) already attention-sort.
             alreadySorted: true,
+            attentionGroupOverrides,
           })
         : null,
-    [groupByAttentionStatus, items],
+    [attentionGroupOverrides, groupByAttentionStatus, items],
   );
 
   const useVirtualList = items.length >= OVERVIEW_LIST_VIRTUALIZE_THRESHOLD;

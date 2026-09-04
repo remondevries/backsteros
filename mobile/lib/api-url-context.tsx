@@ -60,8 +60,12 @@ export function MobileCoreApiUrlProvider({ children }: { children: ReactNode }) 
         localApiUrl,
         cloudApiUrl,
       });
-      setActiveApiUrl(resolved.activeApiUrl);
-      setCoreMode(resolved.coreMode);
+      setActiveApiUrl((prev) =>
+        prev === resolved.activeApiUrl ? prev : resolved.activeApiUrl,
+      );
+      setCoreMode((prev) =>
+        prev === resolved.coreMode ? prev : resolved.coreMode,
+      );
       if (resolved.coreMode === "cloud") {
         console.info(
           `[mobile] local core offline — REST fallback to cloud (${resolved.activeApiUrl})`,

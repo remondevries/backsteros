@@ -24,7 +24,10 @@ import {
   buildMentionSections,
   flattenMentionSections,
 } from "../../mentions/search-catalog.js";
-import { buildMentionToken } from "../../mentions/tokens.js";
+import {
+  buildMentionToken,
+  preferredContactMentionDisplayId,
+} from "../../mentions/tokens.js";
 import { MentionLeadingIcon } from "../mentions/mention-leading-icon.js";
 
 const POPUP_WIDTH = 320;
@@ -129,11 +132,10 @@ function trailingHint(item: MentionItem): string | null {
   if (item.kind === "task" || item.kind === "letter" || item.kind === "email") {
     return item.displayId;
   }
-  if (
-    item.kind === "project" ||
-    item.kind === "contact" ||
-    item.kind === "organization"
-  ) {
+  if (item.kind === "contact") {
+    return preferredContactMentionDisplayId(item) ?? item.key;
+  }
+  if (item.kind === "project" || item.kind === "organization") {
     return item.key;
   }
   return null;
@@ -429,8 +431,17 @@ export function DocumentMentionMenu({
                         item.kind === "contact"
                           ? {
                               id: item.id,
+                              avatarSrc: item.avatarSrc,
                               avatarStorageKey: item.avatarStorageKey,
                               avatarUpdatedAt: item.avatarUpdatedAt,
+                            }
+                          : null
+                      }
+                      organization={
+                        item.kind === "organization"
+                          ? {
+                              id: item.id,
+                              avatarSrc: item.avatarSrc,
                             }
                           : null
                       }

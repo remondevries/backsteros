@@ -6,7 +6,7 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 
 | Layer | Choice | Runner-up |
 | --- | --- | --- |
-| Mobile | **Expo (SDK 52+) + Expo Router** | Flutter + PowerSync |
+| Mobile | **Expo (SDK 57) + Expo Router** | Flutter + PowerSync |
 | Desktop client | **Tauri 2 + Vite + React** (ADR-019) | Electron; Next sidecar |
 | Product web UI | **Next.js 16 + React 19 + Tailwind CSS 4** | Vite + React |
 | Markdown editor | **CodeMirror 6** | — |

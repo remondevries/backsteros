@@ -5,11 +5,21 @@ import type {
   ResearchResponse,
   SpellcheckResponse,
 } from "@backsteros/contracts";
-import { TaskActivityPanel } from "@backsteros/ui";
+import {
+  TaskActivityPanel,
+  type TaskActivityCommentMutations,
+} from "@backsteros/ui";
 
 import { isTaskAgentWorkingForUi } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatus } from "../lib/agent/agent-status-context";
 import { useDesktopApi } from "../lib/api-context";
+import { useDesktopPowerSync } from "../lib/powersync-context";
+import { useTaskActivityLocalFeed } from "../lib/task-activity-feed";
+import {
+  createTaskCommentViaPowerSyncOrApi,
+  deleteTaskCommentViaPowerSyncOrApi,
+  patchTaskCommentViaPowerSyncOrApi,
+} from "../lib/workspace/task-comment-mutations";
 
 type ContactLike = {
   id: string;
@@ -71,8 +81,10 @@ export function DesktopTaskActivityPanel({
 }: DesktopTaskActivityPanelProps) {
   const { client } = useDesktopApi();
   const { user } = useUser();
+  const powerSync = useDesktopPowerSync();
   const agentStatus = useDesktopAgentStatus();
   const { setTaskResearchWorking } = agentStatus;
+  const localFeed = useTaskActivityLocalFeed(taskId);
 
   const [cursorSettings, setCursorSettings] = useState<CursorSettings | null>(
     null,
@@ -134,6 +146,35 @@ export function DesktopTaskActivityPanel({
     }
     return map;
   }, [contactAvatarSrc, contacts]);
+
+  const commentMutations = useMemo((): TaskActivityCommentMutations => {
+    const author = {
+      userId: user?.id ?? null,
+      email: currentUser.email,
+    };
+    return {
+      create: (body, parentCommentId) =>
+        createTaskCommentViaPowerSyncOrApi(client, powerSync, {
+          taskId,
+          body,
+          parentCommentId,
+          author,
+        }),
+      patch: (commentId, patch, existing) =>
+        patchTaskCommentViaPowerSyncOrApi(client, powerSync, {
+          taskId,
+          commentId,
+          existing,
+          ...patch,
+        }),
+      delete: (comment, replyIds) =>
+        deleteTaskCommentViaPowerSyncOrApi(client, powerSync, {
+          taskId,
+          comment,
+          replyIds,
+        }),
+    };
+  }, [client, currentUser.email, powerSync, taskId, user?.id]);
 
   const patchTask = useCallback(
     async (values: Record<string, unknown>) => {
@@ -378,7 +419,12 @@ export function DesktopTaskActivityPanel({
         currentUser={currentUser}
         assigneeAvatarById={assigneeAvatarById}
         avatarByEmail={avatarByEmail}
+        localFeedActive={localFeed.active}
+        localActivities={localFeed.activities}
+        localComments={localFeed.comments}
+        localFeedLoading={localFeed.loading}
         headerActions={headerActions}
+        commentMutations={commentMutations}
       />
       {spellcheckError ? (
         <p className="task-activity__error" role="alert">

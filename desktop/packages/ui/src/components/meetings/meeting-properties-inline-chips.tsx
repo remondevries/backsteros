@@ -25,12 +25,22 @@ import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
+import {
+  formatAttendeeNames,
+  MeetingAttendeeLabels,
+} from "./meeting-attendee-labels.js";
 
 export type MeetingPropertiesMeeting = {
   status: string;
-  priority?: number;
   startAt: Date | null;
   endAt: Date | null;
+  /** video_call | in_person | phone_call */
+  format?: string | null;
+  /** Venue organization (in-person); independent of organizationId. */
+  locationOrganizationId?: string | null;
+  locationOrganizationName?: string | null;
+  /** Formatted address of the venue org (shown next to format). */
+  locationOrganizationAddress?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   organizationId?: string | null;
@@ -43,7 +53,6 @@ export type MeetingPropertiesMeeting = {
 export type MeetingPropertiesInlineChipsProps = {
   meeting: MeetingPropertiesMeeting | null;
   onStatusChange?: (status: TaskStatus) => void;
-  onPriorityChange?: (priority: number) => void;
   onStartChange?: (value: Date | null) => void;
   onEndChange?: (value: Date | null) => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
@@ -106,6 +115,11 @@ export function MeetingPropertiesInlineChips({
   const attendeeOptions = contactOptions.filter(
     (option) => option.value !== DROPDOWN_NONE_VALUE,
   );
+  const attendeeIds = meeting?.attendeeContactIds ?? [];
+  const attendeeAriaLabel = formatAttendeeNames(attendeeIds, attendeeOptions);
+  // Narrow panel always keeps the leading person icon; pills live in the hover
+  // popover when there are multiple attendees.
+  const showAttendeeLeadingIcon = true;
 
   return (
     <div className="task-properties-inline" aria-label="Meeting properties">
@@ -224,7 +238,7 @@ export function MeetingPropertiesInlineChips({
         {canEditAttendees ? (
           <SearchableDropdown
             multiple
-            values={meeting?.attendeeContactIds ?? []}
+            values={attendeeIds}
             options={attendeeOptions}
             onValuesChange={onAttendeeContactIdsChange}
             disabled={disabled}
@@ -261,9 +275,7 @@ export function MeetingPropertiesInlineChips({
                     ? "property-dropdown-trigger--inline-chip"
                     : null,
                   open ? "is-open" : null,
-                  (meeting?.attendeeContactIds?.length ?? 0) === 0
-                    ? "is-muted"
-                    : null,
+                  attendeeIds.length === 0 ? "is-muted" : null,
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -271,27 +283,26 @@ export function MeetingPropertiesInlineChips({
                 disabled={isDisabled}
                 aria-haspopup="listbox"
                 aria-expanded={open}
-                aria-label="Attendees"
+                aria-label={attendeeAriaLabel}
                 onClick={(event) => {
                   event.stopPropagation();
                   onToggle();
                 }}
               >
-                <span
-                  className="property-dropdown-trigger__icon"
-                  aria-hidden="true"
-                >
-                  <ContactPersonIcon size={14} />
-                </span>
+                {showAttendeeLeadingIcon ? (
+                  <span
+                    className="property-dropdown-trigger__icon"
+                    aria-hidden="true"
+                  >
+                    <ContactPersonIcon size={14} />
+                  </span>
+                ) : null}
                 <span className="property-dropdown-trigger__label">
-                  {(meeting?.attendeeContactIds?.length ?? 0) === 0
-                    ? "No attendees"
-                    : meeting!.attendeeContactIds.length === 1
-                      ? (attendeeOptions.find(
-                          (option) =>
-                            option.value === meeting!.attendeeContactIds[0],
-                        )?.label ?? "1 attendee")
-                      : `${meeting!.attendeeContactIds.length} attendees`}
+                  <MeetingAttendeeLabels
+                    attendeeContactIds={attendeeIds}
+                    attendeeOptions={attendeeOptions}
+                    density="compact"
+                  />
                 </span>
               </button>
             )}
@@ -304,21 +315,26 @@ export function MeetingPropertiesInlineChips({
               triggerVariant === "inlineChip"
                 ? "property-dropdown-trigger--inline-chip"
                 : null,
-              (meeting?.attendeeContactIds?.length ?? 0) === 0 ? "is-muted" : null,
+              attendeeIds.length === 0 ? "is-muted" : null,
             ]
               .filter(Boolean)
               .join(" ")}
             data-task-property-dropdown="assignee"
             disabled={disabled}
+            aria-label={attendeeAriaLabel}
             onClick={() => onFieldActivate?.("attendees")}
           >
-            <span className="property-dropdown-trigger__icon" aria-hidden="true">
-              <ContactPersonIcon size={14} />
-            </span>
+            {showAttendeeLeadingIcon ? (
+              <span className="property-dropdown-trigger__icon" aria-hidden="true">
+                <ContactPersonIcon size={14} />
+              </span>
+            ) : null}
             <span className="property-dropdown-trigger__label">
-              {(meeting?.attendeeContactIds?.length ?? 0) === 0
-                ? "No attendees"
-                : `${meeting!.attendeeContactIds.length} attendees`}
+              <MeetingAttendeeLabels
+                attendeeContactIds={attendeeIds}
+                attendeeOptions={attendeeOptions}
+                density="compact"
+              />
             </span>
           </button>
         )}

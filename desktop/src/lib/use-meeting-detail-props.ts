@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import {
   buildAssigneeDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  formatContactAddressLine,
   type MeetingDetailViewProps,
   type MeetingFormat,
   type MeetingListItem,
@@ -34,12 +35,15 @@ export function useMeetingDetailViewProps(
   | "onEndChange"
   | "onProjectChange"
   | "onOrganizationChange"
+  | "onLocationOrganizationChange"
   | "onAttendeeContactIdsChange"
   | "onTrackedDurationSecondsChange"
   | "timerSession"
   | "organizationOptions"
   | "contactOptions"
   | "projectOptions"
+  | "onCreateOrganizationFromQuery"
+  | "onCreateContactFromQuery"
 > {
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -97,8 +101,26 @@ export function useMeetingDetailViewProps(
           (entry) => entry.id === meeting.organizationId,
         )
       : null;
+    const locationOrganization = meeting.locationOrganizationId
+      ? workspace.organizations.find(
+          (entry) => entry.id === meeting.locationOrganizationId,
+        )
+      : null;
+    const locationOrganizationAddress = locationOrganization
+      ? formatContactAddressLine({
+          address: locationOrganization.address,
+          city: locationOrganization.city,
+          postalCode: locationOrganization.postalCode,
+          region: locationOrganization.region,
+          country: locationOrganization.country,
+        }) || null
+      : null;
     return {
       status: meeting.status ?? "ready_to_start",
+      format: meeting.format ?? "video_call",
+      locationOrganizationId: meeting.locationOrganizationId ?? null,
+      locationOrganizationName: locationOrganization?.name ?? null,
+      locationOrganizationAddress,
       startAt: Number.isNaN(startAt.getTime()) ? null : startAt,
       endAt: Number.isNaN(endAt.getTime()) ? null : endAt,
       projectKey: project?.key ?? null,
@@ -110,6 +132,28 @@ export function useMeetingDetailViewProps(
       trackedDurationSeconds: meeting.trackedDurationSeconds ?? null,
     };
   }, [meeting, workspace.organizations, workspace.projects]);
+
+  const onCreateContactFromQuery = useCallback(
+    (query: string) => {
+      if (!meeting) return;
+      void workspace.createContact({ name: query }).then((created) => {
+        const current = meeting.attendeeContactIds ?? [];
+        if (current.includes(created.id)) return;
+        patchMeeting({ attendeeContactIds: [...current, created.id] });
+      });
+    },
+    [meeting, patchMeeting, workspace],
+  );
+
+  const onCreateOrganizationFromQuery = useCallback(
+    (query: string) => {
+      if (!meeting) return;
+      void workspace.createOrganization({ name: query }).then((created) => {
+        patchMeeting({ organizationId: created.id });
+      });
+    },
+    [meeting, patchMeeting, workspace],
+  );
 
   return {
     meeting: meetingProperties,
@@ -132,6 +176,9 @@ export function useMeetingDetailViewProps(
     },
     onOrganizationChange: (organizationId) => {
       patchMeeting({ organizationId });
+    },
+    onLocationOrganizationChange: (locationOrganizationId) => {
+      patchMeeting({ locationOrganizationId });
     },
     onAttendeeContactIdsChange: (contactIds) => {
       patchMeeting({ attendeeContactIds: contactIds });
@@ -157,5 +204,7 @@ export function useMeetingDetailViewProps(
     organizationOptions,
     contactOptions,
     projectOptions,
+    onCreateOrganizationFromQuery,
+    onCreateContactFromQuery,
   };
 }

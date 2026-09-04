@@ -682,7 +682,6 @@ function TrailContactLeaf({
         void workspace.createOrganization({ name: query }).then((created) => {
           void workspace.patchContact(contact.id, {
             organizationId: created.id,
-            organizationName: query.trim(),
           });
         });
       }}
@@ -713,6 +712,7 @@ function TrailOrganizationLeaf({
 
   return (
     <OrganizationOverviewView
+      mode="details"
       organization={{
         id: organization.id,
         name: organization.name,

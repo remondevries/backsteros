@@ -108,6 +108,18 @@ export function shouldHandleListKeyboardActivate(event: KeyboardEvent): boolean 
     return false;
   }
 
+  // Narrow calendar meeting panel owns Enter for expand — do not also open the
+  // highlighted content-preview link (or re-activate a sidepanel row).
+  if (
+    event.key === "Enter" &&
+    typeof document !== "undefined" &&
+    document.querySelector(
+      '[data-calendar-meeting-overlay-layout="panel"]',
+    ) !== null
+  ) {
+    return false;
+  }
+
   // Shift+Space toggles row multi-select; plain Space / Enter open the item.
   if (
     event.shiftKey &&

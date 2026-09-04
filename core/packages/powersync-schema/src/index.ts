@@ -322,6 +322,7 @@ const meetings = new Table({
   end_at: column.text,
   tracked_minutes: column.integer,
   tracked_duration_seconds: column.integer,
+  inbox_updated_at: column.text,
   sort_order: column.integer,
   ...commonDates,
 });

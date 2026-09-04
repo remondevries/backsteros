@@ -12,12 +12,29 @@ import type {
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
+import { preservePendingApiRows } from "../merge-local-and-api";
 import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
 import {
   shouldSkipRestEntityWrite,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
+
+/** Scope moves renumber server-side — client must await the new display number. */
+function taskPatchChangesTaskScope(values: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(values, "projectId")
+    || Object.prototype.hasOwnProperty.call(values, "contactId");
+}
+
+/** Title / received-date changes re-file vault PDFs — must hit REST `updateLetter`. */
+function letterPatchRequiresVaultRelocate(
+  values: Record<string, unknown>,
+): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(values, "title") ||
+    Object.prototype.hasOwnProperty.call(values, "receivedDate")
+  );
+}
 
 /**
  * Sole REST dual-write while PowerSync is connected — agent inbox approval.
@@ -351,6 +368,25 @@ export function useWorkspaceEntityPatching({
     }
   }, [authenticated, client, powerSync, setApiMeetings]);
 
+  /**
+   * Pull document metadata from REST even while PowerSync is connected.
+   * Agent/off-device creates otherwise wait on SQLite download; pending-merge
+   * needs apiDocuments to include those rows.
+   */
+  const softRefreshApiDocuments = useCallback(async () => {
+    if (!authenticated) return;
+    try {
+      const documentsBody = await client.requestJson<{
+        documents: ApiDocument[];
+      }>("/api/v1/documents");
+      setApiDocuments((current) =>
+        preservePendingApiRows(current, documentsBody.documents),
+      );
+    } catch {
+      // PowerSync remains the primary source.
+    }
+  }, [authenticated, client, setApiDocuments]);
+
   const patchViaPowerSyncOrApi = useCallback(
     async (
       table: string,
@@ -400,8 +436,10 @@ export function useWorkspaceEntityPatching({
         applyApiMeetingPatch(id, {
           projectId: row.projectId,
           organizationId: row.organizationId,
+          locationOrganizationId: row.locationOrganizationId,
           attendeeContactIds: row.attendeeContactIds,
           status: row.status,
+          format: row.format,
           updatedAt: row.updatedAt,
         });
         if (powerSync.ready && powerSync.patchMetadata) {
@@ -409,8 +447,10 @@ export function useWorkspaceEntityPatching({
             await powerSync.patchMetadata("meetings", id, toSnakeFields({
               projectId: row.projectId ?? null,
               organizationId: row.organizationId ?? null,
+              locationOrganizationId: row.locationOrganizationId ?? null,
               attendeeContactIds: row.attendeeContactIds ?? [],
               status: row.status,
+              format: row.format ?? "video_call",
             }));
           } catch (error) {
             console.warn("[desktop] local meeting property sync failed", error);
@@ -422,8 +462,10 @@ export function useWorkspaceEntityPatching({
         table === "meetings" &&
         ("projectId" in values ||
           "organizationId" in values ||
+          "locationOrganizationId" in values ||
           "attendeeContactIds" in values ||
-          "status" in values);
+          "status" in values ||
+          "format" in values);
 
       // Optimistic API cache first — UI must not wait on SQLite or REST.
       const persistLocalAndMaybeRest = async (): Promise<
@@ -483,8 +525,9 @@ export function useWorkspaceEntityPatching({
           }
         }
         if (!authenticated) return;
-        // PowerSync upload is primary. Sole REST dual-write:
-        // taskPatchRequiresRestWrite (agentInboxApproved) — see contracts.
+        // PowerSync upload is primary. Extra REST only for:
+        // - agentInboxApproved (replication race) via queueSoleRest…
+        // - project/contact scope moves (server renumbers; URL needs the number)
         if (shouldSkipRestEntityWrite(powerSync)) {
           queueSoleRestDualWriteAgentInboxApproval({
             client,
@@ -494,6 +537,37 @@ export function useWorkspaceEntityPatching({
             apiValues,
             applyTaskServerRow,
           });
+          if (table === "tasks" && taskPatchChangesTaskScope(values)) {
+            try {
+              const updated = await client.requestJson<ApiTask>(path, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(apiValues),
+              });
+              await applyTaskServerRow(updated);
+              return typeof updated?.number === "number"
+                ? { number: updated.number }
+                : undefined;
+            } catch (error) {
+              console.warn("[desktop] task scope move REST failed", error);
+              return;
+            }
+          }
+          if (table === "letters" && letterPatchRequiresVaultRelocate(values)) {
+            try {
+              await client.requestJson(path, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(apiValues),
+              });
+            } catch (error) {
+              console.warn("[desktop] letter vault relocate REST failed", error);
+              throw error instanceof Error
+                ? error
+                : new Error("Could not rename letter PDF on disk.");
+            }
+            return;
+          }
           return;
         }
         try {
@@ -551,7 +625,10 @@ export function useWorkspaceEntityPatching({
         applyOptimisticEntityPatch(table, id, values);
         const mustAwaitRest =
           authenticated &&
-          ("agentChatId" in values || "moneybirdContactId" in values);
+          ("agentChatId" in values ||
+            "moneybirdContactId" in values ||
+            (table === "tasks" && taskPatchChangesTaskScope(values)) ||
+            (table === "letters" && letterPatchRequiresVaultRelocate(values)));
         if (mustAwaitRest) {
           return persistLocalAndMaybeRest();
         }
@@ -708,5 +785,6 @@ export function useWorkspaceEntityPatching({
     patchViaPowerSyncOrApi,
     softDeleteViaPowerSyncOrApi,
     softRefreshApiTasks,
+    softRefreshApiDocuments,
   };
 }

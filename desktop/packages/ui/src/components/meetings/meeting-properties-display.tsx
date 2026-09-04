@@ -24,6 +24,10 @@ import { MeetingScheduleDropdown } from "./meeting-schedule-dropdown.js";
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import type { MeetingPropertiesMeeting } from "./meeting-properties-inline-chips.js";
+import {
+  formatAttendeeNames,
+  MeetingAttendeeLabels,
+} from "./meeting-attendee-labels.js";
 
 export type MeetingPropertiesDisplayProps = {
   meeting: MeetingPropertiesMeeting | null;
@@ -87,6 +91,9 @@ export function MeetingPropertiesDisplay({
   const attendeeOptions = contactOptions.filter(
     (option) => option.value !== DROPDOWN_NONE_VALUE,
   );
+  const attendeeIds = meeting?.attendeeContactIds ?? [];
+  const attendeeAriaLabel = formatAttendeeNames(attendeeIds, attendeeOptions);
+  const showAttendeeLeadingIcon = attendeeIds.length <= 1;
 
   return (
     <div className="task-detail-properties-scroll">
@@ -210,7 +217,7 @@ export function MeetingPropertiesDisplay({
           {canEditAttendees ? (
             <SearchableDropdown
               multiple
-              values={meeting?.attendeeContactIds ?? []}
+              values={attendeeIds}
               options={attendeeOptions}
               onValuesChange={onAttendeeContactIdsChange}
               disabled={disabled}
@@ -240,9 +247,7 @@ export function MeetingPropertiesDisplay({
                   className={[
                     "property-dropdown-trigger",
                     open ? "is-open" : null,
-                    (meeting?.attendeeContactIds?.length ?? 0) === 0
-                      ? "is-muted"
-                      : null,
+                    attendeeIds.length === 0 ? "is-muted" : null,
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -250,27 +255,25 @@ export function MeetingPropertiesDisplay({
                   disabled={isDisabled}
                   aria-haspopup="listbox"
                   aria-expanded={open}
-                  aria-label="Attendees"
+                  aria-label={attendeeAriaLabel}
                   onClick={(event) => {
                     event.stopPropagation();
                     onToggle();
                   }}
                 >
-                  <span
-                    className="property-dropdown-trigger__icon"
-                    aria-hidden="true"
-                  >
-                    <ContactPersonIcon size={14} />
-                  </span>
+                  {showAttendeeLeadingIcon ? (
+                    <span
+                      className="property-dropdown-trigger__icon"
+                      aria-hidden="true"
+                    >
+                      <ContactPersonIcon size={14} />
+                    </span>
+                  ) : null}
                   <span className="property-dropdown-trigger__label">
-                    {(meeting?.attendeeContactIds?.length ?? 0) === 0
-                      ? "No attendees"
-                      : meeting!.attendeeContactIds.length === 1
-                        ? (attendeeOptions.find(
-                            (option) =>
-                              option.value === meeting!.attendeeContactIds[0],
-                          )?.label ?? "1 attendee")
-                        : `${meeting!.attendeeContactIds.length} attendees`}
+                    <MeetingAttendeeLabels
+                      attendeeContactIds={attendeeIds}
+                      attendeeOptions={attendeeOptions}
+                    />
                   </span>
                 </button>
               )}
@@ -280,26 +283,28 @@ export function MeetingPropertiesDisplay({
               type="button"
               className={[
                 "property-dropdown-trigger",
-                (meeting?.attendeeContactIds?.length ?? 0) === 0
-                  ? "is-muted"
-                  : null,
+                attendeeIds.length === 0 ? "is-muted" : null,
               ]
                 .filter(Boolean)
                 .join(" ")}
               data-task-property-dropdown="assignee"
               disabled={disabled}
+              aria-label={attendeeAriaLabel}
               onClick={() => onFieldActivate?.("attendees")}
             >
-              <span
-                className="property-dropdown-trigger__icon"
-                aria-hidden="true"
-              >
-                <ContactPersonIcon size={14} />
-              </span>
+              {showAttendeeLeadingIcon ? (
+                <span
+                  className="property-dropdown-trigger__icon"
+                  aria-hidden="true"
+                >
+                  <ContactPersonIcon size={14} />
+                </span>
+              ) : null}
               <span className="property-dropdown-trigger__label">
-                {(meeting?.attendeeContactIds?.length ?? 0) === 0
-                  ? "No attendees"
-                  : `${meeting!.attendeeContactIds.length} attendees`}
+                <MeetingAttendeeLabels
+                  attendeeContactIds={attendeeIds}
+                  attendeeOptions={attendeeOptions}
+                />
               </span>
             </button>
           )}

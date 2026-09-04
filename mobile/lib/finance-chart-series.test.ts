@@ -9,7 +9,9 @@ import {
   buildAssetsDebtChartPoints,
   buildDashboardTopCategories,
   buildInvoiceRevenueChartPoints,
+  buildMoneybirdMonthIncomeDailyPoints,
   buildMonthIncomeExpenseDailyPoints,
+  densifySeriesForSmoothLine,
   buildMonthlySpendSeries,
   mergeInvoiceRevenueWithAccountExpenses,
 } from "./finance-chart-series";
@@ -340,5 +342,54 @@ describe("buildInvoiceRevenueChartPoints", () => {
     assert.equal(points[2]!.invoiced, 0);
     assert.equal(points[7]!.invoiced, null);
     assert.equal(points[7]!.expenses, null);
+  });
+});
+
+describe("buildMoneybirdMonthIncomeDailyPoints", () => {
+  it("buckets billed invoice amounts by invoice date through asOf", () => {
+    const points = buildMoneybirdMonthIncomeDailyPoints({
+      asOf: new Date(2026, 7, 10),
+      invoices: [
+        {
+          state: "paid",
+          invoiceDate: "2026-08-03",
+          totalPriceInclTax: "121.0",
+        },
+        {
+          state: "draft",
+          invoiceDate: "2026-08-04",
+          totalPriceInclTax: "999.0",
+        },
+        {
+          state: "open",
+          invoiceDate: "2026-08-10",
+          totalPriceInclTax: "50.5",
+        },
+        {
+          state: "paid",
+          invoiceDate: "2026-08-15",
+          totalPriceInclTax: "10.0",
+        },
+      ],
+    });
+    assert.equal(points.length, 10);
+    assert.equal(points[2]!.income, 121);
+    assert.equal(points[3]!.income, 0);
+    assert.equal(points[9]!.income, 50.5);
+  });
+});
+
+
+describe("densifySeriesForSmoothLine", () => {
+  it("keeps endpoints and densifies the middle", () => {
+    const smooth = densifySeriesForSmoothLine([0, 10, 0], 4);
+    assert.equal(smooth[0], 0);
+    assert.equal(smooth[smooth.length - 1], 0);
+    assert.ok(smooth.length > 3);
+  });
+
+  it("returns empty / single-point series unchanged", () => {
+    assert.deepEqual(densifySeriesForSmoothLine([]), []);
+    assert.deepEqual(densifySeriesForSmoothLine([5]), [5]);
   });
 });

@@ -63,6 +63,13 @@ export function useShellChromeState() {
   const [defaultAssigneeId, setDefaultAssigneeIdState] = useState<string | null>(
     () => getDefaultAssigneeId(),
   );
+  /** One-shot override when compose is opened with an explicit assignee. */
+  const [composeAssigneeOverride, setComposeAssigneeOverride] = useState<
+    string | null | undefined
+  >(undefined);
+  /** One-shot Related contacts when compose is opened from a contact. */
+  const [composeRelatedContactIdsOverride, setComposeRelatedContactIdsOverride] =
+    useState<string[] | undefined>(undefined);
   const sidePanelAnimTimerRef = useRef<number | null>(null);
   const sidePanelAnimRafRef = useRef<number | null>(null);
   const sidebarAnimTimerRef = useRef<number | null>(null);
@@ -175,6 +182,10 @@ export function useShellChromeState() {
     windowFullscreen,
     defaultAssigneeId,
     setDefaultAssigneeIdState,
+    composeAssigneeOverride,
+    setComposeAssigneeOverride,
+    composeRelatedContactIdsOverride,
+    setComposeRelatedContactIdsOverride,
   };
 }
 
@@ -255,12 +266,16 @@ export function useShellBootEffects({
 export function useShellShortcuts({
   tabs,
   setComposeOpen,
+  setComposeAssigneeOverride,
+  setComposeRelatedContactIdsOverride,
   showSidePanel,
   panelPathname,
   toggleSidePanelCollapsed,
 }: {
   tabs: ReturnType<typeof useShellTabs>;
   setComposeOpen: (open: boolean) => void;
+  setComposeAssigneeOverride: (id: string | null | undefined) => void;
+  setComposeRelatedContactIdsOverride: (ids: string[] | undefined) => void;
   showSidePanel: boolean;
   panelPathname: string;
   toggleSidePanelCollapsed: () => void;
@@ -284,25 +299,69 @@ export function useShellShortcuts({
     queueMicrotask(() => preloadGoNavigationRouteChunks());
   }, [openFinanceGo]);
 
+  const openCompose = useCallback(() => {
+    setComposeAssigneeOverride(undefined);
+    setComposeRelatedContactIdsOverride(undefined);
+    setComposeOpen(true);
+  }, [
+    setComposeAssigneeOverride,
+    setComposeRelatedContactIdsOverride,
+    setComposeOpen,
+  ]);
+
   useComposeShortcut({
     enabled: true,
-    onCompose: () => setComposeOpen(true),
+    onCompose: openCompose,
   });
 
   useComposeGlobalShortcut({
     enabled: true,
-    onCompose: () => setComposeOpen(true),
+    onCompose: openCompose,
   });
 
   useEffect(() => {
-    function onOpenCompose() {
+    function onOpenCompose(event: Event) {
       if (openRef.current) return;
+      const detail =
+        event instanceof CustomEvent
+          ? (event.detail as {
+              assigneeId?: string | null;
+              relatedContactIds?: string[];
+            } | null)
+          : null;
+      if (
+        detail &&
+        typeof detail === "object" &&
+        Object.prototype.hasOwnProperty.call(detail, "assigneeId")
+      ) {
+        setComposeAssigneeOverride(detail.assigneeId ?? null);
+      } else {
+        setComposeAssigneeOverride(undefined);
+      }
+      if (
+        detail &&
+        typeof detail === "object" &&
+        Array.isArray(detail.relatedContactIds)
+      ) {
+        setComposeRelatedContactIdsOverride(
+          detail.relatedContactIds.filter(
+            (id): id is string => typeof id === "string" && id.trim().length > 0,
+          ),
+        );
+      } else {
+        setComposeRelatedContactIdsOverride(undefined);
+      }
       setComposeOpen(true);
     }
     window.addEventListener("backsteros:open-compose", onOpenCompose);
     return () =>
       window.removeEventListener("backsteros:open-compose", onOpenCompose);
-  }, [openRef, setComposeOpen]);
+  }, [
+    openRef,
+    setComposeOpen,
+    setComposeAssigneeOverride,
+    setComposeRelatedContactIdsOverride,
+  ]);
 
   useCommandPaletteGlobalShortcut({
     enabled: true,

@@ -14,6 +14,7 @@ import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
 import { REPLICATED_TABLES } from "./constants.js";
 import {
+  listTableColumns,
   setReplicationCursorsAfterBootstrap,
   tableExists,
   toIso,
@@ -162,7 +163,16 @@ async function applyGenericRowUnchecked(
   row: ReplicationRow,
   options?: { enforceUpdatedAtGate?: boolean },
 ): Promise<"applied" | "skipped"> {
-  const columns = Object.keys(row).filter((key) => row[key] !== undefined);
+  // Drop columns the local schema does not have yet so a newer peer (or a
+  // newer local pushing to an older peer after deploy lag) does not 500 the
+  // whole apply — e.g. mapbox_access_token before migration 0081 on cloud.
+  const knownColumns = await listTableColumns(spec.name);
+  const columns = Object.keys(row).filter(
+    (key) => row[key] !== undefined && knownColumns.has(key),
+  );
+  if (columns.length === 0) {
+    return "skipped";
+  }
   const colList = columns.map((col) => `"${col}"`).join(", ");
   // postgres.js cannot bind plain JS arrays/objects as query params (they
   // come from row_to_json / JSON transport for jsonb columns). Serialize and

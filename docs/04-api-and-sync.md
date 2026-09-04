@@ -87,7 +87,15 @@ GET  /api/v1/letters/{id}/pdf          → redirect or presigned URL
 PATCH /api/v1/documents/{id}/content
 POST  /api/v1/tasks/batch
 PATCH /api/v1/tasks/{id}
+POST  /api/v1/tasks/{id}/attachments
+      Content-Type: application/pdf   # or image/*, message/rfc822, etc.
+      X-Filename: brief.pdf
+      <raw file bytes, max 25 MB>
+GET   /api/v1/tasks/{id}/attachments
+GET   /api/v1/tasks/{id}/attachments/{attachmentId}
 ```
+
+Task file attachments (any common type: PDF, image, email `.eml`, office docs, …) require `tasks:write` / `tasks:read` and **local-core** for blob put/get (cloud-core returns `503 pdf_requires_local_core`). Metadata lists work from either role.
 
 Every write runs the **unified write pipeline** (storage → Postgres → sync event → Meilisearch → realtime).
 
@@ -102,7 +110,7 @@ Every write runs the **unified write pipeline** (storage → Postgres → sync e
 | Scope | Allows |
 | --- | --- |
 | `projects:read` | List/read projects |
-| `tasks:read` / `tasks:write` | Task CRUD + batch |
+| `tasks:read` / `tasks:write` | Task CRUD + batch + file attachments |
 | `documents:read` / `documents:write` | Markdown metadata + content |
 | `letters:read` | Letter metadata + PDF access |
 | `finance:read` / `finance:write` | Bank accounts, categories, transaction list/import/classification |
@@ -124,28 +132,57 @@ Transactions are **not** PowerSynced. Bank accounts and categories are Tier A.
 
 ## Live documents (human + agent)
 
-When user opens a document in CodeMirror:
+Open desktop shells subscribe to **local-core** workspace SSE. API agents write to
+**cloud-core** (`https://agent.backsteros.com`); cloud nudges the local replica so
+open editors refresh without waiting for the periodic tick.
 
-1. UI `POST /api/v1/documents/{id}/subscribe` (or WebSocket join `doc:{id}`)
-2. Server tracks open sessions
-3. Agent `PATCH /api/v1/documents/{id}/content` → server writes body, bumps `content_version`
-4. Server emits `{ type: "document.updated", id, version, patch_or_url }`
-5. Editor applies update within ~0.2–2 s
+```http
+GET /api/v1/workspace/events
+```
+
+Authenticated SSE (Clerk session) on local-core. Events:
+
+```text
+event: workspace.updated
+data: { "kind":"document", "entityId":"…", "projectId":null, "reason":"patch", "contentVersion":3, "operation":"upsert" }
+```
+
+Flow:
+
+1. Desktop starts `GET /api/v1/workspace/events` on **local-core**
+2. Agent writes via API key on **cloud-core** (`https://agent.backsteros.com`):
+   - `PATCH /api/v1/documents/{id}/content` (body), or
+   - create / update / move / reorder / delete (metadata)
+3. Writing core appends `sync_events` + vault twin, then `POST` peer
+   `/internal/core-replication/nudge` (Tailscale; ignored if peer offline)
+4. Peer pulls vault `.md` when `storage_key` is set (local also pulls
+   `sync_events`), heals metadata, and publishes `workspace.updated`
+5. Open editor force-GETs `/api/v1/documents/{id}/content` when `contentVersion`
+   advances (dirty edit drafts are preserved)
+6. Document lists overlay the SSE-fetched metadata row until PowerSync catches up
+7. Periodic replication tick (`CORE_REPLICATION_INTERVAL_MS`, default 15s) remains
+   the backup if a nudge was missed; post-apply publish covers tick catch-up
+
+Direction: **cloud ↔ local** (agent on cloud wakes desktop; desktop/vault edit on
+local wakes cloud). Local vault `.md` edits (`fs.watch` → metadata heal) also
+nudge the peer.
+
+Repo files outside the vault (e.g. git `docs/*.md`) are not BacksterOS documents and will not appear in the desktop app.
 
 ### Conflict policy (v1)
 
 | Situation | Behavior |
 | --- | --- |
-| User idle, agent writes | Auto-refresh editor content |
-| User typing, agent writes | Toast: “Agent updated — review?” or queue until save |
-| Both offline | Sync pull on reconnect |
+| User idle / preview, agent writes | Auto-refresh editor content via SSE |
+| User typing (dirty draft), agent writes | Keep local draft; do not clobber |
+| Both offline | Sync pull / PowerSync catch-up on reconnect |
 
 ### Levels of collaboration
 
 | Level | Description | Target |
 | --- | --- | --- |
 | 1 | Whole-file replace on save | Phase 1 |
-| 2 | Live session + version + subscribe | Phase 2 (agent + human goal) |
+| 2 | Live session + version + workspace SSE | Phase 2 (agent + human goal) |
 | 3 | CRDT / Yjs character-level | Not v1 |
 
 ## PowerSync upload path

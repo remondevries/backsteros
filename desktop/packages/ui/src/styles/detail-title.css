@@ -141,6 +141,7 @@
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   container-type: size;
 }
 

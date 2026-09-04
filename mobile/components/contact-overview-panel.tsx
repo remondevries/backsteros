@@ -1,11 +1,24 @@
+import { formatContactDisplayName } from "@backsteros/contracts";
+import type {
+  ContactEmailEntry,
+  ContactPhoneEntry,
+} from "@backsteros/contracts";
+import {
+  coerceContactEmailEntries,
+  coerceContactPhoneEntries,
+} from "@backsteros/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import {
   pickAvatarImage,
   patchAvatarMetadataLocally,
   uploadAvatarFromUri,
 } from "../lib/avatar-upload";
+import {
+  formatBirthdayAgeLabel,
+  formatBirthdayLabel,
+} from "../lib/birthday";
 import { organizationDetailHref } from "../lib/detail-href";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
 import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
@@ -17,6 +30,13 @@ import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { TextInput } from "./app-text-input";
+import { ContactCrmSections } from "./contact-crm-sections";
+import { ContactEmailsEditor } from "./contact-emails-editor";
+import { ContactPhonesEditor } from "./contact-phones-editor";
+import {
+  ContactSocialAccountsEditor,
+  type ContactSocialAccount,
+} from "./contact-social-accounts-editor";
 import { EntityProfileAvatar } from "./entity-profile-avatar";
 import { EntityProfileDetails } from "./entity-profile-details";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
@@ -31,14 +51,20 @@ type ContactOverviewRow = {
   number: number | null;
   key: string | null;
   name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   email: string | null;
+  emails: string | null;
   phone: string | null;
+  phones: string | null;
   title: string | null;
   address: string | null;
   city: string | null;
   postal_code: string | null;
   country: string | null;
   summary: string | null;
+  birthday: string | null;
+  social_accounts: string | null;
   avatar_storage_key: string | null;
   organization_id: string | null;
   organization_name: string | null;
@@ -57,28 +83,89 @@ const ORGANIZATIONS_SQL = `SELECT id, name FROM organizations
   ORDER BY name COLLATE NOCASE ASC`;
 
 const DETAIL_SQL = `SELECT
-  c.id, c.number, c.key, c.name, c.email, c.phone, c.title,
-  c.address, c.city, c.postal_code, c.country, c.summary,
-  c.avatar_storage_key, c.organization_id, o.name AS organization_name
+  c.id, c.number, c.key, c.name, c.first_name, c.last_name,
+  c.email, c.emails, c.phone, c.phones, c.title,
+  c.address, c.city, c.postal_code, c.country, c.summary, c.birthday,
+  c.social_accounts, c.avatar_storage_key, c.organization_id,
+  o.name AS organization_name
  FROM contacts c
  LEFT JOIN organizations o ON o.id = c.organization_id
  WHERE c.deleted_at IS NULL AND c.id = ?
  LIMIT 1`;
 
 type ContactFields = {
-  name: string;
+  firstName: string;
+  lastName: string;
   summary: string;
   email: string;
+  emails: ContactEmailEntry[];
   phone: string;
+  phones: ContactPhoneEntry[];
+  socialAccounts: ContactSocialAccount[];
   title: string;
   address: string;
   city: string;
   postalCode: string;
   country: string;
+  birthday: string;
 };
 
+function parseJsonArray(raw: string | null | undefined): unknown[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseEmails(
+  email: string | null | undefined,
+  emailsRaw: string | null | undefined,
+): { email: string; emails: ContactEmailEntry[] } {
+  const emails = coerceContactEmailEntries(
+    parseJsonArray(emailsRaw) as Parameters<
+      typeof coerceContactEmailEntries
+    >[0],
+  );
+  return { email: email?.trim() || "", emails };
+}
+
+function parsePhones(
+  phone: string | null | undefined,
+  phonesRaw: string | null | undefined,
+): { phone: string; phones: ContactPhoneEntry[] } {
+  const phones = coerceContactPhoneEntries(
+    parseJsonArray(phonesRaw) as Parameters<
+      typeof coerceContactPhoneEntries
+    >[0],
+  );
+  return { phone: phone?.trim() || "", phones };
+}
+
+function parseSocialAccounts(
+  raw: string | null | undefined,
+): ContactSocialAccount[] {
+  const out: ContactSocialAccount[] = [];
+  for (const entry of parseJsonArray(raw)) {
+    if (!entry || typeof entry !== "object") continue;
+    const platform =
+      typeof (entry as { platform?: unknown }).platform === "string"
+        ? (entry as { platform: string }).platform.trim()
+        : "";
+    const url =
+      typeof (entry as { url?: unknown }).url === "string"
+        ? (entry as { url: string }).url.trim()
+        : "";
+    if (!platform || !url) continue;
+    out.push({ platform, url });
+  }
+  return out;
+}
+
 /**
- * Contact overview — always-editable fields (desktop / journal parity).
+ * Contact Details tab — identity + CRM fields (desktop Details parity).
  * Saves each field on blur.
  */
 export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
@@ -94,16 +181,23 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
     useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
 
   const [fields, setFields] = useState<ContactFields>({
-    name: "",
+    firstName: "",
+    lastName: "",
     summary: "",
     email: "",
+    emails: [],
     phone: "",
+    phones: [],
+    socialAccounts: [],
     title: "",
     address: "",
     city: "",
     postalCode: "",
     country: "",
+    birthday: "",
   });
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -134,20 +228,35 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
     if (!contact) return;
     if (hydratedIdRef.current === contactId) return;
     hydratedIdRef.current = contactId;
+    const emailFields = parseEmails(contact.email, contact.emails);
+    const phoneFields = parsePhones(contact.phone, contact.phones);
     const next: ContactFields = {
-      name: contact.name?.trim() || "",
+      firstName:
+        contact.first_name?.trim() ||
+        contact.name?.trim().split(/\s+/)[0] ||
+        "",
+      lastName:
+        contact.last_name?.trim() ||
+        contact.name?.trim().split(/\s+/).slice(1).join(" ") ||
+        "",
       summary: contact.summary ?? "",
-      email: contact.email ?? "",
-      phone: contact.phone ?? "",
+      email: emailFields.email,
+      emails: emailFields.emails,
+      phone: phoneFields.phone,
+      phones: phoneFields.phones,
+      socialAccounts: parseSocialAccounts(contact.social_accounts),
       title: contact.title ?? "",
       address: contact.address ?? "",
       city: contact.city ?? "",
       postalCode: contact.postal_code ?? "",
       country: contact.country ?? "",
+      birthday: contact.birthday?.trim().slice(0, 10) ?? "",
     };
     setFields(next);
     setOrganizationId(contact.organization_id ?? null);
-    onNameChangeRef.current?.(next.name || "Untitled");
+    onNameChangeRef.current?.(
+      formatContactDisplayName(next.firstName, next.lastName) || "Untitled",
+    );
   }, [contact, contactId]);
 
   const avatarStorageKey =
@@ -155,9 +264,7 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
 
   const avatarSrcById = useEntityAvatarSrcMap(
     "contact",
-    contact
-      ? [{ id: contact.id, avatarStorageKey }]
-      : [],
+    contact ? [{ id: contact.id, avatarStorageKey }] : [],
     client,
   );
 
@@ -166,8 +273,8 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
       patch: Partial<ContactFields> & { organizationId?: string | null },
     ) => {
       setSaveError(null);
-      const apiBody: Record<string, string | null> = {};
-      const sqliteValues: Record<string, string | null> = {};
+      const apiBody: Record<string, unknown> = {};
+      const sqliteValues: Record<string, unknown> = {};
 
       const mapField = (
         apiKey: string,
@@ -180,15 +287,52 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
         sqliteValues[sqliteKey] = trimmed;
       };
 
-      mapField("name", "name", patch.name);
+      if (patch.firstName !== undefined || patch.lastName !== undefined) {
+        const firstName = (
+          patch.firstName ?? fieldsRef.current.firstName
+        ).trim();
+        const lastName = (patch.lastName ?? fieldsRef.current.lastName).trim();
+        const display =
+          formatContactDisplayName(firstName, lastName) || firstName;
+        apiBody.firstName = firstName;
+        apiBody.lastName = lastName;
+        apiBody.name = display;
+        sqliteValues.first_name = firstName;
+        sqliteValues.last_name = lastName;
+        sqliteValues.name = display;
+      }
+      if (patch.birthday !== undefined) {
+        const trimmed = patch.birthday.trim().slice(0, 10) || null;
+        apiBody.birthday = trimmed;
+        sqliteValues.birthday = trimmed;
+      }
       mapField("summary", "summary", patch.summary);
-      mapField("email", "email", patch.email);
-      mapField("phone", "phone", patch.phone);
       mapField("title", "title", patch.title);
       mapField("address", "address", patch.address);
       mapField("city", "city", patch.city);
       mapField("postalCode", "postal_code", patch.postalCode);
       mapField("country", "country", patch.country);
+
+      if (patch.email !== undefined || patch.emails !== undefined) {
+        const email = (patch.email ?? fieldsRef.current.email).trim() || null;
+        const emails = patch.emails ?? fieldsRef.current.emails;
+        apiBody.email = email;
+        apiBody.emails = emails;
+        sqliteValues.email = email;
+        sqliteValues.emails = JSON.stringify(emails);
+      }
+      if (patch.phone !== undefined || patch.phones !== undefined) {
+        const phone = (patch.phone ?? fieldsRef.current.phone).trim() || null;
+        const phones = patch.phones ?? fieldsRef.current.phones;
+        apiBody.phone = phone;
+        apiBody.phones = phones;
+        sqliteValues.phone = phone;
+        sqliteValues.phones = JSON.stringify(phones);
+      }
+      if (patch.socialAccounts !== undefined) {
+        apiBody.socialAccounts = patch.socialAccounts;
+        sqliteValues.social_accounts = JSON.stringify(patch.socialAccounts);
+      }
 
       if (patch.organizationId !== undefined) {
         apiBody.organizationId = patch.organizationId;
@@ -206,8 +350,13 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
           apiBody,
           sqliteValues,
         );
-        if (patch.name !== undefined) {
-          onNameChangeRef.current?.(patch.name.trim() || "Untitled");
+        if (patch.firstName !== undefined || patch.lastName !== undefined) {
+          const display =
+            formatContactDisplayName(
+              (patch.firstName ?? fieldsRef.current.firstName).trim(),
+              (patch.lastName ?? fieldsRef.current.lastName).trim(),
+            ) || "Untitled";
+          onNameChangeRef.current?.(display);
         }
       } catch (reason) {
         setSaveError(
@@ -299,7 +448,42 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
       : contact.key?.trim() || null;
   const avatarSrc = avatarOverride ?? avatarSrcById[contact.id] ?? null;
 
+  const displayName =
+    formatContactDisplayName(fields.firstName, fields.lastName) || "Untitled";
+  const birthdayLabel = formatBirthdayLabel(fields.birthday);
+  const birthdayAge = formatBirthdayAgeLabel(fields.birthday);
+
   const profileFields = [
+    {
+      key: "firstName",
+      label: "First name",
+      value: fields.firstName,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, firstName: value })),
+      onBlur: () => void persist({ firstName: fields.firstName }),
+      placeholder: "First name",
+      autoCapitalize: "words" as const,
+    },
+    {
+      key: "lastName",
+      label: "Last name",
+      value: fields.lastName,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, lastName: value })),
+      onBlur: () => void persist({ lastName: fields.lastName }),
+      placeholder: "Last name",
+      autoCapitalize: "words" as const,
+    },
+    {
+      key: "birthday",
+      label: "Birthday",
+      value: fields.birthday,
+      onChangeText: (value: string) =>
+        setFields((prev) => ({ ...prev, birthday: value })),
+      onBlur: () => void persist({ birthday: fields.birthday }),
+      placeholder: "YYYY-MM-DD",
+      autoCapitalize: "none" as const,
+    },
     {
       key: "organization",
       label: "Organization",
@@ -313,27 +497,6 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
         ? organizationDetailHref(organizationId)
         : null,
       navigateLabel: "Open organization",
-    },
-    {
-      key: "email",
-      label: "Email",
-      value: fields.email,
-      onChangeText: (value: string) =>
-        setFields((prev) => ({ ...prev, email: value })),
-      onBlur: () => void persist({ email: fields.email }),
-      placeholder: "name@example.com",
-      keyboardType: "email-address" as const,
-      autoCapitalize: "none" as const,
-    },
-    {
-      key: "phone",
-      label: "Phone",
-      value: fields.phone,
-      onChangeText: (value: string) =>
-        setFields((prev) => ({ ...prev, phone: value })),
-      onBlur: () => void persist({ phone: fields.phone }),
-      placeholder: "+31 …",
-      keyboardType: "phone-pad" as const,
     },
     {
       key: "address",
@@ -380,13 +543,14 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
         contentContainerStyle={{
           gap: 28,
           paddingTop: 8,
+          paddingBottom: 40,
         }}
         keepEndVisibleWhileTyping
       >
         <View style={profileStyles.header}>
           <EntityProfileAvatar
             kind="contact"
-            name={fields.name.trim() || "Untitled"}
+            name={displayName}
             src={avatarSrc}
             onPressEdit={() => void onChangeAvatar()}
             uploading={uploadingAvatar || pickingAvatar}
@@ -394,26 +558,13 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
           {displayId ? (
             <Text style={profileStyles.displayId}>{displayId}</Text>
           ) : null}
-          <TextInput
-            value={fields.name}
-            onChangeText={(value) =>
-              setFields((prev) => ({ ...prev, name: value }))
-            }
-            onBlur={() => {
-              const trimmed = fields.name.trim();
-              if (!trimmed) {
-                setFields((prev) => ({
-                  ...prev,
-                  name: contact.name?.trim() || "",
-                }));
-                return;
-              }
-              void persist({ name: trimmed });
-            }}
-            placeholder="Contact name"
-            placeholderTextColor={colors.muted}
-            style={profileStyles.nameInput}
-          />
+          <Text style={profileStyles.name}>{displayName}</Text>
+          {birthdayLabel ? (
+            <Text style={profileStyles.subtitleInput}>
+              {birthdayLabel}
+              {birthdayAge ? ` · ${birthdayAge}` : ""}
+            </Text>
+          ) : null}
           <TextInput
             value={fields.title}
             onChangeText={(value) =>
@@ -427,6 +578,61 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
         </View>
 
         <EntityProfileDetails fields={profileFields} />
+
+        <View style={styles.editorBlock}>
+          <Text style={styles.editorLabel}>Email</Text>
+          <ContactEmailsEditor
+            email={fields.email}
+            emails={fields.emails}
+            onChange={(next) =>
+              setFields((prev) => ({
+                ...prev,
+                email: next.email,
+                emails: next.emails,
+              }))
+            }
+            onSave={(next) =>
+              void persist({
+                email: next.email ?? "",
+                emails: next.emails,
+              })
+            }
+          />
+        </View>
+
+        <View style={styles.editorBlock}>
+          <Text style={styles.editorLabel}>Phone</Text>
+          <ContactPhonesEditor
+            phone={fields.phone}
+            phones={fields.phones}
+            onChange={(next) =>
+              setFields((prev) => ({
+                ...prev,
+                phone: next.phone,
+                phones: next.phones,
+              }))
+            }
+            onSave={(next) =>
+              void persist({
+                phone: next.phone ?? "",
+                phones: next.phones,
+              })
+            }
+          />
+        </View>
+
+        <View style={styles.editorBlock}>
+          <Text style={styles.editorLabel}>Social</Text>
+          <ContactSocialAccountsEditor
+            value={fields.socialAccounts}
+            onChange={(next) =>
+              setFields((prev) => ({ ...prev, socialAccounts: next }))
+            }
+            onSave={(next) => void persist({ socialAccounts: next })}
+          />
+        </View>
+
+        <ContactCrmSections contactId={contactId} />
 
         <View style={profileStyles.summaryBlock}>
           <Text style={profileStyles.summaryLabel}>Note</Text>
@@ -471,3 +677,17 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  editorBlock: {
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  editorLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+});

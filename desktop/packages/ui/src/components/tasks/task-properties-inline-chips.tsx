@@ -23,13 +23,20 @@ import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import {
+  decodeTaskRelatedValues,
+  encodeTaskRelatedValues,
+  type TaskRelatedSelection,
+} from "../../tasks/task-related-entities.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import {
   type TaskPropertiesDisplayTask,
 } from "./task-properties-display.js";
+import { TaskRelatedChips } from "./task-related-chips.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 
 export type TaskPropertiesInlineChipsProps = {
@@ -39,11 +46,14 @@ export type TaskPropertiesInlineChipsProps = {
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
+  onRelatedChange?: (related: TaskRelatedSelection) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
+  relatedOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onCreateRelatedContactFromQuery?: (query: string) => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onTimerSessionChange?: (
     action: "start" | "pause",
@@ -105,11 +115,14 @@ export function TaskPropertiesInlineChips({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onRelatedChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
+  relatedOptions = [],
   projectOptions = [],
   onCreateAssigneeFromQuery,
+  onCreateRelatedContactFromQuery,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
@@ -135,8 +148,14 @@ export function TaskPropertiesInlineChips({
     }));
 
   const assigneeValue = task?.assigneeId ?? DROPDOWN_NONE_VALUE;
+  const relatedValues = encodeTaskRelatedValues(
+    task?.relatedContactIds ?? [],
+    task?.relatedOrganizationIds ?? [],
+  );
   const canEditAssignee =
     Boolean(onAssigneeChange) && assigneeOptions.length > 0;
+  const canEditRelated =
+    Boolean(onRelatedChange) && relatedOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
 
@@ -211,6 +230,24 @@ export function TaskPropertiesInlineChips({
             onClick={() => onFieldActivate?.("assignee")}
           />
         )}
+        <TaskRelatedChips
+          values={relatedValues}
+          options={relatedOptions}
+          onChange={
+            canEditRelated
+              ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+              : undefined
+          }
+          disabled={disabled}
+          emptyLabel="Related"
+          searchPlaceholder="Add related…"
+          searchShortcutLabel="R"
+          ariaLabel="Related"
+          taskPropertyDropdownId="related"
+          onCreateFromQuery={onCreateRelatedContactFromQuery}
+          variant="inline"
+          onActivate={() => onFieldActivate?.("related")}
+        />
         {canEditProject ? (
           <PropertyDropdown
             value={task?.projectKey ?? DROPDOWN_NO_PROJECT_VALUE}

@@ -8,7 +8,7 @@ import type {
 
 import { entityKeyFromName, toSnakeFields } from "./entity-mutations";
 import type { SyncedMetadataTable } from "./powersync-context";
-import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import { shouldSkipRestEntityWrite, shouldWriteEntityViaPowerSync } from "./powersync-write-path";
 
 export type FinanceMetadataTable = Extract<
   SyncedMetadataTable,
@@ -21,6 +21,7 @@ export type FinanceMetadataTable = Extract<
 export type MobileFinancePowerSync = {
   ready: boolean;
   connected: boolean;
+  preferRestWrites?: boolean;
   patchMetadata: (
     table: FinanceMetadataTable,
     id: string,
@@ -142,7 +143,10 @@ export async function patchFinanceViaPowerSyncOrApi(
   if (Object.keys(apiValues).length === 0) return;
 
   const sqliteValues = apiToSqlite(table, apiValues);
-  if (powerSync.ready && Object.keys(sqliteValues).length > 0) {
+  if (
+    shouldWriteEntityViaPowerSync(powerSync) &&
+    Object.keys(sqliteValues).length > 0
+  ) {
     try {
       await patchFinanceLocal(powerSync, table, id, sqliteValues);
     } catch {
@@ -164,7 +168,9 @@ export async function patchFinanceViaPowerSyncOrApi(
 }
 
 function shouldCreateViaPowerSync(powerSync: MobileFinancePowerSync): boolean {
-  return Boolean(powerSync.ready && powerSync.createMetadata);
+  return Boolean(
+    shouldWriteEntityViaPowerSync(powerSync) && powerSync.createMetadata,
+  );
 }
 
 export async function createBankAccountViaPowerSyncOrApi(
@@ -209,6 +215,8 @@ export async function createBankAccountViaPowerSyncOrApi(
       avatarStorageKey: null,
       avatarContentType: null,
       color: null,
+      moneybirdFinancialAccountId: null,
+      moneybirdLastSyncedAt: null,
       sortOrder: body.sortOrder,
       createdAt: now,
       updatedAt: now,
@@ -244,7 +252,7 @@ export async function deleteBankAccountViaPowerSyncOrApi(
   id: string,
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await patchFinanceLocal(powerSync, "bank_accounts", id, {
       deleted_at: deletedAt,
     });
@@ -328,7 +336,7 @@ export async function deleteFinancialCategoryViaPowerSyncOrApi(
   id: string,
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await patchFinanceLocal(powerSync, "financial_categories", id, {
       deleted_at: deletedAt,
     });
@@ -414,7 +422,7 @@ export async function deleteFinancialGoalViaPowerSyncOrApi(
   id: string,
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await patchFinanceLocal(powerSync, "financial_goals", id, {
       deleted_at: deletedAt,
     });
@@ -498,7 +506,7 @@ export async function deleteFinancialRecurringViaPowerSyncOrApi(
   id: string,
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await patchFinanceLocal(powerSync, "financial_recurrings", id, {
       deleted_at: deletedAt,
     });

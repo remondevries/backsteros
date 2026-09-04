@@ -8,15 +8,18 @@ import {
   TaskDetailSkeleton,
   TaskDetailView,
   buildAssigneeDropdownOptions,
+  buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   buildSpellcheckSegments,
   buildTaskProjectChangeRedirectPath,
+  buildTaskRelatedDropdownOptions,
   buildTasksDueHref,
   composeSpellcheckText,
   encodeTaskSlug,
   getInboxTaskRouteSlugForTask,
   getTaskDisplayId,
   getTasksDueFilterLabel,
+  INBOX_TASK_KEY,
   isTasksDueFilter,
   resolveDuplicatedTaskHref,
   spellcheckHasChanges,
@@ -37,6 +40,7 @@ import {
   useKeepAliveActive,
 } from "../lib/shell-route-keep-alive";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
@@ -48,6 +52,7 @@ import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
+  buildLetterLinkOptions,
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import {
@@ -73,11 +78,20 @@ export type TaskDetailPageProps = {
    * render task + properties only — no DesktopTaskLayout agent split.
    */
   overlayMode?: boolean;
+  /** Start with the agent/chat column collapsed (contact workspace embed). */
+  initialAgentCollapsed?: boolean;
+  /**
+   * When the agent opens, fill the host column only (collapse task detail).
+   * Keeps sibling chrome such as the contact card in place.
+   */
+  agentFillsHostColumn?: boolean;
+  /** Notify host when the agent column is collapsed/expanded. */
+  onAgentCollapsedChange?: (collapsed: boolean) => void;
 };
 
 type TaskRouteRow = {
   id: string;
-  number: number;
+  number: number | null;
   projectId: string | null;
   projectKey?: string | null;
   contactId?: string | null;
@@ -93,7 +107,7 @@ type TaskRouteRow = {
 export type TaskDetailBootstrap = {
   id: string;
   title: string;
-  number: number;
+  number: number | null;
   status: string;
   priority?: number;
   projectKey?: string | null;
@@ -115,6 +129,15 @@ function bootstrapMatchesRoute(
     return true;
   }
   return false;
+}
+
+/** Local create ids (uuid without dashes) — not display slugs like `bsh-3`. */
+function isPendingCreatedTaskRouteParam(
+  routeParam: string | null | undefined,
+): boolean {
+  if (!routeParam) return false;
+  if (routeParam.includes("-")) return false;
+  return /^[a-zA-Z0-9_]{20,}$/.test(routeParam);
 }
 
 function bootstrapToRouteRow(bootstrap: TaskDetailBootstrap): TaskRouteRow {
@@ -183,6 +206,9 @@ export function TaskDetailPage({
   detailVisible = true,
   bootstrapTask = null,
   overlayMode = false,
+  initialAgentCollapsed = false,
+  agentFillsHostColumn = false,
+  onAgentCollapsedChange,
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
   const location = useShellLocation();
@@ -210,22 +236,32 @@ export function TaskDetailPage({
     (dueFilter ? buildTasksDueHref(dueFilter) : "/tasks");
   const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
-  const { projects } = useDesktopWorkspaceProjects();
+  const { projects, letters } = useDesktopWorkspaceProjects();
   const { contacts, organizations } = useDesktopWorkspacePeople();
-  const { documents } = useDesktopWorkspaceDocuments();
+  const { knowledgeDocuments, projectDocuments } =
+    useDesktopWorkspaceDocuments();
   const workspace = useDesktopWorkspaceActions();
   const tasksReady = useWorkspaceSurfaceReady("tasks");
   const keepAliveActive = useKeepAliveActive();
   const agentMail = useAgentMail();
   const documentLinkOptions = useMemo(
-    () => buildDocumentLinkOptions(documents),
-    [documents]);
+    () =>
+      buildDocumentLinkOptions(
+        [...knowledgeDocuments, ...projectDocuments],
+        projects,
+      ),
+    [knowledgeDocuments, projectDocuments, projects]);
+  const letterLinkOptions = useMemo(
+    () => buildLetterLinkOptions(letters, projects),
+    [letters, projects]);
   const emailLinkOptions = useMemo(
     () => buildEmailLinkOptions(agentMail.messages),
     [agentMail.messages]);
   const [spellcheckHighlight, setSpellcheckHighlight] =
     useState<TaskSpellcheckHighlight | null>(null);
   const [activityFeedBump, setActivityFeedBump] = useState(0);
+  const [pendingCreateLookupExpired, setPendingCreateLookupExpired] =
+    useState(false);
   const spellcheckNonceRef = useRef(0);
   /** Keeps the open task stable while project-change URL rewrite catches up. */
   const pinnedTaskIdRef = useRef<string | null>(null);
@@ -310,9 +346,19 @@ export function TaskDetailPage({
     detailVisible ? (base?.id ?? "") : "",
   );
 
+  const {
+    attachments: fileAttachments,
+    uploading: fileUploading,
+    uploadFile,
+    remove: removeFileAttachment,
+    open: openFileAttachment,
+  } = useTaskFileAttachments(base?.id, {
+    enabled: keepAliveActive && detailVisible && Boolean(base?.id),
+  });
+
   const [belowDescriptionReady, setBelowDescriptionReady] = useState(false);
   useEffect(() => {
-    if (!detailVisible || overlayMode) {
+    if (!detailVisible) {
       setBelowDescriptionReady(false);
       return;
     }
@@ -326,7 +372,7 @@ export function TaskDetailPage({
       cancelled = true;
       window.cancelAnimationFrame(raf1);
     };
-  }, [detailVisible, overlayMode, base?.id]);
+  }, [detailVisible, base?.id]);
 
   const applySpellcheckComposition = useCallback(
     async (session: TaskSpellcheckHighlight) => {
@@ -401,12 +447,28 @@ export function TaskDetailPage({
     "contact",
     detailVisible ? contacts : [],
   );
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    detailVisible ? organizations : [],
+  );
 
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
         withAvatarSrc(contacts, contactAvatarSrc)),
     [contactAvatarSrc, contacts]);
+
+  const relatedOptions = useMemo(
+    () =>
+      buildTaskRelatedDropdownOptions({
+        contactOptions: assigneeOptions,
+        organizationOptions: buildOrganizationDropdownOptions(
+          withAvatarSrc(organizations, organizationAvatarSrc),
+          { includeNone: false },
+        ),
+      }),
+    [assigneeOptions, organizationAvatarSrc, organizations],
+  );
 
   const projectOptions = useMemo(
     () =>
@@ -444,6 +506,17 @@ export function TaskDetailPage({
     };
   }, [base, contacts, fetchedDescription, projects, taskDetails]);
 
+  useEffect(() => {
+    if (task || !isPendingCreatedTaskRouteParam(routeParam)) {
+      setPendingCreateLookupExpired(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPendingCreateLookupExpired(true);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [routeParam, task]);
+
   const taskLabel = task
     ? task.displayId
       ? `${task.displayId} ${task.title}`
@@ -476,7 +549,8 @@ export function TaskDetailPage({
   }, [backHref, breadcrumbItemsProp, dueFilter, taskLabel]);
 
   useDesktopSectionBreadcrumb(breadcrumbItems, {
-    enabled: detailVisible && !overlayMode,
+    enabled:
+      detailVisible && (!overlayMode || Boolean(breadcrumbItemsProp?.length)),
   });
 
 
@@ -528,7 +602,12 @@ export function TaskDetailPage({
   }, [base, contacts, navigate, projects, workspace]);
 
   if (!task) {
-    if (!tasksReady && !bootstrapTask) {
+    // Hydrating, or a just-created opaque id before the workspace index lands.
+    // A stale bootstrap prop used to force Not found here (`!bootstrapTask` gate).
+    if (
+      !tasksReady ||
+      (isPendingCreatedTaskRouteParam(routeParam) && !pendingCreateLookupExpired)
+    ) {
       return <TaskDetailSkeleton />;
     }
     return (
@@ -574,8 +653,17 @@ export function TaskDetailPage({
   const patchAssignee = (next: string | null) => {
     void workspace.patchTask(task.id, { assigneeId: next });
   };
+  const patchRelated = (related: {
+    contactIds: string[];
+    organizationIds: string[];
+  }) => {
+    void workspace.patchTask(task.id, {
+      relatedContactIds: related.contactIds,
+      relatedOrganizationIds: related.organizationIds,
+    });
+  };
   const patchProjectKey = (next: string | null) => {
-    const previousProjectKey = task.projectKey;
+    const previousProjectKey = task.projectKey ?? INBOX_TASK_KEY;
     const nextProject = next
       ? projects.find((entry) => entry.key === next) ?? null
       : null;
@@ -613,15 +701,21 @@ export function TaskDetailPage({
     void workspace
       .patchTask(task.id, {
         projectId: nextProject?.id ?? null,
+        // Scheduled / due-list tasks stay out of triage inbox when moving.
+        ...(nextProject ? { inbox: false } : {}),
       })
       .then((result) => {
         if (!nextProject) return;
         const confirmedNumber =
-          typeof result?.number === "number" ? result.number : task.number;
+          typeof result?.number === "number" && result.number > 0
+            ? result.number
+            : task.number > 0
+              ? task.number
+              : null;
         const prettyPath = buildTaskProjectChangeRedirectPath(interimPath, {
           ...redirectBase,
-          taskNumber: confirmedNumber,
-          routeLeaf: "display-slug",
+          taskNumber: confirmedNumber ?? 0,
+          routeLeaf: confirmedNumber != null ? "display-slug" : "task-id",
         });
         if (prettyPath !== interimPath) {
           navigateToHref(navigate, prettyPath, {
@@ -656,6 +750,18 @@ export function TaskDetailPage({
   const createAssigneeFromQuery = (query: string) => {
     void workspace.createContact({ name: query }).then((created) => {
       void workspace.patchTask(task.id, { assigneeId: created.id });
+    });
+  };
+  const createRelatedContactFromQuery = (query: string) => {
+    void workspace.createContact({ name: query }).then((created) => {
+      const current =
+        "relatedContactIds" in task && Array.isArray(task.relatedContactIds)
+          ? task.relatedContactIds
+          : [];
+      if (current.includes(created.id)) return;
+      void workspace.patchTask(task.id, {
+        relatedContactIds: [...current, created.id],
+      });
     });
   };
 
@@ -720,10 +826,17 @@ export function TaskDetailPage({
           }}
           onDueDateChange={patchDueDate}
           onAssigneeChange={patchAssignee}
+          onRelatedChange={patchRelated}
           onProjectChange={patchProjectKey}
           onSaveDescription={saveDescription}
           onChangeLinks={changeLinks}
+          fileAttachments={fileAttachments}
+          fileUploading={fileUploading}
+          onUploadFile={uploadFile}
+          onRemoveFile={removeFileAttachment}
+          onOpenFile={openFileAttachment}
           documentLinkOptions={documentLinkOptions}
+          letterLinkOptions={letterLinkOptions}
           emailLinkOptions={emailLinkOptions}
           onNavigateLink={(href) => {
             navigateToHref(navigate, href);
@@ -732,6 +845,7 @@ export function TaskDetailPage({
           resolveImageSrc={resolveImageSrc}
           onSaveTitle={saveTitle}
           assigneeOptions={assigneeOptions}
+          relatedOptions={relatedOptions}
           projectOptions={projectOptions}
           assigneeNavigateHref={
             task.assigneeId ? `/contacts/${task.assigneeId}` : null
@@ -740,6 +854,7 @@ export function TaskDetailPage({
             task.projectKey ? `/projects/${task.projectKey}` : null
           }
           onCreateAssigneeFromQuery={createAssigneeFromQuery}
+          onCreateRelatedContactFromQuery={createRelatedContactFromQuery}
           onAgentInboxApprove={() => {
             void workspace.patchTask(task.id, { agentInboxApproved: true });
           }}
@@ -753,7 +868,13 @@ export function TaskDetailPage({
 
   return (
     <>
-      {detailVisible ? <RegisterPageTitle title={task.title} /> : null}
+      {detailVisible && keepAliveActive ? (
+        <RegisterPageTitle
+          active={keepAliveActive}
+          href={location.pathname}
+          title={task.title}
+        />
+      ) : null}
       {detailVisible ? (
         <>
           <RegisterEntityDuplicateAction onDuplicate={handleDuplicateTask} />
@@ -767,6 +888,11 @@ export function TaskDetailPage({
         <div className="task-detail-page-overlay">{detailView}</div>
       ) : (
         <DesktopTaskLayout
+          key={
+            agentFillsHostColumn
+              ? `contact-task-layout-${task.id}`
+              : `task-layout-${task.id}`
+          }
           taskId={task.id}
           projectId={project?.id ?? null}
           projectLabel={project?.name ?? task.projectName ?? "Task"}
@@ -786,7 +912,9 @@ export function TaskDetailPage({
           preferWideTaskPanel={!isCodebaseTask}
           viewScope={isCodebaseTask ? "codebase" : "rail"}
           requireWorkingDirectory={isCodebaseTask}
-          agentPaneEnabled={detailVisible}
+          initialAgentCollapsed={initialAgentCollapsed || agentFillsHostColumn}
+          agentFillsHostColumn={agentFillsHostColumn}
+          onAgentCollapsedChange={onAgentCollapsedChange}
           onWorkingDirectoryChange={
             isCodebaseTask && project
               ? async (directory) => {

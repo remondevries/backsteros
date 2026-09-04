@@ -25,6 +25,7 @@ import {
   CalendarScopedMeetingDetailPage,
   CalendarScopedTaskDetailPage,
   ContactScopedLetterPage,
+  ContactScopedMeetingDetailPage,
   ContactScopedTaskDetailPage,
   ContactsPage,
   DevelopmentPage,
@@ -37,6 +38,7 @@ import {
   LettersPage,
   NotFoundPage,
   OrgContactScopedLetterPage,
+  OrgContactScopedMeetingDetailPage,
   OrgContactScopedTaskDetailPage,
   OrgProjectScopedTaskDetailPage,
   OrgScopedContactsPage,
@@ -46,6 +48,7 @@ import {
   ProjectsPage,
   SettingsPage,
   ShellLayout,
+  SocialPage,
   TaskListPage,
 } from "./shell-layout";
 
@@ -647,6 +650,12 @@ const orgContactLetterDetailRoute = createRoute({
   component: OrgContactScopedLetterPage,
 });
 
+const orgContactMeetingDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "organizations/$slug/contacts/$contactSlug/meetings/$meetingId",
+  component: OrgContactScopedMeetingDetailPage,
+});
+
 const orgContactSectionRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "organizations/$slug/contacts/$contactSlug/$section",
@@ -679,6 +688,26 @@ const organizationSectionRoute = createRoute({
   ),
 });
 
+const socialRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "social",
+  component: () => (
+    <LazyRoute>
+      <SocialPage />
+    </LazyRoute>
+  ),
+});
+
+const socialDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "social/$slug",
+  component: () => (
+    <LazyRoute>
+      <SocialPage />
+    </LazyRoute>
+  ),
+});
+
 const contactsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "contacts",
@@ -699,6 +728,25 @@ const contactLetterDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "contacts/$slug/letters/$letterSlug",
   component: ContactScopedLetterPage,
+});
+
+const contactMeetingDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "contacts/$slug/meetings/$meetingId",
+  component: ContactScopedMeetingDetailPage,
+});
+
+const contactEmailMessageRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "contacts/$slug/emails/$inboxId/$messageId",
+  // Standalone contacts embed email detail in the workspace column.
+  component: () => null,
+});
+
+const contactEmailDraftRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "contacts/$slug/emails/$inboxId/drafts/$draftId",
+  component: () => null,
 });
 
 const contactDetailRoute = createRoute({
@@ -812,13 +860,19 @@ export const routeTree = rootRoute.addChildren([
     orgProjectDetailRoute,
     orgContactTaskDetailRoute,
     orgContactLetterDetailRoute,
+    orgContactMeetingDetailRoute,
     orgContactSectionRoute,
     orgContactDetailRoute,
     organizationDetailRoute,
     organizationSectionRoute,
+    socialRoute,
+    socialDetailRoute,
     contactsRoute,
     contactTaskDetailRoute,
     contactLetterDetailRoute,
+    contactMeetingDetailRoute,
+    contactEmailDraftRoute,
+    contactEmailMessageRoute,
     contactDetailRoute,
     contactSectionRoute,
     settingsRoute,

@@ -8,6 +8,7 @@ import type {
   Task as ApiTask,
   TaskLink,
 } from "@backsteros/contracts";
+import { coerceContactLanguages } from "@backsteros/contracts";
 import type {
   ContactListItem,
   KnowledgeListItem,
@@ -17,19 +18,17 @@ import type {
   ProjectOverviewRowProject,
   TaskItemRowTask,
 } from "@backsteros/ui";
+import { normalizeContactSocialAccounts } from "@backsteros/ui";
 
-export function parseMeetingAttendeeContactIdsFromRow(
-  row: Record<string, unknown>,
-): string[] {
-  const raw = row.attendee_contact_ids ?? row.attendeeContactIds;
-  if (Array.isArray(raw)) {
-    return raw.filter(
+export function parseStringIdArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(
       (id): id is string => typeof id === "string" && id.trim().length > 0,
     );
   }
-  if (typeof raw === "string" && raw.trim()) {
+  if (typeof value === "string" && value.trim()) {
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(value) as unknown;
       if (Array.isArray(parsed)) {
         return parsed.filter(
           (id): id is string => typeof id === "string" && id.trim().length > 0,
@@ -40,6 +39,14 @@ export function parseMeetingAttendeeContactIdsFromRow(
     }
   }
   return [];
+}
+
+export function parseMeetingAttendeeContactIdsFromRow(
+  row: Record<string, unknown>,
+): string[] {
+  return parseStringIdArray(
+    row.attendee_contact_ids ?? row.attendeeContactIds,
+  );
 }
 
 export function snakeRow(row: Record<string, unknown>) {
@@ -128,6 +135,8 @@ export function mapTask(
     projectName: project?.name ?? null,
     contactId: task.contactId,
     assigneeId: task.assigneeId,
+    relatedContactIds: parseStringIdArray(task.relatedContactIds),
+    relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
@@ -136,6 +145,7 @@ export function mapTask(
     agentInboxApprovedAt: asEpoch(task.agentInboxApprovedAt),
     trackedMinutes: task.trackedMinutes ?? null,
     trackedDurationSeconds: task.trackedDurationSeconds ?? null,
+    inboxUpdatedAt: asEpoch(task.inboxUpdatedAt),
   };
 }
 
@@ -220,6 +230,8 @@ export function mapMeeting(
     transcription: meeting.transcription ?? null,
     status: meeting.status,
     format: meeting.format ?? "video_call",
+    location: meeting.location ?? null,
+    locationOrganizationId: meeting.locationOrganizationId ?? null,
     projectId: meeting.projectId ?? null,
     projectName: project?.name ?? null,
     organizationId: meeting.organizationId ?? null,
@@ -231,6 +243,56 @@ export function mapMeeting(
   };
 }
 
+function normalizeLabeledContactEntries<TField extends string>(
+  raw: unknown,
+  valueKeys: readonly TField[],
+): Array<{ label: "personal" | "work" | "other" } & Record<TField, string>> {
+  let entries: unknown = raw ?? [];
+  if (typeof entries === "string") {
+    try {
+      entries = JSON.parse(entries) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(entries)) return [];
+  const out: Array<
+    { label: "personal" | "work" | "other" } & Record<TField, string>
+  > = [];
+  for (const entry of entries) {
+    let value = "";
+    let label: "personal" | "work" | "other" = "other";
+    if (typeof entry === "string") {
+      value = entry.trim();
+    } else if (entry != null && typeof entry === "object") {
+      const record = entry as Record<string, unknown>;
+      for (const key of valueKeys) {
+        const candidate = String(record[key] ?? "").trim();
+        if (candidate) {
+          value = candidate;
+          break;
+        }
+      }
+      const rawLabel = String(record.label ?? "")
+        .trim()
+        .toLowerCase();
+      if (
+        rawLabel === "personal" ||
+        rawLabel === "work" ||
+        rawLabel === "other"
+      ) {
+        label = rawLabel;
+      }
+    }
+    if (!value) continue;
+    out.push({
+      label,
+      [valueKeys[0]!]: value,
+    } as { label: "personal" | "work" | "other" } & Record<TField, string>);
+  }
+  return out;
+}
+
 export function mapContact(
   contact: ApiContact,
   organizationsById: Map<string, ApiOrganization>,
@@ -238,69 +300,35 @@ export function mapContact(
   const organization = contact.organizationId
     ? organizationsById.get(contact.organizationId) ?? null
     : null;
-  let emails: Array<{ label: "personal" | "work" | "other"; address: string }> =
-    [];
-  const rawEmails = contact.emails as unknown;
-  if (typeof rawEmails === "string") {
+  const emails = normalizeLabeledContactEntries(contact.emails as unknown, [
+    "address",
+    "email",
+  ] as const).map((entry) => ({
+    label: entry.label,
+    address: entry.address,
+  }));
+  const phones = normalizeLabeledContactEntries(
+    (contact as { phones?: unknown }).phones,
+    ["number", "phone"] as const,
+  ).map((entry) => ({
+    label: entry.label,
+    number: entry.number,
+  }));
+  const languagesRaw = (contact as { languages?: unknown }).languages;
+  let languagesParsed: unknown = languagesRaw ?? [];
+  if (typeof languagesParsed === "string") {
     try {
-      const parsed = JSON.parse(rawEmails) as unknown;
-      if (Array.isArray(parsed)) {
-        emails = parsed.flatMap((entry) => {
-          if (typeof entry === "string" && entry.trim()) {
-            return [{ label: "other" as const, address: entry.trim() }];
-          }
-          if (entry != null && typeof entry === "object") {
-            const record = entry as {
-              label?: unknown;
-              address?: unknown;
-              email?: unknown;
-            };
-            const address = String(record.address ?? record.email ?? "").trim();
-            if (!address) return [];
-            const rawLabel = String(record.label ?? "")
-              .trim()
-              .toLowerCase();
-            const label =
-              rawLabel === "personal" ||
-              rawLabel === "work" ||
-              rawLabel === "other"
-                ? rawLabel
-                : ("other" as const);
-            return [{ label, address }];
-          }
-          return [];
-        });
-      }
+      languagesParsed = JSON.parse(languagesParsed) as unknown;
     } catch {
-      emails = [];
+      languagesParsed = [];
     }
-  } else if (Array.isArray(rawEmails)) {
-    emails = rawEmails.flatMap((entry) => {
-      if (typeof entry === "string" && entry.trim()) {
-        return [{ label: "other" as const, address: entry.trim() }];
-      }
-      if (entry != null && typeof entry === "object") {
-        const record = entry as {
-          label?: unknown;
-          address?: unknown;
-          email?: unknown;
-        };
-        const address = String(record.address ?? record.email ?? "").trim();
-        if (!address) return [];
-        const rawLabel = String(record.label ?? "")
-          .trim()
-          .toLowerCase();
-        const label =
-          rawLabel === "personal" ||
-          rawLabel === "work" ||
-          rawLabel === "other"
-            ? rawLabel
-            : ("other" as const);
-        return [{ label, address }];
-      }
-      return [];
-    });
   }
+  const languages = coerceContactLanguages(
+    Array.isArray(languagesParsed) ? languagesParsed : [],
+  );
+  const socialAccounts = normalizeContactSocialAccounts(
+    (contact as { socialAccounts?: unknown }).socialAccounts,
+  );
   return {
     id: contact.id,
     name: contact.name,
@@ -312,10 +340,20 @@ export function mapContact(
     organizationName: organization?.name,
     email: contact.email ?? null,
     emails,
+    phone: contact.phone ?? null,
+    phones,
     title: contact.title ?? null,
+    address: contact.address ?? null,
+    city: contact.city ?? null,
+    postalCode: contact.postalCode ?? null,
+    region: (contact as { region?: string | null }).region ?? null,
+    country: contact.country ?? null,
     avatarStorageKey: contact.avatarStorageKey ?? null,
     avatarUpdatedAt: asEpoch(contact.updatedAt),
+    updatedAt: asEpoch(contact.updatedAt),
     birthday: contact.birthday ?? null,
+    languages,
+    socialAccounts: socialAccounts.length > 0 ? socialAccounts : null,
   };
 }
 
@@ -327,6 +365,12 @@ export function mapOrganization(org: ApiOrganization): OrganizationListItem {
     key: org.key ?? undefined,
     avatarStorageKey: org.avatarStorageKey ?? null,
     avatarUpdatedAt: asEpoch(org.updatedAt),
+    updatedAt: asEpoch(org.updatedAt),
     moneybirdContactId: org.moneybirdContactId ?? null,
+    address: org.address ?? null,
+    city: org.city ?? null,
+    postalCode: org.postalCode ?? null,
+    region: org.region ?? null,
+    country: org.country ?? null,
   };
 }

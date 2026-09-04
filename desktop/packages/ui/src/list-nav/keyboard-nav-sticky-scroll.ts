@@ -13,6 +13,7 @@ export const KEYBOARD_NAV_STICKY_COVER_SELECTOR = [
   ".status-group-header-row",
   ".project-overview-header",
   ".project-type-subgroup__header-row",
+  ".finance-invoices-columns-header",
 ].join(", ");
 
 /** Section labels that should stay visible with the first row beneath them. */
@@ -118,8 +119,13 @@ export function measureStickyCoverInsets(
   stickySelector: string = KEYBOARD_NAV_STICKY_COVER_SELECTOR,
 ): { top: number; bottom: number } {
   const parentRect = scrollParent.getBoundingClientRect();
-  let topInset = 0;
-  let bottomInset = 0;
+  const scrollStyle = getComputedStyle(scrollParent);
+  const paddingTop = Number.parseFloat(scrollStyle.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(scrollStyle.paddingBottom) || 0;
+  const contentTop = parentRect.top + paddingTop;
+  const contentBottom = parentRect.bottom - paddingBottom;
+  let stickyTopCover = 0;
+  let stickyBottomCover = 0;
 
   for (const node of scrollParent.querySelectorAll<HTMLElement>(
     stickySelector,
@@ -140,12 +146,12 @@ export function measureStickyCoverInsets(
 
     const stickyTop = Number.parseFloat(style.top) || 0;
     const stickyBottom = Number.parseFloat(style.bottom) || 0;
-    const stuckTopEdge = parentRect.top + stickyTop;
-    const stuckBottomEdge = parentRect.bottom - stickyBottom;
+    const stuckTopEdge = contentTop + stickyTop;
+    const stuckBottomEdge = contentBottom - stickyBottom;
 
     // Stuck at the top of the scrollport (typical group headers: top: 0).
     if (rect.top <= stuckTopEdge + 1 && rect.bottom > stuckTopEdge + 1) {
-      topInset = Math.max(topInset, rect.bottom - parentRect.top);
+      stickyTopCover = Math.max(stickyTopCover, rect.bottom - contentTop);
     }
 
     // Stuck at the bottom (rare; keep symmetric for filter docks etc.).
@@ -153,11 +159,14 @@ export function measureStickyCoverInsets(
       rect.bottom >= stuckBottomEdge - 1 &&
       rect.top < stuckBottomEdge - 1
     ) {
-      bottomInset = Math.max(bottomInset, parentRect.bottom - rect.top);
+      stickyBottomCover = Math.max(stickyBottomCover, contentBottom - rect.top);
     }
   }
 
-  return { top: topInset, bottom: bottomInset };
+  return {
+    top: paddingTop + stickyTopCover,
+    bottom: paddingBottom + stickyBottomCover,
+  };
 }
 
 function headerInNode(

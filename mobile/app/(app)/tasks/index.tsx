@@ -1,5 +1,5 @@
 import type { Contact, Habit, Project, Task } from "@backsteros/contracts";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 import {
   useCallback,

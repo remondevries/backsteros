@@ -10,17 +10,27 @@ import type {
   Meeting as ApiMeeting,
   Task as ApiTask,
 } from "@backsteros/contracts";
-import type { BacksterosApiClient } from "@backsteros/api-client";
+import { ApiClientError, type BacksterosApiClient } from "@backsteros/api-client";
 
 import { createRequestAbortSignal } from "../request-timeout";
 import { preservePendingApiRows } from "../merge-local-and-api";
+import {
+  WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  type WorkspaceDocumentUpdatedDetail,
+} from "../workspace-events";
 import type { WorkspacePowerSync } from "./workspace-data-types";
+
+/** Coalesce bursty agent reorder/move SSE into one metadata fetch. */
+const DOCUMENT_LIVE_FETCH_DEBOUNCE_MS = 100;
 
 /**
  * REST-hydrated row caches for the workspace snapshot, plus the settle flags
  * used by the readiness computation in the main hook.
  *
- * Linear-shaped: cold-start rescue only — no soft-revalidate on sync epochs.
+ * Linear-shaped: cold-start rescue only for most entities. Documents also
+ * soft-revalidate after settle + react to workspace SSE so agent
+ * create/move/delete appear before PowerSync download (merged via
+ * mergeLocalDocumentsWithLiveApi).
  */
 export function useWorkspaceApiRows({
   authenticated,
@@ -41,6 +51,9 @@ export function useWorkspaceApiRows({
   >(null);
   const [apiAreas, setApiAreas] = useState<ApiArea[] | null>(null);
   const [apiDocuments, setApiDocuments] = useState<ApiDocument[] | null>(null);
+  const [liveDeletedDocumentIds, setLiveDeletedDocumentIds] = useState(
+    () => new Set<string>(),
+  );
   const [apiHabits, setApiHabits] = useState<ApiHabit[] | null>(null);
   const [apiMeetings, setApiMeetings] = useState<ApiMeeting[] | null>(null);
   const [restHydrateSettled, setRestHydrateSettled] = useState(!authenticated);
@@ -77,6 +90,7 @@ export function useWorkspaceApiRows({
       setApiOrganizations(null);
       setApiAreas(null);
       setApiDocuments(null);
+      setLiveDeletedDocumentIds(new Set());
       setApiHabits(null);
       setApiMeetings(null);
     }
@@ -252,6 +266,129 @@ export function useWorkspaceApiRows({
     };
   }, [authenticated, client, powerSync.ready, powerSync.lastSyncedAt]);
 
+  // Soft-revalidate document metadata after cold-start so agent/off-device
+  // creates appear via mergeLocalDocumentsWithLiveApi before PowerSync download.
+  useEffect(() => {
+    if (!authenticated) return;
+    if (!restHydrateSettled && !powerSync.lastSyncedAt) return;
+
+    let cancelled = false;
+    const refresh = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      try {
+        const body = await client.requestJson<{ documents: ApiDocument[] }>(
+          "/api/v1/documents",
+        );
+        if (cancelled) return;
+        setApiDocuments((current) =>
+          preservePendingApiRows(current, body.documents),
+        );
+      } catch {
+        // PowerSync remains the primary source.
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+
+    void refresh();
+    const intervalId = window.setInterval(() => void refresh(), 12_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [authenticated, client, powerSync.lastSyncedAt, restHydrateSettled]);
+
+  // Primary live path: agent document SSE → patch apiDocuments / deleted set
+  // (tree + list) before PowerSync download.
+  useEffect(() => {
+    if (!authenticated) return;
+
+    const pendingIds = new Set<string>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const flush = () => {
+      const ids = [...pendingIds];
+      pendingIds.clear();
+      for (const documentId of ids) {
+        void client
+          .requestJson<ApiDocument>(
+            `/api/v1/documents/${encodeURIComponent(documentId)}`,
+          )
+          .then((row) => {
+            if (cancelled) return;
+            setLiveDeletedDocumentIds((current) => {
+              if (!current.has(documentId)) return current;
+              const next = new Set(current);
+              next.delete(documentId);
+              return next;
+            });
+            setApiDocuments((current) => {
+              if (!current) return [row];
+              const index = current.findIndex((doc) => doc.id === row.id);
+              if (index < 0) return [row, ...current];
+              const next = current.slice();
+              next[index] = row;
+              return next;
+            });
+          })
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            if (error instanceof ApiClientError && error.status === 404) {
+              setLiveDeletedDocumentIds((current) => {
+                if (current.has(documentId)) return current;
+                const next = new Set(current);
+                next.add(documentId);
+                return next;
+              });
+              setApiDocuments((current) =>
+                current?.filter((doc) => doc.id !== documentId) ?? null,
+              );
+            }
+          });
+      }
+    };
+
+    const onDocumentUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceDocumentUpdatedDetail>)
+        .detail;
+      if (!detail?.documentId) return;
+
+      if (detail.operation === "delete") {
+        setLiveDeletedDocumentIds((current) => {
+          if (current.has(detail.documentId)) return current;
+          const next = new Set(current);
+          next.add(detail.documentId);
+          return next;
+        });
+        setApiDocuments((current) =>
+          current?.filter((doc) => doc.id !== detail.documentId) ?? null,
+        );
+        return;
+      }
+
+      pendingIds.add(detail.documentId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flush, DOCUMENT_LIVE_FETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_DOCUMENT_UPDATED_EVENT, onDocumentUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_DOCUMENT_UPDATED_EVENT,
+        onDocumentUpdated,
+      );
+    };
+  }, [authenticated, client]);
+
   return {
     apiTasks,
     setApiTasks,
@@ -269,6 +406,7 @@ export function useWorkspaceApiRows({
     setApiAreas,
     apiDocuments,
     setApiDocuments,
+    liveDeletedDocumentIds,
     apiHabits,
     setApiHabits,
     apiMeetings,

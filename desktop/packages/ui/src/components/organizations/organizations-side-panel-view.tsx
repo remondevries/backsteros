@@ -11,7 +11,7 @@ import { groupItemsByAlphaLetter } from "../../shared/alpha-group.js";
 import {
   getSelectedOrganizationSlugFromPathname,
   getUniqueListItemRouteParam,
-  organizationMatchesSlug,
+  resolveListItemFromSlug,
   type OrganizationListItem,
 } from "../../navigation/entity-routes.js";
 import { getOrganizationSidePanelHref } from "../../navigation/entity-side-panel-href.js";
@@ -51,6 +51,8 @@ export function OrganizationsSidePanelView({
   listContainerProps,
 }: OrganizationsSidePanelViewProps) {
   const selectedSlug = getSelectedOrganizationSlugFromPathname(pathname);
+  const selectedId =
+    resolveListItemFromSlug(items, selectedSlug)?.id ?? null;
   const grouped = groupItemsByAlphaLetter(items);
 
   return (
@@ -86,10 +88,7 @@ export function OrganizationsSidePanelView({
                 <span className="alpha-group-label">{letter}</span>
               </li>,
               ...entries.map((organization) => {
-                const isActive = organizationMatchesSlug(
-                  organization,
-                  selectedSlug,
-                );
+                const isActive = organization.id === selectedId;
                 const href = getOrganizationSidePanelHref(
                   getUniqueListItemRouteParam(organization, items),
                   pathname,

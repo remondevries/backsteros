@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenX,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0, 0, 0, 0.55)",
   },
   dialogWrap: {

@@ -3,6 +3,7 @@ import type {
   MentionCatalog,
   ParsedMentionToken,
 } from "./mention-menu-types.js";
+import { contactMatchesMentionRef } from "./resolve-catalog-entry.js";
 
 /** Subset of a catalog matching the given mention tokens (Next resolve parity). */
 export function filterCatalogForTokens(
@@ -23,11 +24,9 @@ export function filterCatalogForTokens(
       .filter((token) => token.kind === "project")
       .map((token) => token.key.toLowerCase()),
   );
-  const contactKeys = new Set(
-    tokens
-      .filter((token) => token.kind === "contact")
-      .map((token) => token.key.toLowerCase()),
-  );
+  const contactRefs = tokens
+    .filter((token) => token.kind === "contact")
+    .map((token) => token.key);
   const organizationKeys = new Set(
     tokens
       .filter((token) => token.kind === "organization")
@@ -60,7 +59,7 @@ export function filterCatalogForTokens(
       projectKeys.has(project.key.toLowerCase()),
     ),
     contacts: catalog.contacts.filter((contact) =>
-      contactKeys.has(contact.key.toLowerCase()),
+      contactRefs.some((ref) => contactMatchesMentionRef(contact, ref)),
     ),
     organizations: catalog.organizations.filter((organization) =>
       organizationKeys.has(organization.key.toLowerCase()),

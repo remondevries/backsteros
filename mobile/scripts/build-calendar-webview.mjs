@@ -67,6 +67,12 @@ const html = `<!DOCTYPE html>
       font-size: 12px;
       font-weight: 500;
     }
+    .fc .birthday-calendar-event {
+      border-left-width: 3px;
+    }
+    .fc .birthday-calendar-event .fc-event-title {
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>

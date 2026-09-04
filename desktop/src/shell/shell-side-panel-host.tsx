@@ -13,7 +13,7 @@ import {
   ResizableContextPanel,
   getContentSidePanelWidthKey,
 } from "@backsteros/ui/shell";
-import { resolveInboxSidebarIndicator } from "@backsteros/ui/inbox";
+import { resolveInboxSidebarIndicatorTone } from "@backsteros/ui/inbox";
 
 import { useInboxListSessionState } from "../lib/inbox/inbox-list-session-context";
 import { useDesktopWorkspaceInboxItems } from "../lib/workspace-data";
@@ -82,7 +82,7 @@ export function useShellSidePanelHost({
   const inboxItems = useDesktopWorkspaceInboxItems();
   const { sessionContextValue } = useInboxListSessionState(inInboxPanel);
   const inboxSidebarIndicator = useMemo(
-    () => resolveInboxSidebarIndicator(inboxItems),
+    () => resolveInboxSidebarIndicatorTone(inboxItems),
     [inboxItems],
   );
 
@@ -134,6 +134,7 @@ export function useShellSidePanelHost({
             <KeepAlivePane
               key={surface}
               surface={surface}
+              role="sidepanel"
               active={surface === currentKeepSurface}
               snapshot={snapshot}
             >

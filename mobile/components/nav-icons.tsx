@@ -1,7 +1,8 @@
+import type { ColorValue } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 type NavIconProps = {
-  color: string;
+  color: ColorValue;
   size?: number;
 };
 
@@ -246,6 +247,15 @@ export function SearchNavIcon({ color, size = 22 }: NavIconProps) {
         clipRule="evenodd"
         d="M10.5 9.5h-.79l-.28-.27A4.471 4.471 0 0 0 11 6.5 4.5 4.5 0 1 0 6.5 11a4.471 4.471 0 0 0 2.73-.97l.27.28v.79l3.25 3.25 1.5-1.5-3.25-3.25Zm-4 0a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z"
       />
+    </Svg>
+  );
+}
+
+/** Share network — same path as `@backsteros/ui` `SocialNavIcon`. */
+export function SocialNavIcon({ color, size = 22 }: NavIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M7 8.75a3.25 3.25 0 1 0 2.002 5.81l.068.054 4.73 3.312a3.25 3.25 0 1 0 .617-1.4l-4.479-3.135c.2-.421.312-.893.312-1.391s-.112-.97-.312-1.391l4.48-3.136a3.25 3.25 0 1 0-.617-1.4L9.07 9.387l-.068.053A3.24 3.24 0 0 0 7 8.75" />
     </Svg>
   );
 }

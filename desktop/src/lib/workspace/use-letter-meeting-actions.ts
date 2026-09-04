@@ -5,6 +5,7 @@ import type {
 } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
+import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 /** Letter and meeting creation flows. */
@@ -60,25 +61,39 @@ export function useWorkspaceLetterMeetingActions({
           createdAt: now,
           updatedAt: now,
         } as ApiLetter;
-        setApiLetters((rows) => {
-          if (!rows) return [letter];
-          if (rows.some((entry) => entry.id === letter.id)) {
-            return rows.map((entry) =>
-              entry.id === letter.id ? letter : entry,
-            );
-          }
-          return [letter, ...rows];
-        });
-        void powerSync
-          .createMetadata(
-            "letters",
-            toSnakeFields(letter as unknown as Record<string, unknown>),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local letter create failed", error);
+        const applyOptimistic = () => {
+          setApiLetters((rows) => {
+            if (!rows) return [letter];
+            if (rows.some((entry) => entry.id === letter.id)) {
+              return rows.map((entry) =>
+                entry.id === letter.id ? letter : entry,
+              );
+            }
+            return [letter, ...rows];
           });
-        return { id: letter.id, number: letter.number };
+        };
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic,
+          rollback: () =>
+            setApiLetters(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            ),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "letters",
+              toSnakeFields(letter as unknown as Record<string, unknown>),
+              id,
+            ),
+          errorLabel: "local letter create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/letters/${encodeURIComponent(id)}`,
+            setters: [setApiLetters],
+          },
+        });
+        return { id: letter.id, number };
       }
 
       const letter = await client.requestJson<ApiLetter>("/api/v1/letters", {
@@ -130,25 +145,39 @@ export function useWorkspaceLetterMeetingActions({
           createdAt: now,
           updatedAt: now,
         } as ApiMeeting;
-        setApiMeetings((rows) => {
-          if (!rows) return [meeting];
-          if (rows.some((entry) => entry.id === meeting.id)) {
-            return rows.map((entry) =>
-              entry.id === meeting.id ? meeting : entry,
-            );
-          }
-          return [meeting, ...rows];
-        });
-        void powerSync
-          .createMetadata(
-            "meetings",
-            toSnakeFields(meeting as unknown as Record<string, unknown>),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local meeting create failed", error);
+        const applyOptimistic = () => {
+          setApiMeetings((rows) => {
+            if (!rows) return [meeting];
+            if (rows.some((entry) => entry.id === meeting.id)) {
+              return rows.map((entry) =>
+                entry.id === meeting.id ? meeting : entry,
+              );
+            }
+            return [meeting, ...rows];
           });
-        return { id: meeting.id, number: meeting.number };
+        };
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic,
+          rollback: () =>
+            setApiMeetings(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            ),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "meetings",
+              toSnakeFields(meeting as unknown as Record<string, unknown>),
+              id,
+            ),
+          errorLabel: "local meeting create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/meetings/${encodeURIComponent(id)}`,
+            setters: [setApiMeetings],
+          },
+        });
+        return { id: meeting.id, number };
       }
 
       const meeting = await client.requestJson<ApiMeeting>("/api/v1/meetings", {

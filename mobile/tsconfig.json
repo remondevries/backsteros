@@ -8,5 +8,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["**/*.test.ts", "node_modules", "codemirror-editor"]
+  "exclude": ["**/*.test.ts", "node_modules", "codemirror-editor", "app.config.ts"]
 }

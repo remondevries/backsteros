@@ -28,7 +28,17 @@ import { useEmailThreadComments } from "./email/use-email-thread-comments";
 import { useEmailThreadMetadata } from "./email/use-email-thread-metadata";
 import { useEmailThreadView } from "./email/use-email-thread-view";
 
-export function EmailPage() {
+export function EmailPage({
+  embedInboxId,
+  embedMessageId,
+  embedDraftId,
+  breadcrumbItems: breadcrumbItemsProp,
+}: {
+  embedInboxId?: string;
+  embedMessageId?: string;
+  embedDraftId?: string;
+  breadcrumbItems?: { label: string; href?: string }[];
+} = {}) {
   const params = useParams({ strict: false }) as {
     inboxId?: string;
     messageId?: string;
@@ -37,10 +47,15 @@ export function EmailPage() {
   const location = useLocation();
   const locationPath = location.pathname;
   const isCompose = isEmailComposePath(locationPath);
-  const draftPath = parseEmailDraftPath(locationPath);
-  const inboxId = draftPath?.inboxId ?? params.inboxId;
-  const messageId = draftPath ? undefined : params.messageId;
-  const draftId = draftPath?.draftId ?? params.draftId;
+  const draftPath =
+    embedDraftId && embedInboxId
+      ? { inboxId: embedInboxId, draftId: embedDraftId }
+      : parseEmailDraftPath(locationPath);
+  const inboxId = embedInboxId ?? draftPath?.inboxId ?? params.inboxId;
+  const messageId = embedDraftId
+    ? undefined
+    : (embedMessageId ?? (draftPath ? undefined : params.messageId));
+  const draftId = embedDraftId ?? draftPath?.draftId ?? params.draftId;
 
   const toEmailDetailHref = useCallback(
     (targetInboxId: string, targetMessageId: string) =>
@@ -196,6 +211,9 @@ export function EmailPage() {
         (draftId ? "Reply concept" : "Email");
 
   const breadcrumbItems = useMemo(() => {
+    if (breadcrumbItemsProp) {
+      return [...breadcrumbItemsProp, { label: title }];
+    }
     const listContext = getEmailListContext(location.searchStr);
     const currentLabel = isCompose
       ? composeSubject.trim() || "Compose"
@@ -242,6 +260,7 @@ export function EmailPage() {
       { label: currentLabel },
     ];
   }, [
+    breadcrumbItemsProp,
     composeSubject,
     isCompose,
     location.searchStr,
@@ -252,7 +271,9 @@ export function EmailPage() {
     title,
   ]);
 
-  useDesktopSectionBreadcrumb(breadcrumbItems);
+  useDesktopSectionBreadcrumb(breadcrumbItems, {
+    enabled: breadcrumbItemsProp == null || breadcrumbItemsProp.length > 0,
+  });
 
   const composeMailboxes = useMemo(
     () =>

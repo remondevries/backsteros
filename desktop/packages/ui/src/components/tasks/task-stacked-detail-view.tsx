@@ -4,15 +4,10 @@ import type { TaskLink } from "@backsteros/contracts";
 import { useState, type ReactNode } from "react";
 
 import { useContentTitleEditorNavigation } from "../../content/use-content-title-editor-navigation.js";
-import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-  useMarkdownDetailEditor,
-} from "../content/content-markdown-view-layout.js";
+import { ContentMarkdownDescriptionLayout } from "../content/content-markdown-description-layout.js";
+import { useMarkdownDetailEditor } from "../content/content-markdown-view-layout.js";
 import { ContentDetailTitleHeader } from "../content/content-detail-title-header.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
 import {
-  DocumentMarkdownPreview,
   type ResolveMarkdownImageSrc,
 } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
@@ -24,7 +19,10 @@ import {
   TaskPropertiesInlineChips,
 } from "./task-properties-inline-chips.js";
 import type { TaskDetailViewTask } from "./task-detail-view.js";
-import { TaskLinkAttachments } from "./task-link-attachments.js";
+import {
+  TaskLinkAttachments,
+  type TaskFileAttachmentItem,
+} from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
 
 export type TaskStackedDetailViewProps = {
@@ -40,6 +38,11 @@ export type TaskStackedDetailViewProps = {
   belowDescription?: ReactNode;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onChangeLinks?: (links: TaskLink[]) => void;
+  fileAttachments?: readonly TaskFileAttachmentItem[];
+  fileUploading?: boolean;
+  onUploadFile?: (file: File) => void | Promise<void>;
+  onRemoveFile?: (attachmentId: string) => void;
+  onOpenFile?: (attachmentId: string) => void;
   onUploadImages?: UploadMarkdownImages;
   resolveImageSrc?: ResolveMarkdownImageSrc;
   onSaveTitle?: (
@@ -56,10 +59,13 @@ export type TaskStackedDetailViewProps = {
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
+  onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
+  relatedOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onCreateRelatedContactFromQuery?: (query: string) => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
   onTimerSessionChange?: (
     action: "start" | "pause",
@@ -79,6 +85,11 @@ export function TaskStackedDetailView({
   belowDescription,
   onSaveDescription,
   onChangeLinks,
+  fileAttachments,
+  fileUploading,
+  onUploadFile,
+  onRemoveFile,
+  onOpenFile,
   onUploadImages,
   resolveImageSrc,
   onSaveTitle,
@@ -88,10 +99,13 @@ export function TaskStackedDetailView({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onRelatedChange,
   onProjectChange,
   assigneeOptions,
+  relatedOptions,
   projectOptions,
   onCreateAssigneeFromQuery,
+  onCreateRelatedContactFromQuery,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
   timerSession = null,
@@ -190,44 +204,31 @@ export function TaskStackedDetailView({
             onPriorityChange={onPriorityChange}
             onDueDateChange={onDueDateChange}
             onAssigneeChange={onAssigneeChange}
+            onRelatedChange={onRelatedChange}
             onProjectChange={onProjectChange}
             assigneeOptions={assigneeOptions}
+            relatedOptions={relatedOptions}
             projectOptions={projectOptions}
             onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+            onCreateRelatedContactFromQuery={onCreateRelatedContactFromQuery}
             onTrackedDurationSecondsChange={onTrackedDurationSecondsChange}
             onTimerSessionChange={onTimerSessionChange}
             timerSession={timerSession}
           />
         </div>
         <div className="task-detail-stacked__content">
-          <ContentMarkdownViewLayout
+          <ContentMarkdownDescriptionLayout
             mode={mode}
             editorActivated={editorActivated}
             onToggleMode={toggleViewMode}
-            editor={
-              <DocumentMarkdownEditor
-                value={value}
-                onChange={handleChange}
-                onBlur={handleBlurSave}
-                focusRequest={editorFocusRequest}
-                scrollWithContent
-                onUploadImages={onUploadImages}
-                ariaLabel="Task description"
-              />
-            }
-            preview={
-              <ContentMarkdownPreviewColumn includeTopInset={false}>
-                {value.trim() ? (
-                  <DocumentMarkdownPreview
-                    body={value}
-                    onChange={handleChange}
-                    resolveImageSrc={resolveImageSrc}
-                  />
-                ) : (
-                  <p className="overview-empty">Add a description…</p>
-                )}
-              </ContentMarkdownPreviewColumn>
-            }
+            value={value}
+            onChange={handleChange}
+            onBlur={handleBlurSave}
+            focusRequest={editorFocusRequest}
+            onUploadImages={onUploadImages}
+            resolveImageSrc={resolveImageSrc}
+            ariaLabel="Task description"
+            emptyMessage="Add a description…"
             toggle={
               <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
             }
@@ -235,6 +236,11 @@ export function TaskStackedDetailView({
           <TaskLinkAttachments
             links={task.links}
             onChangeLinks={onChangeLinks}
+            fileAttachments={fileAttachments}
+            fileUploading={fileUploading}
+            onUploadFile={onUploadFile}
+            onRemoveFile={onRemoveFile}
+            onOpenFile={onOpenFile}
           />
           {belowDescription ? (
             <div className="task-detail-below-description">

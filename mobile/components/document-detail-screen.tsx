@@ -15,6 +15,7 @@ import {
 } from "../lib/document-content";
 import { updateDocumentViaPowerSyncOrApi } from "../lib/document-mutations";
 import { isPadDevice } from "../lib/device";
+import { toggleMarkdownTaskListItem } from "../lib/markdown-task-list";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
@@ -285,6 +286,56 @@ export function DocumentDetailScreen({ documentId }: Props) {
     [saveEditing, viewMode],
   );
 
+  const handleToggleTaskCheckbox = useCallback(
+    (index: number) => {
+      const next = toggleMarkdownTaskListItem(draftBody, index);
+      if (next == null) return;
+      setDraftBody(next);
+      // Persist after paint so draft state is current for saveEditing deps.
+      queueMicrotask(() => {
+        void (async () => {
+          if (!documentId || saving || !bodyReady) return;
+          if (contentVersion == null) return;
+          const nextBody = next.replace(/^\n+/, "");
+          if (nextBody === displayBody) return;
+          setSaving(true);
+          setSaveError(null);
+          try {
+            const updated = await saveDocumentContent(
+              client,
+              documentId,
+              nextBody,
+              contentVersion,
+            );
+            setBody(stripFrontmatter(updated.content ?? nextBody));
+            setContentVersion(updated.contentVersion);
+          } catch (reason) {
+            if (reason instanceof DocumentContentEmptyBodyRejectedError) {
+              setSaveError(null);
+              return;
+            }
+            setSaveError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not save document.",
+            );
+          } finally {
+            setSaving(false);
+          }
+        })();
+      });
+    },
+    [
+      bodyReady,
+      client,
+      contentVersion,
+      displayBody,
+      documentId,
+      draftBody,
+      saving,
+    ],
+  );
+
   const editors = (
     <View style={styles.content}>
       <View
@@ -326,7 +377,10 @@ export function DocumentDetailScreen({ documentId }: Props) {
             {draftTitle.trim() || "Untitled"}
           </Text>
           {draftBody.trim() ? (
-            <JournalMarkdownBody body={draftBody} />
+            <JournalMarkdownBody
+              body={draftBody}
+              onToggleTaskCheckbox={handleToggleTaskCheckbox}
+            />
           ) : (
             <Text style={styles.emptyHint}>This document is empty.</Text>
           )}

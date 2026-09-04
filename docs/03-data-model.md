@@ -30,7 +30,7 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 
 | Entity | Tier (metadata) | Tier (content) | Notes |
 | --- | --- | --- | --- |
-| Task | A | — | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task — distinct from future blob Attachment entities. `agentChatId` (Cursor chat id) is Tier A metadata for desktop/mobile; the PTY process stays on the local computer (desktop + Tailscale-trusted iPad viewers). |
+| Task | A | B metadata / D blob (file attachments) | Bulk update target. Link attachments (`links` jsonb URL metadata) sync with the task. File attachments live in `task_attachments` (REST list; bytes on demand, local-core; PDF, images, email files, office docs, etc.). Description images use `task_images`. `agentChatId` (Cursor chat id) is Tier A metadata for desktop/mobile; the PTY process stays on the local computer (desktop + Tailscale-trusted iPad viewers). |
 | Project | A | — | |
 | Contact / Organization | A | — | Contact has `first_name` + `last_name` (display `name` derived); optional `birthday` (YYYY-MM-DD, year required); primary `email` plus optional `emails` jsonb (`{ label, address }[]`, labels personal/work/other); address fields include optional `region` (state/province) and geocoded `latitude` / `longitude` via Mapbox. Country is stored as ISO 3166-1 alpha-2 when picked from the dropdown. |
 | Contact relationship | A | — | Directed person↔person edges (`contact_relationships`); inverse labels in UI. |
@@ -57,7 +57,7 @@ This protects iPhone 16 / M1 memory and disk. See [07-performance.md](07-perform
 | Entity | Tier | Notes |
 | --- | --- | --- |
 | Workout session | B header, C sets | Sync session list; sets via API pages |
-| Attachment | B metadata, D blob | Same as letters |
+| Attachment | B metadata, D blob | Polymorphic future; letters stay PDF-oriented; tasks accept general file attachments |
 
 ## Document version fields (required)
 

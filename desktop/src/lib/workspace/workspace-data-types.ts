@@ -96,14 +96,14 @@ export type DesktopWorkspaceData = {
   softDeleteDocument: (id: string) => Promise<void>;
   createOrganization: (input: {
     name: string;
-  }) => Promise<{ id: string; key: string }>;
+  }) => Promise<{ id: string; key: string; number?: number | null }>;
   createContact: (input: {
     name?: string;
     firstName?: string;
     lastName?: string | null;
     organizationId?: string | null;
     email?: string | null;
-  }) => Promise<{ id: string; key: string }>;
+  }) => Promise<{ id: string; key: string; number?: number | null }>;
   createProject: (input: {
     name: string;
     status?: string;
@@ -142,8 +142,12 @@ export type DesktopWorkspaceData = {
     status?: string;
     priority?: number;
     assigneeId?: string | null;
+    relatedContactIds?: string[];
+    relatedOrganizationIds?: string[];
     dueDate?: string | null;
     links?: TaskLink[];
+    /** Default true. Pass false for Today/Tomorrow due-list creates. */
+    inbox?: boolean;
   }) => Promise<{ id: string; number: number | null }>;
   createProjectTask: (input: {
     projectId: string;
@@ -152,6 +156,8 @@ export type DesktopWorkspaceData = {
     status?: string;
     priority?: number;
     assigneeId?: string | null;
+    relatedContactIds?: string[];
+    relatedOrganizationIds?: string[];
     dueDate?: string | null;
     links?: TaskLink[];
   }) => Promise<{ id: string; number: number | null }>;
@@ -185,7 +191,7 @@ export type DesktopWorkspaceData = {
     status?: string;
     startAt: string;
     endAt: string;
-  }) => Promise<{ id: string; number: number }>;
+  }) => Promise<{ id: string; number: number | null }>;
   createKnowledgeDocument: (input: {
     title: string;
     content?: string;
@@ -226,4 +232,6 @@ export type DesktopWorkspaceData = {
   deleteDocument: (
     id: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Soft-pull document list from REST (agent creates before PowerSync). */
+  softRefreshApiDocuments: () => Promise<void>;
 };

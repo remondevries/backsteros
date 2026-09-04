@@ -10,12 +10,18 @@ export type WorkspaceUpdatedKind =
   | "document"
   | "letter";
 
+export type WorkspaceUpdatedOperation = "upsert" | "delete";
+
 export type WorkspaceUpdatedEvent = {
   workspaceId: string;
   kind: WorkspaceUpdatedKind;
   entityId: string;
   projectId?: string | null;
   reason?: "comment" | "patch";
+  /** Present for document body writes so clients can skip stale Tier D caches. */
+  contentVersion?: number | null;
+  /** Metadata lifecycle — clients drop rows on delete before PowerSync catches up. */
+  operation?: WorkspaceUpdatedOperation;
 };
 
 type WorkspaceUpdatedListener = (event: WorkspaceUpdatedEvent) => void;
@@ -96,7 +102,11 @@ export function publishProjectWorkspaceUpdated(
 export function publishDocumentWorkspaceUpdated(
   workspaceId: string,
   documentId: string,
-  input?: { projectId?: string | null },
+  input?: {
+    projectId?: string | null;
+    contentVersion?: number | null;
+    operation?: WorkspaceUpdatedOperation;
+  },
 ): void {
   publishWorkspaceUpdated({
     workspaceId,
@@ -104,6 +114,8 @@ export function publishDocumentWorkspaceUpdated(
     entityId: documentId,
     projectId: input?.projectId ?? null,
     reason: "patch",
+    contentVersion: input?.contentVersion ?? null,
+    operation: input?.operation ?? "upsert",
   });
 }
 

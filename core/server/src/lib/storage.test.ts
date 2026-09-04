@@ -12,11 +12,14 @@ import {
   buildProjectVaultAbsolutePath,
   buildStorageKey,
   buildTaskImageStorageKey,
+  buildTaskAttachmentStorageKey,
+  buildTaskPdfAttachmentStorageKey,
   checksumForContent,
   ensureProjectVaultFolders,
   isCloudCoreVaultHost,
   isSpacesConfigured,
   isStorageConfigured,
+  letterPdfSubjectFromFilename,
   renameProjectVaultFolder,
   resolveVaultPath,
   rewriteProjectStorageKeyPrefix,
@@ -107,6 +110,22 @@ test("storage keys follow Obsidian vault layout", () => {
     ".backsteros/attachments/tasks/task_1/img_abc.png",
   );
   assert.equal(
+    buildTaskAttachmentStorageKey("task_1", "att_abcdefgh", "brief.pdf"),
+    ".backsteros/attachments/tasks/task_1/brief-att_abcd.pdf",
+  );
+  assert.equal(
+    buildTaskAttachmentStorageKey("task_1", "att_abcdefgh", "photo.PNG"),
+    ".backsteros/attachments/tasks/task_1/photo-att_abcd.png",
+  );
+  assert.equal(
+    buildTaskAttachmentStorageKey("task_1", "att_abcdefgh", "invoice.eml"),
+    ".backsteros/attachments/tasks/task_1/invoice-att_abcd.eml",
+  );
+  assert.equal(
+    buildTaskPdfAttachmentStorageKey("task_1", "att_abcdefgh", "brief.pdf"),
+    ".backsteros/attachments/tasks/task_1/brief-att_abcd.pdf",
+  );
+  assert.equal(
     buildLetterPdfStorageKey({
       title: "Tax return",
       // Local calendar day (matches Received Date picker), not UTC stamp.
@@ -114,6 +133,15 @@ test("storage keys follow Obsidian vault layout", () => {
       attachmentId: "att_abcdefgh",
     }),
     "Letters/2026/07/2026-07-26 - Tax return (att_abcd).pdf",
+  );
+  assert.equal(
+    buildLetterPdfStorageKey({
+      title: "New letter",
+      subject: "gemeentelijke belastingen",
+      receivedDate: new Date(2026, 8, 3),
+      attachmentId: "PO6ZRt4HHJ8fc5NonVqmU",
+    }),
+    "Letters/2026/09/2026-09-03 - gemeentelijke belastingen (PO6ZRt4H).pdf",
   );
   // Local midnight stored as previous-day UTC must still file on the UI day.
   assert.equal(
@@ -123,6 +151,14 @@ test("storage keys follow Obsidian vault layout", () => {
       attachmentId: "att_abcdefgh",
     }),
     "Letters/2024/04/2024-04-19 - IB 2022 (att_abcd).pdf",
+  );
+  assert.equal(
+    letterPdfSubjectFromFilename("2026-08-22 - gemeentelijke belastingen.pdf"),
+    "gemeentelijke belastingen",
+  );
+  assert.equal(
+    letterPdfSubjectFromFilename("Gemeente Belastingen 2025.pdf"),
+    "Gemeente Belastingen 2025",
   );
   assert.doesNotThrow(() =>
     assertPrivateStorageKey(

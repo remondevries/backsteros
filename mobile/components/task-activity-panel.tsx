@@ -30,6 +30,11 @@ import {
   normalizeEmail,
   VISIBLE_ACTIVITY_LIMIT,
 } from "../lib/task-activity-format";
+import {
+  TASK_ACTIVITIES_SQL,
+  sqliteRowToTaskActivity,
+  type TaskActivitySqliteRow,
+} from "../lib/task-activity-sqlite";
 import { useLocalQuery } from "../lib/use-local-query";
 import {
   migrateLegacyTaskStatus,
@@ -195,7 +200,7 @@ export function TaskActivityPanel({
 }: TaskActivityPanelProps) {
   const client = useMobileApiClient();
   const powerSync = useMobilePowerSync();
-  const useSyncedComments = powerSync.ready;
+  const useSyncedFeed = powerSync.ready;
   const { data: syncedCommentRows, isLoading: loadingSyncedComments } =
     useLocalQuery<{
       id: string;
@@ -210,9 +215,14 @@ export function TaskActivityPanel({
       updated_at: string;
       deleted_at: string | null;
       contact_name?: string | null;
-    }>(useSyncedComments ? TASK_COMMENTS_SQL : "SELECT id FROM task_comments WHERE 0", [
+    }>(useSyncedFeed ? TASK_COMMENTS_SQL : "SELECT id FROM task_comments WHERE 0", [
       taskId,
     ]);
+  const { data: syncedActivityRows, isLoading: loadingSyncedActivities } =
+    useLocalQuery<TaskActivitySqliteRow>(
+      useSyncedFeed ? TASK_ACTIVITIES_SQL : "SELECT id FROM task_activities WHERE 0",
+      [taskId],
+    );
 
   const currentUserAvatar = useMemo(
     () => ({
@@ -223,12 +233,20 @@ export function TaskActivityPanel({
   );
 
   const [restComments, setRestComments] = useState<TaskComment[]>([]);
+  const [restActivities, setRestActivities] = useState<TaskActivity[]>([]);
   const syncedComments = useMemo(
     () => syncedCommentRows.map(sqliteRowToTaskComment),
     [syncedCommentRows],
   );
-  const comments = useSyncedComments ? syncedComments : restComments;
-  const [activities, setActivities] = useState<TaskActivity[]>([]);
+  const syncedActivities = useMemo(
+    () =>
+      syncedActivityRows
+        .map(sqliteRowToTaskActivity)
+        .filter((row): row is TaskActivity => row != null),
+    [syncedActivityRows],
+  );
+  const comments = useSyncedFeed ? syncedComments : restComments;
+  const activities = useSyncedFeed ? syncedActivities : restActivities;
   const [draft, setDraft] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [loadingFeed, setLoadingFeed] = useState(true);
@@ -249,7 +267,7 @@ export function TaskActivityPanel({
 
   useEffect(() => {
     hasLoadedFeedRef.current = false;
-    setLoadingFeed(true);
+    setLoadingFeed(!useSyncedFeed);
     setActivitiesExpanded(false);
     setExpandedAgentGroups({});
     setReplyDrafts({});
@@ -257,32 +275,31 @@ export function TaskActivityPanel({
     setEditingCommentId(null);
     setEditDraft("");
     setExpandedResolvedIds({});
-  }, [taskId]);
+  }, [taskId, useSyncedFeed]);
 
   const loadFeed = useCallback(async () => {
+    if (useSyncedFeed) {
+      hasLoadedFeedRef.current = true;
+      setLoadingFeed(false);
+      setError(null);
+      return;
+    }
     const isInitialLoad = !hasLoadedFeedRef.current;
     if (isInitialLoad) {
       setLoadingFeed(true);
     }
     setError(null);
     try {
-      const requests: Promise<void>[] = [
+      const [commentsResult, activitiesResult] = await Promise.all([
+        requestJson<{ comments: TaskComment[] }>(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+        ),
         requestJson<{ activities: TaskActivity[] }>(
           `/api/v1/tasks/${encodeURIComponent(taskId)}/activities`,
-        ).then((activitiesResult) => {
-          setActivities(activitiesResult.activities ?? []);
-        }),
-      ];
-      if (!useSyncedComments) {
-        requests.push(
-          requestJson<{ comments: TaskComment[] }>(
-            `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
-          ).then((commentsResult) => {
-            setRestComments(commentsResult.comments ?? []);
-          }),
-        );
-      }
-      await Promise.all(requests);
+        ),
+      ]);
+      setRestComments(commentsResult.comments ?? []);
+      setRestActivities(activitiesResult.activities ?? []);
       hasLoadedFeedRef.current = true;
     } catch (err) {
       setError(
@@ -290,16 +307,18 @@ export function TaskActivityPanel({
       );
       if (isInitialLoad) {
         setRestComments([]);
-        setActivities([]);
+        setRestActivities([]);
       }
     } finally {
       setLoadingFeed(false);
     }
-  }, [requestJson, taskId, useSyncedComments]);
+  }, [requestJson, taskId, useSyncedFeed]);
 
   const loadingPanel =
     loadingFeed ||
-    (useSyncedComments && loadingSyncedComments && comments.length === 0);
+    (useSyncedFeed &&
+      ((loadingSyncedComments && comments.length === 0) ||
+        (loadingSyncedActivities && activities.length === 0)));
 
   useEffect(() => {
     void loadFeed();
@@ -389,7 +408,7 @@ export function TaskActivityPanel({
             },
           },
         );
-        if (!useSyncedComments) {
+        if (!useSyncedFeed) {
           setRestComments((current) => [...current, created]);
         }
         if (parentCommentId) {
@@ -414,7 +433,7 @@ export function TaskActivityPanel({
         }
       }
     },
-    [client, currentUser.email, currentUser.userId, posting, postingReplyTo, powerSync, taskId, useSyncedComments],
+    [client, currentUser.email, currentUser.userId, posting, postingReplyTo, powerSync, taskId, useSyncedFeed],
   );
 
   const patchComment = useCallback(
@@ -439,7 +458,7 @@ export function TaskActivityPanel({
             resolvedAt: patch.resolvedAt,
           },
         );
-        if (!useSyncedComments) {
+        if (!useSyncedFeed) {
           setRestComments((current) =>
             current.map((comment) =>
               comment.id === commentId ? updated : comment,
@@ -456,7 +475,7 @@ export function TaskActivityPanel({
         setSavingCommentId(null);
       }
     },
-    [client, comments, powerSync, taskId, useSyncedComments],
+    [client, comments, powerSync, taskId, useSyncedFeed],
   );
 
   const startEditComment = (comment: TaskComment) => {
@@ -527,7 +546,7 @@ export function TaskActivityPanel({
                     comment,
                     replyIds,
                   });
-                  if (!useSyncedComments) {
+                  if (!useSyncedFeed) {
                     setRestComments((current) =>
                       current.filter(
                         (entry) =>
@@ -553,7 +572,7 @@ export function TaskActivityPanel({
         ],
       );
     },
-    [client, comments, editingCommentId, powerSync, taskId, useSyncedComments],
+    [client, comments, editingCommentId, powerSync, taskId, useSyncedFeed],
   );
 
   const openCommentMenu = (

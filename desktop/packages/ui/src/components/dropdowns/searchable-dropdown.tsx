@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -46,8 +47,10 @@ export type SearchableDropdownOption<T extends string = string> = {
   action?: {
     ariaLabel: string;
     icon: ReactNode;
-    onSelect: () => void;
+    onSelect: (event: ReactMouseEvent<HTMLButtonElement>) => void;
     placement?: "trailing" | "icon";
+    /** When false, the panel stays open after the action. Default true. */
+    closeOnSelect?: boolean;
   };
 };
 
@@ -478,6 +481,12 @@ export function SearchableDropdown<T extends string>({
       const target = event.target as Node;
       if (rootRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest("[data-searchable-dropdown-keep-open]")
+      ) {
+        return;
+      }
       close();
     }
 
@@ -914,7 +923,8 @@ export function SearchableDropdown<T extends string>({
                             onMouseDown={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
-                              iconAction.onSelect();
+                              iconAction.onSelect(event);
+                              if (iconAction.closeOnSelect === false) return;
                               window.requestAnimationFrame(() => {
                                 close();
                               });
@@ -1030,7 +1040,8 @@ export function SearchableDropdown<T extends string>({
                             onMouseDown={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
-                              trailingAction.onSelect();
+                              trailingAction.onSelect(event);
+                              if (trailingAction.closeOnSelect === false) return;
                               window.requestAnimationFrame(() => {
                                 close();
                               });

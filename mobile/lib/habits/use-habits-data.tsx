@@ -339,20 +339,32 @@ function useHabitsDataState(): HabitsData {
       habitId: string,
       input: { dueYmd: string; status: "completed" | "canceled" },
     ) => {
-      await recordHabitDay(client, habitId, input);
+      const habit = items.find((entry) => entry.id === habitId);
+      await recordHabitDay(client, habitId, input, {
+        ...powerSync,
+        todayTaskId: habit?.todayTaskId ?? null,
+      });
       await reloadSilent();
     },
-    [client, reloadSilent],
+    [client, items, powerSync, reloadSilent],
   );
 
   const onToggleToday = useCallback(
     async (habit: HabitListItem, checked: boolean) => {
       setCheckedOverride((current) => ({ ...current, [habit.id]: checked }));
       try {
-        await recordHabitDay(client, habit.id, {
-          dueYmd: todayYmd,
-          status: checked ? "completed" : "canceled",
-        });
+        await recordHabitDay(
+          client,
+          habit.id,
+          {
+            dueYmd: todayYmd,
+            status: checked ? "completed" : "canceled",
+          },
+          {
+            ...powerSync,
+            todayTaskId: habit.todayTaskId,
+          },
+        );
         await reloadSilent();
       } catch {
         setCheckedOverride((current) => {
@@ -363,7 +375,7 @@ function useHabitsDataState(): HabitsData {
         throw new Error("Could not update habit day.");
       }
     },
-    [client, reloadSilent, todayYmd],
+    [client, powerSync, reloadSilent, todayYmd],
   );
 
   const onDeleteDay = useCallback(

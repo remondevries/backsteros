@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
   buildProductTabHref,
   createProductTab,
+  normalizeTabHref,
   syncActiveTabToPath,
   useTabShortcuts,
   type ProductTabsState,
@@ -60,23 +61,50 @@ export function useShellTabs() {
     tabIds,
   });
 
-  const updateActiveTabTitle = useCallback((title: string) => {
-    setTabsState((current) => ({
-      ...current,
-      tabs: current.tabs.map((tab) =>
-        tab.id === current.activeTabId ? { ...tab, title } : tab,
-      ),
-    }));
+  const updateActiveTabTitle = useCallback((title: string, forHref?: string) => {
+    setTabsState((current) => {
+      const active = current.tabs.find((tab) => tab.id === current.activeTabId);
+      if (!active) return current;
+      if (
+        forHref != null &&
+        normalizeTabHref(active.href) !== normalizeTabHref(forHref)
+      ) {
+        return current;
+      }
+      if (active.title === title) return current;
+      return {
+        ...current,
+        tabs: current.tabs.map((tab) =>
+          tab.id === current.activeTabId ? { ...tab, title } : tab,
+        ),
+      };
+    });
   }, []);
 
-  const updateActiveTabIcon = useCallback((icon: string | null) => {
-    setTabsState((current) => ({
-      ...current,
-      tabs: current.tabs.map((tab) =>
-        tab.id === current.activeTabId ? { ...tab, icon } : tab,
-      ),
-    }));
-  }, []);
+  const updateActiveTabIcon = useCallback(
+    (icon: string | null, forHref?: string) => {
+      setTabsState((current) => {
+        const active = current.tabs.find(
+          (tab) => tab.id === current.activeTabId,
+        );
+        if (!active) return current;
+        if (
+          forHref != null &&
+          normalizeTabHref(active.href) !== normalizeTabHref(forHref)
+        ) {
+          return current;
+        }
+        if ((active.icon ?? null) === icon) return current;
+        return {
+          ...current,
+          tabs: current.tabs.map((tab) =>
+            tab.id === current.activeTabId ? { ...tab, icon } : tab,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const payload = JSON.stringify(tabsState);
@@ -116,14 +144,18 @@ export function useShellTabs() {
     (tabId: string) => {
       const tab = tabsState.tabs.find((entry) => entry.id === tabId);
       if (!tab) return;
-      setTabsState((current) => ({ ...current, activeTabId: tabId }));
       const currentHref = buildProductTabHref(
         location.pathname,
         search,
       );
+      // Flip content first (warm keep-alive). Defer tab chrome so setTabsState
+      // does not share the paint-critical frame with the section swap.
       if (tab.href !== currentHref) {
         navigateToHref(navigate, tab.href);
       }
+      startTransition(() => {
+        setTabsState((current) => ({ ...current, activeTabId: tabId }));
+      });
     },
     [location.pathname, search, navigate, tabsState.tabs],
   );

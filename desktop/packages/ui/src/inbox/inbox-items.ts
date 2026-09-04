@@ -1,5 +1,11 @@
+import {
+  hasInboxUpdatedFlag,
+  inboxUpdatedAtRequiresInboxListing,
+} from "@backsteros/contracts";
+
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "../tasks/task-display-id.js";
 import { formatEmailDisplayId } from "../email/email-display-id.js";
+import { formatMeetingDisplayId, getCalendarMeetingHref } from "../meetings/meetings.js";
 import { formatLocalYmd } from "../tasks/task-due-date.js";
 import {
   formatEmailListPartyLabel,
@@ -24,10 +30,11 @@ import {
 import type { TaskItemRowTask } from "../components/tasks/task-item-row.js";
 
 /**
- * Inbox section order: agents (agent-created sign-off) → overdue → triage → …
- * `agents` and `overdue` are not real task statuses.
+ * Inbox section order: updated → agents → overdue → triage → …
+ * `updated`, `agents`, and `overdue` are not real task statuses.
  */
 export const INBOX_ATTENTION_STATUS_ORDER = [
+  "updated",
   "agents",
   "overdue",
   "triage",
@@ -69,6 +76,8 @@ export type InboxTaskListItem = {
   inbox?: boolean | null;
   agentCreatedAt?: number | null;
   agentInboxApprovedAt?: number | null;
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 export type InboxLetterListItem = {
@@ -90,6 +99,8 @@ export type InboxEmailListItem = {
   id: string;
   inboxId: string;
   messageId: string;
+  /** Set when the list row is a draft (messageId may equal draft id). */
+  draftId?: string | null;
   threadId: string | null;
   title: string;
   /** `Name (email@domain)` shown beside the subject. */
@@ -114,6 +125,8 @@ export type InboxEmailListItem = {
   /** Our mailbox label (ID-column / mono mark). */
   mailboxLabel?: string | null;
   mailboxAvatarSrc?: string | null;
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 /** Meeting shown in the Inbox / calendar side-panel list. */
@@ -174,19 +187,27 @@ export function encodeTaskSlug(contextKey: string, taskNumber: number): string {
 }
 
 export function getInboxTaskRouteSlugForTask(input: {
-  number: number;
+  number: number | null | undefined;
   projectKey?: string | null;
   contactKey?: string | null;
+  taskId?: string;
 }): string {
+  if (input.number == null || !Number.isFinite(input.number)) {
+    return input.taskId ?? "";
+  }
   const contextKey = input.projectKey || input.contactKey || INBOX_TASK_KEY;
   return encodeTaskSlug(contextKey, input.number);
 }
 
 export function getInboxTaskRouteHref(input: {
-  number: number;
+  number: number | null | undefined;
   projectKey?: string | null;
   contactKey?: string | null;
+  taskId?: string;
 }): string {
+  if (input.number == null || !Number.isFinite(input.number)) {
+    return input.taskId ? `/inbox/${input.taskId}` : "/inbox";
+  }
   return `/inbox/${getInboxTaskRouteSlugForTask(input)}`;
 }
 
@@ -215,6 +236,7 @@ export function buildInboxTaskListItem(input: {
   inbox?: boolean | null;
   agentCreatedAt?: number | Date | string | null;
   agentInboxApprovedAt?: number | Date | string | null;
+  inboxUpdatedAt?: number | Date | string | null;
 }): InboxTaskListItem {
   const toEpoch = (value: number | Date | string | null | undefined) => {
     if (value == null || value === "") return null;
@@ -242,12 +264,14 @@ export function buildInboxTaskListItem(input: {
     inbox: input.inbox ?? null,
     agentCreatedAt: toEpoch(input.agentCreatedAt),
     agentInboxApprovedAt: toEpoch(input.agentInboxApprovedAt),
+    inboxUpdatedAt: input.inboxUpdatedAt ?? null,
   };
 }
 
 export function buildInboxEmailListItem(input: {
   inboxId: string;
   messageId: string;
+  draftId?: string | null;
   threadId?: string | null;
   title: string;
   from?: string | null;
@@ -269,6 +293,7 @@ export function buildInboxEmailListItem(input: {
   emailThreadId?: string | null;
   number?: number | null;
   displayId?: string | null;
+  inboxUpdatedAt?: number | Date | string | null;
 }): InboxEmailListItem {
   const dueDate =
     input.dueDate == null
@@ -281,11 +306,13 @@ export function buildInboxEmailListItem(input: {
   const messageId = input.messageId.trim();
   const inboxId = input.inboxId.trim();
   const threadId = input.threadId?.trim() || null;
+  const draftId = input.draftId?.trim() || null;
   return {
     kind: "email",
     id: emailInboxItemId(inboxId, threadId, messageId),
     inboxId,
     messageId,
+    draftId,
     threadId,
     title: input.title.trim() || "(no subject)",
     partyLabel: formatEmailListPartyLabel(input.contactName, input.from),
@@ -309,6 +336,7 @@ export function buildInboxEmailListItem(input: {
     displayId: input.displayId?.trim() || (
       input.number != null ? formatEmailDisplayId(input.number) : null
     ),
+    inboxUpdatedAt: input.inboxUpdatedAt ?? null,
   };
 }
 
@@ -388,9 +416,15 @@ export function getEmailTaskListHref(
 
 export function getInboxItemRouteSlug(item: InboxListItem): string {
   if (item.kind === "letter") {
+    if (item.number == null || !Number.isFinite(item.number)) {
+      return item.id;
+    }
     return `ltr-${item.number}`;
   }
   if (item.kind === "email") {
+    return item.id;
+  }
+  if (item.kind === "meeting") {
     return item.id;
   }
 
@@ -398,6 +432,7 @@ export function getInboxItemRouteSlug(item: InboxListItem): string {
     number: item.number,
     projectKey: item.projectKey,
     contactKey: item.contactKey,
+    taskId: item.id,
   });
 }
 
@@ -416,6 +451,10 @@ export function getInboxItemHref(
       `/email/${encodeURIComponent(item.inboxId)}/${encodeURIComponent(item.messageId)}`,
     );
   }
+  if (item.kind === "meeting") {
+    const meetingId = parseMeetingInboxItemId(item.id) ?? item.id;
+    return getCalendarMeetingHref(meetingId);
+  }
 
   const slug = getInboxItemRouteSlug(item);
   const hasSlugCollision =
@@ -432,6 +471,7 @@ export function getInboxItemHref(
     number: item.number,
     projectKey: item.projectKey,
     contactKey: item.contactKey,
+    taskId: item.id,
   });
 }
 
@@ -463,8 +503,13 @@ export function buildInboxItemHrefById(
       );
       continue;
     }
+    if (item.kind === "meeting") {
+      const meetingId = parseMeetingInboxItemId(item.id) ?? item.id;
+      hrefById.set(item.id, getCalendarMeetingHref(meetingId));
+      continue;
+    }
     const slug = getInboxItemRouteSlug(item);
-    if ((slugCounts.get(slug) ?? 0) > 1) {
+    if ((slugCounts.get(slug) ?? 0) > 1 || slug === item.id) {
       hrefById.set(item.id, `/inbox/${item.id}`);
     } else {
       hrefById.set(
@@ -473,6 +518,7 @@ export function buildInboxItemHrefById(
           number: item.number,
           projectKey: item.projectKey,
           contactKey: item.contactKey,
+          taskId: item.id,
         }),
       );
     }
@@ -550,6 +596,9 @@ export function getInboxItemDisplayId(item: InboxListItem): string {
       item.number != null ? formatEmailDisplayId(item.number) : "Email"
     );
   }
+  if (item.kind === "meeting") {
+    return formatMeetingDisplayId(item.number);
+  }
   const key = item.projectKey || item.contactKey || INBOX_TASK_KEY;
   return formatTaskDisplayId(key, item.number);
 }
@@ -608,9 +657,11 @@ export function taskBelongsInInbox(
     dueDate?: number | Date | string | null;
     agentCreatedAt?: number | Date | string | null;
     agentInboxApprovedAt?: number | Date | string | null;
+    inboxUpdatedAt?: number | Date | string | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  if (inboxUpdatedAtRequiresInboxListing(input.inboxUpdatedAt)) return true;
   if (isAgentInboxPending(input)) return true;
   if (input.inbox === true) return true;
   const status = migrateLegacyTaskStatus(input.status ?? "backlog");
@@ -646,9 +697,11 @@ export function emailBelongsInInbox(
   input: {
     status?: string | null;
     dueDate?: number | Date | string | null;
+    inboxUpdatedAt?: number | Date | string | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  if (inboxUpdatedAtRequiresInboxListing(input.inboxUpdatedAt)) return true;
   if (isEmailIncomingStatus(input.status)) return true;
   return taskBelongsInInbox(
     {
@@ -685,10 +738,17 @@ export function resolveInboxEmailIconColor(
 }
 
 function getTaskInboxAttentionGroupKey(
-  item: Pick<InboxTaskListItem, "status" | "dueDate" | "inbox"> &
-    Partial<Pick<InboxTaskListItem, "agentCreatedAt" | "agentInboxApprovedAt">>,
+  item: {
+    status: string;
+    dueDate?: number | Date | string | null;
+    inbox?: boolean | null;
+    agentCreatedAt?: number | Date | string | null;
+    agentInboxApprovedAt?: number | Date | string | null;
+    inboxUpdatedAt?: number | Date | string | null;
+  },
   referenceDate: Date,
 ): InboxAttentionStatus | "other" {
+  if (hasInboxUpdatedFlag(item.inboxUpdatedAt)) return "updated";
   if (isAgentInboxPending(item)) return "agents";
   if (isInboxOverdueTask(item, referenceDate)) return "overdue";
   const status = migrateLegacyTaskStatus(item.status);
@@ -702,7 +762,11 @@ function getTaskInboxAttentionGroupKey(
 }
 
 function getEmailInboxAttentionGroupKey(
-  item: Pick<InboxEmailListItem, "status" | "dueDate">,
+  item: {
+    status: string;
+    dueDate?: number | Date | string | null;
+    inboxUpdatedAt?: number | Date | string | null;
+  },
   referenceDate: Date,
 ): InboxAttentionStatus | "other" {
   return getTaskInboxAttentionGroupKey(
@@ -714,30 +778,63 @@ function getEmailInboxAttentionGroupKey(
   );
 }
 
+function getMeetingInboxAttentionGroupKey(item: {
+  status: string;
+  inboxUpdatedAt?: number | Date | string | null;
+}): InboxAttentionStatus | "other" {
+  if (hasInboxUpdatedFlag(item.inboxUpdatedAt)) return "updated";
+  if (meetingBelongsInInbox(item)) return "triage";
+  return "other";
+}
+
 /**
- * Section key for an inbox task or email.
+ * Section key for an inbox task, email, or meeting.
  *
+ * Updated is highest priority: any item with `inboxUpdatedAt` lands here.
  * Overdue is a special non-status group: any item with a due date in the past
  * that is not completed / canceled / duplicated lands here (including triage,
  * On Hold, and In Review). Remaining inbox items group by real status.
  */
 export function getInboxAttentionGroupKey(
-  item: Pick<
-    InboxTaskListItem | InboxEmailListItem,
-    "kind" | "status" | "dueDate"
-  > &
-    Partial<
-      Pick<
-        InboxTaskListItem,
-        "inbox" | "agentCreatedAt" | "agentInboxApprovedAt"
-      >
-    >,
+  item: {
+    kind: InboxListItem["kind"];
+    status?: string | null;
+    dueDate?: number | Date | string | null;
+    inbox?: boolean | null;
+    agentCreatedAt?: number | Date | string | null;
+    agentInboxApprovedAt?: number | Date | string | null;
+    inboxUpdatedAt?: number | Date | string | null;
+  },
   referenceDate: Date = new Date(),
 ): InboxAttentionStatus | "other" {
-  if (item.kind === "email") {
-    return getEmailInboxAttentionGroupKey(item, referenceDate);
+  if (item.kind === "letter") return "other";
+  if (item.kind === "meeting") {
+    return getMeetingInboxAttentionGroupKey({
+      status: item.status ?? "triage",
+      inboxUpdatedAt: item.inboxUpdatedAt,
+    });
   }
-  return getTaskInboxAttentionGroupKey(item, referenceDate);
+  if (item.kind === "email") {
+    return getEmailInboxAttentionGroupKey(
+      {
+        status: item.status ?? "triage",
+        dueDate: item.dueDate ?? null,
+        inboxUpdatedAt: item.inboxUpdatedAt,
+      },
+      referenceDate,
+    );
+  }
+  return getTaskInboxAttentionGroupKey(
+    {
+      status: item.status ?? "triage",
+      dueDate: item.dueDate ?? null,
+      inbox: item.inbox,
+      agentCreatedAt: item.agentCreatedAt,
+      agentInboxApprovedAt: item.agentInboxApprovedAt,
+      inboxUpdatedAt: item.inboxUpdatedAt,
+    },
+    referenceDate,
+  );
 }
 
 function attentionStatusRank(groupKey: string): number {
@@ -753,14 +850,16 @@ function isAttentionGroupedKind(
   return item.kind === "task" || item.kind === "email";
 }
 
-/** Sort: Agents → Overdue → Triage → In Progress → On Hold → In Review, then by updatedAt desc. */
+/** Sort: Updated → Agents → Overdue → Triage → …, then by updatedAt desc. */
 export function sortInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
   referenceDate: Date = new Date(),
 ): InboxListItem[] {
   return [...items].sort((a, b) => {
     if (!isAttentionGroupedKind(a) || !isAttentionGroupedKind(b)) {
-      if (a.kind === b.kind) return b.updatedAt - a.updatedAt;
+      if (a.kind === b.kind) {
+        return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
+      }
       if (isAttentionGroupedKind(a)) return -1;
       if (isAttentionGroupedKind(b)) return 1;
       return a.kind === "letter" ? 1 : -1;
@@ -780,6 +879,7 @@ export type InboxAttentionStatusGroup = {
 };
 
 export function getInboxAttentionGroupLabel(status: string): string {
+  if (status === "updated") return "Updated";
   if (status === "agents") return "Agents";
   if (status === "overdue") return "Overdue";
   if (isTaskStatus(status)) return getTaskStatusLabel(status);
@@ -790,7 +890,11 @@ export function getInboxAttentionGroupLabel(status: string): string {
 export function groupInboxItemsByAttentionStatus(
   items: readonly InboxListItem[],
   referenceDate: Date = new Date(),
-  options?: { alreadySorted?: boolean },
+  options?: {
+    alreadySorted?: boolean;
+    /** Keep pinned rows in the section they occupied when opened. */
+    attentionGroupOverrides?: ReadonlyMap<string, string>;
+  },
 ): InboxAttentionStatusGroup[] {
   const buckets = new Map<string, InboxListItem[]>();
   for (const status of INBOX_ATTENTION_STATUS_ORDER) {
@@ -803,11 +907,13 @@ export function groupInboxItemsByAttentionStatus(
     : sortInboxItemsByAttentionStatus(items, referenceDate);
 
   for (const item of ordered) {
-    if (!isAttentionGroupedKind(item)) {
+    if (!isAttentionGroupedKind(item) && item.kind !== "meeting") {
       other.push(item);
       continue;
     }
-    const groupKey = getInboxAttentionGroupKey(item, referenceDate);
+    const override = options?.attentionGroupOverrides?.get(item.id);
+    const groupKey =
+      override ?? getInboxAttentionGroupKey(item, referenceDate);
     const bucket = buckets.get(groupKey);
     if (bucket) {
       bucket.push(item);
@@ -840,9 +946,12 @@ export function getInboxAttentionKeyboardItemIds(
   items: readonly InboxListItem[],
   collapsedKeys: ReadonlySet<string> = new Set(),
   referenceDate: Date = new Date(),
+  attentionGroupOverrides?: ReadonlyMap<string, string>,
 ): string[] {
   const ids: string[] = [];
-  for (const group of groupInboxItemsByAttentionStatus(items, referenceDate)) {
+  for (const group of groupInboxItemsByAttentionStatus(items, referenceDate, {
+    attentionGroupOverrides,
+  })) {
     if (collapsedKeys.has(group.status)) continue;
     for (const item of group.items) {
       ids.push(item.id);

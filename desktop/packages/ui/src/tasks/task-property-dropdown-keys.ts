@@ -19,6 +19,7 @@ export type TaskPropertyDropdownId =
   | "dueDate"
   | "startDate"
   | "assignee"
+  | "related"
   | "area"
   | "areaId"
   | "project"
@@ -231,8 +232,9 @@ export function resolveTaskPropertyDropdownOpenCandidatesFromEvent(
     return ["organization"];
   }
 
+  // Tasks: Related contacts. Letters: Received date (whichever trigger exists).
   if (matchesShortcutLetter(event, "r", "KeyR")) {
-    return ["receivedDate"];
+    return ["related", "receivedDate"];
   }
 
   return [];

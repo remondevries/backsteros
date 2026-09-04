@@ -114,6 +114,24 @@ export function resolveSidebarActivePathname(
   return projectListHrefForNavFrom(navFrom);
 }
 
+/**
+ * Persist nav-from from navigate `state` before a warm keep-alive flip.
+ * Warm flips update the URL without TanStack `navigate()`, so location state
+ * never lands — caching by project key keeps Development/Areas highlighted.
+ */
+export function rememberProjectNavFromHref(
+  href: string,
+  state: unknown,
+): void {
+  const from = projectNavFromLocationState(state);
+  if (!from) return;
+  const pathname = href.split(/[?#]/, 1)[0] ?? href;
+  const match = pathname.match(/^\/projects\/([^/]+)/);
+  const key = match?.[1];
+  if (!key || key === "new") return;
+  rememberProjectNavFrom(key, key, from);
+}
+
 /** Prefer location state, then the in-memory nav-from cache. */
 export function resolveProjectNavFromForPath(options: {
   locationState: unknown;

@@ -11,6 +11,7 @@ import {
   resolveSectionTabCycleShortcut,
 } from "./section-tab-hrefs.js";
 import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
+import { isCodebaseDetailHotkeysActive } from "../codebase/codebase-detail-hotkeys.js";
 
 /**
  * Number keys switch list/entity section tabs (Next useSectionTabShortcuts).
@@ -40,6 +41,8 @@ export function useSectionTabShortcuts({
     function handleKeyDown(event: KeyboardEvent) {
       if (openRef.current) return;
       if (!shouldHandleGlobalShortcut(event)) return;
+      // PR / commit detail owns 1–3 while engaged — do not switch workbench tabs.
+      if (isCodebaseDetailHotkeysActive()) return;
 
       const cycle = resolveSectionTabCycleShortcut(event);
       if (cycle != null) {

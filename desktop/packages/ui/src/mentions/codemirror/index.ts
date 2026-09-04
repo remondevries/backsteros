@@ -20,3 +20,4 @@ export function createMentionExtensions(
 export { MentionMenuController } from "./mention-menu-controller.js";
 export type { MentionMenuKeyHandlers } from "./mention-menu-controller.js";
 export { computeMentionTriggerState } from "./compute-mention-trigger.js";
+export { namedLinkDecorations } from "./named-link-decorations.js";

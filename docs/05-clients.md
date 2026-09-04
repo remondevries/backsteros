@@ -121,7 +121,7 @@ Separate folder so agents and builds stay focused — see [11-urls-and-routing.m
 backsteros-packages/
   api-client/          Used by web, desktop, admin, mobile
   contracts/           Zod / OpenAPI types
-  powersync-schema/    Shared Tier A/B client schema (web + desktop)
+  powersync-schema/    Shared Tier A/B client schema (desktop + mobile)
   ui/                  Shared product UI + helpers — desktop-first; Next later
   ui-tokens/           Optional shared colors (optional)
 ```

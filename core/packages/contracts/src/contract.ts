@@ -1618,6 +1618,30 @@ export const apiContract = c.router(
       },
       summary: "Delete avatar",
     },
+    upsertDevicePushToken: {
+      method: "PUT",
+      path: "/api/v1/devices/push-token",
+      body: s.upsertDevicePushTokenSchema,
+      responses: {
+        200: z.object({ ok: z.literal(true) }),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Register or refresh a device push token (Clerk user)",
+    },
+    deleteDevicePushToken: {
+      method: "DELETE",
+      path: "/api/v1/devices/push-token",
+      body: s.deleteDevicePushTokenSchema,
+      responses: {
+        200: z.object({ ok: z.literal(true) }),
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Unregister a device push token (Clerk user)",
+    },
     getSettings: {
       method: "GET",
       path: "/api/v1/settings",

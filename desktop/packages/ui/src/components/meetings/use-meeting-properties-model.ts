@@ -5,7 +5,6 @@ import { useMemo } from "react";
 import { migrateLegacyTaskStatus } from "../../tasks/task-status.js";
 import { DROPDOWN_NONE_VALUE } from "../dropdowns/dropdown-options.js";
 import {
-  buildTaskPriorityDropdownOptions,
   buildTaskStatusDropdownOptions,
   toPropertyDate,
 } from "../entity/property-rail-options.js";
@@ -17,7 +16,6 @@ import type { MeetingPropertiesInlineChipsProps } from "./meeting-properties-inl
 export function useMeetingPropertiesModel({
   meeting,
   onStatusChange,
-  onPriorityChange,
   onOrganizationChange,
   onProjectChange,
   onAttendeeContactIdsChange,
@@ -28,7 +26,6 @@ export function useMeetingPropertiesModel({
   MeetingPropertiesInlineChipsProps,
   | "meeting"
   | "onStatusChange"
-  | "onPriorityChange"
   | "onOrganizationChange"
   | "onProjectChange"
   | "onAttendeeContactIdsChange"
@@ -38,12 +35,10 @@ export function useMeetingPropertiesModel({
 >) {
   const disabled = meeting == null;
   const status = migrateLegacyTaskStatus(meeting?.status ?? "ready_to_start");
-  const priority = meeting?.priority ?? 0;
   const startAt = toPropertyDate(meeting?.startAt ?? null);
   const endAt = toPropertyDate(meeting?.endAt ?? null);
 
   const statusOptions = useMemo(() => buildTaskStatusDropdownOptions(), []);
-  const priorityOptions = useMemo(() => buildTaskPriorityDropdownOptions(), []);
 
   const canEditOrg =
     Boolean(onOrganizationChange) && organizationOptions.length > 0;
@@ -52,7 +47,6 @@ export function useMeetingPropertiesModel({
   const canEditAttendees =
     Boolean(onAttendeeContactIdsChange) && contactOptions.length > 0;
   const canEditStatus = Boolean(onStatusChange) && !disabled;
-  const canEditPriority = Boolean(onPriorityChange) && !disabled;
 
   const attendeeOptions = useMemo(
     () => contactOptions.filter((option) => option.value !== DROPDOWN_NONE_VALUE),
@@ -62,16 +56,13 @@ export function useMeetingPropertiesModel({
   return {
     disabled,
     status,
-    priority,
     startAt,
     endAt,
     statusOptions,
-    priorityOptions,
     canEditOrg,
     canEditProject,
     canEditAttendees,
     canEditStatus,
-    canEditPriority,
     attendeeOptions,
     organizationOptions,
     projectOptions,

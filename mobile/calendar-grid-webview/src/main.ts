@@ -29,6 +29,7 @@ type HostMessage =
       type: "eventClick";
       taskId?: string;
       meetingId?: string;
+      contactId?: string;
       eventId: string;
     }
   | {
@@ -71,12 +72,20 @@ function viewModeToFcView(mode: InitMessage["viewMode"]): string {
 function entityFromEvent(event: {
   id: string;
   extendedProps?: Record<string, unknown>;
-}): { entityType: "task" | "meeting"; entityId: string } {
+}):
+  | { entityType: "task" | "meeting"; entityId: string }
+  | { entityType: "birthday"; entityId: string } {
   const props = event.extendedProps ?? {};
   if (props.entityType === "meeting") {
     const meetingId = props.meetingId;
     if (typeof meetingId === "string" && meetingId) {
       return { entityType: "meeting", entityId: meetingId };
+    }
+  }
+  if (props.entityType === "birthday") {
+    const contactId = props.contactId;
+    if (typeof contactId === "string" && contactId) {
+      return { entityType: "birthday", entityId: contactId };
     }
   }
   const taskId = props.taskId;
@@ -110,6 +119,14 @@ function mountCalendar(payload: InitMessage) {
     events: payload.events,
     eventClick(info) {
       const entity = entityFromEvent(info.event);
+      if (entity.entityType === "birthday") {
+        post({
+          type: "eventClick",
+          eventId: info.event.id,
+          contactId: entity.entityId,
+        });
+        return;
+      }
       post({
         type: "eventClick",
         eventId: info.event.id,
@@ -120,6 +137,10 @@ function mountCalendar(payload: InitMessage) {
     },
     eventDrop(info) {
       const entity = entityFromEvent(info.event);
+      if (entity.entityType === "birthday") {
+        info.revert();
+        return;
+      }
       post({
         type: "eventChange",
         entityType: entity.entityType,
@@ -131,6 +152,10 @@ function mountCalendar(payload: InitMessage) {
     },
     eventResize(info) {
       const entity = entityFromEvent(info.event);
+      if (entity.entityType === "birthday") {
+        info.revert();
+        return;
+      }
       post({
         type: "eventChange",
         entityType: entity.entityType,

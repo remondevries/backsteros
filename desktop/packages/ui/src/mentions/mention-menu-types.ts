@@ -53,14 +53,27 @@ export type MentionCatalogContact = {
   number: number | null;
   displayId: string | null;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   email: string | null;
+  emails?: Array<{ label: string; address: string }> | null;
+  phone?: string | null;
+  phones?: Array<{ label: string; number: string }> | null;
   title: string | null;
   summary: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  region?: string | null;
+  country?: string | null;
+  socialAccounts?: Array<{ platform: string; url: string }> | null;
   avatarStorageKey: string | null;
   avatarUpdatedAt: number;
+  avatarSrc?: string | null;
   organizationId: string | null;
   organizationKey: string | null;
   organizationName: string | null;
+  organizationAvatarSrc?: string | null;
 };
 
 export type MentionCatalogOrganization = {
@@ -73,6 +86,7 @@ export type MentionCatalogOrganization = {
   summary: string | null;
   avatarStorageKey: string | null;
   avatarUpdatedAt: number;
+  avatarSrc?: string | null;
 };
 
 export type MentionCatalogLetter = {
@@ -140,11 +154,15 @@ export type MentionItem =
       kind: "contact";
       id: string;
       key: string;
+      number?: number | null;
+      /** Human id like `C-12`; preferred in mention tokens when present. */
+      displayId: string | null;
       name: string;
       title: string | null;
       organizationName: string | null;
       avatarStorageKey: string | null;
       avatarUpdatedAt: number;
+      avatarSrc?: string | null;
     }
   | {
       kind: "organization";
@@ -153,6 +171,7 @@ export type MentionItem =
       name: string;
       avatarStorageKey: string | null;
       avatarUpdatedAt: number;
+      avatarSrc?: string | null;
     }
   | {
       kind: "document";

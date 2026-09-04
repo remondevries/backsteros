@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 /**
- * Align generated AppDelegate.swift with Expo SDK 55 + Swift 6 / Xcode 26:
+ * Align generated AppDelegate.swift with Expo SDK 57 + Swift 6 / Xcode 26:
  * - `internal import Expo`
  * - non-public AppDelegate
  * - `@main` instead of `@UIApplicationMain`

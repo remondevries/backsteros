@@ -1,5 +1,5 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
@@ -17,10 +17,11 @@ import {
 import { ui } from "../lib/ui";
 import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
+import { ContactActivityPanel } from "./contact-activity-panel";
 import { ContactOverviewPanel } from "./contact-overview-panel";
 import { ContactTasksPanel } from "./contact-tasks-panel";
 import { ContentPageTitle } from "./content-page-title";
-import { PillNav } from "./pill-nav";
+import { PillNav, type PillNavItem } from "./pill-nav";
 import { ScopedLettersPanel } from "./scoped-letters-panel";
 
 type Props = {
@@ -28,7 +29,13 @@ type Props = {
   title: string;
 };
 
-/** Contact detail shell — Overview / Tasks / Letters (desktop parity). */
+const CONTACT_PILL_ITEMS: readonly PillNavItem<ContactSectionId>[] =
+  CONTACT_SECTIONS.map((entry) => ({
+    value: entry.id,
+    label: entry.label,
+  }));
+
+/** Contact detail shell — Activity / Details / Tasks / Letters. */
 export function ContactDetailScreen({ contactId, title }: Props) {
   const router = useRouter();
   const segments = useSegments();
@@ -64,7 +71,7 @@ export function ContactDetailScreen({ contactId, title }: Props) {
     onSelectIndex: onSectionTabIndex,
   });
 
-  function onPressCreate() {
+  const onPressCreate = useCallback(() => {
     if (section === "tasks") {
       router.push({
         pathname: "/create/task",
@@ -78,7 +85,7 @@ export function ContactDetailScreen({ contactId, title }: Props) {
         params: { contactId },
       });
     }
-  }
+  }, [contactId, router, section]);
 
   const createTrailing =
     section === "tasks" || section === "letters" ? (
@@ -90,37 +97,47 @@ export function ContactDetailScreen({ contactId, title }: Props) {
       />
     ) : null;
 
+  const headerTitle = useCallback(
+    () => (
+      <View style={styles.headerTitleCluster}>
+        <PillNav
+          accessibilityLabel="Contact sections"
+          value={section}
+          onChange={setSection}
+          align="start"
+          density="header"
+          items={CONTACT_PILL_ITEMS}
+        />
+      </View>
+    ),
+    [section],
+  );
+
+  const headerRight = useCallback(
+    () => <DetailHeaderDeleteButton onDelete={onDeleteContact} />,
+    [onDeleteContact],
+  );
+
+  const screenOptions = useMemo(
+    () => ({
+      ...tabDetailScreenOptions({ embedded: isPadDevice() }),
+      title: "",
+      headerTitleAlign: "left" as const,
+      headerTitle,
+      ...(inPadContactsSplit ? { headerBackVisible: false } : null),
+      headerRight,
+    }),
+    [headerRight, headerTitle, inPadContactsSplit],
+  );
+
   return (
     <>
-      <Stack.Screen
-        options={{
-          ...tabDetailScreenOptions({ embedded: isPadDevice() }),
-          title: "",
-          headerTitleAlign: "left",
-          headerTitle: () => (
-            <View style={styles.headerTitleCluster}>
-              <PillNav
-                accessibilityLabel="Contact sections"
-                value={section}
-                onChange={setSection}
-                align="start"
-                density="header"
-                items={CONTACT_SECTIONS.map((entry) => ({
-                  value: entry.id,
-                  label: entry.label,
-                }))}
-              />
-            </View>
-          ),
-          ...(inPadContactsSplit ? { headerBackVisible: false } : null),
-          headerRight: () => (
-            <DetailHeaderDeleteButton onDelete={onDeleteContact} />
-          ),
-        }}
-      />
+      <Stack.Screen options={screenOptions} />
       <View style={ui.screen}>
         <View style={{ flex: 1 }}>
           {section === "overview" ? (
+            <ContactActivityPanel contactId={contactId} />
+          ) : section === "details" ? (
             <ContactOverviewPanel
               contactId={contactId}
               onNameChange={setDisplayTitle}

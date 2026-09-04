@@ -6,7 +6,9 @@ import type {
   Project as ApiProject,
 } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
+import { allocateUniqueProjectKey } from "@backsteros/ui";
 
+import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 /** Create/delete flows for organizations, contacts, projects, and areas. */
@@ -45,7 +47,11 @@ export function useWorkspaceEntityCreation({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "")
       .slice(0, 6);
-    return (base || fallback) + Math.floor(Math.random() * 90 + 10);
+    const suffix =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID().replace(/-/g, "").slice(0, 8)
+        : `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+    return `${base || fallback}${suffix}`;
   }, []);
 
   const createOrganization = useCallback(
@@ -65,27 +71,42 @@ export function useWorkspaceEntityCreation({
           createdAt: now,
           updatedAt: now,
         } as ApiOrganization;
-        setApiOrganizations((rows) => {
-          const next = rows ? [...rows] : [];
-          if (!next.some((entry) => entry.id === organization.id)) {
-            next.push(organization);
-          }
-          return next;
-        });
-        void powerSync
-          .createMetadata(
-            "organizations",
-            toSnakeFields({
-              key,
-              name,
-              sortOrder: organization.sortOrder,
-            }),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local organization create failed", error);
+        const applyOptimistic = () => {
+          setApiOrganizations((rows) => {
+            const next = rows ? [...rows] : [];
+            if (!next.some((entry) => entry.id === organization.id)) {
+              next.push(organization);
+            }
+            return next;
           });
-        return { id: organization.id, key: organization.key };
+        };
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic,
+          rollback: () =>
+            setApiOrganizations(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            ),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "organizations",
+              toSnakeFields({
+                key,
+                name,
+                sortOrder: organization.sortOrder,
+                number: null,
+              }),
+              id,
+            ),
+          errorLabel: "local organization create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/organizations/${encodeURIComponent(id)}`,
+            setters: [setApiOrganizations],
+          },
+        });
+        return { id: organization.id, key: organization.key, number };
       }
 
       const organization = await client.requestJson<ApiOrganization>(
@@ -139,30 +160,45 @@ export function useWorkspaceEntityCreation({
           createdAt: now,
           updatedAt: now,
         } as ApiContact;
-        setApiContacts((rows) => {
-          const next = rows ? [...rows] : [];
-          if (!next.some((entry) => entry.id === contact.id)) {
-            next.push(contact);
-          }
-          return next;
-        });
-        void powerSync
-          .createMetadata(
-            "contacts",
-            toSnakeFields({
-              key,
-              name,
-              firstName,
-              lastName,
-              organizationId: contact.organizationId,
-              sortOrder: contact.sortOrder,
-            }),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local contact create failed", error);
+        const applyOptimistic = () => {
+          setApiContacts((rows) => {
+            const next = rows ? [...rows] : [];
+            if (!next.some((entry) => entry.id === contact.id)) {
+              next.push(contact);
+            }
+            return next;
           });
-        return { id: contact.id, key: contact.key };
+        };
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic,
+          rollback: () =>
+            setApiContacts(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            ),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "contacts",
+              toSnakeFields({
+                key,
+                name,
+                firstName,
+                lastName,
+                organizationId: contact.organizationId,
+                sortOrder: contact.sortOrder,
+                number: null,
+              }),
+              id,
+            ),
+          errorLabel: "local contact create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/contacts/${encodeURIComponent(id)}`,
+            setters: [setApiContacts],
+          },
+        });
+        return { id: contact.id, key: contact.key, number };
       }
 
       const contact = await client.requestJson<ApiContact>("/api/v1/contacts", {
@@ -204,7 +240,11 @@ export function useWorkspaceEntityCreation({
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, "")
         .slice(0, 3);
-      const key = base.length >= 2 ? base : "PRJ";
+      const preferred = base.length >= 2 ? base : "PRJ";
+      const key = allocateUniqueProjectKey(
+        preferred,
+        rawProjects.map((project) => project.key),
+      );
       const body = {
         key,
         name,
@@ -230,28 +270,35 @@ export function useWorkspaceEntityCreation({
           createdAt: now,
           updatedAt: now,
         } as ApiProject;
-        setApiProjects((rows) => {
-          if (!rows) return [project];
-          if (rows.some((entry) => entry.id === project.id)) return rows;
-          return [project, ...rows];
+        await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiProjects((rows) => {
+              if (!rows) return [project];
+              if (rows.some((entry) => entry.id === project.id)) return rows;
+              return [project, ...rows];
+            });
+          },
+          rollback: () =>
+            setApiProjects(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            ),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "projects",
+              toSnakeFields({
+                key: project.key,
+                name: project.name,
+                status: project.status,
+                area: body.area ?? null,
+                sortOrder: body.sortOrder,
+                organizationId: project.organizationId ?? null,
+                ...(project.type ? { type: project.type } : {}),
+              }),
+              id,
+            ),
+          errorLabel: "local project create",
         });
-        void powerSync
-          .createMetadata(
-            "projects",
-            toSnakeFields({
-              key: project.key,
-              name: project.name,
-              status: project.status,
-              area: body.area ?? null,
-              sortOrder: body.sortOrder,
-              organizationId: project.organizationId ?? null,
-              ...(project.type ? { type: project.type } : {}),
-            }),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local project create failed", error);
-          });
         return { id: project.id, key: project.key };
       }
 
@@ -267,7 +314,7 @@ export function useWorkspaceEntityCreation({
       });
       return { id: project.id, key: project.key };
     },
-    [authenticated, client, powerSync, setApiProjects, toSnakeFields],
+    [authenticated, client, powerSync, rawProjects, setApiProjects, toSnakeFields],
   );
 
   const createArea = useCallback(
@@ -297,24 +344,29 @@ export function useWorkspaceEntityCreation({
           updatedAt: now,
           deletedAt: null,
         } as ApiArea;
-        setApiAreas((rows) => {
-          const next = rows ? [...rows] : [];
-          if (!next.some((entry) => entry.id === area.id)) next.push(area);
-          return next;
+        await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiAreas((rows) => {
+              const next = rows ? [...rows] : [];
+              if (!next.some((entry) => entry.id === area.id)) next.push(area);
+              return next;
+            });
+          },
+          rollback: () =>
+            setApiAreas((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "areas",
+              toSnakeFields({
+                name: area.name,
+                parent: area.parent,
+                sortOrder: area.sortOrder,
+              }),
+              id,
+            ),
+          errorLabel: "local area create",
         });
-        void powerSync
-          .createMetadata(
-            "areas",
-            toSnakeFields({
-              name: area.name,
-              parent: area.parent,
-              sortOrder: area.sortOrder,
-            }),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local area create failed", error);
-          });
         return { id: area.id };
       }
 

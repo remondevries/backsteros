@@ -10,6 +10,7 @@ import {
 } from "../../lib/calendar/calendar-events";
 import { CALENDAR_VIEW_MODE_OPTIONS } from "../../lib/calendar/calendar-view-modes";
 import { useCalendarGridEvents } from "../../lib/calendar/use-calendar-grid-events";
+import { contactDetailHref } from "../../lib/detail-href";
 import { isPadDevice } from "../../lib/device";
 import { patchEntityViaPowerSyncOrApi } from "../../lib/entity-mutations";
 import { createMeetingViaPowerSyncOrApi } from "../../lib/meeting-create";
@@ -77,6 +78,10 @@ export function CalendarScreen() {
       if (message.type === "eventClick") {
         if (message.meetingId) {
           router.push(`/meeting/${message.meetingId}`);
+          return;
+        }
+        if (message.contactId) {
+          router.push(contactDetailHref(message.contactId));
           return;
         }
         if (message.taskId) {

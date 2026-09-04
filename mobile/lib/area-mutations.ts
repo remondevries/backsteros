@@ -9,6 +9,7 @@ import {
   type MobileSoftDeletePowerSync,
 } from "./entity-mutations";
 import type { ProjectArea } from "./project-areas";
+import { randomUuidCompact } from "./random-uuid";
 
 export type MobileAreaPowerSync = MobileSoftDeletePowerSync & {
   database?: PowerSyncDatabase | null;
@@ -92,7 +93,7 @@ export async function createAreaViaPowerSyncOrApi(
   };
 
   if (powerSync.ready && powerSync.createMetadata) {
-    const id = crypto.randomUUID().replace(/-/g, "");
+    const id = randomUuidCompact();
     await powerSync.createMetadata("areas", toSnakeFields(body), id);
     return { id };
   }

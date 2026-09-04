@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useContentTitleEditorNavigation } from "../../content/use-content-title-editor-navigation.js";
+import {
+  deriveDocumentHeadingMinimapItems,
+  DOCUMENT_HEADING_MINIMAP_MIN_ITEMS,
+  resolveDocumentHeadingMinimapHasPersistentGutter,
+  resolveDocumentHeadingMinimapHitStripWidth,
+  type DocumentHeadingMinimapItem,
+} from "../../documents/document-heading-minimap.js";
 import {
   ContentMarkdownPreviewBody,
   ContentMarkdownViewLayout,
@@ -13,11 +27,17 @@ import {
   ContentDetailTitleHeader,
   buildContentIconTitleHeaders,
 } from "../content/content-detail-title-header.js";
+import { DocumentHeadingMinimap } from "./document-heading-minimap.js";
 import { DocumentMarkdownEditor } from "./document-markdown-editor.js";
 import { DocumentMarkdownPreview } from "./document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
+import { useListKeyboardNavigationZone } from "../list-nav/list-keyboard-navigation-provider.js";
+import {
+  registerCodebaseDetailEnterFocus,
+  registerCodebaseDetailLeaveFocus,
+} from "../../codebase/codebase-detail-focus.js";
 
 export type MarkdownDocumentDetailViewProps = {
   sectionLabel: string;
@@ -41,6 +61,8 @@ export type MarkdownDocumentDetailViewProps = {
   previewTitleEditable?: boolean;
   /** When false, title is read-only in both edit and preview (journal date titles). */
   titleEditable?: boolean;
+  /** When false, skip ⌘E / ⌘P (keep-alive pane not visible). */
+  shortcutsEnabled?: boolean;
   onSave?: (
     value: string,
   ) =>
@@ -69,6 +91,7 @@ export function MarkdownDocumentDetailView({
   embedded = false,
   previewTitleEditable = true,
   titleEditable = true,
+  shortcutsEnabled = true,
   onSave,
   onSaveTitle,
 }: MarkdownDocumentDetailViewProps) {
@@ -76,6 +99,14 @@ export function MarkdownDocumentDetailView({
   const [prevKey, setPrevKey] = useState(resetKey ?? initialTitle);
   const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
   const startedInEditRef = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const scrollportRef = useRef<HTMLDivElement>(null);
+  const minimapRafRef = useRef<number | null>(null);
+  const [hasPersistentGutter, setHasPersistentGutter] = useState(false);
+  const [hitStripWidth, setHitStripWidth] = useState(0);
+  const [inViewIds, setInViewIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const syncKey = resetKey ?? initialTitle;
   if (syncKey !== prevKey) {
     setPrevKey(syncKey);
@@ -113,7 +144,41 @@ export function MarkdownDocumentDetailView({
             reason instanceof Error ? reason.message : "Could not save document.",
         }));
     },
+    shortcutsEnabled,
+    hostRef: shellRef,
   });
+
+  const { setActiveZone } = useListKeyboardNavigationZone();
+
+  useEffect(() => {
+    if (!shortcutsEnabled) return;
+    return registerCodebaseDetailEnterFocus(() => {
+      const root = shellRef.current;
+      if (!root?.closest("[data-codebase-workbench]")) return false;
+      activateEditMode({ focusEditor: true });
+      return true;
+    });
+  }, [activateEditMode, shortcutsEnabled]);
+
+  useEffect(() => {
+    if (!shortcutsEnabled) return;
+    return registerCodebaseDetailLeaveFocus(() => {
+      const root = shellRef.current;
+      if (!root?.closest("[data-codebase-workbench]")) return false;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active.closest(".cm-editor, .cm-content")
+      ) {
+        active.blur();
+      }
+      if (mode === "edit") {
+        setViewMode("preview");
+      }
+      setActiveZone("content", { activate: true });
+      return true;
+    });
+  }, [mode, setActiveZone, setViewMode, shortcutsEnabled]);
 
   useEffect(() => {
     if (!startInEditMode || startedInEditRef.current) return;
@@ -129,6 +194,110 @@ export function MarkdownDocumentDetailView({
     activateEditMode,
     requestEditorFocus,
   });
+
+  const headingMinimapItems = useMemo(() => {
+    if (mode !== "preview") return [] as DocumentHeadingMinimapItem[];
+    return deriveDocumentHeadingMinimapItems(value);
+  }, [mode, value]);
+
+  const showHeadingMinimap =
+    mode === "preview" &&
+    headingMinimapItems.length >= DOCUMENT_HEADING_MINIMAP_MIN_ITEMS;
+
+  const updateMinimapInView = useCallback(() => {
+    const scroller = scrollportRef.current;
+    if (!scroller || headingMinimapItems.length === 0) {
+      setInViewIds(new Set());
+      return;
+    }
+    const scrollerRect = scroller.getBoundingClientRect();
+    const next = new Set<string>();
+    for (const item of headingMinimapItems) {
+      const section = scroller.querySelector<HTMLElement>(
+        `[data-document-heading="${CSS.escape(item.id)}"]`,
+      );
+      if (!section) continue;
+      const rect = section.getBoundingClientRect();
+      if (rect.bottom > scrollerRect.top && rect.top < scrollerRect.bottom) {
+        next.add(item.id);
+      }
+    }
+    setInViewIds((current) => {
+      if (current.size === next.size) {
+        let same = true;
+        for (const id of next) {
+          if (!current.has(id)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return current;
+      }
+      return next;
+    });
+  }, [headingMinimapItems]);
+
+  const scheduleMinimapInView = useCallback(() => {
+    if (minimapRafRef.current != null) return;
+    minimapRafRef.current = window.requestAnimationFrame(() => {
+      minimapRafRef.current = null;
+      updateMinimapInView();
+    });
+  }, [updateMinimapInView]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const syncGutter = () => {
+      const width = shell.getBoundingClientRect().width;
+      setHasPersistentGutter(
+        resolveDocumentHeadingMinimapHasPersistentGutter(width),
+      );
+      setHitStripWidth(resolveDocumentHeadingMinimapHitStripWidth(width));
+    };
+    syncGutter();
+    const observer = new ResizeObserver(syncGutter);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, [syncKey, showHeadingMinimap]);
+
+  useEffect(() => {
+    const scroller = scrollportRef.current;
+    if (!scroller || !showHeadingMinimap) {
+      setInViewIds(new Set());
+      return;
+    }
+    updateMinimapInView();
+    const onScroll = () => scheduleMinimapInView();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const frame = requestAnimationFrame(updateMinimapInView);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+      if (minimapRafRef.current != null) {
+        cancelAnimationFrame(minimapRafRef.current);
+        minimapRafRef.current = null;
+      }
+    };
+  }, [
+    scheduleMinimapInView,
+    showHeadingMinimap,
+    syncKey,
+    updateMinimapInView,
+    value,
+  ]);
+
+  const jumpToHeading = useCallback((item: DocumentHeadingMinimapItem) => {
+    const scroller = scrollportRef.current;
+    if (!scroller) return;
+    const section = scroller.querySelector<HTMLElement>(
+      `[data-document-heading="${CSS.escape(item.id)}"]`,
+    );
+    if (!section) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const sectionRect = section.getBoundingClientRect();
+    scroller.scrollTop += sectionRect.top - scrollerRect.top - 16;
+  }, []);
 
   void sectionLabel;
 
@@ -239,6 +408,16 @@ export function MarkdownDocumentDetailView({
     </FloatingPillToggleDock>
   );
 
+  const headingMinimap = showHeadingMinimap ? (
+    <DocumentHeadingMinimap
+      items={headingMinimapItems}
+      hasPersistentGutter={hasPersistentGutter}
+      hitStripWidth={hitStripWidth}
+      inViewIds={inViewIds}
+      onSelect={jumpToHeading}
+    />
+  ) : null;
+
   // Full-width scrollport (sibling of the Edit/Preview dock) so the scrollbar
   // sits on the far right of the pane — not beside the centered 800px column.
   // Leading (e.g. Whoop) scrolls away with the body; the dock stays pinned.
@@ -252,10 +431,14 @@ export function MarkdownDocumentDetailView({
   if (embedded) {
     return (
       <div
+        ref={shellRef}
         className="markdown-document-embedded markdown-document-embedded--document-scroll"
         data-content-view-mode={mode}
       >
-        <div className="markdown-document-scrollport">{scrollBody}</div>
+        {headingMinimap}
+        <div ref={scrollportRef} className="markdown-document-scrollport">
+          {scrollBody}
+        </div>
         {viewModeDock}
       </div>
     );
@@ -263,12 +446,17 @@ export function MarkdownDocumentDetailView({
 
   return (
     <div
+      ref={shellRef}
       className="inbox-detail-layout"
       data-content-detail
       data-content-view-mode={mode}
       style={{ position: "relative" }}
     >
-      <div className="inbox-detail-body inbox-detail-body--document markdown-document-scrollport">
+      {headingMinimap}
+      <div
+        ref={scrollportRef}
+        className="inbox-detail-body inbox-detail-body--document markdown-document-scrollport"
+      >
         {scrollBody}
       </div>
       {viewModeDock}

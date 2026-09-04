@@ -8,7 +8,18 @@ import {
   type Task,
 } from "@backsteros/contracts";
 
-import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import {
+  shouldSkipRestEntityWrite,
+  shouldWriteEntityViaPowerSync,
+} from "./powersync-write-path";
+import {
+  pendingTaskDetailFromCreateBody,
+  rememberPendingTaskDetail,
+  getPendingTaskDetail,
+} from "./pending-task-detail";
+import { randomUuidCompact } from "./random-uuid";
+import { resolveEntityNumberAfterLocalCreate } from "./resolve-entity-number-after-local-create";
+import { applyTaskRowOverride } from "./task-row-overrides";
 
 export type SyncedEntityTable =
   | "tasks"
@@ -24,6 +35,7 @@ export type MetadataPatchTable = SyncedEntityTable | "documents";
 export type MobileEntityPowerSync = {
   ready: boolean;
   connected: boolean;
+  preferRestWrites?: boolean;
   patchTask: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
@@ -39,6 +51,7 @@ export type MobileEntityPowerSync = {
     values: Record<string, unknown>,
     id?: string,
   ) => Promise<string>;
+  flushCrudUpload?: () => Promise<void>;
 };
 
 export function toSnakeFields(
@@ -46,6 +59,7 @@ export function toSnakeFields(
 ): Record<string, unknown> {
   const snake: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) continue;
     const snakeKey = key.replace(
       /[A-Z]/g,
       (letter) => `_${letter.toLowerCase()}`,
@@ -69,10 +83,14 @@ export function entityKeyFromName(name: string, fallback: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "")
     .slice(0, 6);
-  return (base || fallback) + Math.floor(Math.random() * 90 + 10);
+  const suffix = randomUuidCompact().slice(0, 8);
+  return `${base || fallback}${suffix}`;
 }
 
-export function entityPatchPath(table: MetadataPatchTable, id: string): string {
+export function entityPatchPath(
+  table: MetadataPatchTable | "meetings",
+  id: string,
+): string {
   if (table === "documents") {
     return `/api/v1/documents/${encodeURIComponent(id)}`;
   }
@@ -81,6 +99,9 @@ export function entityPatchPath(table: MetadataPatchTable, id: string): string {
     return `/api/v1/projects/${encodeURIComponent(id)}`;
   }
   if (table === "letters") return `/api/v1/letters/${encodeURIComponent(id)}`;
+  if (table === "meetings") {
+    return `/api/v1/meetings/${encodeURIComponent(id)}`;
+  }
   if (table === "contacts") {
     return `/api/v1/contacts/${encodeURIComponent(id)}`;
   }
@@ -101,7 +122,15 @@ export function taskApiPatchToSqlite(
     else if (key === "trackedDurationSeconds") {
       sqliteValues.tracked_duration_seconds = value;
     } else if (key === "assigneeId") sqliteValues.assignee_id = value;
-    else if (key === "projectId") sqliteValues.project_id = value;
+    else if (key === "relatedContactIds") {
+      sqliteValues.related_contact_ids = Array.isArray(value)
+        ? JSON.stringify(value)
+        : value;
+    } else if (key === "relatedOrganizationIds") {
+      sqliteValues.related_organization_ids = Array.isArray(value)
+        ? JSON.stringify(value)
+        : value;
+    } else if (key === "projectId") sqliteValues.project_id = value;
     else if (key === "contactId") sqliteValues.contact_id = value;
     else if (key === "agentChatId") sqliteValues.agent_chat_id = value;
     else if (key === "agentInboxApproved") {
@@ -226,7 +255,10 @@ export async function patchEntityViaPowerSyncOrApi(
   const localValues =
     sqliteValues ?? defaultSqliteValues(table, apiValues);
 
-  if (powerSync.ready && Object.keys(localValues).length > 0) {
+  if (
+    shouldWriteEntityViaPowerSync(powerSync) &&
+    Object.keys(localValues).length > 0
+  ) {
     try {
       await patchLocalEntity(powerSync, table, id, localValues);
     } catch {
@@ -252,7 +284,9 @@ export async function patchEntityViaPowerSyncOrApi(
 }
 
 function shouldCreateViaPowerSync(powerSync: MobileEntityPowerSync): boolean {
-  return Boolean(powerSync.ready && powerSync.createMetadata);
+  return Boolean(
+    shouldWriteEntityViaPowerSync(powerSync) && powerSync.createMetadata,
+  );
 }
 
 export async function createTaskViaPowerSyncOrApi(
@@ -263,9 +297,33 @@ export async function createTaskViaPowerSyncOrApi(
   if (shouldCreateViaPowerSync(powerSync)) {
     const id = await powerSync.createMetadata!(
       "tasks",
-      toSnakeFields({ ...body, number: null }),
+      toSnakeFields({ ...body, number: null, links: body.links ?? [] }),
     );
-    return { id, number: null };
+    rememberPendingTaskDetail(pendingTaskDetailFromCreateBody(id, body));
+    applyTaskRowOverride(id, {
+      title: typeof body.title === "string" ? body.title : null,
+      status: typeof body.status === "string" ? body.status : null,
+      priority: typeof body.priority === "number" ? body.priority : 0,
+      due_date: typeof body.dueDate === "string" ? body.dueDate : null,
+      project_id: typeof body.projectId === "string" ? body.projectId : null,
+      assignee_id:
+        typeof body.assigneeId === "string" ? body.assigneeId : null,
+      description:
+        typeof body.description === "string" ? body.description : null,
+    });
+    const number = await resolveEntityNumberAfterLocalCreate(
+      client,
+      powerSync,
+      entityPatchPath("tasks", id),
+      async (assigned) => {
+        await powerSync.patchTask(id, { number: assigned });
+        const pending = getPendingTaskDetail(id);
+        if (pending) {
+          rememberPendingTaskDetail({ ...pending, number: assigned });
+        }
+      },
+    );
+    return { id, number };
   }
 
   const task = await client.requestJson<Task>("/api/v1/tasks", {
@@ -273,6 +331,13 @@ export async function createTaskViaPowerSyncOrApi(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  rememberPendingTaskDetail(
+    pendingTaskDetailFromCreateBody(task.id, {
+      ...body,
+      number: task.number,
+      title: task.title,
+    }),
+  );
   return { id: task.id, number: task.number ?? null };
 }
 
@@ -280,7 +345,7 @@ export async function createContactViaPowerSyncOrApi(
   client: BacksterosApiClient,
   powerSync: MobileEntityPowerSync,
   input: { name: string; organizationId?: string | null; sortOrder?: number },
-): Promise<{ id: string }> {
+): Promise<{ id: string; number?: number | null }> {
   const name = input.name.trim();
   const sortOrder = input.sortOrder ?? -Date.now();
   const organizationId = input.organizationId ?? null;
@@ -291,17 +356,33 @@ export async function createContactViaPowerSyncOrApi(
       toSnakeFields({
         key: entityKeyFromName(name, "person"),
         name,
+        firstName: name,
+        lastName: "",
         organizationId,
         sortOrder,
+        number: null,
       }),
     );
-    return { id };
+    const number = await resolveEntityNumberAfterLocalCreate(
+      client,
+      powerSync,
+      entityPatchPath("contacts", id),
+      async (assigned) => {
+        await powerSync.patchContact(id, { number: assigned });
+      },
+    );
+    return { id, number };
   }
 
   const contact = await client.requestJson<Contact>("/api/v1/contacts", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, organizationId, sortOrder }),
+    body: JSON.stringify({
+      firstName: name,
+      lastName: "",
+      organizationId,
+      sortOrder,
+    }),
   });
   return { id: contact.id };
 }
@@ -310,7 +391,7 @@ export async function createOrganizationViaPowerSyncOrApi(
   client: BacksterosApiClient,
   powerSync: MobileEntityPowerSync,
   input: { name: string; sortOrder?: number },
-): Promise<{ id: string }> {
+): Promise<{ id: string; number?: number | null }> {
   const name = input.name.trim();
   const sortOrder = input.sortOrder ?? -Date.now();
 
@@ -321,9 +402,18 @@ export async function createOrganizationViaPowerSyncOrApi(
         key: entityKeyFromName(name, "org"),
         name,
         sortOrder,
+        number: null,
       }),
     );
-    return { id };
+    const number = await resolveEntityNumberAfterLocalCreate(
+      client,
+      powerSync,
+      entityPatchPath("organizations", id),
+      async (assigned) => {
+        await powerSync.patchOrganization(id, { number: assigned });
+      },
+    );
+    return { id, number };
   }
 
   const organization = await client.requestJson<Organization>(
@@ -366,13 +456,21 @@ export async function createLetterViaPowerSyncOrApi(
   client: BacksterosApiClient,
   powerSync: MobileEntityPowerSync,
   body: Record<string, unknown>,
-): Promise<{ id: string }> {
+): Promise<{ id: string; number: number | null }> {
   if (shouldCreateViaPowerSync(powerSync)) {
     const id = await powerSync.createMetadata!(
       "letters",
-      toSnakeFields(body),
+      toSnakeFields({ ...body, number: null }),
     );
-    return { id };
+    const number = await resolveEntityNumberAfterLocalCreate(
+      client,
+      powerSync,
+      entityPatchPath("letters", id),
+      async (assigned) => {
+        await powerSync.patchLetter(id, { number: assigned });
+      },
+    );
+    return { id, number };
   }
 
   const letter = await client.requestJson<Letter>("/api/v1/letters", {
@@ -380,7 +478,7 @@ export async function createLetterViaPowerSyncOrApi(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  return { id: letter.id };
+  return { id: letter.id, number: letter.number ?? null };
 }
 
 export type SoftDeletableEntityTable = MetadataPatchTable;
@@ -437,7 +535,7 @@ export async function softDeleteEntityViaPowerSyncOrApi(
   id: string,
 ): Promise<void> {
   const deletedAt = new Date().toISOString();
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await softDeleteLocalEntity(powerSync, table, id, deletedAt);
     if (shouldSkipRestEntityWrite(powerSync)) {
       return;

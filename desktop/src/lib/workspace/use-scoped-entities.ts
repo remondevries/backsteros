@@ -1,6 +1,9 @@
 import { useParams } from "@tanstack/react-router";
 
-import { contactMatchesSlug, organizationMatchesSlug } from "@backsteros/ui";
+import {
+  getUniqueListItemRouteParam,
+  resolveListItemFromSlug,
+} from "@backsteros/ui";
 
 import {
   useDesktopWorkspaceMeta,
@@ -8,31 +11,47 @@ import {
   useDesktopWorkspaceProjects,
 } from "../workspace-data";
 
-export function orgRouteSlug(org: {
-  number?: number | null;
-  key?: string | null;
-  id: string;
-}) {
-  return String(org.number ?? org.key ?? org.id);
+export function orgRouteSlug(
+  org: {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  },
+  siblings: readonly {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  }[],
+) {
+  return getUniqueListItemRouteParam(org, siblings);
 }
 
-export function contactRouteSlug(contact: {
-  number?: number | null;
-  key?: string | null;
-  id: string;
-}) {
-  return String(contact.number ?? contact.key ?? contact.id);
+export function contactRouteSlug(
+  contact: {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  },
+  siblings: readonly {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  }[],
+) {
+  return getUniqueListItemRouteParam(contact, siblings);
 }
 
 export function useScopedOrganization(slug: string | undefined) {
   const { ready } = useDesktopWorkspaceMeta();
   const { organizations } = useDesktopWorkspacePeople();
   const organization = slug
-    ? organizations.find((entry) => organizationMatchesSlug(entry, slug))
+    ? resolveListItemFromSlug(organizations, slug)
     : null;
   return {
     organization,
-    organizationRouteParam: organization ? orgRouteSlug(organization) : (slug ?? ""),
+    organizationRouteParam: organization
+      ? orgRouteSlug(organization, organizations)
+      : (slug ?? ""),
     workspaceReady: ready,
   };
 }
@@ -40,12 +59,12 @@ export function useScopedOrganization(slug: string | undefined) {
 export function useScopedContact(slug: string | undefined) {
   const { ready } = useDesktopWorkspaceMeta();
   const { contacts } = useDesktopWorkspacePeople();
-  const contact = slug
-    ? contacts.find((entry) => contactMatchesSlug(entry, slug))
-    : null;
+  const contact = slug ? resolveListItemFromSlug(contacts, slug) : null;
   return {
     contact,
-    contactRouteParam: contact ? contactRouteSlug(contact) : (slug ?? ""),
+    contactRouteParam: contact
+      ? contactRouteSlug(contact, contacts)
+      : (slug ?? ""),
     workspaceReady: ready,
   };
 }

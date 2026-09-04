@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@tanstack/react-router";
-import { ComposeModal } from "@backsteros/ui";
+import { ComposeModal, isComposeTasksPagePathname } from "@backsteros/ui";
 
 import {
   createComposeOverlayDocument,
@@ -161,7 +161,9 @@ function ComposeOverlayController() {
         void completeDesktopOverlayNavigation(href);
       }}
       onCreateTask={async (input) =>
-        createComposeOverlayTask(client, input, active.projectsById)
+        createComposeOverlayTask(client, input, active.projectsById, {
+          fromTasksDueList: isComposeTasksPagePathname(pathname),
+        })
       }
       onCreateDocument={async (input) =>
         createComposeOverlayDocument(client, input, active.projectsById)

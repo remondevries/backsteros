@@ -6,6 +6,7 @@ export const routeFamilies = [
   "calendar",
   "inbox",
   "email",
+  "social",
   "contacts",
   "organizations",
   "knowledge",
@@ -30,6 +31,7 @@ export type NavigationItemIconId =
   | "knowledge"
   | "letters"
   | "finance"
+  | "social"
   | "organizations"
   | "contacts"
   | "settings";
@@ -85,6 +87,7 @@ export const navigation: NavigationItem[] = [
     section: "workspace",
   },
   { href: "/finance", label: "Finance", icon: "finance", section: "workspace" },
+  { href: "/social", label: "Social", icon: "social", section: "people" },
   { href: "/contacts", label: "Contacts", icon: "contacts", section: "people" },
   {
     href: "/organizations",
@@ -146,6 +149,12 @@ export const routeCopy: Record<
     description: "Incoming mail from connected inboxes",
     singular: "message",
     accent: "#6aa4e8",
+  },
+  social: {
+    title: "Social",
+    description: "Social accounts and activity",
+    singular: "social",
+    accent: "#8b7cf6",
   },
   contacts: {
     title: "Contacts",

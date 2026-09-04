@@ -23,6 +23,7 @@ import {
   requireVaultRoot,
   VaultPathError,
 } from "./vault-replication.js";
+import { handleReplicationNudge } from "./nudge.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -57,6 +58,53 @@ async function isKnownReplicationTable(table: string): Promise<"live" | "absent"
 }
 
 export function registerCoreReplicationRoutes(app: Hono) {
+  /**
+   * Cloud → local wake after agent writes. Local pulls sync_events (+ optional
+   * vault file) and publishes workspace SSE for open desktop shells.
+   */
+  app.post("/internal/core-replication/nudge", async (c) => {
+    if (!replicationAuth(c.req.header("Authorization"))) {
+      return c.json(unauthorized(), 401);
+    }
+
+    const body = (await c.req.json()) as {
+      workspace_id?: string;
+      reason?: string;
+      entity?: string;
+      entity_id?: string;
+      storage_key?: string | null;
+      content_version?: number | null;
+      operation?: string;
+      project_id?: string | null;
+    };
+
+    const workspaceId = body.workspace_id?.trim();
+    if (!workspaceId) {
+      return c.json(
+        { error: "workspace_id is required", code: "bad_request" as const },
+        400,
+      );
+    }
+
+    const result = await handleReplicationNudge({
+      workspaceId,
+      reason: body.reason?.trim(),
+      entity: body.entity?.trim(),
+      entityId: body.entity_id?.trim(),
+      storageKey:
+        typeof body.storage_key === "string" ? body.storage_key : null,
+      contentVersion:
+        typeof body.content_version === "number" &&
+        Number.isFinite(body.content_version)
+          ? body.content_version
+          : null,
+      operation: body.operation === "delete" ? "delete" : "upsert",
+      projectId:
+        typeof body.project_id === "string" ? body.project_id : null,
+    });
+    return c.json(result);
+  });
+
   app.get("/internal/core-replication/sync-events", async (c) => {
     if (!replicationAuth(c.req.header("Authorization"))) {
       return c.json(unauthorized(), 401);

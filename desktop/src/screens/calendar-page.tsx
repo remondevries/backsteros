@@ -167,7 +167,11 @@ function CalendarPageBody() {
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    workspace.contacts,
+    keepAliveFrozen ? [] : workspace.contacts,
+  );
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    keepAliveFrozen ? [] : workspace.organizations,
   );
 
   const projectOptions = useMemo(
@@ -318,14 +322,19 @@ function CalendarPageBody() {
 
 
   const setOpenMeetingId = useCallback(
-    (meetingId: string | null, layout: CalendarMeetingOverlayLayout = "panel") => {
+    (
+      meetingId: string | null,
+      layout?: CalendarMeetingOverlayLayout,
+    ) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete(CALENDAR_TASK_OVERLAY_PARAM);
           if (meetingId) {
             next.set(CALENDAR_MEETING_OVERLAY_PARAM, meetingId);
-            if (layout === "page") {
+            const resolvedLayout =
+              layout ?? parseCalendarMeetingOverlayLayout(prev.toString());
+            if (resolvedLayout === "page") {
               next.set(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM, "page");
             } else {
               next.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
@@ -364,7 +373,7 @@ function CalendarPageBody() {
 
   const openMeetingFromGrid = useCallback(
     (meetingId: string) => {
-      setOpenMeetingId(meetingId, "panel");
+      setOpenMeetingId(meetingId);
     },
     [setOpenMeetingId],
   );
@@ -391,6 +400,11 @@ function CalendarPageBody() {
       const contact = workspace.contacts.find((entry) => entry.id === contactId);
       if (!contact) return null;
       const details = workspace.contactDetails[contactId];
+      const organization = contact.organizationId
+        ? workspace.organizations.find(
+            (entry) => entry.id === contact.organizationId,
+          )
+        : null;
       return {
         id: contact.id,
         name: contact.name,
@@ -398,12 +412,33 @@ function CalendarPageBody() {
         lastName: contact.lastName ?? details?.lastName ?? null,
         title: contact.title ?? details?.title ?? null,
         organizationName: contact.organizationName ?? null,
+        organizationAvatarSrc: organization
+          ? (organizationAvatarSrc[organization.id] ??
+            organization.avatarSrc ??
+            null)
+          : null,
         email: contact.email ?? details?.email ?? null,
+        emails: contact.emails ?? details?.emails ?? null,
+        phone: contact.phone ?? details?.phone ?? null,
+        phones: contact.phones ?? details?.phones ?? null,
+        address: contact.address ?? details?.address ?? null,
+        city: contact.city ?? details?.city ?? null,
+        postalCode: contact.postalCode ?? details?.postalCode ?? null,
+        region: contact.region ?? details?.region ?? null,
+        country: contact.country ?? details?.country ?? null,
+        socialAccounts:
+          contact.socialAccounts ?? details?.socialAccounts ?? null,
         birthday: contact.birthday ?? details?.birthday ?? null,
         avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
       };
     },
-    [contactAvatarSrc, workspace.contactDetails, workspace.contacts],
+    [
+      contactAvatarSrc,
+      organizationAvatarSrc,
+      workspace.contactDetails,
+      workspace.contacts,
+      workspace.organizations,
+    ],
   );
 
   const openBirthdayContactSection = useCallback(
@@ -564,7 +599,7 @@ function CalendarPageBody() {
   const handleToggleDayHabit = useCallback(
     (item: CalendarHabitIconItem, completed: boolean) => {
       void workspace.patchTask(item.taskId, {
-        status: completed ? "completed" : "ready_to_start",
+        status: completed ? "completed" : "canceled",
       });
     },
     [workspace],
@@ -580,7 +615,7 @@ function CalendarPageBody() {
           endAt: range.endAt,
         })
         .then((created) => {
-          setOpenMeetingId(created.id, "panel");
+          setOpenMeetingId(created.id);
         });
     },
     [setOpenMeetingId, workspace],
@@ -766,7 +801,7 @@ function CalendarPageBody() {
         setOpenMeetingId(null);
         return;
       }
-      setOpenMeetingId(entry.id, "panel");
+      setOpenMeetingId(entry.id);
     },
     [openMeetingId, openTaskId, setOpenMeetingId, setOpenTaskId],
   );
@@ -836,6 +871,8 @@ function CalendarPageBody() {
           {keepAliveActive ? (
             <>
               <RegisterPageTitle
+                active={keepAliveActive}
+                href={pathname}
                 title={
                   displayId ? `${displayId} ${meeting.title}` : meeting.title
                 }

@@ -7,11 +7,14 @@ import {
   useState,
   type Dispatch,
   type ReactNode,
+  type RefObject,
   type SetStateAction,
 } from "react";
 
 import { createContentViewModeDoubleClickHandler } from "../../content/content-view-mode-double-click.js";
 import { useContentViewModeShortcut } from "../../content/use-content-view-mode-shortcut.js";
+import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
+import { rewriteContactMentionTokensToDisplayIds } from "../../mentions/tokens.js";
 
 export type ContentMarkdownViewMode = "edit" | "preview";
 
@@ -239,6 +242,11 @@ type UseMarkdownDetailEditorOptions = {
    * another section's document editor is active).
    */
   shortcutsEnabled?: boolean;
+  /**
+   * Optional host for keep-alive visibility — when the host is under
+   * `[data-keep-alive-hidden]` / `inert`, ⌘E is skipped so another surface wins.
+   */
+  hostRef?: RefObject<Element | null>;
 };
 
 const DEFAULT_SAVE_DEBOUNCE_MS = 700;
@@ -254,7 +262,9 @@ export function useMarkdownDetailEditor({
   debounceMs = DEFAULT_SAVE_DEBOUNCE_MS,
   blurOnPreview = true,
   shortcutsEnabled = true,
+  hostRef,
 }: UseMarkdownDetailEditorOptions) {
+  const mentionCatalog = useMentionCatalogOptional()?.catalog;
   const [value, setValue] = useState(initialValue);
   const [valueSource, setValueSource] = useState(initialValue);
   const [mode, setMode] = useState<MarkdownDetailEditorMode>("preview");
@@ -264,6 +274,18 @@ export function useMarkdownDetailEditor({
   const valueRef = useRef(value);
   const modeRef = useRef(mode);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contactRewriteCatalogRef = useRef(mentionCatalog);
+
+  const normalizeContactMentions = useCallback(
+    (markdown: string) => {
+      const catalog = contactRewriteCatalogRef.current;
+      if (!catalog || catalog.contacts.length === 0) {
+        return markdown;
+      }
+      return rewriteContactMentionTokensToDisplayIds(markdown, catalog);
+    },
+    [],
+  );
 
   if (initialValue !== valueSource) {
     // valueSource is still the previous prop value this render — compare
@@ -272,7 +294,7 @@ export function useMarkdownDetailEditor({
     const preserveLocalDraft = hasUnsavedDraft && mode === "edit";
     setValueSource(initialValue);
     if (!preserveLocalDraft) {
-      setValue(initialValue);
+      setValue(normalizeContactMentions(initialValue));
     }
   }
 
@@ -283,7 +305,12 @@ export function useMarkdownDetailEditor({
 
   const saveValue = useCallback(
     async (nextValue: string) => {
-      const pendingResult = save(nextValue);
+      const normalized = normalizeContactMentions(nextValue);
+      if (normalized !== nextValue) {
+        valueRef.current = normalized;
+        setValue(normalized);
+      }
+      const pendingResult = save(normalized);
       if (pendingResult === null) {
         return;
       }
@@ -294,7 +321,7 @@ export function useMarkdownDetailEditor({
         setError(result.error);
       }
     },
-    [save],
+    [normalizeContactMentions, save],
   );
 
   const clearScheduledSave = useCallback(() => {
@@ -328,6 +355,24 @@ export function useMarkdownDetailEditor({
     },
     [clearScheduledSave, debounceMs, saveInTransition],
   );
+
+  useEffect(() => {
+    contactRewriteCatalogRef.current = mentionCatalog;
+    if (!mentionCatalog || mentionCatalog.contacts.length === 0) {
+      return;
+    }
+    const current = valueRef.current;
+    const rewritten = rewriteContactMentionTokensToDisplayIds(
+      current,
+      mentionCatalog,
+    );
+    if (rewritten === current) {
+      return;
+    }
+    valueRef.current = rewritten;
+    setValue(rewritten);
+    scheduleSave(rewritten);
+  }, [mentionCatalog, scheduleSave]);
 
   const handleChange = useCallback(
     (nextValue: string) => {
@@ -404,10 +449,11 @@ export function useMarkdownDetailEditor({
     activateEditMode();
   }, [activateEditMode, switchToPreview]);
 
-  useContentViewModeShortcut({
+  const contentViewModeHostRef = useContentViewModeShortcut({
     enabled: shortcutsEnabled,
     onToggle: toggleViewMode,
     onForcePreview: switchToPreview,
+    hostRef,
   });
 
   useEffect(() => {
@@ -431,5 +477,6 @@ export function useMarkdownDetailEditor({
     switchToPreview,
     setViewMode,
     toggleViewMode,
+    contentViewModeHostRef,
   };
 }

@@ -12,6 +12,8 @@ export type TaskActivityType =
   | "created"
   | "status_changed"
   | "assignee_changed"
+  | "related_contacts_changed"
+  | "related_organizations_changed"
   | "priority_changed"
   | "due_date_changed"
   | "project_changed"
@@ -23,6 +25,8 @@ export type TaskActivityType =
 const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivityType>([
   "status_changed",
   "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
   "priority_changed",
   "due_date_changed",
   "project_changed",
@@ -68,6 +72,7 @@ export async function recordTaskActivity(
   data: Record<string, unknown>,
   actor: TaskWriteActor | null | undefined,
   executor: DbExecutor = db,
+  id?: string,
 ) {
   const resolved = await resolveActorProfile(workspaceId, actor, executor);
 
@@ -135,7 +140,7 @@ export async function recordTaskActivity(
   const [row] = await executor
     .insert(taskActivities)
     .values({
-      id: newId(),
+      id: id ?? newId(),
       workspaceId,
       taskId,
       type,
@@ -159,6 +164,7 @@ export async function createClientTaskActivity(
   data: Record<string, unknown>,
   actor: TaskWriteActor | null = { userId: null, kind: "agent" },
   executor: DbExecutor = db,
+  id?: string,
 ) {
   const [task] = await executor
     .select({ id: tasks.id })
@@ -180,7 +186,26 @@ export async function createClientTaskActivity(
     { ...data },
     actor,
     executor,
+    id,
   );
+}
+
+export async function getTaskActivityRow(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<typeof taskActivities.$inferSelect | null> {
+  const [row] = await executor
+    .select()
+    .from(taskActivities)
+    .where(
+      and(
+        eq(taskActivities.workspaceId, workspaceId),
+        eq(taskActivities.id, id),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export async function listTaskActivities(

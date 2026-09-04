@@ -136,8 +136,9 @@
   text-align: left;
 }
 
-.contact-overview__top {
+.contact-overview__chrome {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
@@ -157,7 +158,8 @@
 }
 
 .contact-overview__identity .overview-name-editor__button,
-.contact-overview__identity .overview-name-editor__input {
+.contact-overview__identity .overview-name-editor__input,
+.contact-overview__identity .overview-name-editor__fit-editable {
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.3;
@@ -216,44 +218,61 @@
 }
 
 /*
- * Shrink-wrap first/last while editing: an invisible sizer span sets the
- * width (inputs ignore width:auto / size poorly with proportional fonts).
+ * Fit-content editors use contenteditable so width tracks glyphs naturally
+ * (inputs have a UA intrinsic min and desync from sizer spans → clipped text).
  */
-.overview-name-editor__fit {
-  position: relative;
-  display: inline-grid;
-  vertical-align: baseline;
+.overview-name-editor--fit-content {
+  flex: 0 1 auto;
+  width: max-content;
   max-width: 100%;
-  /* Room for the caret at the trailing edge. */
-  padding-right: 2px;
+  min-width: 0;
 }
 
-.overview-name-editor__sizer {
-  grid-area: 1 / 1;
-  visibility: hidden;
-  white-space: pre;
-  pointer-events: none;
+.overview-name-editor--fit-content .overview-name-editor__button {
+  width: auto;
+  max-width: 100%;
+}
+
+.overview-name-editor__fit-editable {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: 1ch;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
   font: inherit;
   font-size: inherit;
   font-weight: inherit;
   letter-spacing: inherit;
   line-height: inherit;
+  white-space: pre;
+  outline: none;
+  caret-color: currentColor;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-.contact-overview__name-row
-  .overview-name-editor--fit-content
-  .overview-name-editor__input {
-  grid-area: 1 / 1;
-  box-sizing: border-box;
-  /* Beat the UA ~20ch intrinsic min so the sizer alone drives width. */
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: none;
+.overview-name-editor__fit-editable[data-empty]::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.overview-name-editor__fit-editable:focus,
+.overview-name-editor__fit-editable:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .contact-overview__last-name .overview-name-editor__button,
 .contact-overview__last-name.overview-name-editor__button,
-.contact-overview__name-row .contact-overview__last-name {
+.contact-overview__name-row .contact-overview__last-name,
+.contact-overview__last-name .overview-name-editor__fit-editable {
   font-weight: 600;
 }
 
@@ -265,11 +284,44 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 2px;
+  gap: 0 0.3em;
   margin: 0;
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
   font-size: 0.9375rem;
   line-height: 1.35;
+}
+
+.contact-overview__subtitle .overview-name-editor {
+  display: inline-flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  gap: 0;
+}
+
+.contact-overview__subtitle .overview-name-editor h1,
+.contact-overview__subtitle .overview-name-editor span.contact-overview__job-title {
+  display: block;
+  margin: 0;
+  width: max-content;
+  max-width: 100%;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.contact-overview__job-title .overview-name-editor__button,
+.contact-overview__job-title .overview-name-editor__fit-editable {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.contact-overview__subtitle-at {
+  flex-shrink: 0;
 }
 
 .contact-overview__subtitle--muted {
@@ -282,6 +334,8 @@
   display: inline-flex;
   max-width: min(100%, 22rem);
   min-width: 0;
+  /* Cancel trigger padding-left so "at" ↔ icon spacing matches title ↔ "at". */
+  margin-inline-start: -4px;
 }
 
 .contact-overview__org-dropdown .searchable-dropdown-root,
@@ -294,9 +348,9 @@
 .contact-overview__org-dropdown .property-dropdown-trigger,
 .contact-overview__org-dropdown .property-dropdown-fallback {
   max-width: 100%;
-  border: 0.5px solid transparent;
-  border-radius: 999px;
-  background: transparent;
+  border: 0.5px solid transparent !important;
+  border-radius: 8px;
+  background: transparent !important;
   color: inherit;
   font-weight: 600;
 }
@@ -304,8 +358,879 @@
 .contact-overview__org-dropdown
   .property-dropdown-trigger:hover:not(:disabled),
 .contact-overview__org-dropdown .property-dropdown-trigger.is-open {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent) !important;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent) !important;
+}
+
+/* Contact Details: summary paragraph → CodeMirror on edit + value chips.
+   Inline inset matches summary text so section titles + field labels align. */
+.contact-details {
+  --contact-details-inline: 12px;
+  gap: 20px;
+}
+
+.contact-details-summary {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 0.5px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.contact-details-summary:hover:not(.is-editing),
+.contact-details-summary.is-editing {
   border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.contact-details-summary__paragraph {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px var(--contact-details-inline);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.contact-details-summary__paragraph:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.contact-details-summary__text {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.contact-details-summary__text.is-placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+.contact-details-summary__editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px var(--contact-details-inline);
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.contact-details-summary__editor .cm-editor {
+  width: 100%;
+}
+
+.contact-details-summary__editor .cm-scroller {
+  min-height: 1.45em;
+}
+
+.contact-details > .entity-overview-subgroup {
+  padding-inline: var(--contact-details-inline);
+  box-sizing: border-box;
+}
+
+/* Birthday date picker — flat until hover/open (shared contact chip chrome). */
+.contact-details-birthday {
+  gap: 8px;
+}
+
+.contact-details-birthday .task-due-date-dropdown {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.contact-details-birthday .property-dropdown-trigger,
+.contact-details-birthday .property-dropdown-fallback {
+  border: 0.5px solid transparent !important;
+  border-radius: 8px;
+  background: transparent !important;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.contact-details-birthday
+  .property-dropdown-trigger:hover:not(:disabled),
+.contact-details-birthday .property-dropdown-trigger.is-open,
+.contact-details-birthday .property-dropdown-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent) !important;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent) !important;
+  outline: none;
+}
+
+.contact-details-birthday__age {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.contact-language-flag-icon {
+  display: inline-block !important;
+  box-sizing: border-box !important;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  flex: 0 0 14px !important;
+  align-self: center !important;
+  aspect-ratio: 1 / 1 !important;
+  border-radius: 9999px !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
+  vertical-align: middle;
+}
+
+.contact-language-flag-icon > svg {
+  display: block !important;
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
+.contact-detail-language-chip__flag {
+  display: inline-flex !important;
+  box-sizing: border-box;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  flex: 0 0 14px !important;
+  align-self: center !important;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.contact-detail-language-chip .contact-detail-split-chip__value--button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 4.5rem;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.searchable-dropdown-panel__option-icon .contact-language-flag-icon {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.contact-detail-language-chip.is-muted .contact-detail-split-chip__value--button {
+  min-width: 7.5rem;
+}
+
+.contact-detail-chips {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-detail-chips__row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Keep each chip at content size so extras wrap instead of crushing. */
+.contact-detail-chips__row > .contact-detail-split-chip,
+.contact-detail-chips__row > .contact-detail-chip,
+.contact-detail-chips__row > .contact-detail-relationship-chip,
+.contact-detail-chips__row > .contact-detail-language-chip,
+.contact-detail-chips__row > .searchable-dropdown-root,
+.contact-detail-chips__row > .contact-detail-chips__add {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.task-related-chips {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.task-related-chips--inline {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.task-related-chips--inline .contact-detail-chips__row {
+  flex-wrap: wrap;
+}
+
+.task-related-chip__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.task-related-chip__icon img,
+.task-related-chip__icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  object-fit: cover;
+}
+
+.task-related-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Show chip chrome on hover so the remove affordance has a clear target. */
+.task-related-chip:hover > .contact-detail-chip,
+.task-related-chip:focus-within > .contact-detail-chip {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.task-properties-inline__fields > .task-related-chips--inline {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.contact-detail-chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.contact-detail-chip.is-muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-chip--static {
+  cursor: default;
+  user-select: text;
+}
+
+.contact-detail-chip--static:hover,
+.contact-detail-chip--static:focus-visible {
+  border-color: transparent;
+  background: transparent;
+}
+
+.contact-detail-chip:hover:not(:disabled),
+.contact-detail-chip.is-open,
+.contact-detail-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  outline: none;
+}
+
+.contact-detail-chip__meta {
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-relationship-chip {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.contact-detail-relationship-chip:hover .contact-detail-split-chip__remove,
+.contact-detail-relationship-chip:focus-within .contact-detail-split-chip__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contact-detail-chip--meta {
+  flex-shrink: 0;
+}
+
+/* Split chip: [ Personal | value ] — same flat-until-hover chrome as birthday. */
+.contact-detail-split-chip {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  align-items: stretch;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.contact-detail-split-chip.is-muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-split-chip:hover,
+.contact-detail-split-chip:focus-within,
+.contact-detail-split-chip:has(.is-open) {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.contact-detail-split-chip__dropdown {
+  display: inline-flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  align-self: stretch;
+  align-items: stretch;
+  max-width: none;
+}
+
+/* Root is both `.searchable-dropdown-root` and `__dropdown`; searchable-dropdown.css
+   loads later, so keep specificity high enough to stretch + center both triggers. */
+.contact-detail-split-chip
+  .searchable-dropdown-root.contact-detail-split-chip__dropdown {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-height: 100%;
+  height: auto;
+}
+
+.contact-detail-split-chip
+  .searchable-dropdown-root.contact-detail-split-chip__dropdown
+  > .contact-detail-split-chip__label,
+.contact-detail-split-chip
+  .searchable-dropdown-root.contact-detail-split-chip__dropdown
+  > .contact-detail-split-chip__value,
+.contact-detail-split-chip
+  .searchable-dropdown-root.contact-detail-split-chip__dropdown
+  > .contact-detail-split-chip__value--button {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+}
+
+.contact-detail-split-chip__label {
+  box-sizing: border-box;
+  display: inline-flex;
+  min-height: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  border-right: 0.5px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contact-detail-split-chip__label--muted,
+.contact-detail-split-chip__value--muted {
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-split-chip__label--icon {
+  min-width: 28px;
+  justify-content: center;
+  padding-inline: 8px;
+  color: inherit;
+}
+
+.contact-detail-split-chip__label--icon svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.contact-detail-split-chip:hover .contact-detail-split-chip__label,
+.contact-detail-split-chip:focus-within .contact-detail-split-chip__label,
+.contact-detail-split-chip:has(.is-open) .contact-detail-split-chip__label {
+  border-right-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.contact-detail-split-chip__label:hover:not(:disabled),
+.contact-detail-split-chip__label.is-open,
+.contact-detail-split-chip__label:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  outline: none;
+}
+
+.contact-detail-split-chip__label--input {
+  field-sizing: content;
+  width: auto;
+  min-width: 4ch;
+  max-width: min(12rem, 100%);
+  cursor: text;
+}
+
+.contact-detail-split-chip__label--input:hover:not(:disabled),
+.contact-detail-split-chip__label--input:focus-visible {
+  background: transparent;
+}
+
+.contact-detail-split-chip__value {
+  box-sizing: border-box;
+  field-sizing: content;
+  width: auto;
+  min-width: 3ch;
+  max-width: min(24rem, 100%);
+  flex: 0 1 auto;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  outline: none;
+}
+
+.contact-detail-split-chip__value::placeholder {
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-split-chip__value--button {
+  display: inline-flex;
+  min-width: 5.5rem;
+  max-width: 14rem;
+  min-height: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  text-align: left;
+}
+
+.contact-detail-split-chip__value--button.is-muted {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-weight: 400;
+}
+
+.contact-detail-split-chip__dropdown--grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-detail-split-chip__dropdown--grow .contact-detail-split-chip__value--button {
+  width: 100%;
+  max-width: none;
+}
+
+.contact-detail-split-chip__confirm {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0;
+  border-left: 0.5px solid transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.contact-detail-split-chip:hover .contact-detail-split-chip__confirm,
+.contact-detail-split-chip:focus-within .contact-detail-split-chip__confirm,
+.contact-detail-split-chip:has(.is-open) .contact-detail-split-chip__confirm {
+  border-left-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.contact-detail-split-chip__confirm:hover:not(:disabled),
+.contact-detail-split-chip__confirm:focus-visible {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  outline: none;
+}
+
+.contact-detail-split-chip__confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.contact-detail-split-chip__remove {
+  box-sizing: border-box;
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 2;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+  line-height: 0;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.contact-detail-split-chip__remove svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.contact-detail-split-chip:hover .contact-detail-split-chip__remove,
+.contact-detail-split-chip:focus-within .contact-detail-split-chip__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contact-detail-split-chip__remove:hover:not(:disabled),
+.contact-detail-split-chip__remove:focus-visible {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  background: #2a2a2a;
+  outline: none;
+}
+
+.relationship-label-overflow-menu {
+  display: flex;
+  min-width: 132px;
+  flex-direction: column;
+  padding: 4px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 8px;
+  background: #141414;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.relationship-label-overflow-menu__item {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.relationship-label-overflow-menu__item:hover,
+.relationship-label-overflow-menu__item:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  outline: none;
+}
+
+.relationship-label-overflow-menu__item.is-danger {
+  color: #f87171;
+}
+
+.relationship-label-overflow-menu__item.is-confirm {
+  font-weight: 600;
+}
+
+.relationship-label-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.relationship-label-modal {
+  box-sizing: border-box;
+  width: min(420px, 100%);
+  padding: 20px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  border-radius: 12px;
+  background: #141414;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+  color: var(--foreground);
+}
+
+.relationship-label-modal__title {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.relationship-label-modal__pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.relationship-label-modal__input {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.relationship-label-modal__input:focus {
+  border-color: color-mix(in srgb, var(--foreground) 36%, transparent);
+}
+
+.relationship-label-modal__swap {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.relationship-label-modal__color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 0.8125rem;
+}
+
+.relationship-label-modal__color-label {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.relationship-label-modal__color input[type="color"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.relationship-label-modal__input--color {
+  flex: 1;
+}
+
+.relationship-label-modal__error {
+  margin: 0 0 12px;
+  color: #f87171;
+  font-size: 0.8125rem;
+}
+
+.relationship-label-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.relationship-label-modal__button {
+  margin: 0;
+  padding: 7px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.relationship-label-modal__button:hover:not(:disabled),
+.relationship-label-modal__button:focus-visible {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  outline: none;
+}
+
+.relationship-label-modal__button--primary {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  font-weight: 500;
+}
+
+.relationship-label-modal__button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.contact-detail-chip--input {
+  position: relative;
+  cursor: text;
+}
+
+.contact-detail-chip--input > span {
+  pointer-events: none;
+}
+
+.contact-detail-chip--input > input {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  min-width: 7rem;
+  max-width: 16rem;
+}
+
+.contact-detail-chip--input.is-muted > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.contact-detail-chips__add {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  cursor: pointer;
+}
+
+.contact-detail-chips__add:hover:not(:disabled),
+.contact-detail-chips__add.is-open,
+.contact-detail-chips__add:focus-visible {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+  outline: none;
+}
+
+.contact-detail-chips__add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.contact-detail-chips__editor {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.contact-detail-chips__editor-input {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.contact-detail-chips__remove,
+.contact-detail-chips__confirm {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.contact-detail-chips__remove:hover:not(:disabled),
+.contact-detail-chips__confirm:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  color: var(--foreground);
+}
+
+.contact-detail-chips__confirm:disabled,
+.contact-detail-chips__remove:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .contact-overview__activity {
@@ -313,71 +1238,20 @@
   min-width: 0;
 }
 
-.contact-overview__actions {
+.contact-overview__scroll {
   display: flex;
   width: 100%;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.contact-overview__action {
-  display: inline-flex;
-  flex: 1 1 0;
-  min-width: 0;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: color-mix(in srgb, var(--foreground) 78%, transparent);
-  cursor: pointer;
+  overflow: auto;
+  padding-top: 16px;
+  padding-bottom: 32px;
+  box-sizing: border-box;
 }
 
-.contact-overview__action-icon {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border: 0.5px solid color-mix(in srgb, var(--foreground) 14%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
-}
-
-.contact-overview__action-label {
-  max-width: 100%;
+.contact-overview__scroll:has(.contact-overview__section-body) {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  line-height: 1.2;
-  text-align: center;
-  color: color-mix(in srgb, var(--foreground) 62%, transparent);
-}
-
-.contact-overview__action:hover {
-  color: var(--foreground);
-}
-
-.contact-overview__action:hover .contact-overview__action-icon {
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
-.contact-overview__action:hover .contact-overview__action-label {
-  color: color-mix(in srgb, var(--foreground) 82%, transparent);
-}
-
-.contact-overview__action:focus-visible {
-  outline: none;
-}
-
-.contact-overview__action:focus-visible .contact-overview__action-icon {
-  outline: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
-  outline-offset: 2px;
 }
 
 .entity-overview__display-id {
@@ -441,6 +1315,9 @@
 
 .entity-overview-subgroup__label {
   flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .entity-overview-subgroup__rule {
@@ -476,6 +1353,28 @@
 .entity-overview-field > :not(.entity-overview-field__label) {
   min-width: 0;
   flex: 1;
+}
+
+.entity-overview-field__value {
+  padding-top: 6px;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.entity-overview-external-link {
+  display: inline-flex;
+  padding-top: 6px;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.entity-overview-external-link:hover {
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
 }
 
 .entity-overview-address-locality {
@@ -972,13 +1871,20 @@
 }
 
 .contact-section-tabs,
+.organization-section-tabs,
 .meeting-detail-view__tabs {
   width: 100%;
   margin-top: 4px;
   border-bottom: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
+.contact-overview__chrome .contact-section-tabs,
+.organization-overview__chrome .organization-section-tabs {
+  margin-top: 0;
+}
+
 .contact-section-tabs__nav.app-pill-nav,
+.organization-section-tabs__nav.app-pill-nav,
 .meeting-detail-view__tabs-nav.app-pill-nav {
   display: flex;
   flex-wrap: nowrap;
@@ -991,6 +1897,7 @@
 }
 
 .contact-section-tabs__nav .app-pill-nav-item,
+.organization-section-tabs__nav .app-pill-nav-item,
 .meeting-detail-view__tabs-nav .app-pill-nav-item {
   flex: 0 0 auto;
   margin: 0;
@@ -1007,12 +1914,14 @@
 }
 
 .contact-section-tabs__nav .app-pill-nav-item:hover,
+.organization-section-tabs__nav .app-pill-nav-item:hover,
 .meeting-detail-view__tabs-nav .app-pill-nav-item:hover {
   background: transparent;
   color: color-mix(in srgb, var(--foreground) 78%, transparent);
 }
 
 .contact-section-tabs__nav .app-pill-nav-item.is-active,
+.organization-section-tabs__nav .app-pill-nav-item.is-active,
 .meeting-detail-view__tabs-nav .app-pill-nav-item.is-active {
   background: transparent;
   color: var(--foreground);
@@ -1021,6 +1930,7 @@
 }
 
 .contact-section-tabs__nav .app-pill-nav-item-count,
+.organization-section-tabs__nav .app-pill-nav-item-count,
 .meeting-detail-view__tabs-nav .app-pill-nav-item-count {
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
@@ -1061,7 +1971,16 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.contact-detail__overview .contact-overview {
+  max-width: none;
+  min-height: 0;
+  flex: 1;
+  gap: 0;
+  overflow: hidden;
+  padding-bottom: 0;
 }
 
 .contact-detail__avatar {
@@ -1085,8 +2004,9 @@
   max-width: 64px;
 }
 
-/* Contacts main catalog + right profile rail (journal-day layout). */
-.contacts-page {
+/* Contacts / organizations main catalog + right profile rail (journal-day layout). */
+.contacts-page,
+.organizations-page {
   position: relative;
   display: flex;
   min-height: 0;
@@ -1095,27 +2015,290 @@
   overflow: hidden;
 }
 
-.contacts-page.journal-day-layout {
+.contacts-page.journal-day-layout,
+.organizations-page.journal-day-layout {
   flex-direction: row;
 }
 
-.contacts-page .journal-day-layout__main {
+.contacts-page .journal-day-layout__main,
+.organizations-page .journal-day-layout__main {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+  opacity: 1;
+  transition: opacity var(--contact-detail-panel-content-fade-duration, 280ms)
+    var(--contact-detail-panel-content-fade-ease, ease);
 }
 
-.contact-detail-panel.resizable-side-panel,
-.contact-detail-panel.journal-day-layout__calendar {
-  border-left: 0.5px solid var(--border);
-  background: color-mix(in srgb, var(--background) 92%, white 8%);
+.contacts-page .journal-day-layout__main.is-expand-faded,
+.organizations-page .journal-day-layout__main.is-expand-faded {
+  opacity: 0;
+  pointer-events: none;
 }
 
-.contact-detail-panel__chrome {
-  justify-content: flex-end;
+.contact-detail-panel.journal-day-layout__calendar,
+.contact-detail-panel--rail,
+.contact-detail-panel__card {
+  /* Match `.content-chrome-header` breadcrumb/content divider. */
+  border-left: 0.5px solid rgb(255 255 255 / 0.1);
+  background: #000;
+}
+
+.contact-detail-panel {
+  --contact-detail-panel-collapse-duration: 220ms;
+  --contact-detail-panel-collapse-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --contact-detail-panel-content-fade-duration: 280ms;
+  --contact-detail-panel-content-fade-ease: ease;
+}
+
+.contact-detail-panel--rail {
+  position: relative;
+  display: flex;
+  /* flex:none — width is driven by inline px (context-panel pattern). */
+  flex: none;
+  flex-direction: column;
+  width: 30%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: none;
+}
+
+/*
+ * Only animate width during collapse/expand.
+ * Never gate on prefers-reduced-motion — match agent / context panel.
+ */
+.contact-detail-panel--rail.is-collapse-animating {
+  min-width: 0;
+  max-width: none;
+  transition: width var(--contact-detail-panel-collapse-duration)
+    var(--contact-detail-panel-collapse-ease);
+}
+
+/*
+ * While sliding, do not clamp max-width — that snaps the panel to 46px and
+ * kills the width transition (the bug vs tasks/context panel).
+ */
+.contact-detail-panel--rail.is-collapsed {
+  width: 46px;
+  flex: none;
+  min-width: 0;
+  max-width: none;
+}
+
+.contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating) {
+  min-width: 46px;
+  max-width: 46px;
+}
+
+.contact-detail-panel__rail-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 0 auto;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity var(--contact-detail-panel-content-fade-duration)
+    var(--contact-detail-panel-content-fade-ease);
+}
+
+/*
+ * Keep the card at expanded width while the aside clips open↔strip —
+ * same idea as `.context-panel__body`.
+ */
+.contact-detail-panel--rail.is-collapsed .contact-detail-panel__rail-body,
+.contact-detail-panel--rail.is-collapse-animating
+  .contact-detail-panel__rail-body {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.contact-detail-panel--rail.is-collapse-animating
+  .contact-detail-panel__rail-body {
+  opacity: 0;
+  transition: none;
+}
+
+.contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating)
+  .contact-detail-panel__rail-body {
+  opacity: 0;
+}
+
+.contact-detail-panel__strip {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--contact-detail-panel-content-fade-duration)
+    var(--contact-detail-panel-content-fade-ease);
+}
+
+.contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating)
+  .contact-detail-panel__strip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contact-detail-panel--rail .contact-detail-panel__card {
+  display: flex;
+  width: 100% !important;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border-left: none;
+  background: transparent;
+  overflow: hidden;
+}
+
+.contact-detail-panel__card.is-content-faded,
+.contact-detail-panel__workspace.is-content-faded {
+  /* Inline style also sets opacity; class keeps pointer-events off. */
+  pointer-events: none;
+}
+
+/*
+ * Expanded meetings/tasks/… layer — sits over the contacts list, leaves the
+ * contact card rail mounted on the right (no card remount/fade on expand).
+ */
+.contact-detail-panel__workspace--page {
+  position: absolute;
+  inset: 0 30% 0 0;
+  z-index: 24;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 0.5px solid rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--background) 96%, white 4%);
+  overflow: hidden;
+}
+
+.contact-detail-panel__workspace--page.contact-detail-panel__workspace--expanded {
+  inset: 0;
+  z-index: 25;
+  border-right: none;
+}
+
+.contact-detail-panel__workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity var(--contact-detail-panel-content-fade-duration, 280ms)
+    var(--contact-detail-panel-content-fade-ease, ease);
+}
+
+.contact-detail-panel__workspace-tabs.contact-section-tabs {
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+.contact-detail-panel__workspace-tabs .contact-section-tabs__nav.app-pill-nav {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.contact-detail-panel__workspace-tabs .contact-section-tabs__nav .app-pill-nav-item {
+  flex: 0 0 auto;
+  margin: 0 0 -1px;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.contact-detail-panel__workspace-tabs
+  .contact-section-tabs__nav
+  .app-pill-nav-item:hover {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.contact-detail-panel__workspace-tabs
+  .contact-section-tabs__nav
+  .app-pill-nav-item.is-active {
+  background: transparent;
+  color: var(--foreground);
+  border-bottom-color: var(--foreground);
+  box-shadow: none;
+}
+
+.contact-detail-panel__workspace-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  padding: 8px 12px 16px;
+  box-sizing: border-box;
+}
+
+.contact-detail-panel--entity-detail .contact-detail-panel__workspace-body,
+.contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.contact-detail-panel--workspace-expanded .contact-detail-panel__workspace,
+.contact-detail-panel__workspace--expanded {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.contact-detail-panel__workspace-body > * {
+  min-height: 0;
+  flex: 1;
+}
+
+/* Beat `.desktop-journal-day-layout__chrome { justify-content: flex-end }`
+   from task-agent-layout.css (loaded later) so expand/collapse sits opposite
+   the hide toggle with empty space between. */
+.desktop-journal-day-layout__chrome.contact-detail-panel__chrome {
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-detail-panel__chrome-start,
+.contact-detail-panel__chrome-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-detail-panel__chrome-end {
+  margin-left: auto;
+}
+
+.contact-detail-panel__chrome-start:empty {
+  min-width: 0;
 }
 
 .contact-detail-panel__body {
@@ -1126,7 +2309,8 @@
   overflow: hidden;
 }
 
-.contact-detail-panel__body .contact-detail {
+.contact-detail-panel__body .contact-detail,
+.contact-detail-panel__body .organization-detail {
   height: 100%;
 }
 
@@ -1169,6 +2353,20 @@
   margin-top: 0;
 }
 
+.contacts-overview__pinned {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.contacts-overview__pinned-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .contacts-overview__row {
   display: flex;
   align-items: center;
@@ -1183,6 +2381,39 @@
 
 .contacts-overview__row.is-selected {
   background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.contacts-overview__row > .entity-list-avatar,
+.contacts-overview__row > [class*="entity-list-avatar"] {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.contacts-overview__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contacts-overview__groups {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  max-width: min(48%, 320px);
+  margin-left: 8px;
+}
+
+.contacts-overview__title-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .contacts-overview__name {
@@ -1204,8 +2435,97 @@
   font-size: 0.8125rem;
 }
 
-.contacts-overview__meta--email {
-  margin-left: auto;
+.contacts-overview__contact-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.contacts-overview__contact-item {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  color: var(--muted-foreground, #a1a1aa);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.contacts-overview__contact-item > svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.contacts-overview__contact-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contacts-side-panel-group-row {
+  position: relative;
+  list-style: none;
+}
+
+.contacts-side-panel-group-row__inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.contacts-side-panel-group-row__inner > .app-side-panel-item {
+  flex: 1;
+  min-width: 0;
+  padding-right: 30px;
+}
+
+.contacts-side-panel-group-row__menu-trigger {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.contacts-side-panel-group-row:hover .contacts-side-panel-group-row__menu-trigger,
+.contacts-side-panel-group-row.is-menu-open
+  .contacts-side-panel-group-row__menu-trigger,
+.contacts-side-panel-group-row__menu-trigger:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.contacts-side-panel-group-row__menu-trigger:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+}
+
+.contacts-side-panel-group-edit {
+  padding: 4px 8px 8px;
 }
 
 .contacts-side-panel-create {
@@ -1256,10 +2576,32 @@
   line-height: 16px;
 }
 
+.crm-group-label--compact {
+  gap: 4px;
+  max-width: 140px;
+  padding: 2px 8px 2px 6px;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 12px;
+  line-height: 14px;
+}
+
 .crm-group-label__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contact-social-label__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.contact-social-label__icon svg {
+  display: block;
 }
 
 .crm-group-color-picker {
@@ -1348,32 +2690,192 @@
   color: color-mix(in srgb, var(--foreground) 50%, transparent);
 }
 
+.contact-meetings-list__card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.contact-emails-list__row {
+  list-style: none;
+}
+
+.contact-emails-list__card {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.contact-emails-list__primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.contact-emails-list__id {
+  flex-shrink: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.contact-emails-list__subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.contact-emails-list__meta {
+  padding-left: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.organization-overview__header {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+  text-align: left;
+}
+
+.organization-overview__chrome {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.organization-overview__avatar {
+  flex-shrink: 0;
+}
+
+.organization-overview__identity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.organization-overview__identity .overview-name-editor__button,
+.organization-overview__identity .overview-name-editor__input,
+.organization-overview__identity .overview-name-editor__fit-editable {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.organization-overview__name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.organization-overview__groups-dropdown {
+  display: inline-flex;
+  margin-left: auto;
+  max-width: min(100%, 14rem);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.organization-overview__groups-dropdown .searchable-dropdown-root,
+.organization-overview__groups-dropdown .property-dropdown {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.organization-overview__name-row .overview-name-editor {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.organization-overview__name-row .overview-name-editor h1 {
+  margin: 0;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+}
+
+.organization-overview__name-row .overview-name-editor__button {
+  width: auto;
+  max-width: 100%;
+}
+
+.organization-overview__header .entity-overview__display-id {
+  text-align: left;
+}
+
+.organization-overview__subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.organization-overview__subtitle--muted {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.organization-overview__activity {
+  width: 100%;
+  min-width: 0;
+}
+
+.organization-overview__scroll {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  padding-top: 16px;
+  padding-bottom: 32px;
+  box-sizing: border-box;
+}
+
+.organization-overview__scroll:has(.organization-overview__section-body) {
+  overflow: hidden;
+}
+
+.organization-overview__section-body {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .organization-detail {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
-}
-
-.organization-detail__nav {
-  flex-shrink: 0;
-}
-
-.organization-detail__nav-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.organization-detail__nav .app-pill-nav {
-  padding: 8px 8px 0;
-}
-
-.organization-detail__nav-action {
-  flex-shrink: 0;
-  padding: 8px 8px 0 0;
 }
 
 .organization-detail__section {
@@ -1401,4 +2903,42 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.organization-detail__overview {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.organization-detail__overview .organization-overview {
+  max-width: none;
+  min-height: 0;
+  flex: 1;
+  gap: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.organization-detail__avatar {
+  display: inline-flex;
+  width: 64px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.05);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
+.organization-overview__avatar .avatar-upload__button {
+  width: 64px;
+  height: 64px;
+}
+
+.organization-overview__avatar .avatar-upload__meta {
+  max-width: 64px;
 }

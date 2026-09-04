@@ -3,18 +3,20 @@ import { useNavigate } from "@tanstack/react-router";
 
 import {
   CommandPaletteView,
-  contactMatchesSlug,
   getContactsHref,
+  getOrganizationsHref,
   getProjectRouteParamFromPathname,
   getSelectedContactSlugFromPathname,
   getSelectedOrganizationSlugFromPathname,
   getUniqueListItemRouteParam,
-  organizationMatchesSlug,
+  resolveListItemFromSlug,
   selectRecentCommandPaletteContacts,
+  selectRecentCommandPaletteOrganizations,
   useCommandPaletteState,
 } from "@backsteros/ui";
 
 import { useCommandPaletteSearchFn } from "../lib/command-palette-search";
+import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   useDesktopWorkspacePeople,
   useDesktopWorkspaceProjects,
@@ -40,6 +42,14 @@ export function CommandPaletteHost() {
   const { projects } = useDesktopWorkspaceProjects();
   const { contacts, organizations } = useDesktopWorkspacePeople();
 
+  // Session-cached blob URLs for every contact/org with an uploaded avatar so
+  // both the recent list and typed search hits can resolve images.
+  const contactAvatarSrcById = useDesktopAvatarSrcMap("contact", contacts);
+  const organizationAvatarSrcById = useDesktopAvatarSrcMap(
+    "organization",
+    organizations,
+  );
+
   const recentContacts = useMemo(
     () =>
       selectRecentCommandPaletteContacts(
@@ -50,10 +60,32 @@ export function CommandPaletteHost() {
           href: getContactsHref(
             getUniqueListItemRouteParam(contact, contacts),
           ),
+          avatarSrc: contactAvatarSrcById[contact.id] ?? null,
           updatedAt: contact.updatedAt ?? contact.avatarUpdatedAt ?? null,
         })),
       ),
-    [contacts],
+    [contactAvatarSrcById, contacts],
+  );
+
+  const recentOrganizations = useMemo(
+    () =>
+      selectRecentCommandPaletteOrganizations(
+        organizations.map((organization) => ({
+          id: organization.id,
+          title: organization.name,
+          subtitle:
+            organization.number != null
+              ? `O-${organization.number}`
+              : (organization.key ?? null),
+          href: getOrganizationsHref(
+            getUniqueListItemRouteParam(organization, organizations),
+          ),
+          avatarSrc: organizationAvatarSrcById[organization.id] ?? null,
+          updatedAt:
+            organization.updatedAt ?? organization.avatarUpdatedAt ?? null,
+        })),
+      ),
+    [organizationAvatarSrcById, organizations],
   );
 
   const paletteEntityNames = useMemo(() => {
@@ -74,11 +106,11 @@ export function CommandPaletteHost() {
       : null;
     const contactSlug = getSelectedContactSlugFromPathname(pathname);
     const contact = contactSlug
-      ? contacts.find((entry) => contactMatchesSlug(entry, contactSlug))
+      ? resolveListItemFromSlug(contacts, contactSlug)
       : null;
     const orgSlug = getSelectedOrganizationSlugFromPathname(pathname);
     const organization = orgSlug
-      ? organizations.find((entry) => organizationMatchesSlug(entry, orgSlug))
+      ? resolveListItemFromSlug(organizations, orgSlug)
       : null;
     return {
       projectName: project?.name ?? null,
@@ -115,8 +147,9 @@ export function CommandPaletteHost() {
         };
       }
       if (context.kind === "contact" && context.contactRouteParam) {
-        const contact = contacts.find((entry) =>
-          contactMatchesSlug(entry, context.contactRouteParam!),
+        const contact = resolveListItemFromSlug(
+          contacts,
+          context.contactRouteParam,
         );
         return {
           projectId: null,
@@ -125,8 +158,9 @@ export function CommandPaletteHost() {
         };
       }
       if (context.kind === "organization" && context.organizationRouteParam) {
-        const organization = organizations.find((entry) =>
-          organizationMatchesSlug(entry, context.organizationRouteParam!),
+        const organization = resolveListItemFromSlug(
+          organizations,
+          context.organizationRouteParam,
         );
         return {
           projectId: null,
@@ -147,6 +181,9 @@ export function CommandPaletteHost() {
       resolveContextIds={resolvePaletteContextIds}
       search={searchFn}
       recentContacts={recentContacts}
+      recentOrganizations={recentOrganizations}
+      contactAvatarSrcById={contactAvatarSrcById}
+      organizationAvatarSrcById={organizationAvatarSrcById}
     />
   );
 }

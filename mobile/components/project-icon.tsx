@@ -1,10 +1,11 @@
+import type { ColorValue } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 import { colors } from "../lib/theme";
 
 type Props = {
   size?: number;
-  color?: string;
+  color?: ColorValue;
 };
 
 /** Same path as `@backsteros/ui` `DefaultProjectIcon`. */

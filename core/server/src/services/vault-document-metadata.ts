@@ -93,30 +93,57 @@ export async function syncDocumentMetadataFromStorageKey(
   const contentChanged =
     row.byteSize !== byteSize || row.checksum !== checksum;
 
+  const nextContentVersion = contentChanged
+    ? row.contentVersion + 1
+    : row.contentVersion;
+
   await db
     .update(documents)
     .set({
       byteSize,
       checksum,
       snippet,
-      contentVersion: contentChanged
-        ? row.contentVersion + 1
-        : row.contentVersion,
+      contentVersion: nextContentVersion,
       contentEtag,
       updatedAt: new Date(),
     })
     .where(eq(documents.id, row.id));
 
+  // Vault / replication drift that bumps the body version — notify open shells
+  // (agents editing .md on disk) without waiting for PowerSync, and nudge the
+  // peer core so cloud↔local stay live.
+  if (contentChanged) {
+    const { publishDocumentWorkspaceUpdated } = await import(
+      "../lib/workspace-events.js"
+    );
+    publishDocumentWorkspaceUpdated(workspaceId, row.id, {
+      projectId: row.projectId,
+      contentVersion: nextContentVersion,
+    });
+    const { notifyPeerOfDocumentWrite } = await import(
+      "./core-replication/nudge.js"
+    );
+    notifyPeerOfDocumentWrite({
+      workspaceId,
+      reason: "document",
+      entity: "document",
+      entityId: row.id,
+      storageKey,
+      contentVersion: nextContentVersion,
+      projectId: row.projectId,
+    });
+  }
+
   return "updated";
 }
 
-/** Pull a single vault markdown path from the replication peer into local vault. */
+/** Pull a single vault markdown path from the replication peer into this core's vault. */
 export async function pullVaultMarkdownFromPeer(
   relativePath: string,
   timeoutMs = 120_000,
 ): Promise<boolean> {
   const config = getCoreReplicationConfig();
-  if (!config || config.role !== "local") {
+  if (!config) {
     return false;
   }
 

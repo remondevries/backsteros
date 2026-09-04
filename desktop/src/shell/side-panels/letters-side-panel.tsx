@@ -10,10 +10,10 @@ import {
 import {
   LettersSidePanelView,
   flattenGroupedListItemIds,
-  getLettersHref,
   getSelectedLetterSlugFromPathname,
   groupLettersByStatus,
   letterMatchesSlug,
+  resolveLetterDetailHref,
   type LettersSidePanelViewProps,
 } from "@backsteros/ui";
 
@@ -45,7 +45,13 @@ export function DesktopLettersSidePanel({
   const { client } = useDesktopApi();
   const { pathname, items } = viewProps;
   const resolveHref =
-    getLetterHref ?? ((letter: { number: number }) => getLettersHref(letter.number));
+    getLetterHref ??
+    ((letter: { id: string; number?: number | null }) =>
+      resolveLetterDetailHref({
+        id: letter.id,
+        number: letter.number,
+        listBaseHref: "/letters",
+      }));
   const selectedSlug = getSelectedLetterSlugFromPathname(pathname);
   const selectedId = selectedSlug
     ? (items.find((item) => letterMatchesSlug(item, selectedSlug))?.id ?? null)

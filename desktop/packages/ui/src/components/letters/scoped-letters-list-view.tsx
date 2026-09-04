@@ -187,7 +187,10 @@ export function ScopedLettersListView({
                     : letter.dueDate instanceof Date
                       ? letter.dueDate
                       : new Date(letter.dueDate);
-                const displayId = formatLetterDisplayId(letter.number);
+                const displayId =
+                  letter.number != null
+                    ? formatLetterDisplayId(letter.number)
+                    : letter.id.slice(0, 8);
 
                 return (
                   <li

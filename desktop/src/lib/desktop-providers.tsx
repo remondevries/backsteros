@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { ApiProvider } from "./api-context";
 import { AgentMailProvider } from "./agentmail-context";
 import { DesktopAgentStatusProvider } from "./agent/agent-status-context";
+import { WorkspaceEventsProvider } from "./workspace-events-provider";
 import { dismissBootSplash } from "./boot-splash";
 import { mergeClerkHandshakeQuery } from "./clerk-oauth-handoff";
 import { getDesktopPublicEnvironment } from "./env";
@@ -270,9 +271,13 @@ function AuthenticatedProviders({
     <ApiProvider apiUrl={apiUrl} getToken={tokenProvider}>
       <PowerSyncProvider authenticated={enablePowerSync} apiUrl={apiUrl}>
         <DesktopWorkspaceDataProvider>
-          <AgentMailProvider>
-            <DesktopAgentStatusProvider>{children}</DesktopAgentStatusProvider>
-          </AgentMailProvider>
+          <WorkspaceEventsProvider>
+            <AgentMailProvider>
+              <DesktopAgentStatusProvider>
+                {children}
+              </DesktopAgentStatusProvider>
+            </AgentMailProvider>
+          </WorkspaceEventsProvider>
         </DesktopWorkspaceDataProvider>
       </PowerSyncProvider>
     </ApiProvider>

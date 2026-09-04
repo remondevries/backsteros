@@ -28,13 +28,15 @@ export function parseCalendarMeetingOverlayLayout(
 export function withCalendarMeetingSearch(
   meetingId: string,
   search = "",
-  layout: CalendarMeetingOverlayLayout = "panel",
+  layout?: CalendarMeetingOverlayLayout,
 ): string {
   const params = new URLSearchParams(
     search.startsWith("?") ? search.slice(1) : search,
   );
   params.set(CALENDAR_MEETING_OVERLAY_PARAM, meetingId);
-  if (layout === "page") {
+  const resolvedLayout =
+    layout ?? parseCalendarMeetingOverlayLayout(params.toString());
+  if (resolvedLayout === "page") {
     params.set(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM, "page");
   } else {
     params.delete(CALENDAR_MEETING_OVERLAY_LAYOUT_PARAM);
@@ -57,19 +59,60 @@ export function formatMeetingBreadcrumbLabel(
   return trimmed ? `${id} ${trimmed}` : id;
 }
 
-/** Whether the sidebar Inbox icon should show an attention / update mark. */
+/** Sidebar/widget Inbox attention dot — orange / green / muted / none. */
+export type InboxSidebarIndicatorTone = "none" | "muted" | "green" | "orange";
+
+export const INBOX_SIDEBAR_INDICATOR_COLORS = {
+  orange: "#ee7a47",
+  green: "#34C759",
+  muted: "#636366",
+} as const;
+
+const ATTENTION_GROUP_KEYS = new Set(["agents", "overdue", "triage"]);
+
+/**
+ * Pick the Inbox sidebar/widget dot color.
+ * Priority: orange (agents/overdue/triage) → green (updated) → muted (other items) → none.
+ */
+export function resolveInboxSidebarIndicatorTone(
+  items: readonly InboxListItem[],
+): InboxSidebarIndicatorTone {
+  if (items.length === 0) return "none";
+  let hasAttention = false;
+  let hasUpdated = false;
+  for (const item of items) {
+    if (ATTENTION_GROUP_KEYS.has(getInboxAttentionGroupKey(item))) {
+      hasAttention = true;
+    }
+    const updatedAt =
+      "inboxUpdatedAt" in item
+        ? (item as { inboxUpdatedAt?: unknown }).inboxUpdatedAt
+        : null;
+    if (
+      hasInboxUpdatedFlag(
+        updatedAt as string | number | Date | null | undefined,
+      )
+    ) {
+      hasUpdated = true;
+    }
+  }
+  if (hasAttention) return "orange";
+  if (hasUpdated) return "green";
+  return "muted";
+}
+
+export function inboxSidebarIndicatorColor(
+  tone: InboxSidebarIndicatorTone,
+): string {
+  if (tone === "none") return "";
+  return INBOX_SIDEBAR_INDICATOR_COLORS[tone];
+}
+
+/** @deprecated Prefer {@link resolveInboxSidebarIndicatorTone}. */
 export function resolveInboxSidebarIndicator(
   items: readonly InboxListItem[],
 ): boolean {
-  for (const item of items) {
-    if (getInboxAttentionGroupKey(item) === "triage") return true;
-    const updatedAt =
-      "inboxUpdatedAt" in item ? (item as { inboxUpdatedAt?: unknown }).inboxUpdatedAt : null;
-    if (hasInboxUpdatedFlag(updatedAt as string | number | Date | null | undefined)) {
-      return true;
-    }
-  }
-  return false;
+  return resolveInboxSidebarIndicatorTone(items) !== "none";
 }
 
 /** Build due-date fields for task/meeting PATCH bodies. */

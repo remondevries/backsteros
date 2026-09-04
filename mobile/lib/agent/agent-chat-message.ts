@@ -6,6 +6,7 @@ import {
   type AgentChatPlanStep,
   type AgentChatTurnSegment,
 } from "./agent-chat-activity";
+import { randomUuid } from "../random-uuid";
 
 export type AgentChatRole = "user" | "assistant";
 
@@ -34,10 +35,7 @@ export type AgentChatMessage = {
 };
 
 function newMessageId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return randomUuid();
 }
 
 /** Normalize sidecar / local JSON into a typed message (preserves activities). */

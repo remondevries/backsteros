@@ -19,6 +19,7 @@ import {
   subscribeToPreferredColorScheme,
 } from "../../tasks/task-status-color.js";
 import { TaskStatusWorkingPulse } from "./task-status-working-pulse.js";
+import { IconWithInboxUpdateIndicator } from "../shared/icon-with-inbox-update-indicator.js";
 
 function TriageIcon() {
   return (
@@ -105,6 +106,8 @@ export type TaskStatusIconProps = {
    * circle — no pie wedge fill. Same ring geometry/color as the status.
    */
   ringOnly?: boolean;
+  /** When set, shows the green Updated indicator on the icon. */
+  inboxUpdatedAt?: Date | string | number | null;
 };
 
 export function TaskStatusIcon({
@@ -115,6 +118,7 @@ export function TaskStatusIcon({
   highlighted = false,
   working = false,
   ringOnly = false,
+  inboxUpdatedAt,
 }: TaskStatusIconProps) {
   const normalizedStatus = isTaskStatus(status) ? status : "backlog";
   const colorScheme = useSyncExternalStore(
@@ -130,39 +134,43 @@ export function TaskStatusIcon({
 
   if (working) {
     return (
-      <TaskStatusWorkingPulse
-        className={className}
-        size={size}
-        aria-label={title ?? "Agent working"}
-      />
+      <IconWithInboxUpdateIndicator inboxUpdatedAt={inboxUpdatedAt}>
+        <TaskStatusWorkingPulse
+          className={className}
+          size={size}
+          aria-label={title ?? "Agent working"}
+        />
+      </IconWithInboxUpdateIndicator>
     );
   }
 
   return (
-    <svg
-      className={mergeIconSvgClassName(className, { highlighted })}
-      style={highlighted ? undefined : iconSvgColorStyle(model.color)}
-      viewBox="0 0 14 14"
-      width={size}
-      height={size}
-      aria-hidden={title ? undefined : true}
-      aria-label={title ? undefined : label}
-      role={title ? "img" : undefined}
-    >
-      {title ? <title>{title}</title> : null}
-      <g fill="none">
-        {model.kind === "triage" ? <TriageIcon /> : null}
-        {model.kind === "backlog" ? (
-          <g fill="currentColor">
-            <BacklogIcon />
-          </g>
-        ) : null}
-        {model.kind === "completed" ? <CompletedIcon /> : null}
-        {model.kind === "duplicated" ? <DuplicatedIcon /> : null}
-        {model.kind === "ring" ? (
-          <ProgressRingIcon fillRatio={ringOnly ? 0 : model.fillRatio} />
-        ) : null}
-      </g>
-    </svg>
+    <IconWithInboxUpdateIndicator inboxUpdatedAt={inboxUpdatedAt}>
+      <svg
+        className={mergeIconSvgClassName(className, { highlighted })}
+        style={highlighted ? undefined : iconSvgColorStyle(model.color)}
+        viewBox="0 0 14 14"
+        width={size}
+        height={size}
+        aria-hidden={title ? undefined : true}
+        aria-label={title ? undefined : label}
+        role={title ? "img" : undefined}
+      >
+        {title ? <title>{title}</title> : null}
+        <g fill="none">
+          {model.kind === "triage" ? <TriageIcon /> : null}
+          {model.kind === "backlog" ? (
+            <g fill="currentColor">
+              <BacklogIcon />
+            </g>
+          ) : null}
+          {model.kind === "completed" ? <CompletedIcon /> : null}
+          {model.kind === "duplicated" ? <DuplicatedIcon /> : null}
+          {model.kind === "ring" ? (
+            <ProgressRingIcon fillRatio={ringOnly ? 0 : model.fillRatio} />
+          ) : null}
+        </g>
+      </svg>
+    </IconWithInboxUpdateIndicator>
   );
 }

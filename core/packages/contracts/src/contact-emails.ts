@@ -50,12 +50,32 @@ export function coerceContactEmailEntry(
   };
 }
 
+/** PowerSync/SQLite may hand back JSON text (`"[]"`) instead of a parsed array. */
+function coerceEmailEntriesList(
+  emails: unknown,
+): readonly ContactEmailInput[] {
+  if (emails == null) return [];
+  if (Array.isArray(emails)) return emails as ContactEmailInput[];
+  if (typeof emails === "string") {
+    const trimmed = emails.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return Array.isArray(parsed) ? (parsed as ContactEmailInput[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function coerceContactEmailEntries(
-  emails: readonly ContactEmailInput[] | null | undefined,
+  emails: readonly ContactEmailInput[] | string | null | undefined,
 ): ContactEmailEntry[] {
-  if (!emails?.length) return [];
+  const list = coerceEmailEntriesList(emails);
+  if (!list.length) return [];
   const out: ContactEmailEntry[] = [];
-  for (const entry of emails) {
+  for (const entry of list) {
     const coerced = coerceContactEmailEntry(entry);
     if (coerced) out.push(coerced);
   }
@@ -64,7 +84,7 @@ export function coerceContactEmailEntries(
 
 export function getContactEmailAddresses(contact: {
   email?: string | null;
-  emails?: readonly ContactEmailInput[] | null;
+  emails?: readonly ContactEmailInput[] | string | null;
 }): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -97,6 +117,34 @@ export function contactMatchesEmailAddress(
   return getContactEmailAddresses(contact).some(
     (entry) => parseBareEmailAddress(entry) === needle,
   );
+}
+
+/**
+ * True when a message involves this contact — linked `contactId`, or any
+ * From/To address matches Details email addresses (sent or received).
+ */
+export function emailMessageInvolvesContact(
+  message: {
+    from?: string | null;
+    to?: readonly string[] | null;
+    contactId?: string | null;
+  },
+  contact: {
+    id?: string | null;
+    email?: string | null;
+    emails?: readonly ContactEmailInput[] | null;
+  },
+): boolean {
+  if (contact.id && message.contactId && message.contactId === contact.id) {
+    return true;
+  }
+  if (message.from && contactMatchesEmailAddress(contact, message.from)) {
+    return true;
+  }
+  for (const address of message.to ?? []) {
+    if (contactMatchesEmailAddress(contact, address)) return true;
+  }
+  return false;
 }
 
 export function findContactByEmailAddress<

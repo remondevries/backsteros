@@ -26,6 +26,17 @@ export async function tableExists(tableName: string): Promise<boolean> {
   return Boolean(rows[0]?.exists);
 }
 
+/** Live column names for a public table (used to tolerate peer schema lag). */
+export async function listTableColumns(tableName: string): Promise<Set<string>> {
+  const rows = await sqlClient<{ column_name: string }[]>`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = ${tableName}
+  `;
+  return new Set(rows.map((row) => row.column_name));
+}
+
 function cursorFromRow(
   row: typeof coreReplicationCursors.$inferSelect | undefined,
   direction: ReplicationCursorDirection,

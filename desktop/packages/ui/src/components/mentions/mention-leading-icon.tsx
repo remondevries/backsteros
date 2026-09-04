@@ -4,8 +4,8 @@ import {
   getDisplayProjectIcon,
   ProjectOcticon,
 } from "../projects/project-octicon.js";
-import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DocumentIcon } from "../documents/document-icon.js";
+import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
@@ -18,6 +18,9 @@ export function MentionLeadingIcon({
   status,
   projectIcon,
   projectType,
+  contact,
+  organization,
+  size = 16,
 }: {
   kind: MentionKind;
   status?: TaskStatus | null;
@@ -26,9 +29,15 @@ export function MentionLeadingIcon({
   documentIcon?: string | null;
   contact?: {
     id: string;
-    avatarStorageKey: string | null;
-    avatarUpdatedAt: number;
+    avatarSrc?: string | null;
+    avatarStorageKey?: string | null;
+    avatarUpdatedAt?: number;
   } | null;
+  organization?: {
+    id: string;
+    avatarSrc?: string | null;
+  } | null;
+  size?: number;
 }) {
   if (kind === "task") {
     return (
@@ -42,7 +51,7 @@ export function MentionLeadingIcon({
   if (kind === "letter") {
     return (
       <LetterIcon
-        size={16}
+        size={size}
         className="mention-menu__icon mention-menu__icon--muted"
       />
     );
@@ -51,7 +60,7 @@ export function MentionLeadingIcon({
   if (kind === "email") {
     return (
       <EmailNavIcon
-        size={16}
+        size={size}
         className="mention-menu__icon mention-menu__icon--muted"
       />
     );
@@ -69,25 +78,29 @@ export function MentionLeadingIcon({
 
   if (kind === "contact") {
     return (
-      <ContactPersonIcon
-        size={16}
-        className="mention-menu__icon mention-menu__icon--muted"
+      <EntityAvatarIcon
+        src={contact?.avatarSrc}
+        size={size}
+        kind="contact"
+        className="mention-menu__icon mention-menu__icon--avatar"
       />
     );
   }
 
   if (kind === "organization") {
     return (
-      <OrganizationIcon
-        size={16}
-        className="mention-menu__icon mention-menu__icon--muted"
+      <EntityAvatarIcon
+        src={organization?.avatarSrc}
+        size={size}
+        kind="organization"
+        className="mention-menu__icon mention-menu__icon--avatar"
       />
     );
   }
 
   return (
     <DocumentIcon
-      size={16}
+      size={size}
       className="mention-menu__icon mention-menu__icon--muted"
     />
   );

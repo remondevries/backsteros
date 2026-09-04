@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildMoneybirdInvoicesMonthPeriodFilter,
   buildMoneybirdInvoicesPeriodFilter,
   buildTransactionsPath,
 } from "./finance-api";
@@ -53,6 +54,19 @@ describe("buildMoneybirdInvoicesPeriodFilter", () => {
     assert.equal(
       buildMoneybirdInvoicesPeriodFilter(2026),
       "period:20260101..20261231",
+    );
+  });
+});
+
+describe("buildMoneybirdInvoicesMonthPeriodFilter", () => {
+  it("scopes to billed invoices in the calendar month including last day", () => {
+    assert.equal(
+      buildMoneybirdInvoicesMonthPeriodFilter("2026-02"),
+      "period:20260201..20260228,state:open|scheduled|pending_payment|reminded|late|paid",
+    );
+    assert.equal(
+      buildMoneybirdInvoicesMonthPeriodFilter("2024-02"),
+      "period:20240201..20240229,state:open|scheduled|pending_payment|reminded|late|paid",
     );
   });
 });

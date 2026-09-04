@@ -1073,6 +1073,7 @@ export {
   getFirstLetterInListOrder,
   getLettersHref,
   getLettersV2Href,
+  resolveLetterDetailHref,
   getSelectedLetterSlugFromPathname,
   isLettersSectionPath,
   isLettersV2SectionPath,
@@ -1081,9 +1082,16 @@ export {
   normalizeProductPathname,
   letterMatchesSlug,
   parseLetterSlug,
+  isLetterEntityIdSlug,
   type LetterListItem,
   type LetterStatusGroup,
 } from "./letters/letters.js";
+
+export {
+  getLetterListBaseHref,
+  resolveScopedLetterDetailHref,
+  type LetterRouteScope,
+} from "./letters/letter-route-scope.js";
 
 export {
   MEETING_DISPLAY_KEY,
@@ -2584,6 +2592,7 @@ export {
 export {
   TaskActivityPanel,
   type TaskActivityPanelProps,
+  type TaskActivityCommentMutations,
   type TaskActivityRequestJson,
   type TaskActivityCurrentUser,
 } from "./components/tasks/task-activity-panel.js";
@@ -3305,6 +3314,7 @@ export {
 
 export {
   stripPdfExtension,
+  letterPdfSubjectFromFilename,
   withPdfExtension,
 } from "./letters/letter-pdf-filename.js";
 

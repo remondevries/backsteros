@@ -39,7 +39,13 @@ const CalendarWebView = (() => {
 
 export type CalendarGridHostMessage =
   | { type: "ready" }
-  | { type: "eventClick"; taskId?: string; meetingId?: string; eventId: string }
+  | {
+      type: "eventClick";
+      taskId?: string;
+      meetingId?: string;
+      contactId?: string;
+      eventId: string;
+    }
   | {
       type: "eventChange";
       entityType: "task" | "meeting";

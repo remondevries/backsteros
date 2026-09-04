@@ -53,21 +53,56 @@
       "backgroundColor": "#000000",
       "resizeMode": "contain"
     },
-    "plugins": [
+      "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-image",
       "./plugins/with-fmt-xcode-format.js",
       "./plugins/with-internal-expo-import.js",
+      "./plugins/with-strip-aps-environment.js",
+      "./plugins/with-solid-black-widget-background.js",
       "expo-web-browser",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "BacksterOS uses your location to show the outdoor temperature on the home screen widget."
+        }
+      ],
       [
         "expo-build-properties",
         {
           "ios": {
             "deploymentTarget": "16.4"
           }
+        }
+      ],
+      [
+        "expo-widgets",
+        {
+          "widgets": [
+            {
+              "name": "HomeGlanceHeaderWidget",
+              "displayName": "BacksterOS Greeting",
+              "description": "Time-of-day greeting, date, and weather",
+              "ios": {
+                "supportedFamilies": ["systemMedium"],
+                "contentMarginsDisabled": true,
+                "initialLayout": "./widgets/home-glance-header-widget.tsx"
+              }
+            },
+            {
+              "name": "HomeGlanceSectionsWidget",
+              "displayName": "BacksterOS Sections",
+              "description": "Inbox, tasks, email, and Finance at a glance",
+              "ios": {
+                "supportedFamilies": ["systemLarge"],
+                "contentMarginsDisabled": true,
+                "initialLayout": "./widgets/home-glance-sections-widget.tsx"
+              }
+            }
+          ]
         }
       ]
     ],

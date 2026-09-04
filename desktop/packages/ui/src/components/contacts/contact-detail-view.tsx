@@ -3,7 +3,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  CONTACT_CARD_SECTIONS,
   CONTACT_SECTIONS,
+  type ContactSectionConfig,
   type ContactSectionId,
 } from "../../contacts/contact-sections.js";
 import { rememberContactSection } from "../../navigation/entity-section-memory.js";
@@ -15,6 +17,21 @@ import {
 } from "./contact-overview-view.js";
 import { ContactPersonIcon } from "./contact-person-icon.js";
 import { PillNav } from "../shared/pill-nav.js";
+
+const CONTACT_MORE_TAB = {
+  value: "more" as const,
+  label: "More...",
+};
+
+function isCardOnlySections(sections: readonly ContactSectionConfig[]): boolean {
+  return (
+    sections === CONTACT_CARD_SECTIONS ||
+    (sections.length === CONTACT_CARD_SECTIONS.length &&
+      sections.every(
+        (entry, index) => entry.id === CONTACT_CARD_SECTIONS[index]?.id,
+      ))
+  );
+}
 
 export type ContactDetailViewProps = {
   contact: ContactOverviewViewContact;
@@ -36,20 +53,26 @@ export type ContactDetailViewProps = {
   overviewHeaderAccessory?: ReactNode;
   relationshipsSlot?: ReactNode;
   activitySlot?: ReactNode;
-  onAddTask?: ContactOverviewViewProps["onAddTask"];
-  onAddMeeting?: ContactOverviewViewProps["onAddMeeting"];
-  onSendEmail?: ContactOverviewViewProps["onSendEmail"];
   section?: ContactSectionId;
   onSectionChange?: (section: ContactSectionId) => void;
   initialSection?: ContactSectionId;
   renderSection?: (sectionId: ContactSectionId) => ReactNode;
   /** When false, hide section tabs (e.g. nested task/letter detail). Default true. */
   showSectionNav?: boolean;
+  /**
+   * Tabs on the profile card. Standalone contacts use
+   * `CONTACT_CARD_SECTIONS` (Activity / Details); org-scoped keeps all sections.
+   */
+  sections?: readonly ContactSectionConfig[];
+  /**
+   * When set, appends a "More..." tab after Details that expands the overlay
+   * (same as the expand control). Only for the narrow card.
+   */
+  onMore?: () => void;
 };
 
 /**
- * Contact detail shell — chrome (name + actions) stays put; underline tabs
- * switch Activity / Details / Tasks / Letters.
+ * Contact detail shell — avatar header + tabs stay put; only the tab body scrolls.
  */
 export function ContactDetailView({
   contact,
@@ -69,14 +92,13 @@ export function ContactDetailView({
   overviewHeaderAccessory,
   relationshipsSlot,
   activitySlot,
-  onAddTask,
-  onAddMeeting,
-  onSendEmail,
   section: controlledSection,
   onSectionChange,
   initialSection = "overview",
   renderSection,
   showSectionNav = true,
+  sections = CONTACT_SECTIONS,
+  onMore,
 }: ContactDetailViewProps) {
   const [uncontrolledSection, setUncontrolledSection] =
     useState<ContactSectionId>(initialSection);
@@ -92,17 +114,34 @@ export function ContactDetailView({
     rememberContactSection(section);
   }, [section]);
 
-  const sectionItems = CONTACT_SECTIONS.map((entry) => ({
-    value: entry.id,
-    label: entry.label,
-  }));
+  type NavValue = ContactSectionId | "more";
+  const showMoreTab = Boolean(onMore) || isCardOnlySections(sections);
+  const sectionItems: { value: NavValue; label: string }[] = [
+    ...sections.map((entry) => ({
+      value: entry.id as NavValue,
+      label: entry.label,
+    })),
+    ...(showMoreTab ? [CONTACT_MORE_TAB] : []),
+  ];
+  const navSection: NavValue = sections.some((entry) => entry.id === section)
+    ? section
+    : "overview";
 
   const mode =
-    section === "overview"
+    section === "overview" ||
+    (section !== "details" && !sections.some((entry) => entry.id === section))
       ? "overview"
       : section === "details"
         ? "details"
         : "section";
+
+  function handleNavChange(next: NavValue) {
+    if (next === "more") {
+      onMore?.();
+      return;
+    }
+    setSection(next);
+  }
 
   return (
     <div className="contact-detail" data-content-detail>
@@ -139,8 +178,8 @@ export function ContactDetailView({
                   className="contact-section-tabs__nav"
                   ariaLabel="Contact sections"
                   items={sectionItems}
-                  value={section}
-                  onChange={setSection}
+                  value={navSection}
+                  onChange={handleNavChange}
                 />
               </div>
             ) : null
@@ -160,9 +199,6 @@ export function ContactDetailView({
                 ))
               : null
           }
-          onAddTask={onAddTask}
-          onAddMeeting={onAddMeeting}
-          onSendEmail={onSendEmail}
         />
       </div>
     </div>

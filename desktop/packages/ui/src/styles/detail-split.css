@@ -40,6 +40,7 @@
   gap: 12px;
   padding: 12px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .task-detail-stacked__properties {
@@ -224,6 +225,7 @@
   gap: 10px;
   padding: 7px 10px 7px 12px;
   color: inherit;
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
@@ -257,10 +259,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
   color: color-mix(in srgb, var(--foreground) 55%, transparent);
   font-size: 13px;
   line-height: 1.35;
   text-decoration: none;
+}
+
+.task-link-attachments__meta {
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .task-link-attachments__remove {
@@ -315,6 +326,14 @@
   color: color-mix(in srgb, var(--foreground) 58%, transparent);
 }
 
+/**
+ * Portaled add-attachment dialog must sit above the compose/create-task modal
+ * (z-index 300). Default `.entity-delete-modal-root` is only 50.
+ */
+.entity-delete-modal-root[data-task-link-modal] {
+  z-index: 400;
+}
+
 .task-link-attachments-modal__form {
   display: flex;
   flex-direction: column;
@@ -337,6 +356,19 @@
   overflow: auto;
 }
 
+.task-link-attachments-modal__section-label {
+  margin: 0.75rem 0 0;
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.task-link-attachments-modal__section-label + .task-link-attachments-modal__results {
+  margin-top: 0.35rem;
+}
+
 .task-link-attachments-modal__result {
   display: flex;
   flex-direction: column;
@@ -355,6 +387,25 @@
 .task-link-attachments-modal__result:hover {
   background: rgb(255 255 255 / 0.06);
   border-color: #343434;
+}
+
+.task-link-attachments-modal__result-scope {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-bottom: 0.1rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 550;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-link-attachments-modal__result-label {
@@ -559,6 +610,7 @@
 .document-pdf-main__notes.markdown-document-scrollport {
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   container-type: size;
 }
 

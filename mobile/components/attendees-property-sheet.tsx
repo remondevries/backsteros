@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Modal,
   Pressable,
@@ -16,11 +16,13 @@ import { TextInput } from "./app-text-input";
 export type AttendeeOption = {
   id: string;
   label: string;
+  icon?: ReactNode;
 };
 
 type Props = {
   visible: boolean;
   title?: string;
+  searchPlaceholder?: string;
   options: readonly AttendeeOption[];
   selectedIds: readonly string[];
   onChange: (ids: string[]) => void;
@@ -30,6 +32,7 @@ type Props = {
 export function AttendeesPropertySheet({
   visible,
   title = "Attendees",
+  searchPlaceholder = "Search…",
   options,
   selectedIds,
   onChange,
@@ -98,7 +101,7 @@ export function AttendeesPropertySheet({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search contacts…"
+            placeholder={searchPlaceholder}
             style={styles.search}
           />
           <ScrollView keyboardShouldPersistTaps="handled">
@@ -115,6 +118,9 @@ export function AttendeesPropertySheet({
                     pressed ? styles.rowPressed : null,
                   ]}
                 >
+                  {option.icon ? (
+                    <View style={styles.rowIcon}>{option.icon}</View>
+                  ) : null}
                   <Text style={styles.rowLabel}>{option.label}</Text>
                   <Text style={styles.check}>{selected ? "✓" : ""}</Text>
                 </Pressable>
@@ -181,6 +187,9 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     opacity: 0.7,
+  },
+  rowIcon: {
+    marginRight: 10,
   },
   rowLabel: {
     color: colors.foreground,

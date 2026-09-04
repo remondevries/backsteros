@@ -14,7 +14,12 @@ export type ContactSectionConfig = {
   supportsDetail: boolean;
 };
 
-export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
+/**
+ * Tabs shown on the standalone contact profile card (Activity / Details).
+ * A "More..." tab is appended in the UI to expand the workspace.
+ * Tasks + Letters live in that expanded workspace.
+ */
+export const CONTACT_CARD_SECTIONS: readonly ContactSectionConfig[] = [
   { id: "overview", label: "Activity", segment: "", supportsDetail: false },
   {
     id: "details",
@@ -22,12 +27,23 @@ export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
     segment: "details",
     supportsDetail: false,
   },
+];
+
+/** All contact sections including tasks/letters (routing + org-scoped card). */
+export const CONTACT_SECTIONS: readonly ContactSectionConfig[] = [
+  ...CONTACT_CARD_SECTIONS,
   { id: "tasks", label: "Tasks", segment: "tasks", supportsDetail: true },
   { id: "letters", label: "Letters", segment: "letters", supportsDetail: true },
 ];
 
 export function isContactSectionId(value: string): value is ContactSectionId {
   return (CONTACT_SECTION_IDS as readonly string[]).includes(value);
+}
+
+export function isContactCardSectionId(
+  value: string,
+): value is "overview" | "details" {
+  return value === "overview" || value === "details";
 }
 
 /** Parse a URL segment (`tasks`, `letters`, …). Empty / missing → overview. */

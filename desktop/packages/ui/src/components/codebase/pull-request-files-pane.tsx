@@ -457,10 +457,12 @@ export function CommitFilesPane({
   projectId,
   sha,
   requestJson,
+  autoFocusList = false,
 }: {
   projectId: string;
   sha: string;
   requestJson: CodebaseRequestJson;
+  autoFocusList?: boolean;
 }) {
   const fetchPage = useCallback(async () => {
     const result = await requestJson<{
@@ -479,6 +481,7 @@ export function CommitFilesPane({
     <GithubFilesDiffPane
       cacheKey={`commit:${projectId}:${sha}`}
       fetchPage={fetchPage}
+      autoFocusList={autoFocusList}
     />
   );
 }

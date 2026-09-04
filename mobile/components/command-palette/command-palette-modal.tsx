@@ -17,6 +17,7 @@ import {
   mapGlobalSearchResults,
   type CommandPaletteHit,
 } from "../../lib/command-palette-search";
+import { GO_NAVIGATION_ITEMS } from "../../lib/go-navigation";
 import { useCommandPalette } from "../../lib/use-command-palette";
 import { colors, spacing } from "../../lib/theme";
 import { useMobileApiClient } from "../../lib/use-mobile-api-client";
@@ -26,6 +27,41 @@ type Props = {
   visible: boolean;
   onClose: () => void;
 };
+
+type Destination = {
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+};
+
+const EMPTY_DESTINATIONS: readonly Destination[] = [
+  { id: "inbox", title: "Inbox", subtitle: "G I", href: "/inbox" },
+  { id: "email", title: "Email", subtitle: "G E", href: "/email" },
+  { id: "tasks", title: "Tasks", subtitle: "G T", href: "/tasks" },
+  { id: "calendar", title: "Calendar", subtitle: "G M", href: "/calendar" },
+  { id: "contacts", title: "Contacts", subtitle: "G C", href: "/contacts" },
+  { id: "social", title: "Social", subtitle: "Social accounts", href: "/social" },
+  {
+    id: "organizations",
+    title: "Organizations",
+    subtitle: "G O",
+    href: "/organizations",
+  },
+  { id: "projects", title: "Projects", subtitle: "G P", href: "/projects" },
+  { id: "compose", title: "Compose", subtitle: "Create task or document", href: "/compose" },
+  ...GO_NAVIGATION_ITEMS.filter(
+    (item) =>
+      !["inbox", "email", "tasks", "calendar", "contacts", "organizations", "projects"].includes(
+        item.id,
+      ),
+  ).map((item) => ({
+    id: item.id,
+    title: item.label,
+    subtitle: `G ${item.letter.toUpperCase()}`,
+    href: item.href,
+  })),
+];
 
 export function CommandPaletteModal({ visible, onClose }: Props) {
   const router = useRouter();
@@ -93,10 +129,29 @@ export function CommandPaletteModal({ visible, onClose }: Props) {
     })).filter((section) => section.data.length > 0);
   }, [hits]);
 
+  const filteredDestinations = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length >= 2) return [];
+    if (!q) return EMPTY_DESTINATIONS;
+    return EMPTY_DESTINATIONS.filter(
+      (entry) =>
+        entry.title.toLowerCase().includes(q) ||
+        entry.subtitle.toLowerCase().includes(q),
+    );
+  }, [query]);
+
   const openHit = useCallback(
     (hit: CommandPaletteHit) => {
       onClose();
       router.push(hit.href as never);
+    },
+    [onClose, router],
+  );
+
+  const openDestination = useCallback(
+    (href: string) => {
+      onClose();
+      router.push(href as never);
     },
     [onClose, router],
   );
@@ -119,7 +174,7 @@ export function CommandPaletteModal({ visible, onClose }: Props) {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search projects, tasks, contacts…"
+            placeholder="Search or jump to…"
             autoFocus
             style={styles.input}
           />
@@ -130,7 +185,30 @@ export function CommandPaletteModal({ visible, onClose }: Props) {
           ) : error ? (
             <Text style={styles.error}>{error}</Text>
           ) : query.trim().length < 2 ? (
-            <Text style={styles.hint}>Type at least 2 characters to search.</Text>
+            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={styles.list}>
+              <Text style={styles.sectionHeader}>Go</Text>
+              {filteredDestinations.map((entry) => (
+                <Pressable
+                  key={entry.id}
+                  accessibilityRole="button"
+                  onPress={() => openDestination(entry.href)}
+                  style={({ pressed }) => [
+                    styles.row,
+                    pressed ? styles.rowPressed : null,
+                  ]}
+                >
+                  <Text style={styles.rowTitle} numberOfLines={1}>
+                    {entry.title}
+                  </Text>
+                  <Text style={styles.rowSubtitle} numberOfLines={1}>
+                    {entry.subtitle}
+                  </Text>
+                </Pressable>
+              ))}
+              <Text style={[styles.hint, { marginTop: 12 }]}>
+                Type 2+ characters to search the workspace.
+              </Text>
+            </ScrollView>
           ) : sections.length === 0 ? (
             <Text style={styles.hint}>No results.</Text>
           ) : (

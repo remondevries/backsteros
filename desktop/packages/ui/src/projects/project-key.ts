@@ -117,10 +117,20 @@ export function buildTaskProjectChangeRedirectPath(
   const pathOnly = pathname.split("?")[0] ?? pathname;
   const oldKey = input.oldProjectKey?.trim() || null;
   const newKey = input.newProjectKey?.trim() || null;
+  const routeLeaf = input.routeLeaf ?? "display-slug";
 
   if (!newKey) {
     if (isProjectScopedTaskPath(pathOnly) || hasProjectTrailSource(pathOnly)) {
       return `/tasks/${encodeURIComponent(input.taskId)}`;
+    }
+    const dueFilterCleared = rewriteDueFilterTaskLeaf(pathOnly, {
+      taskId: input.taskId,
+      taskNumber: input.taskNumber,
+      contextKey: INBOX_TASK_KEY,
+      routeLeaf,
+    });
+    if (dueFilterCleared) {
+      return dueFilterCleared;
     }
     if (oldKey) {
       return (
@@ -147,13 +157,26 @@ export function buildTaskProjectChangeRedirectPath(
         ? currentOrg
         : input.newOrganizationRouteParam;
     const taskSlug =
-      input.routeLeaf === "task-id"
+      routeLeaf === "task-id"
         ? encodeURIComponent(input.taskId)
         : `${canonicalNewKey}-${input.taskNumber}`;
     if (nextOrg) {
       return `/organizations/${encodeURIComponent(nextOrg)}/projects/${canonicalNewKey}/tasks/${taskSlug}`;
     }
     return `/projects/${canonicalNewKey}/tasks/${taskSlug}`;
+  }
+
+  // Due-list detail (`/tasks/tomorrow/in-12` or `/tasks/tomorrow/<uuid>`):
+  // unscoped tasks have no projectKey, so always rewrite the leaf — do not
+  // require an oldKey prefix match.
+  const dueFilterAssigned = rewriteDueFilterTaskLeaf(pathOnly, {
+    taskId: input.taskId,
+    taskNumber: input.taskNumber,
+    contextKey: canonicalNewKey,
+    routeLeaf,
+  });
+  if (dueFilterAssigned) {
+    return dueFilterAssigned;
   }
 
   if (oldKey) {
@@ -188,6 +211,34 @@ function isProjectScopedTaskPath(pathname: string): boolean {
 
 function hasProjectTrailSource(pathname: string): boolean {
   return /^(?:\/organizations\/[^/]+)?\/projects\/[^/]+\/~/.test(pathname);
+}
+
+/**
+ * Rewrite `/tasks/{dueFilter}/{leaf}` regardless of whether the current leaf is
+ * `in-12`, `bsh-3`, or a durable task id.
+ */
+function rewriteDueFilterTaskLeaf(
+  pathname: string,
+  input: {
+    taskId: string;
+    taskNumber: number;
+    contextKey: string;
+    routeLeaf: "display-slug" | "task-id";
+  },
+): string | null {
+  const match = pathname.match(/^\/tasks\/([^/]+)\/([^/]+)\/?$/);
+  if (!match) return null;
+
+  const dueFilter = match[1]!;
+  // Keep UUID / non-slug task ids under `/tasks/{id}` untouched — that route
+  // has only two segments and does not match above. `/tasks/inbox/…` is inbox.
+  if (dueFilter === "inbox") return null;
+
+  const leaf =
+    input.routeLeaf === "task-id"
+      ? encodeURIComponent(input.taskId)
+      : `${encodeProjectSlug(input.contextKey)}-${input.taskNumber}`;
+  return `/tasks/${dueFilter}/${leaf}`;
 }
 
 function rewriteTaskSlugPrefixes(

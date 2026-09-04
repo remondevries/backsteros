@@ -1,4 +1,4 @@
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation } from "expo-router/react-navigation";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useLayoutEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";

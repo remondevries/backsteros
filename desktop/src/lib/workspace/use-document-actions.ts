@@ -4,18 +4,9 @@ import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { writeDocumentContentCache } from "../document-content-cache";
 import type { SoftDeletableTable } from "./use-entity-patching";
+import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
 import type { WorkspacePowerSync } from "./workspace-data-types";
-
-async function flushPowerSyncMetadataUpload(
-  powerSync: WorkspacePowerSync,
-): Promise<void> {
-  const database = powerSync.database;
-  if (!database) {
-    throw new Error("PowerSync is not ready");
-  }
-  await database.uploadCrud();
-}
 
 async function commitInitialDocumentContent(
   client: BacksterosApiClient,
@@ -122,48 +113,58 @@ export function useWorkspaceDocumentActions({
         updatedAt: now,
       } as ApiDocument;
       upsertOptimisticDocument(document);
-      void (async () => {
-        try {
-          await powerSync.createMetadata!(
-            "documents",
-            toSnakeFields({
-              type: input.type,
-              projectId: input.projectId ?? null,
-              parentId: input.parentId ?? null,
-              kind: input.kind ?? "document",
-              icon: null,
-              sortOrder: 0,
-              journalDate: null,
-              path: input.path,
-              title: input.title,
-              storageKey: "",
-              contentType: "text/markdown",
-              byteSize: 0,
-              checksum: null,
-              snippet: null,
-              contentVersion: 1,
-              contentEtag: null,
-            }),
-            id,
-          );
-          await flushPowerSyncMetadataUpload(powerSync);
-          const content = input.content ?? "";
-          if (content.length > 0) {
-            const contentVersion = await commitInitialDocumentContent(
-              client,
+      try {
+        await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => upsertOptimisticDocument(document),
+          rollback: () =>
+            setApiDocuments((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "documents",
+              toSnakeFields({
+                type: input.type,
+                projectId: input.projectId ?? null,
+                parentId: input.parentId ?? null,
+                kind: input.kind ?? "document",
+                icon: null,
+                sortOrder: 0,
+                journalDate: null,
+                path: input.path,
+                title: input.title,
+                storageKey: "",
+                contentType: "text/markdown",
+                byteSize: 0,
+                checksum: null,
+                snippet: null,
+                contentVersion: 1,
+                contentEtag: null,
+              }),
               id,
-              content,
-              1,
-            );
-            upsertOptimisticDocument({ ...document, contentVersion });
-          }
-        } catch (error) {
-          console.warn("[desktop] local document create failed", error);
-        }
-      })();
+            ),
+          errorLabel: "local document create",
+          afterCreate: async () => {
+            if (powerSync.connected) {
+              await powerSync.flushCrudUpload();
+            }
+            const content = input.content ?? "";
+            if (content.length > 0) {
+              const contentVersion = await commitInitialDocumentContent(
+                client,
+                id,
+                content,
+                1,
+              );
+              upsertOptimisticDocument({ ...document, contentVersion });
+            }
+          },
+        });
+      } catch (error) {
+        throw error;
+      }
       return { id, path: input.path, contentVersion: 1 };
     },
-    [client, powerSync, toSnakeFields, upsertOptimisticDocument],
+    [client, powerSync, setApiDocuments, toSnakeFields, upsertOptimisticDocument],
   );
 
   const createKnowledgeDocument = useCallback(
@@ -205,6 +206,7 @@ export function useWorkspaceDocumentActions({
           }),
         },
       );
+      upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
       return {
         id: document.id,
@@ -218,6 +220,7 @@ export function useWorkspaceDocumentActions({
       createDocumentMetadataLocal,
       powerSync,
       seedDocumentLocal,
+      upsertOptimisticDocument,
     ],
   );
 
@@ -263,6 +266,7 @@ export function useWorkspaceDocumentActions({
           }),
         },
       );
+      upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
       return {
         id: document.id,
@@ -276,6 +280,7 @@ export function useWorkspaceDocumentActions({
       createDocumentMetadataLocal,
       powerSync,
       seedDocumentLocal,
+      upsertOptimisticDocument,
     ],
   );
 
@@ -315,6 +320,7 @@ export function useWorkspaceDocumentActions({
           }),
         },
       );
+      upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
@@ -324,6 +330,7 @@ export function useWorkspaceDocumentActions({
       createDocumentMetadataLocal,
       powerSync,
       seedDocumentLocal,
+      upsertOptimisticDocument,
     ],
   );
 
@@ -369,6 +376,7 @@ export function useWorkspaceDocumentActions({
           }),
         },
       );
+      upsertOptimisticDocument(document);
       await seedDocumentLocal(document);
       return { id: document.id, path: document.path };
     },
@@ -378,6 +386,7 @@ export function useWorkspaceDocumentActions({
       createDocumentMetadataLocal,
       powerSync,
       seedDocumentLocal,
+      upsertOptimisticDocument,
     ],
   );
 

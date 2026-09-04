@@ -85,6 +85,8 @@ export function taskBelongsInInbox(
   if (isAgentInboxPending(input)) return true;
   if (input.inbox === true || input.inbox === 1) return true;
   const status = migrateLegacyTaskStatus(input.status);
+  // Triage capture — same as attention grouping / inbox SQL.
+  if (status === "triage") return true;
   if (
     (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
   ) {

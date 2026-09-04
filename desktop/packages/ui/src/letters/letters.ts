@@ -14,7 +14,7 @@ export function formatLetterDisplayId(letterNumber: number): string {
 export type LetterListItem = {
   id: string;
   title: string;
-  number: number;
+  number: number | null;
   status: string;
   sortOrder?: number;
   projectId?: string | null;
@@ -76,6 +76,28 @@ export function getLettersHref(letterNumber?: number | null): string {
 
 export function getLettersV2Href(letterNumber?: number | null): string {
   return getLettersHref(letterNumber);
+}
+
+/**
+ * Prefer a pretty L-{n} route when the server number is known; otherwise fall
+ * back to the durable entity id (upload still in flight or offline).
+ */
+export function resolveLetterDetailHref(input: {
+  id: string;
+  number?: number | null;
+  /** Letters list section base — e.g. `/letters`, `/projects/BSH/letters`. */
+  listBaseHref: string;
+}): string {
+  if (input.number != null) {
+    if (
+      input.listBaseHref === "/letters" ||
+      input.listBaseHref === "/letters-v2"
+    ) {
+      return getLettersHref(input.number);
+    }
+    return `${input.listBaseHref}/${formatLetterDisplayId(input.number).toLowerCase()}`;
+  }
+  return `${input.listBaseHref}/${input.id}`;
 }
 
 export function getSelectedLetterSlugFromPathname(
@@ -176,12 +198,27 @@ export function isLetterDetailPath(pathname: string): boolean {
   );
 }
 
+export function isLetterEntityIdSlug(slug: string): boolean {
+  const trimmed = slug.trim();
+  return /^[a-f0-9]{32}$/i.test(trimmed) || /^[a-f0-9-]{36}$/i.test(trimmed);
+}
+
 export function letterMatchesSlug(
   letter: Pick<LetterListItem, "id" | "number">,
   slug: string | null,
 ): boolean {
   if (!slug) return false;
-  if (letter.id === slug) return true;
+  const normalizedSlug = decodeURIComponent(slug.trim());
+  if (
+    letter.id === normalizedSlug ||
+    letter.id.toLowerCase() === normalizedSlug.toLowerCase()
+  ) {
+    return true;
+  }
+  if (letter.number == null || !Number.isFinite(letter.number)) {
+    return false;
+  }
   const display = formatLetterDisplayId(letter.number).toLowerCase();
-  return slug.toLowerCase() === display || slug.toLowerCase() === `l-${letter.number}`;
+  const lowerSlug = normalizedSlug.toLowerCase();
+  return lowerSlug === display || lowerSlug === `l-${letter.number}`;
 }

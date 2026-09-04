@@ -5,11 +5,13 @@ export const CODEBASE_PAD_SPLIT_MIN_WIDTH = 700;
  * Codebase project sections.
  * Overview matches the default project type (iPhone requirement); iPad keeps
  * list|detail for Tasks / Files / Commits / PRs under the same tab strip.
+ * Docs mirrors desktop codebase workbench (`CodebaseGithubListTab` "docs").
  */
 export const CODEBASE_WORKBENCH_TABS = [
   { id: "overview", label: "Overview" },
   { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
+  { id: "docs", label: "Documents" },
   { id: "commits", label: "Commits" },
   { id: "pulls", label: "PRs" },
 ] as const;
@@ -22,11 +24,12 @@ export const DEFAULT_CODEBASE_WORKBENCH_TAB: CodebaseWorkbenchTabId =
 
 /**
  * Left-pane list toggles on iPad — same set as desktop
- * (`Tasks | Files | Commits | PRs`). Overview stays a full-width section.
+ * (`Tasks | Files | Docs | Commits | PRs`). Overview stays a full-width section.
  */
 export const CODEBASE_PAD_LIST_TABS = [
   { id: "tasks", label: "Tasks" },
   { id: "files", label: "Files" },
+  { id: "docs", label: "Documents" },
   { id: "commits", label: "Commits" },
   { id: "pulls", label: "PRs" },
 ] as const satisfies ReadonlyArray<{

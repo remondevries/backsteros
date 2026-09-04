@@ -7,7 +7,9 @@ import {
   TaskDetailView,
   buildAssigneeDropdownOptions,
   buildInboxTaskListItem,
+  buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
+  buildTaskRelatedDropdownOptions,
   encodeTaskSlug,
   findInboxItemBySlugOrId,
   getFirstInboxItemHref,
@@ -23,6 +25,7 @@ import { DesktopTaskActivityPanel } from "../components/desktop-task-activity-pa
 import { DesktopTaskLayout } from "../components/desktop-task-layout";
 import { navigateToHref } from "../router/navigate-href";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
+import { useTaskFileAttachments } from "../lib/use-task-file-attachments";
 import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
@@ -34,6 +37,7 @@ import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
+  buildLetterLinkOptions,
 } from "../lib/task-link-picker-options";
 import { useAgentMail } from "../lib/agentmail-context";
 import { useInboxListSessionPin } from "../lib/inbox/inbox-list-session-context";
@@ -117,15 +121,23 @@ function InboxPageBody() {
   const inboxItems = useDesktopWorkspaceInboxItems();
   const { allTasks, taskDetails } =
     useDesktopWorkspaceTasks();
-  const { documents } = useDesktopWorkspaceDocuments();
-  const { contacts } = useDesktopWorkspacePeople();
-  const { projects } = useDesktopWorkspaceProjects();
+  const { knowledgeDocuments, projectDocuments } =
+    useDesktopWorkspaceDocuments();
+  const { contacts, organizations } = useDesktopWorkspacePeople();
+  const { projects, letters } = useDesktopWorkspaceProjects();
   const workspace = useDesktopWorkspaceActions();
   const agentMail = useAgentMail();
   const { unpinInboxListItem } = useInboxListSessionPin();
   const documentLinkOptions = useMemo(
-    () => buildDocumentLinkOptions(documents),
-    [documents]);
+    () =>
+      buildDocumentLinkOptions(
+        [...knowledgeDocuments, ...projectDocuments],
+        projects,
+      ),
+    [knowledgeDocuments, projectDocuments, projects]);
+  const letterLinkOptions = useMemo(
+    () => buildLetterLinkOptions(letters, projects),
+    [letters, projects]);
   const emailLinkOptions = useMemo(
     () =>
       keepAliveFrozen ? [] : buildEmailLinkOptions(agentMail.messages),
@@ -195,6 +207,16 @@ function InboxPageBody() {
   const { onUploadImages, resolveImageSrc } = useTaskDescriptionImages(
     selectedTask?.id ?? "");
 
+  const {
+    attachments: fileAttachments,
+    uploading: fileUploading,
+    uploadFile,
+    remove: removeFileAttachment,
+    open: openFileAttachment,
+  } = useTaskFileAttachments(selectedTask?.id, {
+    enabled: keepAliveActive && Boolean(selectedTask?.id),
+  });
+
   const displayId = selectedTask ? getInboxItemDisplayId(selectedTask) : null;
   useDesktopSectionBreadcrumb(
     selectedTask
@@ -217,11 +239,27 @@ function InboxPageBody() {
     "contact",
     keepAliveFrozen ? [] : contacts);
 
+  const organizationAvatarSrc = useDesktopAvatarSrcMap(
+    "organization",
+    keepAliveFrozen ? [] : organizations);
+
   const assigneeOptions = useMemo(
     () =>
       buildAssigneeDropdownOptions(
         withAvatarSrc(contacts, contactAvatarSrc)),
     [contactAvatarSrc, contacts]);
+
+  const relatedOptions = useMemo(
+    () =>
+      buildTaskRelatedDropdownOptions({
+        contactOptions: assigneeOptions,
+        organizationOptions: buildOrganizationDropdownOptions(
+          withAvatarSrc(organizations, organizationAvatarSrc),
+          { includeNone: false },
+        ),
+      }),
+    [assigneeOptions, organizationAvatarSrc, organizations],
+  );
 
   const projectOptions = useMemo(
     () =>
@@ -407,6 +445,9 @@ function InboxPageBody() {
             selectedTaskRecord?.dueDate ?? selectedTask.dueDate ?? null,
           assigneeId: resolvedAssigneeId,
           assigneeName: assignee?.name ?? null,
+          relatedContactIds: selectedTaskRecord?.relatedContactIds ?? [],
+          relatedOrganizationIds:
+            selectedTaskRecord?.relatedOrganizationIds ?? [],
           projectKey: project?.key ?? resolvedProjectKey,
           projectName: project?.name ?? selectedTask.projectName ?? null,
           agentCreatedAt: selectedTaskRecord?.agentCreatedAt ?? selectedTask.agentCreatedAt ?? null,
@@ -414,14 +455,9 @@ function InboxPageBody() {
             selectedTaskRecord?.agentInboxApprovedAt ??
             selectedTask.agentInboxApprovedAt ??
             null,
-          trackedMinutes:
-            selectedTaskRecord?.trackedMinutes ??
-            selectedTask.trackedMinutes ??
-            null,
+          trackedMinutes: selectedTaskRecord?.trackedMinutes ?? null,
           trackedDurationSeconds:
-            selectedTaskRecord?.trackedDurationSeconds ??
-            selectedTask.trackedDurationSeconds ??
-            null,
+            selectedTaskRecord?.trackedDurationSeconds ?? null,
           description: fetchedDescription,
           links: parseTaskLinks(
             taskDetails[selectedTask.id]?.links),
@@ -463,6 +499,12 @@ function InboxPageBody() {
         onAssigneeChange={(next) => {
           void workspace.patchTask(selectedTask.id, { assigneeId: next });
         }}
+        onRelatedChange={(related) => {
+          void workspace.patchTask(selectedTask.id, {
+            relatedContactIds: related.contactIds,
+            relatedOrganizationIds: related.organizationIds,
+          });
+        }}
         onProjectChange={handleProjectChange}
         onSaveDescription={(description) => {
           rememberDescription(description);
@@ -473,7 +515,13 @@ function InboxPageBody() {
         onChangeLinks={(links) => {
           void workspace.patchTask(selectedTask.id, { links });
         }}
+        fileAttachments={fileAttachments}
+        fileUploading={fileUploading}
+        onUploadFile={uploadFile}
+        onRemoveFile={removeFileAttachment}
+        onOpenFile={openFileAttachment}
         documentLinkOptions={documentLinkOptions}
+        letterLinkOptions={letterLinkOptions}
         emailLinkOptions={emailLinkOptions}
         onNavigateLink={(href) => {
           navigateToHref(navigate, href);
@@ -497,6 +545,7 @@ function InboxPageBody() {
           }
         }}
         assigneeOptions={assigneeOptions}
+        relatedOptions={relatedOptions}
         projectOptions={projectOptions}
         assigneeNavigateHref={
           resolvedAssigneeId ? `/contacts/${resolvedAssigneeId}` : null
@@ -512,6 +561,15 @@ function InboxPageBody() {
           void workspace.createContact({ name: query }).then((created) => {
             void workspace.patchTask(selectedTask.id, {
               assigneeId: created.id,
+            });
+          });
+        }}
+        onCreateRelatedContactFromQuery={(query) => {
+          void workspace.createContact({ name: query }).then((created) => {
+            const current = selectedTaskRecord?.relatedContactIds ?? [];
+            if (current.includes(created.id)) return;
+            void workspace.patchTask(selectedTask.id, {
+              relatedContactIds: [...current, created.id],
             });
           });
         }}

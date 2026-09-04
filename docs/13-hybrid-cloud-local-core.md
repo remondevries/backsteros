@@ -131,14 +131,21 @@ busy intervals (meetings + timed tasks) before accepting a booking.
 Same routes as today on whichever core is reachable. On cloud-core: full
 workspace access for owner keys.
 
-**Agents that must keep working when the laptop is offline must use cloud-core
-as their API base URL** — never the Mac Tailscale IP / `127.0.0.1:8788`.
+**API agents always use cloud-core** as their base URL — never the Mac
+`127.0.0.1:8788` / Tailscale IP — so writes keep working when the laptop sleeps
+and so cloud→local nudge + replication keep desktop/mobile in sync.
 
 | Audience | Base URL |
 | --- | --- |
-| Always-on agents (Eva, Jaap, …) | `https://agent.backsteros.com` (door → cloud-core) or VPS `http://100.117.142.79:8788` |
-| You / desktop / local agents with PTY | `http://127.0.0.1:8788` (local-core) |
-| Core↔core replication peers | Tailscale core URLs only — **not** `agent.backsteros.com` / `agents.backsteros.com` |
+| Always-on / API agents (Eva, Jaap, Grok, …) | `https://agent.backsteros.com` (door → cloud-core) |
+| Desktop / mobile shells + local PTY | `http://127.0.0.1:8788` (local-core) |
+| Core↔core replication peers | Tailscale core URLs only — **not** `agent.backsteros.com` |
+
+**Live path (bidirectional):** after a document write on either core, that core
+calls `POST {peer}/internal/core-replication/nudge`. The peer pulls the vault
+`.md` (and on local, ordered `sync_events`), heals metadata, and publishes
+`workspace.updated`. Backup: `CORE_REPLICATION_INTERVAL_MS` tick (default 15000;
+clamped 2s–120s).
 
 **Verified ops (VPS):** `backsteros-agents` `.env` uses
 `CORE_UPSTREAM_URL=http://127.0.0.1:8788` (switched off Mac Tailscale). A request
@@ -245,3 +252,30 @@ Portal env: `BACKSTEROS_API_URL`, `BACKSTEROS_API_KEY` (server-only).
 - Bulk-syncing PDFs to VPS
 - Desktop/mobile depending on cloud-core for sync
 - Replacing local-core as the operator’s primary environment
+
+## Leader-first vs intentional twin-only
+
+User-visible entity writes that invent or mutate shared IDs should go **cloud leader
+first** (`commitRestEntityWrite*` / PowerSync upload → leader apply → ordered
+`sync_events`). Local-core must not invent rows on GET/list/ensure paths.
+
+**Background spawners** (e.g. recurring-task runner) run on **cloud leader only**
+(`CORE_REPLICATION_ROLE !== local`).
+
+### Intentional twin-only (do not “fix” to leader-first without a plan)
+
+These rely on Phase B table twin (`REPLICATED_TABLES`). Accept twin lag; do not
+add open-ended sweep items for them unless a dual-core race shows up in prod.
+
+| Surface | Why twin-only for now |
+| --- | --- |
+| `device_push_tokens` | Device-local registration; cloud portal push waits on twin |
+| `meeting_scheduling_settings` | Twin **local-wins**; portal reads cloud copy after lag |
+| `task_attachments` metadata | Bytes stay local-core (503 on cloud); metadata twins |
+| Letter/PDF **bytes** | Local vault only — metadata via letter `sync_events` |
+| `financial_import_batches` | Not in `REPLICATED_TABLES`; CSV blob is local storage. Transaction **rows** from CSV/Moneybird use create-via-sync + leader-first (`commitFinancialTransactionCreates`); `import_batch_id` is linked locally after apply and is not round-tripped on the sync clock |
+| `workspace_integration_secrets` | Twin for AgentMail/Moneybird credentials; not `sync_events` |
+
+Contract tests under `core/server/src/services/*-sync.test.ts` and
+`hybrid-write-bar.test.ts` lock the leader-first bar for entities that must not
+regress to local-first invent-on-list.

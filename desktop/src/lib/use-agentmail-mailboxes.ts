@@ -58,6 +58,8 @@ export type EmailListPatchDetail = {
   projectKey?: string | null;
   /** Clear the concept-draft badge on list rows. */
   conceptDraftId?: string | null;
+  /** Clear or set the Updated inbox flag. */
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 export type EmailListRemoveDetail = {
@@ -88,6 +90,7 @@ function toListItem(entry: AgentMailMessage): EmailListItem | null {
     inboxId: entry.inboxId,
     subject: entry.subject,
     from: entry.from,
+    to: entry.to ?? null,
     preview: entry.preview,
     receivedAt: Date.parse(entry.timestamp) || 0,
     threadId: entry.threadId ?? null,
@@ -108,6 +111,7 @@ function toListItem(entry: AgentMailMessage): EmailListItem | null {
     emailThreadId: entry.emailThreadId ?? null,
     number: entry.number ?? null,
     displayId: entry.displayId ?? null,
+    inboxUpdatedAt: entry.inboxUpdatedAt ?? null,
   };
 }
 
@@ -154,6 +158,9 @@ function applyListPatch(
         : {}),
       ...(patch.conceptDraftId !== undefined
         ? { conceptDraftId: patch.conceptDraftId }
+        : {}),
+      ...(patch.inboxUpdatedAt !== undefined
+        ? { inboxUpdatedAt: patch.inboxUpdatedAt }
         : {}),
     };
   });

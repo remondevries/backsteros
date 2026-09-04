@@ -27,7 +27,8 @@ import { formatTaskDueMetaLabel } from "../../tasks/task-due-date.js";
 import { getTaskPriorityLabel } from "../../tasks/task-priority.js";
 import { getTaskStatusLabel } from "../../tasks/task-status.js";
 import { getProjectStatusLabel } from "../../projects/project-status.js";
-import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
+import { getContactsHref } from "../../navigation/entity-routes.js";
+import { ContactPeekCard } from "../contacts/contact-peek-card.js";
 import { DocumentIcon } from "./document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
 import {
@@ -35,6 +36,7 @@ import {
   ProjectOcticon,
 } from "../projects/project-octicon.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
+import { useHoverCardClose } from "../shared/hover-card.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { TaskPriorityIcon } from "../tasks/task-priority-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
@@ -317,33 +319,41 @@ function ContactMentionHoverDetails({
 }: {
   contact: MentionCatalogContact;
 }) {
+  const closeHoverCard = useHoverCardClose();
+  // Prefer number, then id — never bare key (keys can collide across contacts).
+  const profileHref = getContactsHref(
+    contact.number != null ? String(contact.number) : contact.id,
+  );
+
   return (
     <MentionHoverPanel variant="structured">
-      <MentionHoverHeader
-        icon={
-          <span className="mention-hover-card__avatar">
-            <ContactPersonIcon size={16} />
-          </span>
-        }
-        title={contact.name}
+      <ContactPeekCard
+        className="mention-hover-card__contact-peek"
+        contact={{
+          id: contact.id,
+          name: contact.name,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          title: contact.title,
+          organizationName: contact.organizationName,
+          organizationAvatarSrc: contact.organizationAvatarSrc,
+          avatarSrc: contact.avatarSrc,
+          email: contact.email,
+          emails: contact.emails,
+          phone: contact.phone,
+          phones: contact.phones,
+          address: contact.address,
+          city: contact.city,
+          postalCode: contact.postalCode,
+          region: contact.region,
+          country: contact.country,
+          socialAccounts: contact.socialAccounts,
+        }}
+        viewProfile={{
+          href: profileHref,
+          onClick: () => closeHoverCard?.(),
+        }}
       />
-      <MentionHoverCardSeparator />
-      {contact.summary ? (
-        <>
-          <MentionHoverSection>
-            <MentionHoverDescription>{contact.summary}</MentionHoverDescription>
-          </MentionHoverSection>
-          <MentionHoverCardSeparator />
-        </>
-      ) : null}
-      <MentionHoverSection>
-        <MentionHoverFooterRow>
-          <span className="mention-hover-card__truncate">
-            {contact.title ?? contact.email ?? "Contact"}
-          </span>
-          <span className="mention-hover-card__id">{contact.key}</span>
-        </MentionHoverFooterRow>
-      </MentionHoverSection>
     </MentionHoverPanel>
   );
 }

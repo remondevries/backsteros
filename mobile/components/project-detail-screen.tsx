@@ -9,7 +9,6 @@ import {
 
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench-lazy";
 import {
-  FLOATING_BOTTOM_RIGHT_PLUS_CLEARANCE,
   FloatingBottomRightPlusButton,
 } from "./floating-bottom-right-plus-button";
 import {
@@ -141,14 +140,14 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   });
 
   const onPressCreate = useCallback(() => {
-    if (section === "tasks" || isCodebase) {
+    if (section === "tasks" || (isCodebase && codebaseTab === "tasks")) {
       router.push({
         pathname: "/create/task",
         params: { projectId },
       });
       return;
     }
-    if (section === "documents") {
+    if (section === "documents" || (isCodebase && codebaseTab === "docs")) {
       router.push({
         pathname: "/create/document",
         params: { projectId },
@@ -161,18 +160,22 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
         params: { projectId },
       });
     }
-  }, [isCodebase, projectId, router, section]);
+  }, [codebaseTab, isCodebase, projectId, router, section]);
 
   const showPhoneFloatingCreate =
     !isPad &&
     (isCodebase
-      ? codebaseTab === "tasks" || codebaseTab === "files"
+      ? codebaseTab === "tasks" ||
+        codebaseTab === "files" ||
+        codebaseTab === "docs"
       : CREATE_SECTIONS.has(section));
 
   const floatingCreateLabel = isCodebase
     ? codebaseTab === "files"
       ? "Create file or folder"
-      : "Create task"
+      : codebaseTab === "docs"
+        ? "Create document"
+        : "Create task"
     : section === "tasks"
       ? "Create task"
       : section === "documents"
@@ -192,20 +195,31 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
   );
 
   const padCreateAction =
-    !isPad || isCodebase
+    !isPad
       ? null
-      : CREATE_SECTIONS.has(section) ? (
-          <TabStackHeaderPlusButton
-            onPress={onPressCreate}
-            accessibilityLabel={
-              section === "tasks"
-                ? "Create task"
-                : section === "documents"
-                  ? "Create document"
-                  : "Create letter"
-            }
-          />
-        ) : null;
+      : isCodebase
+        ? codebaseTab === "tasks" || codebaseTab === "docs"
+          ? (
+              <TabStackHeaderPlusButton
+                onPress={onPressCreate}
+                accessibilityLabel={
+                  codebaseTab === "docs" ? "Create document" : "Create task"
+                }
+              />
+            )
+          : null
+        : CREATE_SECTIONS.has(section) ? (
+            <TabStackHeaderPlusButton
+              onPress={onPressCreate}
+              accessibilityLabel={
+                section === "tasks"
+                  ? "Create task"
+                  : section === "documents"
+                    ? "Create document"
+                    : "Create letter"
+              }
+            />
+          ) : null;
 
   const headerRight = headerRightActions(
     <>
@@ -269,14 +283,7 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
           }}
         />
         <View style={ui.screen}>
-          <View
-            style={{
-              flex: 1,
-              paddingBottom: showPhoneFloatingCreate
-                ? FLOATING_BOTTOM_RIGHT_PLUS_CLEARANCE
-                : 0,
-            }}
-          >
+          <View style={{ flex: 1 }}>
             <CodebaseProjectWorkbench
               projectId={projectId}
               githubRefreshToken={githubRefreshToken}
@@ -358,16 +365,7 @@ export function ProjectDetailScreen({ projectId, title }: Props) {
         }}
       />
       <View style={ui.screen}>
-        <View
-          style={{
-            flex: 1,
-            paddingBottom: showPhoneFloatingCreate
-              ? FLOATING_BOTTOM_RIGHT_PLUS_CLEARANCE
-              : 0,
-          }}
-        >
-          {sectionBody}
-        </View>
+        <View style={{ flex: 1 }}>{sectionBody}</View>
         <FloatingBottomRightPlusButton
           visible={showPhoneFloatingCreate}
           onPress={onPressFloatingCreate}

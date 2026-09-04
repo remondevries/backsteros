@@ -1,3 +1,4 @@
+import { taskInvolvesContact } from "@backsteros/contracts";
 import type { Contact, Project, Task } from "@backsteros/contracts";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
@@ -22,6 +23,7 @@ type SyncedTaskRow = GroupedTaskRow & {
   project_id?: string | null;
   contact_id?: string | null;
   assignee_id?: string | null;
+  related_contact_ids?: string | null;
   project_key?: string | null;
 };
 
@@ -29,13 +31,20 @@ type Props = {
   contactId: string;
 };
 
-const TASKS_SQL = `${TASK_LIST_SELECT}
+/**
+ * Avoid selecting/filtering `related_contact_ids` locally — that column may be
+ * missing until schema migrate finishes; REST hydrate still returns Related.
+ */
+const TASKS_SQL = `${TASK_LIST_SELECT.replace(
+  /^\s*t\.related_contact_ids,\n/m,
+  "  NULL AS related_contact_ids,\n",
+)}
  WHERE t.deleted_at IS NULL
    AND t.habit_id IS NULL
    AND (t.contact_id = ? OR t.assignee_id = ?)
  ORDER BY t.sort_order ASC, t.updated_at DESC`;
 
-/** Tasks assigned to / linked to a contact (matches desktop ContactTasksListView). */
+/** Tasks assigned to / linked to / Related to a contact. */
 export function ContactTasksPanel({ contactId }: Props) {
   const router = useRouter();
   const client = useMobileApiClient();
@@ -59,15 +68,22 @@ export function ContactTasksPanel({ contactId }: Props) {
       mapLocal: (synced) => synced.map((row) => withDisplayId(row)),
       fetchRest: async () => {
         try {
-          const [tasksBody, projectsBody, contactsBody] = await Promise.all([
-            client.requestJson<{ tasks: Task[] }>(
-              `/api/v1/tasks?contactId=${encodeURIComponent(contactId)}`,
-            ),
-            client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
-            client
-              .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
-              .catch(() => ({ contacts: [] as Contact[] })),
-          ]);
+          const [byContact, byAssignee, byRelated, projectsBody, contactsBody] =
+            await Promise.all([
+              client.requestJson<{ tasks: Task[] }>(
+                `/api/v1/tasks?contactId=${encodeURIComponent(contactId)}`,
+              ),
+              client.requestJson<{ tasks: Task[] }>(
+                `/api/v1/tasks?assigneeId=${encodeURIComponent(contactId)}`,
+              ),
+              client.requestJson<{ tasks: Task[] }>(
+                `/api/v1/tasks?relatedContactId=${encodeURIComponent(contactId)}`,
+              ),
+              client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
+              client
+                .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
+                .catch(() => ({ contacts: [] as Contact[] })),
+            ]);
           const projectsById = new Map(
             (projectsBody.projects ?? []).map((project) => [
               project.id,
@@ -77,11 +93,18 @@ export function ContactTasksPanel({ contactId }: Props) {
           const contactsById = contactsByIdFromList(
             contactsBody.contacts ?? [],
           );
-          return (tasksBody.tasks ?? [])
+          const byId = new Map<string, Task>();
+          for (const task of [
+            ...(byContact.tasks ?? []),
+            ...(byAssignee.tasks ?? []),
+            ...(byRelated.tasks ?? []),
+          ]) {
+            byId.set(task.id, task);
+          }
+          return [...byId.values()]
             .filter(
               (task) =>
-                !task.habitId &&
-                (task.contactId === contactId || task.assigneeId === contactId),
+                !task.habitId && taskInvolvesContact(task, contactId),
             )
             .map((task) =>
               mapApiTaskToRow(task, projectsById, contactsById),

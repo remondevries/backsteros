@@ -1,20 +1,29 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import {
   CalendarNavIcon,
+  EmailNavIcon,
   LettersNavIcon,
   TasksNavIcon,
 } from "../shell/sidebar-nav-icons.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+
+export type CrmActivityTaskRelation = "assigned" | "related";
 
 export type CrmActivityFeedItem = {
   id: string;
@@ -26,9 +35,21 @@ export type CrmActivityFeedItem = {
   meetingTitle?: string | null;
   taskId?: string | null;
   taskTitle?: string | null;
+  /**
+   * For `kind: "task"` on a contact timeline: whether the contact was the
+   * assignee or only related / structurally linked.
+   */
+  taskRelation?: CrmActivityTaskRelation | null;
   letterId?: string | null;
   letterTitle?: string | null;
 };
+
+export type CrmActivityCreateKind =
+  | "task"
+  | "note"
+  | "email"
+  | "meeting"
+  | "letter";
 
 export type CrmActivityFeedViewProps = {
   items: CrmActivityFeedItem[];
@@ -37,10 +58,18 @@ export type CrmActivityFeedViewProps = {
   nextCursor?: string | null;
   onLoadMore?: () => void | Promise<void>;
   onSubmitNote?: (body: string) => void | Promise<void>;
+  onCreateTask?: () => void;
+  onCreateEmail?: () => void;
+  onCreateMeeting?: () => void;
+  onCreateLetter?: () => void;
   onOpenMeeting?: (meetingId: string) => void;
   onOpenTask?: (taskId: string) => void;
   onOpenLetter?: (letterId: string) => void;
 };
+
+const PANEL_GAP = 8;
+const VIEWPORT_PADDING = 8;
+const PANEL_MIN_WIDTH = 168;
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -110,10 +139,16 @@ function ActivityDetail({
 
   if (item.kind === "task") {
     const title = item.taskTitle?.trim() || "Untitled task";
+    const relationLabel =
+      item.taskRelation === "assigned"
+        ? "Completed assigned task"
+        : item.taskRelation === "related"
+          ? "Completed related task"
+          : "Completed task";
     if (item.taskId && onOpenTask) {
       return (
         <>
-          Completed task{" "}
+          {relationLabel}{" "}
           <button
             type="button"
             className="crm-activity-event__link"
@@ -126,7 +161,7 @@ function ActivityDetail({
     }
     return (
       <>
-        Completed task <strong>{title}</strong>
+        {relationLabel} <strong>{title}</strong>
       </>
     );
   }
@@ -160,6 +195,13 @@ function ActivityDetail({
   return <span className="crm-activity-event__note">{body}</span>;
 }
 
+type CreateMenuItem = {
+  id: CrmActivityCreateKind;
+  label: string;
+  icon: ReactNode;
+  onSelect: () => void;
+};
+
 /**
  * Contact/org activity timeline — notes, meetings, completed tasks, letters.
  * Layout mirrors task activity (rail + type icon) with relative time above detail.
@@ -171,6 +213,10 @@ export function CrmActivityFeedView({
   nextCursor = null,
   onLoadMore,
   onSubmitNote,
+  onCreateTask,
+  onCreateEmail,
+  onCreateMeeting,
+  onCreateLetter,
   onOpenMeeting,
   onOpenTask,
   onOpenLetter,
@@ -178,12 +224,154 @@ export function CrmActivityFeedView({
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({
+    position: "fixed",
+    visibility: "hidden",
+  });
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  const createItems = useMemo((): CreateMenuItem[] => {
+    const next: CreateMenuItem[] = [];
+    if (onCreateTask) {
+      next.push({
+        id: "task",
+        label: "Task",
+        icon: <TasksNavIcon />,
+        onSelect: onCreateTask,
+      });
+    }
+    if (onSubmitNote) {
+      next.push({
+        id: "note",
+        label: "Note",
+        icon: <ProjectOcticon icon="note" size={16} />,
+        onSelect: () => setComposing(true),
+      });
+    }
+    if (onCreateEmail) {
+      next.push({
+        id: "email",
+        label: "E-mail",
+        icon: <EmailNavIcon size={16} />,
+        onSelect: onCreateEmail,
+      });
+    }
+    if (onCreateMeeting) {
+      next.push({
+        id: "meeting",
+        label: "Meeting",
+        icon: <CalendarNavIcon />,
+        onSelect: onCreateMeeting,
+      });
+    }
+    if (onCreateLetter) {
+      next.push({
+        id: "letter",
+        label: "Letter",
+        icon: <LettersNavIcon />,
+        onSelect: onCreateLetter,
+      });
+    }
+    return next;
+  }, [
+    onCreateEmail,
+    onCreateLetter,
+    onCreateMeeting,
+    onCreateTask,
+    onSubmitNote,
+  ]);
+
+  const canCreate = createItems.length > 0;
 
   useEffect(() => {
     if (!composing) return;
     inputRef.current?.focus();
   }, [composing]);
+
+  const updatePanelPosition = useCallback(() => {
+    const trigger = plusRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const panelHeight = panelRef.current?.offsetHeight ?? 48;
+    const spaceBelow =
+      window.innerHeight - rect.bottom - PANEL_GAP - VIEWPORT_PADDING;
+    const openUpward =
+      spaceBelow < panelHeight && rect.top > panelHeight + PANEL_GAP;
+    const top = openUpward
+      ? Math.max(VIEWPORT_PADDING, rect.top - panelHeight - PANEL_GAP)
+      : rect.bottom + PANEL_GAP;
+    const preferredLeft = rect.left;
+    const maxLeft = window.innerWidth - PANEL_MIN_WIDTH - VIEWPORT_PADDING;
+    const left = Math.max(
+      VIEWPORT_PADDING,
+      Math.min(preferredLeft, maxLeft),
+    );
+
+    setPanelStyle({
+      position: "fixed",
+      top: `${top}px`,
+      left: `${left}px`,
+      right: "auto",
+      width: "max-content",
+      minWidth: `${PANEL_MIN_WIDTH}px`,
+      maxWidth: `calc(100vw - ${VIEWPORT_PADDING * 2}px)`,
+      visibility: "visible",
+      zIndex: 1000,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    updatePanelPosition();
+    const frame = window.requestAnimationFrame(() => {
+      updatePanelPosition();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [menuOpen, updatePanelPosition]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handleReposition() {
+      updatePanelPosition();
+    }
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [menuOpen, updatePanelPosition]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!(event.target instanceof Node)) return;
+      if (plusRef.current?.contains(event.target)) return;
+      if (panelRef.current?.contains(event.target)) return;
+      setMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
 
   function closeComposer() {
     setComposing(false);
@@ -203,6 +391,45 @@ export function CrmActivityFeedView({
     }
   }
 
+  const menuPanel =
+    menuOpen && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={panelRef}
+            id={menuId}
+            className="entity-header-action-menu crm-activity-create-menu"
+            style={panelStyle}
+            role="menu"
+            aria-label="Add to activity"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="app-side-panel-profile-menu-section">
+              {createItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    item.onSelect();
+                  }}
+                  className="app-side-panel-item app-side-panel-profile-menu-item"
+                >
+                  <span
+                    className="entity-header-action-menu-item-icon"
+                    aria-hidden="true"
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="app-side-panel-item-label">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <div className="task-activity crm-activity">
       <div className="task-activity__feed">
@@ -211,13 +438,13 @@ export function CrmActivityFeedView({
             {error}
           </p>
         ) : null}
-        {loading && items.length === 0 && !onSubmitNote ? (
+        {loading && items.length === 0 && !canCreate ? (
           <p className="task-activity__empty">Loading activity…</p>
-        ) : !loading && items.length === 0 && !onSubmitNote ? (
+        ) : !loading && items.length === 0 && !canCreate ? (
           <p className="task-activity__empty">No activity yet.</p>
         ) : (
           <ul className="task-activity-timeline crm-activity-timeline">
-            {onSubmitNote ? (
+            {canCreate ? (
               <li
                 className={[
                   "task-activity-event",
@@ -239,11 +466,15 @@ export function CrmActivityFeedView({
                       </span>
                     ) : (
                       <button
+                        ref={plusRef}
                         type="button"
                         className="task-activity-event__marker crm-activity-event__marker crm-activity-event__marker--add"
-                        aria-label="Add note"
-                        title="Add note"
-                        onClick={() => setComposing(true)}
+                        aria-label="Add to activity"
+                        title="Add to activity"
+                        aria-expanded={menuOpen}
+                        aria-haspopup="menu"
+                        aria-controls={menuOpen ? menuId : undefined}
+                        onClick={() => setMenuOpen((open) => !open)}
                       >
                         <SidePanelPlusIcon />
                       </button>
@@ -287,13 +518,22 @@ export function CrmActivityFeedView({
                 </div>
               </li>
             ) : null}
-            {items.map((item) => (
+            {items.map((item) => {
+              const eventKindClass =
+                item.kind === "task" && item.taskRelation
+                  ? `crm-activity-event--task-${item.taskRelation}`
+                  : `crm-activity-event--${item.kind}`;
+              const markerKindClass =
+                item.kind === "task" && item.taskRelation
+                  ? `crm-activity-event__marker--task-${item.taskRelation}`
+                  : `crm-activity-event__marker--${item.kind}`;
+              return (
               <li
                 key={item.id}
                 className={[
                   "task-activity-event",
                   "crm-activity-event",
-                  `crm-activity-event--${item.kind}`,
+                  eventKindClass,
                 ].join(" ")}
               >
                 <span className="task-activity-event__leading">
@@ -305,7 +545,7 @@ export function CrmActivityFeedView({
                       className={[
                         "task-activity-event__marker",
                         "crm-activity-event__marker",
-                        `crm-activity-event__marker--${item.kind}`,
+                        markerKindClass,
                       ].join(" ")}
                     >
                       <ActivityTypeIcon kind={item.kind} />
@@ -330,7 +570,8 @@ export function CrmActivityFeedView({
                   </div>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
         {nextCursor && onLoadMore ? (
@@ -345,6 +586,7 @@ export function CrmActivityFeedView({
           </div>
         ) : null}
       </div>
+      {menuPanel}
     </div>
   );
 }

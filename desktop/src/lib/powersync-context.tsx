@@ -58,7 +58,16 @@ export const SYNCED_METADATA_TABLES = [
   "workspace_settings",
   "bank_accounts",
   "financial_categories",
+  "financial_goals",
+  "financial_recurrings",
+  "cashflow_planner_entries",
   "habits",
+  "task_comments",
+  "contact_relationships",
+  "crm_relationship_labels",
+  "crm_groups",
+  "crm_group_members",
+  "crm_activities",
 ] as const;
 
 export type SyncedMetadataTable = (typeof SYNCED_METADATA_TABLES)[number];
@@ -91,6 +100,8 @@ type SyncState = {
     id: string,
     values: Record<string, unknown>,
   ) => Promise<void>;
+  /** Push pending CRUD to local-core so server can assign task numbers, etc. */
+  flushCrudUpload: () => Promise<void>;
 };
 
 const idleState: SyncState = {
@@ -108,6 +119,9 @@ const idleState: SyncState = {
     throw new Error("Offline database is not ready");
   },
   patchMetadata: async () => {
+    throw new Error("Offline database is not ready");
+  },
+  flushCrudUpload: async () => {
     throw new Error("Offline database is not ready");
   },
 };
@@ -383,6 +397,15 @@ function AuthenticatedPowerSyncProvider({
     [],
   );
 
+  const flushCrudUpload = useCallback(async () => {
+    const db = databaseRef.current;
+    const connector = connectorRef.current;
+    if (!db || !connector) {
+      throw new Error("Offline database is not ready");
+    }
+    await connector.uploadData(db);
+  }, []);
+
   const createMetadata = useCallback(
     async (
       table: SyncedMetadataTable,
@@ -468,6 +491,7 @@ function AuthenticatedPowerSyncProvider({
       retry,
       createMetadata,
       patchMetadata,
+      flushCrudUpload,
     };
     const prev = stableValueRef.current;
     if (
@@ -483,7 +507,8 @@ function AuthenticatedPowerSyncProvider({
       prev.error === next.error &&
       prev.retry === next.retry &&
       prev.createMetadata === next.createMetadata &&
-      prev.patchMetadata === next.patchMetadata
+      prev.patchMetadata === next.patchMetadata &&
+      prev.flushCrudUpload === next.flushCrudUpload
     ) {
       return prev;
     }
@@ -495,6 +520,7 @@ function AuthenticatedPowerSyncProvider({
     createMetadata,
     database,
     downloadErrorMessage,
+    flushCrudUpload,
     initError,
     isLoaded,
     offline,
@@ -645,13 +671,15 @@ export function usePowerSyncQuery<T>(
       setErrorState(null);
     };
 
-    // Seed from current state (may already be warm from a shared prior watch).
-    if (!watched.state.isLoading) {
-      applyState();
-    }
-
     const unsubscribe = watched.registerListener({
       onData: () => applyState(),
+      // Empty result sets match the [] placeholder, so differentialWatch may
+      // flip isLoading without emitting onData — still treat that as ready.
+      onStateChange: (state) => {
+        if (!state.isLoading) {
+          applyState();
+        }
+      },
       onError: (watchError) => {
         setErrorState({
           database,
@@ -660,6 +688,11 @@ export function usePowerSyncQuery<T>(
         });
       },
     });
+
+    // Seed after subscribe so a fast first emit cannot race past the listener.
+    if (!watched.state.isLoading) {
+      applyState();
+    }
 
     return () => {
       unsubscribe();
@@ -677,5 +710,9 @@ export function usePowerSyncQuery<T>(
     errorState?.database === database && errorState.queryKey === queryKey
       ? errorState.error
       : null;
-  return { data, error, loading: Boolean(sql) && data === null && !database };
+  return {
+    data,
+    error,
+    loading: Boolean(sql) && Boolean(database) && data === null && !error,
+  };
 }

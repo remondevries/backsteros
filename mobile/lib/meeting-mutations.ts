@@ -1,11 +1,15 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 import type { Meeting, UpdateMeetingInput } from "@backsteros/contracts";
 
-import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import {
+  shouldSkipRestEntityWrite,
+  shouldWriteEntityViaPowerSync,
+} from "./powersync-write-path";
 
 export type MobileMeetingPowerSync = {
   ready: boolean;
   connected: boolean;
+  preferRestWrites?: boolean;
   patchMeeting: (
     id: string,
     values: Record<string, unknown>,
@@ -43,7 +47,10 @@ export async function patchMeetingViaPowerSyncOrApi(
   if (Object.keys(apiValues).length === 0) return;
 
   const sqliteValues = meetingApiToSqlite(apiValues);
-  if (powerSync.ready && Object.keys(sqliteValues).length > 0) {
+  if (
+    shouldWriteEntityViaPowerSync(powerSync) &&
+    Object.keys(sqliteValues).length > 0
+  ) {
     try {
       await powerSync.patchMeeting(id, sqliteValues);
     } catch {

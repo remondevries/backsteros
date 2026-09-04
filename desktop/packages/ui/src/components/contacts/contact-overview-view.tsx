@@ -27,24 +27,35 @@ import {
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { CrmGroupColorDot } from "../crm/crm-group-label.js";
 import { OrganizationIcon } from "../organizations/organization-icon.js";
-import {
-  CalendarNavIcon,
-  EmailNavIcon,
-  TasksNavIcon,
-} from "../shell/sidebar-nav-icons.js";
+import { TaskDueDateDropdown } from "../tasks/task-due-date-dropdown.js";
+import { BirthdayCalendarIcon } from "../calendar/birthday-calendar-icon.js";
+import { formatDueDateInputValue } from "../../tasks/task-due-date.js";
 import {
   ContactSocialAccountsEditor,
   type ContactSocialAccount,
 } from "./contact-social-accounts-editor.js";
 import { ContactEmailsEditor, type ContactEmailEntry } from "./contact-emails-editor.js";
+import { ContactLanguagesEditor } from "./contact-languages-editor.js";
+import {
+  ContactPhonesEditor,
+  type ContactPhoneEntry,
+} from "./contact-phones-editor.js";
+import { ContactSummaryEditor } from "./contact-summary-editor.js";
+import { formatBirthdayAgeLabel } from "../../contacts/birthday.js";
+import {
+  coerceContactLanguages,
+  type ContactLanguage,
+} from "@backsteros/contracts";
 
 export type { ContactSocialAccount };
 export type { ContactEmailEntry };
+export type { ContactPhoneEntry };
 
 export type ContactOverviewDetails = {
   email?: string | null;
   emails?: ContactEmailEntry[];
   phone?: string | null;
+  phones?: ContactPhoneEntry[];
   title?: string | null;
   address?: string | null;
   city?: string | null;
@@ -60,6 +71,8 @@ export type ContactOverviewDetails = {
   socialAccounts?: ContactSocialAccount[];
   /** YYYY-MM-DD; year required. */
   birthday?: string | null;
+  /** Preferred languages (`nl` | `en` | `de` | `es` | `fr` | `pl`). */
+  languages?: ContactLanguage[];
 };
 
 export type ContactLocationParts = {
@@ -129,19 +142,16 @@ export type ContactOverviewViewProps = {
   relationshipsSlot?: ReactNode;
   /** Notes / meetings timeline under the section tabs (overview / Activity). */
   activitySlot?: ReactNode;
-  /** Section tabs rendered below the action circles. */
+  /** Section tabs rendered under the avatar header (fixed; body scrolls). */
   sectionNavSlot?: ReactNode;
   /** Body for non-overview/details tabs (tasks, letters). */
   sectionBody?: ReactNode;
   /**
-   * `overview` — header, actions, tabs, activity (Activity tab).
-   * `details` — header, actions, tabs, profile fields, location + relationships.
-   * `section` — header, actions, tabs, `sectionBody`.
+   * `overview` — header, tabs, activity (Activity tab).
+   * `details` — header, tabs, profile fields, location + relationships.
+   * `section` — header, tabs, `sectionBody`.
    */
   mode?: "overview" | "details" | "section";
-  onAddTask?: () => void;
-  onAddMeeting?: () => void;
-  onSendEmail?: () => void;
 };
 
 function DetailsField({
@@ -208,6 +218,14 @@ function emailsKey(emails: ContactEmailEntry[]): string {
   return JSON.stringify(emails);
 }
 
+function phonesKey(phones: ContactPhoneEntry[]): string {
+  return JSON.stringify(phones);
+}
+
+function languagesKey(languages: ContactLanguage[]): string {
+  return JSON.stringify(languages);
+}
+
 /** One-line location from street + locality fields (skips empty parts). */
 export function formatContactAddressLine(parts: {
   address?: string | null;
@@ -252,9 +270,6 @@ export function ContactOverviewView({
   sectionNavSlot,
   sectionBody,
   mode = "overview",
-  onAddTask,
-  onAddMeeting,
-  onSendEmail,
 }: ContactOverviewViewProps) {
   const remoteEmail = contact.email ?? "";
   const remotePhone = contact.phone ?? "";
@@ -268,7 +283,9 @@ export function ContactOverviewView({
   const remoteSummary = contact.summary ?? "";
   const remoteSocialAccounts = contact.socialAccounts ?? [];
   const remoteEmails = contact.emails ?? [];
+  const remotePhones = contact.phones ?? [];
   const remoteBirthday = contact.birthday ?? "";
+  const remoteLanguages = coerceContactLanguages(contact.languages);
   const remoteFirstName =
     contact.firstName?.trim() ||
     contact.name.trim().split(/\s+/)[0] ||
@@ -288,6 +305,8 @@ export function ContactOverviewView({
   const [emailsSource, setEmailsSource] = useState(emailsKey(remoteEmails));
   const [phone, setPhone] = useState(remotePhone);
   const [phoneSource, setPhoneSource] = useState(remotePhone);
+  const [phones, setPhones] = useState<ContactPhoneEntry[]>(remotePhones);
+  const [phonesSource, setPhonesSource] = useState(phonesKey(remotePhones));
   const [title, setTitle] = useState(remoteTitle);
   const [titleSource, setTitleSource] = useState(remoteTitle);
   const [address, setAddress] = useState(remoteAddress);
@@ -317,7 +336,12 @@ export function ContactOverviewView({
   );
   const [birthday, setBirthday] = useState(remoteBirthday);
   const [birthdaySource, setBirthdaySource] = useState(remoteBirthday);
+  const [languages, setLanguages] = useState<ContactLanguage[]>(remoteLanguages);
+  const [languagesSource, setLanguagesSource] = useState(
+    languagesKey(remoteLanguages),
+  );
   const [renameFocusRequest, setRenameFocusRequest] = useState(0);
+  const [lastNameFocusRequest, setLastNameFocusRequest] = useState(0);
   const [prevId, setPrevId] = useState(contact.id);
 
   useTitleRenameShortcut(
@@ -342,6 +366,8 @@ export function ContactOverviewView({
     setEmailsSource(emailsKey(remoteEmails));
     setPhone(remotePhone);
     setPhoneSource(remotePhone);
+    setPhones(remotePhones);
+    setPhonesSource(phonesKey(remotePhones));
     setTitle(remoteTitle);
     setTitleSource(remoteTitle);
     setAddress(remoteAddress);
@@ -365,6 +391,8 @@ export function ContactOverviewView({
     setSocialAccountsSource(socialAccountsKey(remoteSocialAccounts));
     setBirthday(remoteBirthday);
     setBirthdaySource(remoteBirthday);
+    setLanguages(remoteLanguages);
+    setLanguagesSource(languagesKey(remoteLanguages));
   } else {
     adoptRemoteField(
       remoteFirstName,
@@ -449,6 +477,22 @@ export function ContactOverviewView({
         setEmails(remoteEmails);
       }
     }
+
+    const remotePhonesKey = phonesKey(remotePhones);
+    if (remotePhonesKey !== phonesSource) {
+      setPhonesSource(remotePhonesKey);
+      if (phonesKey(phones) === phonesSource) {
+        setPhones(remotePhones);
+      }
+    }
+
+    const remoteLanguagesKey = languagesKey(remoteLanguages);
+    if (remoteLanguagesKey !== languagesSource) {
+      setLanguagesSource(remoteLanguagesKey);
+      if (languagesKey(languages) === languagesSource) {
+        setLanguages(remoteLanguages);
+      }
+    }
   }
 
   function persist(patch: ContactOverviewDetails) {
@@ -491,6 +535,24 @@ export function ContactOverviewView({
     persist({ email: next.email, emails: next.emails });
   }
 
+  function savePhones(next: {
+    phone: string | null;
+    phones: ContactPhoneEntry[];
+  }) {
+    const nextPhone = next.phone ?? "";
+    setPhone(nextPhone);
+    setPhones(next.phones);
+    const phoneMatches = nextPhone === (contact.phone ?? "");
+    const phonesMatch =
+      phonesKey(next.phones) === phonesKey(contact.phones ?? []);
+    if (phoneMatches && phonesMatch) {
+      setPhoneSource(nextPhone);
+      setPhonesSource(phonesKey(next.phones));
+      return;
+    }
+    persist({ phone: next.phone, phones: next.phones });
+  }
+
   function saveSocialAccounts(nextAccounts: ContactSocialAccount[]) {
     const normalized = normalizeSocialAccounts(nextAccounts);
     setSocialAccounts(normalized);
@@ -511,6 +573,7 @@ export function ContactOverviewView({
     region,
     country,
   });
+  const birthdayAgeLabel = formatBirthdayAgeLabel(birthday);
   const countryLabel = formatCountryLabel(country) || country.trim();
   const regionLabel = formatRegionLabel(country, region) || region.trim();
   const canExpandMap = Boolean(mapImageSrc);
@@ -598,43 +661,68 @@ export function ContactOverviewView({
     );
 
   const detailsFields = (
-    <section className="entity-overview__details" aria-label="Contact details">
-      <DetailsField label="Summary" htmlFor="contact-summary">
-        <input
-          id="contact-summary"
-          type="text"
-          className="entity-overview-input"
-          value={summary}
-          placeholder="Add a short summary…"
-          onChange={(event) => setSummary(event.target.value)}
-          onBlur={() => persist({ summary: summary.trim() || null })}
-        />
-      </DetailsField>
-      <DetailsField label="Title" htmlFor="contact-title">
-        <input
-          id="contact-title"
-          type="text"
-          className="entity-overview-input"
-          value={title}
-          placeholder="Role or title"
-          onChange={(event) => setTitle(event.target.value)}
-          onBlur={() => persist({ title: title.trim() || null })}
-        />
-      </DetailsField>
+    <section className="entity-overview__details contact-details" aria-label="Contact details">
+      <ContactSummaryEditor
+        value={summary}
+        onChange={setSummary}
+        onSave={(next) => {
+          setSummary(next ?? "");
+          persist({ summary: next });
+        }}
+      />
 
-      <DetailsSubgroup title="Contact details">
-        <DetailsField label="Phone" htmlFor="contact-phone">
-          <input
-            id="contact-phone"
-            type="tel"
-            className="entity-overview-input"
-            value={phone}
-            placeholder="+31 …"
-            onChange={(event) => setPhone(event.target.value)}
-            onBlur={() => persist({ phone: phone.trim() || null })}
+      <DetailsSubgroup title="Personal Details">
+        {relationshipsSlot ? (
+          <DetailsField label="Relationships">{relationshipsSlot}</DetailsField>
+        ) : null}
+        <DetailsField label="Birthday">
+          <div className="contact-detail-chips">
+            <div className="contact-detail-chips__row contact-details-birthday">
+              <TaskDueDateDropdown
+                dueDate={birthday.trim() || null}
+                variant="property"
+                triggerVariant="inlineChip"
+                labelFormat="long"
+                allowClear
+                noDueDateLabel="Add birthday"
+                showIcon
+                icon={<BirthdayCalendarIcon size={14} />}
+                taskPropertyDropdownId={null}
+                searchPlaceholder="e.g. 28 aug 1990…"
+                searchShortcutLabel=""
+                onDueDateChange={(date) => {
+                  const next = date ? formatDueDateInputValue(date) : "";
+                  setBirthday(next);
+                  setBirthdaySource(next);
+                  persist({ birthday: next.trim() || null });
+                }}
+              />
+              {birthdayAgeLabel ? (
+                <span className="contact-details-birthday__age">
+                  {birthdayAgeLabel}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </DetailsField>
+        <DetailsField label="Language">
+          <ContactLanguagesEditor
+            key={contact.id}
+            languages={languages}
+            onChange={(next) => {
+              setLanguages(next);
+            }}
+            onSave={(next) => {
+              setLanguages(next);
+              setLanguagesSource(languagesKey(next));
+              persist({ languages: next });
+            }}
           />
         </DetailsField>
-        <DetailsField label="Email" htmlFor="contact-email">
+      </DetailsSubgroup>
+
+      <DetailsSubgroup title="Contact Details">
+        <DetailsField label="E-mail" htmlFor="contact-email">
           <ContactEmailsEditor
             email={email}
             emails={emails}
@@ -645,28 +733,22 @@ export function ContactOverviewView({
             onSave={saveEmails}
           />
         </DetailsField>
-        <DetailsField label="Social">
+        <DetailsField label="Phone">
+          <ContactPhonesEditor
+            phone={phone}
+            phones={phones}
+            onChange={({ phone: nextPhone, phones: nextPhones }) => {
+              setPhone(nextPhone);
+              setPhones(nextPhones);
+            }}
+            onSave={savePhones}
+          />
+        </DetailsField>
+        <DetailsField label="Social media">
           <ContactSocialAccountsEditor
             value={socialAccounts}
             onChange={setSocialAccounts}
             onSave={saveSocialAccounts}
-          />
-        </DetailsField>
-      </DetailsSubgroup>
-
-      <DetailsSubgroup title="Personal details">
-        <DetailsField label="Birthday" htmlFor="contact-birthday">
-          <input
-            id="contact-birthday"
-            type="date"
-            className="entity-overview-input"
-            value={birthday}
-            onChange={(event) => {
-              const next = event.target.value;
-              setBirthday(next);
-              persist({ birthday: next.trim() || null });
-            }}
-            onBlur={() => persist({ birthday: birthday.trim() || null })}
           />
         </DetailsField>
       </DetailsSubgroup>
@@ -999,10 +1081,6 @@ export function ContactOverviewView({
 
           {mapHint ? (
             <p className="contact-location-map__hint">{mapHint}</p>
-          ) : !mapImageSrc && !mapLoading && addressLine ? (
-            <p className="contact-location-map__hint">
-              Add a Mapbox token in Settings → Mapbox to show this on a map.
-            </p>
           ) : null}
         </div>
 
@@ -1038,18 +1116,12 @@ export function ContactOverviewView({
             )
           : null}
       </DetailsSubgroup>
-
-      {relationshipsSlot ? (
-        <DetailsSubgroup title="Relationships">
-          {relationshipsSlot}
-        </DetailsSubgroup>
-      ) : null}
     </section>
   );
 
   return (
-    <article className="entity-overview">
-      <div className="contact-overview__top">
+    <article className="entity-overview contact-overview">
+      <div className="contact-overview__chrome">
       <header className="entity-overview__header contact-overview__header">
         {headerAccessory ? (
           <div className="contact-overview__avatar">{headerAccessory}</div>
@@ -1062,6 +1134,9 @@ export function ContactOverviewView({
               resetKey={`${contact.id}:first`}
               renameFocusRequest={renameFocusRequest}
               fitContent
+              onLeaveTitle={() => {
+                setLastNameFocusRequest((count) => count + 1);
+              }}
               onSave={async (next) => {
                 if (!onSaveFirstName && onSaveName) {
                   const composed = [next, lastName].filter(Boolean).join(" ");
@@ -1089,6 +1164,7 @@ export function ContactOverviewView({
               value={lastName}
               entityLabel="Last name"
               resetKey={`${contact.id}:last`}
+              renameFocusRequest={lastNameFocusRequest}
               allowEmpty
               fitContent
               titleClassName="contact-overview__last-name"
@@ -1177,8 +1253,27 @@ export function ContactOverviewView({
             ) : null}
           </div>
           <div className="contact-overview__subtitle">
-            {titlePart ? <span>{titlePart}</span> : null}
-            {titlePart ? <span> at </span> : null}
+            <OverviewNameEditor
+              value={title}
+              entityLabel="Title"
+              resetKey={`${contact.id}:title`}
+              allowEmpty
+              fitContent
+              as="span"
+              titleClassName="contact-overview__job-title"
+              onSave={(next) => {
+                const trimmed = next.trim();
+                setTitle(trimmed);
+                setTitleSource(trimmed);
+                if (trimmed !== (contact.title ?? "").trim()) {
+                  persist({ title: trimmed || null });
+                }
+                return { ok: true };
+              }}
+            />
+            {titlePart ? (
+              <span className="contact-overview__subtitle-at">at</span>
+            ) : null}
             <span className="contact-overview__org-dropdown">
               <PropertyDropdown
                 value={organizationId || DROPDOWN_NONE_VALUE}
@@ -1187,12 +1282,8 @@ export function ContactOverviewView({
                   const resolved = resolveDropdownNone(next) ?? "";
                   setOrganizationId(resolved);
                   setOrganizationIdSource(resolved);
-                  const org = organizationOptions.find(
-                    (entry) => entry.id === resolved,
-                  );
                   persist({
                     organizationId: resolved || null,
-                    organizationName: org?.name ?? null,
                   });
                 }}
                 searchPlaceholder="Search organizations…"
@@ -1220,64 +1311,25 @@ export function ContactOverviewView({
         </div>
       </header>
 
-      {onAddTask || onAddMeeting || onSendEmail ? (
-        <div className="contact-overview__actions" role="toolbar" aria-label="Contact actions">
-          {onAddTask ? (
-            <button
-              type="button"
-              className="contact-overview__action"
-              onClick={onAddTask}
-            >
-              <span className="contact-overview__action-icon" aria-hidden="true">
-                <TasksNavIcon />
-              </span>
-              <span className="contact-overview__action-label">Add Task</span>
-            </button>
-          ) : null}
-          {onAddMeeting ? (
-            <button
-              type="button"
-              className="contact-overview__action"
-              onClick={onAddMeeting}
-            >
-              <span className="contact-overview__action-icon" aria-hidden="true">
-                <CalendarNavIcon />
-              </span>
-              <span className="contact-overview__action-label">Add Calendar</span>
-            </button>
-          ) : null}
-          {onSendEmail ? (
-            <button
-              type="button"
-              className="contact-overview__action"
-              onClick={onSendEmail}
-            >
-              <span className="contact-overview__action-icon" aria-hidden="true">
-                <EmailNavIcon size={16} />
-              </span>
-              <span className="contact-overview__action-label">Add E-mail</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+        {sectionNavSlot}
       </div>
 
-      {sectionNavSlot}
+      <div className="contact-overview__scroll">
+        {mode === "overview" && activitySlot ? (
+          <div
+            id="contact-activity-feed"
+            className="contact-overview__activity"
+          >
+            {activitySlot}
+          </div>
+        ) : null}
 
-      {mode === "overview" && activitySlot ? (
-        <div
-          id="contact-activity-feed"
-          className="contact-overview__activity"
-        >
-          {activitySlot}
-        </div>
-      ) : null}
+        {mode === "details" ? detailsFields : null}
 
-      {mode === "details" ? detailsFields : null}
-
-      {mode === "section" && sectionBody ? (
-        <div className="contact-overview__section-body">{sectionBody}</div>
-      ) : null}
+        {mode === "section" && sectionBody ? (
+          <div className="contact-overview__section-body">{sectionBody}</div>
+        ) : null}
+      </div>
     </article>
   );
 }

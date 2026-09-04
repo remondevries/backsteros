@@ -11,9 +11,99 @@ import {
   fillMissingTypeFromApi,
   mergeLocalAndApiByUpdatedAt,
   dropStaleLocalHabitTasks,
+  mergeLocalDocumentsWithLiveApi,
+  mergeLocalWithPendingApiCreates,
   preservePendingApiRows,
   resolveLocalOrApiRows,
 } from "./merge-local-and-api.ts";
+
+test("mergeLocalWithPendingApiCreates keeps optimistic API-only rows", () => {
+  const merged = mergeLocalWithPendingApiCreates(
+    [{ id: "existing", title: "local" }],
+    [
+      { id: "existing", title: "api-stale" },
+      { id: "pending", title: "just-created" },
+    ],
+  );
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["pending", "existing"],
+  );
+  assert.equal(merged[0]?.title, "just-created");
+  assert.equal(merged[1]?.title, "local");
+});
+
+test("mergeLocalWithPendingApiCreates surfaces agent document creates until local sync", () => {
+  const localDocs = [
+    { id: "doc-1", type: "project", title: "Existing" },
+  ];
+  const apiDocs = [
+    { id: "doc-1", type: "project", title: "Existing" },
+    { id: "doc-agent", type: "project", title: "Agent just created" },
+  ];
+  const merged = mergeLocalWithPendingApiCreates(
+    resolveLocalOrApiRows(localDocs, apiDocs),
+    apiDocs,
+  );
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["doc-agent", "doc-1"],
+  );
+});
+
+test("mergeLocalDocumentsWithLiveApi overlays newer API metadata (moves)", () => {
+  const localDocs = [
+    {
+      id: "doc-1",
+      parentId: "folder-a",
+      title: "Note",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const apiDocs = [
+    {
+      id: "doc-1",
+      parentId: "folder-b",
+      title: "Note",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+  ];
+  const merged = mergeLocalDocumentsWithLiveApi(localDocs, apiDocs);
+  assert.equal(merged[0]?.parentId, "folder-b");
+});
+
+test("mergeLocalDocumentsWithLiveApi keeps newer local optimistic edits", () => {
+  const localDocs = [
+    {
+      id: "doc-1",
+      title: "Local rename",
+      updatedAt: "2026-01-03T00:00:00.000Z",
+    },
+  ];
+  const apiDocs = [
+    {
+      id: "doc-1",
+      title: "Stale API",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+  ];
+  const merged = mergeLocalDocumentsWithLiveApi(localDocs, apiDocs);
+  assert.equal(merged[0]?.title, "Local rename");
+});
+
+test("mergeLocalDocumentsWithLiveApi hides deleted ids until PowerSync drops them", () => {
+  const localDocs = [
+    { id: "doc-1", title: "Gone", updatedAt: "2026-01-01T00:00:00.000Z" },
+    { id: "doc-2", title: "Keep", updatedAt: "2026-01-01T00:00:00.000Z" },
+  ];
+  const merged = mergeLocalDocumentsWithLiveApi(localDocs, null, {
+    deletedIds: new Set(["doc-1"]),
+  });
+  assert.deepEqual(
+    merged.map((row) => row.id),
+    ["doc-2"],
+  );
+});
 
 test("resolveLocalOrApiRows prefers local when any local rows exist", () => {
   const resolved = resolveLocalOrApiRows(

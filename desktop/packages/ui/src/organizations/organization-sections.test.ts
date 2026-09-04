@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  ORGANIZATION_SECTION_IDS,
   resolveVisibleOrganizationSections,
 } from "../../dist/organizations/organization-sections.js";
 
@@ -20,7 +19,15 @@ describe("resolveVisibleOrganizationSections", () => {
         hasTransactions: true,
         hasInvoices: true,
       }).map((entry) => entry.id),
-      [...ORGANIZATION_SECTION_IDS],
+      [
+        "overview",
+        "activity",
+        "projects",
+        "letters",
+        "contacts",
+        "transactions",
+        "invoices",
+      ],
     );
     assert.deepEqual(
       resolveVisibleOrganizationSections({

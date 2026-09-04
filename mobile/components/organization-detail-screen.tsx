@@ -28,6 +28,7 @@ import { useLocalQuery } from "../lib/use-local-query";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
 import { ContentPageTitle } from "./content-page-title";
 import { ListBoardToggle } from "./list-board-toggle";
+import { OrganizationActivityPanel } from "./organization-activity-panel";
 import { OrganizationContactsPanel } from "./organization-contacts-panel";
 import { OrganizationInvoicesPanel } from "./organization-invoices-panel";
 import { OrganizationOverviewPanel } from "./organization-overview-panel";
@@ -196,7 +197,7 @@ export function OrganizationDetailScreen({ organizationId, title }: Props) {
   }
 
   const createTrailing =
-    section === "overview" ? null : (
+    section === "overview" || section === "activity" ? null : (
       <TabStackHeaderPlusButton
         onPress={onPressCreate}
         accessibilityLabel={
@@ -244,6 +245,8 @@ export function OrganizationDetailScreen({ organizationId, title }: Props) {
               organizationId={organizationId}
               onNameChange={setDisplayTitle}
             />
+          ) : section === "activity" ? (
+            <OrganizationActivityPanel organizationId={organizationId} />
           ) : section === "projects" ? (
             <>
               <ContentPageTitle

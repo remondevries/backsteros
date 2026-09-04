@@ -52,6 +52,76 @@ test("standard project documents stay on default tabs when workbench is not moun
   ]);
 });
 
+test("standalone contact card tabs are Activity / Details / More (expand)", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/contacts/c-1"), [
+    "/contacts/c-1",
+    "/contacts/c-1/details",
+    "/contacts/c-1?contactLayout=page",
+  ]);
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/contacts/c-1/details"), [
+    "/contacts/c-1",
+    "/contacts/c-1/details",
+    "/contacts/c-1/details?contactLayout=page",
+  ]);
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/contacts/c-1", "?crmGroup=g1"),
+    [
+      "/contacts/c-1?crmGroup=g1",
+      "/contacts/c-1/details?crmGroup=g1",
+      "/contacts/c-1?contactLayout=page&crmGroup=g1",
+    ],
+  );
+});
+
+test("expanded contact overlay disables section-tab number shortcuts", () => {
+  assert.equal(
+    resolveDesktopSectionTabHrefs("/contacts/c-1", "?contactLayout=page"),
+    null,
+  );
+  assert.equal(
+    resolveDesktopSectionTabHrefs(
+      "/contacts/c-1/details",
+      "?contactLayout=page&crmGroup=g1",
+    ),
+    null,
+  );
+});
+
+test("standalone organization card tabs are Activity / Details / More (expand)", () => {
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/organizations/o-1"), [
+    "/organizations/o-1",
+    "/organizations/o-1/details",
+    "/organizations/o-1?orgLayout=page",
+  ]);
+  assert.deepEqual(resolveDesktopSectionTabHrefs("/organizations/o-1/details"), [
+    "/organizations/o-1",
+    "/organizations/o-1/details",
+    "/organizations/o-1/details?orgLayout=page",
+  ]);
+  assert.deepEqual(
+    resolveDesktopSectionTabHrefs("/organizations/o-1", "?crmGroup=g1"),
+    [
+      "/organizations/o-1?crmGroup=g1",
+      "/organizations/o-1/details?crmGroup=g1",
+      "/organizations/o-1?orgLayout=page&crmGroup=g1",
+    ],
+  );
+});
+
+test("expanded organization overlay disables section-tab number shortcuts", () => {
+  assert.equal(
+    resolveDesktopSectionTabHrefs("/organizations/o-1", "?orgLayout=page"),
+    null,
+  );
+  assert.equal(
+    resolveDesktopSectionTabHrefs(
+      "/organizations/o-1/details",
+      "?orgLayout=page&crmGroup=g1",
+    ),
+    null,
+  );
+});
+
 test("task detail routes disable section tab shortcuts", () => {
   assert.equal(
     resolveDesktopSectionTabHrefs("/projects/demo/tasks/demo-12"),

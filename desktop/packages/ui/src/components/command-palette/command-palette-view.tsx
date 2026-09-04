@@ -13,12 +13,14 @@ import {
   DEFAULT_GO_NAVIGATION_ITEMS,
   goNavigationItemSearchValue,
   isCommandPaletteContactsListScope,
+  isCommandPaletteOrganizationsListScope,
   isScopedFilterMode,
   NAVIGATION_GO_LETTER_HINT,
   type CommandPaletteFilterMode,
   type CommandPaletteFilterState,
   type CommandPaletteHit,
   type CommandPaletteRecentContact,
+  type CommandPaletteRecentOrganization,
   type GoNavigationItem,
 } from "../../command-palette/command-palette.js";
 import {
@@ -38,7 +40,10 @@ import {
 } from "../../finance/finance-nav.js";
 import { clearGoFinanceChord } from "../../finance/go-finance-chord-gate.js";
 import { clearGoLeaderSequence } from "../../shortcuts/go-leader-sequence-gate.js";
-import { isContactSectionPath } from "../../navigation/entity-routes.js";
+import {
+  isContactSectionPath,
+  isOrganizationSectionPath,
+} from "../../navigation/entity-routes.js";
 import { navigation } from "../../navigation/navigation.js";
 import { isCommandPaletteToggleKey } from "../../command-palette/command-palette-toggle-key.js";
 import {
@@ -46,8 +51,9 @@ import {
   type CommandPaletteMode,
 } from "./command-palette-context.js";
 import { FinanceSectionNavIcon } from "../finance/finance-side-panel-nav-view.js";
+import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { NavigationItemIcon } from "../navigation/navigation-item-icon.js";
-import { ContactsNavIcon, SearchNavIcon } from "../shell/sidebar-nav-icons.js";
+import { SearchNavIcon } from "../shell/sidebar-nav-icons.js";
 import { dismissInstantCommandOverlay, revealCommandPaletteChrome } from "../../command-palette/conceal-command-palette-chrome.js";
 
 /** Native desktop menus (Tauri) dispatch this when ⌘K / Ctrl+K is pressed. */
@@ -83,6 +89,12 @@ export type CommandPaletteViewProps = {
   ) => Promise<CommandPaletteHit[]> | CommandPaletteHit[];
   /** Most recent contacts for empty-query Contacts scope (already limited). */
   recentContacts?: readonly CommandPaletteRecentContact[];
+  /** Most recent organizations for empty-query Organizations scope. */
+  recentOrganizations?: readonly CommandPaletteRecentOrganization[];
+  /** Resolved contact avatar URLs by contact id (search + recent list). */
+  contactAvatarSrcById?: Readonly<Record<string, string>>;
+  /** Resolved organization avatar URLs by organization id. */
+  organizationAvatarSrcById?: Readonly<Record<string, string>>;
   goItems?: GoNavigationItem[];
   financeGoItems?: readonly FinanceGoNavigationItem[];
   destinations?: {
@@ -118,6 +130,32 @@ function withResolvedIds(
   return context;
 }
 
+function commandPaletteEntityAvatar(
+  type: string,
+  id: string,
+  options: {
+    avatarSrc?: string | null;
+    contactAvatarSrcById: Readonly<Record<string, string>>;
+    organizationAvatarSrcById: Readonly<Record<string, string>>;
+  },
+): { kind: "contact" | "organization"; src: string | null } | null {
+  if (type === "contact") {
+    return {
+      kind: "contact",
+      src:
+        options.avatarSrc ?? options.contactAvatarSrcById[id] ?? null,
+    };
+  }
+  if (type === "organization") {
+    return {
+      kind: "organization",
+      src:
+        options.avatarSrc ?? options.organizationAvatarSrcById[id] ?? null,
+    };
+  }
+  return null;
+}
+
 export function CommandPaletteView({
   navigate,
   pathname = "/",
@@ -125,6 +163,9 @@ export function CommandPaletteView({
   resolveContextIds,
   search,
   recentContacts = [],
+  recentOrganizations = [],
+  contactAvatarSrcById = {},
+  organizationAvatarSrcById = {},
   goItems = DEFAULT_GO_NAVIGATION_ITEMS,
   financeGoItems = DEFAULT_FINANCE_GO_NAVIGATION_ITEMS,
   destinations,
@@ -257,9 +298,14 @@ export function CommandPaletteView({
       return;
     }
 
-    // Opening from Contacts scopes to the contact list (not Navigate).
+    // Opening from Contacts / Organizations scopes to that entity list (not Navigate).
     if (!wasOpen && isContactSectionPath(pathname)) {
       setFilter({ mode: "contacts", searchTerm: "" });
+      setManualContext(null);
+      setRouteContextOverride(null);
+      setContextDismissed(false);
+    } else if (!wasOpen && isOrganizationSectionPath(pathname)) {
+      setFilter({ mode: "organizations", searchTerm: "" });
       setManualContext(null);
       setRouteContextOverride(null);
       setContextDismissed(false);
@@ -448,6 +494,14 @@ export function CommandPaletteView({
     !isLeaderNavMode &&
     !showWorkspaceResults &&
     isCommandPaletteContactsListScope({
+      filterMode: filter.mode,
+      searchContext: activeSearchContext,
+    });
+  const showOrganizationsListResults =
+    !isLeaderNavMode &&
+    !showWorkspaceResults &&
+    !showContactsListResults &&
+    isCommandPaletteOrganizationsListScope({
       filterMode: filter.mode,
       searchContext: activeSearchContext,
     });
@@ -795,22 +849,82 @@ export function CommandPaletteView({
                       No contacts found.
                     </Command.Empty>
                     <Command.Group heading="Contacts">
-                      {recentContacts.map((contact) => (
-                        <Command.Item
-                          key={contact.id}
-                          value={`${contact.title} ${contact.subtitle ?? ""} ${contact.id}`}
-                          className="command-item"
-                          onSelect={() => closeAndNavigate(contact.href)}
-                        >
-                          <span className="nav-icon" aria-hidden="true">
-                            <ContactsNavIcon />
-                          </span>
-                          <span className="command-item-label">
-                            {contact.title}
-                          </span>
-                          <small>{contact.subtitle ?? "contact"}</small>
-                        </Command.Item>
-                      ))}
+                      {recentContacts.map((contact) => {
+                        const avatar = commandPaletteEntityAvatar(
+                          "contact",
+                          contact.id,
+                          {
+                            avatarSrc: contact.avatarSrc,
+                            contactAvatarSrcById,
+                            organizationAvatarSrcById,
+                          },
+                        );
+                        return (
+                          <Command.Item
+                            key={contact.id}
+                            value={`${contact.title} ${contact.subtitle ?? ""} ${contact.id}`}
+                            className="command-item"
+                            onSelect={() => closeAndNavigate(contact.href)}
+                          >
+                            {avatar ? (
+                              <span className="nav-icon" aria-hidden="true">
+                                <EntityAvatarIcon
+                                  src={avatar.src}
+                                  size={16}
+                                  kind={avatar.kind}
+                                />
+                              </span>
+                            ) : null}
+                            <span className="command-item-label">
+                              {contact.title}
+                            </span>
+                            <small>{contact.subtitle ?? "contact"}</small>
+                          </Command.Item>
+                        );
+                      })}
+                    </Command.Group>
+                  </>
+                ) : showOrganizationsListResults ? (
+                  <>
+                    <Command.Empty className="command-empty">
+                      No organizations found.
+                    </Command.Empty>
+                    <Command.Group heading="Organizations">
+                      {recentOrganizations.map((organization) => {
+                        const avatar = commandPaletteEntityAvatar(
+                          "organization",
+                          organization.id,
+                          {
+                            avatarSrc: organization.avatarSrc,
+                            contactAvatarSrcById,
+                            organizationAvatarSrcById,
+                          },
+                        );
+                        return (
+                          <Command.Item
+                            key={organization.id}
+                            value={`${organization.title} ${organization.subtitle ?? ""} ${organization.id}`}
+                            className="command-item"
+                            onSelect={() => closeAndNavigate(organization.href)}
+                          >
+                            {avatar ? (
+                              <span className="nav-icon" aria-hidden="true">
+                                <EntityAvatarIcon
+                                  src={avatar.src}
+                                  size={16}
+                                  kind={avatar.kind}
+                                />
+                              </span>
+                            ) : null}
+                            <span className="command-item-label">
+                              {organization.title}
+                            </span>
+                            <small>
+                              {organization.subtitle ?? "organization"}
+                            </small>
+                          </Command.Item>
+                        );
+                      })}
                     </Command.Group>
                   </>
                 ) : (
@@ -872,19 +986,39 @@ export function CommandPaletteView({
                     if (items.length === 0) return null;
                     return (
                       <Command.Group key={section} heading={section}>
-                        {items.map((hit) => (
-                          <Command.Item
-                            key={`${hit.type}:${hit.id}`}
-                            value={`${hit.title} ${hit.subtitle ?? ""} ${hit.id}`}
-                            className="command-item"
-                            onSelect={() => closeAndNavigate(hit.href)}
-                          >
-                            <span className="command-item-label">
-                              {hit.title}
-                            </span>
-                            <small>{hit.type}</small>
-                          </Command.Item>
-                        ))}
+                        {items.map((hit) => {
+                          const avatar = commandPaletteEntityAvatar(
+                            hit.type,
+                            hit.id,
+                            {
+                              avatarSrc: hit.avatarSrc,
+                              contactAvatarSrcById,
+                              organizationAvatarSrcById,
+                            },
+                          );
+                          return (
+                            <Command.Item
+                              key={`${hit.type}:${hit.id}`}
+                              value={`${hit.title} ${hit.subtitle ?? ""} ${hit.id}`}
+                              className="command-item"
+                              onSelect={() => closeAndNavigate(hit.href)}
+                            >
+                              {avatar ? (
+                                <span className="nav-icon" aria-hidden="true">
+                                  <EntityAvatarIcon
+                                    src={avatar.src}
+                                    size={16}
+                                    kind={avatar.kind}
+                                  />
+                                </span>
+                              ) : null}
+                              <span className="command-item-label">
+                                {hit.title}
+                              </span>
+                              <small>{hit.type}</small>
+                            </Command.Item>
+                          );
+                        })}
                       </Command.Group>
                     );
                   })}

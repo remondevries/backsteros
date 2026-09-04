@@ -55,7 +55,12 @@ export function useLocalQuery<T extends Record<string, unknown>>(
           );
           setIsLoading(false);
         },
-        onError: () => {
+        onError: (error) => {
+          console.warn(
+            "[mobile] local query error",
+            sql.slice(0, 80).replace(/\s+/g, " "),
+            error instanceof Error ? error.message : error,
+          );
           setIsLoading(false);
         },
       },

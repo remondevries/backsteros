@@ -3,7 +3,15 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { mutationReceipts, syncEvents } from "../../db/schema.js";
 import type { SyncEntity, SyncOperation } from "../../lib/sync-constants.js";
-import { applySyncChange, type SyncChange } from "../sync.js";
+import { applySyncChange, mergeHabitDerivedTaskChanges, type SyncChange } from "../sync.js";
+import {
+  crmActivityToSyncPayload,
+  listCrmActivitiesForMeeting,
+} from "../crm-activities.js";
+import {
+  ensureHabitTasksForDate,
+  type HabitTaskSyncChange,
+} from "../habits.js";
 import {
   getDocumentById,
   hydrateLocalDocumentVaultContent,
@@ -115,6 +123,8 @@ export async function acceptLeaderMutations(input: {
       change.eventMutationId ??
       `${input.mutationId}:${change.entity}:${change.entityId}`;
 
+    const followUpMutationIds: string[] = [];
+
     await db.transaction(async (tx) => {
       const [receipt] = await tx
         .insert(mutationReceipts)
@@ -130,7 +140,10 @@ export async function acceptLeaderMutations(input: {
         return;
       }
 
-      await applySyncChange(input.workspaceId, toSyncChange(change), tx);
+      const habitTaskChangesOut: HabitTaskSyncChange[] = [];
+      await applySyncChange(input.workspaceId, toSyncChange(change), tx, {
+        habitTaskChangesOut,
+      });
       await appendSyncEvent(
         {
           workspaceId: input.workspaceId,
@@ -143,6 +156,87 @@ export async function acceptLeaderMutations(input: {
         },
         tx,
       );
+
+      if (change.entity === "meeting") {
+        const activityRows = await listCrmActivitiesForMeeting(
+          input.workspaceId,
+          change.entityId,
+          tx,
+        );
+        for (const activity of activityRows) {
+          const activityMutationId = `${eventMutationId}:crm_activity:${activity.id}`;
+          const [activityReceipt] = await tx
+            .insert(mutationReceipts)
+            .values({
+              workspaceId: input.workspaceId,
+              mutationId: activityMutationId,
+              deviceId,
+            })
+            .onConflictDoNothing()
+            .returning({ mutationId: mutationReceipts.mutationId });
+          if (!activityReceipt) continue;
+          await appendSyncEvent(
+            {
+              workspaceId: input.workspaceId,
+              mutationId: activityMutationId,
+              deviceId,
+              entity: "crm_activity",
+              entityId: activity.id,
+              operation: activity.deletedAt ? "delete" : "upsert",
+              payload: crmActivityToSyncPayload(activity),
+            },
+            tx,
+          );
+          followUpMutationIds.push(activityMutationId);
+        }
+      }
+
+      if (change.entity === "habit") {
+        const { taskRowToSyncPayload } = await import("../sync.js");
+        const ensured = await ensureHabitTasksForDate(
+          input.workspaceId,
+          undefined,
+          tx,
+        );
+        const taskChanges = mergeHabitDerivedTaskChanges(
+          habitTaskChangesOut,
+          ensured.changedTasks,
+        );
+        for (const taskChange of taskChanges) {
+          const taskMutationId = `${eventMutationId}:task:${taskChange.task.id}`;
+          const [taskReceipt] = await tx
+            .insert(mutationReceipts)
+            .values({
+              workspaceId: input.workspaceId,
+              mutationId: taskMutationId,
+              deviceId,
+            })
+            .onConflictDoNothing()
+            .returning({ mutationId: mutationReceipts.mutationId });
+          if (!taskReceipt) continue;
+          await appendSyncEvent(
+            {
+              workspaceId: input.workspaceId,
+              mutationId: taskMutationId,
+              deviceId,
+              entity: "task",
+              entityId: taskChange.task.id,
+              operation: taskChange.operation,
+              payload:
+                taskChange.operation === "delete"
+                  ? {
+                      id: taskChange.task.id,
+                      deleted_at:
+                        taskChange.task.deletedAt?.toISOString() ??
+                        new Date().toISOString(),
+                    }
+                  : taskRowToSyncPayload(taskChange.task),
+            },
+            tx,
+          );
+          followUpMutationIds.push(taskMutationId);
+        }
+      }
 
       await tx
         .update(mutationReceipts)
@@ -167,6 +261,13 @@ export async function acceptLeaderMutations(input: {
     );
     if (event) {
       events.push(event);
+    }
+    for (const followUpId of followUpMutationIds) {
+      const followUp = await loadEventByMutationId(
+        input.workspaceId,
+        followUpId,
+      );
+      if (followUp) events.push(followUp);
     }
   }
 

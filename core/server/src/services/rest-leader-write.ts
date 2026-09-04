@@ -36,6 +36,16 @@ function restFieldsToSyncPayload(
   return payload;
 }
 
+function applyAcknowledgeInboxUpdate(
+  payload: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  if (body.acknowledgeInboxUpdate === true) {
+    payload.inbox_updated_at = null;
+    delete payload.acknowledge_inbox_update;
+  }
+}
+
 export function buildTaskRestPayload(
   taskId: string,
   body: Record<string, unknown>,
@@ -45,8 +55,9 @@ export function buildTaskRestPayload(
   },
 ): Record<string, unknown> {
   const payload = restFieldsToSyncPayload(taskId, body, {
-    jsonStringify: ["links"],
+    jsonStringify: ["links", "related_contact_ids", "related_organization_ids"],
   });
+  applyAcknowledgeInboxUpdate(payload, body);
   if (
     options?.agentInboxApproved === true &&
     options.allowAgentInboxApproval
@@ -67,7 +78,9 @@ export function buildOrganizationRestPayload(
   organizationId: string,
   body: Record<string, unknown>,
 ): Record<string, unknown> {
-  return restFieldsToSyncPayload(organizationId, body);
+  return restFieldsToSyncPayload(organizationId, body, {
+    jsonStringify: ["social_accounts"],
+  });
 }
 
 export function buildAreaRestPayload(
@@ -82,7 +95,7 @@ export function buildContactRestPayload(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
   return restFieldsToSyncPayload(contactId, body, {
-    jsonStringify: ["social_accounts"],
+    jsonStringify: ["social_accounts", "emails", "phones", "languages"],
   });
 }
 
@@ -103,7 +116,195 @@ export function buildMeetingRestPayload(
   if (Object.prototype.hasOwnProperty.call(body, "attendeeContactIds")) {
     payload.attendee_contact_ids = JSON.stringify(body.attendeeContactIds ?? []);
   }
+  applyAcknowledgeInboxUpdate(payload, body);
   return payload;
+}
+
+export function buildContactRelationshipRestPayload(
+  relationshipId: string,
+  fromContactId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...restFieldsToSyncPayload(relationshipId, body),
+    from_contact_id: fromContactId,
+  };
+}
+
+export function buildCrmRelationshipLabelRestPayload(
+  labelId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(labelId, body);
+}
+
+export function buildCrmGroupRestPayload(
+  groupId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(groupId, body);
+}
+
+export function buildCrmGroupMemberRestPayload(
+  memberId: string,
+  groupId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...restFieldsToSyncPayload(memberId, body),
+    group_id: groupId,
+  };
+}
+
+export function buildCrmActivityRestPayload(
+  activityId: string,
+  subjectType: string,
+  subjectId: string,
+  body: Record<string, unknown>,
+  createdBy?: string | null,
+): Record<string, unknown> {
+  const payload = restFieldsToSyncPayload(activityId, body);
+  payload.subject_type = subjectType;
+  payload.subject_id = subjectId;
+  if (createdBy) payload.created_by = createdBy;
+  return payload;
+}
+
+export function buildHabitRestPayload(
+  habitId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(habitId, body);
+}
+
+export function buildBankAccountRestPayload(
+  accountId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(accountId, body);
+}
+
+export function buildFinancialCategoryRestPayload(
+  categoryId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(categoryId, body);
+}
+
+export function buildFinancialGoalRestPayload(
+  goalId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(goalId, body);
+}
+
+export function buildFinancialRecurringRestPayload(
+  recurringId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(recurringId, body);
+}
+
+export function buildCashflowPlannerRestPayload(
+  entryId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(entryId, body);
+}
+
+export function buildFinancialTransactionRestPayload(
+  transactionId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(transactionId, body);
+}
+
+export function buildEmailThreadRestPayload(
+  threadId: string,
+  inboxId: string,
+  threadKey: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const payload = {
+    ...restFieldsToSyncPayload(threadId, body),
+    inbox_id: inboxId,
+    thread_key: threadKey,
+  };
+  applyAcknowledgeInboxUpdate(payload, body);
+  return payload;
+}
+
+export function buildRecurringTaskRestPayload(
+  recurringTaskId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(recurringTaskId, body);
+}
+
+export function buildEmailThreadCommentRestPayload(
+  commentId: string,
+  inboxId: string,
+  threadKey: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...restFieldsToSyncPayload(commentId, body, {
+      skipKeys: ["activityActor", "agentInboxApproved"],
+    }),
+    inbox_id: inboxId,
+    thread_key: threadKey,
+  };
+}
+
+export function buildTaskCommentRestPayload(
+  commentId: string,
+  taskId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...restFieldsToSyncPayload(commentId, body, {
+      skipKeys: ["activityActor", "agentInboxApproved"],
+    }),
+    task_id: taskId,
+  };
+}
+
+export function buildTaskActivityRestPayload(
+  activityId: string,
+  taskId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...restFieldsToSyncPayload(activityId, body, {
+      skipKeys: ["activityActor", "agentInboxApproved"],
+      jsonStringify: ["data"],
+    }),
+    task_id: taskId,
+  };
+}
+
+export function buildMentionRestPayload(
+  mentionId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(mentionId, body);
+}
+
+export function buildWorkspaceSettingRestPayload(
+  workspaceId: string,
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: workspaceId,
+    settings,
+  };
+}
+
+export function buildDocumentRestPayload(
+  documentId: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return restFieldsToSyncPayload(documentId, body);
 }
 
 function newRestMutationId(

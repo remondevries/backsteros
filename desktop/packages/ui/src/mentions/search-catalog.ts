@@ -77,22 +77,47 @@ function filterContacts(catalog: MentionCatalog, query: string): MentionItem[] {
   const normalized = normalizeQuery(query);
 
   return catalog.contacts
-    .filter(
-      (contact) =>
-        matchesQuery(contact.name, normalized) ||
-        matchesQuery(contact.key, normalized),
-    )
+    .filter((contact) => {
+      if (!normalized) return true;
+      if (matchesQuery(contact.name, normalized)) return true;
+      if (matchesQuery(contact.key, normalized)) return true;
+      if (contact.displayId && matchesQuery(contact.displayId, normalized)) {
+        return true;
+      }
+      if (contact.firstName && matchesQuery(contact.firstName, normalized)) {
+        return true;
+      }
+      if (contact.lastName && matchesQuery(contact.lastName, normalized)) {
+        return true;
+      }
+      if (contact.email && matchesQuery(contact.email, normalized)) {
+        return true;
+      }
+      if (contact.title && matchesQuery(contact.title, normalized)) {
+        return true;
+      }
+      if (
+        contact.organizationName &&
+        matchesQuery(contact.organizationName, normalized)
+      ) {
+        return true;
+      }
+      return false;
+    })
     .slice(0, MAX_ITEMS_PER_SECTION)
     .map(
       (contact): MentionItem => ({
         kind: "contact",
         id: contact.id,
         key: contact.key,
+        number: contact.number,
+        displayId: contact.displayId,
         name: contact.name,
         title: contact.title,
         organizationName: contact.organizationName,
         avatarStorageKey: contact.avatarStorageKey,
         avatarUpdatedAt: contact.avatarUpdatedAt,
+        avatarSrc: contact.avatarSrc ?? null,
       }),
     );
 }
@@ -104,11 +129,21 @@ function filterOrganizations(
   const normalized = normalizeQuery(query);
 
   return catalog.organizations
-    .filter(
-      (organization) =>
-        matchesQuery(organization.name, normalized) ||
-        matchesQuery(organization.key, normalized),
-    )
+    .filter((organization) => {
+      if (!normalized) return true;
+      if (matchesQuery(organization.name, normalized)) return true;
+      if (matchesQuery(organization.key, normalized)) return true;
+      if (
+        organization.displayId &&
+        matchesQuery(organization.displayId, normalized)
+      ) {
+        return true;
+      }
+      if (organization.email && matchesQuery(organization.email, normalized)) {
+        return true;
+      }
+      return false;
+    })
     .slice(0, MAX_ITEMS_PER_SECTION)
     .map(
       (organization): MentionItem => ({
@@ -118,6 +153,7 @@ function filterOrganizations(
         name: organization.name,
         avatarStorageKey: organization.avatarStorageKey,
         avatarUpdatedAt: organization.avatarUpdatedAt,
+        avatarSrc: organization.avatarSrc ?? null,
       }),
     );
 }

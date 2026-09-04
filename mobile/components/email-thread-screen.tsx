@@ -1,6 +1,7 @@
 import type {
   AgentMailMessageAttachment,
   AgentMailMessageDetail,
+  EmailThreadComment,
 } from "@backsteros/contracts";
 import { File, Paths } from "expo-file-system";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -19,7 +20,13 @@ import {
 } from "react-native";
 
 import { useAgentMail } from "../lib/agentmail-context";
+import {
+  emailAgentTaskId,
+  type EmailAgentCreateTaskSpec,
+} from "../lib/agent/email-agent-prompt";
+import { useEmailThreadCommentAgent } from "../lib/agent/use-email-thread-comment-agent";
 import { isPadDevice } from "../lib/device";
+import { taskDetailHref } from "../lib/detail-href";
 import { formatEmailDisplayId } from "../lib/email-display-id";
 import { emailMessagePlainBody } from "../lib/email-message-html";
 import {
@@ -27,6 +34,10 @@ import {
   fetchEmailMessageDetail,
 } from "../lib/email-message-detail";
 import type { EmailMessageSourceDetail } from "../lib/email-message-source";
+import {
+  applyEmailThreadAgentResult,
+  postEmailThreadComment,
+} from "../lib/email-thread-comments";
 import {
   EMAIL_THREAD_BODY_VIEW_MODE_LABELS,
   EMAIL_THREAD_BODY_VIEW_MODES,
@@ -75,6 +86,8 @@ import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { FeatureErrorBoundary } from "./feature-error-boundary";
+import { EmailThreadCommentBubble } from "./email-thread-comment-bubble";
+import { EmailThreadCommentComposer } from "./email-thread-comment-composer";
 import { EmailThreadMessageCard } from "./email-thread-message-card";
 import { MoreHorizontalIcon } from "./more-horizontal-icon";
 import { OrganizationIcon } from "./organization-icon";
@@ -177,6 +190,12 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
   );
 
   const [detail, setDetail] = useState<AgentMailMessageDetail | null>(null);
+  const [threadComments, setThreadComments] = useState<EmailThreadComment[]>(
+    [],
+  );
+  const [commentSending, setCommentSending] = useState(false);
+  const [commentHint, setCommentHint] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -291,6 +310,7 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
         return;
       }
       setDetail(result);
+      setThreadComments(result.threadComments ?? []);
       applyThreadProperties(
         resolveEmailThreadPropertiesFromDetail(result, listItem),
       );
@@ -327,6 +347,152 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
       },
     ];
   }, [detail]);
+
+  const messageWithComments = useMemo(() => {
+    if (!detail) return null;
+    return { ...detail, threadComments };
+  }, [detail, threadComments]);
+
+  const agentTaskId = useMemo(() => {
+    if (!inboxId || !messageId) return null;
+    return emailAgentTaskId(inboxId, messageId);
+  }, [inboxId, messageId]);
+
+  const postComment = useCallback(
+    async (body: string, author: "user" | "agent") => {
+      if (!detail || !inboxId) return null;
+      const created = await postEmailThreadComment(
+        client,
+        inboxId,
+        detail,
+        body,
+        author,
+      );
+      setThreadComments((current) => [...current, created]);
+      return created;
+    },
+    [client, detail, inboxId],
+  );
+
+  const promoteStatus = useCallback(
+    (next: "in_progress" | "in_review") => {
+      if (!detail || !inboxId) return;
+      const order: TaskStatus[] = ["triage", "in_progress", "in_review"];
+      const currentIndex = order.indexOf(status);
+      const nextIndex = order.indexOf(next);
+      if (currentIndex >= 0 && nextIndex >= 0 && nextIndex <= currentIndex) {
+        return;
+      }
+      setStatus(next);
+      void patchEmailThreadMetadata(
+        client,
+        {
+          inboxId,
+          id: detail.messageId,
+          threadId: detail.threadId ?? null,
+        },
+        { status: next },
+      ).catch(() => undefined);
+    },
+    [client, detail, inboxId, status],
+  );
+
+  const handleCommentAgentResult = useCallback(
+    async (result: {
+      commentBody: string;
+      replyDraftBody: string | null;
+      createTasks: EmailAgentCreateTaskSpec[];
+    }) => {
+      if (!detail || !inboxId) return;
+      setCommentError(null);
+      await applyEmailThreadAgentResult({
+        client,
+        inboxId,
+        message: detail,
+        result,
+        projects,
+        postComment,
+        onConceptDraft: (draftId) => {
+          router.push({
+            pathname: composePath,
+            params: {
+              inboxId,
+              draftId,
+              replyTo: detail.messageId,
+              subject: detail.subject ?? "",
+              replyToFrom: detail.from ?? "",
+              mode: "reply",
+            },
+          });
+        },
+        onStatusHint: setCommentHint,
+        onError: setCommentError,
+        promoteStatus,
+      });
+    },
+    [
+      client,
+      composePath,
+      detail,
+      inboxId,
+      postComment,
+      projects,
+      promoteStatus,
+      router,
+    ],
+  );
+
+  const {
+    sendComment: sendCommentToAgent,
+    working: commentAgentWorking,
+    error: commentAgentError,
+  } = useEmailThreadCommentAgent({
+    taskId: agentTaskId,
+    message: messageWithComments,
+    onResult: handleCommentAgentResult,
+    enabled: Boolean(detail),
+  });
+
+  useEffect(() => {
+    if (!commentAgentError) return;
+    setCommentError(commentAgentError);
+  }, [commentAgentError]);
+
+  const handleSubmitThreadComment = useCallback(
+    async (body: string) => {
+      if (!detail || !inboxId) return;
+      setCommentSending(true);
+      setCommentError(null);
+      setCommentHint(null);
+      promoteStatus("in_progress");
+      try {
+        const created = await postComment(body, "user");
+        const nextComments = created
+          ? [...threadComments, created]
+          : threadComments;
+        await sendCommentToAgent(body, {
+          message: {
+            ...detail,
+            threadComments: nextComments,
+          },
+        });
+      } catch (caught) {
+        setCommentError(
+          caught instanceof Error ? caught.message : "Could not post comment.",
+        );
+      } finally {
+        setCommentSending(false);
+      }
+    },
+    [
+      detail,
+      inboxId,
+      postComment,
+      promoteStatus,
+      sendCommentToAgent,
+      threadComments,
+    ],
+  );
 
   const statusOptions = useMemo<PropertyOption<TaskStatus>[]>(
     () =>
@@ -456,6 +622,7 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
         replyTo: detail.messageId,
         subject: detail.subject ?? "",
         replyToFrom: detail.from ?? "",
+        mode: "reply",
       },
     });
   }, [composePath, detail, router]);
@@ -585,11 +752,61 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
           replyTo: targetMessageId,
           subject: targetSubject,
           replyToFrom: targetFrom,
+          mode: "reply",
         },
       });
     },
     [composePath, detail, router],
   );
+
+  const openForwardComposer = useCallback(
+    (entry: {
+      subject: string;
+      from: string;
+      to: string[];
+      timestamp: string;
+      body: string;
+    }) => {
+      if (!detail) return;
+      const subjectText = entry.subject.trim() || "(no subject)";
+      const forwardSubject = /^fwd:/i.test(subjectText)
+        ? subjectText
+        : `Fwd: ${subjectText}`;
+      const parsedDate = new Date(entry.timestamp);
+      const forwardBody = [
+        "---------- Forwarded message ----------",
+        `From: ${entry.from}`,
+        ...(Number.isNaN(parsedDate.getTime())
+          ? []
+          : [`Date: ${parsedDate.toLocaleString()}`]),
+        `Subject: ${subjectText}`,
+        ...(entry.to.length > 0 ? [`To: ${entry.to.join(", ")}`] : []),
+        "",
+        entry.body,
+      ].join("\n");
+      router.push({
+        pathname: composePath,
+        params: {
+          inboxId: detail.inboxId,
+          subject: forwardSubject,
+          body: forwardBody,
+          mode: "forward",
+        },
+      });
+    },
+    [composePath, detail, router],
+  );
+
+  const onForward = useCallback(() => {
+    if (!detail) return;
+    openForwardComposer({
+      subject: detail.subject ?? "",
+      from: detail.from ?? "",
+      to: detail.to ?? [],
+      timestamp: detail.timestamp ?? "",
+      body: emailMessagePlainBody(detail),
+    });
+  }, [detail, openForwardComposer]);
 
   const markMessagesUnread = useCallback(
     (messageIds: string[]) => {
@@ -1213,6 +1430,15 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
                     detail.from ?? "",
                   )
                 }
+                onForward={() =>
+                  openForwardComposer({
+                    subject: message.subject ?? detail.subject ?? "",
+                    from: message.from,
+                    to: message.to ?? [],
+                    timestamp: message.timestamp,
+                    body: plainBody,
+                  })
+                }
                 onCopyText={() => {
                   if (!plainBody) return;
                   void Share.share({ message: plainBody });
@@ -1243,6 +1469,31 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
           })}
         </View>
 
+        {threadComments.length > 0 || commentAgentWorking || commentSending ? (
+          <View style={styles.comments}>
+            <Text style={styles.commentsHeading}>Comments</Text>
+            {threadComments.map((comment) => (
+              <EmailThreadCommentBubble
+                key={comment.id}
+                comment={comment}
+                onOpenTask={(card) => {
+                  router.push(taskDetailHref(card.taskId));
+                }}
+              />
+            ))}
+            {commentHint ? (
+              <Text style={styles.commentHint}>{commentHint}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <EmailThreadCommentComposer
+          onSubmit={handleSubmitThreadComment}
+          working={commentAgentWorking || commentSending}
+          disabled={!detail || busyAction != null}
+          error={commentError}
+        />
+
         <View style={styles.actions}>
           <Pressable
             accessibilityRole="button"
@@ -1255,6 +1506,17 @@ export function EmailThreadScreen({ inboxId, messageId }: Props) {
             ]}
           >
             <Text style={styles.actionPrimaryLabel}>Reply</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Forward"
+            onPress={onForward}
+            style={({ pressed }) => [
+              styles.actionButton,
+              pressed ? { opacity: 0.7 } : null,
+            ]}
+          >
+            <Text style={styles.actionLabel}>Forward</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -1321,6 +1583,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     gap: 12,
+  },
+  comments: {
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  commentsHeading: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  commentHint: {
+    color: colors.muted,
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingTop: 4,
   },
   actions: {
     flexDirection: "row",

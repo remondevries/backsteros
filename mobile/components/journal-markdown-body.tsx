@@ -1,5 +1,18 @@
 import type { ReactNode } from "react";
-import { Linking, StyleSheet, Text, View, type TextStyle } from "react-native";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+} from "react";
+import {
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type TextStyle,
+} from "react-native";
 
 import {
   projectDetailHref,
@@ -13,6 +26,7 @@ import {
   type TableAlignment,
   splitMarkdownContentParts,
 } from "../lib/markdown-inline";
+import { parseMarkdownTaskCheckbox } from "../lib/markdown-task-list";
 import {
   resolveMentionChip,
   useMentionCatalogForBody,
@@ -33,28 +47,29 @@ import {
 import { colors } from "../lib/theme";
 import { MentionChip } from "./mention-chip";
 
-function parseTaskCheckbox(textAfterMarker: string): {
-  checked: boolean;
-  textAfter: string;
-} | null {
-  // `` `[ ]` `` / `` `[x]` `` — documenting syntax, not a real checkbox.
-  if (/^`+\[[ xX]?\]`/.test(textAfterMarker)) {
-    return null;
-  }
-  const match = textAfterMarker.match(/^\[([ xX]?)\](?:[ \t]+|(?=$))(.*)$/);
-  if (!match) return null;
-  const mark = match[1] ?? "";
-  return {
-    checked: mark === "x" || mark === "X",
-    textAfter: match[2] ?? "",
-  };
-}
+type TaskListInteractContextValue = {
+  allocateIndex: () => number;
+  onToggle?: (index: number) => void;
+};
+
+const TaskListInteractContext =
+  createContext<TaskListInteractContextValue | null>(null);
 
 function TaskCheckbox({ checked }: { checked: boolean }) {
-  return (
+  const ctx = useContext(TaskListInteractContext);
+  const indexRef = useRef<number | null>(null);
+  if (indexRef.current === null) {
+    indexRef.current = ctx?.allocateIndex() ?? -1;
+  }
+  const index = indexRef.current;
+  const interactive = Boolean(ctx?.onToggle) && index >= 0;
+
+  const box = (
     <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden={!interactive}
+      importantForAccessibility={
+        interactive ? "yes" : "no-hide-descendants"
+      }
       style={{
         width: 14,
         height: 14,
@@ -77,10 +92,26 @@ function TaskCheckbox({ checked }: { checked: boolean }) {
       ) : null}
     </View>
   );
+
+  if (!interactive) return box;
+
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      accessibilityLabel={checked ? "Mark incomplete" : "Mark complete"}
+      hitSlop={8}
+      onPress={() => ctx?.onToggle?.(index)}
+    >
+      {box}
+    </Pressable>
+  );
 }
 
 type Props = {
   body: string;
+  /** When set, GFM task-list checkboxes are tappable and call with 0-based index. */
+  onToggleTaskCheckbox?: (index: number) => void;
 };
 
 function MentionSegmentView({
@@ -418,7 +449,7 @@ function consumeListItem(
     return null;
   }
 
-  const checkbox = parseTaskCheckbox(opener.textAfterMarker);
+  const checkbox = parseMarkdownTaskCheckbox(opener.textAfterMarker);
   const textAfterMarker = checkbox?.textAfter ?? opener.textAfterMarker;
 
   const children: ReactNode[] = [];
@@ -592,7 +623,7 @@ function ParagraphWithMentions({
               const opener = matchListItemOpener(line);
               if (opener) {
                 const checkbox = !opener.ordered
-                  ? parseTaskCheckbox(opener.textAfterMarker)
+                  ? parseMarkdownTaskCheckbox(opener.textAfterMarker)
                   : null;
                 const itemText = checkbox
                   ? checkbox.textAfter
@@ -835,23 +866,41 @@ function SegmentView({
 }
 
 /** Journal body with desktop-style `[@task:…]` / `[@project:…]` chips. */
-export function JournalMarkdownBody({ body }: Props) {
+export function JournalMarkdownBody({
+  body,
+  onToggleTaskCheckbox,
+}: Props) {
   const catalog = useMentionCatalogForBody(body);
   const paragraphs = splitMarkdownParagraphs(body);
+  const indexRef = useRef(0);
+  indexRef.current = 0;
+  const interact = useMemo<TaskListInteractContextValue>(
+    () => ({
+      allocateIndex: () => {
+        const next = indexRef.current;
+        indexRef.current += 1;
+        return next;
+      },
+      onToggle: onToggleTaskCheckbox,
+    }),
+    [onToggleTaskCheckbox],
+  );
 
   return (
-    <View>
-      {paragraphs.map((paragraph, index) =>
-        paragraph.trim() === "" ? (
-          <BlankParagraph key={`blank-${index}`} />
-        ) : (
-          <ParagraphWithMentions
-            key={`p-${index}`}
-            paragraph={paragraph}
-            catalog={catalog}
-          />
-        ),
-      )}
-    </View>
+    <TaskListInteractContext.Provider value={interact}>
+      <View key={body}>
+        {paragraphs.map((paragraph, index) =>
+          paragraph.trim() === "" ? (
+            <BlankParagraph key={`blank-${index}`} />
+          ) : (
+            <ParagraphWithMentions
+              key={`p-${index}`}
+              paragraph={paragraph}
+              catalog={catalog}
+            />
+          ),
+        )}
+      </View>
+    </TaskListInteractContext.Provider>
   );
 }

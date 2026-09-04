@@ -1,16 +1,11 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode, type Ref } from "react";
 
-import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-  useMarkdownDetailEditor,
-} from "../content/content-markdown-view-layout.js";
+import { ContentMarkdownDescriptionLayout } from "../content/content-markdown-description-layout.js";
+import { useMarkdownDetailEditor } from "../content/content-markdown-view-layout.js";
 import { ContentDetailIconTitleHeader } from "../content/content-detail-title-header.js";
 import { DetailWithPropertiesLayout } from "../content/detail-with-properties-layout.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { LetterDetailIcon } from "./letter-detail-icon.js";
 import {
@@ -91,6 +86,8 @@ export type LetterDetailViewProps = {
   hasLegacyPdf?: boolean;
   legacyPdfTitle?: string;
   pdfUploading?: boolean;
+  /** When false, skip ⌘E / ⌘P (keep-alive pane not visible). */
+  shortcutsEnabled?: boolean;
 };
 
 /**
@@ -137,6 +134,7 @@ export function LetterDetailView({
   hasLegacyPdf = false,
   legacyPdfTitle,
   pdfUploading = false,
+  shortcutsEnabled = true,
 }: LetterDetailViewProps) {
   const [title, setTitle] = useState(letter.title);
   const [titleSource, setTitleSource] = useState(letter.title);
@@ -165,6 +163,7 @@ export function LetterDetailView({
     activateEditMode,
     setViewMode,
     toggleViewMode,
+    contentViewModeHostRef,
   } = useMarkdownDetailEditor({
     initialValue: letter.body ?? "",
     save: (next) => {
@@ -173,6 +172,7 @@ export function LetterDetailView({
       }
       return Promise.resolve(onSaveBody(next)).then(() => ({ ok: true }));
     },
+    shortcutsEnabled,
   });
 
   const {
@@ -252,34 +252,17 @@ export function LetterDetailView({
             </>
           }
         />
-        <ContentMarkdownViewLayout
+        <ContentMarkdownDescriptionLayout
           mode={mode}
           editorActivated={editorActivated}
           onToggleMode={toggleViewMode}
-          editor={
-            <DocumentMarkdownEditor
-              value={value}
-              onChange={handleChange}
-              onBlur={handleBlurSave}
-              focusRequest={editorFocusRequest}
-              ariaLabel="Letter notes"
-              scrollWithContent
-            />
-          }
-          preview={
-            <ContentMarkdownPreviewColumn includeTopInset={false}>
-              {value.trim() ? (
-                <DocumentMarkdownPreview
-                  body={value}
-                  onChange={handleChange}
-                />
-              ) : (
-                <p className="content-markdown-empty-hint">
-                  This letter is empty.
-                </p>
-              )}
-            </ContentMarkdownPreviewColumn>
-          }
+          value={value}
+          onChange={handleChange}
+          onBlur={handleBlurSave}
+          focusRequest={editorFocusRequest}
+          ariaLabel="Letter notes"
+          emptyMessage="This letter is empty."
+          emptyClassName="content-markdown-empty-hint"
         />
         {error ? (
           <p className="overview-empty" role="alert">
@@ -292,6 +275,7 @@ export function LetterDetailView({
 
   return (
     <div
+      ref={contentViewModeHostRef as Ref<HTMLDivElement>}
       className="letter-detail-split"
       data-content-detail
       data-detail-split=""

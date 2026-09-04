@@ -67,8 +67,9 @@ describe("resolveAppHref section roots", () => {
     expect(formatResolvedAppHref(resolveAppHref("/contacts"))).toBe(
       "/contacts",
     );
+    // Organizations catalog is main-content (no first-org redirect).
     expect(formatResolvedAppHref(resolveAppHref("/organizations"))).toBe(
-      "/organizations/2",
+      "/organizations",
     );
     expect(formatResolvedAppHref(resolveAppHref("/letters"))).toBe(
       "/letters/l-3",

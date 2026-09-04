@@ -3,6 +3,8 @@
  * (mobile-owned copy; no shared UI package).
  */
 
+import { randomUuid } from "../random-uuid";
+
 export type AgentSurfaceTabKind =
   | "chat"
   | "browser"
@@ -33,10 +35,7 @@ const SINGLETON_KINDS = new Set<AgentSurfaceTabKind>([
 ]);
 
 function newTabId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return randomUuid();
 }
 
 export function baseTitleForKind(kind: AgentSurfaceTabKind): string {

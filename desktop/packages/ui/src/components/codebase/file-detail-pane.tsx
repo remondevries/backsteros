@@ -8,6 +8,10 @@ import {
 } from "react";
 
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
+import {
+  registerCodebaseDetailEnterFocus,
+  registerCodebaseDetailLeaveFocus,
+} from "../../codebase/codebase-detail-focus.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { useListKeyboardNavigationZone } from "../list-nav/list-keyboard-navigation-provider.js";
 import { FileCodeViewer } from "./file-code-viewer.js";
@@ -127,7 +131,16 @@ export function FileDetailPane({
   onFileDeleted,
 }: FileDetailPaneProps) {
   const { setActiveZone } = useListKeyboardNavigationZone();
+  const [tabFocusRequest, setTabFocusRequest] = useState(0);
+  const mergedFocusRequest = editorFocusRequest + tabFocusRequest;
   const leaveEditor = useCallback(() => {
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      active.closest(".cm-editor, .cm-content")
+    ) {
+      active.blur();
+    }
     setActiveZone("content", { activate: true });
   }, [setActiveZone]);
   const filePath = activePath;
@@ -138,6 +151,28 @@ export function FileDetailPane({
   sessionsRef.current = sessions;
 
   const session = sessions[filePath] ?? emptySession(previewKind !== "image");
+  const canFocusCodeEditor =
+    previewKind !== "image" &&
+    !session.loading &&
+    !session.error &&
+    session.draft != null &&
+    !(session.payload?.binary ?? false);
+
+  useEffect(() => {
+    if (!canFocusCodeEditor) return;
+    return registerCodebaseDetailEnterFocus(() => {
+      setTabFocusRequest((current) => current + 1);
+      return true;
+    });
+  }, [canFocusCodeEditor]);
+
+  useEffect(() => {
+    if (!canFocusCodeEditor) return;
+    return registerCodebaseDetailLeaveFocus(() => {
+      leaveEditor();
+      return true;
+    });
+  }, [canFocusCodeEditor, leaveEditor]);
   const dirtyPaths = useMemo(
     () =>
       Object.entries(sessions)
@@ -519,7 +554,7 @@ export function FileDetailPane({
               path={filePath}
               value={session.draft}
               onChange={(value) => updateSession(filePath, { draft: value })}
-              focusRequest={editorFocusRequest}
+              focusRequest={mergedFocusRequest}
               onLeaveEditor={leaveEditor}
             />
           ) : null

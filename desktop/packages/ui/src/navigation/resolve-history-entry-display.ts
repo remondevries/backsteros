@@ -111,6 +111,7 @@ const TOP_LEVEL_NAV: Record<
   "/development": { navId: "development", badgeLabel: "Development" },
   "/letters": { navId: "letters", badgeLabel: "Letters" },
   "/letters-v2": { navId: "letters", badgeLabel: "Letters" },
+  "/social": { navId: "social", badgeLabel: "Social" },
   "/contacts": { navId: "contacts", badgeLabel: "Contacts" },
   "/organizations": { navId: "organizations", badgeLabel: "Organization" },
 };
@@ -394,22 +395,42 @@ export function resolveHistoryEntryDisplay(
     };
   }
 
-  const contactDetailMatch = pathname.match(/^\/contacts\/([^/]+)$/);
-  if (contactDetailMatch) {
+  // Contact hub (overview + section tabs). Nested task/letter details match earlier.
+  const contactHubMatch = pathname.match(
+    /^\/contacts\/([^/]+)(?:\/(details|tasks|letters))?$/,
+  );
+  if (contactHubMatch) {
+    // Narrow side-panel keeps the section tab as "Contacts".
+    if (title === "Contacts") {
+      return {
+        kind: "navigate",
+        navId: "contacts",
+        badgeLabel: "Contacts",
+        title,
+      };
+    }
     return {
       kind: "contact",
-      badgeLabel: contactBadgeFromSlug(contactDetailMatch[1]!),
+      badgeLabel: contactBadgeFromSlug(contactHubMatch[1]!),
       title,
     };
   }
 
-  const organizationContactDetailMatch = pathname.match(
-    /^\/organizations\/([^/]+)\/contacts\/([^/]+)$/,
+  const organizationContactHubMatch = pathname.match(
+    /^\/organizations\/([^/]+)\/contacts\/([^/]+)(?:\/(details|tasks|letters))?$/,
   );
-  if (organizationContactDetailMatch) {
+  if (organizationContactHubMatch) {
+    if (title === "Contacts") {
+      return {
+        kind: "navigate",
+        navId: "contacts",
+        badgeLabel: "Contacts",
+        title,
+      };
+    }
     return {
       kind: "contact",
-      badgeLabel: contactBadgeFromSlug(organizationContactDetailMatch[2]!),
+      badgeLabel: contactBadgeFromSlug(organizationContactHubMatch[2]!),
       title,
     };
   }

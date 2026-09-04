@@ -21,9 +21,16 @@ import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navigate-row.js";
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
+import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
+import {
+  decodeTaskRelatedValues,
+  encodeTaskRelatedValues,
+  type TaskRelatedSelection,
+} from "../../tasks/task-related-entities.js";
 import { TaskDueDateDropdown } from "./task-due-date-dropdown.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
+import { TaskRelatedChips } from "./task-related-chips.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
 import { TrackedTimeField } from "../shared/tracked-time-field.js";
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
@@ -37,6 +44,8 @@ export type TaskPropertiesDisplayTask = {
   dueEndDate?: number | Date | null;
   assigneeId?: string | null;
   assigneeName?: string | null;
+  relatedContactIds?: string[] | null;
+  relatedOrganizationIds?: string[] | null;
   projectKey?: string | null;
   projectName?: string | null;
   agentCreatedAt?: number | Date | null;
@@ -53,13 +62,16 @@ export type TaskPropertiesDisplayProps = {
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
+  onRelatedChange?: (related: TaskRelatedSelection) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onFieldActivate?: (field: string) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
+  relatedOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onCreateRelatedContactFromQuery?: (query: string) => void;
   agentInboxPending?: boolean;
   onAgentInboxApprove?: () => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
@@ -85,13 +97,16 @@ export function TaskPropertiesDisplay({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onRelatedChange,
   onProjectChange,
   onFieldActivate,
   assigneeOptions = [],
+  relatedOptions = [],
   projectOptions = [],
   assigneeNavigateHref,
   projectNavigateHref,
   onCreateAssigneeFromQuery,
+  onCreateRelatedContactFromQuery,
   agentInboxPending = false,
   onAgentInboxApprove,
   onTrackedDurationSecondsChange,
@@ -119,8 +134,14 @@ export function TaskPropertiesDisplay({
     }));
 
   const assigneeValue = task?.assigneeId ?? DROPDOWN_NONE_VALUE;
+  const relatedValues = encodeTaskRelatedValues(
+    task?.relatedContactIds ?? [],
+    task?.relatedOrganizationIds ?? [],
+  );
   const canEditAssignee =
     Boolean(onAssigneeChange) && assigneeOptions.length > 0;
+  const canEditRelated =
+    Boolean(onRelatedChange) && relatedOptions.length > 0;
   const canEditProject =
     Boolean(onProjectChange) && projectOptions.length > 0;
 
@@ -219,6 +240,26 @@ export function TaskPropertiesDisplay({
                 </span>
               </button>
             )}
+          </PropertyFieldGroup>
+          <PropertyFieldGroup label="Related">
+            <TaskRelatedChips
+              values={relatedValues}
+              options={relatedOptions}
+              onChange={
+                canEditRelated
+                  ? (next) => onRelatedChange?.(decodeTaskRelatedValues(next))
+                  : undefined
+              }
+              disabled={disabled}
+              emptyLabel="No related"
+              searchPlaceholder="Add related…"
+              searchShortcutLabel="R"
+              ariaLabel="Related"
+              taskPropertyDropdownId="related"
+              onCreateFromQuery={onCreateRelatedContactFromQuery}
+              variant="rail"
+              onActivate={() => onFieldActivate?.("related")}
+            />
           </PropertyFieldGroup>
         </EntityPropertiesSection>
 

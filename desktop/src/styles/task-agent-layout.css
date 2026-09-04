@@ -683,6 +683,115 @@
   padding: 6px 8px 0;
 }
 
+/* Contact panel: expand/collapse on the leading edge, hide toggle on the trailing. */
+.desktop-journal-day-layout__chrome.contact-detail-panel__chrome {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contact-detail-panel__chrome-end {
+  margin-left: auto;
+}
+
+/*
+ * Contact profile rail — width from inline px (measured), fallback 30%.
+ * Collapse animates width only; never clamp max-width while sliding.
+ * Do not gate on prefers-reduced-motion.
+ */
+.bos-product-shell .contact-detail-panel--rail,
+.page-scroll .contact-detail-panel--rail,
+.contact-detail-panel--rail {
+  flex: none !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  box-sizing: border-box;
+  border-left: 0.5px solid rgb(255 255 255 / 0.1) !important;
+}
+
+.bos-product-shell .contact-detail-panel--rail:not(.is-collapsed),
+.page-scroll .contact-detail-panel--rail:not(.is-collapsed),
+.contact-detail-panel--rail:not(.is-collapsed) {
+  /* Fallback before first measure — inline style overrides when px known. */
+  width: 30%;
+}
+
+.bos-product-shell .contact-detail-panel--rail.is-collapsed,
+.page-scroll .contact-detail-panel--rail.is-collapsed,
+.contact-detail-panel--rail.is-collapsed,
+.bos-product-shell
+  .journal-day-layout__calendar.contact-detail-panel.is-collapsed,
+.page-scroll .journal-day-layout__calendar.contact-detail-panel.is-collapsed,
+.journal-day-layout__calendar.contact-detail-panel.is-collapsed {
+  /* Target width only — no max-width clamp (that snapped the slide). */
+  width: 46px;
+  flex: none !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+.bos-product-shell
+  .contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating),
+.page-scroll
+  .contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating),
+.contact-detail-panel--rail.is-collapsed:not(.is-collapse-animating),
+.bos-product-shell
+  .journal-day-layout__calendar.contact-detail-panel.is-collapsed:not(
+    .is-collapse-animating
+  ),
+.page-scroll
+  .journal-day-layout__calendar.contact-detail-panel.is-collapsed:not(
+    .is-collapse-animating
+  ),
+.journal-day-layout__calendar.contact-detail-panel.is-collapsed:not(
+    .is-collapse-animating
+  ) {
+  min-width: 46px !important;
+  max-width: 46px !important;
+}
+
+.bos-product-shell .contact-detail-panel--rail.is-collapse-animating,
+.page-scroll .contact-detail-panel--rail.is-collapse-animating,
+.contact-detail-panel--rail.is-collapse-animating {
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.bos-product-shell .contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,
+.page-scroll .contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,
+.contact-detail-panel__workspace--entity-detail .contact-detail-panel__workspace-body,
+.bos-product-shell .contact-detail-panel--entity-detail .contact-detail-panel__workspace-body,
+.page-scroll .contact-detail-panel--entity-detail .contact-detail-panel__workspace-body,
+.contact-detail-panel--entity-detail .contact-detail-panel__workspace-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.bos-product-shell .contact-detail-panel--workspace-expanded .contact-detail-panel__workspace,
+.page-scroll .contact-detail-panel--workspace-expanded .contact-detail-panel__workspace,
+.contact-detail-panel--workspace-expanded .contact-detail-panel__workspace {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+/* Marker gap rings must match the black panel fill. */
+.contact-detail-panel .crm-activity-event__marker,
+.contact-detail-panel .crm-activity-event__marker--add {
+  box-shadow: 0 0 0 3px #000;
+}
+
+/* Meeting panel (opens from left): hide on the leading edge, expand on the trailing. */
+.desktop-journal-day-layout__chrome.calendar-meeting-detail-overlay__chrome {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.calendar-meeting-detail-overlay__chrome-end {
+  margin-left: auto;
+}
+
 .desktop-journal-day-layout__calendar-body {
   display: flex;
   flex: 1;

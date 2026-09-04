@@ -170,19 +170,18 @@ export function TaskAgentSurfacesHost({
     [addSurface],
   );
 
-  const handleCloseTab = useCallback(
-    (id: string) => {
-      const tab = state.tabs.find((entry) => entry.id === id);
-      // Closing Chat ends the ACP session (desktop parity — no Stop button).
-      if (tab?.kind === "chat" && agentChatIdRef.current?.trim()) {
-        void endChatSessionRef.current?.();
-      }
-      setState((current) =>
-        closeAgentSurfaceTab(current.tabs, id, current.activeId),
-      );
-    },
-    [state.tabs],
-  );
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const handleCloseTab = useCallback((id: string) => {
+    const current = stateRef.current;
+    const tab = current.tabs.find((entry) => entry.id === id);
+    // Closing Chat ends the ACP session (desktop parity — no Stop button).
+    if (tab?.kind === "chat" && agentChatIdRef.current?.trim()) {
+      void endChatSessionRef.current?.();
+    }
+    setState((prev) => closeAgentSurfaceTab(prev.tabs, id, prev.activeId));
+  }, []);
 
   const activateTab = useCallback((id: string) => {
     setState((current) => ({ ...current, activeId: id }));
@@ -205,9 +204,10 @@ export function TaskAgentSurfacesHost({
     [],
   );
 
+  const tabsControllerRef = useRef<SurfaceTabsController | null>(null);
   useEffect(() => {
     if (!onTabsControllerChange) return;
-    onTabsControllerChange({
+    const next: SurfaceTabsController = {
       state,
       cwdAvailable,
       isCodebaseProject,
@@ -215,7 +215,24 @@ export function TaskAgentSurfacesHost({
       activate: activateTab,
       close: handleCloseTab,
       add: addSurface,
-    });
+    };
+    const prev = tabsControllerRef.current;
+    // Skip parent setState when tab chrome is unchanged — notifying every
+    // render with a fresh object caused max-update-depth on iPhone.
+    if (
+      prev &&
+      prev.state === next.state &&
+      prev.cwdAvailable === next.cwdAvailable &&
+      prev.isCodebaseProject === next.isCodebaseProject &&
+      prev.diffAvailable === next.diffAvailable &&
+      prev.activate === next.activate &&
+      prev.close === next.close &&
+      prev.add === next.add
+    ) {
+      return;
+    }
+    tabsControllerRef.current = next;
+    onTabsControllerChange(next);
   }, [
     activateTab,
     addSurface,
@@ -229,6 +246,7 @@ export function TaskAgentSurfacesHost({
 
   useEffect(() => {
     return () => {
+      tabsControllerRef.current = null;
       onTabsControllerChange?.(null);
     };
   }, [onTabsControllerChange]);

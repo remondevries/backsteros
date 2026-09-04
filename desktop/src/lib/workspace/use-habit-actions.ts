@@ -1,9 +1,117 @@
 import { useCallback, useRef } from "react";
 import type { Habit as ApiHabit, Task as ApiTask } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
+import { ApiClientError } from "@backsteros/api-client";
 
+import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import {
+  applyHabitUpdatePatch,
+  habitPatchToSqlite,
+} from "./habit-sqlite-fields";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
+
+/** Server creates today's habit task on insert — read it back after upload. */
+async function seedHabitTodayTask(
+  client: BacksterosApiClient,
+  powerSync: WorkspacePowerSync,
+  habitId: string,
+  setApiHabits: ApiRowsSetter<ApiHabit>,
+  setApiTasks: ApiRowsSetter<ApiTask>,
+  toSnakeFields: (values: Record<string, unknown>) => Record<string, unknown>,
+  knownTodayTaskId?: string | null,
+): Promise<void> {
+  let todayTaskId = knownTodayTaskId ?? null;
+
+  if (!todayTaskId) {
+    if (!powerSync.connected) return;
+    try {
+      await powerSync.flushCrudUpload();
+    } catch (error) {
+      console.warn(
+        "[desktop] habit create upload deferred",
+        error instanceof Error ? error.message : error,
+      );
+      return;
+    }
+
+    const deadline = Date.now() + 4_000;
+    while (Date.now() < deadline) {
+      try {
+        const row = await client.requestJson<ApiHabit>(
+          `/api/v1/habits/${encodeURIComponent(habitId)}`,
+        );
+        if (row.todayTaskId) {
+          todayTaskId = row.todayTaskId;
+          setApiHabits((rows) => {
+            if (!rows) return rows;
+            return rows.map((entry) =>
+              entry.id === habitId
+                ? { ...entry, todayTaskId: row.todayTaskId }
+                : entry,
+            );
+          });
+          break;
+        }
+      } catch (error) {
+        if (error instanceof ApiClientError && error.status === 404) {
+          // Upload not applied yet — retry.
+        } else {
+          console.warn("[desktop] habit today-task lookup failed", error);
+          return;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  } else {
+    setApiHabits((rows) => {
+      if (!rows) return rows;
+      return rows.map((entry) =>
+        entry.id === habitId ? { ...entry, todayTaskId } : entry,
+      );
+    });
+  }
+
+  if (!todayTaskId) return;
+
+  try {
+    const task = await client.requestJson<ApiTask>(
+      `/api/v1/tasks/${encodeURIComponent(todayTaskId)}`,
+    );
+    setApiTasks((rows) => {
+      if (!rows) return [task];
+      if (rows.some((entry) => entry.id === task.id)) return rows;
+      return [task, ...rows];
+    });
+    if (powerSync.createMetadata) {
+      try {
+        await powerSync.createMetadata(
+          "tasks",
+          toSnakeFields({
+            title: task.title,
+            projectId: task.projectId,
+            contactId: task.contactId,
+            assigneeId: task.assigneeId,
+            number: task.number,
+            description: task.description,
+            status: task.status,
+            priority: task.priority,
+            sortOrder: task.sortOrder,
+            dueDate: task.dueDate,
+            inbox: task.inbox,
+            habitId: task.habitId,
+            completedAt: task.completedAt,
+          }),
+          task.id,
+        );
+      } catch {
+        // Download sync will eventually bring the row in.
+      }
+    }
+  } catch (error) {
+    console.warn("[desktop] habit today task seed failed", error);
+  }
+}
 
 /** Habit CRUD plus per-day completion recording. */
 export function useWorkspaceHabitActions({
@@ -61,25 +169,39 @@ export function useWorkspaceHabitActions({
           createdAt: now,
           updatedAt: now,
         } as ApiHabit;
-        setApiHabits((rows) => {
-          if (!rows) return [habit];
-          if (rows.some((entry) => entry.id === habit.id)) return rows;
-          return [habit, ...rows];
+        await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiHabits((rows) => {
+              if (!rows) return [habit];
+              if (rows.some((entry) => entry.id === habit.id)) return rows;
+              return [habit, ...rows];
+            });
+          },
+          rollback: () =>
+            setApiHabits((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "habits",
+              toSnakeFields({
+                title: habit.title,
+                icon: habit.icon,
+                cadence: habit.cadence,
+                sortOrder: habit.sortOrder,
+              }),
+              id,
+            ),
+          errorLabel: "local habit create",
+          afterCreate: () =>
+            seedHabitTodayTask(
+              client,
+              powerSync,
+              id,
+              setApiHabits,
+              setApiTasks,
+              toSnakeFields,
+            ),
         });
-        void powerSync
-          .createMetadata(
-            "habits",
-            toSnakeFields({
-              title: habit.title,
-              icon: habit.icon,
-              cadence: habit.cadence,
-              sortOrder: habit.sortOrder,
-            }),
-            id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local habit create failed", error);
-          });
         return habit;
       }
 
@@ -117,43 +239,15 @@ export function useWorkspaceHabitActions({
         }
       }
       if (habit.todayTaskId) {
-        try {
-          const task = await client.requestJson<ApiTask>(
-            `/api/v1/tasks/${encodeURIComponent(habit.todayTaskId)}`,
-          );
-          setApiTasks((rows) => {
-            if (!rows) return [task];
-            if (rows.some((entry) => entry.id === task.id)) return rows;
-            return [task, ...rows];
-          });
-          if (powerSync.ready && powerSync.createMetadata) {
-            try {
-              await powerSync.createMetadata(
-                "tasks",
-                toSnakeFields({
-                  title: task.title,
-                  projectId: task.projectId,
-                  contactId: task.contactId,
-                  assigneeId: task.assigneeId,
-                  number: task.number,
-                  description: task.description,
-                  status: task.status,
-                  priority: task.priority,
-                  sortOrder: task.sortOrder,
-                  dueDate: task.dueDate,
-                  inbox: task.inbox,
-                  habitId: task.habitId,
-                  completedAt: task.completedAt,
-                }),
-                task.id,
-              );
-            } catch {
-              // Download sync will eventually bring the row in.
-            }
-          }
-        } catch {
-          // Habit row is enough; the task list will catch up on refresh.
-        }
+        await seedHabitTodayTask(
+          client,
+          powerSync,
+          habit.id,
+          setApiHabits,
+          setApiTasks,
+          toSnakeFields,
+          habit.todayTaskId,
+        );
       }
       return habit;
     },
@@ -175,17 +269,20 @@ export function useWorkspaceHabitActions({
       if (!authenticated) throw new Error("Sign in to update habits.");
 
       if (shouldSkipRestEntityWrite(powerSync) && powerSync.patchMetadata) {
-        await powerSync.patchMetadata("habits", id, toSnakeFields(input));
+        await powerSync.patchMetadata("habits", id, habitPatchToSqlite(input));
         const now = new Date().toISOString();
         const existing = rawHabits.find((entry) => entry.id === id);
         if (!existing) {
           throw new Error("Habit not found.");
         }
-        const habit = { ...existing, ...input, updatedAt: now } as ApiHabit;
+        const habit = applyHabitUpdatePatch(existing, input, now);
         setApiHabits((rows) => {
           if (!rows) return [habit];
           return rows.map((entry) => (entry.id === habit.id ? habit : entry));
         });
+        if (input.nextDueYmd !== undefined) {
+          await softRefreshApiTasks();
+        }
         return habit;
       }
 
@@ -206,7 +303,7 @@ export function useWorkspaceHabitActions({
           await powerSync.patchMetadata(
             "habits",
             habit.id,
-            toSnakeFields({
+            habitPatchToSqlite({
               title: habit.title,
               description: habit.description,
               cadence: habit.cadence,

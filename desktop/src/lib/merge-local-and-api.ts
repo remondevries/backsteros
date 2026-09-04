@@ -42,6 +42,64 @@ export function resolveLocalOrApiRows<
 }
 
 /**
+ * Keep optimistic API creates that SQLite has not mirrored yet.
+ * {@link resolveLocalOrApiRows} drops them once any local rows exist, which
+ * made just-created tasks flash "Not found" on detail until the watch caught up.
+ */
+export function mergeLocalWithPendingApiCreates<T extends { id: string }>(
+  localRows: T[],
+  apiRows: T[] | null | undefined,
+): T[] {
+  if (!apiRows?.length) return localRows;
+  const localIds = new Set(localRows.map((row) => row.id));
+  const pending = apiRows.filter((row) => !localIds.has(row.id));
+  if (pending.length === 0) return localRows;
+  return [...pending, ...localRows];
+}
+
+/**
+ * Documents live path: overlay newer API metadata (move/rename/title) and
+ * pending creates onto SQLite rows until PowerSync catches up. Optional
+ * `deletedIds` hides agent deletes immediately.
+ *
+ * Scoped to documents only — do not generalize to tasks/projects (Linear-shaped
+ * local-primary lists).
+ */
+export function mergeLocalDocumentsWithLiveApi<
+  T extends { id: string; updatedAt?: string | number | Date | null },
+>(
+  localRows: T[],
+  apiRows: T[] | null | undefined,
+  options?: { deletedIds?: ReadonlySet<string> },
+): T[] {
+  const deletedIds = options?.deletedIds;
+  const base =
+    deletedIds && deletedIds.size > 0
+      ? localRows.filter((row) => !deletedIds.has(row.id))
+      : localRows;
+
+  if (!apiRows?.length) return base;
+
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  const merged = base.map((local) => {
+    if (deletedIds?.has(local.id)) return local;
+    const api = apiById.get(local.id);
+    if (!api) return local;
+    if (updatedAtMs(api.updatedAt) > updatedAtMs(local.updatedAt)) {
+      return api;
+    }
+    return local;
+  });
+
+  const localIds = new Set(merged.map((row) => row.id));
+  const pending = apiRows.filter(
+    (row) => !localIds.has(row.id) && !deletedIds?.has(row.id),
+  );
+  if (pending.length === 0) return merged;
+  return [...pending, ...merged];
+}
+
+/**
  * Column fillers for fields that PowerSync list watches already select
  * (links, type, due dates, …) must only run on cold-start rescue (local
  * empty). Once SQLite has rows, pass null so those fillers are no-ops.
@@ -442,6 +500,24 @@ export function fillMissingMeetingPropertiesFromApi<
       updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
     ) {
       next = { ...next, format: api.format };
+    }
+
+    const localLocationOrg =
+      typeof row.locationOrganizationId === "string"
+        ? row.locationOrganizationId.trim()
+        : "";
+    const apiLocationOrg =
+      typeof api.locationOrganizationId === "string"
+        ? api.locationOrganizationId.trim()
+        : "";
+    if (!localLocationOrg && apiLocationOrg) {
+      next = { ...next, locationOrganizationId: api.locationOrganizationId };
+    } else if (
+      api.locationOrganizationId !== undefined &&
+      apiLocationOrg !== localLocationOrg &&
+      updatedAtMs(api.updatedAt) >= updatedAtMs(row.updatedAt)
+    ) {
+      next = { ...next, locationOrganizationId: api.locationOrganizationId };
     }
 
     return next;

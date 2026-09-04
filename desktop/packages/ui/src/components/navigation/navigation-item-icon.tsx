@@ -16,6 +16,7 @@ import {
   OrganizationsNavIcon,
   ProjectsNavIcon,
   SidebarSettingsIcon,
+  SocialNavIcon,
   TasksNavIcon,
 } from "../shell/sidebar-nav-icons.js";
 
@@ -35,6 +36,7 @@ export const NAVIGATION_ITEM_ICONS: Record<
   development: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
+  social: SocialNavIcon,
   contacts: ContactsNavIcon,
   organizations: OrganizationsNavIcon,
   settings: SidebarSettingsIcon,

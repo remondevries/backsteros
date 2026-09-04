@@ -22,6 +22,7 @@ import {
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 import { relationshipTypeLabel } from "./crm-relationship-labels.js";
+import * as crmRelationshipLabelsService from "./crm-relationship-labels.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
@@ -158,6 +159,11 @@ export async function listContactRelationships(
       .map((row) => [row.id, row.name]),
   );
 
+  const labels = await crmRelationshipLabelsService.listCrmRelationshipLabels(
+    workspaceId,
+    executor,
+  );
+
   return edges.map((edge) => {
     const outgoing = edge.fromContactId === contactId;
     const direction = outgoing ? ("outgoing" as const) : ("incoming" as const);
@@ -166,17 +172,37 @@ export async function listContactRelationships(
     return {
       ...mapRelationship(edge),
       direction,
-      typeLabel: relationshipTypeLabel(type, direction),
+      typeLabel: relationshipTypeLabel(type, direction, labels),
       relatedContactId,
       relatedContactName: nameById.get(relatedContactId) ?? "Unknown",
     } satisfies ContactRelationshipListItem;
   });
 }
 
+export async function getContactRelationshipById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<ContactRelationship | null> {
+  const [row] = await executor
+    .select()
+    .from(contactRelationships)
+    .where(
+      and(
+        eq(contactRelationships.workspaceId, workspaceId),
+        eq(contactRelationships.id, id),
+        isNull(contactRelationships.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ? mapRelationship(row) : null;
+}
+
 export async function createContactRelationship(
   workspaceId: string,
   fromContactId: string,
   input: ContactRelationshipInput,
+  entityId?: string,
   executor: DbExecutor = db,
 ): Promise<ContactRelationship> {
   if (!(await contactExists(workspaceId, fromContactId, executor))) {
@@ -209,7 +235,7 @@ export async function createContactRelationship(
   const [row] = await executor
     .insert(contactRelationships)
     .values({
-      id: newId(),
+      id: entityId ?? newId(),
       workspaceId,
       fromContactId,
       toContactId: input.toContactId,
@@ -300,12 +326,13 @@ export async function getCrmGroupById(
 export async function createCrmGroup(
   workspaceId: string,
   input: CrmGroupInput,
+  entityId?: string,
   executor: DbExecutor = db,
 ): Promise<CrmGroup> {
   const [row] = await executor
     .insert(crmGroups)
     .values({
-      id: newId(),
+      id: entityId ?? newId(),
       workspaceId,
       name: input.name.trim(),
       description: input.description ?? null,
@@ -397,10 +424,30 @@ export async function listCrmGroupMembers(
   return rows.map(mapMember);
 }
 
+export async function getCrmGroupMemberById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<CrmGroupMember | null> {
+  const [row] = await executor
+    .select()
+    .from(crmGroupMembers)
+    .where(
+      and(
+        eq(crmGroupMembers.workspaceId, workspaceId),
+        eq(crmGroupMembers.id, id),
+        isNull(crmGroupMembers.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row ? mapMember(row) : null;
+}
+
 export async function addCrmGroupMember(
   workspaceId: string,
   groupId: string,
   input: CrmGroupMemberInput,
+  entityId?: string,
   executor: DbExecutor = db,
 ): Promise<CrmGroupMember> {
   if (!(await getCrmGroupById(workspaceId, groupId, executor))) {
@@ -434,7 +481,7 @@ export async function addCrmGroupMember(
   const [row] = await executor
     .insert(crmGroupMembers)
     .values({
-      id: newId(),
+      id: entityId ?? newId(),
       workspaceId,
       groupId,
       subjectType: input.subjectType,

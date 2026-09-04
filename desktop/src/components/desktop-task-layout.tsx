@@ -86,6 +86,15 @@ export type DesktopTaskLayoutProps = {
    * Task routes without a list panel keep the default (toggle detail column).
    */
   detailColumnToggleShortcutEnabled?: boolean;
+  /** Start with the agent/chat column collapsed (e.g. contact workspace embed). */
+  initialAgentCollapsed?: boolean;
+  /**
+   * When the agent opens, collapse the task-detail column so chat fills the
+   * host column only (contact card / siblings stay put — no fourth column).
+   */
+  agentFillsHostColumn?: boolean;
+  /** Fires whenever the agent column collapse state changes. */
+  onAgentCollapsedChange?: (collapsed: boolean) => void;
 };
 
 /**
@@ -116,6 +125,9 @@ export function DesktopTaskLayout({
   viewScope = "rail",
   requireWorkingDirectory = false,
   detailColumnToggleShortcutEnabled = true,
+  initialAgentCollapsed = false,
+  agentFillsHostColumn = false,
+  onAgentCollapsedChange,
 }: DesktopTaskLayoutProps) {
   const workingDirectory = requireWorkingDirectory
     ? normalizeWorkingDirectory(cwd)
@@ -158,7 +170,9 @@ export function DesktopTaskLayout({
 
   const [layoutReady, setLayoutReady] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
-  const [agentCollapsed, setAgentCollapsed] = useState(false);
+  const [agentCollapsed, setAgentCollapsed] = useState(
+    () => initialAgentCollapsed || agentFillsHostColumn,
+  );
   const [collapseAnimating, setCollapseAnimating] = useState(false);
   const collapseAnimTimerRef = useRef<number | null>(null);
   const collapseRafRef = useRef<number | null>(null);
@@ -217,6 +231,18 @@ export function DesktopTaskLayout({
     detailPanelWidth,
   ]);
 
+  // Contact embed: always open on the full task column (agent strip only).
+  // useLayoutEffect so we don't paint an expanded agent pane first.
+  useLayoutEffect(() => {
+    if (!(initialAgentCollapsed || agentFillsHostColumn)) return;
+    setAgentCollapsed(true);
+    setDetailCollapsed(false);
+  }, [agentFillsHostColumn, initialAgentCollapsed, taskId]);
+
+  useEffect(() => {
+    onAgentCollapsedChange?.(agentCollapsed);
+  }, [agentCollapsed, onAgentCollapsedChange]);
+
   const beginCollapseAnimation = useCallback(
     (apply: () => void) => {
       setCollapseAnimating(true);
@@ -259,32 +285,43 @@ export function DesktopTaskLayout({
     (options?: Parameters<typeof startAgentSessionBase>[0]) => {
       beginCollapseAnimation(() => {
         setAgentCollapsed(false);
-        setDetailCollapsed(false);
+        setDetailCollapsed(agentFillsHostColumn);
       });
       return startAgentSessionBase(options);
     },
-    [beginCollapseAnimation, startAgentSessionBase],
+    [agentFillsHostColumn, beginCollapseAnimation, startAgentSessionBase],
   );
 
   const toggleDetailCollapsed = useCallback(() => {
     beginCollapseAnimation(() => {
       setDetailCollapsed((current) => {
         const next = !current;
-        if (next) setAgentCollapsed(false);
+        if (agentFillsHostColumn) {
+          // Contacts embed: detail XOR agent in the host column.
+          // Show details → full-width task (agent strip). Hide details → agent fills.
+          setAgentCollapsed(!next);
+        } else if (next) {
+          setAgentCollapsed(false);
+        }
         return next;
       });
     });
-  }, [beginCollapseAnimation]);
+  }, [agentFillsHostColumn, beginCollapseAnimation]);
 
   const toggleAgentCollapsed = useCallback(() => {
     beginCollapseAnimation(() => {
       setAgentCollapsed((current) => {
         const next = !current;
-        if (next) setDetailCollapsed(false);
+        if (agentFillsHostColumn) {
+          // Open agent → fill host column; close agent → restore task detail.
+          setDetailCollapsed(!next);
+        } else if (next) {
+          setDetailCollapsed(false);
+        }
         return next;
       });
     });
-  }, [beginCollapseAnimation]);
+  }, [agentFillsHostColumn, beginCollapseAnimation]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -354,9 +391,9 @@ export function DesktopTaskLayout({
       previousStatusRef.current = null;
       autoStartedTaskIdRef.current = null;
       setDetailCollapsed(false);
-      setAgentCollapsed(false);
+      setAgentCollapsed(initialAgentCollapsed);
     }
-  }, [taskId]);
+  }, [initialAgentCollapsed, taskId]);
 
   // Codebase only: pick up work when the task enters Ready to Start.
   useEffect(() => {
@@ -453,7 +490,12 @@ export function DesktopTaskLayout({
             title="Show details (⇧[)"
             aria-label="Show details"
             onClick={() => {
-              beginCollapseAnimation(() => setDetailCollapsed(false));
+              beginCollapseAnimation(() => {
+                setDetailCollapsed(false);
+                // Contact embed: full-width task + agent collapsed to the strip
+                // (not a narrow task beside "Open a surface").
+                if (agentFillsHostColumn) setAgentCollapsed(true);
+              });
             }}
           >
             <TaskStatusIcon
@@ -530,7 +572,10 @@ export function DesktopTaskLayout({
                 });
               }}
               onExpand={() => {
-                beginCollapseAnimation(() => setAgentCollapsed(false));
+                beginCollapseAnimation(() => {
+                  setAgentCollapsed(false);
+                  if (agentFillsHostColumn) setDetailCollapsed(true);
+                });
               }}
               onStartAgent={(options) => void startAgentSession(options)}
               startingAgent={creatingAgent}
@@ -546,7 +591,10 @@ export function DesktopTaskLayout({
             title="Show agent panel (])"
             aria-label="Show agent panel"
             onClick={() => {
-              beginCollapseAnimation(() => setAgentCollapsed(false));
+              beginCollapseAnimation(() => {
+                setAgentCollapsed(false);
+                if (agentFillsHostColumn) setDetailCollapsed(true);
+              });
             }}
           >
             <ProjectsSidePanelIcon size={16} collapsed rail="end" />

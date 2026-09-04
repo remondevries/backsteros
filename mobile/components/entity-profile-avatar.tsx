@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fallback: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   editOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0, 0, 0, 0.35)",
     alignItems: "center",
     justifyContent: "center",

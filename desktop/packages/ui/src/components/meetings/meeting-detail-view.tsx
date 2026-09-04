@@ -5,14 +5,14 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 
 import { MEETING_PROPERTIES_PANEL_WIDTH_KEY } from "../../content/properties-panel.js";
 import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-  useMarkdownDetailEditor,
-} from "../content/content-markdown-view-layout.js";
+  MEETING_CONTENT_TAB_ORDER,
+  type MeetingContentTab,
+} from "../../meetings/meeting-content-tab-shortcuts.js";
+import { useMeetingContentTabShortcuts } from "../../meetings/use-meeting-content-tab-shortcuts.js";
+import { ContentMarkdownDescriptionLayout } from "../content/content-markdown-description-layout.js";
+import { useMarkdownDetailEditor } from "../content/content-markdown-view-layout.js";
 import { ContentDetailTitleHeader } from "../content/content-detail-title-header.js";
 import { DetailWithPropertiesLayout } from "../content/detail-with-properties-layout.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { PillNav } from "../shared/pill-nav.js";
@@ -31,13 +31,19 @@ import { MeetingFormatToggle } from "./meeting-format-toggle.js";
 import type { MeetingFormat } from "../../meetings/meeting-format.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
 
-export type MeetingContentTab = "summary" | "notes" | "transcription";
+export type { MeetingContentTab };
 
-const MEETING_CONTENT_TABS: { id: MeetingContentTab; label: string }[] = [
-  { id: "summary", label: "Summary" },
-  { id: "notes", label: "Notes" },
-  { id: "transcription", label: "Transcription" },
-];
+const MEETING_CONTENT_TAB_LABELS: Record<MeetingContentTab, string> = {
+  summary: "Summary",
+  notes: "Notes",
+  transcription: "Transcription",
+};
+
+const MEETING_CONTENT_TABS: { id: MeetingContentTab; label: string }[] =
+  MEETING_CONTENT_TAB_ORDER.map((id) => ({
+    id,
+    label: MEETING_CONTENT_TAB_LABELS[id],
+  }));
 
 type MeetingContentTabEditorProps = {
   tab: MeetingContentTab;
@@ -107,31 +113,17 @@ function MeetingContentTabEditor({
 
   return (
     <>
-      <ContentMarkdownViewLayout
+      <ContentMarkdownDescriptionLayout
         mode={mode}
         editorActivated={editorActivated}
         onToggleMode={handleToggleViewMode}
-        editor={
-          <DocumentMarkdownEditor
-            value={value}
-            onChange={handleChange}
-            onBlur={handleBlurSave}
-            focusRequest={editorFocusRequest}
-            ariaLabel={ariaLabel}
-            scrollWithContent
-          />
-        }
-        preview={
-          <ContentMarkdownPreviewColumn includeTopInset={false}>
-            {value.trim() ? (
-              <DocumentMarkdownPreview body={value} onChange={handleChange} />
-            ) : (
-              <p className="content-markdown-empty-hint">
-                No {emptyLabel} yet.
-              </p>
-            )}
-          </ContentMarkdownPreviewColumn>
-        }
+        value={value}
+        onChange={handleChange}
+        onBlur={handleBlurSave}
+        focusRequest={editorFocusRequest}
+        ariaLabel={ariaLabel}
+        emptyMessage={`No ${emptyLabel} yet.`}
+        emptyClassName="content-markdown-empty-hint"
         toggle={
           dockToggle ? null : (
             <FloatingPillToggleDock>{viewModeToggle}</FloatingPillToggleDock>
@@ -163,9 +155,9 @@ export type MeetingDetailViewProps = {
   onEndChange?: (value: Date | null) => void;
   onProjectChange?: (projectKey: string | null) => void;
   onOrganizationChange?: (organizationId: string | null) => void;
+  onLocationOrganizationChange?: (organizationId: string | null) => void;
   onAttendeeContactIdsChange?: (contactIds: string[]) => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
-  onPriorityChange?: (priority: number) => void;
   timerSession?: MeetingPropertiesInlineChipsProps["timerSession"];
   onFieldActivate?: (field: string) => void;
   organizationOptions?: MeetingPropertiesInlineChipsProps["organizationOptions"];
@@ -175,6 +167,11 @@ export type MeetingDetailViewProps = {
   onCreateContactFromQuery?: (query: string) => void;
   layout?: "page" | "panel";
   propertyTriggerVariant?: PropertyDropdownTriggerVariant;
+  /**
+   * When true, `1` / `2` / `3` switch Summary / Notes / Transcription.
+   * Defaults to on for the narrow panel so calendar mode digits yield.
+   */
+  contentTabShortcutsEnabled?: boolean;
   /** Panel overlay — close control beside the title. */
   onClose?: () => void;
   /** Expand narrow calendar panel to full-width page layout. */
@@ -201,9 +198,9 @@ export function MeetingDetailView({
   onEndChange,
   onProjectChange,
   onOrganizationChange,
+  onLocationOrganizationChange,
   onAttendeeContactIdsChange,
   onTrackedDurationSecondsChange,
-  onPriorityChange,
   timerSession = null,
   onFieldActivate,
   organizationOptions,
@@ -213,12 +210,21 @@ export function MeetingDetailView({
   onCreateContactFromQuery,
   layout = "panel",
   propertyTriggerVariant,
+  contentTabShortcutsEnabled,
   onClose,
   onExpand,
   onCollapse,
 }: MeetingDetailViewProps) {
   const [activeTab, setActiveTab] = useState<MeetingContentTab>("summary");
   const [dockToggle, setDockToggle] = useState<ReactNode>(null);
+  const tabShortcutsEnabled =
+    contentTabShortcutsEnabled ?? layout === "panel";
+
+  useMeetingContentTabShortcuts({
+    enabled: tabShortcutsEnabled,
+    activeTab,
+    onTabChange: setActiveTab,
+  });
 
   const tabValue =
     activeTab === "summary"
@@ -245,9 +251,14 @@ export function MeetingDetailView({
     propertyTriggerVariant ?? (layout === "panel" ? "inlineChip" : "default");
 
   const propertiesProps = {
-    meeting,
+    meeting: meeting
+      ? {
+          ...meeting,
+          // Keep in sync with the header format toggle (same source of truth).
+          format: format ?? meeting.format,
+        }
+      : null,
     onStatusChange,
-    onPriorityChange,
     onStartChange,
     onEndChange,
     onTrackedDurationSecondsChange,
@@ -262,6 +273,20 @@ export function MeetingDetailView({
     onCreateContactFromQuery,
     timerSession,
   };
+
+  const titleEditor = (
+    <OverviewNameEditor
+      value={title}
+      entityLabel="Meeting"
+      // New calendar meetings open as "New meeting" — land in the title field
+      // so rename does not require an extra click.
+      autoEdit={title === "New meeting"}
+      onSave={async (next) => {
+        onTitleChange(next);
+        return { ok: true as const };
+      }}
+    />
+  );
 
   const contentTabs = (
     <div className="meeting-detail-view__tabs">
@@ -283,6 +308,11 @@ export function MeetingDetailView({
       value={format}
       onChange={onFormatChange}
       disabled={meeting == null}
+      locationOrganizationId={meeting?.locationOrganizationId}
+      locationOrganizationAddress={meeting?.locationOrganizationAddress}
+      onLocationOrganizationChange={onLocationOrganizationChange}
+      organizationOptions={organizationOptions}
+      onCreateOrganizationFromQuery={onCreateOrganizationFromQuery}
     />
   );
 
@@ -384,14 +414,7 @@ export function MeetingDetailView({
                 ) : null}
                 <ContentDetailTitleHeader>
                   <p className="content-detail-display-id">{displayId}</p>
-                  <OverviewNameEditor
-                    value={title}
-                    entityLabel="Meeting"
-                    onSave={async (next) => {
-                      onTitleChange(next);
-                      return { ok: true as const };
-                    }}
-                  />
+                  {titleEditor}
                   {formatToggle}
                 </ContentDetailTitleHeader>
                 <div className="meeting-detail-view__content meeting-detail-view__content--page">
@@ -419,23 +442,15 @@ export function MeetingDetailView({
       data-meeting-detail-layout="panel"
     >
       <header className="meeting-detail-view__header">
-        <div className="meeting-detail-view__id-row">
-          <span className="meeting-detail-view__id">{displayId}</span>
+        {formatToggle}
+        <div className="meeting-detail-view__title-row">
+          <div className="meeting-detail-view__title">{titleEditor}</div>
           {closeAction ? (
             <div className="meeting-detail-view__header-actions">
               {closeAction}
             </div>
           ) : null}
         </div>
-        <input
-          type="text"
-          className="meeting-detail-view__title"
-          value={title}
-          placeholder="Meeting title"
-          aria-label="Meeting title"
-          onChange={(event) => onTitleChange(event.target.value)}
-        />
-        {formatToggle}
       </header>
       <MeetingPropertiesInlineChips
         {...propertiesProps}

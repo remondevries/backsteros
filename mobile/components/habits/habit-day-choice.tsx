@@ -193,7 +193,7 @@ export function HabitDayChoice({
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: "hidden",
     borderRadius: 4,
   },

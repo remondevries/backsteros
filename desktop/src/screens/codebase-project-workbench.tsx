@@ -15,7 +15,12 @@ import {
   getCodebaseWorkbenchHref,
   normalizeWorkingDirectory,
   parseCodebaseWorkbenchPath,
+  isCodebaseDetailEditorFocused,
+  isBlockingModalOpen,
+  requestCodebaseDetailEnterFocus,
+  requestCodebaseDetailLeaveFocus,
   shouldHandleGlobalShortcut,
+  useListKeyboardNavigationZone,
   type CodebaseGithubListTab,
   type ProjectDetailNestedArea,
   type ProjectFsClient,
@@ -134,6 +139,10 @@ export function CodebaseProjectWorkbench({
     [routerNavigate],
   );
   const { client } = useDesktopApi();
+  const { setActiveZone } = useListKeyboardNavigationZone();
+  const [editorFocusRequest, setEditorFocusRequest] = useState(0);
+  /** Tab/Enter into PR or commit detail — list keeps 1–5 until this is true. */
+  const [detailFocusEngaged, setDetailFocusEngaged] = useState(false);
   const requestJson = useCallback(
     <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
     [client],
@@ -277,6 +286,7 @@ export function CodebaseProjectWorkbench({
     (tab: CodebaseGithubListTab) => {
       setSelectedCommit(null);
       setSelectedPull(null);
+      setDetailFocusEngaged(false);
       if (tab !== "files") {
         setActiveFilePath(null);
       }
@@ -292,35 +302,51 @@ export function CodebaseProjectWorkbench({
   );
 
   const handleSelectCommit = useCallback(
-    (commit: GithubCommit, repository: string) => {
+    (
+      commit: GithubCommit,
+      repository: string,
+      options?: { engageHotkeys?: boolean },
+    ) => {
       setSelectedCommit({ commit, repository });
       setSelectedPull(null);
+      setDetailFocusEngaged(options?.engageHotkeys === true);
       navigateSelection({
         tab: "commits",
         commitSha: commit.sha,
         pullNumber: null,
         filePath: null,
       });
+      if (options?.engageHotkeys) {
+        requestAnimationFrame(() => {
+          setActiveZone("main", { activate: true });
+        });
+      }
     },
-    [navigateSelection],
+    [navigateSelection, setActiveZone],
   );
 
   const handleSelectPull = useCallback(
     (
       pullRequest: GithubPullRequest,
       repository: string,
-      _options?: { engageHotkeys?: boolean },
+      options?: { engageHotkeys?: boolean },
     ) => {
       setSelectedPull({ pullRequest, repository });
       setSelectedCommit(null);
+      setDetailFocusEngaged(options?.engageHotkeys === true);
       navigateSelection({
         tab: "pulls",
         pullNumber: pullRequest.number,
         commitSha: null,
         filePath: null,
       });
+      if (options?.engageHotkeys) {
+        requestAnimationFrame(() => {
+          setActiveZone("main", { activate: true });
+        });
+      }
     },
-    [navigateSelection],
+    [navigateSelection, setActiveZone],
   );
 
   const handleSelectFile = useCallback<SelectProjectFileHandler>(
@@ -344,9 +370,111 @@ export function CodebaseProjectWorkbench({
         commitSha: null,
         pullNumber: null,
       });
+      if (options?.focusEditor) {
+        setEditorFocusRequest((current) => current + 1);
+      }
     },
     [activeFilePath, navigateSelection],
   );
+
+  // Tab toggles left list ↔ open detail/editor (files/docs) or main zone (commits/PRs).
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Tab" || event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isBlockingModalOpen()) return;
+
+      const workbench = document.querySelector("[data-codebase-workbench]");
+      if (!workbench) return;
+
+      const tab = selection.tab;
+      if (
+        tab !== "files" &&
+        tab !== "docs" &&
+        tab !== "commits" &&
+        tab !== "pulls"
+      ) {
+        return;
+      }
+
+      const editorFocused = isCodebaseDetailEditorFocused(event.target);
+      if (editorFocused || isCodebaseDetailEditorFocused()) {
+        // Leave editor even when shouldHandleGlobalShortcut would yield.
+        if (requestCodebaseDetailLeaveFocus()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
+
+      // Let the global zone Tab handler run unless we own list→detail.
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      const hasFilesDetail =
+        tab === "files" &&
+        Boolean(activeFilePath) &&
+        Boolean(normalizeWorkingDirectory(apiProject.localWorkingDirectory));
+      const hasDocsDetail = tab === "docs" && Boolean(docsPanel);
+      const hasGithubDetail =
+        (tab === "commits" && Boolean(selection.commitSha)) ||
+        (tab === "pulls" && selection.pullNumber != null);
+
+      if (hasFilesDetail || hasDocsDetail) {
+        if (requestCodebaseDetailEnterFocus()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
+
+      if (hasGithubDetail) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (detailFocusEngaged) {
+          setDetailFocusEngaged(false);
+          setActiveZone("content", { activate: true });
+        } else {
+          setDetailFocusEngaged(true);
+          setActiveZone("main", { activate: true });
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    activeFilePath,
+    apiProject.localWorkingDirectory,
+    detailFocusEngaged,
+    docsPanel,
+    selection.commitSha,
+    selection.pullNumber,
+    selection.tab,
+    setActiveZone,
+  ]);
+
+  // Escape while PR/commit detail owns focus — return to the left list (keep selection).
+  useEffect(() => {
+    if (!detailFocusEngaged) return;
+    if (selection.tab !== "pulls" && selection.tab !== "commits") return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (isBlockingModalOpen()) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setDetailFocusEngaged(false);
+      setActiveZone("content", { activate: true });
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [detailFocusEngaged, selection.tab, setActiveZone]);
 
   useEffect(() => {
     if (selection.tab === "files" && selection.filePath) {
@@ -494,6 +622,7 @@ export function CodebaseProjectWorkbench({
         repository={selectedCommit.repository}
         requestJson={requestJson}
         parentPullRequest={selectedPull?.pullRequest ?? null}
+        hotkeysEnabled={detailFocusEngaged}
       />
     );
   } else if (showPullDetail && selectedPull) {
@@ -504,6 +633,7 @@ export function CodebaseProjectWorkbench({
         repository={selectedPull.repository}
         requestJson={requestJson}
         onSelectCommit={handleSelectCommit}
+        hotkeysEnabled={detailFocusEngaged}
       />
     );
   } else if (showFileDetail && workingDirectory && activeFilePath) {
@@ -513,6 +643,7 @@ export function CodebaseProjectWorkbench({
         openPaths={openFilePaths}
         activePath={activeFilePath}
         fs={fs}
+        editorFocusRequest={editorFocusRequest}
         onActivatePath={(path) => {
           setActiveFilePath(path);
           navigateSelection({ tab: "files", filePath: path });
@@ -668,6 +799,7 @@ export function CodebaseProjectWorkbench({
             onSelectCommit={handleSelectCommit}
             selectedPullNumber={selection.pullNumber}
             onSelectPullRequest={handleSelectPull}
+            githubDetailEngaged={detailFocusEngaged}
             selectedFilePath={activeFilePath}
             onSelectFile={handleSelectFile}
             onFileEntryDeleted={() => {

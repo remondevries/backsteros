@@ -406,14 +406,14 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   glassBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   glassFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(20, 20, 22, 0.45)",
   },
   glassBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: HEADER_ACTION_SIZE / 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.14)",
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     borderRadius: HEADER_ACTION_SIZE / 2,
   },
   glassContent: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
     alignItems: "center",
     justifyContent: "center",

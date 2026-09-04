@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Link as RouterLink,
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
@@ -16,7 +15,6 @@ import {
   PROJECTS_LIST_BOARD_STORAGE_KEY,
   PROJECT_SECTIONS,
   ProjectDetailView,
-  ProjectDocumentsSidePanelView,
   ProjectDocumentsView,
   ProjectLettersView,
   ProjectTasksView,
@@ -50,10 +48,12 @@ import {
   isCodebaseWorkbenchPath,
   isProjectSectionId,
   letterMatchesSlug,
+  letterPdfSubjectFromFilename,
   organizationMatchesSlug,
   parseListBoardViewFromLocation,
   parseProjectAreaFilterFromLocation,
   persistListBoardView,
+  resolveLetterDetailHref,
   serializeDocumentBody,
   type KnowledgeListItem,
   type ListBoardView,
@@ -101,6 +101,7 @@ import {
 } from "../lib/shell-route-keep-alive";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { CodebaseProjectWorkbench } from "./codebase-project-workbench";
+import { DesktopCodebaseDocsListPanel } from "./codebase-docs-list-panel";
 import {
   projectTypeFromLocationState,
   projectNavFromLocationState,
@@ -242,6 +243,9 @@ function ProjectsPageBody({
   const [composePdfUploading, setComposePdfUploading] = useState(false);
   const [letterStatusOverride, setLetterStatusOverride] =
     useState<TaskStatus | null>(null);
+  const [letterTitleOverride, setLetterTitleOverride] = useState<string | null>(
+    null,
+  );
   /** Title/number from the latest create — `onCreatedTask` may close over a stale tasks list. */
   const pendingCreatedTaskRef = useRef<{
     title: string;
@@ -426,6 +430,13 @@ function ProjectsPageBody({
     selected,
   ]);
 
+  // Soft-pull document metadata when viewing Docs so agent creates show before
+  // PowerSync mirrors them into SQLite.
+  useEffect(() => {
+    if (activeSection !== "documents") return;
+    void workspace.softRefreshApiDocuments();
+  }, [activeSection, selected?.id, workspace.softRefreshApiDocuments]);
+
   // Match web: open first project letter when landing on Letters index.
   useEffect(() => {
     if (!selected || activeSection !== "letters" || letterSlug) return;
@@ -448,7 +459,15 @@ function ProjectsPageBody({
     setPendingEditDocumentId(null);
     setOmittedDocumentIds([]);
     setLetterStatusOverride(null);
+    setLetterTitleOverride(null);
   }, [selected?.id, letterSlug]);
+
+  useEffect(() => {
+    if (letterTitleOverride == null || !selectedLetter) return;
+    if (selectedLetter.title === letterTitleOverride) {
+      setLetterTitleOverride(null);
+    }
+  }, [letterTitleOverride, selectedLetter]);
 
   useEffect(() => {
     if (!pendingEditDocumentId || !selectedDocument) return;
@@ -463,7 +482,7 @@ function ProjectsPageBody({
   const letterBreadcrumbTitle = composingLetter
     ? "New"
     : selectedLetter
-      ? `${formatLetterDisplayId(selectedLetter.number)} ${selectedLetter.title}`
+      ? `${formatLetterDisplayId(selectedLetter.number)} ${letterTitleOverride ?? selectedLetter.title}`
       : null;
 
   const projectNavFrom: ProjectNavFrom =
@@ -1116,22 +1135,20 @@ function ProjectsPageBody({
                         : null,
                     });
                     setOmittedLetterIds([]);
-                    if (payload.navigateAfterCreate !== false) {
-                      // Navigate immediately so the letter appears in the list;
-                      // PDF upload continues afterward and must not block create.
-                      if (created.number != null) {
+                      if (payload.navigateAfterCreate !== false) {
                         navigate(
-                          getScopedProjectLetterHref(
-                            projectKey,
-                            created.number,
-                            routeScope),
-                          { replace: true });
-                      } else {
-                        navigate(
-                          `${getScopedProjectSectionHref(projectKey, "letters", routeScope)}/${created.id}`,
-                          { replace: true });
+                          resolveLetterDetailHref({
+                            id: created.id,
+                            number: created.number,
+                            listBaseHref: getScopedProjectSectionHref(
+                              projectKey,
+                              "letters",
+                              routeScope,
+                            ),
+                          }),
+                          { replace: true },
+                        );
                       }
-                    }
                     if (payload.pdfFile) {
                       setComposePdfUploading(true);
                       const upload = await uploadLetterPdfFile(
@@ -1160,7 +1177,7 @@ function ProjectsPageBody({
               <LetterDetailView
                 letter={{
                   id: selectedLetter.id,
-                  title: selectedLetter.title,
+                  title: letterTitleOverride ?? selectedLetter.title,
                   status: letterStatusOverride ?? selectedLetter.status,
                   organizationId: record?.organizationId ?? null,
                   organizationName:
@@ -1192,7 +1209,21 @@ function ProjectsPageBody({
                 pdfAttachments={pdfPanel.attachments}
                 selectedAttachmentId={pdfPanel.selectedAttachmentId}
                 onSelectAttachment={pdfPanel.selectAttachment}
-                onRenameAttachment={pdfPanel.renameAttachment}
+                onRenameAttachment={async (attachmentId, originalFilename) => {
+                  const result = await pdfPanel.renameAttachment(
+                    attachmentId,
+                    originalFilename,
+                  );
+                  if (result.ok) {
+                    const primaryId = pdfPanel.attachments[0]?.id;
+                    if (attachmentId === primaryId) {
+                      setLetterTitleOverride(
+                        letterPdfSubjectFromFilename(originalFilename),
+                      );
+                    }
+                  }
+                  return result;
+                }}
                 onAttachmentRenamed={pdfPanel.reloadAttachments}
                 onDeleteAttachment={pdfPanel.deleteAttachment}
                 onReorderAttachments={async (orderedIds) => {
@@ -1274,6 +1305,7 @@ function ProjectsPageBody({
                     await workspace.patchLetter(selectedLetter.id, {
                       title: trimmed,
                     });
+                    void pdfPanel.reloadAttachments();
                     return { ok: true as const };
                   } catch (error) {
                     return {
@@ -1451,7 +1483,11 @@ function ProjectsPageBody({
   if (isCodebaseWorkbench) {
     return (
       <>
-        <RegisterPageTitle title={project.name} />
+        <RegisterPageTitle
+          active={keepAliveActive}
+          href={location.pathname}
+          title={project.name}
+        />
         <RegisterEntityDuplicateAction
           confirm="project"
           entityLabel={`project "${project.name}"`}
@@ -1490,11 +1526,10 @@ function ProjectsPageBody({
           tasksPanel={renderSection("tasks")}
           docsPanel={renderSection("documents")}
           docsListPanel={
-            <ProjectDocumentsSidePanelView
-              variant="embedded"
+            <DesktopCodebaseDocsListPanel
+              keyboardEnabled={activeSection === "documents"}
               pathname={location.pathname}
               items={projectDocuments}
-              Link={RouterLink}
               getDocumentHref={(pathOrId) =>
                 getScopedProjectDocumentHref(projectKey, pathOrId, routeScope)
               }
@@ -1666,7 +1701,11 @@ function ProjectsPageBody({
 
   return (
     <>
-      <RegisterPageTitle title={project.name} />
+      <RegisterPageTitle
+        active={keepAliveActive}
+        href={location.pathname}
+        title={project.name}
+      />
       {activeSection === "overview" ? (
         <>
           <RegisterEntityDuplicateAction

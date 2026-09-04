@@ -24,7 +24,7 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import Svg, { Rect } from "react-native-svg";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation } from "expo-router/react-navigation";
 import { useRouter } from "expo-router";
 
 import {
@@ -1483,7 +1483,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   heatTipBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "transparent",
   },
   choiceOverlayAnchor: {

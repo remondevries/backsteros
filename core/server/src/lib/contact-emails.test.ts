@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   coerceContactEmailEntries,
   contactMatchesEmailAddress,
+  emailMessageInvolvesContact,
   findContactByEmailAddress,
   getContactEmailAddresses,
   normalizeContactEmailsInput,
@@ -44,6 +45,21 @@ describe("contact emails", () => {
     );
   });
 
+  it("parses PowerSync JSON-string emails instead of treating chars as addresses", () => {
+    assert.deepEqual(coerceContactEmailEntries("[]"), []);
+    assert.deepEqual(
+      getContactEmailAddresses({ email: null, emails: "[]" }),
+      [],
+    );
+    assert.deepEqual(
+      getContactEmailAddresses({
+        email: null,
+        emails: '[{"label":"work","address":"a@example.com"}]',
+      }),
+      ["a@example.com"],
+    );
+  });
+
   it("matches any stored address", () => {
     const contact = {
       email: "one@example.com",
@@ -54,6 +70,42 @@ describe("contact emails", () => {
     assert.equal(
       findContactByEmailAddress([contact], "two@example.com")?.email,
       "one@example.com",
+    );
+  });
+
+  it("matches email messages by From, To, or linked contactId", () => {
+    const contact = {
+      id: "c1",
+      email: "ada@example.com",
+      emails: [{ label: "work" as const, address: "ada.work@example.com" }],
+    };
+    assert.equal(
+      emailMessageInvolvesContact(
+        { from: "Ada <ada@example.com>", to: [] },
+        contact,
+      ),
+      true,
+    );
+    assert.equal(
+      emailMessageInvolvesContact(
+        { from: "us@inbox.com", to: ["ada.work@example.com"] },
+        contact,
+      ),
+      true,
+    );
+    assert.equal(
+      emailMessageInvolvesContact(
+        { from: "other@example.com", to: ["us@inbox.com"], contactId: "c1" },
+        contact,
+      ),
+      true,
+    );
+    assert.equal(
+      emailMessageInvolvesContact(
+        { from: "other@example.com", to: ["us@inbox.com"] },
+        contact,
+      ),
+      false,
     );
   });
 

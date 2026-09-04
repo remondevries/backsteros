@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -29,14 +30,16 @@ import {
   routerAgreesWithWindow,
   shouldKeepAliveSurface,
   subscribeWarmKeepAlive,
+  subscribeWarmKeepAliveChrome,
   visibleKeepAliveHref,
 } from "./shell-warm-keep-alive";
+import {
+  snapshotFor,
+  type RouteSnapshot,
+} from "./shell-keep-alive-snapshot";
 
-export type RouteSnapshot = {
-  pathname: string;
-  searchStr: string;
-  params: Record<string, string | undefined>;
-};
+export type { RouteSnapshot } from "./shell-keep-alive-snapshot";
+export { snapshotFor } from "./shell-keep-alive-snapshot";
 
 type FrozenRouteContextValue = {
   active: boolean;
@@ -153,11 +156,31 @@ export function useKeepAliveAfterPaint(): boolean {
  * - Inside a KeepAlivePane → that pane's store href (snapshot)
  * - Else if a keep-alive surface is visible → visible surface store href
  * - Else (Outlet: finance, settings, email, development) → TanStack router
+ *
+ * Keep-alive page bodies must not subscribe to the warm epoch: every section
+ * flip would re-render every frozen tree. Location updates arrive via
+ * FrozenRouteContext from KeepAlivePane instead.
  */
 export function useShellLocation() {
   const frozen = useContext(FrozenRouteContext);
-  const visible = useVisibleKeepAliveSurface();
-  useWarmKeepAliveEpoch();
+  const skipWarm = frozen != null;
+  // Chrome only needs one warm subscription — epoch bumps on every emit
+  // (including visible changes). Subscribing to visible + epoch doubled
+  // re-renders per flip (~20–70 chrome wakes in perf logs).
+  // Chrome notifications are deferred to the next frame so pane DOM can paint.
+  const subscribeWarm = useCallback(
+    (onChange: () => void) => {
+      if (skipWarm) return () => {};
+      return subscribeWarmKeepAliveChrome(onChange);
+    },
+    [skipWarm],
+  );
+  useSyncExternalStore(
+    subscribeWarm,
+    getWarmKeepAliveEpoch,
+    getWarmKeepAliveEpoch,
+  );
+  const visible = skipWarm ? null : getVisibleKeepAliveSurface();
   const router = useRouter();
   const skipLive = frozen != null || visible != null;
   const store = routerLocationStore(router);
@@ -251,44 +274,6 @@ export function useRoutePathActive(root: string): boolean {
   return isRoutePathActive(pathname, root);
 }
 
-export function snapshotFor(
-  surface: PendingPageSurface,
-  pathname: string,
-  searchStr: string,
-): RouteSnapshot {
-  const parts = pathname.split("/").filter(Boolean);
-  const params: Record<string, string | undefined> = {};
-  if (surface === "inbox") {
-    params.itemId = parts[0] === "inbox" ? parts[1] : undefined;
-  }
-  if (surface === "journal-habits") {
-    params.habitId = parts[2];
-  }
-  if (surface === "journal-day") {
-    params.dateSlug = parts[1];
-  }
-  if (surface === "projects" || surface === "contacts") {
-    params.slug = parts[1];
-    params.section = parts[2];
-  }
-  if (surface === "organizations") {
-    params.slug = parts[1];
-    params.section = parts[2];
-  }
-  if (surface === "letters") {
-    params.slug = parts[1];
-  }
-  if (surface === "tasks-list" && parts[0] === "tasks") {
-    if (parts.length >= 3) {
-      params.dueFilter = parts[1];
-      params.taskSlug = parts[2];
-    } else if (parts.length === 2) {
-      params.taskId = parts[1];
-    }
-  }
-  return { pathname, searchStr, params };
-}
-
 function snapshotsMatch(left: RouteSnapshot, right: RouteSnapshot): boolean {
   return left.pathname === right.pathname && left.searchStr === right.searchStr;
 }
@@ -297,18 +282,114 @@ export const KeepAlivePane = memo(function KeepAlivePane({
   surface,
   active: activeProp,
   snapshot,
+  /** Side panels thaw one frame later so the main page paints first. */
+  role = "main",
   children,
 }: {
   surface?: PendingPageSurface;
   active: boolean;
   snapshot: RouteSnapshot;
+  role?: "main" | "sidepanel";
   children: ReactNode;
 }) {
-  const visible = useVisibleKeepAliveSurface();
-  // Same-surface task/list href flips emit without changing `visible`.
-  useWarmKeepAliveEpoch();
-  const active =
-    surface != null && visible != null ? visible === surface : activeProp;
+  // Only wake when THIS surface gains/loses keep-alive visibility — not when
+  // other sections flip. Same-surface href flips leave `visible` unchanged and
+  // use the epoch subscription below (shown panes only).
+  const subscribeVisible = useCallback(
+    (onChange: () => void) => {
+      if (surface == null) return () => {};
+      let wasMine = getVisibleKeepAliveSurface() === surface;
+      return subscribeWarmKeepAlive(() => {
+        const isMine = getVisibleKeepAliveSurface() === surface;
+        if (isMine === wasMine) return;
+        wasMine = isMine;
+        onChange();
+      });
+    },
+    [surface],
+  );
+  const isThisSurfaceShown = useCallback(() => {
+    if (surface == null) return activeProp;
+    const visible = getVisibleKeepAliveSurface();
+    // First-visit / Outlet dismiss clears `visible` so the router-driven
+    // activeProp can win on that commit (see dismissKeepAliveForOutletNavigation).
+    if (visible == null) return activeProp;
+    return visible === surface;
+  }, [surface, activeProp]);
+  const active = useSyncExternalStore(
+    subscribeVisible,
+    isThisSurfaceShown,
+    isThisSurfaceShown,
+  );
+  const shown = active;
+  // DOM visibility flips immediately. Thaw runs on the next animation frame
+  // (urgent); freeze runs one frame later with a visibility guard so a stale
+  // freeze cannot land after the user has already returned.
+  const [treeActive, setTreeActive] = useState(() => shown);
+  useLayoutEffect(() => {
+    let cancelled = false;
+    if (shown) {
+      if (treeActive) {
+        return () => {
+          cancelled = true;
+        };
+      }
+      const thaw = () => {
+        if (cancelled) return;
+        // Never activate a pane that is no longer the visible surface.
+        if (surface != null && getVisibleKeepAliveSurface() !== surface) {
+          return;
+        }
+        if (surface == null && !activeProp) return;
+        setTreeActive(true);
+      };
+      // Main thaws next frame; sidepanel waits one more so main paints first.
+      let frame2 = 0;
+      const frame1 = requestAnimationFrame(() => {
+        if (cancelled) return;
+        if (role === "sidepanel") {
+          frame2 = requestAnimationFrame(() => {
+            if (!cancelled) thaw();
+          });
+          return;
+        }
+        thaw();
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(frame1);
+        if (frame2) cancelAnimationFrame(frame2);
+      };
+    }
+    if (!treeActive) return;
+    // Freeze one frame later than main thaw so the entering pane activates
+    // first. Skip if this surface is visible again (stale freeze guard).
+    const frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      if (surface != null && getVisibleKeepAliveSurface() === surface) return;
+      if (surface == null && activeProp) return;
+      setTreeActive(false);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [shown, treeActive, surface, activeProp, role]);
+  // Context consumers must stay frozen while DOM-hidden, even if raw
+  // treeActive briefly disagrees.
+  const effectiveTreeActive = treeActive && shown;
+  const subscribeEpoch = useCallback(
+    (onChange: () => void) => {
+      if (surface != null && !shown) return () => {};
+      return subscribeWarmKeepAlive(onChange);
+    },
+    [surface, shown],
+  );
+  useSyncExternalStore(
+    subscribeEpoch,
+    getWarmKeepAliveEpoch,
+    getWarmKeepAliveEpoch,
+  );
   let nextSnapshot = snapshot;
   if (surface != null) {
     const parts = partsFromKeepAliveHref(lastHrefForKeepAliveSurface(surface));
@@ -316,16 +397,16 @@ export const KeepAlivePane = memo(function KeepAlivePane({
   }
   const [allowHeavy, setAllowHeavy] = useState(false);
   useEffect(() => {
-    if (!active || allowHeavy) return;
+    if (!effectiveTreeActive || allowHeavy) return;
     const frame = requestAnimationFrame(() => setAllowHeavy(true));
     return () => cancelAnimationFrame(frame);
-  }, [active, allowHeavy]);
+  }, [effectiveTreeActive, allowHeavy]);
 
   const { setActiveZone } = useListKeyboardNavigationZone();
   const wasActiveRef = useRef(false);
   useEffect(() => {
-    const becameActive = active && !wasActiveRef.current;
-    wasActiveRef.current = active;
+    const becameActive = effectiveTreeActive && !wasActiveRef.current;
+    wasActiveRef.current = effectiveTreeActive;
     // Only reclaim j/k when this pane becomes visible — not on every
     // same-surface href flip (journal day → day would re-scroll the list).
     if (!becameActive) return;
@@ -338,30 +419,34 @@ export const KeepAlivePane = memo(function KeepAlivePane({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [active, nextSnapshot.pathname, setActiveZone]);
+  }, [effectiveTreeActive, nextSnapshot.pathname, setActiveZone]);
 
   const valueRef = useRef<FrozenRouteContextValue>({
-    active,
+    active: effectiveTreeActive,
     snapshot: nextSnapshot,
     allowHeavy,
   });
   if (
-    valueRef.current.active !== active ||
+    valueRef.current.active !== effectiveTreeActive ||
     !snapshotsMatch(valueRef.current.snapshot, nextSnapshot) ||
     valueRef.current.allowHeavy !== allowHeavy
   ) {
-    valueRef.current = { active, snapshot: nextSnapshot, allowHeavy };
+    valueRef.current = {
+      active: effectiveTreeActive,
+      snapshot: nextSnapshot,
+      allowHeavy,
+    };
   }
 
   return (
     <FrozenRouteContext.Provider value={valueRef.current}>
       <div
         className="keep-alive-pane"
-        data-keep-alive-hidden={active ? undefined : ""}
-        inert={!active ? true : undefined}
-        aria-hidden={!active}
+        data-keep-alive-hidden={shown ? undefined : ""}
+        inert={!shown ? true : undefined}
+        aria-hidden={!shown}
       >
-        <ListKeyboardNavMountGate active={active}>
+        <ListKeyboardNavMountGate active={effectiveTreeActive}>
           {children}
         </ListKeyboardNavMountGate>
       </div>

@@ -19,6 +19,14 @@ function shouldHandleEscapeBack(
   if (document.querySelector("[data-searchable-dropdown-panel]")) {
     return false;
   }
+  // Page overlays own Escape (collapse / close) before history back.
+  if (
+    document.querySelector(
+      "[data-calendar-meeting-overlay], [data-calendar-task-overlay], [data-contact-overlay], [data-organization-overlay]",
+    )
+  ) {
+    return false;
+  }
 
   const target = event.target;
   if (target instanceof HTMLElement) {

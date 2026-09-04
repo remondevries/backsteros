@@ -175,7 +175,7 @@ function HabitSidePanelChrome({
       onToggleToday={(habit, checked) => {
         if (!habit.todayTaskId) return;
         void patchTask(habit.todayTaskId, {
-          status: checked ? "completed" : "ready_to_start",
+          status: checked ? "completed" : "canceled",
         });
       }}
       onCreateHabit={async ({ title, icon }) => {

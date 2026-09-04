@@ -1,5 +1,5 @@
 import type { UpdateFinancialTransactionInput } from "@backsteros/contracts";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation } from "expo-router/react-navigation";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   useCallback,

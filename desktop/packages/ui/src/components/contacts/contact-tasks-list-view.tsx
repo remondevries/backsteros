@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { taskInvolvesContact } from "@backsteros/contracts";
 
 import { groupTasksByStatus } from "../../tasks/group-tasks-by-status.js";
 import { flattenGroupedListItemIds } from "../../list-nav/list-keyboard-nav-index.js";
@@ -66,8 +67,8 @@ export type ContactTasksListViewProps = {
 };
 
 /**
- * Contact Tasks tab — status-grouped list filtered to
- * assigneeId === contactId || contactId === contactId (Next ContactTasksList).
+ * Contact Tasks tab — status-grouped list filtered to tasks involving this contact
+ * (assignee, structural contactId, or Related).
  */
 export function ContactTasksListView({
   contactId,
@@ -80,15 +81,14 @@ export function ContactTasksListView({
   onReorder,
   selectedTaskId = null,
   emptyMessage = "No tasks for this contact",
-  emptyHint = "Tasks assigned to this contact will show up here.",
+  emptyHint = "Tasks assigned to or related to this contact will show up here.",
   taskIdColumnCh: taskIdColumnChProp,
 }: ContactTasksListViewProps) {
   const scopedTasks = useMemo(
     () =>
       tasks.filter(
         (task) =>
-          !isHabitLinkedTask(task) &&
-          (task.assigneeId === contactId || task.contactId === contactId),
+          !isHabitLinkedTask(task) && taskInvolvesContact(task, contactId),
       ),
     [contactId, tasks],
   );

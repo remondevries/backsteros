@@ -9,7 +9,14 @@ import {
 import type { AuthContext } from "../middleware/auth.js";
 import { requireScope } from "../middleware/auth.js";
 import * as schedulingService from "../services/meeting-scheduling.js";
+import * as meetingService from "../services/meetings.js";
 import { pushInboxTriageForMeeting } from "../services/inbox-triage-push-triggers.js";
+import {
+  buildMeetingRestPayload,
+  commitRestEntityWrite,
+  isRestLeaderFirstWrite,
+} from "../services/rest-leader-write.js";
+import { recordMeetingRestSyncEvent } from "../services/sync.js";
 
 function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
@@ -84,10 +91,47 @@ export function registerPublicSchedulingRoutes(app: Hono) {
       }
 
       try {
-        const meeting = await schedulingService.createMeetingBooking(
-          auth!.workspaceId,
-          c.req.valid("json"),
-        );
+        const body = c.req.valid("json");
+        let meeting;
+        if (isRestLeaderFirstWrite()) {
+          const planned = await schedulingService.planMeetingBooking(
+            auth!.workspaceId,
+            body,
+          );
+          await commitRestEntityWrite({
+            workspaceId: auth!.workspaceId,
+            entity: "meeting",
+            entityId: planned.id,
+            operation: "upsert",
+            payload: buildMeetingRestPayload(planned.id, planned.input),
+          });
+          meeting = await meetingService.getMeetingById(
+            auth!.workspaceId,
+            planned.id,
+          );
+          if (!meeting) {
+            return c.json(
+              { error: "Meeting booking failed", code: "internal" },
+              500,
+            );
+          }
+        } else {
+          meeting = await schedulingService.createMeetingBooking(
+            auth!.workspaceId,
+            body,
+          );
+          const dbRow = await meetingService.getMeetingRow(
+            auth!.workspaceId,
+            meeting.id,
+          );
+          if (dbRow) {
+            await recordMeetingRestSyncEvent(
+              auth!.workspaceId,
+              dbRow,
+              "upsert",
+            );
+          }
+        }
         void pushInboxTriageForMeeting(auth!.workspaceId, meeting).catch(
           (error) => {
             console.warn(
@@ -124,11 +168,8 @@ export function registerPublicSchedulingRoutes(app: Hono) {
             error.message === "INVALID_SLOT_DURATION"
           ) {
             return c.json(
-              {
-                error: "Invalid meeting time.",
-                code: "invalid_meeting_dates" as const,
-              },
-              status,
+              { error: error.message, code: "bad_request" as const },
+              400,
             );
           }
         }

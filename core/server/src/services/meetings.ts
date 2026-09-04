@@ -5,6 +5,7 @@ import type {
   Meeting,
   UpdateMeetingInput,
 } from "@backsteros/contracts";
+import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import {
@@ -89,8 +90,11 @@ export function toMeeting(row: DbMeeting): Meeting {
     startAt: row.startAt.toISOString(),
     endAt: row.endAt.toISOString(),
     format: (row.format ?? "video_call") as Meeting["format"],
+    location: row.location ?? null,
+    locationOrganizationId: row.locationOrganizationId ?? null,
     trackedMinutes: row.trackedMinutes ?? null,
     trackedDurationSeconds: row.trackedDurationSeconds ?? null,
+    inboxUpdatedAt: toIso(row.inboxUpdatedAt),
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -171,6 +175,8 @@ export async function createMeetingRow(
       organizationId: input.organizationId ?? null,
       attendeeContactIds: input.attendeeContactIds ?? [],
       format: input.format ?? "video_call",
+      location: input.location ?? null,
+      locationOrganizationId: input.locationOrganizationId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
       startAt,
@@ -225,6 +231,19 @@ export async function updateMeeting(
     throw new Error("MEETING_END_BEFORE_START");
   }
 
+  let inboxUpdatedAt: Date | null | undefined = undefined;
+  if (
+    shouldClearInboxUpdatedOnUserWrite(input) ||
+    input.inboxUpdatedAt === null
+  ) {
+    inboxUpdatedAt = null;
+  } else if (typeof input.inboxUpdatedAt === "string") {
+    const parsed = new Date(input.inboxUpdatedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      inboxUpdatedAt = parsed;
+    }
+  }
+
   const [row] = await executor
     .update(meetings)
     .set({
@@ -243,12 +262,17 @@ export async function updateMeeting(
         ? { attendeeContactIds: input.attendeeContactIds }
         : {}),
       ...(input.format !== undefined ? { format: input.format } : {}),
+      ...(input.location !== undefined ? { location: input.location } : {}),
+      ...(input.locationOrganizationId !== undefined
+        ? { locationOrganizationId: input.locationOrganizationId }
+        : {}),
       ...(input.trackedMinutes !== undefined
         ? { trackedMinutes: input.trackedMinutes }
         : {}),
       ...(input.trackedDurationSeconds !== undefined
         ? { trackedDurationSeconds: input.trackedDurationSeconds }
         : {}),
+      ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
       startAt,
       endAt,
       updatedAt: new Date(),

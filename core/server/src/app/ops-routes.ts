@@ -9,9 +9,16 @@ import {
 import type { AuthContext } from "../middleware/auth.js";
 import { resolveAuth } from "../middleware/auth.js";
 import { isSpacesConfigured } from "../lib/storage.js";
+import { newId } from "../lib/crypto.js";
 import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import * as opsService from "../services/ops.js";
 import * as recurringTaskService from "../services/recurring-tasks.js";
+import {
+  buildRecurringTaskRestPayload,
+  commitRestEntityWrite,
+  isRestLeaderFirstWrite,
+} from "../services/rest-leader-write.js";
+import { recordRecurringTaskRestSyncEvent } from "../services/sync.js";
 
 function getAuth(c: Context): AuthContext {
   return c.get("auth");
@@ -81,10 +88,44 @@ export function registerOpsRoutes(app: Hono) {
       if (denied) return denied;
 
       try {
+        const body = c.req.valid("json");
+        const auth = getAuth(c);
+        if (isRestLeaderFirstWrite()) {
+          const recurringTaskId = newId();
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "recurring_task",
+            entityId: recurringTaskId,
+            operation: "upsert",
+            payload: buildRecurringTaskRestPayload(recurringTaskId, body),
+          });
+          const row = await recurringTaskService.getRecurringTaskById(
+            auth.workspaceId,
+            recurringTaskId,
+          );
+          if (!row || row.deletedAt) {
+            return c.json(
+              { error: "Recurring task create failed", code: "internal" },
+              500,
+            );
+          }
+          return c.json(recurringTaskService.toRecurringTask(row), 201);
+        }
         const row = await recurringTaskService.createRecurringTask(
-          getAuth(c).workspaceId,
-          c.req.valid("json"),
+          auth.workspaceId,
+          body,
         );
+        const dbRow = await recurringTaskService.getRecurringTaskById(
+          auth.workspaceId,
+          row.id,
+        );
+        if (dbRow) {
+          await recordRecurringTaskRestSyncEvent(
+            auth.workspaceId,
+            dbRow,
+            "upsert",
+          );
+        }
         return c.json(row, 201);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -117,15 +158,59 @@ export function registerOpsRoutes(app: Hono) {
       if (denied) return denied;
 
       try {
+        const auth = getAuth(c);
+        const recurringTaskId = c.req.param("id");
+        const patch = c.req.valid("json");
+        if (isRestLeaderFirstWrite()) {
+          const existing = await recurringTaskService.getRecurringTaskById(
+            auth.workspaceId,
+            recurringTaskId,
+          );
+          if (!existing || existing.deletedAt) {
+            return c.json(
+              { error: "Recurring task not found", code: "not_found" as const },
+              404,
+            );
+          }
+          await commitRestEntityWrite({
+            workspaceId: auth.workspaceId,
+            entity: "recurring_task",
+            entityId: recurringTaskId,
+            operation: "upsert",
+            payload: buildRecurringTaskRestPayload(recurringTaskId, patch),
+          });
+          const row = await recurringTaskService.getRecurringTaskById(
+            auth.workspaceId,
+            recurringTaskId,
+          );
+          if (!row || row.deletedAt) {
+            return c.json(
+              { error: "Recurring task not found", code: "not_found" as const },
+              404,
+            );
+          }
+          return c.json(recurringTaskService.toRecurringTask(row));
+        }
         const row = await recurringTaskService.updateRecurringTask(
-          getAuth(c).workspaceId,
-          c.req.param("id"),
-          c.req.valid("json"),
+          auth.workspaceId,
+          recurringTaskId,
+          patch,
         );
         if (!row) {
           return c.json(
             { error: "Recurring task not found", code: "not_found" as const },
             404,
+          );
+        }
+        const dbRow = await recurringTaskService.getRecurringTaskById(
+          auth.workspaceId,
+          recurringTaskId,
+        );
+        if (dbRow) {
+          await recordRecurringTaskRestSyncEvent(
+            auth.workspaceId,
+            dbRow,
+            "upsert",
           );
         }
         return c.json(row);
@@ -156,9 +241,35 @@ export function registerOpsRoutes(app: Hono) {
     const denied = await requireOwner(c);
     if (denied) return denied;
 
+    const auth = getAuth(c);
+    const recurringTaskId = c.req.param("id");
+    if (isRestLeaderFirstWrite()) {
+      const existing = await recurringTaskService.getRecurringTaskById(
+        auth.workspaceId,
+        recurringTaskId,
+      );
+      if (!existing || existing.deletedAt) {
+        return c.json(
+          { error: "Recurring task not found", code: "not_found" as const },
+          404,
+        );
+      }
+      await commitRestEntityWrite({
+        workspaceId: auth.workspaceId,
+        entity: "recurring_task",
+        entityId: recurringTaskId,
+        operation: "delete",
+        payload: {
+          id: recurringTaskId,
+          deleted_at: new Date().toISOString(),
+        },
+      });
+      return c.body(null, 204);
+    }
+
     const deleted = await recurringTaskService.deleteRecurringTask(
-      getAuth(c).workspaceId,
-      c.req.param("id"),
+      auth.workspaceId,
+      recurringTaskId,
     );
     if (!deleted) {
       return c.json(
@@ -166,6 +277,11 @@ export function registerOpsRoutes(app: Hono) {
         404,
       );
     }
+    await recordRecurringTaskRestSyncEvent(
+      auth.workspaceId,
+      deleted,
+      "delete",
+    );
     return c.body(null, 204);
   });
 

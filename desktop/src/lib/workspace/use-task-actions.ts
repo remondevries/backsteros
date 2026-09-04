@@ -8,6 +8,7 @@ import { allocateUniqueProjectKey, toApiDueDateIso } from "@backsteros/ui";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { resolveCreateAssigneeId } from "../default-assignee";
+import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
 import {
   cloneTaskLinksForDuplicate,
   parseTaskLinks,
@@ -46,23 +47,38 @@ export function useWorkspaceTaskActions({
       status?: string;
       priority?: number;
       assigneeId?: string | null;
+      relatedContactIds?: string[];
+      relatedOrganizationIds?: string[];
       dueDate?: string | null;
       links?: TaskLink[];
+      /**
+       * Triage capture defaults to true. Due-list creates (Today/Tomorrow/…)
+       * must pass false so the task stays on the tasks overview (`!inbox`).
+       */
+      inbox?: boolean;
     }) => {
       const title = input.title.trim();
       if (!title) throw new Error("Task title is required.");
       if (!authenticated) throw new Error("Sign in to create inbox tasks.");
+      const inbox = input.inbox ?? true;
       const body = {
         title,
         ...(input.description?.trim()
           ? { description: input.description.trim() }
           : {}),
-        status: input.status ?? "triage",
+        status: input.status ?? (inbox ? "triage" : "ready_to_start"),
         priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
+        ...(input.relatedContactIds && input.relatedContactIds.length > 0
+          ? { relatedContactIds: input.relatedContactIds }
+          : {}),
+        ...(input.relatedOrganizationIds &&
+        input.relatedOrganizationIds.length > 0
+          ? { relatedOrganizationIds: input.relatedOrganizationIds }
+          : {}),
         dueDate: toApiDueDateIso(input.dueDate),
-        inbox: true,
+        inbox,
         projectId: null,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
@@ -78,22 +94,48 @@ export function useWorkspaceTaskActions({
           createdAt: now,
           updatedAt: now,
         } as ApiTask;
-        setApiTasks((rows) => {
-          if (!rows) return [task];
-          if (rows.some((entry) => entry.id === task.id)) return rows;
-          return [task, ...rows];
+        const rollback = () => {
+          setApiTasks((rows) => rows?.filter((entry) => entry.id !== id) ?? null);
+          if (inbox) {
+            setApiInboxTasks(
+              (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+            );
+          }
+        };
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiTasks((rows) => {
+              if (!rows) return [task];
+              if (rows.some((entry) => entry.id === task.id)) return rows;
+              return [task, ...rows];
+            });
+            if (inbox) {
+              setApiInboxTasks((rows) => {
+                if (!rows) return [task];
+                if (rows.some((entry) => entry.id === task.id)) return rows;
+                return [task, ...rows];
+              });
+            }
+          },
+          rollback,
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "tasks",
+              toSnakeFields({ ...body, number: null }),
+              id,
+            ),
+          errorLabel: "local task create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
+            setters: inbox
+              ? [setApiTasks, setApiInboxTasks]
+              : [setApiTasks],
+          },
         });
-        setApiInboxTasks((rows) => {
-          if (!rows) return [task];
-          if (rows.some((entry) => entry.id === task.id)) return rows;
-          return [task, ...rows];
-        });
-        void powerSync
-          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
-          .catch((error) => {
-            console.warn("[desktop] local inbox task create failed", error);
-          });
-        return { id: task.id, number: null };
+        return { id: task.id, number };
       }
 
       let task: ApiTask;
@@ -126,11 +168,13 @@ export function useWorkspaceTaskActions({
         if (rows.some((entry) => entry.id === task.id)) return rows;
         return [task, ...rows];
       });
-      setApiInboxTasks((rows) => {
-        if (!rows) return [task];
-        if (rows.some((entry) => entry.id === task.id)) return rows;
-        return [task, ...rows];
-      });
+      if (task.inbox) {
+        setApiInboxTasks((rows) => {
+          if (!rows) return [task];
+          if (rows.some((entry) => entry.id === task.id)) return rows;
+          return [task, ...rows];
+        });
+      }
       return { id: task.id, number: task.number ?? null };
     },
     [
@@ -151,6 +195,8 @@ export function useWorkspaceTaskActions({
       status?: string;
       priority?: number;
       assigneeId?: string | null;
+      relatedContactIds?: string[];
+      relatedOrganizationIds?: string[];
       dueDate?: string | null;
       links?: TaskLink[];
     }) => {
@@ -168,6 +214,13 @@ export function useWorkspaceTaskActions({
         priority: input.priority ?? 0,
         sortOrder: Date.now(),
         assigneeId: resolveCreateAssigneeId(input.assigneeId),
+        ...(input.relatedContactIds && input.relatedContactIds.length > 0
+          ? { relatedContactIds: input.relatedContactIds }
+          : {}),
+        ...(input.relatedOrganizationIds &&
+        input.relatedOrganizationIds.length > 0
+          ? { relatedOrganizationIds: input.relatedOrganizationIds }
+          : {}),
         dueDate: toApiDueDateIso(input.dueDate),
         inbox: false,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
@@ -183,17 +236,32 @@ export function useWorkspaceTaskActions({
           createdAt: now,
           updatedAt: now,
         } as ApiTask;
-        setApiTasks((rows) => {
-          if (!rows) return [task];
-          if (rows.some((entry) => entry.id === task.id)) return rows;
-          return [task, ...rows];
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiTasks((rows) => {
+              if (!rows) return [task];
+              if (rows.some((entry) => entry.id === task.id)) return rows;
+              return [task, ...rows];
+            });
+          },
+          rollback: () =>
+            setApiTasks((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "tasks",
+              toSnakeFields({ ...body, number: null }),
+              id,
+            ),
+          errorLabel: "local project task create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
+            setters: [setApiTasks],
+          },
         });
-        void powerSync
-          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
-          .catch((error) => {
-            console.warn("[desktop] local project task create failed", error);
-          });
-        return { id: task.id, number: null };
+        return { id: task.id, number };
       }
 
       let task: ApiTask;
@@ -227,7 +295,7 @@ export function useWorkspaceTaskActions({
       });
       return { id: task.id, number: task.number ?? null };
     },
-    [authenticated, client, powerSync, setApiTasks, toSnakeFields],
+    [authenticated, client, powerSync, setApiInboxTasks, setApiTasks, toSnakeFields],
   );
 
   const createTaskFromBody = useCallback(
@@ -235,6 +303,7 @@ export function useWorkspaceTaskActions({
       if (powerSync.ready && powerSync.createMetadata) {
         const id = crypto.randomUUID().replace(/-/g, "");
         const now = new Date().toISOString();
+        const inbox = Boolean(body.inbox);
         const task = {
           id,
           number: null,
@@ -242,24 +311,47 @@ export function useWorkspaceTaskActions({
           createdAt: now,
           updatedAt: now,
         } as ApiTask;
-        setApiTasks((rows) => {
-          if (!rows) return [task];
-          if (rows.some((entry) => entry.id === task.id)) return rows;
-          return [task, ...rows];
+        const { number } = await optimisticLocalMetadataCreate({
+          id,
+          applyOptimistic: () => {
+            setApiTasks((rows) => {
+              if (!rows) return [task];
+              if (rows.some((entry) => entry.id === task.id)) return rows;
+              return [task, ...rows];
+            });
+            if (inbox) {
+              setApiInboxTasks((rows) => {
+                if (!rows) return [task];
+                if (rows.some((entry) => entry.id === task.id)) return rows;
+                return [task, ...rows];
+              });
+            }
+          },
+          rollback: () => {
+            setApiTasks((rows) => rows?.filter((entry) => entry.id !== id) ?? null);
+            if (inbox) {
+              setApiInboxTasks(
+                (rows) => rows?.filter((entry) => entry.id !== id) ?? null,
+              );
+            }
+          },
+          createMetadata: () =>
+            powerSync.createMetadata!(
+              "tasks",
+              toSnakeFields({ ...body, number: null }),
+              id,
+            ),
+          errorLabel: "local task create",
+          resolveNumberAfterUpload: {
+            client,
+            powerSync,
+            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
+            setters: inbox
+              ? [setApiTasks, setApiInboxTasks]
+              : [setApiTasks],
+          },
         });
-        if (task.inbox) {
-          setApiInboxTasks((rows) => {
-            if (!rows) return [task];
-            if (rows.some((entry) => entry.id === task.id)) return rows;
-            return [task, ...rows];
-          });
-        }
-        void powerSync
-          .createMetadata("tasks", toSnakeFields({ ...body, number: null }), id)
-          .catch((error) => {
-            console.warn("[desktop] local task create failed", error);
-          });
-        return task;
+        return { ...task, number };
       }
 
       let task: ApiTask;
@@ -333,6 +425,14 @@ export function useWorkspaceTaskActions({
         projectId: source.projectId ?? null,
         contactId: source.contactId ?? null,
         inbox: Boolean(source.inbox),
+        ...(Array.isArray(source.relatedContactIds) &&
+        source.relatedContactIds.length > 0
+          ? { relatedContactIds: source.relatedContactIds }
+          : {}),
+        ...(Array.isArray(source.relatedOrganizationIds) &&
+        source.relatedOrganizationIds.length > 0
+          ? { relatedOrganizationIds: source.relatedOrganizationIds }
+          : {}),
         ...(links.length > 0 ? { links } : {}),
       };
 
@@ -415,8 +515,13 @@ export function useWorkspaceTaskActions({
           createdAt: now,
           updatedAt: now,
         } as ApiProject;
-        void powerSync
-          .createMetadata(
+        setApiProjects((rows) => {
+          if (!rows) return [createdProject];
+          if (rows.some((entry) => entry.id === createdProject.id)) return rows;
+          return [createdProject, ...rows];
+        });
+        try {
+          await powerSync.createMetadata(
             "projects",
             toSnakeFields({
               key: createdProject.key,
@@ -428,10 +533,27 @@ export function useWorkspaceTaskActions({
               ...(createdProject.type ? { type: createdProject.type } : {}),
             }),
             createdProject.id,
-          )
-          .catch((error) => {
-            console.warn("[desktop] local duplicate project create failed", error);
-          });
+          );
+        } catch (error) {
+          setApiProjects(
+            (rows) =>
+              rows?.filter((entry) => entry.id !== createdProject.id) ?? null,
+          );
+          console.warn("[desktop] local duplicate project create failed", error);
+          throw error instanceof Error
+            ? error
+            : new Error("Could not duplicate project.");
+        }
+        if (options?.includeTasks && powerSync.connected) {
+          try {
+            await powerSync.flushCrudUpload();
+          } catch (error) {
+            console.warn(
+              "[desktop] duplicate project upload deferred",
+              error instanceof Error ? error.message : error,
+            );
+          }
+        }
       } else {
         const uniqueCandidates = [
           allocateUniqueProjectKey(source.key, rawProjects.map((project) => project.key)),
@@ -474,13 +596,12 @@ export function useWorkspaceTaskActions({
             : new Error("Failed to duplicate project.");
         }
         createdProject = project;
+        setApiProjects((rows) => {
+          if (!rows) return [createdProject];
+          if (rows.some((entry) => entry.id === createdProject.id)) return rows;
+          return [createdProject, ...rows];
+        });
       }
-
-      setApiProjects((rows) => {
-        if (!rows) return [createdProject];
-        if (rows.some((entry) => entry.id === createdProject.id)) return rows;
-        return [createdProject, ...rows];
-      });
 
       if (options?.includeTasks) {
         const sourceTasks = [...rawTasks, ...rawInboxTasks]

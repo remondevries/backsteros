@@ -1,9 +1,16 @@
-export const OPEN_COMPOSE_MODAL_EVENT = "backsteros:open-compose-modal";
+export const OPEN_COMPOSE_MODAL_EVENT = "backsteros:open-compose";
 
 export const COMPOSE_SHORTCUT_KEY = "c";
 export const COMPOSE_SHORTCUT_HINT = "C";
 
 export type ComposeKind = "task" | "document";
+
+export type OpenComposeModalDetail = {
+  /** Prefill assignee when opening the task compose modal. */
+  assigneeId?: string | null;
+  /** Prefill Related contacts (e.g. create-from-contact). */
+  relatedContactIds?: string[];
+};
 
 export type HorizontalArrowDirection = "left" | "right";
 
@@ -52,10 +59,16 @@ export function getComposeKindForShortcutKey(
   return null;
 }
 
-export function requestOpenComposeModal(): void {
+export function requestOpenComposeModal(
+  detail?: OpenComposeModalDetail,
+): void {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.dispatchEvent(new Event(OPEN_COMPOSE_MODAL_EVENT));
+  window.dispatchEvent(
+    new CustomEvent(OPEN_COMPOSE_MODAL_EVENT, {
+      detail: detail ?? {},
+    }),
+  );
 }

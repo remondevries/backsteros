@@ -1,0 +1,110 @@
+import { Stack } from "expo-router";
+import { StyleSheet, View } from "react-native";
+
+import { SocialHeader } from "../../../components/social-header";
+import { SocialListPane } from "../../../components/social-list-pane";
+import { isPadDevice } from "../../../lib/device";
+import {
+  PadContentFrame,
+  PadSidePanelCollapsedRail,
+  usePadSidePanelCollapsed,
+} from "../../../lib/pad-side-panel-collapse";
+import {
+  iosStackGestureOptions,
+  tabDetailScreenOptions,
+} from "../../../lib/tab-stack-options";
+import { colors } from "../../../lib/theme";
+
+const LIST_PANE_WIDTH = 320;
+
+function padDetailOptions() {
+  return {
+    ...tabDetailScreenOptions({ embedded: true }),
+    headerBackVisible: false,
+  };
+}
+
+export default function SocialLayout() {
+  const { collapsed, setCollapsed } = usePadSidePanelCollapsed("social");
+
+  if (!isPadDevice()) {
+    return (
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: colors.background },
+          ...iosStackGestureOptions,
+        }}
+      >
+        <Stack.Screen
+          name="index"
+          options={{
+            contentStyle: { backgroundColor: colors.background },
+          }}
+        />
+        <Stack.Screen name="[id]" options={tabDetailScreenOptions()} />
+      </Stack>
+    );
+  }
+
+  return (
+    <View style={styles.split}>
+      {collapsed ? (
+        <PadSidePanelCollapsedRail
+          onExpand={() => setCollapsed(false)}
+          accessibilityLabel="Show Social list"
+        />
+      ) : (
+        <View style={styles.listPane}>
+          <SocialHeader onToggleCollapse={() => setCollapsed(true)} />
+          <View style={styles.listBody}>
+            <SocialListPane autoSelectFirst />
+          </View>
+        </View>
+      )}
+      <PadContentFrame>
+        <Stack
+          screenOptions={{
+            contentStyle: { backgroundColor: colors.surface },
+            headerStyle: { backgroundColor: colors.surface },
+            ...iosStackGestureOptions,
+          }}
+        >
+          <Stack.Screen
+            name="index"
+            options={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.surface },
+            }}
+          />
+          <Stack.Screen
+            name="[id]"
+            options={{
+              ...padDetailOptions(),
+              animation: "fade",
+              animationDuration: 220,
+            }}
+          />
+        </Stack>
+      </PadContentFrame>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  split: {
+    flex: 1,
+    flexDirection: "row",
+    minHeight: 0,
+    backgroundColor: colors.background,
+  },
+  listPane: {
+    width: LIST_PANE_WIDTH,
+    flexShrink: 0,
+    minHeight: 0,
+    backgroundColor: colors.background,
+  },
+  listBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+});

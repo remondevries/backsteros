@@ -32,6 +32,19 @@ describe("scrollDeltaToRevealInSafeArea", () => {
     );
   });
 
+  it("scrolls up when the target sits under a sticky header below scroll padding", () => {
+    // Finance tx scrollports use ~16px top padding; month headers stick under it.
+    assert.equal(
+      scrollDeltaToRevealInSafeArea({
+        targetTop: 16,
+        targetBottom: 52,
+        visibleTop: 48,
+        visibleBottom: 600,
+      }),
+      -32,
+    );
+  });
+
   it("scrolls down when the target sits past the bottom of the safe band", () => {
     assert.equal(
       scrollDeltaToRevealInSafeArea({

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   discardDocumentContentCache,
   fetchDocumentContent,
+  peekDocumentContentCache,
   shouldMissDocumentContentCache,
   writeDocumentContentCache,
 } from "./document-content-cache.ts";
@@ -97,4 +98,16 @@ test("fetchDocumentContent always revalidates — never returns warm LRU as fina
   assert.equal(result?.contentVersion, 2);
   assert.equal(result?.checksum, "fresh");
   discardDocumentContentCache(id);
+});
+
+test("discardDocumentContentCache clears warm entry for SSE force refetch", () => {
+  const id = `doc-discard-${Date.now()}`;
+  writeDocumentContentCache(id, {
+    content: "# stale",
+    contentVersion: 1,
+    checksum: "abc",
+  });
+  assert.ok(peekDocumentContentCache(id));
+  discardDocumentContentCache(id);
+  assert.equal(peekDocumentContentCache(id), null);
 });

@@ -6,6 +6,7 @@ import {
   getScopedContactSectionHref,
   getUniqueListItemRouteParam,
   groupItemsByAlphaLetter,
+  resolveLetterDetailHref,
   type InboxListItem,
   type KnowledgeListItem,
 } from "@backsteros/ui";
@@ -74,11 +75,15 @@ export function firstOrganizationHref(
 }
 
 export function firstLetterHref(
-  letters: readonly { number?: number | null }[],
+  letters: readonly { id: string; number?: number | null }[],
 ): string | null {
   const first = letters[0];
-  if (first?.number == null) return null;
-  return getLettersHref(first.number);
+  if (!first) return null;
+  return resolveLetterDetailHref({
+    id: first.id,
+    number: first.number,
+    listBaseHref: "/letters",
+  });
 }
 
 export function firstLetterSlug(
@@ -120,12 +125,9 @@ export function rememberWorkspaceSectionEntries(input: {
   if (peekSectionEntryHref("inbox") == null) {
     seed.inbox = getFirstInboxItemHref(input.inboxItems) ?? null;
   }
-  if (peekSectionEntryHref("contacts") == null) {
-    seed.contacts = "/contacts";
-  }
-  if (peekSectionEntryHref("organizations") == null) {
-    seed.organizations = firstOrganizationHref(input.organizations);
-  }
+  // Contacts / organizations catalogs live in main content — always list root.
+  seed.contacts = "/contacts";
+  seed.organizations = "/organizations";
   if (peekSectionEntryHref("letters") == null) {
     seed.letters = firstLetterHref(input.letters);
   }

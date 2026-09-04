@@ -6,6 +6,7 @@ import {
   isValidElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,6 +17,7 @@ import remarkGfm from "remark-gfm";
 
 import { ClientLink } from "../../shared/client-link.js";
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
+import { documentHeadingMinimapSectionId } from "../../documents/document-heading-minimap.js";
 import { hasBlockMarkdown } from "../../documents/markdown-preview-blocks.js";
 import {
   normalizeMarkdownTaskLists,
@@ -66,6 +68,7 @@ import { LetterIcon } from "../letters/letter-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { MentionChipHoverShell } from "../mentions/mention-chip-hover-shell.js";
 import { MentionLeadingIcon } from "../mentions/mention-leading-icon.js";
+import { NamedLinkChip } from "../mentions/named-link-chip.js";
 import { TaskMentionBlockChip } from "../tasks/task-mention-block-chip.js";
 import {
   getDisplayProjectIcon,
@@ -478,6 +481,7 @@ function resolvePreviewChipIconProps(
         projectIcon: null,
         documentIcon: null,
         contact: null,
+        organization: null,
       };
     }
     case "letter":
@@ -487,6 +491,7 @@ function resolvePreviewChipIconProps(
         projectIcon: null,
         documentIcon: null,
         contact: null,
+        organization: null,
       };
     case "email": {
       const email = resolveMentionCatalogEmail(token, catalog);
@@ -496,6 +501,7 @@ function resolvePreviewChipIconProps(
         projectIcon: null,
         documentIcon: null,
         contact: null,
+        organization: null,
       };
     }
     case "project": {
@@ -506,6 +512,7 @@ function resolvePreviewChipIconProps(
         projectIcon: project?.icon ?? null,
         documentIcon: null,
         contact: null,
+        organization: null,
       };
     }
     case "contact": {
@@ -518,20 +525,30 @@ function resolvePreviewChipIconProps(
         contact: contact
           ? {
               id: contact.id,
+              avatarSrc: contact.avatarSrc ?? null,
               avatarStorageKey: contact.avatarStorageKey,
               avatarUpdatedAt: contact.avatarUpdatedAt,
             }
           : null,
+        organization: null,
       };
     }
-    case "organization":
+    case "organization": {
+      const organization = resolveMentionCatalogOrganization(token, catalog);
       return {
         kind: "organization" as const,
         status: null,
         projectIcon: null,
         documentIcon: null,
         contact: null,
+        organization: organization
+          ? {
+              id: organization.id,
+              avatarSrc: organization.avatarSrc ?? null,
+            }
+          : null,
       };
+    }
     case "document": {
       const document = resolveMentionCatalogDocument(token, catalog);
       return {
@@ -540,6 +557,7 @@ function resolvePreviewChipIconProps(
         projectIcon: null,
         documentIcon: document?.icon ?? null,
         contact: null,
+        organization: null,
       };
     }
   }
@@ -564,6 +582,8 @@ function renderMentionChipBody(
             projectIcon={iconProps.projectIcon}
             documentIcon={iconProps.documentIcon}
             contact={iconProps.contact}
+            organization={iconProps.organization}
+            size={14}
           />
         </span>
         <span className="mention-chip-lite__label">{label}</span>
@@ -892,7 +912,7 @@ function MentionChipLite({
     <MentionChipHoverShell
       trigger={trigger}
       layout={chipLayout}
-      asChild={Boolean(href)}
+      asChild={chipLayout === "block" && Boolean(href)}
       hoverContent={
         <DocumentMentionHoverCard parsed={token} catalog={catalog} />
       }
@@ -928,6 +948,10 @@ function renderInlineSegment(
 ): ReactNode {
   if (segment.type === "mention") {
     return renderMentionChip(segment, segments, segmentIndex, catalog, key);
+  }
+
+  if (segment.type === "namedLink") {
+    return <NamedLinkChip key={key} token={segment.token} />;
   }
 
   return <InlineMarkdownSegment key={key} content={segment.content} />;
@@ -999,6 +1023,17 @@ function consumeListItem(
           token={segment.token}
           catalog={catalog}
           layout="inline"
+        />,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (segment.type === "namedLink") {
+      contentChildren.push(
+        <NamedLinkChip
+          key={`${keyPrefix}-li-named-link-${index}`}
+          token={segment.token}
         />,
       );
       index += 1;
@@ -1258,9 +1293,12 @@ function ParagraphPreview({
   }
 
   const segments = segmentMarkdownWithMentions(paragraph);
-  const hasMentions = segments.some((segment) => segment.type === "mention");
+  const hasSpecialTokens = segments.some(
+    (segment) =>
+      segment.type === "mention" || segment.type === "namedLink",
+  );
 
-  if (!hasMentions) {
+  if (!hasSpecialTokens) {
     if (hasBlockMarkdown(paragraph)) {
       return <MarkdownBlockSegment content={paragraph} />;
     }
@@ -1312,6 +1350,20 @@ export function DocumentMarkdownPreview({
   useResolveMentionTokensInContent(mentionTokens);
 
   useContentPreviewLinkNavigation({ containerRef, body });
+
+  // Stamp heading ids in DOM order so the document minimap can scroll-to-section.
+  // Matches deriveDocumentHeadingMinimapItems for normal ATX bodies.
+  useLayoutEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const headings = root.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    headings.forEach((el, index) => {
+      el.setAttribute(
+        "data-document-heading",
+        documentHeadingMinimapSectionId(index),
+      );
+    });
+  }, [body]);
 
   const trimmed = body.trim();
   if (!trimmed) {

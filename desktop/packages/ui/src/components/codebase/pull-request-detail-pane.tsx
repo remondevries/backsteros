@@ -10,6 +10,7 @@ import {
   keyboardNavListItemClass,
 } from "../../list-nav/keyboard-nav-item.js";
 import { LIST_KEYBOARD_NAV_ZONE_MAIN } from "../../list-nav/list-keyboard-nav-zone.js";
+import { setCodebaseDetailHotkeysActive } from "../../codebase/codebase-detail-hotkeys.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import { useCommandPaletteRuntimeRefs } from "../command-palette/command-palette-context.js";
 import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
@@ -291,6 +292,11 @@ export function PullRequestDetailPane({
   }, [commits.length, loadCommitsPage, pullRequest.number, tab]);
 
   useEffect(() => {
+    setCodebaseDetailHotkeysActive(hotkeysEnabled);
+    return () => setCodebaseDetailHotkeysActive(false);
+  }, [hotkeysEnabled]);
+
+  useEffect(() => {
     if (!hotkeysEnabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -311,7 +317,7 @@ export function PullRequestDetailPane({
       if (!nextTab) return;
 
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
       selectDetailTab(nextTab);
     }
 

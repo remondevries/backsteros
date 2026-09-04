@@ -2,6 +2,7 @@
 
 export const ORGANIZATION_SECTION_IDS = [
   "overview",
+  "activity",
   "projects",
   "letters",
   "contacts",
@@ -18,6 +19,7 @@ export type OrganizationSectionConfig = {
 
 export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "overview", label: "Overview" },
+  { id: "activity", label: "Activity" },
   { id: "projects", label: "Projects" },
   { id: "letters", label: "Letters" },
   { id: "contacts", label: "Contacts" },

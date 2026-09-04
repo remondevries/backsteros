@@ -1,7 +1,9 @@
+import { formatContactDisplayName } from "@backsteros/contracts";
 import { useMemo } from "react";
 
 import {
   mergeCalendarGridEvents,
+  type BirthdayCalendarLike,
   type CalendarTaskLike,
   type MeetingCalendarLike,
   type TaskCalendarEvent,
@@ -25,6 +27,14 @@ type CalendarMeetingRow = {
   start_at: string | null;
   end_at: string | null;
   project_name: string | null;
+};
+
+type CalendarBirthdayRow = {
+  id: string;
+  name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  birthday: string | null;
 };
 
 const CALENDAR_TASKS_SQL = `
@@ -58,6 +68,13 @@ WHERE m.deleted_at IS NULL
   AND m.end_at IS NOT NULL
 ORDER BY m.start_at ASC`;
 
+const CALENDAR_BIRTHDAYS_SQL = `
+SELECT id, name, first_name, last_name, birthday
+FROM contacts
+WHERE deleted_at IS NULL
+  AND birthday IS NOT NULL
+  AND birthday != ''`;
+
 function rowToCalendarTask(row: CalendarTaskRow): CalendarTaskLike {
   return {
     id: row.id,
@@ -70,7 +87,9 @@ function rowToCalendarTask(row: CalendarTaskRow): CalendarTaskLike {
   };
 }
 
-function rowToCalendarMeeting(row: CalendarMeetingRow): MeetingCalendarLike | null {
+function rowToCalendarMeeting(
+  row: CalendarMeetingRow,
+): MeetingCalendarLike | null {
   if (!row.start_at || !row.end_at) return null;
   return {
     id: row.id,
@@ -82,6 +101,19 @@ function rowToCalendarMeeting(row: CalendarMeetingRow): MeetingCalendarLike | nu
   };
 }
 
+function rowToBirthday(row: CalendarBirthdayRow): BirthdayCalendarLike | null {
+  if (!row.birthday?.trim()) return null;
+  const name =
+    formatContactDisplayName(row.first_name ?? "", row.last_name ?? "") ||
+    row.name?.trim() ||
+    "Contact";
+  return {
+    id: row.id,
+    name,
+    birthday: row.birthday,
+  };
+}
+
 export function useCalendarGridEvents(): {
   events: TaskCalendarEvent[];
   loading: boolean;
@@ -90,17 +122,22 @@ export function useCalendarGridEvents(): {
     useLocalQuery<CalendarTaskRow>(CALENDAR_TASKS_SQL);
   const { data: meetingRows, isLoading: meetingsLoading } =
     useLocalQuery<CalendarMeetingRow>(CALENDAR_MEETINGS_SQL);
+  const { data: birthdayRows, isLoading: birthdaysLoading } =
+    useLocalQuery<CalendarBirthdayRow>(CALENDAR_BIRTHDAYS_SQL);
 
   const events = useMemo(() => {
     const tasks = taskRows.map(rowToCalendarTask);
     const meetings = meetingRows
       .map(rowToCalendarMeeting)
       .filter((row): row is MeetingCalendarLike => row != null);
-    return mergeCalendarGridEvents(tasks, meetings);
-  }, [meetingRows, taskRows]);
+    const birthdays = birthdayRows
+      .map(rowToBirthday)
+      .filter((row): row is BirthdayCalendarLike => row != null);
+    return mergeCalendarGridEvents(tasks, meetings, new Date(), birthdays);
+  }, [birthdayRows, meetingRows, taskRows]);
 
   return {
     events,
-    loading: tasksLoading || meetingsLoading,
+    loading: tasksLoading || meetingsLoading || birthdaysLoading,
   };
 }

@@ -17,6 +17,7 @@ import {
 import {
   createMentionExtensions,
   MentionMenuController,
+  namedLinkDecorations,
 } from "../../mentions/codemirror/index.js";
 import { useMentionCatalogOptional } from "../../mentions/mention-catalog-context.js";
 import type {
@@ -169,6 +170,7 @@ export function TaskCommentEditor({
     () => [
       markdown(),
       commentEditorBaseTheme,
+      ...namedLinkDecorations,
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
       ...(placeholder ? [cmPlaceholder(placeholder)] : []),

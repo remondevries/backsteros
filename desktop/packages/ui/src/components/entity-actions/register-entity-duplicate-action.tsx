@@ -4,7 +4,7 @@ import { useId, useLayoutEffect } from "react";
 
 import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
 import {
-  useEntityHeaderActionsContext,
+  useEntityHeaderActionsContextOptional,
   type EntityDuplicateConfig,
 } from "./entity-header-actions-context.js";
 import { useLatestRef } from "./use-latest-ref.js";
@@ -17,11 +17,13 @@ export function RegisterEntityDuplicateAction({
 }: EntityDuplicateConfig) {
   const ownerId = useId();
   const mountGate = useListKeyboardNavMountGate();
-  const { registerDuplicateConfig, clearDuplicateConfig } =
-    useEntityHeaderActionsContext();
+  const context = useEntityHeaderActionsContextOptional();
+  const registerDuplicateConfig = context?.registerDuplicateConfig;
+  const clearDuplicateConfig = context?.clearDuplicateConfig;
   const onDuplicateRef = useLatestRef(onDuplicate);
 
   useLayoutEffect(() => {
+    if (!registerDuplicateConfig || !clearDuplicateConfig) return;
     if (!mountGate) {
       clearDuplicateConfig(ownerId);
       return;

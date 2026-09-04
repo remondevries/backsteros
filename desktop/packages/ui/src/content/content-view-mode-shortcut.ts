@@ -44,6 +44,8 @@ export function isForceContentPreviewShortcut(
 type ContentViewModeRegistration = {
   run: () => void;
   isEnabled: () => boolean;
+  /** When set, skip handlers whose host is under keep-alive / inert. */
+  getHost?: () => Element | null | undefined;
 };
 
 const toggleHandlers: ContentViewModeRegistration[] = [];
@@ -55,6 +57,11 @@ let lastToggleAtMs = 0;
 let lastForcePreviewAtMs = 0;
 
 let windowListenersInstalled = false;
+
+function isHostVisible(host: Element | null | undefined): boolean {
+  if (!host) return true;
+  return host.closest("[inert], [data-keep-alive-hidden]") == null;
+}
 
 function runLatestEnabled(
   handlers: ContentViewModeRegistration[],
@@ -68,9 +75,26 @@ function runLatestEnabled(
     return true;
   }
 
+  // Prefer newest enabled handler whose host is visible (keep-alive panes stay
+  // mounted and would otherwise steal ⌘E / ⌘P from the active section).
   for (let i = handlers.length - 1; i >= 0; i -= 1) {
     const registration = handlers[i];
     if (!registration?.isEnabled()) continue;
+    const host = registration.getHost?.();
+    if (host != null && !isHostVisible(host)) continue;
+    // Hosted visible handlers win over hostless ones when both exist later.
+    if (host != null) {
+      setLastAt(now);
+      registration.run();
+      return true;
+    }
+  }
+
+  // Fall back to hostless handlers (e.g. email draft body toggle).
+  for (let i = handlers.length - 1; i >= 0; i -= 1) {
+    const registration = handlers[i];
+    if (!registration?.isEnabled()) continue;
+    if (registration.getHost?.()) continue;
     setLastAt(now);
     registration.run();
     return true;
@@ -137,12 +161,17 @@ export function installContentViewModeShortcutListeners() {
 
 function registerHandler(
   handlers: ContentViewModeRegistration[],
-  options: { run: () => void; isEnabled: () => boolean },
+  options: {
+    run: () => void;
+    isEnabled: () => boolean;
+    getHost?: () => Element | null | undefined;
+  },
 ): () => void {
   ensureWindowListeners();
   const registration: ContentViewModeRegistration = {
     run: options.run,
     isEnabled: options.isEnabled,
+    getHost: options.getHost,
   };
   handlers.push(registration);
   return () => {
@@ -155,28 +184,32 @@ function registerHandler(
 
 /**
  * Register a content edit ↔ preview toggle for ⌘E / Ctrl+E.
- * Most recently registered enabled handler wins (visible detail over keep-alive).
+ * Most recently registered enabled (and visible) handler wins.
  */
 export function registerContentViewModeToggle(options: {
   toggle: () => void;
   isEnabled: () => boolean;
+  getHost?: () => Element | null | undefined;
 }): () => void {
   return registerHandler(toggleHandlers, {
     run: options.toggle,
     isEnabled: options.isEnabled,
+    getHost: options.getHost,
   });
 }
 
 /**
  * Register a force-preview handler for ⌘P / Ctrl+P.
- * Most recently registered enabled handler wins.
+ * Most recently registered enabled (and visible) handler wins.
  */
 export function registerForceContentPreview(options: {
   forcePreview: () => void;
   isEnabled: () => boolean;
+  getHost?: () => Element | null | undefined;
 }): () => void {
   return registerHandler(forcePreviewHandlers, {
     run: options.forcePreview,
     isEnabled: options.isEnabled,
+    getHost: options.getHost,
   });
 }

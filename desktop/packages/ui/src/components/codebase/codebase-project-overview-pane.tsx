@@ -256,7 +256,7 @@ function ProjectCommitHistory({
   docsListPanel = null,
   minimized = false,
   showTabs = true,
-  pullDetailEngaged = false,
+  githubDetailEngaged = false,
 }: {
   project: ApiProject;
   onProjectUpdated: (project: ApiProject) => void;
@@ -284,8 +284,8 @@ function ProjectCommitHistory({
   minimized?: boolean;
   /** When false, host renders the Files/Docs/Commits/PRs toggle. */
   showTabs?: boolean;
-  /** True while PR detail owns keyboard (Enter/Space) — hide list orange ring. */
-  pullDetailEngaged?: boolean;
+  /** True while commit/PR detail owns keyboard (Enter/Space/Tab) — hide list orange ring. */
+  githubDetailEngaged?: boolean;
 }) {
   const [repoSaving, setRepoSaving] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
@@ -782,7 +782,11 @@ function ProjectCommitHistory({
       if (!project.githubRepository) return;
       if (listTab === "commits") {
         const commit = commits.find((entry) => entry.sha === itemId);
-        if (commit) onSelectCommit?.(commit, project.githubRepository);
+        if (commit) {
+          onSelectCommit?.(commit, project.githubRepository, {
+            engageHotkeys: true,
+          });
+        }
         return;
       }
       const pull = pullRequests.find(
@@ -809,13 +813,13 @@ function ProjectCommitHistory({
   // first (that chicken-and-egg left j/k on the projects rail after 2 / 3).
   // Registration alone does not steal focus; 1 / 2 / 3 (or the effect below)
   // activate the content zone.
-  // While a PR detail is engaged, drop list j/k + orange ring so focus reads
-  // as inside the PR (Escape restores the list).
+  // While a commit/PR detail is engaged, drop list j/k + orange ring so focus
+  // reads as inside the detail (Escape / Tab restores the list).
   const githubKeyboardEnabled =
     Boolean(project.githubRepository) &&
     (listTab === "commits" || listTab === "pulls") &&
     githubItemIds.length > 0 &&
-    !(listTab === "pulls" && pullDetailEngaged);
+    !githubDetailEngaged;
   const { highlightedId: githubHighlightedId } = useListKeyboardNavigation({
     containerRef: githubListRef,
     itemIds: githubItemIds,
@@ -825,24 +829,28 @@ function ProjectCommitHistory({
     enabled: githubKeyboardEnabled,
   });
 
-  // Enter/Space into a PR — clear list highlight/focus immediately.
+  // Enter/Space / Tab into commit or PR detail — clear list highlight/focus.
   useEffect(() => {
-    if (!pullDetailEngaged || listTab !== "pulls") return;
+    if (!githubDetailEngaged) return;
+    if (listTab !== "pulls" && listTab !== "commits") return;
     clearHighlights();
     const root = githubListRef.current;
     const active = document.activeElement;
     if (active instanceof HTMLElement && root?.contains(active)) {
       active.blur();
     }
-  }, [clearHighlights, listTab, pullDetailEngaged]);
+  }, [clearHighlights, githubDetailEngaged, listTab]);
   const previousGithubListTabRef = useRef(listTab);
+  const previousProjectIdRef = useRef(project.id);
   /** Auto-open first row only when entering Commits/PRs — not after Escape clears. */
   const autoSelectOnTabRef = useRef<"commits" | "pulls" | null>(
     listTab === "commits" || listTab === "pulls" ? listTab : null,
   );
   useEffect(() => {
     const tabChanged = previousGithubListTabRef.current !== listTab;
+    const projectChanged = previousProjectIdRef.current !== project.id;
     previousGithubListTabRef.current = listTab;
+    previousProjectIdRef.current = project.id;
 
     if (tabChanged) {
       autoSelectOnTabRef.current =
@@ -850,8 +858,8 @@ function ProjectCommitHistory({
     }
 
     if (listTab === "files" || listTab === "docs") {
-      // Pill / 2–3 — move j/k onto the files or docs tree (not the projects rail).
-      if (tabChanged) {
+      // Pill / 2–3 / project switch — j/k on the files or docs tree.
+      if (tabChanged || projectChanged) {
         setActiveZone("content", { activate: true });
       }
       return;
@@ -860,7 +868,7 @@ function ProjectCommitHistory({
     if (listTab === "tasks" || githubItemIds.length === 0) return;
 
     // 4 / 5 or commits/PRs pill — activate once the list has rows.
-    if (tabChanged) {
+    if (tabChanged || projectChanged) {
       setActiveZone("content", { activate: true });
       return;
     }
@@ -871,7 +879,7 @@ function ProjectCommitHistory({
     if (activeZone === "sidepanel") {
       setActiveZone("content", { activate: true });
     }
-  }, [activeZone, githubItemIds.length, listTab, setActiveZone]);
+  }, [activeZone, githubItemIds.length, listTab, project.id, setActiveZone]);
 
   useEffect(() => {
     if (autoSelectOnTabRef.current !== "commits") return;
@@ -1171,9 +1179,11 @@ function ProjectCommitHistory({
                         className={[
                           "console-github-commit",
                           keyboardNavListItemClass(
-                            githubHighlightedId === commit.sha,
+                            !githubDetailEngaged &&
+                              githubHighlightedId === commit.sha,
                           ),
-                          selectedCommitSha === commit.sha
+                          selectedCommitSha === commit.sha &&
+                          !githubDetailEngaged
                             ? "is-selected"
                             : null,
                         ]
@@ -1184,7 +1194,9 @@ function ProjectCommitHistory({
                         }`}
                         onClick={() => {
                           if (!project.githubRepository) return;
-                          onSelectCommit?.(commit, project.githubRepository);
+                          onSelectCommit?.(commit, project.githubRepository, {
+                            engageHotkeys: true,
+                          });
                         }}
                         onKeyDown={(event) => {
                           if (event.key !== "Enter" && event.key !== " ") {
@@ -1192,7 +1204,9 @@ function ProjectCommitHistory({
                           }
                           event.preventDefault();
                           if (!project.githubRepository) return;
-                          onSelectCommit?.(commit, project.githubRepository);
+                          onSelectCommit?.(commit, project.githubRepository, {
+                            engageHotkeys: true,
+                          });
                         }}
                       >
                         {!minimized ? (
@@ -1284,13 +1298,13 @@ function ProjectCommitHistory({
                           "console-github-commit",
                           "console-github-pull",
                           keyboardNavListItemClass(
-                            !pullDetailEngaged &&
+                            !githubDetailEngaged &&
                               githubHighlightedId === String(pull.number),
                           ),
                           `is-${pull.state}`,
                           pull.draft ? "is-draft" : null,
                           selectedPullNumber === pull.number &&
-                          !pullDetailEngaged
+                          !githubDetailEngaged
                             ? "is-selected"
                             : null,
                         ]
@@ -1388,7 +1402,11 @@ export type CodebaseProjectOverviewPaneProps = {
   githubListTab?: CodebaseGithubListTab;
   onGithubListTabChange?: (tab: CodebaseGithubListTab) => void;
   selectedCommitSha?: string | null;
-  onSelectCommit?: (commit: GithubCommit, repository: string) => void;
+  onSelectCommit?: (
+    commit: GithubCommit,
+    repository: string,
+    options?: { engageHotkeys?: boolean },
+  ) => void;
   selectedPullNumber?: number | null;
   onSelectPullRequest?: (
     pullRequest: GithubPullRequest,
@@ -1407,8 +1425,8 @@ export type CodebaseProjectOverviewPaneProps = {
   showHeader?: boolean;
   /** Narrow ⇧[ rail — Files/Docs/Commits/PRs compact presentation. */
   minimized?: boolean;
-  /** True while PR detail owns keyboard — suppress list orange highlight. */
-  pullDetailEngaged?: boolean;
+  /** True while commit/PR detail owns keyboard — suppress list orange highlight. */
+  githubDetailEngaged?: boolean;
   /** Optional host-supplied organizations (skips fetch when provided). */
   organizations?: ApiOrganization[] | null;
   /** Nested custom areas for the Areas parent/sub-area dropdowns. */
@@ -1447,7 +1465,7 @@ export function CodebaseProjectOverviewPane({
   onToggleTasksPanel,
   showHeader = true,
   minimized = false,
-  pullDetailEngaged = false,
+  githubDetailEngaged = false,
   organizations: organizationsProp = null,
   nestedAreas = [],
   onCreateOrganizationFromQuery: onCreateOrganizationFromQueryProp,
@@ -1696,7 +1714,7 @@ export function CodebaseProjectOverviewPane({
               githubRefreshToken={githubRefreshToken}
               minimized
               showTabs={false}
-              pullDetailEngaged={pullDetailEngaged}
+              githubDetailEngaged={githubDetailEngaged}
             />
           ) : null}
         </div>
@@ -1887,7 +1905,7 @@ export function CodebaseProjectOverviewPane({
                 docsListPanel={docsListPanel}
                 githubRefreshToken={githubRefreshToken}
                 showTabs={false}
-                pullDetailEngaged={pullDetailEngaged}
+                githubDetailEngaged={githubDetailEngaged}
               />
             )}
           </div>

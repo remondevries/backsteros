@@ -102,7 +102,7 @@ export function PhoneTaskSurfacesSlide({
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.background,
   },
   body: {

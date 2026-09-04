@@ -48,6 +48,8 @@ import { TaskStatusWorkingPulse } from "./task-status-working-pulse.js";
 import { EntityActionsMenu } from "../entity-actions/entity-actions-menu.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { TasksNavIcon } from "../shell/sidebar-nav-icons.js";
+import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
+import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskDueDateIcon } from "./task-due-date-icon.js";
 import { TaskPriorityIcon } from "./task-priority-icon.js";
 import { TaskStatusIcon } from "./task-status-icon.js";
@@ -209,6 +211,59 @@ function activityMessage(activity: TaskActivity): ReactNode {
       </>
     );
   }
+  if (activity.type === "related_contacts_changed") {
+    const toNames = Array.isArray(activity.data.toNames)
+      ? activity.data.toNames.filter(
+          (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+        )
+      : [];
+    const toIds = Array.isArray(activity.data.to)
+      ? activity.data.to.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [];
+    if (toIds.length === 0) {
+      return <>{name} cleared related contacts</>;
+    }
+    const label =
+      toNames.length > 0
+        ? toNames.join(", ")
+        : toIds.length === 1
+          ? "1 contact"
+          : `${toIds.length} contacts`;
+    return (
+      <>
+        {name} updated related contacts to <strong>{label}</strong>
+      </>
+    );
+  }
+  if (activity.type === "related_organizations_changed") {
+    const toNames = Array.isArray(activity.data.toNames)
+      ? activity.data.toNames.filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+        )
+      : [];
+    const toIds = Array.isArray(activity.data.to)
+      ? activity.data.to.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
+      : [];
+    if (toIds.length === 0) {
+      return <>{name} cleared related organizations</>;
+    }
+    const label =
+      toNames.length > 0
+        ? toNames.join(", ")
+        : toIds.length === 1
+          ? "1 organization"
+          : `${toIds.length} organizations`;
+    return (
+      <>
+        {name} updated related organizations to <strong>{label}</strong>
+      </>
+    );
+  }
   if (activity.type === "priority_changed") {
     return (
       <>
@@ -329,6 +384,20 @@ function ActivityLeadingIcon({
       </span>
     );
   }
+  if (activity.type === "related_contacts_changed") {
+    return (
+      <span className="task-activity-event__marker" aria-hidden="true">
+        <ContactPersonIcon size={12} />
+      </span>
+    );
+  }
+  if (activity.type === "related_organizations_changed") {
+    return (
+      <span className="task-activity-event__marker" aria-hidden="true">
+        <OrganizationIcon size={12} />
+      </span>
+    );
+  }
   if (activity.type === "agent_worked") {
     return (
       <span className="task-activity-event__marker" aria-hidden="true">
@@ -385,6 +454,8 @@ function ActivityLeadingIcon({
 const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivity["type"]>([
   "status_changed",
   "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
   "priority_changed",
   "due_date_changed",
   "project_changed",
@@ -707,6 +778,19 @@ export type TaskActivityCurrentUser = {
   imageUrl: string | null;
 };
 
+export type TaskActivityCommentMutations = {
+  create: (
+    body: string,
+    parentCommentId?: string | null,
+  ) => Promise<TaskComment>;
+  patch: (
+    commentId: string,
+    patch: { body?: string; resolvedAt?: string | null },
+    existing: TaskComment,
+  ) => Promise<TaskComment>;
+  delete: (comment: TaskComment, replyIds: string[]) => Promise<void>;
+};
+
 export type TaskActivityPanelProps = {
   taskId: string;
   /** Bump reload when the parent task changes (e.g. status patch). */
@@ -720,6 +804,15 @@ export type TaskActivityPanelProps = {
   avatarByEmail?: ReadonlyMap<string, string | null>;
   requestJson: TaskActivityRequestJson;
   currentUser: TaskActivityCurrentUser;
+  /**
+   * Local-first PowerSync feed. When active, skip REST list fetches and render
+   * these rows (mutations still POST/PATCH via requestJson; optimistic local
+   * rows merge until SQLite catches up).
+   */
+  localFeedActive?: boolean;
+  localActivities?: readonly TaskActivity[] | null;
+  localComments?: readonly TaskComment[] | null;
+  localFeedLoading?: boolean;
   /** Optional header controls (e.g. Start working / agent testing). */
   headerActions?: ReactNode;
   /**
@@ -732,6 +825,8 @@ export type TaskActivityPanelProps = {
     replyBody: string,
     parentBody: string,
   ) => void | Promise<void>;
+  /** When set, comment CRUD uses local-first PowerSync instead of REST. */
+  commentMutations?: TaskActivityCommentMutations;
 };
 
 export function TaskActivityPanel({
@@ -743,8 +838,13 @@ export function TaskActivityPanel({
   avatarByEmail,
   requestJson,
   currentUser,
+  localFeedActive = false,
+  localActivities = null,
+  localComments = null,
+  localFeedLoading = false,
   headerActions,
   onContinueHoldComment,
+  commentMutations,
 }: TaskActivityPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const editInputRef = useRef<TaskCommentEditorHandle | null>(null);
@@ -755,8 +855,13 @@ export function TaskActivityPanel({
     }),
     [currentUser.email, currentUser.imageUrl],
   );
-  const [comments, setComments] = useState<TaskComment[]>([]);
-  const [activities, setActivities] = useState<TaskActivity[]>([]);
+  const [restComments, setRestComments] = useState<TaskComment[]>([]);
+  const [restActivities, setRestActivities] = useState<TaskActivity[]>([]);
+  /** Optimistic rows not yet present in the local PowerSync snapshot. */
+  const [pendingComments, setPendingComments] = useState<TaskComment[]>([]);
+  const [pendingDeletes, setPendingDeletes] = useState<Record<string, true>>(
+    {},
+  );
   const [draft, setDraft] = useState("");
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [loadingFeed, setLoadingFeed] = useState(true);
@@ -785,16 +890,45 @@ export function TaskActivityPanel({
 
   const requestJsonRef = useRef(requestJson);
   requestJsonRef.current = requestJson;
+  const commentMutationsRef = useRef(commentMutations);
+  commentMutationsRef.current = commentMutations;
+
+  const comments = useMemo(() => {
+    if (!localFeedActive) return restComments;
+    const byId = new Map<string, TaskComment>();
+    for (const comment of localComments ?? []) {
+      if (pendingDeletes[comment.id]) continue;
+      byId.set(comment.id, comment);
+    }
+    for (const comment of pendingComments) {
+      if (pendingDeletes[comment.id]) continue;
+      if (!byId.has(comment.id)) byId.set(comment.id, comment);
+      else {
+        // Prefer optimistic patch fields when SQLite is briefly behind.
+        const synced = byId.get(comment.id)!;
+        byId.set(comment.id, {
+          ...synced,
+          ...comment,
+          updatedAt: comment.updatedAt || synced.updatedAt,
+        });
+      }
+    }
+    return [...byId.values()];
+  }, [localComments, localFeedActive, pendingComments, pendingDeletes, restComments]);
+
+  const activities = useMemo(() => {
+    if (!localFeedActive) return restActivities;
+    return localActivities ? [...localActivities] : [];
+  }, [localActivities, localFeedActive, restActivities]);
 
   useEffect(() => {
     // Invalidate in-flight loads before paint so a late reject cannot flash
     // "Load failed" into the next task's comments section.
     feedLoadIdRef.current += 1;
     hasLoadedFeedRef.current = false;
-    setLoadingFeed(true);
     setError(null);
-    setComments([]);
-    setActivities([]);
+    setPendingComments([]);
+    setPendingDeletes({});
     setActivitiesExpanded(false);
     setExpandedAgentGroups({});
     setReplyDrafts({});
@@ -802,9 +936,65 @@ export function TaskActivityPanel({
     setEditingCommentId(null);
     setEditDraft("");
     setExpandedResolvedIds({});
+    if (localFeedActive) {
+      const hasLocal =
+        localActivities != null || localComments != null;
+      setLoadingFeed(!hasLocal && localFeedLoading);
+      if (hasLocal) hasLoadedFeedRef.current = true;
+      setRestComments([]);
+      setRestActivities([]);
+    } else {
+      setLoadingFeed(true);
+      setRestComments([]);
+      setRestActivities([]);
+    }
+    // Only reset UI chrome on task switch — local rows stream in via props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
+  // Drop pending overlays once PowerSync includes a same-or-newer row.
   useEffect(() => {
+    if (!localFeedActive || !localComments) return;
+    const syncedById = new Map(localComments.map((c) => [c.id, c]));
+    setPendingComments((prev) => {
+      const next = prev.filter((pending) => {
+        const synced = syncedById.get(pending.id);
+        if (!synced) return true;
+        return synced.updatedAt < pending.updatedAt;
+      });
+      return next.length === prev.length ? prev : next;
+    });
+    setPendingDeletes((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of Object.keys(prev)) {
+        if (!syncedById.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [localComments, localFeedActive]);
+
+  useEffect(() => {
+    if (!localFeedActive) return;
+    if (localActivities != null || localComments != null) {
+      hasLoadedFeedRef.current = true;
+      setLoadingFeed(false);
+      setError(null);
+      return;
+    }
+    if (localFeedLoading) {
+      setLoadingFeed(true);
+      return;
+    }
+    // Local feed claimed idle without rows — clear spinner instead of hanging.
+    setLoadingFeed(false);
+  }, [localActivities, localComments, localFeedActive, localFeedLoading]);
+
+  useEffect(() => {
+    if (localFeedActive) return;
     const controller = new AbortController();
     const loadId = ++feedLoadIdRef.current;
     const isInitialLoad = !hasLoadedFeedRef.current;
@@ -858,8 +1048,8 @@ export function TaskActivityPanel({
           [commentsResult, activitiesResult] = await fetchFeed();
         }
         if (isStale()) return;
-        setComments(commentsResult.comments ?? []);
-        setActivities(activitiesResult.activities ?? []);
+        setRestComments(commentsResult.comments ?? []);
+        setRestActivities(activitiesResult.activities ?? []);
         hasLoadedFeedRef.current = true;
         setError(null);
         setLoadingFeed(false);
@@ -869,8 +1059,8 @@ export function TaskActivityPanel({
         if (isStale() || isAbortError(err)) return;
         setError(feedLoadErrorMessage(err));
         if (isInitialLoad) {
-          setComments([]);
-          setActivities([]);
+          setRestComments([]);
+          setRestActivities([]);
         }
         setLoadingFeed(false);
       }
@@ -879,7 +1069,7 @@ export function TaskActivityPanel({
     return () => {
       controller.abort();
     };
-  }, [taskId, taskUpdatedAt, feedRevision]);
+  }, [localFeedActive, taskId, taskUpdatedAt, feedRevision]);
 
   const activityTimeline = useMemo((): ActivityTimelineItem[] => {
     // Coalesce + agent grouping need chronological order; display is newest-first.
@@ -955,18 +1145,27 @@ export function TaskActivityPanel({
       }
       setError(null);
       try {
-        const created = await requestJson<TaskComment>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              body,
-              parentCommentId: parentCommentId ?? null,
-            }),
-          },
-        );
-        setComments((current) => [...current, created]);
+        const created = commentMutationsRef.current
+          ? await commentMutationsRef.current.create(body, parentCommentId)
+          : await requestJsonRef.current<TaskComment>(
+              `/api/v1/tasks/${encodeURIComponent(taskId)}/comments`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  body,
+                  parentCommentId: parentCommentId ?? null,
+                }),
+              },
+            );
+        if (localFeedActive) {
+          setPendingComments((current) => {
+            const without = current.filter((c) => c.id !== created.id);
+            return [...without, created];
+          });
+        } else {
+          setRestComments((current) => [...current, created]);
+        }
         if (options?.clearDraft !== false) {
           if (parentCommentId) {
             setReplyDrafts((current) => ({
@@ -991,7 +1190,7 @@ export function TaskActivityPanel({
         }
       }
     },
-    [posting, postingReplyTo, requestJson, taskId],
+    [localFeedActive, posting, postingReplyTo, taskId],
   );
 
   /** Post a reply on an agent thread, then resume the agent with that text. */
@@ -1078,19 +1277,30 @@ export function TaskActivityPanel({
       setSavingCommentId(commentId);
       setError(null);
       try {
-        const updated = await requestJson<TaskComment>(
-          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(patch),
-          },
-        );
-        setComments((current) =>
-          current.map((comment) =>
-            comment.id === commentId ? updated : comment,
-          ),
-        );
+        const existing = comments.find((comment) => comment.id === commentId);
+        if (!existing) return null;
+        const updated = commentMutationsRef.current
+          ? await commentMutationsRef.current.patch(commentId, patch, existing)
+          : await requestJsonRef.current<TaskComment>(
+              `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+              {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(patch),
+              },
+            );
+        if (localFeedActive) {
+          setPendingComments((current) => {
+            const without = current.filter((c) => c.id !== commentId);
+            return [...without, updated];
+          });
+        } else {
+          setRestComments((current) =>
+            current.map((comment) =>
+              comment.id === commentId ? updated : comment,
+            ),
+          );
+        }
         return updated;
       } catch (err) {
         setError(
@@ -1101,7 +1311,7 @@ export function TaskActivityPanel({
         setSavingCommentId(null);
       }
     },
-    [requestJson, taskId],
+    [comments, localFeedActive, taskId],
   );
 
   const startEditComment = (comment: TaskComment) => {
@@ -1177,16 +1387,41 @@ export function TaskActivityPanel({
     setDeletingComment(true);
     setError(null);
     try {
-      await requestJson<void>(
-        `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(comment.id)}`,
-        { method: "DELETE" },
-      );
-      setComments((current) =>
-        current.filter(
-          (entry) =>
-            entry.id !== comment.id && entry.parentCommentId !== comment.id,
-        ),
-      );
+      if (commentMutationsRef.current) {
+        const replyIds = comments
+          .filter((entry) => entry.parentCommentId === comment.id)
+          .map((entry) => entry.id);
+        await commentMutationsRef.current.delete(comment, replyIds);
+      } else {
+        await requestJsonRef.current<void>(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(comment.id)}`,
+          { method: "DELETE" },
+        );
+      }
+      if (localFeedActive) {
+        setPendingDeletes((current) => {
+          const next = { ...current, [comment.id]: true as const };
+          for (const entry of comments) {
+            if (entry.parentCommentId === comment.id) {
+              next[entry.id] = true;
+            }
+          }
+          return next;
+        });
+        setPendingComments((current) =>
+          current.filter(
+            (entry) =>
+              entry.id !== comment.id && entry.parentCommentId !== comment.id,
+          ),
+        );
+      } else {
+        setRestComments((current) =>
+          current.filter(
+            (entry) =>
+              entry.id !== comment.id && entry.parentCommentId !== comment.id,
+          ),
+        );
+      }
       if (editingCommentId === comment.id) {
         setEditingCommentId(null);
         setEditDraft("");
@@ -1200,10 +1435,11 @@ export function TaskActivityPanel({
       setDeletingComment(false);
     }
   }, [
+    comments,
     deletingComment,
     editingCommentId,
+    localFeedActive,
     pendingDeleteComment,
-    requestJson,
     taskId,
   ]);
 

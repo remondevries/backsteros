@@ -17,6 +17,7 @@ import {
 import { FLOATING_TAB_BAR_CLEARANCE } from "../lib/tab-bar-inset";
 import { colors } from "../lib/theme";
 import { PillNav } from "./pill-nav";
+import { ProjectDocumentsPanel } from "./project-documents-panel";
 import { ProjectOverviewPanel } from "./project-overview-panel";
 import { ProjectTasksPanel } from "./project-tasks-panel";
 import { ProjectsSidePanelIcon } from "./projects-side-panel-icon";
@@ -57,10 +58,11 @@ type Props = {
 };
 
 /**
- * Codebase workbench tabs: Overview | Tasks | Files | Commits | PRs.
+ * Codebase workbench tabs: Overview | Tasks | Files | Documents | Commits | PRs.
  * Overview uses the same ProjectOverviewPanel as default projects.
- * iPad: Tasks/Files/Commits/PRs use list|detail columns; project name lives
- * in the stack header next to Back. Section pills stay centered.
+ * Documents uses ProjectDocumentsPanel (desktop Docs tab parity).
+ * iPad: Tasks/Files/Commits/PRs use list|detail columns; Documents is full-width
+ * like Overview. Project name lives in the stack header next to Back.
  * Left pane can collapse like task detail (⇧[ parity).
  * iPhone: single-column lists (detail pushed on the stack).
  */
@@ -153,6 +155,12 @@ export function CodebaseProjectWorkbench({
         onDescriptionLoaded={onDescriptionLoaded}
         onNameChange={onTitleChange}
       />
+    );
+  } else if (tab === "docs") {
+    body = (
+      <View style={styles.phoneTasks}>
+        <ProjectDocumentsPanel projectId={projectId} />
+      </View>
     );
   } else if (!usePadSplit) {
     body =
@@ -358,7 +366,13 @@ export function CodebaseProjectWorkbench({
       <View
         style={[
           styles.body,
-          tab !== "overview" && !usePadSplit ? styles.bodyPhonePad : null,
+          // Tab bar is hidden on project detail (phone). List panes that use
+          // `embedded` FlashLists still need clearance for the home indicator /
+          // create FAB; Overview + Documents fill the canvas (Documents uses
+          // BacksterFlashList’s content inset instead of shrinking the pane).
+          tab !== "overview" && tab !== "docs" && !usePadSplit
+            ? styles.bodyPhonePad
+            : null,
         ]}
       >
         {body}

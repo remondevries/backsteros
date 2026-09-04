@@ -87,6 +87,7 @@ describe("agentmail-client mappers", () => {
     });
     assert.equal(mapped.messageId, "msg_1");
     assert.equal(mapped.from, "Ada <ada@example.com>");
+    assert.deepEqual(mapped.to, []);
     assert.equal(formatAgentMailAddress("ops@example.com"), "ops@example.com");
   });
 

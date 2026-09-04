@@ -1,3 +1,8 @@
+import {
+  parseNamedLinkToken,
+  type ParsedNamedLinkToken,
+} from "./named-link-tokens.js";
+
 export type MentionKind =
   | "task"
   | "project"
@@ -87,30 +92,89 @@ export function mentionTokenLabel(token: ParsedMentionToken): string {
 
 export type MentionSegment =
   | { type: "markdown"; content: string }
-  | { type: "mention"; token: ParsedMentionToken; raw: string };
+  | { type: "mention"; token: ParsedMentionToken; raw: string }
+  | { type: "namedLink"; token: ParsedNamedLinkToken; raw: string };
+
+type TokenHit =
+  | { kind: "mention"; index: number; raw: string; token: ParsedMentionToken }
+  | {
+      kind: "namedLink";
+      index: number;
+      raw: string;
+      token: ParsedNamedLinkToken;
+    };
+
+function findNextTokenHit(markdown: string, from: number): TokenHit | null {
+  const slice = markdown.slice(from);
+  MENTION_TOKEN_RE.lastIndex = 0;
+  const mentionMatch = MENTION_TOKEN_RE.exec(slice);
+
+  // Rebuild named-link regex each call so lastIndex stays clean.
+  const namedLinkRe = /\[(?!@)([^\]\|\r\n]+)\|([^\]\r\n]+)\]/g;
+  let namedHit: TokenHit | null = null;
+  let namedMatch: RegExpExecArray | null;
+  while ((namedMatch = namedLinkRe.exec(slice)) != null) {
+    const raw = namedMatch[0];
+    const parsed = parseNamedLinkToken(raw);
+    if (!parsed) {
+      continue;
+    }
+    namedHit = {
+      kind: "namedLink",
+      index: from + (namedMatch.index ?? 0),
+      raw,
+      token: parsed,
+    };
+    break;
+  }
+
+  const mentionHit: TokenHit | null =
+    mentionMatch != null
+      ? (() => {
+          const raw = mentionMatch[0];
+          const parsed = parseMentionToken(raw);
+          if (!parsed) {
+            return null;
+          }
+          return {
+            kind: "mention" as const,
+            index: from + (mentionMatch.index ?? 0),
+            raw,
+            token: parsed,
+          };
+        })()
+      : null;
+
+  if (mentionHit && namedHit) {
+    return mentionHit.index <= namedHit.index ? mentionHit : namedHit;
+  }
+  return mentionHit ?? namedHit;
+}
 
 export function segmentMarkdownWithMentions(markdown: string): MentionSegment[] {
   const segments: MentionSegment[] = [];
   let lastIndex = 0;
 
-  for (const match of markdown.matchAll(MENTION_TOKEN_RE)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
+  while (lastIndex < markdown.length) {
+    const hit = findNextTokenHit(markdown, lastIndex);
+    if (!hit) {
+      break;
+    }
+
+    if (hit.index > lastIndex) {
       segments.push({
         type: "markdown",
-        content: markdown.slice(lastIndex, index),
+        content: markdown.slice(lastIndex, hit.index),
       });
     }
 
-    const raw = match[0];
-    const parsed = parseMentionToken(raw);
-    if (parsed) {
-      segments.push({ type: "mention", token: parsed, raw });
+    if (hit.kind === "mention") {
+      segments.push({ type: "mention", token: hit.token, raw: hit.raw });
     } else {
-      segments.push({ type: "markdown", content: raw });
+      segments.push({ type: "namedLink", token: hit.token, raw: hit.raw });
     }
 
-    lastIndex = index + raw.length;
+    lastIndex = hit.index + hit.raw.length;
   }
 
   if (lastIndex < markdown.length) {
@@ -124,3 +188,5 @@ export function segmentMarkdownWithMentions(markdown: string): MentionSegment[] 
     ? segments
     : [{ type: "markdown", content: markdown }];
 }
+
+export type { ParsedNamedLinkToken };

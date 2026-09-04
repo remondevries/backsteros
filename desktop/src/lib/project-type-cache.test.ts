@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  recalledProjectNavFrom,
   rememberProjectNavFrom,
+  rememberProjectNavFromHref,
   resolveProjectNavFromForPath,
   resolveSidebarActivePathname,
 } from "./project-type-cache.ts";
+
 
 test("resolveSidebarActivePathname keeps Projects when from projects or unset", () => {
   assert.equal(
@@ -72,4 +75,21 @@ test("resolveProjectNavFromForPath prefers location state then cache", () => {
     }),
     "areas",
   );
+});
+
+test("rememberProjectNavFromHref caches from state for warm project opens", () => {
+  rememberProjectNavFromHref("/projects/BOD/files?tab=1", {
+    from: "development",
+  });
+  assert.equal(recalledProjectNavFrom("BOD"), "development");
+  assert.equal(
+    resolveSidebarActivePathname(
+      "/projects/BOD/files",
+      recalledProjectNavFrom("bod"),
+    ),
+    "/development",
+  );
+
+  rememberProjectNavFromHref("/projects/new", { from: "areas" });
+  assert.equal(recalledProjectNavFrom("new"), null);
 });

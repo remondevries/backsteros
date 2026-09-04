@@ -6,6 +6,7 @@ import {
 
 export const ORGANIZATION_SECTION_IDS = [
   "overview",
+  "details",
   "activity",
   "projects",
   "letters",
@@ -20,6 +21,15 @@ export type OrganizationSectionConfig = {
   id: OrganizationSectionId;
   label: string;
 };
+
+/**
+ * Tabs on the standalone org profile card (Activity / Details).
+ * A "More..." tab is appended in the UI to expand the workspace.
+ */
+export const ORGANIZATION_CARD_SECTIONS: readonly OrganizationSectionConfig[] = [
+  { id: "overview", label: "Activity" },
+  { id: "details", label: "Details" },
+];
 
 export const ORGANIZATION_SECTIONS: readonly OrganizationSectionConfig[] = [
   { id: "overview", label: "Overview" },
@@ -59,16 +69,36 @@ export function resolveVisibleOrganizationSections(
   });
 }
 
+/** Workspace tabs for expanded org overlay (excludes card Activity/Details). */
+export function resolveOrganizationWorkspaceTabs(
+  options: VisibleOrganizationSectionsOptions = {},
+): OrganizationSectionConfig[] {
+  return resolveVisibleOrganizationSections(options).filter(
+    (section) =>
+      section.id !== "overview" &&
+      section.id !== "activity" &&
+      section.id !== "details",
+  );
+}
+
 export function isOrganizationSectionId(
   value: string,
 ): value is OrganizationSectionId {
   return (ORGANIZATION_SECTION_IDS as readonly string[]).includes(value);
 }
 
+export function isOrganizationCardSectionId(
+  value: string,
+): value is "overview" | "details" {
+  return value === "overview" || value === "details";
+}
+
 export function parseOrganizationSectionId(
   value: string | null | undefined,
 ): OrganizationSectionId {
   if (!value || value === "overview") return "overview";
+  // Legacy: full-page Activity tab → card Activity (overview id).
+  if (value === "activity") return "overview";
   return isOrganizationSectionId(value) ? value : "overview";
 }
 
@@ -90,15 +120,18 @@ export function getActiveOrganizationSection(
 
   if (!resolvedBase) return "overview";
 
-  for (const section of ORGANIZATION_SECTIONS) {
-    const segment = getOrganizationSectionSegment(section.id);
+  // Include card-only `details` plus workspace sections (projects, …).
+  for (const sectionId of ORGANIZATION_SECTION_IDS) {
+    const segment = getOrganizationSectionSegment(sectionId);
     if (!segment) continue;
     const sectionPath = `${resolvedBase}/${segment}`;
     if (
       normalized === sectionPath ||
       normalized.startsWith(`${sectionPath}/`)
     ) {
-      return section.id;
+      // Legacy /activity URL → card Activity tab (overview id).
+      if (sectionId === "activity") return "overview";
+      return sectionId;
     }
   }
 

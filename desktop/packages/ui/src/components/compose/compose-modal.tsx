@@ -135,6 +135,7 @@ export type ComposeModalCreateTaskInput = {
   priority?: number;
   dueDate: string | null;
   assigneeId: string | null;
+  relatedContactIds?: string[];
   links?: TaskLink[];
 };
 
@@ -152,6 +153,8 @@ export type ComposeModalProps = {
   projects: ComposeModalProject[];
   contacts: AssigneeDropdownContact[];
   defaultAssigneeId: string | null;
+  /** Seed Related contacts when compose opens from a contact card. */
+  defaultRelatedContactIds?: string[];
   documentFoldersByTarget: ComposeDocumentFoldersByTarget;
   contextLoading?: boolean;
   contextError?: string | null;
@@ -161,6 +164,7 @@ export type ComposeModalProps = {
   ) => Promise<{ href: string }>;
   onNavigate: (href: string) => void;
   documentLinkOptions?: readonly TaskLinkPickerOption[];
+  letterLinkOptions?: readonly TaskLinkPickerOption[];
   emailLinkOptions?: readonly TaskLinkPickerOption[];
   /** Optional link for empty projects CTA; if omitted render plain text. */
   projectsHref?: string;
@@ -180,6 +184,7 @@ export function ComposeModal({
   projects,
   contacts,
   defaultAssigneeId,
+  defaultRelatedContactIds = [],
   documentFoldersByTarget,
   contextLoading = false,
   contextError = null,
@@ -187,6 +192,7 @@ export function ComposeModal({
   onCreateDocument,
   onNavigate,
   documentLinkOptions,
+  letterLinkOptions,
   emailLinkOptions,
   projectsHref,
   allowedKinds = ["task", "document"],
@@ -229,6 +235,9 @@ export function ComposeModal({
   const [priority, setPriority] = useState<TaskPriority>(0);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(defaultAssigneeId);
+  const [relatedContactIds, setRelatedContactIds] = useState<string[]>(
+    defaultRelatedContactIds,
+  );
   const [links, setLinks] = useState<TaskLink[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showBreadcrumbFade, setShowBreadcrumbFade] = useState(false);
@@ -260,7 +269,7 @@ export function ComposeModal({
   }, [description, kind, open]);
 
   const composeResetKey = open
-    ? `${pathname}|${defaultAssigneeId}|${projects.length}`
+    ? `${pathname}|${defaultAssigneeId}|${defaultRelatedContactIds.join(",")}|${projects.length}`
     : "";
   const [prevComposeResetKey, setPrevComposeResetKey] = useState("");
   if (open && composeResetKey !== prevComposeResetKey) {
@@ -293,6 +302,7 @@ export function ComposeModal({
     setPriority(0);
     setDueDate(resolveComposeContextDueDate(pathname, projects));
     setAssigneeId(defaultAssigneeId);
+    setRelatedContactIds(defaultRelatedContactIds);
     setLinks([]);
     setError(null);
   } else if (!open && prevComposeResetKey !== "") {
@@ -523,6 +533,9 @@ export function ComposeModal({
       priority,
       dueDate,
       assigneeId,
+      ...(relatedContactIds.length > 0
+        ? { relatedContactIds }
+        : {}),
       ...(links.length > 0 ? { links } : {}),
     })
       .then((result) => {
@@ -536,6 +549,7 @@ export function ComposeModal({
       });
   }, [
     assigneeId,
+    relatedContactIds,
     description,
     dueDate,
     links,
@@ -1275,6 +1289,7 @@ export function ComposeModal({
                   links={links}
                   onChangeLinks={pending || contextLoading ? undefined : setLinks}
                   documentOptions={documentLinkOptions}
+                  letterOptions={letterLinkOptions}
                   emailOptions={emailLinkOptions}
                   onNavigate={onNavigate}
                 />

@@ -1645,7 +1645,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   serverFullscreen: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20,
     elevation: 20,
     backgroundColor: colors.background,

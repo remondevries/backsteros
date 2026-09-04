@@ -22,6 +22,18 @@ export function newId(): string {
   return nanoid();
 }
 
+/** Stable id so local + cloud meeting apply insert the same CRM activity rows. */
+export function meetingCrmActivityId(
+  meetingId: string,
+  subjectType: string,
+  subjectId: string,
+): string {
+  return createHash("sha256")
+    .update(`crm-meeting-activity:${meetingId}:${subjectType}:${subjectId}`)
+    .digest("hex")
+    .slice(0, 21);
+}
+
 export function hasScope(scopes: ApiKeyScope[], required: ApiKeyScope): boolean {
   return scopes.includes(required);
 }

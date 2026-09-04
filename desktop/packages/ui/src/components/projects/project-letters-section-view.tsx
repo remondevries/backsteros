@@ -110,7 +110,9 @@ export function ProjectLettersSectionView({
                       <LetterIcon size={14} />
                     </span>
                     <span className="project-detail__letter-id">
-                      {formatLetterDisplayId(letter.number)}
+                      {letter.number != null
+                        ? formatLetterDisplayId(letter.number)
+                        : letter.id.slice(0, 8)}
                     </span>
                     <span className="project-detail__entity-row-label">
                       {letter.title}

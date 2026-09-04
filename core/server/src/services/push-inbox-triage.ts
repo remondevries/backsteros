@@ -4,7 +4,6 @@ import type {
   InboxTriageNotificationPayload,
 } from "@backsteros/contracts";
 
-import { db } from "../db/index.js";
 import { devicePushTokens } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
 
@@ -35,6 +34,11 @@ function pruneDedupe(now: number): void {
   }
 }
 
+async function getDb() {
+  const { db } = await import("../db/index.js");
+  return db;
+}
+
 export async function upsertDevicePushToken(input: {
   workspaceId: string;
   userId: string;
@@ -44,6 +48,7 @@ export async function upsertDevicePushToken(input: {
 }) {
   const token = input.token.trim();
   if (!token) throw new Error("PUSH_TOKEN_REQUIRED");
+  const db = await getDb();
 
   const [existing] = await db
     .select({ id: devicePushTokens.id })
@@ -87,6 +92,7 @@ export async function deleteDevicePushToken(input: {
 }) {
   const token = input.token.trim();
   if (!token) return false;
+  const db = await getDb();
   const rows = await db
     .delete(devicePushTokens)
     .where(eq(devicePushTokens.token, token))
@@ -102,6 +108,7 @@ export async function notifyWorkspacePush(
     return { sent: 0, skipped: true };
   }
 
+  const db = await getDb();
   const tokens = await db
     .select({ token: devicePushTokens.token })
     .from(devicePushTokens)

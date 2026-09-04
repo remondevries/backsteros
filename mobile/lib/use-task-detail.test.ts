@@ -59,4 +59,19 @@ describe("shouldFetchTaskDetailViaRest", () => {
       true,
     );
   });
+
+  it("does not fetch while a just-created pending task is seeded", () => {
+    assert.equal(
+      shouldFetchTaskDetailViaRest({
+        taskId: "t1",
+        hasSyncedTask: false,
+        hasPendingTask: true,
+        syncLoading: false,
+        powerSyncStatus: "ready",
+        powerSyncReady: true,
+        restFallbackAllowed: false,
+      }),
+      false,
+    );
+  });
 });

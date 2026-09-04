@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri-invoke-instrumentation";
 
+import { useAgentMail } from "../lib/agentmail-context";
 import {
   cursorUsageTitle,
   formatDaysUntilReset,
@@ -11,6 +12,18 @@ import {
 } from "../lib/cursor-usage";
 
 const POLL_MS = 5 * 60 * 1000;
+
+function AgentMailDegradedAlert() {
+  return (
+    <div
+      className="sidebar-agentmail-degraded"
+      role="alert"
+      title="AgentMail provider failed or reset (often during HMR). Email lists are paused; reload the app to restore."
+    >
+      AgentMail unavailable
+    </div>
+  );
+}
 
 function UsageBar({ label, percent }: { label: string; percent: number }) {
   const tone = planUsageTone(percent);
@@ -40,50 +53,13 @@ function UsageBar({ label, percent }: { label: string; percent: number }) {
   );
 }
 
-/**
- * Sidebar footer: Cursor monthly included Auto / API usage toward the plan
- * allowance, plus weekly Grok Bot quota when the account includes it.
- */
-export function CursorCreditsUsageBar() {
-  const [usage, setUsage] = useState<CursorUsage | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const data = await invoke<CursorUsage>("cursor_usage");
-        if (!cancelled) {
-          setUsage(data);
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setUsage({
-            available: false,
-            autoPercentUsed: 0,
-            apiPercentUsed: 0,
-            totalPercentUsed: 0,
-            error: "Cursor credits unavailable",
-            sampledAt: Date.now(),
-          });
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-    const timer = window.setInterval(() => {
-      void load();
-    }, POLL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
+function CursorCreditsBody({
+  usage,
+  loading,
+}: {
+  usage: CursorUsage | null;
+  loading: boolean;
+}) {
   if (!usage?.available) {
     return (
       <div className="sidebar-cursor-credits" aria-busy={loading}>
@@ -128,6 +104,60 @@ export function CursorCreditsUsageBar() {
       {usage.grokBotPercentUsed != null ? (
         <UsageBar label="Grok Bot" percent={usage.grokBotPercentUsed} />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Sidebar footer: Cursor monthly included Auto / API usage toward the plan
+ * allowance, plus weekly Grok Bot quota when the account includes it.
+ * Shows a red AgentMail alert above the credits when mail sync has degraded.
+ */
+export function CursorCreditsUsageBar() {
+  const { degraded: agentMailDegraded } = useAgentMail();
+  const [usage, setUsage] = useState<CursorUsage | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const data = await invoke<CursorUsage>("cursor_usage");
+        if (!cancelled) {
+          setUsage(data);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setUsage({
+            available: false,
+            autoPercentUsed: 0,
+            apiPercentUsed: 0,
+            totalPercentUsed: 0,
+            error: "Cursor credits unavailable",
+            sampledAt: Date.now(),
+          });
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <div className="sidebar-footer-status-stack">
+      {agentMailDegraded ? <AgentMailDegradedAlert /> : null}
+      <CursorCreditsBody usage={usage} loading={loading} />
     </div>
   );
 }

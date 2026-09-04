@@ -379,6 +379,95 @@ export function incomeExpenseDailyHasActivity(
   return points.some((point) => point.income > 0 || point.expense > 0);
 }
 
+/**
+ * Densify a daily series with Catmull-Rom so line charts look rounded
+ * (desktop `curve="monotoneX"` parity) instead of hard corners.
+ */
+export function densifySeriesForSmoothLine(
+  values: readonly number[],
+  stepsPerSegment = 4,
+): number[] {
+  if (values.length === 0) return [];
+  if (values.length === 1) return [values[0]!];
+  const out: number[] = [];
+  for (let index = 0; index < values.length - 1; index++) {
+    const p0 = values[Math.max(0, index - 1)]!;
+    const p1 = values[index]!;
+    const p2 = values[index + 1]!;
+    const p3 = values[Math.min(values.length - 1, index + 2)]!;
+    for (let step = 0; step < stepsPerSegment; step++) {
+      const t = step / stepsPerSegment;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      out.push(
+        0.5 *
+          (2 * p1 +
+            (-p0 + p2) * t +
+            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+            (-p0 + 3 * p1 - 3 * p2 + p3) * t3),
+      );
+    }
+  }
+  out.push(values[values.length - 1]!);
+  return out;
+}
+
+const SKIP_MONEYBIRD_INVOICE_STATES = new Set(["draft", "uncollectible"]);
+
+function eurosStringToCents(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  // Moneybird amounts are decimal strings with a `.` separator (e.g. "121.0").
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric * 100);
+}
+
+/**
+ * Daily Moneybird billed income (euros) for the calendar month of `asOf`,
+ * from the 1st through that day. Draft / uncollectible invoices are skipped.
+ */
+export function buildMoneybirdMonthIncomeDailyPoints(input: {
+  invoices: readonly {
+    state?: string | null;
+    invoiceDate: string | null;
+    totalPriceInclTax: string | null;
+  }[];
+  asOf?: Date;
+}): IncomeExpenseDailyPoint[] {
+  const asOf = input.asOf ?? new Date();
+  const year = asOf.getFullYear();
+  const monthIndex = asOf.getMonth();
+  const lastDay = asOf.getDate();
+  const incomeByDay = new Array<number>(lastDay).fill(0);
+
+  for (const invoice of input.invoices) {
+    if (
+      invoice.state &&
+      SKIP_MONEYBIRD_INVOICE_STATES.has(String(invoice.state).toLowerCase())
+    ) {
+      continue;
+    }
+    const booked = parseBookedDay(invoice.invoiceDate ?? "");
+    if (!booked) continue;
+    if (booked.year !== year || booked.monthIndex !== monthIndex) continue;
+    if (booked.day < 1 || booked.day > lastDay) continue;
+    incomeByDay[booked.day - 1]! += eurosStringToCents(invoice.totalPriceInclTax);
+  }
+
+  const points: IncomeExpenseDailyPoint[] = [];
+  for (let day = 1; day <= lastDay; day++) {
+    points.push({
+      index: day - 1,
+      day,
+      label: String(day),
+      tooltipLabel: formatDayTooltip(year, monthIndex, day),
+      income: centsToEuros(incomeByDay[day - 1]!),
+      expense: 0,
+    });
+  }
+  return points;
+}
+
 export type IncomeExpenseYearPoint = {
   index: number;
   /** Short month label (`Jan`, `Jan 2026` for January). */

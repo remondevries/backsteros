@@ -256,8 +256,14 @@ async function pullWorkspaceSyncEvents(workspaceId: string): Promise<{
         createdAt: new Date(raw.created_at),
       };
       const result = await applyPeerSyncEvent(workspaceId, event);
-      if (result === "applied") applied += 1;
-      else if (result === "duplicate") duplicate += 1;
+      if (result === "applied") {
+        applied += 1;
+        // Open desktop shells subscribe on local — rebroadcast before PowerSync.
+        const { publishWorkspaceUpdatedFromSyncEvent } = await import(
+          "./sync-event-live-publish.js"
+        );
+        publishWorkspaceUpdatedFromSyncEvent(workspaceId, event);
+      } else if (result === "duplicate") duplicate += 1;
       else skipped += 1;
       after = Math.max(after, event.cursor);
       await setSyncEventPullCursor(workspaceId, after);

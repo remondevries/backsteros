@@ -2,6 +2,7 @@ import { and, eq, gt, isNotNull, isNull, lt, sql } from "drizzle-orm";
 
 import type {
   CreateMeetingBookingInput,
+  CreateMeetingInput,
   Meeting,
   MeetingSchedulingSettings,
   MeetingSlot,
@@ -290,12 +291,19 @@ function buildMeetingSummary(input: CreateMeetingBookingInput): string {
   return lines.join("\n");
 }
 
-export async function createMeetingBooking(
+export type PlannedMeetingBooking = {
+  id: string;
+  input: CreateMeetingInput;
+};
+
+/** Validate slot availability and build meeting create input (no DB write). */
+export async function planMeetingBooking(
   workspaceId: string,
   input: CreateMeetingBookingInput,
   now = new Date(),
   executor: DbExecutor = db,
-): Promise<Meeting> {
+  id: string = newId(),
+): Promise<PlannedMeetingBooking> {
   const row = await getSchedulingSettingsRow(workspaceId, executor);
   if (!row || !row.enabled) {
     throw new Error("SCHEDULING_DISABLED");
@@ -351,9 +359,9 @@ export async function createMeetingBooking(
   }
 
   const bookerName = formatBookerName(input);
-  const created = await createMeetingRow(
-    workspaceId,
-    {
+  return {
+    id,
+    input: {
       title: `Meeting with ${bookerName}`.slice(0, 500),
       summary: buildMeetingSummary(input),
       startAt: startAt.toISOString(),
@@ -363,7 +371,25 @@ export async function createMeetingBooking(
       projectId: row.defaultProjectId ?? null,
       organizationId: row.defaultOrganizationId ?? null,
     },
-    newId(),
+  };
+}
+
+export async function createMeetingBooking(
+  workspaceId: string,
+  input: CreateMeetingBookingInput,
+  now = new Date(),
+  executor: DbExecutor = db,
+): Promise<Meeting> {
+  const planned = await planMeetingBooking(
+    workspaceId,
+    input,
+    now,
+    executor,
+  );
+  const created = await createMeetingRow(
+    workspaceId,
+    planned.input,
+    planned.id,
     executor,
   );
 

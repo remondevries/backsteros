@@ -1,10 +1,11 @@
+import type { ColorValue } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
 
 import { colors } from "../lib/theme";
 
 type Props = {
   size?: number;
-  color?: string;
+  color?: ColorValue;
 };
 
 /**

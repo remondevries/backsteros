@@ -3,12 +3,13 @@ import "react-native-gesture-handler";
 
 import { ClerkProvider, ClerkLoaded } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
-import { ThemeProvider } from "@react-navigation/native";
+import { ThemeProvider } from "expo-router/react-navigation";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Text, View } from "react-native";
 
 import { AppErrorBoundary } from "../components/app-error-boundary";
+import { AgentMailProvider } from "../lib/agentmail-context";
 import { MobileCoreApiUrlProvider } from "../lib/api-url-context";
 import { getMobileEnvironment } from "../lib/env";
 import { PowerSyncProvider } from "../lib/powersync-context";
@@ -56,7 +57,7 @@ function RootLayout() {
           Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in backsteros-mobile/.env and
           restart Expo. No demo workspace is shipped on mobile.
         </Text>
-        <StatusBar style="light" backgroundColor={colors.background} />
+        <StatusBar style="light" />
       </View>
     );
   }
@@ -69,6 +70,7 @@ function RootLayout() {
             <MobileCoreApiUrlProvider>
             <ClerkLoaded>
               <PowerSyncProvider>
+                <AgentMailProvider>
                 <TrackedTimerProvider>
                 <TabBarVisibilityProvider>
                   <TabBarDetailRouteHider />
@@ -143,10 +145,11 @@ function RootLayout() {
                       options={rootDetailOptions}
                     />
                     </Stack>
-                    <StatusBar style="light" backgroundColor={colors.background} />
+                    <StatusBar style="light" />
                   </NavigationShortcutGateProvider>
                 </TabBarVisibilityProvider>
                 </TrackedTimerProvider>
+                </AgentMailProvider>
               </PowerSyncProvider>
             </ClerkLoaded>
             </MobileCoreApiUrlProvider>

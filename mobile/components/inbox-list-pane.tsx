@@ -26,6 +26,7 @@ import {
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
+import { INBOX_TASKS_WHERE_SQL } from "../lib/inbox-tasks-sql";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
@@ -145,25 +146,7 @@ export function InboxListPane({
     InboxSyncedRow
   >(
     `${TASK_LIST_SELECT}
-     WHERE t.deleted_at IS NULL AND (
-       t.inbox = 1
-       OR (
-         t.agent_created_at IS NOT NULL
-         AND t.agent_inbox_approved_at IS NULL
-       )
-       OR (
-         t.status IN ('on_hold', 'in_review')
-         AND (
-           t.due_date IS NULL
-           OR date(t.due_date) <= date('now', 'localtime')
-         )
-       )
-       OR (
-         t.due_date IS NOT NULL
-         AND date(t.due_date) < date('now', 'localtime')
-         AND t.status NOT IN ('completed', 'canceled', 'duplicated')
-       )
-     )
+     WHERE ${INBOX_TASKS_WHERE_SQL}
      ORDER BY t.sort_order ASC, t.updated_at DESC`,
   );
 

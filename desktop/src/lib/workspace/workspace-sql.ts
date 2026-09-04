@@ -19,6 +19,8 @@ export const TASK_LIST_COLUMNS = [
   "project_id",
   "contact_id",
   "assignee_id",
+  "related_contact_ids",
+  "related_organization_ids",
   "sort_order",
   "updated_at",
   "created_at",
@@ -96,6 +98,7 @@ export const CONTACT_LIST_COLUMNS = [
   "avatar_content_type",
   "sort_order",
   "phone",
+  "phones",
   "role",
   "address",
   "city",
@@ -106,6 +109,7 @@ export const CONTACT_LIST_COLUMNS = [
   "longitude",
   "social_accounts",
   "birthday",
+  "languages",
   "updated_at",
   "created_at",
   "deleted_at",
@@ -116,13 +120,23 @@ export const ORGANIZATION_LIST_COLUMNS = [
   "number",
   "key",
   "name",
+  "summary",
   "phone",
   "email",
+  "emails",
+  "phones",
   "website",
   "address",
   "city",
   "postal_code",
   "country",
+  "region",
+  "latitude",
+  "longitude",
+  "size",
+  "social_accounts",
+  "chamber_of_commerce",
+  "tax_number",
   "avatar_storage_key",
   "avatar_content_type",
   "sort_order",
@@ -184,7 +198,13 @@ export const MEETING_LIST_COLUMNS = [
   "id",
   "number",
   "title",
+  "summary",
+  "notes",
+  "transcription",
   "status",
+  "format",
+  "location",
+  "location_organization_id",
   "project_id",
   "organization_id",
   "attendee_contact_ids",
@@ -223,6 +243,126 @@ export const PROJECTS_LIST_SQL = `SELECT ${PROJECT_LIST_COLUMNS} FROM projects W
 export const LETTERS_LIST_SQL = `SELECT ${LETTER_LIST_COLUMNS} FROM letters WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
 
 export const CONTACTS_LIST_SQL = `SELECT ${CONTACT_LIST_COLUMNS} FROM contacts WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
+
+/** Contact → CRM group chips for the contacts overview list. */
+export const CRM_CONTACT_GROUP_MEMBERSHIPS_SQL = `
+  SELECT
+    m.subject_id AS contact_id,
+    g.id AS group_id,
+    g.name AS name,
+    g.color AS color,
+    g.sort_order AS sort_order
+  FROM crm_group_members m
+  INNER JOIN crm_groups g ON g.id = m.group_id
+  WHERE m.deleted_at IS NULL
+    AND g.deleted_at IS NULL
+    AND m.subject_type = 'contact'
+  ORDER BY g.sort_order ASC, g.name COLLATE NOCASE ASC
+`.trim();
+
+export const CRM_GROUPS_LIST_SQL = `
+  SELECT
+    id,
+    name,
+    description,
+    color,
+    icon,
+    sort_order,
+    created_at,
+    updated_at,
+    deleted_at
+  FROM crm_groups
+  WHERE deleted_at IS NULL
+  ORDER BY sort_order ASC, name COLLATE NOCASE ASC
+`.trim();
+
+export const CRM_RELATIONSHIP_LABELS_SQL = `
+  SELECT
+    id,
+    side_a_label,
+    side_a_slug,
+    side_b_label,
+    side_b_slug,
+    color,
+    sort_order,
+    created_at,
+    updated_at,
+    deleted_at
+  FROM crm_relationship_labels
+  WHERE deleted_at IS NULL
+  ORDER BY sort_order ASC, side_a_label COLLATE NOCASE ASC
+`.trim();
+
+export const CONTACT_RELATIONSHIPS_FOR_CONTACT_SQL = `
+  SELECT
+    r.id,
+    r.from_contact_id,
+    r.to_contact_id,
+    r.type,
+    r.note,
+    r.created_at,
+    r.updated_at,
+    r.deleted_at,
+    CASE WHEN r.from_contact_id = ? THEN 'outgoing' ELSE 'incoming' END AS direction,
+    CASE WHEN r.from_contact_id = ? THEN r.to_contact_id ELSE r.from_contact_id END AS related_contact_id,
+    COALESCE(c.name, 'Unknown') AS related_contact_name
+  FROM contact_relationships r
+  LEFT JOIN contacts c
+    ON c.id = CASE WHEN r.from_contact_id = ? THEN r.to_contact_id ELSE r.from_contact_id END
+    AND c.deleted_at IS NULL
+  WHERE r.deleted_at IS NULL
+    AND (r.from_contact_id = ? OR r.to_contact_id = ?)
+  ORDER BY r.created_at ASC
+`.trim();
+
+export const CRM_ACTIVITIES_FOR_SUBJECT_SQL = `
+  SELECT
+    a.id,
+    a.subject_type,
+    a.subject_id,
+    a.kind,
+    a.body,
+    a.body_preview,
+    a.meeting_id,
+    a.occurred_at,
+    a.created_by,
+    a.created_at,
+    a.updated_at,
+    a.deleted_at,
+    m.title AS meeting_title,
+    m.start_at AS meeting_start_at
+  FROM crm_activities a
+  LEFT JOIN meetings m ON m.id = a.meeting_id AND m.deleted_at IS NULL
+  WHERE a.deleted_at IS NULL
+    AND a.subject_type = ?
+    AND a.subject_id = ?
+  ORDER BY a.occurred_at DESC, a.id DESC
+`.trim();
+
+export const CRM_GROUP_MEMBERS_SQL = `
+  SELECT subject_type, subject_id
+  FROM crm_group_members
+  WHERE deleted_at IS NULL AND group_id = ?
+`.trim();
+
+export const CRM_SUBJECT_GROUPS_SQL = `
+  SELECT
+    g.id,
+    g.name,
+    g.description,
+    g.color,
+    g.icon,
+    g.sort_order,
+    g.created_at,
+    g.updated_at,
+    g.deleted_at
+  FROM crm_groups g
+  INNER JOIN crm_group_members m ON m.group_id = g.id AND m.deleted_at IS NULL
+  WHERE g.deleted_at IS NULL
+    AND m.subject_type = ?
+    AND m.subject_id = ?
+  ORDER BY g.sort_order ASC, g.name COLLATE NOCASE ASC
+`.trim();
 
 export const ORGANIZATIONS_LIST_SQL = `SELECT ${ORGANIZATION_LIST_COLUMNS} FROM organizations WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
 

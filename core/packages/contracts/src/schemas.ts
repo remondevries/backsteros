@@ -425,6 +425,10 @@ export const createTaskSchema = z.object({
   habitId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** Replicated from sync; when set, do not invent from actor/api_key. */
+  agentCreatedAt: z.string().datetime().nullable().optional(),
+  /** Replicated from sync on create. */
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
   /**
    * Who should be attributed on activity rows for this write.
    * `agent` also flags the task for the Agents inbox subgroup.
@@ -750,6 +754,9 @@ export const organizationInputSchema = z.object({
   notes: z.string().max(20_000).nullable().optional(),
   /** Moneybird contact id (string — large integer). */
   moneybirdContactId: z.string().max(64).nullable().optional(),
+  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
+  avatarStorageKey: z.string().nullable().optional(),
+  avatarContentType: z.string().nullable().optional(),
 });
 export const updateOrganizationSchema = organizationInputSchema.partial();
 export const organizationSchema = z.object({
@@ -869,6 +876,9 @@ const contactWritableFieldsSchema = z.object({
     .array(z.enum(["nl", "en", "de", "es", "fr", "pl"]))
     .max(5)
     .optional(),
+  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
+  avatarStorageKey: z.string().nullable().optional(),
+  avatarContentType: z.string().nullable().optional(),
 });
 
 export const contactInputSchema = contactWritableFieldsSchema.superRefine(
@@ -1117,6 +1127,9 @@ export const bankAccountInputSchema = z.object({
   /** Link to a Moneybird financial account for mutation sync. */
   moneybirdFinancialAccountId: z.string().min(1).max(64).nullable().optional(),
   sortOrder: z.number().int().optional(),
+  /** Avatar blob key — set via avatar PUT / sync, not typical REST create. */
+  avatarStorageKey: z.string().nullable().optional(),
+  avatarContentType: z.string().nullable().optional(),
 });
 export const updateBankAccountSchema = bankAccountInputSchema.partial();
 export const bankAccountSchema = z.object({
@@ -1568,6 +1581,11 @@ export const letterInputSchema = z.object({
   receivedDate: isoDateSchema.nullable().optional(),
   direction: z.enum(["incoming", "outgoing"]).optional(),
   originalFilename: z.string().max(255).optional(),
+  storageKey: z.string().max(1024).optional(),
+  contentType: z.string().max(255).optional(),
+  byteSize: z.number().int().nonnegative().optional(),
+  checksum: z.string().max(128).nullable().optional(),
+  contentEtag: z.string().max(128).nullable().optional(),
   extractedText: z.string().max(2_000_000).nullable().optional(),
   sortOrder: z.number().int().optional(),
 });
@@ -1682,6 +1700,15 @@ export const avatarSchema = z.object({
   contentEtag: z.string().nullable(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
+});
+
+export const upsertDevicePushTokenSchema = z.object({
+  platform: z.enum(["ios", "android", "web"]),
+  token: z.string().min(1),
+  deviceName: z.string().max(255).optional(),
+});
+export const deleteDevicePushTokenSchema = z.object({
+  token: z.string().min(1),
 });
 
 /** Inline image pasted into a task description (blob fetched on demand). */
@@ -2608,10 +2635,18 @@ export const updateMeetingSchema = z
     locationOrganizationId: z.string().nullable().optional(),
     trackedMinutes: z.number().int().nonnegative().nullable().optional(),
     trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+    /** Clear the Updated inbox flag after the user views the item. */
+    acknowledgeInboxUpdate: z.boolean().optional(),
+    inboxUpdatedAt: z.string().datetime().nullable().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, {
-    message: "At least one field is required",
-  });
+  .refine(
+    (value) =>
+      Object.keys(value).filter((key) => key !== "acknowledgeInboxUpdate")
+        .length > 0 || value.acknowledgeInboxUpdate === true,
+    {
+      message: "At least one field is required",
+    },
+  );
 
 export const meetingSchema = z.object({
   id: z.string(),
@@ -2631,6 +2666,8 @@ export const meetingSchema = z.object({
   locationOrganizationId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt: z.string().datetime().nullable().optional(),
   sortOrder: z.number().int(),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,

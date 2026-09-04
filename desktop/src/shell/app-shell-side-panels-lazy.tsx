@@ -72,6 +72,12 @@ export const DesktopOrganizationsSidePanel = lazy(() =>
   })),
 );
 
+export const DesktopSocialSidePanel = lazy(() =>
+  import("./side-panels/social-side-panel").then((m) => ({
+    default: m.DesktopSocialSidePanel,
+  })),
+);
+
 export const DesktopProjectDocumentsSidePanel = lazy(() =>
   import("./side-panels/project-documents-side-panel").then((m) => ({
     default: m.DesktopProjectDocumentsSidePanel,

@@ -8,6 +8,10 @@ export {
   isKnowledgeSectionPath,
   isFinanceSectionPath,
 } from "../navigation/entity-routes.js";
+export {
+  getSocialHref,
+  isSocialSectionPath,
+} from "../social/social-contacts.js";
 
 export {
   getLettersHref,

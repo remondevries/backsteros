@@ -22,11 +22,20 @@ export const KEEP_ALIVE_SURFACES = new Set<PendingPageSurface>([
   "contacts",
   "organizations",
   "letters",
+  "social",
 ]);
 
 const mountedKeepAliveSurfaces = new Set<PendingPageSurface>();
 const lastKeepAliveHref = new Map<PendingPageSurface, string>();
+/** Pane / outlet listeners — notified synchronously so DOM can flip this frame. */
 const warmKeepAliveListeners = new Set<() => void>();
+/**
+ * Chrome listeners (tabs, side-panel host, shortcuts). Deferred to the next
+ * animation frame so content visibility paint is not blocked by ~20 chrome
+ * re-renders (perf logs: chromeLocationWakes 21–25 before raf1).
+ */
+const warmKeepAliveChromeListeners = new Set<() => void>();
+let warmChromeEmitScheduled = false;
 
 let visibleKeepAliveSurface: PendingPageSurface | null = null;
 let warmKeepAlivePopstateInstalled = false;
@@ -44,6 +53,7 @@ const KEEP_ALIVE_GO_ROOT: Partial<Record<PendingPageSurface, string>> = {
   contacts: "/contacts",
   organizations: "/organizations",
   letters: "/letters",
+  social: "/social",
 };
 
 function hrefFromParts(pathname: string, searchStr: string): string {
@@ -56,6 +66,19 @@ function emitWarmKeepAlive(): void {
   for (const listener of warmKeepAliveListeners) {
     listener();
   }
+  if (warmKeepAliveChromeListeners.size === 0) return;
+  if (warmChromeEmitScheduled) return;
+  warmChromeEmitScheduled = true;
+  // Two frames so content thaw (one rAF from KeepAlivePane) runs first.
+  // Single-rAF chrome previously shared the first frame and delayed thaws.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      warmChromeEmitScheduled = false;
+      for (const listener of warmKeepAliveChromeListeners) {
+        listener();
+      }
+    });
+  });
 }
 
 export function getWarmKeepAliveEpoch(): number {
@@ -115,6 +138,12 @@ export function shouldKeepAliveSidePanelSurface(
 export function keepAliveSidePanelSurface(
   pathname: string,
 ): PendingPageSurface | null {
+  // Contact-scoped nested details (tasks / letters / meetings) still use the
+  // contacts list panel even when the page surface is task-detail / letters /
+  // outlet-only.
+  if (pathname === "/contacts" || pathname.startsWith("/contacts/")) {
+    return "contacts";
+  }
   const surface = resolveAppHref(pathname).surface;
   return shouldKeepAliveSidePanelSurface(surface, pathname) ? surface : null;
 }
@@ -184,6 +213,14 @@ export function subscribeWarmKeepAlive(onChange: () => void): () => void {
   warmKeepAliveListeners.add(onChange);
   return () => {
     warmKeepAliveListeners.delete(onChange);
+  };
+}
+
+/** Chrome-only: notified on the next animation frame after a warm emit. */
+export function subscribeWarmKeepAliveChrome(onChange: () => void): () => void {
+  warmKeepAliveChromeListeners.add(onChange);
+  return () => {
+    warmKeepAliveChromeListeners.delete(onChange);
   };
 }
 
@@ -312,10 +349,8 @@ export function tryWarmKeepAliveFlip(
   const replace = options?.replace ?? false;
   const alreadyVisible = visibleKeepAliveSurface === resolved.surface;
   if (alreadyVisible && lastKeepAliveHref.get(resolved.surface) === nextHref) {
+    // Nothing changed for keep-alive consumers — skip the epoch fan-out.
     followWarmKeepAliveUrl(nextHref, replace);
-    // Surface unchanged — still emit so panes re-read lastHref (native push
-    // no longer wakes the router).
-    emitWarmKeepAlive();
     rememberSectionEntryFromNav(nextHref);
     return true;
   }

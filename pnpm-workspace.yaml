@@ -46,11 +46,14 @@ minimumReleaseAgeExclude:
   - expo-manifests@55.0.21
   - expo-secure-store@55.0.18
   - expo-web-browser@55.0.20
-# Single React for Expo mobile (SDK 54) — clerk can otherwise pull a second React.
+# Single React for Expo mobile (SDK 57) — clerk can otherwise pull a second React.
+# Pin Worklets to match the native RNWorklets pod (0.10.1); orphan 0.7.4 peers
+# break reanimated and collapse the (app) tab layout.
 overrides:
-  react: 19.1.0
-  react-dom: 19.1.0
-  '@types/react': 19.1.10
+  react: 19.2.3
+  react-dom: 19.2.3
+  '@types/react': 19.2.18
+  react-native-worklets: 0.10.1
 # Worklets Babel plugin requires these at runtime but only declares @babel/core.
 packageExtensions:
   react-native-worklets:

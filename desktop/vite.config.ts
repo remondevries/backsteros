@@ -49,6 +49,65 @@ export default defineConfig(async () => ({
     ],
   },
 
+  // Resolve UI package to source in dev so HMR picks up edits without a
+  // separate `pnpm --filter @backsteros/ui build` (package.json exports → dist).
+  // Use exact / trailing-path finds — a bare "@backsteros/ui" string alias
+  // would steal "@backsteros/ui/tailwind.css" → index.ts/tailwind.css.
+  resolve: {
+    alias: [
+      {
+        find: "@backsteros/ui/tailwind.css",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/tailwind.css",
+        ),
+      },
+      {
+        find: "@backsteros/ui/styles.css",
+        replacement: path.resolve(__dirname, "packages/ui/src/styles.css"),
+      },
+      {
+        find: "@backsteros/ui/shell",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/entry/shell.ts",
+        ),
+      },
+      {
+        find: "@backsteros/ui/tasks",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/entry/tasks.ts",
+        ),
+      },
+      {
+        find: "@backsteros/ui/inbox",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/entry/inbox.ts",
+        ),
+      },
+      {
+        find: "@backsteros/ui/calendar",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/entry/calendar.ts",
+        ),
+      },
+      {
+        find: "@backsteros/ui/navigation",
+        replacement: path.resolve(
+          __dirname,
+          "packages/ui/src/entry/navigation.ts",
+        ),
+      },
+      {
+        find: /^@backsteros\/ui$/,
+        replacement: path.resolve(__dirname, "packages/ui/src/index.ts"),
+      },
+    ],
+  },
+
   // PowerSync workers code-split; Vite 7 defaults to iife which Rollup rejects.
   worker: {
     format: "es",

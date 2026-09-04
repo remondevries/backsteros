@@ -7,6 +7,12 @@ import type {
 } from "@backsteros/contracts";
 import type { FinanceNavId } from "@backsteros/ui";
 import { useCallback, useEffect, useState } from "react";
+import { useDesktopPowerSync } from "../../lib/powersync-context";
+import {
+  createCashflowPlannerEntryViaPowerSyncOrApi,
+  deleteCashflowPlannerEntryViaPowerSyncOrApi,
+  updateCashflowPlannerEntryViaPowerSyncOrApi,
+} from "../../lib/workspace/finance-mutations";
 
 function todayYmd(): string {
   const now = new Date();
@@ -20,6 +26,7 @@ export function useFinanceCashflow({
   client: BacksterosApiClient;
   navId: FinanceNavId | null;
 }) {
+  const powerSync = useDesktopPowerSync();
   const [workspaceCashflow, setWorkspaceCashflow] =
     useState<WorkspaceCashflow | null>(null);
   const [workspaceCashflowLoading, setWorkspaceCashflowLoading] =
@@ -115,21 +122,18 @@ export function useFinanceCashflow({
       setPlannerPending(true);
       setPlannerError(null);
       try {
-        const created = await client.requestJson<CashflowPlannerEntry>(
-          "/api/v1/cashflow-planner-entries",
+        const created = await createCashflowPlannerEntryViaPowerSyncOrApi(
+          client,
+          powerSync,
           {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              entryType: input?.entryType ?? "expense",
-              name: input?.name ?? "New row",
-              amountCents: input?.amountCents ?? 0,
-              dueDate: input?.dueDate ?? todayYmd(),
-              groupLabel: input?.groupLabel ?? null,
-              ...(input?.sortOrder !== undefined
-                ? { sortOrder: input.sortOrder }
-                : {}),
-            } satisfies CashflowPlannerEntryInput),
+            entryType: input?.entryType ?? "expense",
+            name: input?.name ?? "New row",
+            amountCents: input?.amountCents ?? 0,
+            dueDate: input?.dueDate ?? todayYmd(),
+            groupLabel: input?.groupLabel ?? null,
+            ...(input?.sortOrder !== undefined
+              ? { sortOrder: input.sortOrder }
+              : {}),
           },
         );
         setPlannerEntries((rows) =>
@@ -150,7 +154,7 @@ export function useFinanceCashflow({
         setPlannerPending(false);
       }
     },
-    [client],
+    [client, powerSync],
   );
 
   const updatePlannerEntry = useCallback(
@@ -158,17 +162,23 @@ export function useFinanceCashflow({
       setPlannerPending(true);
       setPlannerError(null);
       try {
-        const updated = await client.requestJson<CashflowPlannerEntry>(
-          `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
-          {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(patch),
-          },
+        const updated = await updateCashflowPlannerEntryViaPowerSyncOrApi(
+          client,
+          powerSync,
+          id,
+          patch,
         );
         setPlannerEntries((rows) =>
           rows
-            .map((row) => (row.id === updated.id ? updated : row))
+            .map((row) =>
+              row.id === id
+                ? ((updated ?? {
+                    ...row,
+                    ...patch,
+                    updatedAt: new Date().toISOString(),
+                  }) as CashflowPlannerEntry)
+                : row,
+            )
             .sort((a, b) => {
               if (a.sortOrder !== b.sortOrder) {
                 return a.sortOrder - b.sortOrder;
@@ -176,7 +186,13 @@ export function useFinanceCashflow({
               return a.name.localeCompare(b.name);
             }),
         );
-        return updated;
+        return (
+          updated ??
+          ({
+            id,
+            ...patch,
+          } as CashflowPlannerEntry)
+        );
       } catch (error) {
         setPlannerError(
           error instanceof Error ? error.message : "Failed to update row",
@@ -186,7 +202,7 @@ export function useFinanceCashflow({
         setPlannerPending(false);
       }
     },
-    [client],
+    [client, powerSync],
   );
 
   const reorderPlannerEntries = useCallback(
@@ -218,13 +234,11 @@ export function useFinanceCashflow({
       try {
         await Promise.all(
           patches.map(({ id, patch }) =>
-            client.requestJson<CashflowPlannerEntry>(
-              `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
-              {
-                method: "PATCH",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(patch),
-              },
+            updateCashflowPlannerEntryViaPowerSyncOrApi(
+              client,
+              powerSync,
+              id,
+              patch,
             ),
           ),
         );
@@ -235,7 +249,7 @@ export function useFinanceCashflow({
         void refreshPlannerEntries();
       }
     },
-    [client, refreshPlannerEntries],
+    [client, powerSync, refreshPlannerEntries],
   );
 
   const deletePlannerEntry = useCallback(
@@ -243,20 +257,21 @@ export function useFinanceCashflow({
       setPlannerPending(true);
       setPlannerError(null);
       try {
-        await client.requestJson(
-          `/api/v1/cashflow-planner-entries/${encodeURIComponent(id)}`,
-          { method: "DELETE" },
+        await deleteCashflowPlannerEntryViaPowerSyncOrApi(
+          client,
+          powerSync,
+          id,
         );
         setPlannerEntries((rows) => rows.filter((row) => row.id !== id));
       } catch (error) {
         setPlannerError(
-          error instanceof Error ? error.message : "Failed to remove row",
+          error instanceof Error ? error.message : "Failed to delete row",
         );
       } finally {
         setPlannerPending(false);
       }
     },
-    [client],
+    [client, powerSync],
   );
 
   const fetchSpendPanel = useCallback(

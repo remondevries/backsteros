@@ -47,6 +47,7 @@ export const documentEditorTheme = EditorView.theme(
       color: "inherit",
     },
     ".cm-cursor, .cm-dropCursor": {
+      borderLeftWidth: "1.5px",
       borderLeftColor: "var(--keyboard-nav-highlight-color, #ee7a47)",
     },
     // Vim normal-mode block caret (Next document-editor-theme parity).

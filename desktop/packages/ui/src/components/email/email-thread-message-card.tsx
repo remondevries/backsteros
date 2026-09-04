@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { EntityActionsMenu } from "../entity-actions/entity-actions-menu.js";
 import type { EntityActionsMenuItem } from "../entity-actions/entity-actions-menu.js";
 import {
-  useEntityHeaderActionsContext,
+  useEntityHeaderActionsContextOptional,
   type EntityDeleteResult,
 } from "../entity-actions/entity-header-actions-context.js";
 import type { EmailDraftBodyMode } from "./email-draft-actions.js";
@@ -499,7 +499,8 @@ function EmailThreadMessageCardComponent({
   onMarkUnreadFromHere,
   onReportSpam,
 }: EmailThreadMessageCardProps) {
-  const { openDeleteModal } = useEntityHeaderActionsContext();
+  const entityHeaderActions = useEntityHeaderActionsContextOptional();
+  const openDeleteModal = entityHeaderActions?.openDeleteModal;
   const [infoOpen, setInfoOpen] = useState(false);
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<
     string | null
@@ -720,7 +721,7 @@ function EmailThreadMessageCardComponent({
                 icon: MESSAGE_MENU_ICONS.trash,
                 disabled: deleting,
                 onSelect: () => {
-                  openDeleteModal({
+                  openDeleteModal?.({
                     entityLabel: deleteEntityLabel,
                     confirmLabel: "Delete",
                     actionVerb: "Delete",
@@ -747,7 +748,7 @@ function EmailThreadMessageCardComponent({
                 label: "Report spam",
                 icon: MESSAGE_MENU_ICONS.spam,
                 onSelect: () => {
-                  openDeleteModal({
+                  openDeleteModal?.({
                     entityLabel: deleteEntityLabel,
                     confirmLabel: "Report spam",
                     actionVerb: "Report spam for",

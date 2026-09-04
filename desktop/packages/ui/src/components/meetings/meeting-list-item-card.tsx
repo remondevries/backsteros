@@ -24,7 +24,6 @@ import {
   resolveMeetingEffectiveStatus,
 } from "../../meetings/meeting-status.js";
 import type { InboxMeetingListItem } from "../../inbox/inbox-items.js";
-import { TaskListPriorityMark } from "../tasks/task-list-property-label.js";
 import {
   getPreferredColorSchemeSnapshot,
   subscribeToPreferredColorScheme,
@@ -241,7 +240,6 @@ export function MeetingListItemCard(props: MeetingListItemCardProps) {
         </span>
       </div>
       <ListItemMetaProperties>
-          <TaskListPriorityMark priority={item.priority} />
           {projectLabel ? (
             <ListItemProjectMeta projectName={projectLabel} />
           ) : null}

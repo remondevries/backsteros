@@ -12,7 +12,9 @@ import {
   formatLetterDisplayId,
   getLettersHref,
   letterMatchesSlug,
+  letterPdfSubjectFromFilename,
   migrateLegacyTaskStatus,
+  resolveLetterDetailHref,
   type TaskStatus,
 } from "@backsteros/ui";
 
@@ -103,7 +105,7 @@ function LettersPageBody({
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
   const { slug: slugParam } = useShellParams() as { slug?: string };
-  const { searchStr } = useShellLocation();
+  const { pathname, searchStr } = useShellLocation();
   const searchParams = useMemo(
     () =>
       new URLSearchParams(
@@ -123,6 +125,7 @@ function LettersPageBody({
   const [composePdfUploading, setComposePdfUploading] = useState(false);
   const [omittedLetterIds, setOmittedLetterIds] = useState<string[]>([]);
   const [statusOverride, setStatusOverride] = useState<TaskStatus | null>(null);
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [dueDateOverride, setDueDateOverride] = useState<
     Date | null | undefined
   >(undefined);
@@ -163,6 +166,7 @@ function LettersPageBody({
 
   useEffect(() => {
     setStatusOverride(null);
+    setTitleOverride(null);
     setDueDateOverride(undefined);
     setReceivedOverride(undefined);
     setOrganizationId(record?.organizationId ?? null);
@@ -172,6 +176,13 @@ function LettersPageBody({
       : null;
     setProjectKey(linkedProject?.key ?? selected?.projectKey ?? null);
   }, [projects, record, selected?.id, selected?.projectKey]);
+
+  useEffect(() => {
+    if (titleOverride == null || !selected) return;
+    if (selected.title === titleOverride) {
+      setTitleOverride(null);
+    }
+  }, [selected, titleOverride]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -226,7 +237,7 @@ function LettersPageBody({
       projects.find((entry) => entry.key === projectKey) ?? null;
     return {
       id: selected.id,
-      title: selected.title,
+      title: titleOverride ?? selected.title,
       status: statusOverride ?? selected.status,
       organizationId,
       organizationName: organization?.name ?? null,
@@ -267,6 +278,7 @@ function LettersPageBody({
     record,
     selected,
     statusOverride,
+    titleOverride,
     letterBodies,
   ]);
 
@@ -301,16 +313,14 @@ function LettersPageBody({
     { enabled: keepAliveActive });
 
   const letterDetailHref = useCallback(
-    (created: { id: string; number?: number | null }) => {
-      if (created.number != null) {
-        if (backHref === "/letters" || backHref === "/letters-v2") {
-          return getLettersHref(created.number);
-        }
-        return `${backHref}/${formatLetterDisplayId(created.number).toLowerCase()}`;
-      }
-      return `${backHref}/${created.id}`;
-    },
-    [backHref]);
+    (created: { id: string; number?: number | null }) =>
+      resolveLetterDetailHref({
+        id: created.id,
+        number: created.number,
+        listBaseHref: backHref,
+      }),
+    [backHref],
+  );
 
   const handleDeleteLetter = useCallback(async () => {
     if (!letter) {
@@ -447,7 +457,11 @@ function LettersPageBody({
     <>
       {keepAliveActive ? (
         <>
-          <RegisterPageTitle title={letter.title} />
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={pathname}
+            title={letter.title}
+          />
           <RegisterEntityDeleteAction
             entityLabel={deleteEntityLabel}
             onDelete={handleDeleteLetter}
@@ -456,6 +470,7 @@ function LettersPageBody({
       ) : null}
       <LetterDetailView
         letter={letter}
+        shortcutsEnabled={keepAliveActive}
         showPdfDock
         hasPdfDocument={pdfPanel.hasPdf}
         hasLegacyPdf={hasLivePdf}
@@ -463,7 +478,21 @@ function LettersPageBody({
         pdfAttachments={pdfPanel.attachments}
         selectedAttachmentId={pdfPanel.selectedAttachmentId}
         onSelectAttachment={pdfPanel.selectAttachment}
-        onRenameAttachment={pdfPanel.renameAttachment}
+        onRenameAttachment={async (attachmentId, originalFilename) => {
+          const result = await pdfPanel.renameAttachment(
+            attachmentId,
+            originalFilename,
+          );
+          if (result.ok) {
+            const primaryId = pdfPanel.attachments[0]?.id;
+            if (attachmentId === primaryId) {
+              setTitleOverride(
+                letterPdfSubjectFromFilename(originalFilename),
+              );
+            }
+          }
+          return result;
+        }}
         onAttachmentRenamed={pdfPanel.reloadAttachments}
         onDeleteAttachment={pdfPanel.deleteAttachment}
         onReorderAttachments={async (orderedIds) => {
@@ -537,6 +566,8 @@ function LettersPageBody({
           }
           try {
             await workspace.patchLetter(letter.id, { title: trimmed });
+            // Primary PDF label follows title on the server — refresh tabs.
+            void pdfPanel.reloadAttachments();
             return { ok: true as const };
           } catch (error) {
             return {

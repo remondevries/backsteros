@@ -3,6 +3,13 @@ import {
   resolveTaskStatusColor,
   type TaskStatusColorScheme,
 } from "../tasks/task-status-color.js";
+import {
+  getTaskStatusLabel,
+  migrateLegacyTaskStatus,
+  TASK_STATUS_ORDER,
+  type TaskStatus,
+} from "../tasks/task-status.js";
+import { resolveMeetingEffectiveStatus } from "./meeting-status.js";
 
 export const MEETING_DISPLAY_KEY = "M";
 
@@ -43,6 +50,10 @@ export type MeetingListItem = {
   status?: string;
   /** video_call | in_person | phone_call */
   format?: string;
+  /** Free-text place when format is in_person (legacy snapshot). */
+  location?: string | null;
+  /** Venue organization for in-person meetings (independent of organizationId). */
+  locationOrganizationId?: string | null;
   priority?: number;
   projectId?: string | null;
   projectKey?: string | null;
@@ -101,4 +112,39 @@ export function sortMeetingsByStart<T extends MeetingListItem>(items: T[]): T[] 
     if (aStart !== bStart) return aStart - bStart;
     return a.number - b.number;
   });
+}
+
+export type MeetingStatusGroup<T extends MeetingListItem = MeetingListItem> = {
+  status: TaskStatus;
+  label: string;
+  meetings: T[];
+};
+
+/** Status-grouped meetings (same structure as contact tasks / letters lists). */
+export function groupMeetingsByStatus<T extends MeetingListItem>(
+  meetings: readonly T[],
+  options?: { includeEmpty?: boolean; now?: Date },
+): MeetingStatusGroup<T>[] {
+  const now = options?.now ?? new Date();
+  const buckets = new Map<TaskStatus, T[]>();
+  for (const status of TASK_STATUS_ORDER) {
+    buckets.set(status, []);
+  }
+
+  for (const meeting of meetings) {
+    const status = migrateLegacyTaskStatus(
+      resolveMeetingEffectiveStatus(meeting, now),
+    );
+    buckets.get(status)?.push(meeting);
+  }
+
+  const groups = TASK_STATUS_ORDER.map((status) => ({
+    status,
+    label: getTaskStatusLabel(status),
+    meetings: sortMeetingsByStart(buckets.get(status) ?? []),
+  }));
+
+  return options?.includeEmpty
+    ? groups
+    : groups.filter((group) => group.meetings.length > 0);
 }

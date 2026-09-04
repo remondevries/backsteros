@@ -1,4 +1,4 @@
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation } from "expo-router/react-navigation";
 import { useLayoutEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 

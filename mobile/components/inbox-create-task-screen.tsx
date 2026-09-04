@@ -131,9 +131,7 @@ export function InboxCreateTaskScreen() {
   const [status, setStatus] = useState<TaskStatus>(initialStatus);
   const [priority, setPriority] = useState(0);
   const [dueDate, setDueDate] = useState<string | null>(initialDueDate);
-  const [assigneeId, setAssigneeId] = useState<string | null>(
-    contactIdParam ?? null,
-  );
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(
     projectIdParam ?? null,
   );
@@ -142,10 +140,6 @@ export function InboxCreateTaskScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (contactIdParam) {
-      setAssigneeId(contactIdParam);
-      return;
-    }
     let cancelled = false;
     void (async () => {
       try {
@@ -162,7 +156,7 @@ export function InboxCreateTaskScreen() {
     return () => {
       cancelled = true;
     };
-  }, [client, contactIdParam]);
+  }, [client]);
 
   const projects = syncedProjects ?? [];
   const contacts = syncedContacts ?? [];
@@ -315,6 +309,7 @@ export function InboxCreateTaskScreen() {
         dueDate,
         assigneeId,
         contactId: contactIdParam || null,
+        relatedContactIds: contactIdParam ? [contactIdParam] : undefined,
         projectId,
         inbox: !projectId && !contactIdParam,
         sortOrder: Date.now(),

@@ -27,6 +27,8 @@ export type EmailListItem = {
   inboxId: string;
   subject: string;
   from: string;
+  /** Recipients when known (contact Emails tab matching). */
+  to?: string[] | null;
   preview?: string | null;
   receivedAt: number;
   threadId?: string | null;
@@ -50,6 +52,8 @@ export type EmailListItem = {
   emailThreadId?: string | null;
   number?: number | null;
   displayId?: string | null;
+  /** External update flag — surfaces in the Updated inbox group. */
+  inboxUpdatedAt?: number | Date | string | null;
 };
 
 export type EmailMessagePath = {

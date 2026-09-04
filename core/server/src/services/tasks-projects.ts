@@ -19,6 +19,7 @@ import type {
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@backsteros/contracts";
+import { shouldClearInboxUpdatedOnUserWrite } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
 import { nudgeDynamicIslandTasksRefresh } from "../lib/dynamic-island-nudge.js";
@@ -115,6 +116,121 @@ async function projectDisplayName(
 function dueDateIso(value: Date | null | undefined): string | null {
   if (!value) return null;
   return value.toISOString();
+}
+
+function normalizeRelatedContactIds(
+  value: readonly string[] | null | undefined,
+): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function relatedContactIdsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
+}
+
+async function assertRelatedContactIds(
+  workspaceId: string,
+  ids: readonly string[],
+  executor: DbExecutor,
+) {
+  for (const id of ids) {
+    await assertWorkspaceReference(
+      workspaceId,
+      id,
+      contacts,
+      "RELATED_CONTACT_NOT_FOUND",
+      executor,
+    );
+  }
+}
+
+async function relatedContactDisplayNames(
+  workspaceId: string,
+  ids: readonly string[],
+  executor: DbExecutor,
+): Promise<string[]> {
+  const names: string[] = [];
+  for (const id of ids) {
+    const name = await contactDisplayName(workspaceId, id, executor);
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+function normalizeRelatedOrganizationIds(
+  value: readonly string[] | null | undefined,
+): string[] {
+  return normalizeRelatedContactIds(value);
+}
+
+function relatedOrganizationIdsEqual(
+  a: readonly string[],
+  b: readonly string[],
+): boolean {
+  return relatedContactIdsEqual(a, b);
+}
+
+async function assertRelatedOrganizationIds(
+  workspaceId: string,
+  ids: readonly string[],
+  executor: DbExecutor,
+) {
+  for (const id of ids) {
+    await assertWorkspaceReference(
+      workspaceId,
+      id,
+      organizations,
+      "RELATED_ORGANIZATION_NOT_FOUND",
+      executor,
+    );
+  }
+}
+
+async function organizationDisplayName(
+  workspaceId: string,
+  organizationId: string | null | undefined,
+  executor: DbExecutor,
+): Promise<string | null> {
+  if (!organizationId) return null;
+  const [row] = await executor
+    .select({ name: organizations.name })
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.workspaceId, workspaceId),
+        eq(organizations.id, organizationId),
+        isNull(organizations.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const name = row.name?.trim();
+  return name || null;
+}
+
+async function relatedOrganizationDisplayNames(
+  workspaceId: string,
+  ids: readonly string[],
+  executor: DbExecutor,
+): Promise<string[]> {
+  const names: string[] = [];
+  for (const id of ids) {
+    const name = await organizationDisplayName(workspaceId, id, executor);
+    if (name) names.push(name);
+  }
+  return names;
 }
 
 export async function listProjects(
@@ -452,6 +568,7 @@ export async function listTasks(
     projectId?: string;
     contactId?: string;
     assigneeId?: string;
+    relatedContactId?: string;
     status?: string;
     inbox?: boolean;
   } = {},
@@ -465,6 +582,11 @@ export async function listTasks(
   if (filters.projectId) conditions.push(eq(tasks.projectId, filters.projectId));
   if (filters.contactId) conditions.push(eq(tasks.contactId, filters.contactId));
   if (filters.assigneeId) conditions.push(eq(tasks.assigneeId, filters.assigneeId));
+  if (filters.relatedContactId) {
+    conditions.push(
+      sql`${tasks.relatedContactIds} @> ${JSON.stringify([filters.relatedContactId])}::jsonb`,
+    );
+  }
   if (filters.status) conditions.push(eq(tasks.status, filters.status));
   if (filters.inbox !== undefined) conditions.push(eq(tasks.inbox, filters.inbox));
 
@@ -583,6 +705,16 @@ async function createTaskWithExecutor(
     "ASSIGNEE_NOT_FOUND",
     executor,
   );
+  const relatedContactIds = normalizeRelatedContactIds(input.relatedContactIds);
+  await assertRelatedContactIds(workspaceId, relatedContactIds, executor);
+  const relatedOrganizationIds = normalizeRelatedOrganizationIds(
+    input.relatedOrganizationIds,
+  );
+  await assertRelatedOrganizationIds(
+    workspaceId,
+    relatedOrganizationIds,
+    executor,
+  );
   await assertWorkspaceReference(
     workspaceId,
     input.habitId,
@@ -600,6 +732,20 @@ async function createTaskWithExecutor(
   const status = input.status ?? "ready_to_start";
   const agentInbox =
     options?.authKind === "api_key" || actor?.kind === "agent";
+  const agentCreatedAt =
+    input.agentCreatedAt !== undefined
+      ? input.agentCreatedAt
+        ? new Date(input.agentCreatedAt)
+        : null
+      : agentInbox
+        ? new Date()
+        : null;
+  const inboxUpdatedAt =
+    input.inboxUpdatedAt !== undefined
+      ? input.inboxUpdatedAt
+        ? new Date(input.inboxUpdatedAt)
+        : null
+      : undefined;
 
   const [row] = await executor
     .insert(tasks)
@@ -609,6 +755,8 @@ async function createTaskWithExecutor(
       projectId: input.projectId ?? null,
       contactId: input.contactId ?? null,
       assigneeId: input.assigneeId ?? null,
+      relatedContactIds,
+      relatedOrganizationIds,
       number,
       title: input.title,
       description: input.description ?? null,
@@ -625,7 +773,8 @@ async function createTaskWithExecutor(
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
       completedAt: status === "completed" ? new Date() : null,
-      agentCreatedAt: agentInbox ? new Date() : null,
+      agentCreatedAt,
+      ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
     })
     .returning();
 
@@ -649,6 +798,36 @@ async function createTaskWithExecutor(
         row.id,
         "assignee_changed",
         { from: null, to: row.assigneeId, fromName: null, toName },
+        actor,
+        executor,
+      );
+    }
+    if (relatedContactIds.length > 0) {
+      const toNames = await relatedContactDisplayNames(
+        workspaceId,
+        relatedContactIds,
+        executor,
+      );
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        row.id,
+        "related_contacts_changed",
+        { from: [], to: relatedContactIds, fromNames: [], toNames },
+        actor,
+        executor,
+      );
+    }
+    if (relatedOrganizationIds.length > 0) {
+      const toNames = await relatedOrganizationDisplayNames(
+        workspaceId,
+        relatedOrganizationIds,
+        executor,
+      );
+      await taskActivityService.recordTaskActivity(
+        workspaceId,
+        row.id,
+        "related_organizations_changed",
+        { from: [], to: relatedOrganizationIds, fromNames: [], toNames },
         actor,
         executor,
       );
@@ -714,6 +893,24 @@ export async function updateTask(
     "ASSIGNEE_NOT_FOUND",
     executor,
   );
+  const nextRelatedContactIds =
+    input.relatedContactIds === undefined
+      ? undefined
+      : normalizeRelatedContactIds(input.relatedContactIds);
+  if (nextRelatedContactIds !== undefined) {
+    await assertRelatedContactIds(workspaceId, nextRelatedContactIds, executor);
+  }
+  const nextRelatedOrganizationIds =
+    input.relatedOrganizationIds === undefined
+      ? undefined
+      : normalizeRelatedOrganizationIds(input.relatedOrganizationIds);
+  if (nextRelatedOrganizationIds !== undefined) {
+    await assertRelatedOrganizationIds(
+      workspaceId,
+      nextRelatedOrganizationIds,
+      executor,
+    );
+  }
   await assertWorkspaceReference(
     workspaceId,
     input.habitId,
@@ -759,12 +956,31 @@ export async function updateTask(
     }
   }
 
+  let inboxUpdatedAt: Date | null | undefined = undefined;
+  if (
+    shouldClearInboxUpdatedOnUserWrite(input) ||
+    input.inboxUpdatedAt === null
+  ) {
+    inboxUpdatedAt = null;
+  } else if (typeof input.inboxUpdatedAt === "string") {
+    const parsed = new Date(input.inboxUpdatedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      inboxUpdatedAt = parsed;
+    }
+  }
+
   const [row] = await executor
     .update(tasks)
     .set({
       projectId: input.projectId,
       contactId: input.contactId,
       assigneeId: input.assigneeId,
+      ...(nextRelatedContactIds !== undefined
+        ? { relatedContactIds: nextRelatedContactIds }
+        : {}),
+      ...(nextRelatedOrganizationIds !== undefined
+        ? { relatedOrganizationIds: nextRelatedOrganizationIds }
+        : {}),
       number,
       title: input.title,
       description: input.description,
@@ -801,6 +1017,7 @@ export async function updateTask(
       trackedDurationSeconds: input.trackedDurationSeconds,
       completedAt,
       agentInboxApprovedAt,
+      ...(inboxUpdatedAt !== undefined ? { inboxUpdatedAt } : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id)))
@@ -841,6 +1058,71 @@ export async function updateTask(
         actor,
         executor,
       );
+    }
+    if (nextRelatedContactIds !== undefined) {
+      const existingRelated = normalizeRelatedContactIds(
+        existing.relatedContactIds,
+      );
+      if (!relatedContactIdsEqual(existingRelated, nextRelatedContactIds)) {
+        const [fromNames, toNames] = await Promise.all([
+          relatedContactDisplayNames(workspaceId, existingRelated, executor),
+          relatedContactDisplayNames(
+            workspaceId,
+            nextRelatedContactIds,
+            executor,
+          ),
+        ]);
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "related_contacts_changed",
+          {
+            from: existingRelated,
+            to: nextRelatedContactIds,
+            fromNames,
+            toNames,
+          },
+          actor,
+          executor,
+        );
+      }
+    }
+    if (nextRelatedOrganizationIds !== undefined) {
+      const existingRelated = normalizeRelatedOrganizationIds(
+        existing.relatedOrganizationIds,
+      );
+      if (
+        !relatedOrganizationIdsEqual(
+          existingRelated,
+          nextRelatedOrganizationIds,
+        )
+      ) {
+        const [fromNames, toNames] = await Promise.all([
+          relatedOrganizationDisplayNames(
+            workspaceId,
+            existingRelated,
+            executor,
+          ),
+          relatedOrganizationDisplayNames(
+            workspaceId,
+            nextRelatedOrganizationIds,
+            executor,
+          ),
+        ]);
+        await taskActivityService.recordTaskActivity(
+          workspaceId,
+          id,
+          "related_organizations_changed",
+          {
+            from: existingRelated,
+            to: nextRelatedOrganizationIds,
+            fromNames,
+            toNames,
+          },
+          actor,
+          executor,
+        );
+      }
     }
     if (input.priority !== undefined && input.priority !== existing.priority) {
       await taskActivityService.recordTaskActivity(

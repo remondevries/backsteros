@@ -25,6 +25,7 @@ const PHONE_DETAIL_PATH_PATTERNS: readonly RegExp[] = [
   /^\/journal\/[^/]+$/,
   /^\/habits\/[^/]+$/,
   /^\/contacts\/[^/]+$/,
+  /^\/social\/[^/]+$/,
   /^\/organizations\/[^/]+$/,
   /^\/letters\/[^/]+$/,
   /^\/knowledge\/[^/]+$/,

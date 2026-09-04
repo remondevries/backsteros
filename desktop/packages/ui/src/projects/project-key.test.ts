@@ -100,6 +100,45 @@ test("buildTaskProjectChangeRedirectPath rewrites due-filter task slugs", () => 
   );
 });
 
+test("buildTaskProjectChangeRedirectPath rewrites unscoped IN due-filter slugs", () => {
+  assert.equal(
+    buildTaskProjectChangeRedirectPath("/tasks/tomorrow/in-5", {
+      taskId: "task-1",
+      taskNumber: 5,
+      oldProjectKey: null,
+      newProjectKey: "BSH",
+      routeLeaf: "task-id",
+    }),
+    "/tasks/tomorrow/task-1",
+  );
+  assert.equal(
+    buildTaskProjectChangeRedirectPath("/tasks/tomorrow/task-1", {
+      taskId: "task-1",
+      taskNumber: 42,
+      oldProjectKey: "IN",
+      newProjectKey: "BSH",
+      routeLeaf: "display-slug",
+    }),
+    "/tasks/tomorrow/bsh-42",
+  );
+});
+
+test("buildTaskProjectChangeRedirectPath rewrites due-filter UUID leaves", () => {
+  assert.equal(
+    buildTaskProjectChangeRedirectPath(
+      "/tasks/today/a125032090d2416280a522d1fa5ed08e",
+      {
+        taskId: "a125032090d2416280a522d1fa5ed08e",
+        taskNumber: 0,
+        oldProjectKey: null,
+        newProjectKey: "BSH",
+        routeLeaf: "task-id",
+      },
+    ),
+    "/tasks/today/a125032090d2416280a522d1fa5ed08e",
+  );
+});
+
 test("buildTaskProjectChangeRedirectPath leaves project URLs when project is cleared", () => {
   assert.equal(
     buildTaskProjectChangeRedirectPath("/projects/abc/tasks/abc-12", {

@@ -24,6 +24,10 @@ import {
   type ProductHistoryRecentPage,
 } from "./product-history-toolbar.js";
 import {
+  inboxSidebarIndicatorColor,
+  type InboxSidebarIndicatorTone,
+} from "../../calendar/calendar-meeting-overlay.js";
+import {
   SidebarAccountIcon,
   SidebarChevronIcon,
   SidebarComposeIcon,
@@ -64,7 +68,9 @@ export type ProductSidebarProps = {
   canGoForward?: boolean;
   recentPages?: ProductSidebarRecentPage[];
   onSelectRecentPage?: (href: string) => void;
-  /** Grey dot on Inbox when the attention list is non-empty. */
+  /** Inbox attention dot tone (orange / green / muted). */
+  inboxIndicatorTone?: InboxSidebarIndicatorTone;
+  /** @deprecated Prefer {@link inboxIndicatorTone}. */
   inboxHasItems?: boolean;
   /** Bottom-left footer (e.g. Cursor credits). Replaces the old search button. */
   footer?: ReactNode;
@@ -73,11 +79,11 @@ export type ProductSidebarProps = {
 function NavLinks({
   activePathname,
   Link,
-  inboxHasItems = false,
+  inboxIndicatorTone = "none",
 }: {
   activePathname: string;
   Link: ProductSidebarLinkComponent;
-  inboxHasItems?: boolean;
+  inboxIndicatorTone?: InboxSidebarIndicatorTone;
 }) {
   return (
     <nav className="sidebar-sections" aria-label="Workspace">
@@ -89,8 +95,11 @@ function NavLinks({
             .map((item) => {
               const Icon = getNavigationItemIcon(item.icon);
               const active = isNavigationPathActive(activePathname, item.href);
-              const showInboxDot =
-                item.href === "/inbox" && inboxHasItems;
+              const inboxDotColor =
+                item.href === "/inbox"
+                  ? inboxSidebarIndicatorColor(inboxIndicatorTone)
+                  : "";
+              const showInboxDot = inboxDotColor !== "";
               return (
                 <Link
                   key={item.href}
@@ -104,6 +113,7 @@ function NavLinks({
                       {showInboxDot ? (
                         <span
                           className="sidebar-link-indicator-dot"
+                          style={{ background: inboxDotColor }}
                           aria-hidden="true"
                         />
                       ) : null}
@@ -137,6 +147,7 @@ export function ProductSidebar({
   canGoForward = false,
   recentPages = [],
   onSelectRecentPage,
+  inboxIndicatorTone = "none",
   inboxHasItems = false,
   footer,
 }: ProductSidebarProps) {
@@ -297,7 +308,13 @@ export function ProductSidebar({
       <NavLinks
         activePathname={activePathname}
         Link={Link}
-        inboxHasItems={inboxHasItems}
+        inboxIndicatorTone={
+          inboxIndicatorTone !== "none"
+            ? inboxIndicatorTone
+            : inboxHasItems
+              ? "muted"
+              : "none"
+        }
       />
 
       {footer ? <div className="sidebar-footer">{footer}</div> : null}

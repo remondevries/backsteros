@@ -22,12 +22,12 @@ import { ProjectIcon } from "../../components/project-icon";
 import { CommandPaletteHost } from "../../components/command-palette/command-palette-modal";
 import { CommandPaletteShortcutListener } from "../../components/command-palette/command-palette-shortcut-listener";
 import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
-import { AgentMailProvider } from "../../lib/agentmail-context";
 import { CommandPaletteProvider } from "../../lib/use-command-palette";
 import { isPadDevice } from "../../lib/device";
 import { HabitConfettiHost } from "../../lib/habits/habit-complete-confetti";
 import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
 import { useGoNavigationShortcuts } from "../../lib/use-go-navigation-shortcuts";
+import { useHomeGlanceWidgetRefresh } from "../../lib/use-home-glance-widget-refresh";
 import { colors } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 
@@ -56,6 +56,7 @@ function tabOverflowOptions(routeName: string) {
 function SignedInTabs() {
   useGoNavigationShortcuts(true);
   useAgentAttentionNotifications();
+  useHomeGlanceWidgetRefresh(true);
 
   return (
     <View style={ui.screen}>
@@ -207,6 +208,14 @@ function SignedInTabs() {
           }}
         />
         <Tabs.Screen name="contacts" options={overflowTabOptions} />
+        <Tabs.Screen
+          name="social"
+          options={{
+            ...overflowTabOptions,
+            title: "Social",
+            tabBarAccessibilityLabel: "Social",
+          }}
+        />
         <Tabs.Screen name="organizations" options={overflowTabOptions} />
         <Tabs.Screen
           name="compose"
@@ -239,12 +248,10 @@ export default function AppLayout() {
   }
 
   return (
-    <AgentMailProvider>
-      <CommandPaletteProvider>
-        <CommandPaletteShortcutListener />
-        <CommandPaletteHost />
-        <SignedInTabs />
-      </CommandPaletteProvider>
-    </AgentMailProvider>
+    <CommandPaletteProvider>
+      <CommandPaletteShortcutListener />
+      <CommandPaletteHost />
+      <SignedInTabs />
+    </CommandPaletteProvider>
   );
 }

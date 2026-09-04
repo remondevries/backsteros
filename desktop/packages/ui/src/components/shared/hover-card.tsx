@@ -22,6 +22,7 @@ type HoverCardContextValue = {
   open: boolean;
   triggerRef: React.RefObject<HTMLElement | null>;
   contentId: string;
+  close: () => void;
   onTriggerEnter: () => void;
   onTriggerLeave: () => void;
   onContentEnter: () => void;
@@ -36,6 +37,11 @@ function useHoverCardContext() {
     throw new Error("HoverCard components must be used within HoverCard");
   }
   return context;
+}
+
+/** Dismiss the open hover card immediately (e.g. after navigating from a CTA). */
+export function useHoverCardClose(): (() => void) | null {
+  return useContext(HoverCardContext)?.close ?? null;
 }
 
 function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
@@ -98,6 +104,12 @@ export function HoverCard({
     }, closeDelay);
   }, [clearCloseTimer, clearOpenTimer, closeDelay]);
 
+  const close = useCallback(() => {
+    clearOpenTimer();
+    clearCloseTimer();
+    setOpen(false);
+  }, [clearCloseTimer, clearOpenTimer]);
+
   useEffect(() => {
     return () => {
       clearOpenTimer();
@@ -109,6 +121,7 @@ export function HoverCard({
     open,
     triggerRef,
     contentId,
+    close,
     onTriggerEnter: scheduleOpen,
     onTriggerLeave: scheduleClose,
     onContentEnter: () => {
@@ -306,6 +319,8 @@ export function HoverCardContent({
     }
 
     const rect = trigger.getBoundingClientRect();
+    // Prefer CSS width on the panel (e.g. contact peek at 22.5rem); only fall
+    // back to 320 when the class does not define one.
     const width = 320;
     const leftBase =
       align === "end"
@@ -323,7 +338,7 @@ export function HoverCardContent({
         position: "fixed",
         left,
         top: rect.bottom + sideOffset,
-        width,
+        minWidth: width,
         visibility: "visible",
       });
       return;
@@ -333,7 +348,7 @@ export function HoverCardContent({
       position: "fixed",
       left,
       bottom: window.innerHeight - rect.top + sideOffset,
-      width,
+      minWidth: width,
       visibility: "visible",
     });
   }, [align, side, sideOffset, triggerRef]);

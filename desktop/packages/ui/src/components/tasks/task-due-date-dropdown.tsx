@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
   type SyntheticEvent,
 } from "react";
 
@@ -27,6 +28,7 @@ import {
   getTaskDueDateUrgency,
   parseDueDateInputValue,
 } from "../../tasks/task-due-date.js";
+import { formatBirthdayLabel } from "../../contacts/birthday.js";
 import type { TaskPropertyDropdownId } from "../../tasks/task-property-dropdown-keys.js";
 import {
   getPreferredColorSchemeSnapshot,
@@ -60,12 +62,15 @@ export type TaskDueDateDropdownProps = {
   taskPropertyDropdownId?: TaskPropertyDropdownId | null;
   /** When false, list/property triggers omit the calendar icon (Next list/board). */
   showIcon?: boolean;
+  /** Replaces the default calendar due-date icon when `showIcon` is true. */
+  icon?: ReactNode;
   /**
    * `relative` (default) = Today / Tomorrow / etc.
    * `ymd` = always `YYYY-MM-DD`.
    * `ymd-time` = always `YYYY-MM-DD @ HH:MM:SS` (local).
+   * `long` = always `28 Aug 1990` (includes year).
    */
-  labelFormat?: "relative" | "ymd" | "ymd-time";
+  labelFormat?: "relative" | "ymd" | "ymd-time" | "long";
   /** Property-variant trigger chrome (`inlineChip` matches mobile detail chips). */
   triggerVariant?: import("../dropdowns/property-dropdown.js").PropertyDropdownTriggerVariant;
   /** Open the panel on mount (used by deferred list-row mounts). */
@@ -99,6 +104,7 @@ export function TaskDueDateDropdown({
   searchShortcutLabel = "⇧D",
   taskPropertyDropdownId,
   showIcon = true,
+  icon,
   labelFormat = "relative",
   triggerVariant = "default",
   defaultOpen = false,
@@ -137,7 +143,9 @@ export function TaskDueDateDropdown({
       ? formatDueDateTimeStamp(dueDate) || ymdValue
       : labelFormat === "ymd"
         ? ymdValue
-        : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+        : labelFormat === "long"
+          ? (formatBirthdayLabel(ymdValue) ?? ymdValue)
+          : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
     : noDueDateLabel;
   const hasDueDate = Boolean(ymdValue);
   const dueDateUrgency = useMemo(
@@ -154,6 +162,12 @@ export function TaskDueDateDropdown({
     hasDueDate && dueDateUrgency === "overdue"
       ? resolveTaskDueDateUrgencyColor(dueDateUrgency, colorScheme)
       : undefined;
+
+  const dueDateIcon = showIcon
+    ? (icon ?? (
+        <TaskDueDateIcon active={hasDueDate} urgency={dueDateUrgency} />
+      ))
+    : undefined;
 
   const applyYmd = useCallback(
     (nextYmd: string | null) => {
@@ -226,11 +240,7 @@ export function TaskDueDateDropdown({
           taskPropertyDropdownId={resolvedTaskPropertyDropdownId ?? undefined}
           defaultOpen={defaultOpen}
           defaultOpenPlacement={defaultOpenPlacement}
-          fallbackIcon={
-            showIcon ? (
-              <TaskDueDateIcon active={hasDueDate} urgency={dueDateUrgency} />
-            ) : undefined
-          }
+          fallbackIcon={dueDateIcon}
           fallbackLabel={displayLabel}
           mutedFallback={!hasDueDate}
           triggerVariant={triggerVariant}

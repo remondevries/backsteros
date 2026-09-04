@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { migrateLegacyProjectType } from "./project-type";
 import { useMobilePowerSync } from "./powersync-context";
+import {
+  clearPendingTaskDetail,
+  usePendingTaskDetail,
+} from "./pending-task-detail";
 import { getTaskDisplayId } from "./task-display-id";
 import { TASK_DETAIL_SELECT } from "./task-list-query";
 import { useLocalQuery } from "./use-local-query";
@@ -19,6 +23,8 @@ export type TaskDetailModel = {
   due_end_date: string | null;
   project_id: string | null;
   assignee_id: string | null;
+  related_contact_ids: string | null;
+  related_organization_ids: string | null;
   project_name: string | null;
   project_key: string | null;
   project_type: string | null;
@@ -44,6 +50,8 @@ type SyncedDetailRow = {
   project_id: string | null;
   contact_id: string | null;
   assignee_id: string | null;
+  related_contact_ids: string | null;
+  related_organization_ids: string | null;
   project_name: string | null;
   project_key: string | null;
   project_type: string | null;
@@ -69,6 +77,8 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
     due_end_date: row.due_end_date ?? null,
     project_id: row.project_id,
     assignee_id: assigneeId,
+    related_contact_ids: row.related_contact_ids ?? null,
+    related_organization_ids: row.related_organization_ids ?? null,
     project_name: row.project_name,
     project_key: row.project_key,
     project_type: row.project_type
@@ -109,6 +119,10 @@ function mapApiTask(
     due_end_date: task.dueEndDate ?? null,
     project_id: task.projectId,
     assignee_id: assigneeId,
+    related_contact_ids: JSON.stringify(task.relatedContactIds ?? []),
+    related_organization_ids: JSON.stringify(
+      task.relatedOrganizationIds ?? [],
+    ),
     project_name: project?.name ?? null,
     project_key: project?.key ?? null,
     project_type: project?.type
@@ -143,6 +157,7 @@ const EMPTY_DETAIL_SQL = "SELECT 1 AS id WHERE 0";
 export function useTaskDetail(taskId: string | undefined) {
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
+  const pendingTask = usePendingTaskDetail(taskId);
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<SyncedDetailRow>(
@@ -150,11 +165,19 @@ export function useTaskDetail(taskId: string | undefined) {
       taskId ? [taskId] : [],
     );
 
-  const syncedTask = syncedRows?.[0] ? mapSyncedRow(syncedRows[0]) : null;
+  const syncedTask = useMemo(
+    () => (syncedRows?.[0] ? mapSyncedRow(syncedRows[0]) : null),
+    [syncedRows],
+  );
+
+  useEffect(() => {
+    if (taskId && syncedTask) clearPendingTaskDetail(taskId);
+  }, [syncedTask, taskId]);
 
   const useRest = shouldFetchTaskDetailViaRest({
     taskId,
     hasSyncedTask: Boolean(syncedTask),
+    hasPendingTask: Boolean(pendingTask),
     syncLoading,
     powerSyncStatus: powerSync.status,
     powerSyncReady: powerSync.ready,
@@ -196,6 +219,7 @@ export function useTaskDetail(taskId: string | undefined) {
           : Promise.resolve(null),
       ]);
       setRestTask(mapApiTask(task, project, assignee));
+      clearPendingTaskDetail(taskId);
     } catch (reason) {
       setRestError(reason instanceof Error ? reason.message : String(reason));
       setRestTask(null);
@@ -213,7 +237,7 @@ export function useTaskDetail(taskId: string | undefined) {
     if (useRest) void reloadRest();
   }, [reloadRest, useRest]);
 
-  const task = syncedTask ?? restTask;
+  const task = syncedTask ?? restTask ?? pendingTask;
 
   const waitingForSync =
     Boolean(taskId) &&

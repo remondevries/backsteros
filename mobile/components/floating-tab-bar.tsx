@@ -34,6 +34,7 @@ import {
   LettersNavIcon,
   MoreNavIcon,
   SettingsNavIcon,
+  SocialNavIcon,
   TasksNavIcon,
 } from "./nav-icons";
 import { ContactPersonIcon } from "./contact-person-icon";
@@ -66,6 +67,7 @@ const IPAD_PRIMARY_ROUTES = [
 const IPAD_MORE_SECTION_ROUTES = new Set([
   "habits",
   "contacts",
+  "social",
   "organizations",
 ]);
 const PHONE_MORE_SECTION_ROUTES = new Set([
@@ -75,6 +77,7 @@ const PHONE_MORE_SECTION_ROUTES = new Set([
   "finance",
   "knowledge",
   "contacts",
+  "social",
   "organizations",
 ]);
 const IS_IPAD = isPadDevice();
@@ -437,6 +440,12 @@ export function FloatingTabBar({
         icon: (color) => <ContactPersonIcon size={18} color={color} />,
       },
       {
+        key: "social",
+        label: "Social",
+        onPress: () => go("social"),
+        icon: (color) => <SocialNavIcon size={18} color={color} />,
+      },
+      {
         key: "organizations",
         label: "Organizations",
         onPress: () => go("organizations"),
@@ -734,7 +743,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   dismissScrim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   row: {
     flexDirection: "row",
@@ -812,21 +821,21 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
   },
   pillFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(20, 20, 22, 0.45)",
   },
   pillBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: PILL_HEIGHT / 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.14)",
   },
   hitLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 2,
     elevation: 2,
     flexDirection: "row",
@@ -842,7 +851,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
   composeHighlight: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
     borderRadius: 999,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
@@ -856,7 +865,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   composeItem: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 2,
     elevation: 2,
     alignItems: "center",

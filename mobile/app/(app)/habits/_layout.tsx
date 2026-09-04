@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   routeStack: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0,
   },
 });

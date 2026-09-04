@@ -20,11 +20,12 @@ import {
 } from "./task-property-dropdown-keys.js";
 
 /**
- * S/P/A/D (and shift variants) open property dropdowns on the highlighted row
+ * S/P/A/D/R (and shift variants) open property dropdowns on the highlighted row
  * or compose modal — matches Next useTaskPropertyDropdownShortcuts.
  * On finance lists: plain C/A/O/M/R open tx fields (detail preferred when open);
  * P/G open project/goal only while the transaction detail panel is open;
  * Shift+A/C/O/G/R/M open filter or bulk chrome.
+ * Plain R opens Related on tasks (or Received date on letters).
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,

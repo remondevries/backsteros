@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
   },
   chipFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
     backgroundColor: "rgba(20, 20, 22, 0.4)",
   },
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(40, 40, 44, 0.72)",
   },
   chipBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
@@ -466,11 +466,11 @@ const styles = StyleSheet.create({
     minWidth: 160,
   },
   menuFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(28, 28, 30, 0.55)",
   },
   menuBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.14)",
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   renameBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   renameCard: {

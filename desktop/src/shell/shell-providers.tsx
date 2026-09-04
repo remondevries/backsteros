@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 
 import {
+  EntityHeaderActionsShell,
+  MentionNavigationProvider,
+} from "@backsteros/ui";
+import {
   ChromeHeaderProvider,
   ClientLinkProvider,
   CommandPaletteProvider,
-  EntityHeaderActionsShell,
   ListKeyboardNavigationProvider,
   RegisterPageTitleProvider,
   TrackedTimerProvider,
@@ -17,7 +20,6 @@ import { ExternalOpenHrefListener } from "../components/external-open-href-liste
 import { AppShellMentionCatalog } from "./app-shell-mention-catalog";
 import { AppShellTaskSideEffects } from "./app-shell-task-side-effects";
 import { DesktopClientLink } from "./app-shell-links";
-import { MentionNavigationProvider } from "@backsteros/ui";
 
 type ShellOuterProvidersProps = {
   children: ReactNode;

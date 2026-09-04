@@ -21,7 +21,7 @@ After adding sync tables: update `sync-config.yaml` + `POWERSYNC_PUBLICATION_TAB
 
 Tier A/B metadata only (no PDF bytes / markdown bodies):
 
-`projects`, `tasks`, `documents`, `organizations`, `contacts`, `areas`, `letters`, `avatars`, `mentions`, `workspace_settings`, `bank_accounts`, `financial_categories`, `financial_goals`, `financial_recurrings`, `habits`
+`projects`, `tasks`, `documents`, `organizations`, `contacts`, `areas`, `letters`, `avatars`, `mentions`, `workspace_settings`, `bank_accounts`, `financial_categories`, `financial_goals`, `financial_recurrings`, `habits`, `meetings`, `task_comments`, `task_activities`, CRM tables
 
 (Not synced: `financial_transactions` — Tier C.)
 

@@ -1,4 +1,4 @@
-import { DarkTheme, type Theme } from "@react-navigation/native";
+import { DarkTheme, type Theme } from "expo-router/react-navigation";
 
 /**
  * Mobile chrome tokens — aligned with `@backsteros/ui` product shell,

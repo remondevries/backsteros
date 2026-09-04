@@ -19,6 +19,7 @@ import {
   createPowerSyncDatabase,
   isNativeSqliteThreadError,
 } from "./powersync";
+import { randomUuidCompact } from "./random-uuid";
 
 /** Keep in sync with `use-rest-fallback-gate` export. */
 const REST_FALLBACK_DELAY_MS = 4500;
@@ -44,8 +45,15 @@ export type SyncedMetadataTable =
   | "financial_categories"
   | "financial_goals"
   | "financial_recurrings"
+  | "cashflow_planner_entries"
   | "meetings"
-  | "task_comments";
+  | "workspace_settings"
+  | "task_comments"
+  | "contact_relationships"
+  | "crm_relationship_labels"
+  | "crm_groups"
+  | "crm_group_members"
+  | "crm_activities";
 
 type SyncState = {
   status: PowerSyncStatus;
@@ -60,6 +68,11 @@ type SyncState = {
    * hard error). Shared so each screen does not restart its own 4.5s wait.
    */
   restFallbackAllowed: boolean;
+  /**
+   * When local-core is unreachable, REST targets cloud-core while PowerSync
+   * still aims at local. Skip PowerSync entity writes so we do not diverge.
+   */
+  preferRestWrites: boolean;
   patchTask: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchProject: (id: string, values: Record<string, unknown>) => Promise<void>;
   patchLetter: (id: string, values: Record<string, unknown>) => Promise<void>;
@@ -95,6 +108,7 @@ const idleState: SyncState = {
   connecting: false,
   lastSyncedAt: null,
   restFallbackAllowed: false,
+  preferRestWrites: false,
   patchTask: async () => {
     throw new Error("Offline database is not ready");
   },
@@ -154,7 +168,8 @@ async function closeDatabase(
 
 function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   const { isLoaded, userId, sessionId, getToken } = useAuth();
-  const { localApiUrl } = useMobileCoreApiUrl();
+  const { localApiUrl, coreMode } = useMobileCoreApiUrl();
+  const preferRestWrites = coreMode === "cloud";
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   // Clerk session id string can churn; only react to presence.
@@ -478,7 +493,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     ) => {
       const db = databaseRef.current;
       if (!db) throw new Error("Offline database is not ready");
-      const rowId = id ?? crypto.randomUUID().replace(/-/g, "");
+      const rowId = id ?? randomUuidCompact();
       const now = new Date().toISOString();
       const complete = {
         ...values,
@@ -486,7 +501,9 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
         updated_at: now,
         deleted_at: null,
       };
-      const entries = Object.entries(complete);
+      const entries = Object.entries(complete).filter(
+        ([, value]) => value !== undefined,
+      );
       const columns = entries.map(([key]) => {
         if (!/^[a-z_]+$/.test(key)) throw new Error("Invalid metadata field");
         return key;
@@ -580,6 +597,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
           : null,
       restFallbackAllowed:
         syncStatus === "error" ? true : restFallbackAllowed,
+      preferRestWrites,
       patchTask,
       patchProject,
       patchLetter,
@@ -610,6 +628,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     patchOrganization,
     patchProject,
     patchTask,
+    preferRestWrites,
     ready,
     restFallbackAllowed,
     retry,

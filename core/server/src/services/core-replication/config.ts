@@ -71,6 +71,20 @@ export function isCoreReplicationEnabled(
   return getCoreReplicationConfig(env) !== null;
 }
 
+const DEFAULT_REPLICATION_INTERVAL_MS = 15_000;
+
+/** Prefer CORE_REPLICATION_INTERVAL_MS; clamp to a sane range (2s–120s). */
+export function resolveReplicationIntervalMs(
+  env: NodeJS.ProcessEnv = process.env,
+  fallbackMs = DEFAULT_REPLICATION_INTERVAL_MS,
+): number {
+  const raw = env.CORE_REPLICATION_INTERVAL_MS?.trim();
+  if (!raw) return fallbackMs;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallbackMs;
+  return Math.min(120_000, Math.max(2_000, parsed));
+}
+
 /**
  * Cloud-core must not expose :8788 on 0.0.0.0 while replication is enabled —
  * /internal/* routes are Bearer-protected but must stay on loopback/Tailscale.

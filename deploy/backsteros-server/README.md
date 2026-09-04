@@ -52,10 +52,20 @@ Point the **origin** A record for `client.lemo-design.com` / `.nl` to **`161.35.
 From your Mac:
 
 ```bash
+./deploy/cloud/deploy-cloud-core.sh
+```
+
+Or manually:
+
+```bash
 ./deploy/cloud/build-image.sh
 docker save backsteros-cloud:latest | ssh root@100.117.142.79 'docker load'
 ssh root@100.117.142.79 'cd /root/backsteros/deploy/cloud && docker compose up -d --no-build backsteros'
+ssh root@100.117.142.79 'cd /root/backsteros/deploy/cloud && docker compose exec -T backsteros pnpm db:migrate'
 ```
+
+`deploy-cloud-core.sh` also verifies `crm_groups` replication on cloud and runs
+`pnpm prove:crm-powersync-leader` from local-core when done (`SKIP_PROOF=1` to skip).
 
 ## Retired
 

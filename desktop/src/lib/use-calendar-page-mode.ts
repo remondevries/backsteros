@@ -92,9 +92,16 @@ export function useCalendarPageModeControls() {
     [navigate, pathname, searchParams],
   );
 
+  // Narrow/expanded meeting overlay owns `1`/`2`/`3` for Summary/Notes/
+  // Transcription; Escape closes the overlay and restores these toggles.
+  const meetingOverlayOpen = Boolean(
+    searchParams.get(CALENDAR_MEETING_OVERLAY_PARAM)?.trim(),
+  );
+
   useCalendarPageModeShortcuts({
     enabled:
       !keepAliveFrozen &&
+      !meetingOverlayOpen &&
       (pathname === "/calendar" || pathname.startsWith("/calendar/")),
     pageMode,
     onPageModeChange: handlePageModeChange,

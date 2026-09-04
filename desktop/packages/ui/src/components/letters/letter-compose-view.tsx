@@ -1,16 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 
-import {
-  ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
-  useMarkdownDetailEditor,
-} from "../content/content-markdown-view-layout.js";
+import { ContentMarkdownDescriptionLayout } from "../content/content-markdown-description-layout.js";
+import { useMarkdownDetailEditor } from "../content/content-markdown-view-layout.js";
 import { ContentDetailIconTitleHeader } from "../content/content-detail-title-header.js";
 import { DetailWithPropertiesLayout } from "../content/detail-with-properties-layout.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
-import { DocumentMarkdownPreview } from "../documents/document-markdown-preview.js";
 import {
   buildContactDropdownOptions,
   type AssigneeDropdownContact,
@@ -207,6 +202,7 @@ export function LetterComposeView({
     activateEditMode,
     setViewMode,
     toggleViewMode,
+    contentViewModeHostRef,
   } = useMarkdownDetailEditor({
     initialValue: "",
     save: () => ({ ok: true }),
@@ -330,6 +326,7 @@ export function LetterComposeView({
 
   return (
     <div
+      ref={contentViewModeHostRef as Ref<HTMLDivElement>}
       className="letter-detail-split"
       data-content-detail
       data-detail-split=""
@@ -366,7 +363,7 @@ export function LetterComposeView({
                     />
                   }
                 />
-                <ContentMarkdownViewLayout
+                <ContentMarkdownDescriptionLayout
                   mode={mode}
                   editorActivated={editorActivated}
                   onToggleMode={() => {
@@ -376,30 +373,13 @@ export function LetterComposeView({
                     }
                     enterBody();
                   }}
-                  editor={
-                    <DocumentMarkdownEditor
-                      value={value}
-                      onChange={handleChange}
-                      disabled={pdfUploading}
-                      focusRequest={editorFocusRequest}
-                      ariaLabel="Letter notes"
-                      scrollWithContent
-                    />
-                  }
-                  preview={
-                    <ContentMarkdownPreviewColumn includeTopInset={false}>
-                      {value.trim() ? (
-                        <DocumentMarkdownPreview
-                          body={value}
-                          onChange={handleChange}
-                        />
-                      ) : (
-                        <p className="content-markdown-empty-hint">
-                          This letter is empty.
-                        </p>
-                      )}
-                    </ContentMarkdownPreviewColumn>
-                  }
+                  value={value}
+                  onChange={handleChange}
+                  disabled={pdfUploading}
+                  focusRequest={editorFocusRequest}
+                  ariaLabel="Letter notes"
+                  emptyMessage="This letter is empty."
+                  emptyClassName="content-markdown-empty-hint"
                 />
               </div>
             </div>

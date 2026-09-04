@@ -176,7 +176,7 @@ export function LetterPdfViewerModal({
             allowingReadAccessToURL={uri}
             startInLoadingState
             renderLoading={() => (
-              <View style={[ui.centered, StyleSheet.absoluteFillObject]}>
+              <View style={[ui.centered, StyleSheet.absoluteFill]}>
                 <ActivityIndicator color={colors.muted} />
               </View>
             )}
@@ -232,14 +232,14 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   doneBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   doneFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(20, 20, 22, 0.45)",
   },
   doneBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.14)",

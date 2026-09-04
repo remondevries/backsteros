@@ -105,6 +105,7 @@ export function toTask(row: DbTask): Task {
     completedAt: toIso(row.completedAt),
     agentCreatedAt: toIso(row.agentCreatedAt),
     agentInboxApprovedAt: toIso(row.agentInboxApprovedAt),
+    inboxUpdatedAt: toIso(row.inboxUpdatedAt),
     trackedMinutes: row.trackedMinutes ?? null,
     trackedDurationSeconds: row.trackedDurationSeconds ?? null,
     createdAt: row.createdAt.toISOString(),

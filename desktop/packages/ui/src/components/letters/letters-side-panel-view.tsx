@@ -14,6 +14,7 @@ import {
   getSelectedLetterSlugFromPathname,
   groupLettersByStatus,
   letterMatchesSlug,
+  resolveLetterDetailHref,
   type LetterListItem,
 } from "../../letters/letters.js";
 import { sidePanelItemClass } from "../../content/side-panel-styles.js";
@@ -71,7 +72,12 @@ export function LettersSidePanelView({
   onAdd,
   composeHref = "/letters/new",
   onCompose,
-  getLetterHref = (letter) => getLettersHref(letter.number),
+  getLetterHref = (letter) =>
+    resolveLetterDetailHref({
+      id: letter.id,
+      number: letter.number,
+      listBaseHref: "/letters",
+    }),
   highlightedId = null,
   listRef,
   listContainerProps,
@@ -170,7 +176,9 @@ export function LettersSidePanelView({
                             <LetterIcon size={14} />
                           </span>
                           <span className="letter-display-id">
-                            {formatLetterDisplayId(letter.number)}
+                            {letter.number != null
+                              ? formatLetterDisplayId(letter.number)
+                              : letter.id.slice(0, 8)}
                           </span>
                           <span className="app-side-panel-item-label">
                             {letter.title}

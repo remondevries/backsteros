@@ -11,6 +11,7 @@ import type { SidePanelNavProps } from "./types.js";
 
 export function DesktopContactsSidePanel({
   onNavigate,
+  getGroupHref = getContactsGroupHref,
   ...viewProps
 }: ContactsSidePanelViewProps & SidePanelNavProps) {
   const { groups, selectedGroupId = null } = viewProps;
@@ -23,17 +24,21 @@ export function DesktopContactsSidePanel({
   const { highlightedId } = useDesktopSidePanelListNav({
     itemIds,
     selectedId,
-    pathname: "/contacts",
+    pathname: getGroupHref(null).split("?")[0] || "/contacts",
     onNavigate: (itemId) => {
       if (itemId === CONTACTS_SIDE_PANEL_ALL_ID) {
-        onNavigate(getContactsGroupHref(null));
+        onNavigate(getGroupHref(null));
         return;
       }
-      onNavigate(getContactsGroupHref(itemId));
+      onNavigate(getGroupHref(itemId));
     },
     enabled: itemIds.length > 0,
   });
   return (
-    <ContactsSidePanelView {...viewProps} highlightedId={highlightedId} />
+    <ContactsSidePanelView
+      {...viewProps}
+      getGroupHref={getGroupHref}
+      highlightedId={highlightedId}
+    />
   );
 }

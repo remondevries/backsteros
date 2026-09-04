@@ -20,6 +20,7 @@ export type PendingPageSurface =
   | "knowledge"
   | "letters"
   | "finance"
+  | "social"
   | "contacts"
   | "organizations"
   | "settings"
@@ -97,6 +98,8 @@ function isTaskDetailPath(parts: string[]): boolean {
   if (isSplatContentPath(parts)) return false;
   // Main Tasks section (list + detail) stays on keep-alive tasks-list — like inbox.
   if (isStandaloneTasksSectionPath(parts) && parts.length >= 2) return false;
+  // Contact-scoped tasks stay on ContactsPage (embedded workspace column).
+  if (parts[0] === "contacts") return false;
   if (parts[0] === "tasks" && parts.length >= 2) return true;
   if (parts[0] === "calendar" && parts[1] === "tasks") return true;
   const tasksIndex = parts.lastIndexOf("tasks");
@@ -106,9 +109,11 @@ function isTaskDetailPath(parts: string[]): boolean {
 function isStandaloneOrContactLetterPath(parts: string[]): boolean {
   if (isSplatContentPath(parts)) return false;
   if (parts[0] === "letters") return true;
+  // Contact-scoped letters stay on ContactsPage (embedded workspace column).
+  if (parts[0] === "contacts") return false;
   const lettersIndex = parts.lastIndexOf("letters");
   if (lettersIndex < 0 || parts[lettersIndex + 1] == null) return false;
-  // Project letters stay on ProjectsPage; contact letters use LettersPage.
+  // Project letters stay on ProjectsPage; org-contact letters use LettersPage outlet.
   return parts[0] !== "projects" && !parts.includes("projects");
 }
 
@@ -142,6 +147,8 @@ export function surfaceForPathname(pathname: string): PendingPageSurface {
       return "projects";
     case "finance":
       return "finance";
+    case "social":
+      return "social";
     case "contacts":
       return "contacts";
     case "organizations": {
@@ -184,8 +191,7 @@ export function resolveAppHref(href: string): ResolvedAppHref {
   } else if (pathname === "/contacts") {
     // Contacts catalog lives in main content (no auto-open of last contact).
   } else if (pathname === "/organizations") {
-    const first = peekSectionEntryHref("organizations");
-    if (first) withEntry(first);
+    // Organizations catalog lives in main content (no auto-open of first org).
   } else if (pathname === "/letters") {
     const first = peekSectionEntryHref("letters");
     if (first) withEntry(first);

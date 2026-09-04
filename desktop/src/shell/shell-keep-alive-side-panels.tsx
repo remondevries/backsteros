@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { primeTabTitle } from "@backsteros/ui/shell";
 import {
@@ -21,15 +21,25 @@ import {
   withCalendarViewSearch,
   type CalendarSidePanelHabitItem,
 } from "@backsteros/ui/calendar";
-import { getFirstInboxItemHref, getJournalHref, parseCrmGroupId } from "@backsteros/ui";
+import {
+  getContactsGroupHref,
+  getFirstInboxItemHref,
+  getJournalHref,
+  getOrganizationsGroupHref,
+  getScopedProjectSectionHref,
+  getSocialHref,
+  getUniqueListItemRouteParam,
+  groupItemsByAlphaLetter,
+  normalizeContactSocialAccounts,
+  parseCrmGroupId,
+  resolveLetterDetailHref,
+  type SocialContactListItem,
+} from "@backsteros/ui";
 import {
   getKnowledgeHref,
-  getLettersHref,
-  getOrganizationsHref,
   getProjectRouteParamFromPathname,
   getProjectRouteScopeFromPathname,
   getScopedProjectDocumentHref,
-  getScopedProjectLetterHref,
   getTodayJournalDateSlug,
   isProjectLettersSectionPath,
 } from "@backsteros/ui/navigation";
@@ -40,7 +50,6 @@ import { panePathnameWithFirstItem } from "../lib/keep-alive-list-selection";
 import {
   firstKnowledgeHref,
   firstLetterHref,
-  firstOrganizationHref,
 } from "../lib/section-entry-hrefs";
 import { buildMailboxByIdMap } from "../lib/email-list-tasks";
 import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
@@ -82,8 +91,8 @@ import {
   DesktopJournalSidePanel,
   DesktopKnowledgeSidePanel,
   DesktopLettersSidePanel,
-  DesktopOrganizationsSidePanel,
   DesktopProjectDocumentsSidePanel,
+  DesktopSocialSidePanel,
 } from "./app-shell-side-panels-lazy";
 import { DesktopInboxSidePanel } from "./app-shell-inbox-side-panel";
 import { RouterLink } from "./app-shell-links";
@@ -152,6 +161,8 @@ export function keepAliveSidePanelTree(
       return <ContactsKeepAliveSidePanel onNavigate={onNavigate} />;
     case "organizations":
       return <OrganizationsKeepAliveSidePanel onNavigate={onNavigate} />;
+    case "social":
+      return <SocialKeepAliveSidePanel onNavigate={onNavigate} />;
     case "letters":
       return <LettersKeepAliveSidePanel onNavigate={onNavigate} />;
     case "tasks-list":
@@ -264,9 +275,6 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           projectName: item.projectName,
           organizationId: item.organizationId,
           organizationName: item.organizationName,
-          organizationAvatarSrc: item.organizationId
-            ? organizationAvatarSrc[item.organizationId] ?? null
-            : null,
           contactId: item.contactId,
           contactName: item.contactName,
           emailThreadId: item.emailThreadId,
@@ -288,7 +296,6 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
     agentMailListSignature,
     contactAvatarSrc,
     frozen,
-    organizationAvatarSrc,
   ]);
 
   const baseInboxItems = useMemo(() => {
@@ -607,8 +614,9 @@ export function CalendarKeepAliveSidePanel({
         )
       }
       onToggleHabit={(habit, checked) => {
+        if (!habit.todayTaskId) return;
         void workspaceActions.patchTask(habit.todayTaskId, {
-          status: checked ? "completed" : "ready_to_start",
+          status: checked ? "completed" : "canceled",
         });
       }}
     />
@@ -656,6 +664,10 @@ export function KnowledgeKeepAliveSidePanel({
   const knowledgeReady = useWorkspaceSurfaceReady("knowledge");
   const { knowledgeDocuments } = useDesktopWorkspaceDocuments();
   const workspaceActions = useDesktopWorkspaceActions();
+
+  useEffect(() => {
+    void workspaceActions.softRefreshApiDocuments();
+  }, [workspaceActions.softRefreshApiDocuments]);
 
   return (
     <DesktopKnowledgeSidePanel
@@ -739,6 +751,16 @@ export function ProjectKeepAliveSidePanel({
     );
   }, [activeProject, projectDocuments]);
 
+  useEffect(() => {
+    if (!activeProject) return;
+    if (!pathname.includes("/documents")) return;
+    void workspaceActions.softRefreshApiDocuments();
+  }, [
+    activeProject?.id,
+    pathname,
+    workspaceActions.softRefreshApiDocuments,
+  ]);
+
   const projectLettersForPanel = useMemo(() => {
     if (!activeProject) return [];
     return letters.filter(
@@ -760,7 +782,15 @@ export function ProjectKeepAliveSidePanel({
         items={projectLettersForPanel}
         loading={!lettersReady}
         getLetterHref={(letter) =>
-          getScopedProjectLetterHref(projectKey, letter.number, projectRouteScope)
+          resolveLetterDetailHref({
+            id: letter.id,
+            number: letter.number,
+            listBaseHref: getScopedProjectSectionHref(
+              projectKey,
+              "letters",
+              projectRouteScope,
+            ),
+          })
         }
         onAdd={() => {
           void workspaceActions
@@ -769,12 +799,15 @@ export function ProjectKeepAliveSidePanel({
               projectId: activeProject.id,
             })
             .then((created) => {
-              if (created.number == null) return;
-              const href = getScopedProjectLetterHref(
-                projectKey,
-                created.number,
-                projectRouteScope,
-              );
+              const href = resolveLetterDetailHref({
+                id: created.id,
+                number: created.number,
+                listBaseHref: getScopedProjectSectionHref(
+                  projectKey,
+                  "letters",
+                  projectRouteScope,
+                ),
+              });
               primeTabTitle(href, "New letter");
               onNavigate(href);
             });
@@ -869,6 +902,16 @@ export function ContactsKeepAliveSidePanel({
       onCreateGroup={(input) => {
         void catalog.createGroup(input);
       }}
+      onUpdateGroup={(groupId, input) => {
+        void catalog.updateGroup(groupId, input);
+      }}
+      onDeleteGroup={(groupId) => {
+        void catalog.deleteGroup(groupId).then(() => {
+          if (selectedGroupId === groupId) {
+            onNavigate(getContactsGroupHref(null));
+          }
+        });
+      }}
     />
   );
 }
@@ -878,40 +921,83 @@ export function OrganizationsKeepAliveSidePanel({
 }: {
   onNavigate: PanelNav;
 }) {
-  const frozen = useKeepAliveFrozen();
-  const { pathname } = useShellLocation();
-  const { organizations } = useDesktopWorkspacePeople();
-  const workspaceActions = useDesktopWorkspaceActions();
-  const organizationAvatarSrc = useDesktopAvatarSrcMap(
-    "organization",
-    frozen ? NO_ENTITIES : organizations,
-  );
-  const items = useMemo(
-    () =>
-      frozen
-        ? organizations
-        : withAvatarSrc(organizations, organizationAvatarSrc),
-    [frozen, organizationAvatarSrc, organizations],
-  );
-  const firstHref = firstOrganizationHref(organizations);
+  const { searchStr } = useShellLocation();
+  const catalog = useCrmGroupsCatalog(true);
+  const selectedGroupId = parseCrmGroupId(searchStr ?? "");
 
   return (
-    <DesktopOrganizationsSidePanel
+    <DesktopContactsSidePanel
+      onNavigate={onNavigate}
+      selectedGroupId={selectedGroupId}
+      groups={catalog.groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        color: group.color,
+      }))}
+      Link={RouterLink}
+      getGroupHref={getOrganizationsGroupHref}
+      onCreateGroup={(input) => {
+        void catalog.createGroup(input);
+      }}
+      onUpdateGroup={(groupId, input) => {
+        void catalog.updateGroup(groupId, input);
+      }}
+      onDeleteGroup={(groupId) => {
+        void catalog.deleteGroup(groupId).then(() => {
+          if (selectedGroupId === groupId) {
+            onNavigate(getOrganizationsGroupHref(null));
+          }
+        });
+      }}
+    />
+  );
+}
+
+export function SocialKeepAliveSidePanel({
+  onNavigate,
+}: {
+  onNavigate: PanelNav;
+}) {
+  const frozen = useKeepAliveFrozen();
+  const { pathname } = useShellLocation();
+  const { contacts, contactDetails } = useDesktopWorkspacePeople();
+  const contactAvatarSrc = useDesktopAvatarSrcMap(
+    "contact",
+    frozen ? NO_ENTITIES : contacts,
+  );
+  const items = useMemo((): SocialContactListItem[] => {
+    const withAvatars = frozen
+      ? contacts
+      : withAvatarSrc(contacts, contactAvatarSrc);
+    const rows: SocialContactListItem[] = [];
+    for (const contact of withAvatars) {
+      const details = contactDetails[contact.id];
+      const socialAccounts = normalizeContactSocialAccounts(
+        details?.socialAccounts,
+      );
+      if (socialAccounts.length === 0) continue;
+      rows.push({ ...contact, socialAccounts });
+    }
+    return rows;
+  }, [contactAvatarSrc, contactDetails, contacts, frozen]);
+
+  const first =
+    groupItemsByAlphaLetter(items).flatMap(([, entries]) => entries)[0] ??
+    null;
+  const firstHref = first
+    ? getSocialHref(getUniqueListItemRouteParam(first, items))
+    : null;
+
+  return (
+    <DesktopSocialSidePanel
       onNavigate={onNavigate}
       pathname={panePathnameWithFirstItem(
         pathname,
         firstHref,
-        pathname.startsWith("/organizations/"),
+        pathname.startsWith("/social/"),
       )}
       items={items}
       Link={RouterLink}
-      onAdd={() => {
-        void workspaceActions
-          .createOrganization({ name: "New organization" })
-          .then((created) => {
-            onNavigate(getOrganizationsHref(created.id));
-          });
-      }}
     />
   );
 }
@@ -940,8 +1026,11 @@ export function LettersKeepAliveSidePanel({
         void workspaceActions
           .createLetter({ title: "New letter" })
           .then((created) => {
-            if (created.number == null) return;
-            const href = getLettersHref(created.number);
+            const href = resolveLetterDetailHref({
+              id: created.id,
+              number: created.number,
+              listBaseHref: "/letters",
+            });
             primeTabTitle(href, "New letter");
             onNavigate(href);
           });

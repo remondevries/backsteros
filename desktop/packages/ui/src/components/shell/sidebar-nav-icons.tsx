@@ -245,6 +245,22 @@ export function ContactsNavIcon({ className }: SidebarNavIconProps) {
   return <ContactPersonIcon className={className} />;
 }
 
+export function SocialNavIcon({ className, size = 16 }: SidebarNavIconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M7 8.75a3.25 3.25 0 1 0 2.002 5.81l.068.054 4.73 3.312a3.25 3.25 0 1 0 .617-1.4l-4.479-3.135c.2-.421.312-.893.312-1.391s-.112-.97-.312-1.391l4.48-3.136a3.25 3.25 0 1 0-.617-1.4L9.07 9.387l-.068.053A3.24 3.24 0 0 0 7 8.75" />
+    </svg>
+  );
+}
+
 export function LettersNavIcon({ className }: SidebarNavIconProps) {
   return <LetterIcon className={className} />;
 }

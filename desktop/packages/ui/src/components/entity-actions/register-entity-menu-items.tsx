@@ -4,7 +4,7 @@ import { useId, useLayoutEffect } from "react";
 
 import { useListKeyboardNavMountGate } from "../../list-nav/list-keyboard-nav-mount-gate.js";
 import {
-  useEntityHeaderActionsContext,
+  useEntityHeaderActionsContextOptional,
   type EntityExtraMenuItem,
 } from "./entity-header-actions-context.js";
 import { useLatestRef } from "./use-latest-ref.js";
@@ -16,11 +16,13 @@ export function RegisterEntityMenuItems({
 }) {
   const ownerId = useId();
   const mountGate = useListKeyboardNavMountGate();
-  const { registerExtraMenuItems, clearExtraMenuItems } =
-    useEntityHeaderActionsContext();
+  const context = useEntityHeaderActionsContextOptional();
+  const registerExtraMenuItems = context?.registerExtraMenuItems;
+  const clearExtraMenuItems = context?.clearExtraMenuItems;
   const itemsRef = useLatestRef(items);
 
   useLayoutEffect(() => {
+    if (!registerExtraMenuItems || !clearExtraMenuItems) return;
     if (!mountGate) {
       clearExtraMenuItems(ownerId);
       return;

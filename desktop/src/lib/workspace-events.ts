@@ -1,7 +1,7 @@
 /**
  * Authenticated SSE subscriber for workspace entity updates.
  * Desktop uses this to refresh REST snapshots and invalidate Tier D caches
- * when agents (or other clients) write via the API before PowerSync catches up.
+ * when agents write via the API before PowerSync catches up.
  */
 
 export type WorkspaceUpdatedKind =
@@ -11,12 +11,26 @@ export type WorkspaceUpdatedKind =
   | "document"
   | "letter";
 
+export type WorkspaceUpdatedOperation = "upsert" | "delete";
+
 export type WorkspaceUpdatedPayload = {
   kind: WorkspaceUpdatedKind;
   entityId: string;
   projectId: string | null;
   reason: "comment" | "patch" | null;
+  contentVersion: number | null;
+  operation: WorkspaceUpdatedOperation;
 };
+
+export type WorkspaceDocumentUpdatedDetail = {
+  documentId: string;
+  contentVersion: number | null;
+  operation: WorkspaceUpdatedOperation;
+};
+
+/** Fired when workspace SSE reports a document write (body and/or metadata). */
+export const WORKSPACE_DOCUMENT_UPDATED_EVENT =
+  "backsteros-workspace-document-updated";
 
 export type WorkspaceEventsClient = {
   requestStream: (path: string, init?: RequestInit) => Promise<Response>;
@@ -35,6 +49,19 @@ function parseWorkspaceUpdatedKind(value: unknown): WorkspaceUpdatedKind | null 
   return WORKSPACE_UPDATED_KINDS.has(value as WorkspaceUpdatedKind)
     ? (value as WorkspaceUpdatedKind)
     : null;
+}
+
+function parseContentVersion(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function parseOperation(value: unknown): WorkspaceUpdatedOperation {
+  return value === "delete" ? "delete" : "upsert";
 }
 
 function parseSseChunk(
@@ -136,6 +163,8 @@ export async function subscribeWorkspaceEvents(input: {
               entityId?: unknown;
               projectId?: unknown;
               reason?: unknown;
+              contentVersion?: unknown;
+              operation?: unknown;
             };
             const entityId =
               typeof parsed.entityId === "string" ? parsed.entityId.trim() : "";
@@ -153,6 +182,8 @@ export async function subscribeWorkspaceEvents(input: {
                 parsed.reason === "comment" || parsed.reason === "patch"
                   ? parsed.reason
                   : null,
+              contentVersion: parseContentVersion(parsed.contentVersion),
+              operation: parseOperation(parsed.operation),
             });
           } catch {
             // Ignore malformed event payloads.

@@ -20,18 +20,32 @@ import {
 import { isInternalAppHref } from "../../navigation/is-internal-app-href.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
+import { LetterIcon } from "../letters/letter-icon.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
+import { FileTypeIcon } from "../documents/file-type-icon.js";
+import { formatLetterDisplayId, parseLetterSlug } from "../../letters/letters.js";
+import { PdfFileIcon } from "./pdf-file-icon.js";
 
 const MAX_TASK_LINKS = 20;
 const MAX_TASK_LINK_URL_LENGTH = 2000;
 
-export type TaskLinkAttachmentKind = "url" | "document" | "email";
+export type TaskLinkAttachmentKind = "url" | "document" | "email" | "file";
 
 export type TaskLinkPickerOption = {
   id: string;
   label: string;
   href: string;
   detail?: string | null;
+  /** e.g. Document / Letter — shown above the title in picker results. */
+  kindLabel?: string | null;
+  /** e.g. Knowledge Base / BacksterOS (Desktop) — ownership scope. */
+  scopeLabel?: string | null;
+};
+
+export type TaskFileAttachmentItem = {
+  id: string;
+  originalFilename: string;
+  byteSize: number;
 };
 
 export type TaskLinkAttachmentsProps = {
@@ -40,10 +54,21 @@ export type TaskLinkAttachmentsProps = {
   readOnly?: boolean;
   /** Documents available to attach (filtered client-side by search). */
   documentOptions?: readonly TaskLinkPickerOption[];
+  /**
+   * Letters available to attach. Shown inside the Document tab search
+   * alongside documents (with kind/scope labels).
+   */
+  letterOptions?: readonly TaskLinkPickerOption[];
   /** Emails available to attach (filtered client-side by search). */
   emailOptions?: readonly TaskLinkPickerOption[];
   /** Prefer app navigation for internal hrefs. */
   onNavigate?: (href: string) => void;
+  /** File attachments (blob uploads; shown in the same list). */
+  fileAttachments?: readonly TaskFileAttachmentItem[];
+  fileUploading?: boolean;
+  onUploadFile?: (file: File) => void | Promise<void>;
+  onRemoveFile?: (attachmentId: string) => void;
+  onOpenFile?: (attachmentId: string) => void;
 };
 
 /**
@@ -148,9 +173,31 @@ export function isAppDocumentTaskLinkUrl(url: string): boolean {
   );
 }
 
+/** True for in-app letter detail hrefs (`/letters/l-N` or scoped `…/letters/l-N`). */
+export function isAppLetterTaskLinkUrl(url: string): boolean {
+  const trimmed = url.trim();
+  const match = trimmed.match(/(?:^|\/)letters(?:-v2)?\/([^/?#]+)/i);
+  if (!match?.[1]) {
+    return false;
+  }
+  return parseLetterSlug(match[1]) != null;
+}
+
+function letterNumberFromTaskLinkUrl(url: string): number | null {
+  const match = url.trim().match(/(?:^|\/)letters(?:-v2)?\/([^/?#]+)/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  return parseLetterSlug(match[1]);
+}
+
 export function taskLinkDisplayLabel(url: string): string {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return "E-mail";
+  }
+  if (isAppLetterTaskLinkUrl(url)) {
+    const number = letterNumberFromTaskLinkUrl(url);
+    return number != null ? formatLetterDisplayId(number) : "Letter";
   }
   if (isAppDocumentTaskLinkUrl(url)) {
     try {
@@ -168,6 +215,43 @@ export function taskLinkDisplayLabel(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * Prefer a readable label when picker options are available.
+ * Letters: `L-12 - Title`. Documents: title only (no path).
+ * Falls back to {@link taskLinkDisplayLabel} for URLs and unresolved links.
+ */
+export function resolveTaskLinkAttachmentLabel(
+  url: string,
+  options: readonly TaskLinkPickerOption[] = [],
+): string {
+  const match = options.find((option) => option.href === url);
+  if (!match?.label?.trim()) {
+    return taskLinkDisplayLabel(url);
+  }
+
+  const title = match.label.trim();
+  if (isAppLetterTaskLinkUrl(url) || match.kindLabel === "Letter") {
+    const id =
+      match.detail?.trim() ||
+      (letterNumberFromTaskLinkUrl(url) != null
+        ? formatLetterDisplayId(letterNumberFromTaskLinkUrl(url)!)
+        : null);
+    return id ? `${id} - ${title}` : title;
+  }
+
+  if (isAppDocumentTaskLinkUrl(url) || match.kindLabel === "Document") {
+    return title;
+  }
+
+  return title;
+}
+
+function formatFileBytes(byteSize: number): string {
+  if (byteSize < 1024) return `${byteSize} B`;
+  if (byteSize < 1024 * 1024) return `${(byteSize / 1024).toFixed(1)} KB`;
+  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function createTaskLinkId(): string {
@@ -205,6 +289,9 @@ function TaskLinkFavicon({ url }: { url: string }) {
 export function TaskLinkIcon({ url }: { url: string }): ReactNode {
   if (isSparkEmailTaskLinkUrl(url) || isAppEmailTaskLinkUrl(url)) {
     return <EmailNavIcon size={16} />;
+  }
+  if (isAppLetterTaskLinkUrl(url)) {
+    return <LetterIcon size={16} />;
   }
   if (isAppDocumentTaskLinkUrl(url)) {
     return <ProjectOcticon icon="file" size={16} />;
@@ -256,8 +343,14 @@ export function TaskLinkAttachments({
   onChangeLinks,
   readOnly = false,
   documentOptions = [],
+  letterOptions = [],
   emailOptions = [],
   onNavigate,
+  fileAttachments = [],
+  fileUploading = false,
+  onUploadFile,
+  onRemoveFile,
+  onOpenFile,
 }: TaskLinkAttachmentsProps) {
   const remoteLinks = links ?? [];
   const remoteKey = JSON.stringify(remoteLinks);
@@ -268,23 +361,27 @@ export function TaskLinkAttachments({
     setItems(remoteLinks);
   }
 
-  const canEdit = Boolean(onChangeLinks) && !readOnly;
+  const canUploadFiles = Boolean(onUploadFile) && !readOnly;
+  const canEditLinks = Boolean(onChangeLinks) && !readOnly;
+  const canEdit = canEditLinks || canUploadFiles;
   const [modalOpen, setModalOpen] = useState(false);
   const [attachKind, setAttachKind] = useState<TaskLinkAttachmentKind>("url");
   const [draftUrl, setDraftUrl] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [fileBusy, setFileBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
 
   const openModal = useCallback(() => {
     setDraftUrl("");
     setSearchQuery("");
-    setAttachKind("url");
+    setAttachKind(canEditLinks ? "url" : "file");
     setFormError(null);
     setModalOpen(true);
-  }, []);
+  }, [canEditLinks]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
@@ -325,6 +422,10 @@ export function TaskLinkAttachments({
       return;
     }
     const frame = window.requestAnimationFrame(() => {
+      if (attachKind === "file") {
+        fileInputRef.current?.focus();
+        return;
+      }
       inputRef.current?.focus();
       inputRef.current?.select();
     });
@@ -389,27 +490,63 @@ export function TaskLinkAttachments({
     appendLink(draftUrl);
   }
 
+  async function handleFileSelected(file: File | null) {
+    if (!file || !onUploadFile) return;
+    setFormError(null);
+    setFileBusy(true);
+    try {
+      await onUploadFile(file);
+      closeModal();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not upload file.",
+      );
+    } finally {
+      setFileBusy(false);
+    }
+  }
+
   const query = searchQuery.trim().toLowerCase();
-  const filteredDocuments = documentOptions
-    .filter((option) => {
-      if (!query) return true;
-      return (
-        option.label.toLowerCase().includes(query) ||
-        (option.detail?.toLowerCase().includes(query) ?? false)
-      );
-    })
-    .slice(0, 40);
-  const filteredEmails = emailOptions
-    .filter((option) => {
-      if (!query) return true;
-      return (
-        option.label.toLowerCase().includes(query) ||
-        (option.detail?.toLowerCase().includes(query) ?? false)
-      );
-    })
-    .slice(0, 40);
+  function filterPickerOptions(options: readonly TaskLinkPickerOption[]) {
+    return options
+      .filter((option) => {
+        if (!query) return true;
+        return (
+          option.label.toLowerCase().includes(query) ||
+          (option.detail?.toLowerCase().includes(query) ?? false) ||
+          (option.kindLabel?.toLowerCase().includes(query) ?? false) ||
+          (option.scopeLabel?.toLowerCase().includes(query) ?? false)
+        );
+      })
+      .slice(0, 40);
+  }
+  const filteredDocuments = filterPickerOptions([
+    ...documentOptions,
+    ...letterOptions,
+  ]);
+  const filteredEmails = filterPickerOptions(emailOptions);
+
+  const kindOptions = [
+    ...(canEditLinks
+      ? ([
+          { value: "url" as const, label: "URL" },
+          { value: "document" as const, label: "Document" },
+          { value: "email" as const, label: "Email" },
+        ] as const)
+      : []),
+    ...(canUploadFiles
+      ? ([{ value: "file" as const, label: "File" }] as const)
+      : []),
+  ];
 
   const addShortcutTitle = `Add attachment (${ADD_TASK_LINK_SHORTCUT_HINT})`;
+  const uploading = fileBusy || fileUploading;
+  const hasRows = items.length > 0 || fileAttachments.length > 0;
+  const linkLabelOptions = [
+    ...documentOptions,
+    ...letterOptions,
+    ...emailOptions,
+  ];
 
   return (
     <div
@@ -430,11 +567,15 @@ export function TaskLinkAttachments({
         </div>
       ) : null}
 
-      {items.length > 0 ? (
+      {hasRows ? (
         <ul className="task-link-attachments__list">
           {items.map((item) => {
             const href = coerceSparkEmailUrl(item.url) ?? item.url;
             const internal = isInternalAppHref(href);
+            const displayLabel = resolveTaskLinkAttachmentLabel(
+              href,
+              linkLabelOptions,
+            );
             return (
             <li key={item.id} className="task-link-attachments__row">
               {internal && onNavigate ? (
@@ -451,7 +592,7 @@ export function TaskLinkAttachments({
                     <TaskLinkIcon url={href} />
                   </span>
                   <span className="task-link-attachments__label">
-                    {taskLinkDisplayLabel(href)}
+                    {displayLabel}
                   </span>
                 </button>
               ) : (
@@ -474,11 +615,11 @@ export function TaskLinkAttachments({
                     <TaskLinkIcon url={href} />
                   </span>
                   <span className="task-link-attachments__label">
-                    {taskLinkDisplayLabel(href)}
+                    {displayLabel}
                   </span>
                 </a>
               )}
-              {canEdit ? (
+              {canEditLinks ? (
                 <button
                   type="button"
                   className="task-link-attachments__remove"
@@ -487,6 +628,66 @@ export function TaskLinkAttachments({
                     event.preventDefault();
                     event.stopPropagation();
                     handleRemove(item.id);
+                  }}
+                >
+                  <RemoveIcon />
+                </button>
+              ) : null}
+            </li>
+            );
+          })}
+          {fileAttachments.map((file) => {
+            const fileName = file.originalFilename || "attachment";
+            const isPdf = fileName.toLowerCase().endsWith(".pdf");
+            const fileIcon = (
+              <span
+                className="task-link-attachments__icon"
+                aria-hidden="true"
+              >
+                {isPdf ? (
+                  <PdfFileIcon size={16} />
+                ) : (
+                  <FileTypeIcon pathValue={fileName} size={16} />
+                )}
+              </span>
+            );
+            return (
+            <li key={`file:${file.id}`} className="task-link-attachments__row">
+              {onOpenFile ? (
+                <button
+                  type="button"
+                  className="task-link-attachments__link task-link-attachments__link--button"
+                  title={fileName}
+                  onClick={() => onOpenFile(file.id)}
+                >
+                  {fileIcon}
+                  <span className="task-link-attachments__label">
+                    {fileName}
+                  </span>
+                  <span className="task-link-attachments__meta">
+                    {formatFileBytes(file.byteSize)}
+                  </span>
+                </button>
+              ) : (
+                <span className="task-link-attachments__link">
+                  {fileIcon}
+                  <span className="task-link-attachments__label">
+                    {fileName}
+                  </span>
+                  <span className="task-link-attachments__meta">
+                    {formatFileBytes(file.byteSize)}
+                  </span>
+                </span>
+              )}
+              {canUploadFiles && onRemoveFile ? (
+                <button
+                  type="button"
+                  className="task-link-attachments__remove"
+                  aria-label={`Remove ${fileName}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onRemoveFile(file.id);
                   }}
                 >
                   <RemoveIcon />
@@ -520,18 +721,16 @@ export function TaskLinkAttachments({
                 <h2 id={titleId} className="entity-delete-modal-title">
                   Add attachment
                 </h2>
-                <div className="task-link-attachments-modal__kind">
-                  <SegmentedPillToggle
-                    value={attachKind}
-                    options={[
-                      { value: "url", label: "URL" },
-                      { value: "document", label: "Document" },
-                      { value: "email", label: "Email" },
-                    ]}
-                    onChange={setAttachKind}
-                    ariaLabel="Attachment type"
-                  />
-                </div>
+                {kindOptions.length > 1 ? (
+                  <div className="task-link-attachments-modal__kind">
+                    <SegmentedPillToggle
+                      value={attachKind}
+                      options={[...kindOptions]}
+                      onChange={setAttachKind}
+                      ariaLabel="Attachment type"
+                    />
+                  </div>
+                ) : null}
                 {attachKind === "url" ? (
                   <>
                     <p className="entity-delete-modal-body">
@@ -582,13 +781,52 @@ export function TaskLinkAttachments({
                       </div>
                     </form>
                   </>
-                ) : (
+                ) : attachKind === "file" ? (
                   <>
                     <p className="entity-delete-modal-body">
-                      {attachKind === "document"
-                        ? "Search and select a document from BacksterOS."
-                        : "Search and select an email from BacksterOS."}
+                      Upload a file to attach it to this task.
                     </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="sr-only"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        event.target.value = "";
+                        void handleFileSelected(file);
+                      }}
+                    />
+                    {formError ? (
+                      <p className="entity-delete-modal-error" role="alert">
+                        {formError}
+                      </p>
+                    ) : null}
+                    <div className="entity-delete-modal-actions">
+                      <button
+                        type="button"
+                        className="entity-delete-modal-cancel"
+                        onClick={closeModal}
+                        disabled={uploading}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="entity-delete-modal-confirm"
+                        disabled={uploading}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {uploading ? "Uploading…" : "Choose file"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {attachKind === "email" ? (
+                      <p className="entity-delete-modal-body">
+                        Search and select an email from BacksterOS.
+                      </p>
+                    ) : null}
                     <label className="task-link-attachments-modal__label">
                       <span className="sr-only">Search</span>
                       <input
@@ -598,7 +836,7 @@ export function TaskLinkAttachments({
                         spellCheck={false}
                         placeholder={
                           attachKind === "document"
-                            ? "Search documents…"
+                            ? "Search documents and letters…"
                             : "Search emails…"
                         }
                         value={searchQuery}
@@ -614,6 +852,11 @@ export function TaskLinkAttachments({
                         {formError}
                       </p>
                     ) : null}
+                    {attachKind === "document" ? (
+                      <p className="task-link-attachments-modal__section-label">
+                        Documents / Letters
+                      </p>
+                    ) : null}
                     <ul className="task-link-attachments-modal__results">
                       {(attachKind === "document"
                         ? filteredDocuments
@@ -625,6 +868,11 @@ export function TaskLinkAttachments({
                             className="task-link-attachments-modal__result"
                             onClick={() => appendLink(option.href)}
                           >
+                            {option.scopeLabel ? (
+                              <span className="task-link-attachments-modal__result-scope">
+                                {option.scopeLabel}
+                              </span>
+                            ) : null}
                             <span className="task-link-attachments-modal__result-label">
                               {option.label}
                             </span>

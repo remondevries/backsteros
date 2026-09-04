@@ -9,14 +9,15 @@ import {
   getKnowledgeHref,
   getProjectDocumentHref,
   getScopedProjectTaskHref,
+  isComposeTasksPagePathname,
   primeTabTitle,
 } from "@backsteros/ui";
 import { useAgentMail } from "../lib/agentmail-context";
 import { withAvatarSrc } from "../lib/avatar-src";
-import { beginEmailComposeFromModal } from "../lib/email-compose-from-modal";
 import {
   buildDocumentLinkOptions,
   buildEmailLinkOptions,
+  buildLetterLinkOptions,
 } from "../lib/task-link-picker-options";
 import {
   useDesktopWorkspaceActions,
@@ -32,6 +33,7 @@ export function AppShellOverlays({
   pathname,
   search,
   defaultAssigneeId,
+  defaultRelatedContactIds = [],
   contactAvatarSrc,
 }: {
   composeOpen: boolean;
@@ -39,6 +41,7 @@ export function AppShellOverlays({
   pathname: string;
   search: string;
   defaultAssigneeId: string | null;
+  defaultRelatedContactIds?: string[];
   contactAvatarSrc: Record<string, string>;
 }) {
   const routerNavigate = useNavigate();
@@ -46,9 +49,9 @@ export function AppShellOverlays({
     navigateToHref(routerNavigate, to, options);
   };
   const agentMail = useAgentMail();
-  const { projects } = useDesktopWorkspaceProjects();
+  const { projects, letters } = useDesktopWorkspaceProjects();
   const { contacts } = useDesktopWorkspacePeople();
-  const { documents, knowledgeDocuments, projectDocuments } =
+  const { knowledgeDocuments, projectDocuments } =
     useDesktopWorkspaceDocuments();
   const {
     createInboxTask,
@@ -109,13 +112,16 @@ export function AppShellOverlays({
         projects={composeProjects}
         contacts={composeContacts}
         defaultAssigneeId={defaultAssigneeId}
+        defaultRelatedContactIds={defaultRelatedContactIds}
         documentFoldersByTarget={documentFoldersByTarget}
         projectsHref="/projects"
         onNavigate={(href) => navigate(href)}
-        documentLinkOptions={buildDocumentLinkOptions(documents)}
+        documentLinkOptions={buildDocumentLinkOptions(
+          [...knowledgeDocuments, ...projectDocuments],
+          projects,
+        )}
+        letterLinkOptions={buildLetterLinkOptions(letters, projects)}
         emailLinkOptions={buildEmailLinkOptions(agentMail.messages)}
-        mailboxes={agentMail.mailboxes}
-        onCreateEmail={async (input) => beginEmailComposeFromModal(input)}
         onCreateTask={async (input) => {
           if (input.projectId) {
             const project = projects.find(
@@ -128,6 +134,7 @@ export function AppShellOverlays({
               status: input.status,
               priority: input.priority,
               assigneeId: input.assigneeId,
+              relatedContactIds: input.relatedContactIds,
               dueDate: input.dueDate,
               links: input.links,
             });
@@ -143,15 +150,24 @@ export function AppShellOverlays({
             primeTabTitle(href, input.title);
             return { href };
           }
+          // From Today/Tomorrow/… compose: create a list task (not triage inbox).
+          const fromTasksDueList = isComposeTasksPagePathname(pathname);
           const created = await createInboxTask({
             title: input.title,
             description: input.description,
             status: input.status,
             priority: input.priority,
             assigneeId: input.assigneeId,
+            relatedContactIds: input.relatedContactIds,
             dueDate: input.dueDate,
             links: input.links,
+            inbox: !fromTasksDueList,
           });
+          if (fromTasksDueList) {
+            const href = `/tasks/${created.id}`;
+            primeTabTitle(href, input.title);
+            return { href };
+          }
           if (created.number != null) {
             const href = getInboxTaskRouteHref({ number: created.number });
             primeTabTitle(href, input.title);

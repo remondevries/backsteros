@@ -32,6 +32,23 @@ import * as taskProjectService from "./tasks-projects.js";
 
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update">;
 
+/** Task rows mutated by habit ensure / day / update — callers emit sync_events. */
+export type HabitTaskSyncChange = {
+  task: DbTask;
+  operation: "upsert" | "delete";
+};
+
+function mergeHabitTaskChanges(
+  into: HabitTaskSyncChange[],
+  next: HabitTaskSyncChange[],
+): void {
+  for (const change of next) {
+    const index = into.findIndex((entry) => entry.task.id === change.task.id);
+    if (index >= 0) into[index] = change;
+    else into.push(change);
+  }
+}
+
 function asSettingsRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -113,6 +130,33 @@ async function ensureHabitProjectId(
     .where(and(eq(habits.workspaceId, workspaceId), eq(habits.id, habit.id)))
     .returning();
   return updated ?? { ...habit, projectId: project.id };
+}
+
+/**
+ * Resolve habit.projectId without creating/updating rows.
+ * Used by leader-first plan paths that must not mutate local Postgres first.
+ */
+export async function resolveHabitProjectReadonly(
+  workspaceId: string,
+  habit: DbHabit,
+  executor: DbExecutor = db,
+): Promise<DbHabit | null> {
+  if (habit.projectId) {
+    const project = await taskProjectService.getProjectById(
+      workspaceId,
+      habit.projectId,
+      executor,
+    );
+    if (project) return habit;
+  }
+  const projects = await taskProjectService.listProjects(
+    workspaceId,
+    {},
+    executor,
+  );
+  const health = projects.find((project) => isHealthProjectName(project.name));
+  if (health) return { ...habit, projectId: health.id };
+  return null;
 }
 
 export async function ensureHealthProject(
@@ -252,7 +296,8 @@ async function collapseDuplicateHabitDays(
   taskRows: DbTask[],
   timeZone: string,
   executor: DbExecutor,
-) {
+): Promise<HabitTaskSyncChange[]> {
+  const changed: HabitTaskSyncChange[] = [];
   const groups = new Map<string, DbTask[]>();
   for (const task of taskRows) {
     if (task.deletedAt || !task.habitId) continue;
@@ -269,10 +314,18 @@ async function collapseDuplicateHabitDays(
     if (extraIds.size === 0) continue;
     for (const task of group) {
       if (!extraIds.has(task.id)) continue;
-      await taskProjectService.deleteTask(workspaceId, task.id, executor);
-      task.deletedAt = new Date();
+      const deleted = await taskProjectService.deleteTask(
+        workspaceId,
+        task.id,
+        executor,
+      );
+      if (deleted) {
+        task.deletedAt = deleted.deletedAt;
+        changed.push({ task: deleted, operation: "delete" });
+      }
     }
   }
+  return changed;
 }
 
 export async function ensureHabitTasksForDate(
@@ -280,6 +333,7 @@ export async function ensureHabitTasksForDate(
   todayYmd?: string,
   executor: DbExecutor = db,
 ) {
+  const changedTasks: HabitTaskSyncChange[] = [];
   const settings = asSettingsRecord(
     await circleService.getSettings(workspaceId, executor),
   );
@@ -289,12 +343,38 @@ export async function ensureHabitTasksForDate(
   const habitRows = await listHabitRows(workspaceId, executor);
   const taskRows = await listHabitTaskRows(workspaceId, executor);
   if (habitRows.length === 0) {
-    return { timeZone, todayYmd: resolvedToday, habits: habitRows, tasks: taskRows };
+    return {
+      timeZone,
+      todayYmd: resolvedToday,
+      habits: habitRows,
+      tasks: taskRows,
+      changedTasks,
+      backfilledHabits: [] as DbHabit[],
+    };
   }
 
   const resolvedHabits: DbHabit[] = [];
+  const backfilledHabits: DbHabit[] = [];
   for (const habit of habitRows) {
-    resolvedHabits.push(await ensureHabitProjectId(workspaceId, habit, executor));
+    const readonly = await resolveHabitProjectReadonly(
+      workspaceId,
+      habit,
+      executor,
+    );
+    if (readonly) {
+      resolvedHabits.push(readonly);
+      continue;
+    }
+    const beforeProjectId = habit.projectId;
+    const ensuredHabit = await ensureHabitProjectId(
+      workspaceId,
+      habit,
+      executor,
+    );
+    resolvedHabits.push(ensuredHabit);
+    if (ensuredHabit.projectId !== beforeProjectId) {
+      backfilledHabits.push(ensuredHabit);
+    }
   }
 
   for (const task of taskRows) {
@@ -302,20 +382,26 @@ export async function ensureHabitTasksForDate(
     if (!shouldCancelStaleHabitTask(task.status, dueYmd, resolvedToday)) {
       continue;
     }
-    await taskProjectService.updateTask(
+    const updated = await taskProjectService.updateTask(
       workspaceId,
       task.id,
       { status: "canceled" },
       executor,
     );
-    task.status = "canceled";
+    if (updated) {
+      task.status = updated.status;
+      changedTasks.push({ task: updated, operation: "upsert" });
+    }
   }
 
-  await collapseDuplicateHabitDays(
-    workspaceId,
-    taskRows,
-    timeZone,
-    executor,
+  mergeHabitTaskChanges(
+    changedTasks,
+    await collapseDuplicateHabitDays(
+      workspaceId,
+      taskRows,
+      timeZone,
+      executor,
+    ),
   );
 
   const dueYmdsByHabit = new Map<string, string[]>();
@@ -363,7 +449,7 @@ export async function ensureHabitTasksForDate(
     );
     if (created) {
       taskRows.push(created);
-      continue;
+      changedTasks.push({ task: created, operation: "upsert" });
     }
   }
 
@@ -372,6 +458,8 @@ export async function ensureHabitTasksForDate(
     todayYmd: resolvedToday,
     habits: resolvedHabits,
     tasks: taskRows,
+    changedTasks,
+    backfilledHabits,
   };
 }
 
@@ -394,21 +482,33 @@ function todayTaskForHabit(
 export async function listHabits(
   workspaceId: string,
   executor: DbExecutor = db,
-): Promise<Habit[]> {
+): Promise<{
+  habits: Habit[];
+  changedTasks: HabitTaskSyncChange[];
+  backfilledHabits: DbHabit[];
+}> {
   const ensured = await ensureHabitTasksForDate(workspaceId, undefined, executor);
-  return ensured.habits.map((habit) =>
-    toHabit(
-      habit,
-      todayTaskForHabit(habit.id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
+  return {
+    habits: ensured.habits.map((habit) =>
+      toHabit(
+        habit,
+        todayTaskForHabit(habit.id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
+      ),
     ),
-  );
+    changedTasks: ensured.changedTasks,
+    backfilledHabits: ensured.backfilledHabits,
+  };
 }
 
 export async function getHabitById(
   workspaceId: string,
   id: string,
   executor: DbExecutor = db,
-): Promise<Habit | null> {
+): Promise<{
+  habit: Habit;
+  changedTasks: HabitTaskSyncChange[];
+  backfilledHabits: DbHabit[];
+} | null> {
   const [row] = await executor
     .select()
     .from(habits)
@@ -422,13 +522,23 @@ export async function getHabitById(
     .limit(1);
   if (!row) return null;
   const ensured = await ensureHabitTasksForDate(workspaceId, undefined, executor);
-  const habit =
-    ensured.habits.find((entry) => entry.id === id) ??
-    (await ensureHabitProjectId(workspaceId, row, executor));
-  return toHabit(
-    habit,
-    todayTaskForHabit(id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
-  );
+  const backfilledHabits = [...ensured.backfilledHabits];
+  let habitRow = ensured.habits.find((entry) => entry.id === id);
+  if (!habitRow) {
+    const beforeProjectId = row.projectId;
+    habitRow = await ensureHabitProjectId(workspaceId, row, executor);
+    if (habitRow.projectId !== beforeProjectId) {
+      backfilledHabits.push(habitRow);
+    }
+  }
+  return {
+    habit: toHabit(
+      habitRow,
+      todayTaskForHabit(id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
+    ),
+    changedTasks: ensured.changedTasks,
+    backfilledHabits,
+  };
 }
 
 export async function getHabitRow(
@@ -572,8 +682,9 @@ async function reconcileEvery2DaysOpenTask(
   todayYmd: string,
   assigneeId: string | null,
   executor: DbExecutor,
-): Promise<void> {
-  if (parseHabitCadence(habit.cadence) !== "every_2_days") return;
+): Promise<HabitTaskSyncChange[]> {
+  const changed: HabitTaskSyncChange[] = [];
+  if (parseHabitCadence(habit.cadence) !== "every_2_days") return changed;
 
   const anchor = habit.cadenceAnchorYmd ?? todayYmd;
   const outcomes = habitOutcomesFromTasks(habit.id, taskRows, timeZone);
@@ -597,14 +708,15 @@ async function reconcileEvery2DaysOpenTask(
   if (nextDueYmd <= todayYmd) {
     for (const { task, dueYmd } of openWithDue) {
       if (dueYmd <= todayYmd) continue;
-      await taskProjectService.updateTask(
+      const updated = await taskProjectService.updateTask(
         workspaceId,
         task.id,
         { status: "canceled" },
         executor,
       );
+      if (updated) changed.push({ task: updated, operation: "upsert" });
     }
-    return;
+    return changed;
   }
 
   const atNextDue = openWithDue.find((entry) => entry.dueYmd === nextDueYmd);
@@ -613,36 +725,39 @@ async function reconcileEvery2DaysOpenTask(
   if (atNextDue) {
     for (const { task, dueYmd } of futureOpen) {
       if (dueYmd === nextDueYmd) continue;
-      await taskProjectService.updateTask(
+      const updated = await taskProjectService.updateTask(
         workspaceId,
         task.id,
         { status: "canceled" },
         executor,
       );
+      if (updated) changed.push({ task: updated, operation: "upsert" });
     }
-    return;
+    return changed;
   }
 
   const reusable = [...futureOpen].sort((a, b) =>
     a.dueYmd.localeCompare(b.dueYmd),
   )[0];
   if (reusable) {
-    await taskProjectService.updateTask(
+    const moved = await taskProjectService.updateTask(
       workspaceId,
       reusable.task.id,
       { dueDate: ymdStartOfDayIso(nextDueYmd, timeZone) },
       executor,
     );
+    if (moved) changed.push({ task: moved, operation: "upsert" });
     for (const { task } of futureOpen) {
       if (task.id === reusable.task.id) continue;
-      await taskProjectService.updateTask(
+      const updated = await taskProjectService.updateTask(
         workspaceId,
         task.id,
         { status: "canceled" },
         executor,
       );
+      if (updated) changed.push({ task: updated, operation: "upsert" });
     }
-    return;
+    return changed;
   }
 
   const project = await resolveProjectForHabit(
@@ -650,7 +765,7 @@ async function reconcileEvery2DaysOpenTask(
     habit.projectId,
     executor,
   );
-  await createHabitTask(
+  const created = await createHabitTask(
     workspaceId,
     habit,
     project.id,
@@ -659,6 +774,8 @@ async function reconcileEvery2DaysOpenTask(
     assigneeId,
     executor,
   );
+  if (created) changed.push({ task: created, operation: "upsert" });
+  return changed;
 }
 
 export async function updateHabit(
@@ -666,9 +783,10 @@ export async function updateHabit(
   id: string,
   input: UpdateHabitInput,
   executor: DbExecutor = db,
-): Promise<Habit | null> {
+): Promise<{ habit: Habit; changedTasks: HabitTaskSyncChange[] } | null> {
   const existing = await getHabitRow(workspaceId, id, executor);
   if (!existing || existing.deletedAt) return null;
+  const changedTasks: HabitTaskSyncChange[] = [];
   const settings = asSettingsRecord(
     await circleService.getSettings(workspaceId, executor),
   );
@@ -747,17 +865,16 @@ export async function updateHabit(
       if (task.habitId !== id) continue;
 
       if (renamedTitle && task.title !== renamedTitle) {
-        // Keep every habit-day task titled like the habit so they stay linked.
-        await taskProjectService.updateTask(
+        const updated = await taskProjectService.updateTask(
           workspaceId,
           task.id,
           { title: renamedTitle },
           executor,
         );
+        if (updated) changedTasks.push({ task: updated, operation: "upsert" });
       }
 
       if (!projectChanged || task.projectId === nextProjectId) continue;
-      // Keep open / today's instances aligned with the new project.
       if (
         task.status === "completed" ||
         task.status === "canceled" ||
@@ -765,12 +882,13 @@ export async function updateHabit(
       ) {
         continue;
       }
-      await taskProjectService.updateTask(
+      const updated = await taskProjectService.updateTask(
         workspaceId,
         task.id,
         { projectId: nextProjectId },
         executor,
       );
+      if (updated) changedTasks.push({ task: updated, operation: "upsert" });
     }
   }
 
@@ -791,12 +909,13 @@ export async function updateHabit(
     if (openTask) {
       const openDueYmd = dueDateToYmd(openTask.dueDate, timeZone);
       if (openDueYmd !== nextDueYmd) {
-        await taskProjectService.updateTask(
+        const updated = await taskProjectService.updateTask(
           workspaceId,
           openTask.id,
           { dueDate: ymdStartOfDayIso(nextDueYmd, timeZone) },
           executor,
         );
+        if (updated) changedTasks.push({ task: updated, operation: "upsert" });
       }
     } else if (!occupying) {
       const project = await resolveProjectForHabit(
@@ -804,7 +923,7 @@ export async function updateHabit(
         row.projectId ?? nextProjectId ?? existing.projectId,
         executor,
       );
-      await createHabitTask(
+      const created = await createHabitTask(
         workspaceId,
         { id: row.id, title: row.title },
         project.id,
@@ -813,14 +932,19 @@ export async function updateHabit(
         defaultAssigneeId(settings),
         executor,
       );
+      if (created) changedTasks.push({ task: created, operation: "upsert" });
     }
   }
 
   const ensured = await ensureHabitTasksForDate(workspaceId, todayYmd, executor);
-  return toHabit(
-    row,
-    todayTaskForHabit(id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
-  );
+  mergeHabitTaskChanges(changedTasks, ensured.changedTasks);
+  return {
+    habit: toHabit(
+      row,
+      todayTaskForHabit(id, ensured.tasks, ensured.todayYmd, ensured.timeZone),
+    ),
+    changedTasks,
+  };
 }
 
 export async function createHabit(
@@ -828,7 +952,7 @@ export async function createHabit(
   input: CreateHabitInput,
   id = newId(),
   executor: DbExecutor = db,
-): Promise<Habit> {
+): Promise<{ habit: Habit; changedTasks: HabitTaskSyncChange[] }> {
   const settings = asSettingsRecord(
     await circleService.getSettings(workspaceId, executor),
   );
@@ -847,6 +971,7 @@ export async function createHabit(
     todayYmd,
     project.id,
   );
+  const changedTasks: HabitTaskSyncChange[] = [];
   const todayTask = await createHabitTask(
     workspaceId,
     created,
@@ -856,7 +981,13 @@ export async function createHabit(
     defaultAssigneeId(settings),
     executor,
   );
-  return toHabit(created, todayTask);
+  if (todayTask) {
+    changedTasks.push({ task: todayTask, operation: "upsert" });
+  }
+  return {
+    habit: toHabit(created, todayTask),
+    changedTasks,
+  };
 }
 
 /**
@@ -868,7 +999,11 @@ export async function recordHabitDay(
   habitId: string,
   input: RecordHabitDayInput,
   executor: DbExecutor = db,
-): Promise<{ task: DbTask; created: boolean } | null> {
+): Promise<{
+  task: DbTask;
+  created: boolean;
+  changedTasks: HabitTaskSyncChange[];
+} | null> {
   const habitRow = await getHabitRow(workspaceId, habitId, executor);
   if (!habitRow || habitRow.deletedAt) return null;
   const habit = await ensureHabitProjectId(workspaceId, habitRow, executor);
@@ -891,6 +1026,7 @@ export async function recordHabitDay(
         dueDateToYmd(task.dueDate, timeZone) === input.dueYmd,
     ) ?? null;
 
+  const changedTasks: HabitTaskSyncChange[] = [];
   let result: { task: DbTask; created: boolean } | null = null;
 
   if (existing) {
@@ -939,21 +1075,284 @@ export async function recordHabitDay(
     }
   }
 
+  changedTasks.push({ task: result.task, operation: "upsert" });
+
   if (
     result &&
     (input.status === "completed" || input.status === "canceled")
   ) {
     const refreshed = await listHabitTaskRows(workspaceId, executor);
-    await reconcileEvery2DaysOpenTask(
-      workspaceId,
-      habit,
-      refreshed,
-      timeZone,
-      todayYmd,
-      assigneeId,
-      executor,
+    mergeHabitTaskChanges(
+      changedTasks,
+      await reconcileEvery2DaysOpenTask(
+        workspaceId,
+        habit,
+        refreshed,
+        timeZone,
+        todayYmd,
+        assigneeId,
+        executor,
+      ),
     );
   }
 
-  return result;
+  return { ...result, changedTasks };
+}
+
+/** Locate the habit task for a workspace-local due YMD (read-only). */
+export async function findHabitTaskForDueYmd(
+  workspaceId: string,
+  habitId: string,
+  dueYmd: string,
+  executor: DbExecutor = db,
+): Promise<DbTask | null> {
+  const settings = asSettingsRecord(
+    await circleService.getSettings(workspaceId, executor),
+  );
+  const timeZone = workspaceTimezone(settings);
+  const taskRows = await listHabitTaskRows(workspaceId, executor);
+  return (
+    taskRows.find(
+      (task) =>
+        task.habitId === habitId &&
+        dueDateToYmd(task.dueDate, timeZone) === dueYmd,
+    ) ?? null
+  );
+}
+
+/**
+ * Build a snake_case task sync payload for leader-first habit-day writes
+ * without mutating local rows.
+ */
+export async function buildHabitDayTaskSyncPayload(
+  workspaceId: string,
+  habitId: string,
+  input: RecordHabitDayInput,
+  taskId: string,
+  existing: DbTask | null,
+  executor: DbExecutor = db,
+): Promise<Record<string, unknown> | null> {
+  const habitRow = await getHabitRow(workspaceId, habitId, executor);
+  if (!habitRow || habitRow.deletedAt) return null;
+
+  const settings = asSettingsRecord(
+    await circleService.getSettings(workspaceId, executor),
+  );
+  const timeZone = workspaceTimezone(settings);
+  const todayYmd = formatYmdInTimeZone(new Date(), timeZone);
+  if (input.dueYmd > todayYmd) {
+    throw new Error("HABIT_DAY_IN_FUTURE");
+  }
+
+  if (existing) {
+    return {
+      id: taskId,
+      status: input.status,
+      habit_id: habitId,
+      title: existing.title,
+      project_id: existing.projectId,
+      due_date: existing.dueDate?.toISOString() ?? ymdStartOfDayIso(input.dueYmd, timeZone),
+      priority: existing.priority,
+      inbox: existing.inbox,
+      sort_order: existing.sortOrder,
+      assignee_id: existing.assigneeId,
+    };
+  }
+
+  const habit =
+    (await resolveHabitProjectReadonly(workspaceId, habitRow, executor)) ??
+    (await ensureHabitProjectId(workspaceId, habitRow, executor));
+  const project = await resolveProjectForHabit(
+    workspaceId,
+    habit.projectId,
+    executor,
+  );
+  const assigneeId = defaultAssigneeId(settings);
+  return {
+    id: taskId,
+    title: habit.title,
+    project_id: project.id,
+    habit_id: habit.id,
+    status: input.status,
+    priority: HABIT_TASK_PRIORITY,
+    assignee_id: assigneeId,
+    due_date: ymdStartOfDayIso(input.dueYmd, timeZone),
+    inbox: false,
+    sort_order: Date.now(),
+  };
+}
+
+/** Every-2-days open-task reconcile after a habit day is recorded. */
+export async function reconcileHabitDaySideEffects(
+  workspaceId: string,
+  habitId: string,
+  input: RecordHabitDayInput,
+  executor: DbExecutor = db,
+): Promise<HabitTaskSyncChange[]> {
+  if (input.status !== "completed" && input.status !== "canceled") {
+    return [];
+  }
+  const habitRow = await getHabitRow(workspaceId, habitId, executor);
+  if (!habitRow || habitRow.deletedAt) return [];
+  const habit = await ensureHabitProjectId(workspaceId, habitRow, executor);
+  const settings = asSettingsRecord(
+    await circleService.getSettings(workspaceId, executor),
+  );
+  const timeZone = workspaceTimezone(settings);
+  const todayYmd = formatYmdInTimeZone(new Date(), timeZone);
+  const assigneeId = defaultAssigneeId(settings);
+  const refreshed = await listHabitTaskRows(workspaceId, executor);
+  return reconcileEvery2DaysOpenTask(
+    workspaceId,
+    habit,
+    refreshed,
+    timeZone,
+    todayYmd,
+    assigneeId,
+    executor,
+  );
+}
+
+/**
+ * Plan every-2-days follow-up task sync payloads without writing rows.
+ * Used by leader-first habit-day routes so side-effects go through
+ * commitRestEntityWriteBatch only.
+ */
+export async function planHabitDayReconcileLeaderChanges(
+  workspaceId: string,
+  habitId: string,
+  input: RecordHabitDayInput,
+  executor: DbExecutor = db,
+): Promise<
+  Array<{
+    entityId: string;
+    operation: "upsert";
+    payload: Record<string, unknown>;
+  }>
+> {
+  if (input.status !== "completed" && input.status !== "canceled") {
+    return [];
+  }
+  const habitRow = await getHabitRow(workspaceId, habitId, executor);
+  if (!habitRow || habitRow.deletedAt) return [];
+  if (parseHabitCadence(habitRow.cadence) !== "every_2_days") return [];
+
+  const settings = asSettingsRecord(
+    await circleService.getSettings(workspaceId, executor),
+  );
+  const timeZone = workspaceTimezone(settings);
+  const todayYmd = formatYmdInTimeZone(new Date(), timeZone);
+  const assigneeId = defaultAssigneeId(settings);
+  const habit = await resolveHabitProjectReadonly(
+    workspaceId,
+    habitRow,
+    executor,
+  );
+  if (!habit) return [];
+  const taskRows = await listHabitTaskRows(workspaceId, executor);
+
+  const anchor = habit.cadenceAnchorYmd ?? todayYmd;
+  const outcomes = habitOutcomesFromTasks(habit.id, taskRows, timeZone);
+  const nextDueYmd = nextEvery2DaysDueYmd(outcomes, anchor);
+
+  const openWithDue = taskRows
+    .filter(
+      (task) =>
+        task.habitId === habit.id &&
+        !task.deletedAt &&
+        isOpenHabitTaskStatus(task.status),
+    )
+    .map((task) => ({
+      task,
+      dueYmd: dueDateToYmd(task.dueDate, timeZone),
+    }))
+    .filter((entry): entry is { task: DbTask; dueYmd: string } =>
+      Boolean(entry.dueYmd),
+    );
+
+  const changes: Array<{
+    entityId: string;
+    operation: "upsert";
+    payload: Record<string, unknown>;
+  }> = [];
+
+  const upsertFromExisting = (
+    task: DbTask,
+    patch: Record<string, unknown>,
+  ) => {
+    changes.push({
+      entityId: task.id,
+      operation: "upsert",
+      payload: {
+        id: task.id,
+        title: task.title,
+        project_id: task.projectId,
+        habit_id: task.habitId,
+        status: task.status,
+        priority: task.priority,
+        inbox: task.inbox,
+        sort_order: task.sortOrder,
+        assignee_id: task.assigneeId,
+        due_date: task.dueDate?.toISOString() ?? null,
+        ...patch,
+      },
+    });
+  };
+
+  if (nextDueYmd <= todayYmd) {
+    for (const { task, dueYmd } of openWithDue) {
+      if (dueYmd <= todayYmd) continue;
+      upsertFromExisting(task, { status: "canceled" });
+    }
+    return changes;
+  }
+
+  const atNextDue = openWithDue.find((entry) => entry.dueYmd === nextDueYmd);
+  const futureOpen = openWithDue.filter((entry) => entry.dueYmd > todayYmd);
+
+  if (atNextDue) {
+    for (const { task, dueYmd } of futureOpen) {
+      if (dueYmd === nextDueYmd) continue;
+      upsertFromExisting(task, { status: "canceled" });
+    }
+    return changes;
+  }
+
+  const reusable = [...futureOpen].sort((a, b) =>
+    a.dueYmd.localeCompare(b.dueYmd),
+  )[0];
+  if (reusable) {
+    upsertFromExisting(reusable.task, {
+      due_date: ymdStartOfDayIso(nextDueYmd, timeZone),
+    });
+    for (const { task } of futureOpen) {
+      if (task.id === reusable.task.id) continue;
+      upsertFromExisting(task, { status: "canceled" });
+    }
+    return changes;
+  }
+
+  const project = await resolveProjectForHabit(
+    workspaceId,
+    habit.projectId,
+    executor,
+  );
+  const taskId = newId();
+  changes.push({
+    entityId: taskId,
+    operation: "upsert",
+    payload: {
+      id: taskId,
+      title: habit.title,
+      project_id: project.id,
+      habit_id: habit.id,
+      status: "ready_to_start",
+      priority: HABIT_TASK_PRIORITY,
+      assignee_id: assigneeId,
+      due_date: ymdStartOfDayIso(nextDueYmd, timeZone),
+      inbox: false,
+      sort_order: Date.now(),
+    },
+  });
+  return changes;
 }

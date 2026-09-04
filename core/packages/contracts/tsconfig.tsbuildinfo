@@ -1,1 +1,1 @@
-{"root":["./src/contract.ts","./src/index.ts","./src/schemas.ts"],"version":"5.9.3"}
+{"root":["./src/agent-attention-notifications.ts","./src/contact-emails.ts","./src/contact-languages.ts","./src/contact-phones.ts","./src/contract.ts","./src/inbox-meetings.ts","./src/inbox-triage-notifications.ts","./src/inbox-updated.ts","./src/index.ts","./src/schemas.ts","./src/tracked-time.ts","./src/client-logic/task-due-date.ts","./src/client-logic/task-involves-contact.ts"],"version":"5.9.3"}

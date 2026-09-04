@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   CONTACT_EMAIL_LABELS,
   contactEmailRowsForEditor,
@@ -9,102 +9,110 @@ import {
   type ContactEmailLabel,
 } from "@backsteros/contracts";
 
+import { XIcon } from "@primer/octicons-react";
+
 import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
 
 export type { ContactEmailEntry, ContactEmailLabel };
 
-export type ContactEmailsEditorProps = {
-  email: string;
-  emails: ContactEmailEntry[];
-  disabled?: boolean;
-  onChange: (next: { email: string; emails: ContactEmailEntry[] }) => void;
-  onSave: (next: { email: string | null; emails: ContactEmailEntry[] }) => void;
+export type ContactEmailEditorRow = {
+  label: string;
+  address: string;
 };
 
-const LABEL_OPTIONS = CONTACT_EMAIL_LABELS.map((value) => ({
+export type ContactEmailsEditorProps = {
+  email: string;
+  emails: ContactEmailEditorRow[];
+  disabled?: boolean;
+  /** Override Personal/Work/Other (e.g. org General/Support/Other). */
+  labelOptions?: ReadonlyArray<{ value: string; label: string }>;
+  defaultLabel?: string;
+  rowsForEditor?: (input: {
+    email: string;
+    emails: ContactEmailEditorRow[];
+  }) => ContactEmailEditorRow[];
+  splitRows?: (rows: ContactEmailEditorRow[]) => {
+    email: string | null;
+    emails: ContactEmailEditorRow[];
+  };
+  onChange: (next: {
+    email: string;
+    emails: ContactEmailEditorRow[];
+  }) => void;
+  onSave: (next: {
+    email: string | null;
+    emails: ContactEmailEditorRow[];
+  }) => void;
+};
+
+const DEFAULT_LABEL_OPTIONS = CONTACT_EMAIL_LABELS.map((value) => ({
   value,
-  label: value === "personal" ? "Personal" : value === "work" ? "Work" : "Other",
+  label:
+    value === "personal" ? "Personal" : value === "work" ? "Work" : "Other",
 }));
 
-function RemoveEmailIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      viewBox="0 0 24 24"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M8.5 12h7" />
-    </svg>
-  );
-}
-
-function rowsKey(rows: ContactEmailEntry[]): string {
+function rowsKey(rows: ContactEmailEditorRow[]): string {
   return JSON.stringify(rows);
 }
 
-function parentToRows(email: string, emails: ContactEmailEntry[]): ContactEmailEntry[] {
-  return contactEmailRowsForEditor({ email, emails });
-}
-
-function rowsToParent(rows: ContactEmailEntry[]): {
-  email: string;
-  emails: ContactEmailEntry[];
-} {
-  const split = splitContactEmailRows(rows);
-  return {
-    email: split.email ?? "",
-    // Persist labeled primary inside emails; drop blank drafts.
-    emails: split.emails,
-  };
-}
-
 /**
- * Primary + additional contact emails in one list. Index 0 is primary.
- * Uses SearchableDropdown for labels (not native &lt;select&gt;).
+ * Email addresses as split pills: category dropdown | address input.
  */
 export function ContactEmailsEditor({
   email,
   emails,
   disabled = false,
+  labelOptions = DEFAULT_LABEL_OPTIONS,
+  defaultLabel = "personal",
+  rowsForEditor = (input) =>
+    contactEmailRowsForEditor({
+      email: input.email,
+      emails: input.emails as ContactEmailEntry[],
+    }),
+  splitRows = (rows) => splitContactEmailRows(rows as ContactEmailEntry[]),
   onChange,
   onSave,
 }: ContactEmailsEditorProps) {
-  const remoteRows = parentToRows(email, emails);
+  const remoteRows = rowsForEditor({ email, emails });
   const remoteKey = rowsKey(remoteRows);
   const [rows, setRows] = useState(remoteRows);
   const [rowsSource, setRowsSource] = useState(remoteKey);
+  const addressInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
 
   if (remoteKey !== rowsSource) {
     setRowsSource(remoteKey);
-    // Adopt remote when local still matches the last confirmed remote.
     if (rowsKey(rows) === rowsSource) {
       setRows(remoteRows);
     }
   }
 
-  function setLocalRows(next: ContactEmailEntry[]) {
-    setRows(next);
-    const parent = rowsToParent(next);
-    onChange(parent);
+  function labelDisplay(label: string): string {
+    return (
+      labelOptions.find((option) => option.value === label)?.label ?? "Other"
+    );
   }
 
-  function commitRows(next: ContactEmailEntry[]) {
+  function setLocalRows(next: ContactEmailEditorRow[]) {
     setRows(next);
-    const parent = rowsToParent(next);
-    onChange(parent);
-    onSave({ email: parent.email || null, emails: parent.emails });
-    // rowsSource advances on remote echo; keep editing stable until then.
+    const split = splitRows(next);
+    onChange({
+      email: split.email ?? "",
+      emails: split.emails,
+    });
   }
 
-  function updateRow(index: number, patch: Partial<ContactEmailEntry>) {
+  function commitRows(next: ContactEmailEditorRow[]) {
+    setRows(next);
+    const split = splitRows(next);
+    onChange({
+      email: split.email ?? "",
+      emails: split.emails,
+    });
+    onSave({ email: split.email, emails: split.emails });
+  }
+
+  function updateRow(index: number, patch: Partial<ContactEmailEditorRow>) {
     setLocalRows(
       rows.map((entry, entryIndex) =>
         entryIndex === index ? { ...entry, ...patch } : entry,
@@ -112,132 +120,160 @@ export function ContactEmailsEditor({
     );
   }
 
+  function commitLabel(index: number, label: string) {
+    const next = rows.map((row, rowIndex) =>
+      rowIndex === index ? { ...row, label } : row,
+    );
+    setLocalRows(next);
+    if (next[index]?.address.trim()) {
+      commitRows(next);
+    }
+  }
+
+  function commitAddress(index: number, address: string) {
+    commitRows(
+      rows.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, address } : row,
+      ),
+    );
+  }
+
   function removeRow(index: number) {
     if (rows.length <= 1) {
-      commitRows([{ label: rows[0]?.label ?? "personal", address: "" }]);
+      commitRows([{ label: rows[0]?.label ?? defaultLabel, address: "" }]);
       return;
     }
     commitRows(rows.filter((_, entryIndex) => entryIndex !== index));
   }
 
   function addRow() {
-    setLocalRows([...rows, { label: "personal", address: "" }]);
+    if (disabled || rows.length >= 20) return;
+    const next = [...rows, { label: defaultLabel, address: "" }];
+    setLocalRows(next);
+    requestAnimationFrame(() => {
+      addressInputRefs.current.get(next.length - 1)?.focus();
+    });
   }
 
+  const chips = rows
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => {
+      if (entry.address.trim()) return true;
+      if (rows.length === 1) return true;
+      return index === rows.length - 1;
+    });
+
   return (
-    <div className="contact-emails">
-      {rows.map((entry, index) => {
-        const isPrimary = index === 0;
-        return (
-          <div key={`email-${index}`} className="contact-emails__row">
-            <SearchableDropdown
-              value={entry.label}
-              options={LABEL_OPTIONS}
-              disabled={disabled}
-              searchPlaceholder="Label…"
-              ariaLabel={
-                isPrimary ? "Primary email label" : `Email label ${index + 1}`
-              }
-              panelAlign="start"
-              panelWidth={160}
-              showIcon={false}
-              className="entity-overview-dropdown contact-emails__label"
-              onChange={(label) => {
-                const next = rows.map((row, rowIndex) =>
-                  rowIndex === index ? { ...row, label } : row,
-                );
-                setLocalRows(next);
-                if (entry.address.trim()) {
-                  onSave({
-                    email: rowsToParent(next).email || null,
-                    emails: rowsToParent(next).emails,
-                  });
-                }
-              }}
-              renderTrigger={({ selected, open, triggerId, onToggle }) => {
-                const label =
-                  selected?.label ??
-                  LABEL_OPTIONS.find((option) => option.value === entry.label)
-                    ?.label ??
-                  "Other";
-                return (
+    <div className="contact-detail-chips">
+      <div className="contact-detail-chips__row">
+        {chips.map(({ entry, index }) => {
+          const label = labelDisplay(entry.label);
+          const canRemove = Boolean(entry.address.trim()) || rows.length > 1;
+          return (
+            <div
+              key={`email-split-${index}`}
+              className={[
+                "contact-detail-split-chip",
+                !entry.address.trim() ? "is-muted" : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <SearchableDropdown
+                value={entry.label}
+                options={[...labelOptions]}
+                disabled={disabled}
+                searchPlaceholder="Label…"
+                searchShortcutLabel=""
+                ariaLabel="Email label"
+                panelAlign="start"
+                panelWidth={160}
+                showIcon={false}
+                className="contact-detail-split-chip__dropdown"
+                onChange={(nextLabel) => commitLabel(index, nextLabel)}
+                renderTrigger={({ selected, open, triggerId, onToggle }) => (
                   <button
                     type="button"
                     id={triggerId}
                     disabled={disabled}
                     aria-haspopup="listbox"
                     aria-expanded={open}
-                    aria-label={`Email label: ${label}`}
-                    title={label}
+                    aria-label={`Email label: ${selected?.label ?? label}`}
+                    title={selected?.label ?? label}
                     onClick={onToggle}
                     className={[
-                      "entity-overview-input",
-                      "entity-overview-dropdown-trigger",
-                      "contact-emails__label-trigger",
-                    ].join(" ")}
+                      "contact-detail-split-chip__label",
+                      "contact-detail-split-chip__label--muted",
+                      open ? "is-open" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
-                    <span className="entity-overview-dropdown-trigger__label">
-                      {label}
-                    </span>
-                    <span
-                      className="entity-overview-dropdown-trigger__chevron"
-                      aria-hidden="true"
-                    >
-                      ▾
-                    </span>
+                    {selected?.label ?? label}
                   </button>
-                );
-              }}
-            />
-            <input
-              id={isPrimary ? "contact-email" : undefined}
-              type="email"
-              aria-label={isPrimary ? "Email" : `Additional email ${index}`}
-              value={entry.address}
-              disabled={disabled}
-              placeholder="name@example.com"
-              onChange={(event) =>
-                updateRow(index, { address: event.target.value })
-              }
-              onBlur={(event) => {
-                const next = rows.map((row, rowIndex) =>
-                  rowIndex === index
-                    ? { ...row, address: event.target.value }
-                    : row,
-                );
-                commitRows(next);
-              }}
-              className="entity-overview-input"
-            />
-            <button
-              type="button"
-              className="contact-emails__remove"
-              disabled={
-                disabled ||
-                (isPrimary && rows.length === 1 && !entry.address.trim())
-              }
-              aria-label={
-                isPrimary && rows.length === 1
-                  ? "Clear email"
-                  : `Remove email ${index + 1}`
-              }
-              title="Remove"
-              onClick={() => removeRow(index)}
-            >
-              <RemoveEmailIcon />
-            </button>
-          </div>
-        );
-      })}
-
-      <button
-        type="button"
-        className="contact-emails__add"
-        disabled={disabled || rows.length >= 20}
-        onClick={addRow}
-      >
-        Add email address
-      </button>
+                )}
+              />
+              <input
+                ref={(node) => {
+                  if (node) addressInputRefs.current.set(index, node);
+                  else addressInputRefs.current.delete(index);
+                }}
+                type="email"
+                aria-label="Email address"
+                value={entry.address}
+                disabled={disabled}
+                placeholder="name@example.com"
+                size={Math.max(
+                  entry.address.length,
+                  "name@example.com".length,
+                  4,
+                )}
+                onChange={(event) =>
+                  updateRow(index, { address: event.target.value })
+                }
+                onBlur={(event) => commitAddress(index, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    (event.target as HTMLInputElement).blur();
+                  }
+                  if (
+                    event.key === "Backspace" &&
+                    !(event.target as HTMLInputElement).value &&
+                    rows.length > 1
+                  ) {
+                    event.preventDefault();
+                    removeRow(index);
+                  }
+                }}
+                className="contact-detail-split-chip__value"
+              />
+              {canRemove ? (
+                <button
+                  type="button"
+                  className="contact-detail-split-chip__remove"
+                  disabled={disabled}
+                  aria-label="Remove email"
+                  title="Remove"
+                  onClick={() => removeRow(index)}
+                >
+                  <XIcon size={10} />
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          className="contact-detail-chips__add"
+          disabled={disabled || rows.length >= 20}
+          aria-label="Add email address"
+          title="Add email"
+          onClick={addRow}
+        >
+          <SidePanelPlusIcon />
+        </button>
+      </div>
     </div>
   );
 }

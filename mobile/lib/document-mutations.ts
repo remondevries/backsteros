@@ -5,7 +5,10 @@ import {
   patchEntityViaPowerSyncOrApi,
   type MobileEntityPowerSync,
 } from "./entity-mutations";
-import { shouldSkipRestEntityWrite } from "./powersync-write-path";
+import {
+  shouldSkipRestEntityWrite,
+  shouldWriteEntityViaPowerSync,
+} from "./powersync-write-path";
 
 export type DocumentMetadataPatch = {
   title?: string;
@@ -48,7 +51,7 @@ export async function moveDocumentViaPowerSyncOrApi(
   id: string,
   parentId: string | null,
 ): Promise<void> {
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await powerSync.patchDocument(id, { parent_id: parentId });
     if (shouldSkipRestEntityWrite(powerSync)) {
       return;
@@ -75,7 +78,7 @@ export async function reorderDocumentsViaPowerSyncOrApi(
     throw new Error("At least one document is required.");
   }
 
-  if (powerSync.ready) {
+  if (shouldWriteEntityViaPowerSync(powerSync)) {
     await Promise.all(
       orderedIds.map((id, index) =>
         powerSync.patchDocument(id, { sort_order: index }),

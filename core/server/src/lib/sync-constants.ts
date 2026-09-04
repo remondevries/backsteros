@@ -14,9 +14,20 @@ export const SYNC_ENTITIES = [
   "financial_goal",
   "financial_recurring",
   "cashflow_planner_entry",
+  "financial_transaction",
   "habit",
   "meeting",
   "task_comment",
+  "contact_relationship",
+  "crm_relationship_label",
+  "crm_group",
+  "crm_group_member",
+  "crm_activity",
+  "task_activity",
+  "email_thread",
+  "email_thread_comment",
+  "recurring_task",
+  "mention",
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
@@ -40,8 +51,20 @@ export const POWERSYNC_TABLES = [
   "habits",
   "meetings",
   "task_comments",
+  "contact_relationships",
+  "crm_relationship_labels",
+  "crm_groups",
+  "crm_group_members",
+  "crm_activities",
 ] as const;
 export type PowerSyncTable = (typeof POWERSYNC_TABLES)[number];
+
+/** Published to clients but not client-uploadable — see crm-sync.test.ts. */
+export const POWERSYNC_DOWNLOAD_ONLY_TABLES = [
+  "avatars",
+  "mentions",
+  "task_activities",
+] as const;
 
 export const POWERSYNC_OPS = ["PUT", "PATCH", "DELETE"] as const;
 export type PowerSyncOp = (typeof POWERSYNC_OPS)[number];

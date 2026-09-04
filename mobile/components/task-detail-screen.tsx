@@ -1,8 +1,13 @@
 import type { Task } from "@backsteros/contracts";
 import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
 import { useUser } from "@clerk/clerk-expo";
-import { useNavigation } from "@react-navigation/native";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { useNavigation } from "expo-router/react-navigation";
+import {
+  Stack,
+  useRouter,
+  useSegments,
+  type NativeStackHeaderBackProps,
+} from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -15,6 +20,9 @@ import {
   View,
 } from "react-native";
 
+import {
+  parseAttendeeContactIds,
+} from "../lib/meeting-detail-model";
 import { noteLocalTaskStatusPatch } from "../lib/agent-status-notifications";
 import {
   flattenInboxAttentionOrder,
@@ -49,7 +57,11 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../lib/task-status";
-import { CONTACTS_SQL, INBOX_NAV_SQL, PROJECTS_SQL } from "./tasks/detail/task-detail-sql";
+import {
+  decodeMobileRelatedValues,
+  encodeMobileRelatedValues,
+} from "../lib/task-related-entities";
+import { CONTACTS_SQL, INBOX_NAV_SQL, ORGANIZATIONS_SQL, PROJECTS_SQL } from "./tasks/detail/task-detail-sql";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
@@ -63,16 +75,22 @@ import {
   TaskAgentSurfacesHost,
   type SurfaceTabsController,
 } from "./agent/surfaces/task-agent-surfaces-host";
+import { AttendeesPropertySheet } from "./attendees-property-sheet";
 import { CodebaseTaskLayout } from "./codebase/codebase-task-layout";
 import { ContactAvatarIcon } from "./contact-avatar-icon";
 import { ContactPersonIcon } from "./contact-person-icon";
+import { OrganizationIcon } from "./organization-icon";
 import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
 import { DetailPropertiesInlineShell } from "./detail-properties-inline-shell";
 import { DetailPropertyEditorRows } from "./detail-property-editor-rows";
 import { DueDatePropertySheet } from "./due-date-property-sheet";
 import { KeyboardAwareScrollView } from "./keyboard-aware-scroll-view";
+import { JournalMarkdownBody } from "./journal-markdown-body";
 import { ProjectIcon } from "./project-icon";
 import { ProjectsSidePanelIcon } from "./projects-side-panel-icon";
+import { SegmentedPillToggle } from "./segmented-pill-toggle";
+import { TextInput } from "./app-text-input";
+import { toggleMarkdownTaskListItem } from "../lib/markdown-task-list";
 import {
   PropertyOptionSheet,
   type PropertyOption,
@@ -81,7 +99,6 @@ import { TaskActivityPanel } from "./task-activity-panel";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
 import { TaskStatusIcon } from "./task-status-icon";
-import { TextInput } from "./app-text-input";
 import { TrackedTimeField } from "./tracked-time-field";
 
 type Props = {
@@ -94,8 +111,16 @@ type PickerKind =
   | "due"
   | "dueEnd"
   | "assignee"
+  | "related"
   | "project"
   | null;
+
+type DescriptionViewMode = "edit" | "preview";
+
+const DESCRIPTION_VIEW_OPTIONS = [
+  { value: "edit" as const, label: "Edit" },
+  { value: "preview" as const, label: "Preview" },
+] as const;
 
 type NamedOptionRow = { id: string; name: string | null };
 
@@ -150,12 +175,16 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const { data: syncedProjects } = useLocalQuery<NamedOptionRow>(PROJECTS_SQL);
   const { data: syncedContacts } = useLocalQuery<ContactOptionRow>(CONTACTS_SQL);
+  const { data: syncedOrganizations } =
+    useLocalQuery<NamedOptionRow>(ORGANIZATIONS_SQL);
   const { data: inboxNavRows } = useLocalQuery<InboxNavRow>(
     inInboxRoute ? INBOX_NAV_SQL : "SELECT id FROM tasks WHERE 0",
   );
 
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [descriptionViewMode, setDescriptionViewMode] =
+    useState<DescriptionViewMode>("edit");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [localTitle, setLocalTitle] = useState<string | null>(null);
@@ -167,6 +196,7 @@ export function TaskDetailScreen({ taskId }: Props) {
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [dueEndDate, setDueEndDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [relatedValues, setRelatedValues] = useState<string[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerKind>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
@@ -236,12 +266,13 @@ export function TaskDetailScreen({ taskId }: Props) {
   useEffect(() => {
     if (!task) return;
     const fromSync = task.agent_chat_id?.trim() || null;
-    if (fromSync) {
-      setLocalAgentChatId(fromSync);
-    }
+    if (!fromSync) return;
+    setLocalAgentChatId((prev) => (prev === fromSync ? prev : fromSync));
   }, [task?.id, task?.agent_chat_id]);
 
   // Desktop fillMissingAgentChatIdFromApi — local sync can lag or omit the field.
+  const powerSyncReady = powerSync.ready;
+  const patchTask = powerSync.patchTask;
   useEffect(() => {
     if (!taskId) return;
     let cancelled = false;
@@ -251,10 +282,10 @@ export function TaskDetailScreen({ taskId }: Props) {
         if (cancelled) return;
         const remoteId = remote.agentChatId?.trim() || null;
         if (!remoteId) return;
-        setLocalAgentChatId(remoteId);
+        setLocalAgentChatId((prev) => (prev === remoteId ? prev : remoteId));
         applyTaskRowOverride(taskId, { agent_chat_id: remoteId });
-        if (powerSync.ready) {
-          void powerSync.patchTask(taskId, { agent_chat_id: remoteId });
+        if (powerSyncReady) {
+          void patchTask(taskId, { agent_chat_id: remoteId });
         }
       })
       .catch(() => {
@@ -263,20 +294,53 @@ export function TaskDetailScreen({ taskId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, powerSync, taskId]);
+  }, [client, patchTask, powerSyncReady, taskId]);
 
+  // Seed editable fields from sync — only write when values change (avoids
+  // max-update-depth when parent re-renders with a fresh `task` object).
   useEffect(() => {
     if (!task) return;
-    setStatus(asTaskStatus(task.status));
-    setPriority(task.priority);
-    setDueDate(task.due_date);
-    setDueEndDate(task.due_end_date ?? null);
-    setAssigneeId(task.assignee_id);
-    setProjectId(task.project_id);
-  }, [task]);
+    const nextStatus = asTaskStatus(task.status);
+    const nextPriority = task.priority;
+    const nextDueDate = task.due_date;
+    const nextDueEndDate = task.due_end_date ?? null;
+    const nextAssigneeId = task.assignee_id;
+    const nextRelated = encodeMobileRelatedValues(
+      parseAttendeeContactIds(task.related_contact_ids),
+      parseAttendeeContactIds(task.related_organization_ids),
+    );
+    const nextProjectId = task.project_id;
+
+    setStatus((prev) => (prev === nextStatus ? prev : nextStatus));
+    setPriority((prev) => (prev === nextPriority ? prev : nextPriority));
+    setDueDate((prev) => (prev === nextDueDate ? prev : nextDueDate));
+    setDueEndDate((prev) => (prev === nextDueEndDate ? prev : nextDueEndDate));
+    setAssigneeId((prev) => (prev === nextAssigneeId ? prev : nextAssigneeId));
+    setRelatedValues((prev) => {
+      if (
+        prev.length === nextRelated.length &&
+        prev.every((id, index) => id === nextRelated[index])
+      ) {
+        return prev;
+      }
+      return nextRelated;
+    });
+    setProjectId((prev) => (prev === nextProjectId ? prev : nextProjectId));
+  }, [
+    task?.assignee_id,
+    task?.due_date,
+    task?.due_end_date,
+    task?.id,
+    task?.priority,
+    task?.project_id,
+    task?.related_contact_ids,
+    task?.related_organization_ids,
+    task?.status,
+  ]);
 
   const projects = syncedProjects ?? [];
   const contacts = syncedContacts ?? [];
+  const organizations = syncedOrganizations ?? [];
 
   const contactAvatarEntities = useMemo(
     () =>
@@ -300,23 +364,23 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const taskReady = Boolean(task);
 
-  /** Title/description stay inline-editable — no Edit button. Seed once per open. */
+  /** Title/description stay inline-editable — seed once per open. */
   useEffect(() => {
     if (!task) return;
     setDraftTitle(task.title);
     setDraftDescription(task.description ?? "");
+    setDescriptionViewMode("edit");
     setSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed keys only
   }, [taskId, taskReady]);
 
-  async function saveEditing() {
+  async function saveEditing(nextDescription = draftDescription) {
     if (!task || saving) return;
     const trimmedTitle = draftTitle.trim();
     if (!trimmedTitle) {
       setSaveError("Title is required.");
       return;
     }
-    const nextDescription = draftDescription;
     const titleUnchanged = trimmedTitle === displayTitle;
     const descriptionUnchanged = nextDescription === displayDescription;
     if (titleUnchanged && descriptionUnchanged) {
@@ -353,6 +417,21 @@ export function TaskDetailScreen({ taskId }: Props) {
     }
   }
 
+  function handleDescriptionViewModeChange(next: DescriptionViewMode) {
+    if (next === descriptionViewMode) return;
+    if (descriptionViewMode === "edit" && next === "preview") {
+      void saveEditing();
+    }
+    setDescriptionViewMode(next);
+  }
+
+  function handleToggleTaskCheckbox(index: number) {
+    const next = toggleMarkdownTaskListItem(draftDescription, index);
+    if (next == null) return;
+    setDraftDescription(next);
+    void saveEditing(next);
+  }
+
   async function patchProperty(
     values: Record<string, unknown>,
     rowExtras?: Record<string, unknown>,
@@ -367,7 +446,15 @@ export function TaskDetailScreen({ taskId }: Props) {
       if (key === "dueDate") sqliteValues.due_date = value;
       else if (key === "dueEndDate") sqliteValues.due_end_date = value;
       else if (key === "assigneeId") sqliteValues.assignee_id = value;
-      else if (key === "projectId") sqliteValues.project_id = value;
+      else if (key === "relatedContactIds") {
+        sqliteValues.related_contact_ids = Array.isArray(value)
+          ? JSON.stringify(value)
+          : value;
+      } else if (key === "relatedOrganizationIds") {
+        sqliteValues.related_organization_ids = Array.isArray(value)
+          ? JSON.stringify(value)
+          : value;
+      } else if (key === "projectId") sqliteValues.project_id = value;
       else if (key === "agentInboxApproved") {
         if (value === true) {
           sqliteValues.agent_inbox_approved_at = new Date().toISOString();
@@ -534,6 +621,39 @@ export function TaskDetailScreen({ taskId }: Props) {
       value: assigneeLabel || "No assignee",
       icon: <ContactAvatarIcon src={assigneeAvatarSrc} size={14} />,
     },
+    {
+      key: "related",
+      label: "Related",
+      value:
+        relatedValues.length === 0
+          ? "No related"
+          : relatedValues.length === 1
+            ? (() => {
+                const decoded = decodeMobileRelatedValues(relatedValues);
+                if (decoded.contactIds[0]) {
+                  return (
+                    contacts.find((entry) => entry.id === decoded.contactIds[0])
+                      ?.name?.trim() || "1 related"
+                  );
+                }
+                if (decoded.organizationIds[0]) {
+                  return (
+                    organizations.find(
+                      (entry) => entry.id === decoded.organizationIds[0],
+                    )?.name?.trim() || "1 related"
+                  );
+                }
+                return "1 related";
+              })()
+            : `${relatedValues.length} related`,
+      icon:
+        relatedValues.length === 1 &&
+        relatedValues[0]?.startsWith("organization:") ? (
+          <OrganizationIcon size={14} />
+        ) : (
+          <ContactPersonIcon size={14} />
+        ),
+    },
   ];
 
   const projectRows = [
@@ -627,14 +747,15 @@ export function TaskDetailScreen({ taskId }: Props) {
     navigateBack();
   }, [inInboxRoute, inboxNavRows, navigateBack, router, task]);
 
+  const taskTitle = task?.title ?? null;
   const onDeleteTask = useCallback(() => {
-    if (!taskId || !task) return;
+    if (!taskId) return;
     confirmAndDelete(
       "tasks",
       taskId,
       draftTitle.trim() ||
         localTitle?.trim() ||
-        task.title?.trim() ||
+        taskTitle?.trim() ||
         "Untitled",
       { onDeleted: afterTaskDelete },
     );
@@ -643,8 +764,8 @@ export function TaskDetailScreen({ taskId }: Props) {
     confirmAndDelete,
     draftTitle,
     localTitle,
-    task,
     taskId,
+    taskTitle,
   ]);
 
   const detailScreenOptions = useMemo(() => {
@@ -679,16 +800,15 @@ export function TaskDetailScreen({ taskId }: Props) {
       // Custom left replaces native back so a sticky headerLeft: null from the
       // surfaces header cannot leave this screen without a way back.
       headerBackVisible: false,
-      headerLeft: (props: {
-        canGoBack?: boolean;
-        tintColor?: string;
-      }): ReactNode => {
+      headerLeft: (props: NativeStackHeaderBackProps): ReactNode => {
         if (!props.canGoBack && !navigation.canGoBack()) {
           return null;
         }
         return (
           <TabStackHeaderBackButton
-            tintColor={props.tintColor}
+            tintColor={
+              typeof props.tintColor === "string" ? props.tintColor : undefined
+            }
             onPress={() => {
               if (navigation.canGoBack()) {
                 navigation.goBack();
@@ -899,6 +1019,33 @@ export function TaskDetailScreen({ taskId }: Props) {
         }}
         onClose={() => setPicker(null)}
       />
+      <AttendeesPropertySheet
+        visible={picker === "related"}
+        title="Related"
+        searchPlaceholder="Search contacts and organizations…"
+        options={[
+          ...contacts.map((contact) => ({
+            id: encodeMobileRelatedValues([contact.id], [])[0]!,
+            label: contact.name?.trim() || "Untitled",
+            icon: <ContactPersonIcon size={16} />,
+          })),
+          ...organizations.map((organization) => ({
+            id: encodeMobileRelatedValues([], [organization.id])[0]!,
+            label: organization.name?.trim() || "Untitled",
+            icon: <OrganizationIcon size={16} />,
+          })),
+        ]}
+        selectedIds={relatedValues}
+        onChange={(ids) => {
+          setRelatedValues(ids);
+          const related = decodeMobileRelatedValues(ids);
+          void patchProperty({
+            relatedContactIds: related.contactIds,
+            relatedOrganizationIds: related.organizationIds,
+          });
+        }}
+        onClose={() => setPicker(null)}
+      />
       <PropertyOptionSheet
         embedded={embedPropertySheets}
         visible={picker === "project"}
@@ -1011,25 +1158,57 @@ export function TaskDetailScreen({ taskId }: Props) {
           paddingVertical: 4,
         }}
       />
-      <TextInput
-        value={draftDescription}
-        onChangeText={setDraftDescription}
-        placeholder="Add a description…"
-        placeholderTextColor={colors.muted}
-        multiline
-        scrollEnabled={false}
-        textAlignVertical="top"
-        onBlur={() => {
-          void saveEditing();
-        }}
+      <View
         style={{
-          color: colors.foreground,
-          fontSize: 15,
-          lineHeight: 22,
-          minHeight: 160,
+          flexDirection: "row",
+          alignItems: "center",
           paddingVertical: 4,
         }}
-      />
+      >
+        <SegmentedPillToggle
+          value={descriptionViewMode}
+          options={DESCRIPTION_VIEW_OPTIONS}
+          onChange={handleDescriptionViewModeChange}
+          accessibilityLabel="Description view mode"
+        />
+      </View>
+      {descriptionViewMode === "edit" ? (
+        <TextInput
+          value={draftDescription}
+          onChangeText={setDraftDescription}
+          placeholder="Add a description…"
+          placeholderTextColor={colors.muted}
+          multiline
+          scrollEnabled={false}
+          textAlignVertical="top"
+          onBlur={() => {
+            void saveEditing();
+          }}
+          style={{
+            color: colors.foreground,
+            fontSize: 15,
+            lineHeight: 22,
+            minHeight: 160,
+            paddingVertical: 4,
+          }}
+        />
+      ) : draftDescription.trim() ? (
+        <JournalMarkdownBody
+          body={draftDescription}
+          onToggleTaskCheckbox={handleToggleTaskCheckbox}
+        />
+      ) : (
+        <Text
+          style={{
+            color: colors.muted,
+            fontSize: 15,
+            lineHeight: 22,
+            paddingVertical: 4,
+          }}
+        >
+          No description yet.
+        </Text>
+      )}
       {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
     </View>
   );

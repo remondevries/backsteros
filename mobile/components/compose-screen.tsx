@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -567,6 +568,54 @@ export function ComposeScreen() {
             {error}
           </Text>
         ) : null}
+
+        <View style={{ paddingHorizontal: 16, paddingTop: 28, gap: 10 }}>
+          <Text
+            style={{
+              color: colors.muted,
+              fontSize: 12,
+              fontWeight: "600",
+              textTransform: "uppercase",
+              letterSpacing: 0.4,
+            }}
+          >
+            Also create
+          </Text>
+          {(
+            [
+              { label: "Meeting", href: "/create/meeting" as const },
+              { label: "Contact", href: "/create/contact" as const },
+              { label: "Letter", href: "/create/letter" as const },
+              { label: "Email", href: "/(app)/email/compose" as const },
+            ] as const
+          ).map((entry) => (
+            <Pressable
+              key={entry.href}
+              accessibilityRole="button"
+              accessibilityLabel={`Create ${entry.label.toLowerCase()}`}
+              onPress={() => router.push(entry.href)}
+              style={({ pressed }) => ({
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                borderRadius: 12,
+                backgroundColor: colors.surface,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  color: colors.foreground,
+                  fontSize: 15,
+                  fontWeight: "600",
+                }}
+              >
+                {entry.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </KeyboardAwareScrollView>
     </>
   );

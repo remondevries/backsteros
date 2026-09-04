@@ -10,6 +10,7 @@ import {
   EntityDetailLayout,
   getOrganizationSectionHref,
   getScopedContactBasePath,
+  getScopedContactMeetingsListHref,
   getScopedContactSectionHref,
   getScopedProjectBasePath,
   getScopedProjectSectionHref,
@@ -53,6 +54,7 @@ import {
   organizationsPage,
   projectsPage,
   settingsPage,
+  socialPage,
   taskDetailPage,
   taskListPage,
 } from "./shell-route-modules";
@@ -74,6 +76,7 @@ const FinancePage = financePage.Page;
 const OrganizationsPage = organizationsPage.Page;
 const ProjectsPage = projectsPage.Page;
 const SettingsPage = settingsPage.Page;
+const SocialPage = socialPage.Page;
 const CalendarPage = calendarPage.Page;
 const MeetingDetailPage = meetingDetailPage.Page;
 const TaskDetailPage = taskDetailPage.Page;
@@ -93,10 +96,22 @@ const KEEP_ALIVE_PAGE: Partial<Record<PendingPageSurface, () => ReactNode>> = {
   contacts: () => <ContactsPage />,
   organizations: () => <OrganizationsPage />,
   letters: () => <LettersPage />,
+  social: () => <SocialPage />,
 };
 
 /** Survive ShellRouteContent remounts — same element identity for StableKeepAliveTree. */
 const keepAlivePageElements = new Map<PendingPageSurface, ReactNode>();
+
+// Full page rewrites (e.g. organizations shell port) must drop cached elements
+// or keep-alive keeps rendering the pre-HMR component tree until hard refresh.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    keepAlivePageElements.clear();
+  });
+  import.meta.hot.dispose(() => {
+    keepAlivePageElements.clear();
+  });
+}
 
 function ShellRouteSuspenseFallback() {
   return (
@@ -369,6 +384,8 @@ export function ContactScopedTaskDetailPage() {
         },
         { label: "Tasks", href: backHref },
       ]}
+      initialAgentCollapsed
+      agentFillsHostColumn
     />
   );
 }
@@ -392,6 +409,28 @@ export function ContactScopedLetterPage() {
           href: getScopedContactBasePath(contactRouteParam),
         },
         { label: "Letters", href: backHref },
+      ]}
+    />
+  );
+}
+
+export function ContactScopedMeetingDetailPage() {
+  const { slug } = useParams({ strict: false }) as {
+    slug?: string;
+  };
+  const { contact, contactRouteParam } = useScopedContact(slug);
+  const backHref = getScopedContactMeetingsListHref(contactRouteParam);
+
+  return (
+    <MeetingDetailPage
+      backHref={backHref}
+      breadcrumbItems={[
+        { label: "Contacts", href: "/contacts" },
+        {
+          label: contact?.name ?? contactRouteParam,
+          href: getScopedContactBasePath(contactRouteParam),
+        },
+        { label: "Meetings", href: backHref },
       ]}
     />
   );
@@ -473,6 +512,43 @@ export function OrgContactScopedLetterPage() {
   );
 }
 
+export function OrgContactScopedMeetingDetailPage() {
+  const { slug, contactSlug } = useParams({ strict: false }) as {
+    slug?: string;
+    contactSlug?: string;
+    meetingId?: string;
+  };
+  const { organization, organizationRouteParam } = useScopedOrganization(slug);
+  const { contact, contactRouteParam } = useScopedContact(contactSlug);
+  const scope = {
+    kind: "organization" as const,
+    organizationRouteParam,
+  };
+  const backHref = getScopedContactMeetingsListHref(contactRouteParam, scope);
+
+  return (
+    <MeetingDetailPage
+      backHref={backHref}
+      breadcrumbItems={[
+        { label: "Organizations", href: "/organizations" },
+        {
+          label: organization?.name ?? organizationRouteParam,
+          href: getOrganizationSectionHref(organizationRouteParam, "overview"),
+        },
+        {
+          label: "Contacts",
+          href: getOrganizationSectionHref(organizationRouteParam, "contacts"),
+        },
+        {
+          label: contact?.name ?? contactRouteParam,
+          href: getScopedContactBasePath(contactRouteParam, scope),
+        },
+        { label: "Meetings", href: backHref },
+      ]}
+    />
+  );
+}
+
 export {
   AreasPage,
   CalendarPage,
@@ -490,6 +566,7 @@ export {
   OrganizationsPage,
   ProjectsPage,
   SettingsPage,
+  SocialPage,
   TaskDetailPage,
   TaskListPage,
 };

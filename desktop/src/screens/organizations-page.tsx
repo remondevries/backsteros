@@ -4,55 +4,86 @@ import type {
   FinancialGoal,
   FinancialRecurring,
   FinancialTransaction,
+  MapboxGeocodeResult,
+  MapboxSettings,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
+  MoneybirdSettings,
   Organization as ApiOrganization,
 } from "@backsteros/contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  coerceOrganizationEmailEntries,
+  coerceOrganizationPhoneEntries,
+} from "@backsteros/contracts";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
   AvatarUpload,
   buildMoneybirdContactInvoicesFilter,
   buildMoneybirdInvoicesFilter,
+  CrmActivityFeedView,
   EntityDetailLayout,
   FinanceInvoicesView,
+  formatContactAddressLine,
+  normalizeContactSocialAccounts,
   OrganizationContactsListView,
+  OrganizationDetailOverlay,
   OrganizationDetailView,
   OrganizationTransactionsSection,
-  RegisterEntityDeleteAction,
-  RegisterPageTitle,
-  ScopedLettersListView,
+  OrganizationsOverviewView,
+  ORGANIZATION_CARD_SECTIONS,
+  ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS,
+  ORGANIZATION_DETAIL_CONTENT_FADE_MS,
+  ORGANIZATION_DETAIL_EXPAND_FADE_MS,
   ProjectsOverviewView,
-  CrmActivityFeedView,
-  CrmGroupsChips,
-  CrmGroupsManagePanel,
+  RegisterEntityDeleteAction,
+  RegisterPageIcon,
+  RegisterPageTitle,
+  resolveCountryOption,
+  ScopedLettersListView,
   buildOrganizationProjectsHref,
-  getLettersHref,
+  resolveScopedLetterDetailHref,
   getOrganizationContactHref,
+  getOrganizationOverlayHref,
   getOrganizationProjectHref,
   getOrganizationSectionHref,
-  getOrganizationsHref,
-  groupItemsByAlphaLetter,
+  getOrganizationsGroupHref,
   getUniqueListItemRouteParam,
+  isOrganizationCardSectionId,
   isOrganizationSectionId,
   localCalendarYear,
-  organizationMatchesSlug,
+  parseCrmGroupId,
   parseListBoardViewFromLocation,
+  parseOrganizationOverlayLayout,
   parseOrganizationSectionId,
+  parseSectionTabIndex,
   persistListBoardView,
   primeTabTitle,
   PROJECTS_LIST_BOARD_STORAGE_KEY,
-  resolveVisibleOrganizationSections,
+  resolveListItemFromSlug,
+  resolveOrganizationWorkspaceTabs,
+  shouldHandleGlobalShortcut,
+  type ContactListItem,
   type ListBoardView,
+  type OrganizationExpandedWorkspaceTabId,
+  type OrganizationListItem,
+  type OrganizationOverlayLayout,
   type OrganizationOverviewDetails,
   type OrganizationSectionId,
-  type ContactListItem,
   type ProjectStatus,
   type TaskStatus,
   projectReorderPatches,
 } from "@backsteros/ui";
 
+import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
@@ -61,9 +92,10 @@ import {
 } from "../lib/avatar-upload";
 import {
   useCrmActivityFeed,
+  useCrmGroupOrganizationIds,
+  useCrmGroupsCatalog,
   useCrmGroupsForSubject,
 } from "../lib/use-crm-data";
-import { firstOrganizationRouteParam } from "../lib/section-entry-hrefs";
 import {
   useKeepAliveActive,
   useKeepAliveFrozen,
@@ -76,6 +108,15 @@ import { type ProjectLocationState } from "../lib/project-type-cache";
 import { buildWorkingProjectIdSet } from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import { navigateToHref } from "../router/navigate-href";
+
+function asCoord(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 type MoneybirdInvoicesListResponse = {
   invoices: MoneybirdSalesInvoiceSummary[];
@@ -97,7 +138,8 @@ async function fetchAllOrganizationTransactions(
   client: {
     requestJson: <T>(path: string) => Promise<T>;
   },
-  organizationId: string): Promise<FinancialTransaction[]> {
+  organizationId: string,
+): Promise<FinancialTransaction[]> {
   const rows: FinancialTransaction[] = [];
   let cursor: string | null = null;
   do {
@@ -117,22 +159,17 @@ async function fetchAllOrganizationTransactions(
 }
 
 export function OrganizationsPage() {
-  return <OrganizationsPageBody />;
-}
-
-function OrganizationsPageBody() {
+  // Keep-alive + HMR: touch export so Fast Refresh remounts after shell port.
   const routerNavigate = useNavigate();
   const navigate = useCallback(
-    (
-      to: string,
-      options?: { replace?: boolean; state?: unknown },
-    ) => {
+    (to: string, options?: { replace?: boolean; state?: unknown }) => {
       navigateToHref(routerNavigate, to, options);
     },
-    [routerNavigate]);
-  const location = useShellLocation();
+    [routerNavigate],
+  );
   const keepAliveActive = useKeepAliveActive();
   const keepAliveFrozen = useKeepAliveFrozen();
+  const location = useShellLocation();
   const { slug: routedSlug, section: sectionParam } = useShellParams() as {
     slug?: string;
     section?: string;
@@ -141,48 +178,133 @@ function OrganizationsPageBody() {
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
   const { organizations, projects, letters, contacts } = workspace;
-  const slug = routedSlug ?? firstOrganizationRouteParam(organizations) ?? undefined;
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
-    keepAliveFrozen ? [] : organizations);
+    keepAliveFrozen ? [] : organizations,
+  );
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
-    keepAliveFrozen ? [] : contacts);
+    keepAliveFrozen ? [] : contacts,
+  );
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
 
-  const selected = slug
-    ? organizations.find((org) => organizationMatchesSlug(org, slug)) ?? null
+  const selected = routedSlug
+    ? resolveListItemFromSlug(organizations, routedSlug)
     : null;
 
-  const orgProjectsListView = useMemo(
-    () =>
-      parseListBoardViewFromLocation(
-        location.pathname,
-        location.searchStr,
-        PROJECTS_LIST_BOARD_STORAGE_KEY),
-    [location.pathname, location.searchStr]);
+  const overlayLayout: OrganizationOverlayLayout = parseOrganizationOverlayLayout(
+    location.searchStr ?? "",
+  );
+  const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
+  const groupsCatalog = useCrmGroupsCatalog(keepAliveActive);
+  const groupMembers = useCrmGroupOrganizationIds(
+    selectedGroupId,
+    keepAliveActive && Boolean(selectedGroupId),
+  );
+  const selectedGroupName = selectedGroupId
+    ? (groupsCatalog.groups.find((group) => group.id === selectedGroupId)
+        ?.name ?? null)
+    : null;
+
+  const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [detailCollapseAnimating, setDetailCollapseAnimating] =
+    useState(false);
+  const detailCollapseAnimTimerRef = useRef<number | null>(null);
+  const detailCollapseRafRef = useRef<number | null>(null);
+  const detailCloseNavTimerRef = useRef<number | null>(null);
+  const detailCollapsedRef = useRef(detailCollapsed);
+  detailCollapsedRef.current = detailCollapsed;
+  /** Organization id shown in the panel — lags `selected` during switch fade. */
+  const [panelOrganizationId, setPanelOrganizationId] = useState<
+    string | null
+  >(selected?.id ?? null);
+  const [contentFaded, setContentFaded] = useState(false);
+  const contentFadeTokenRef = useRef(0);
+  /** Organizations list opacity during expand/collapse to page workspace. */
+  const [listFaded, setListFaded] = useState(() => overlayLayout === "page");
+  /** Expanded workspace opacity during expand/collapse. */
+  const [workspaceFaded, setWorkspaceFaded] = useState(false);
+  const expandAnimTokenRef = useRef(0);
+  const expandAnimTimerRef = useRef<number | null>(null);
+  const pendingWorkspaceFadeInRef = useRef(false);
+  const pendingListFadeInRef = useRef(false);
+  /** Keep a just-created organization at the top of the list until navigation leaves it. */
+  const [pinnedOrganizationId, setPinnedOrganizationId] = useState<
+    string | null
+  >(null);
+  const pinnedWasSelectedRef = useRef(false);
+  const [workspaceTab, setWorkspaceTab] =
+    useState<OrganizationExpandedWorkspaceTabId>("projects");
+  /** Activity / Details on the profile card — local so it never closes the workspace. */
+  const [cardSection, setCardSection] = useState<"overview" | "details">(
+    "overview",
+  );
 
   useEffect(() => {
-    setAvatarOverride(undefined);
-  }, [selected?.id]);
+    if (!pinnedOrganizationId) {
+      pinnedWasSelectedRef.current = false;
+      return;
+    }
+    if (selected?.id === pinnedOrganizationId) {
+      pinnedWasSelectedRef.current = true;
+      return;
+    }
+    if (pinnedWasSelectedRef.current) {
+      setPinnedOrganizationId(null);
+    }
+  }, [pinnedOrganizationId, selected?.id]);
 
-  const details: ApiOrganization | null = selected
-    ? (workspace.organizationDetails[selected.id] ?? null)
+  const panelOrganization: OrganizationListItem | null = panelOrganizationId
+    ? (organizations.find((entry) => entry.id === panelOrganizationId) ??
+      (selected?.id === panelOrganizationId ? selected : null))
     : null;
 
-  const activeSection = parseOrganizationSectionId(sectionParam);
-  const activityFeed = useCrmActivityFeed(
-    "organization",
-    selected?.id ?? null,
-    keepAliveActive && activeSection === "activity",
+  const details: ApiOrganization | null = panelOrganizationId
+    ? (workspace.organizationDetails[panelOrganizationId] ?? null)
+    : null;
+
+  const moneybirdContactId =
+    details?.moneybirdContactId?.trim() ||
+    panelOrganization?.moneybirdContactId?.trim() ||
+    null;
+
+  const [mapboxConfigured, setMapboxConfigured] = useState<boolean | null>(
+    null,
   );
-  const crmGroups = useCrmGroupsForSubject(
-    "organization",
-    selected?.id ?? null,
-    keepAliveActive && Boolean(selected),
-  );
+  const [mapImageSrc, setMapImageSrc] = useState<string | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapHint, setMapHint] = useState<string | null>(null);
+  const [geocodeFailed, setGeocodeFailed] = useState(false);
+  const [moneybirdAdministrationId, setMoneybirdAdministrationId] = useState<
+    string | null
+  >(null);
+  const [moneybirdCompanyFields, setMoneybirdCompanyFields] = useState<{
+    chamberOfCommerce: string | null;
+    taxNumber: string | null;
+  } | null>(null);
+  const moneybirdSyncKeyRef = useRef<string | null>(null);
+  const geocodeAttemptKeyRef = useRef<string | null>(null);
+  const mapCoordsKeyRef = useRef<string | null>(null);
+  const mapImageSrcRef = useRef<string | null>(null);
+  const patchOrganization = workspace.patchOrganization;
+
+  const organizationLatitude = asCoord(details?.latitude);
+  const organizationLongitude = asCoord(details?.longitude);
+  const moneybirdHref =
+    moneybirdContactId && moneybirdAdministrationId
+      ? `https://moneybird.com/${encodeURIComponent(moneybirdAdministrationId)}/contacts/${encodeURIComponent(moneybirdContactId)}`
+      : null;
+  const chamberOfCommerce =
+    moneybirdCompanyFields?.chamberOfCommerce?.trim() ||
+    details?.chamberOfCommerce?.trim() ||
+    null;
+  const taxNumber =
+    moneybirdCompanyFields?.taxNumber?.trim() ||
+    details?.taxNumber?.trim() ||
+    null;
+
   const [hasTransactions, setHasTransactions] = useState(false);
   const [hasInvoices, setHasInvoices] = useState(false);
   const [financeProbeReady, setFinanceProbeReady] = useState(false);
@@ -200,116 +322,630 @@ function OrganizationsPageBody() {
     FinancialRecurring[]
   >([]);
 
-  const [orgInvoices, setOrgInvoices] = useState<MoneybirdSalesInvoiceSummary[]>(
-    []);
+  const [orgInvoices, setOrgInvoices] = useState<
+    MoneybirdSalesInvoiceSummary[]
+  >([]);
   const [orgInvoicesLoading, setOrgInvoicesLoading] = useState(false);
-  const [orgInvoicesError, setOrgInvoicesError] = useState<string | null>(null);
+  const [orgInvoicesError, setOrgInvoicesError] = useState<string | null>(
+    null,
+  );
   const [orgInvoicesConnected, setOrgInvoicesConnected] = useState(false);
   const [orgInvoicesPage, setOrgInvoicesPage] = useState(1);
   const [orgInvoicesTotalPages, setOrgInvoicesTotalPages] = useState(1);
   const [orgInvoicesHasMore, setOrgInvoicesHasMore] = useState(false);
   const [orgInvoicesYear, setOrgInvoicesYear] = useState(() =>
-    localCalendarYear());
+    localCalendarYear(),
+  );
   const [orgInvoiceStatusIds, setOrgInvoiceStatusIds] = useState<string[]>([]);
   const [selectedOrgInvoiceId, setSelectedOrgInvoiceId] = useState<
     string | null
   >(null);
   const [orgInvoiceDetail, setOrgInvoiceDetail] =
     useState<MoneybirdSalesInvoiceDetail | null>(null);
-  const [orgInvoiceDetailLoading, setOrgInvoiceDetailLoading] = useState(false);
+  const [orgInvoiceDetailLoading, setOrgInvoiceDetailLoading] =
+    useState(false);
   const [orgInvoiceDetailError, setOrgInvoiceDetailError] = useState<
     string | null
   >(null);
 
-  const visibleSections = useMemo(
+  const orgProjectsListView = useMemo(
     () =>
-      resolveVisibleOrganizationSections({
-        hasTransactions,
-        hasInvoices,
-      }),
-    [hasInvoices, hasTransactions]);
+      parseListBoardViewFromLocation(
+        location.pathname,
+        location.searchStr,
+        PROJECTS_LIST_BOARD_STORAGE_KEY,
+      ),
+    [location.pathname, location.searchStr],
+  );
 
-  const sectionLabel =
-    activeSection === "overview"
-      ? null
-      : (visibleSections.find((entry) => entry.id === activeSection)?.label ??
-        null);
+  useEffect(() => {
+    setAvatarOverride(undefined);
+  }, [panelOrganizationId]);
 
-  const selectedSlugValue = selected ? String(orgSlug(selected)) : null;
+  useEffect(() => {
+    setCardSection("overview");
+  }, [panelOrganizationId]);
 
-  const moneybirdContactId =
-    details?.moneybirdContactId?.trim() ||
-    (
-      selected
-        ? organizations.find((entry) => entry.id === selected.id)
-        : null
-    )?.moneybirdContactId?.trim() ||
-    null;
+  const visibleWorkspaceTabs = useMemo(
+    () =>
+      resolveOrganizationWorkspaceTabs({ hasTransactions, hasInvoices }) as {
+        id: OrganizationExpandedWorkspaceTabId;
+        label: string;
+      }[],
+    [hasInvoices, hasTransactions],
+  );
+  const visibleWorkspaceTabIds = useMemo(
+    () => visibleWorkspaceTabs.map((entry) => entry.id),
+    [visibleWorkspaceTabs],
+  );
 
-  const accountAvatarSrcById = useDesktopAvatarSrcMap(
-    "bank_account",
-    financeAccounts);
+  useEffect(() => {
+    if (!financeProbeReady) return;
+    if (workspaceTab === "transactions" && !hasTransactions) {
+      setWorkspaceTab("projects");
+    } else if (workspaceTab === "invoices" && !hasInvoices) {
+      setWorkspaceTab("projects");
+    }
+  }, [financeProbeReady, hasInvoices, hasTransactions, workspaceTab]);
 
-  const orgListItem = useMemo(() => {
-    if (!selected) return null;
-    return {
-      id: selected.id,
-      name: selected.name,
-      number: selected.number,
-      key: selected.key,
-      moneybirdContactId: moneybirdContactId,
-    };
-  }, [moneybirdContactId, selected]);
+  const activeSection = parseOrganizationSectionId(sectionParam);
+  // Standalone card tabs (Activity / Details) are local — URL section is for
+  // deep links; workspace tabs (Projects/Contacts/…) are separate state.
+  const profileSection: "overview" | "details" = cardSection;
+  const activityFeed = useCrmActivityFeed(
+    "organization",
+    panelOrganizationId,
+    keepAliveActive &&
+      Boolean(panelOrganizationId) &&
+      profileSection === "overview",
+  );
+  const crmGroups = useCrmGroupsForSubject(
+    "organization",
+    panelOrganizationId,
+    keepAliveActive && Boolean(panelOrganizationId),
+  );
+  const groupOptions = useMemo(
+    () =>
+      crmGroups.allGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        color: group.color,
+      })),
+    [crmGroups.allGroups],
+  );
+  const memberGroupIds = useMemo(
+    () => crmGroups.memberGroups.map((group) => group.id),
+    [crmGroups.memberGroups],
+  );
+  const handleMemberGroupIdsChange = useCallback(
+    (nextIds: string[]) => {
+      const previous = new Set(memberGroupIds);
+      const next = new Set(nextIds);
+      for (const groupId of next) {
+        if (!previous.has(groupId)) {
+          void crmGroups.toggleMembership(groupId, true);
+        }
+      }
+      for (const groupId of previous) {
+        if (!next.has(groupId)) {
+          void crmGroups.toggleMembership(groupId, false);
+        }
+      }
+    },
+    [crmGroups.toggleMembership, memberGroupIds],
+  );
 
   useEffect(() => {
     if (!keepAliveActive) return;
-    if (routedSlug) return;
-    // Match side-panel alpha order (not API/sort_order).
-    const first =
-      groupItemsByAlphaLetter(organizations).flatMap(
-        ([, entries]) => entries)[0] ?? null;
-    if (first) {
-      const routeParam = getUniqueListItemRouteParam(first, organizations);
-      navigate(getOrganizationsHref(routeParam), {
-        replace: true,
-      });
-    }
-  }, [keepAliveActive, navigate, organizations, routedSlug]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const mapbox = await client.requestJson<MapboxSettings>(
+          "/api/v1/settings/mapbox",
+        );
+        if (!cancelled) setMapboxConfigured(mapbox.accessTokenConfigured);
+      } catch {
+        if (!cancelled) setMapboxConfigured(false);
+      }
+    })();
+    void (async () => {
+      try {
+        const moneybird = await client.requestJson<MoneybirdSettings>(
+          "/api/v1/settings/moneybird",
+        );
+        if (!cancelled) {
+          setMoneybirdAdministrationId(moneybird.administrationId);
+        }
+      } catch {
+        if (!cancelled) setMoneybirdAdministrationId(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, keepAliveActive]);
 
+  useEffect(() => {
+    setGeocodeFailed(false);
+    moneybirdSyncKeyRef.current = null;
+    geocodeAttemptKeyRef.current = null;
+    mapCoordsKeyRef.current = null;
+    mapImageSrcRef.current = null;
+  }, [panelOrganizationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let fetchedUrl: string | null = null;
+
+    if (organizationLatitude == null || organizationLongitude == null) {
+      mapCoordsKeyRef.current = null;
+      setMapImageSrc((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      mapImageSrcRef.current = null;
+      setMapLoading(false);
+      return;
+    }
+
+    // Settings still loading — keep any existing tile; don't flash empty.
+    if (mapboxConfigured == null) {
+      return;
+    }
+
+    if (!mapboxConfigured) {
+      mapCoordsKeyRef.current = null;
+      setMapImageSrc((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      mapImageSrcRef.current = null;
+      setMapLoading(false);
+      return;
+    }
+
+    const coordsKey = `${organizationLatitude.toFixed(5)},${organizationLongitude.toFixed(5)}`;
+    if (mapCoordsKeyRef.current === coordsKey && mapImageSrcRef.current) {
+      return;
+    }
+
+    setMapLoading(true);
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          lat: String(organizationLatitude),
+          lng: String(organizationLongitude),
+          width: "640",
+          height: "320",
+        });
+        const blob = await client.requestBinary(
+          `/api/v1/mapbox/static-map?${params}`,
+        );
+        if (cancelled) return;
+        fetchedUrl = URL.createObjectURL(blob);
+        mapCoordsKeyRef.current = coordsKey;
+        mapImageSrcRef.current = fetchedUrl;
+        setMapImageSrc((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return fetchedUrl;
+        });
+        setMapHint(null);
+      } catch {
+        if (cancelled) return;
+        mapCoordsKeyRef.current = null;
+        mapImageSrcRef.current = null;
+        setMapImageSrc((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return null;
+        });
+        setMapHint("Couldn’t load the map image.");
+      } finally {
+        if (!cancelled) setMapLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, mapboxConfigured, organizationLatitude, organizationLongitude]);
+
+  useEffect(() => {
+    const addressLine = formatContactAddressLine({
+      address: details?.address,
+      city: details?.city,
+      postalCode: details?.postalCode,
+      country: details?.country,
+      region: details?.region,
+    });
+    if (mapImageSrc) {
+      setMapHint(null);
+      return;
+    }
+    if (organizationLatitude != null && organizationLongitude != null) {
+      if (mapboxConfigured === false) {
+        setMapHint(
+          "Add a Mapbox token in Settings → Mapbox to show this on a map.",
+        );
+        return;
+      }
+      // Coords present — fetch effect owns load/error hints.
+      return;
+    }
+    if (!addressLine) {
+      setMapHint(null);
+      return;
+    }
+    if (mapboxConfigured === false) {
+      setMapHint(
+        "Add a Mapbox token in Settings → Mapbox to show this on a map.",
+      );
+      return;
+    }
+    if (mapboxConfigured == null) {
+      setMapHint(null);
+      return;
+    }
+    if (geocodeFailed) {
+      setMapHint("Couldn’t locate this address.");
+      return;
+    }
+    setMapHint("Locating address…");
+  }, [
+    details?.address,
+    details?.city,
+    details?.country,
+    details?.postalCode,
+    details?.region,
+    geocodeFailed,
+    mapImageSrc,
+    mapboxConfigured,
+    organizationLatitude,
+    organizationLongitude,
+  ]);
+
+  const organizationDetails = workspace.organizationDetails;
+  const organizationDetailsRef = useRef(organizationDetails);
+  organizationDetailsRef.current = organizationDetails;
+
+  const resolveOrganizationLocation = useCallback(
+    async (
+      organizationId: string,
+      parts: {
+        address?: string | null;
+        city?: string | null;
+        postalCode?: string | null;
+        country?: string | null;
+        region?: string | null;
+      },
+    ) => {
+      const addressLine = formatContactAddressLine(parts);
+      if (!addressLine) {
+        setGeocodeFailed(false);
+        geocodeAttemptKeyRef.current = null;
+        await patchOrganization(organizationId, {
+          latitude: null,
+          longitude: null,
+        });
+        return;
+      }
+      if (!mapboxConfigured) {
+        setGeocodeFailed(false);
+        return;
+      }
+      const attemptKey = `${organizationId}:${addressLine}:${parts.country ?? ""}`;
+      if (geocodeAttemptKeyRef.current === attemptKey) {
+        return;
+      }
+      geocodeAttemptKeyRef.current = attemptKey;
+      try {
+        const params = new URLSearchParams({ q: addressLine });
+        const countryCode = resolveCountryOption(parts.country)?.code;
+        if (countryCode) {
+          params.set("country", countryCode);
+        }
+        const body = await client.requestJson<{
+          result: MapboxGeocodeResult | null;
+        }>(`/api/v1/mapbox/geocode?${params}`);
+        if (!body.result) {
+          setGeocodeFailed(true);
+          await patchOrganization(organizationId, {
+            latitude: null,
+            longitude: null,
+          });
+          return;
+        }
+        setGeocodeFailed(false);
+        const nextLat = body.result.latitude;
+        const nextLng = body.result.longitude;
+        const current = organizationDetailsRef.current[organizationId];
+        const currentLat = asCoord(current?.latitude);
+        const currentLng = asCoord(current?.longitude);
+        if (
+          currentLat != null &&
+          currentLng != null &&
+          Math.abs(currentLat - nextLat) < 1e-5 &&
+          Math.abs(currentLng - nextLng) < 1e-5
+        ) {
+          return;
+        }
+        await patchOrganization(organizationId, {
+          latitude: nextLat,
+          longitude: nextLng,
+        });
+      } catch {
+        setGeocodeFailed(true);
+        geocodeAttemptKeyRef.current = null;
+      }
+    },
+    [client, mapboxConfigured, patchOrganization],
+  );
+
+  useEffect(() => {
+    if (!keepAliveActive || !moneybirdContactId || !panelOrganizationId) {
+      setMoneybirdCompanyFields(null);
+      moneybirdSyncKeyRef.current = null;
+      return;
+    }
+    const syncKey = `${panelOrganizationId}:${moneybirdContactId}`;
+    if (moneybirdSyncKeyRef.current === syncKey) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const body = await client.requestJson<{
+          chamberOfCommerce: string | null;
+          taxNumber: string | null;
+          address1: string | null;
+          address2: string | null;
+          zipcode: string | null;
+          city: string | null;
+          country: string | null;
+        }>(
+          `/api/v1/finance/moneybird/contacts/${encodeURIComponent(moneybirdContactId)}`,
+        );
+        if (cancelled) return;
+        moneybirdSyncKeyRef.current = syncKey;
+
+        const nextChamber = body.chamberOfCommerce?.trim() || null;
+        const nextTax = body.taxNumber?.trim() || null;
+        setMoneybirdCompanyFields({
+          chamberOfCommerce: nextChamber,
+          taxNumber: nextTax,
+        });
+
+        const line1 = body.address1?.trim() || "";
+        const line2 = body.address2?.trim() || "";
+        const addressFromMoneybird =
+          [line1, line2].filter(Boolean).join("\n") || null;
+        const cityFromMoneybird = body.city?.trim() || null;
+        const postalFromMoneybird = body.zipcode?.trim() || null;
+        const countryRaw = body.country?.trim() || null;
+        const countryFromMoneybird =
+          resolveCountryOption(countryRaw)?.code ?? countryRaw;
+        const hasMoneybirdAddress = Boolean(
+          addressFromMoneybird ||
+            cityFromMoneybird ||
+            postalFromMoneybird ||
+            countryFromMoneybird,
+        );
+
+        const current = organizationDetailsRef.current[panelOrganizationId];
+        const patch: Record<string, string | null> = {};
+        if ((current?.chamberOfCommerce ?? null) !== nextChamber) {
+          patch.chamberOfCommerce = nextChamber;
+        }
+        if ((current?.taxNumber ?? null) !== nextTax) {
+          patch.taxNumber = nextTax;
+        }
+        if (hasMoneybirdAddress) {
+          if ((current?.address ?? null) !== addressFromMoneybird) {
+            patch.address = addressFromMoneybird;
+          }
+          if ((current?.city ?? null) !== cityFromMoneybird) {
+            patch.city = cityFromMoneybird;
+          }
+          if ((current?.postalCode ?? null) !== postalFromMoneybird) {
+            patch.postalCode = postalFromMoneybird;
+          }
+          if ((current?.country ?? null) !== countryFromMoneybird) {
+            patch.country = countryFromMoneybird;
+          }
+          if ((current?.region ?? null) != null) {
+            patch.region = null;
+          }
+        }
+
+        if (Object.keys(patch).length > 0) {
+          await patchOrganization(panelOrganizationId, patch);
+        }
+        if (cancelled) return;
+        if (hasMoneybirdAddress) {
+          await resolveOrganizationLocation(panelOrganizationId, {
+            address: addressFromMoneybird,
+            city: cityFromMoneybird,
+            postalCode: postalFromMoneybird,
+            country: countryFromMoneybird,
+            region: null,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setMoneybirdCompanyFields(null);
+          moneybirdSyncKeyRef.current = null;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    client,
+    keepAliveActive,
+    moneybirdContactId,
+    panelOrganizationId,
+    patchOrganization,
+    resolveOrganizationLocation,
+  ]);
+
+  // If address exists but coords were never written (e.g. Mapbox wasn't ready
+  // during Moneybird sync), geocode once Mapbox is available.
+  useEffect(() => {
+    if (
+      !keepAliveActive ||
+      !panelOrganizationId ||
+      !mapboxConfigured ||
+      !details
+    ) {
+      return;
+    }
+    if (organizationLatitude != null && organizationLongitude != null) {
+      return;
+    }
+    const parts = {
+      address: details.address ?? null,
+      city: details.city ?? null,
+      postalCode: details.postalCode ?? null,
+      country: details.country ?? null,
+      region: details.region ?? null,
+    };
+    if (!formatContactAddressLine(parts)) return;
+    void resolveOrganizationLocation(panelOrganizationId, parts);
+  }, [
+    details?.address,
+    details?.city,
+    details?.country,
+    details?.postalCode,
+    details?.region,
+    keepAliveActive,
+    mapboxConfigured,
+    organizationLatitude,
+    organizationLongitude,
+    panelOrganizationId,
+    resolveOrganizationLocation,
+  ]);
+
+  const sectionLabel =
+    profileSection === "overview"
+      ? null
+      : (ORGANIZATION_CARD_SECTIONS.find((entry) => entry.id === profileSection)
+          ?.label ?? null);
+
+  const selectedSlugValue = selected ? String(orgSlug(selected)) : null;
+
+  const accountAvatarSrcById = useDesktopAvatarSrcMap(
+    "bank_account",
+    financeAccounts,
+  );
+
+  const orgListItem = useMemo(() => {
+    if (!panelOrganization) return null;
+    return {
+      id: panelOrganization.id,
+      name: panelOrganization.name,
+      number: panelOrganization.number,
+      key: panelOrganization.key,
+      moneybirdContactId,
+    };
+  }, [moneybirdContactId, panelOrganization]);
+
+  // Sync Activity / Details from deep-link URLs when no workspace tab is open.
+  useEffect(() => {
+    if (sectionParam === "details") {
+      setCardSection("details");
+      return;
+    }
+    if (!sectionParam || sectionParam === "overview" || sectionParam === "activity") {
+      setCardSection("overview");
+    }
+  }, [sectionParam]);
+
+  // Invalid section segment → overview. Legacy full-page workspace tabs
+  // (`/projects`, `/contacts`, `/letters`, `/transactions`, `/invoices`) →
+  // expanded overlay layout with the matching workspace tab.
   useEffect(() => {
     if (!keepAliveActive) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (
-      sectionParam === "overview" ||
+      sectionParam === "projects" ||
+      sectionParam === "contacts" ||
+      sectionParam === "letters" ||
+      sectionParam === "transactions" ||
+      sectionParam === "invoices"
+    ) {
+      setWorkspaceTab(sectionParam);
+      setDetailCollapsed(false);
+      navigate(
+        getOrganizationOverlayHref(selectedSlugValue, {
+          layout: "page",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+      return;
+    }
+    if (
+      sectionParam !== "overview" &&
+      sectionParam !== "activity" &&
+      sectionParam !== "details" &&
       !isOrganizationSectionId(sectionParam)
     ) {
       navigate(getOrganizationSectionHref(selectedSlugValue, "overview"), {
         replace: true,
       });
     }
-  }, [keepAliveActive, navigate, sectionParam, selected, selectedSlugValue]);
-
-  useEffect(() => {
-    if (!keepAliveActive) return;
-    if (!selected || !financeProbeReady || !selectedSlugValue) return;
-    const visibleIds = new Set(visibleSections.map((entry) => entry.id));
-    if (!visibleIds.has(activeSection)) {
-      navigate(getOrganizationSectionHref(selectedSlugValue, "overview"), {
-        replace: true,
-      });
-    }
   }, [
-    activeSection,
-    financeProbeReady,
     keepAliveActive,
     navigate,
+    sectionParam,
     selected,
+    selectedGroupId,
     selectedSlugValue,
-    visibleSections,
   ]);
 
-  useEffect(() => {
+  useDesktopSectionBreadcrumb(
+    selected
+      ? [
+          {
+            label: "Organizations",
+            href: getOrganizationsGroupHref(selectedGroupId),
+          },
+          {
+            label: selected.name,
+            href:
+              profileSection === "overview" || !selectedSlugValue
+                ? undefined
+                : getOrganizationOverlayHref(selectedSlugValue, {
+                    layout: overlayLayout,
+                    groupId: selectedGroupId,
+                  }),
+          },
+          ...(sectionLabel ? [{ label: sectionLabel }] : []),
+        ]
+      : [{ label: selectedGroupName ?? "Organizations" }],
+    { enabled: keepAliveActive },
+  );
+
+  const handleDeleteOrganization = useCallback(async () => {
     if (!selected) {
+      return { ok: false as const, error: "Organization is required." };
+    }
+    try {
+      await workspace.softDeleteOrganization(selected.id);
+      navigate(getOrganizationsGroupHref(selectedGroupId), { replace: true });
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete organization.",
+      };
+    }
+  }, [navigate, selected, selectedGroupId, workspace]);
+
+  useEffect(() => {
+    if (!panelOrganizationId) {
       setHasTransactions(false);
       setHasInvoices(false);
       setFinanceProbeReady(false);
@@ -320,17 +956,15 @@ function OrganizationsPageBody() {
     setHasTransactions(false);
     setHasInvoices(false);
     void (async () => {
-      const contactId =
-        details?.moneybirdContactId?.trim() ||
-        moneybirdContactId ||
-        null;
+      const contactId = moneybirdContactId;
       try {
         const [txProbe, invoiceProbe] = await Promise.all([
           client.requestJson<{ transactions: FinancialTransaction[] }>(
             `/api/v1/transactions?${new URLSearchParams({
-              organizationId: selected.id,
+              organizationId: panelOrganizationId,
               limit: "1",
-            })}`),
+            })}`,
+          ),
           contactId
             ? client
                 .requestJson<MoneybirdInvoicesListResponse>(
@@ -338,14 +972,16 @@ function OrganizationsPageBody() {
                     page: "1",
                     perPage: "1",
                     filter: buildMoneybirdContactInvoicesFilter(contactId),
-                  })}`)
+                  })}`,
+                )
                 .catch(() => null)
             : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setHasTransactions(txProbe.transactions.length > 0);
         setHasInvoices(
-          Boolean(invoiceProbe && invoiceProbe.invoices.length > 0));
+          Boolean(invoiceProbe && invoiceProbe.invoices.length > 0),
+        );
         setOrgInvoicesConnected(invoiceProbe != null);
       } catch {
         if (cancelled) return;
@@ -358,26 +994,41 @@ function OrganizationsPageBody() {
     return () => {
       cancelled = true;
     };
-  }, [client, details?.moneybirdContactId, moneybirdContactId, selected]);
+  }, [client, moneybirdContactId, panelOrganizationId]);
 
   useEffect(() => {
-    if (!selected || activeSection !== "transactions") return;
+    if (
+      !panelOrganizationId ||
+      overlayLayout !== "page" ||
+      workspaceTab !== "transactions"
+    ) {
+      return;
+    }
     let cancelled = false;
     setOrgTransactionsLoading(true);
     void (async () => {
       try {
-        const [transactions, categoriesBody, accountsBody, goalsBody, recurringsBody] =
-          await Promise.all([
-            fetchAllOrganizationTransactions(client, selected.id),
-            client.requestJson<{ categories: FinancialCategory[] }>(
-              "/api/v1/financial-categories"),
-            client.requestJson<{ bankAccounts: BankAccount[] }>(
-              "/api/v1/bank-accounts"),
-            client.requestJson<{ goals: FinancialGoal[] }>(
-              "/api/v1/financial-goals"),
-            client.requestJson<{ recurrings: FinancialRecurring[] }>(
-              "/api/v1/financial-recurrings"),
-          ]);
+        const [
+          transactions,
+          categoriesBody,
+          accountsBody,
+          goalsBody,
+          recurringsBody,
+        ] = await Promise.all([
+          fetchAllOrganizationTransactions(client, panelOrganizationId),
+          client.requestJson<{ categories: FinancialCategory[] }>(
+            "/api/v1/financial-categories",
+          ),
+          client.requestJson<{ bankAccounts: BankAccount[] }>(
+            "/api/v1/bank-accounts",
+          ),
+          client.requestJson<{ goals: FinancialGoal[] }>(
+            "/api/v1/financial-goals",
+          ),
+          client.requestJson<{ recurrings: FinancialRecurring[] }>(
+            "/api/v1/financial-recurrings",
+          ),
+        ]);
         if (cancelled) return;
         setOrgTransactions(transactions);
         setFinanceCategories(categoriesBody.categories);
@@ -394,10 +1045,15 @@ function OrganizationsPageBody() {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, client, selected]);
+  }, [client, overlayLayout, panelOrganizationId, workspaceTab]);
 
   useEffect(() => {
-    if (!selected || activeSection !== "invoices" || !moneybirdContactId) {
+    if (
+      !panelOrganizationId ||
+      overlayLayout !== "page" ||
+      workspaceTab !== "invoices" ||
+      !moneybirdContactId
+    ) {
       return;
     }
     let cancelled = false;
@@ -408,13 +1064,15 @@ function OrganizationsPageBody() {
         const filter = buildMoneybirdInvoicesFilter(
           orgInvoicesYear,
           orgInvoiceStatusIds,
-          { contactId: moneybirdContactId });
+          { contactId: moneybirdContactId },
+        );
         const body = await client.requestJson<MoneybirdInvoicesListResponse>(
           `/api/v1/finance/moneybird/invoices?${new URLSearchParams({
             page: String(orgInvoicesPage),
             perPage: "50",
             filter,
-          })}`);
+          })}`,
+        );
         if (cancelled) return;
         setOrgInvoices(body.invoices);
         setOrgInvoicesPage(body.page);
@@ -429,7 +1087,8 @@ function OrganizationsPageBody() {
         setOrgInvoicesError(
           error instanceof Error
             ? error.message
-            : "Failed to load Moneybird invoices");
+            : "Failed to load Moneybird invoices",
+        );
       } finally {
         if (!cancelled) setOrgInvoicesLoading(false);
       }
@@ -438,21 +1097,22 @@ function OrganizationsPageBody() {
       cancelled = true;
     };
   }, [
-    activeSection,
     client,
     moneybirdContactId,
     orgInvoiceStatusIds,
     orgInvoicesPage,
     orgInvoicesYear,
-    selected,
+    overlayLayout,
+    panelOrganizationId,
+    workspaceTab,
   ]);
 
   useEffect(() => {
     setSelectedOrgInvoiceId(null);
-  }, [orgInvoicesPage, orgInvoicesYear, orgInvoiceStatusIds, selected?.id]);
+  }, [orgInvoicesPage, orgInvoicesYear, orgInvoiceStatusIds, panelOrganizationId]);
 
   useEffect(() => {
-    if (activeSection !== "invoices" || !selectedOrgInvoiceId) {
+    if (workspaceTab !== "invoices" || !selectedOrgInvoiceId) {
       setOrgInvoiceDetail(null);
       setOrgInvoiceDetailError(null);
       setOrgInvoiceDetailLoading(false);
@@ -464,7 +1124,8 @@ function OrganizationsPageBody() {
     void (async () => {
       try {
         const detail = await client.requestJson<MoneybirdSalesInvoiceDetail>(
-          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`);
+          `/api/v1/finance/moneybird/invoices/${encodeURIComponent(selectedOrgInvoiceId)}`,
+        );
         if (cancelled) return;
         setOrgInvoiceDetail(detail);
       } catch (error) {
@@ -473,7 +1134,8 @@ function OrganizationsPageBody() {
         setOrgInvoiceDetailError(
           error instanceof Error
             ? error.message
-            : "Failed to load invoice detail");
+            : "Failed to load invoice detail",
+        );
       } finally {
         if (!cancelled) setOrgInvoiceDetailLoading(false);
       }
@@ -481,7 +1143,7 @@ function OrganizationsPageBody() {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, client, selectedOrgInvoiceId]);
+  }, [client, selectedOrgInvoiceId, workspaceTab]);
 
   const patchOrgTransaction = useCallback(
     async (
@@ -494,23 +1156,26 @@ function OrganizationsPageBody() {
         projectId?: string | null;
         notes?: string | null;
         bankAccountId?: string | null;
-      }) => {
+      },
+    ) => {
       const updated = await client.requestJson<FinancialTransaction>(
         `/api/v1/transactions/${encodeURIComponent(id)}`,
         {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(patch),
-        });
+        },
+      );
       setOrgTransactions((current) => {
         const next = current
           .map((row) => (row.id === id ? updated : row))
-          .filter((row) => row.organizationId === selected?.id);
+          .filter((row) => row.organizationId === panelOrganizationId);
         setHasTransactions(next.length > 0);
         return next;
       });
     },
-    [client, selected?.id]);
+    [client, panelOrganizationId],
+  );
 
   const bulkPatchOrgTransactions = useCallback(
     async (
@@ -523,7 +1188,8 @@ function OrganizationsPageBody() {
         projectId?: string | null;
         notes?: string | null;
         bankAccountId?: string | null;
-      }) => {
+      },
+    ) => {
       for (let offset = 0; offset < ids.length; offset += 500) {
         const chunk = ids.slice(offset, offset + 500);
         await client.requestJson("/api/v1/transactions/batch", {
@@ -532,63 +1198,33 @@ function OrganizationsPageBody() {
           body: JSON.stringify({ ids: chunk, patch }),
         });
       }
-      if (!selected) return;
+      if (!panelOrganizationId) return;
       const refreshed = await fetchAllOrganizationTransactions(
         client,
-        selected.id);
+        panelOrganizationId,
+      );
       setOrgTransactions(refreshed);
       setHasTransactions(refreshed.length > 0);
     },
-    [client, selected]);
-
-  useDesktopSectionBreadcrumb(
-    selected
-      ? [
-          { label: "Organizations", href: "/organizations" },
-          {
-            label: selected.name,
-            href:
-              activeSection === "overview" || !selectedSlugValue
-                ? undefined
-                : getOrganizationSectionHref(selectedSlugValue, "overview"),
-          },
-          ...(sectionLabel ? [{ label: sectionLabel }] : []),
-        ]
-      : [{ label: "Organizations" }],
-    { enabled: keepAliveActive });
-
-  const handleDeleteOrganization = useCallback(async () => {
-    if (!selected) {
-      return { ok: false as const, error: "Organization is required." };
-    }
-    try {
-      await workspace.softDeleteOrganization(selected.id);
-      navigate("/organizations", { replace: true });
-      return { ok: true as const };
-    } catch (error) {
-      return {
-        ok: false as const,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to delete organization.",
-      };
-    }
-  }, [navigate, selected, workspace]);
+    [client, panelOrganizationId],
+  );
 
   const orgProjects = useMemo(
     () =>
       selected
         ? projects.filter((project) => project.organizationId === selected.id)
         : [],
-    [projects, selected]);
+    [projects, selected],
+  );
 
   const workingProjectIds = useMemo(
     () =>
       buildWorkingProjectIdSet(
         workspace.allTasks,
-        agentStatus?.workingTaskIds ?? new Set()),
-    [agentStatus?.workingTaskIds, workspace.allTasks]);
+        agentStatus?.workingTaskIds ?? new Set(),
+      ),
+    [agentStatus?.workingTaskIds, workspace.allTasks],
+  );
 
   const orgLetters = useMemo(() => {
     if (!selected) return [];
@@ -615,63 +1251,417 @@ function OrganizationsPageBody() {
       .sort((left, right) =>
         (left.name || "").localeCompare(right.name || "", undefined, {
           sensitivity: "base",
-        }));
+        }),
+      );
   }, [contactAvatarSrc, contacts, selected, workspace.contactDetails]);
 
-  if (!slug) {
-    return (
-      <EntityDetailLayout
-        sectionLabel="Organizations"
-        title={null}
-        resolving={organizations.length > 0}
-      />
+  const overviewOrganizations = useMemo((): OrganizationListItem[] => {
+    const mapped = organizations.map((org) => ({
+      ...org,
+      avatarSrc: organizationAvatarSrc[org.id] ?? org.avatarSrc ?? null,
+    }));
+    if (!selectedGroupId) return mapped;
+    return mapped.filter((org) =>
+      groupMembers.organizationIds.has(org.id),
     );
-  }
+  }, [
+    groupMembers.organizationIds,
+    organizationAvatarSrc,
+    organizations,
+    selectedGroupId,
+  ]);
 
-  if (!selected || !selectedSlugValue) {
-    if (!workspace.ready) {
-      return (
-        <EntityDetailLayout
-          sectionLabel="Organizations"
-          title={null}
-          resolving
-        />
+  const openOrganization = useCallback(
+    (organization: OrganizationListItem) => {
+      const routeParam = getUniqueListItemRouteParam(
+        organization,
+        organizations,
       );
-    }
-    return (
-      <EntityDetailLayout
-        sectionLabel="Organizations"
-        title={null}
-        emptyMessage="Organization not found."
-      />
-    );
-  }
+      navigate(
+        getOrganizationOverlayHref(routeParam, { groupId: selectedGroupId }),
+      );
+    },
+    [navigate, organizations, selectedGroupId],
+  );
 
-  const organization = selected;
-  const organizationSlug = selectedSlugValue;
+  const createAndOpenOrganization = useCallback(() => {
+    void workspace
+      .createOrganization({ name: "New organization" })
+      .then((created) => {
+        setPinnedOrganizationId(created.id);
+        const match =
+          organizations.find((entry) => entry.id === created.id) ??
+          overviewOrganizations.find((entry) => entry.id === created.id);
+        if (match) openOrganization(match);
+        else
+          navigate(
+            getOrganizationOverlayHref(created.key ?? created.id, {
+              groupId: selectedGroupId,
+            }),
+          );
+      });
+  }, [
+    navigate,
+    openOrganization,
+    organizations,
+    overviewOrganizations,
+    selectedGroupId,
+    workspace,
+  ]);
+
+  const expandOverlay = useCallback(() => {
+    if (!selectedSlugValue) return;
+    if (overlayLayout === "page") return;
+    setDetailCollapsed(false);
+    const token = ++expandAnimTokenRef.current;
+    pendingListFadeInRef.current = false;
+    pendingWorkspaceFadeInRef.current = true;
+    setListFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setWorkspaceFaded(true);
+      navigate(
+        getOrganizationOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "page",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+    }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
+  }, [cardSection, navigate, overlayLayout, selectedGroupId, selectedSlugValue]);
+
+  const collapseOverlay = useCallback(() => {
+    if (!selectedSlugValue) return;
+    setDetailCollapsed(false);
+    if (overlayLayout !== "page") {
+      navigate(
+        getOrganizationOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "panel",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+      return;
+    }
+    const token = ++expandAnimTokenRef.current;
+    pendingWorkspaceFadeInRef.current = false;
+    pendingListFadeInRef.current = true;
+    setWorkspaceFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setListFaded(true);
+      navigate(
+        getOrganizationOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "panel",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+    }, ORGANIZATION_DETAIL_EXPAND_FADE_MS);
+  }, [cardSection, navigate, overlayLayout, selectedGroupId, selectedSlugValue]);
+
+  // After expand navigates to page: fade workspace in.
+  useLayoutEffect(() => {
+    if (overlayLayout !== "page") return;
+    if (!pendingWorkspaceFadeInRef.current) {
+      setListFaded(true);
+      return;
+    }
+    pendingWorkspaceFadeInRef.current = false;
+    setWorkspaceFaded(true);
+    setListFaded(true);
+    const token = expandAnimTokenRef.current;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (expandAnimTokenRef.current !== token) return;
+        setWorkspaceFaded(false);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [overlayLayout]);
+
+  // After collapse navigates to panel: fade list back in.
+  // Direct leave from page (breadcrumb / Escape) skips the pending flag — still
+  // restore the catalog so it is not left at opacity 0.
+  useLayoutEffect(() => {
+    if (overlayLayout !== "panel") return;
+    if (!pendingListFadeInRef.current) {
+      if (!selected) {
+        setListFaded(false);
+        setWorkspaceFaded(false);
+      }
+      return;
+    }
+    pendingListFadeInRef.current = false;
+    setListFaded(true);
+    setWorkspaceFaded(false);
+    const token = expandAnimTokenRef.current;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (expandAnimTokenRef.current !== token) return;
+        setListFaded(false);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [overlayLayout, selected]);
+
+  useEffect(() => {
+    return () => {
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+      }
+    };
+  }, []);
+
+  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
+    setDetailCollapseAnimating(true);
+    if (detailCollapseAnimTimerRef.current != null) {
+      window.clearTimeout(detailCollapseAnimTimerRef.current);
+      detailCollapseAnimTimerRef.current = null;
+    }
+    if (detailCollapseRafRef.current != null) {
+      window.cancelAnimationFrame(detailCollapseRafRef.current);
+      detailCollapseRafRef.current = null;
+    }
+    // Enable transition for one paint, then flip collapsed so width interpolates.
+    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+        detailCollapseRafRef.current = null;
+        apply();
+        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
+          detailCollapseAnimTimerRef.current = null;
+          setDetailCollapseAnimating(false);
+        }, ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (detailCollapseAnimTimerRef.current != null) {
+        window.clearTimeout(detailCollapseAnimTimerRef.current);
+      }
+      if (detailCollapseRafRef.current != null) {
+        window.cancelAnimationFrame(detailCollapseRafRef.current);
+      }
+      if (detailCloseNavTimerRef.current != null) {
+        window.clearTimeout(detailCloseNavTimerRef.current);
+      }
+    };
+  }, []);
+
+  const hideDetail = useCallback(() => {
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+  }, [beginDetailCollapseAnimation]);
+
+  const showDetail = useCallback(() => {
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(false);
+    });
+  }, [beginDetailCollapseAnimation]);
+
+  const closeOverlay = useCallback(() => {
+    if (detailCloseNavTimerRef.current != null) {
+      window.clearTimeout(detailCloseNavTimerRef.current);
+      detailCloseNavTimerRef.current = null;
+    }
+
+    const leave = () => {
+      expandAnimTokenRef.current += 1;
+      pendingListFadeInRef.current = false;
+      pendingWorkspaceFadeInRef.current = false;
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+        expandAnimTimerRef.current = null;
+      }
+      setListFaded(false);
+      setWorkspaceFaded(false);
+      setDetailCollapsed(false);
+      navigate(getOrganizationsGroupHref(selectedGroupId), { replace: true });
+    };
+
+    // Already on the reopen strip — leave immediately.
+    if (detailCollapsedRef.current) {
+      leave();
+      return;
+    }
+
+    // Slide closed, then navigate so Escape matches `]` hide animation.
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+    detailCloseNavTimerRef.current = window.setTimeout(() => {
+      detailCloseNavTimerRef.current = null;
+      leave();
+    }, ORGANIZATION_DETAIL_COLLAPSE_DURATION_MS);
+  }, [beginDetailCollapseAnimation, navigate, selectedGroupId]);
+
+  // Selecting an organization while the reopen strip is showing should NOT
+  // slide the panel open — stay collapsed. First open (no prior selection)
+  // uses the overlay enter slide; switching while expanded fades content.
+  const prevSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevId = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selected?.id ?? null;
+
+    if (!selected?.id) {
+      setDetailCollapsed(false);
+      return;
+    }
+    // Switching organizations while the strip is showing: keep the strip.
+    if (detailCollapsed && prevId != null) return;
+  }, [selected?.id, detailCollapsed]);
+
+  // Opacity crossfade when switching organizations while the panel is open.
+  // useLayoutEffect so fade-out starts before paint (no flash of new chrome).
+  useLayoutEffect(() => {
+    const nextId = selected?.id ?? null;
+    if (nextId === panelOrganizationId) return;
+
+    // Route can briefly miss a match while keep-alive href flips — keep the
+    // current card mounted so we don't abort mid-fade / remount the rail.
+    if (nextId == null) return;
+
+    const canFade =
+      panelOrganizationId != null && !detailCollapsed && !detailCollapseAnimating;
+
+    if (!canFade) {
+      contentFadeTokenRef.current += 1;
+      setPanelOrganizationId(nextId);
+      setContentFaded(false);
+      return;
+    }
+
+    const token = ++contentFadeTokenRef.current;
+    setContentFaded(true);
+    const timer = window.setTimeout(() => {
+      if (contentFadeTokenRef.current !== token) return;
+      setPanelOrganizationId(nextId);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (contentFadeTokenRef.current !== token) return;
+          setContentFaded(false);
+        });
+      });
+    }, ORGANIZATION_DETAIL_CONTENT_FADE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [detailCollapseAnimating, detailCollapsed, panelOrganizationId, selected?.id]);
+
+  // Close the panel only when the route truly leaves organizations (no slug).
+  useLayoutEffect(() => {
+    if (routedSlug) return;
+    contentFadeTokenRef.current += 1;
+    expandAnimTokenRef.current += 1;
+    pendingListFadeInRef.current = false;
+    pendingWorkspaceFadeInRef.current = false;
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+      expandAnimTimerRef.current = null;
+    }
+    setPanelOrganizationId(null);
+    setContentFaded(false);
+    setListFaded(false);
+    setWorkspaceFaded(false);
+    setDetailCollapsed(false);
+  }, [routedSlug]);
+
+  useEffect(() => {
+    if (!keepAliveActive || !selected) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (!shouldHandleGlobalShortcut(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (overlayLayout === "page") {
+          collapseOverlay();
+        } else {
+          closeOverlay();
+        }
+        return;
+      }
+
+      if (
+        overlayLayout === "page" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        const tabIndex = parseSectionTabIndex(event.key);
+        if (tabIndex != null) {
+          const tab = visibleWorkspaceTabIds[tabIndex];
+          if (tab) {
+            if (!shouldHandleGlobalShortcut(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            setWorkspaceTab(tab);
+          }
+          return;
+        }
+      }
+
+      if (!isAgentPanelToggleShortcut(event)) return;
+      if (!shouldHandleGlobalShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      beginDetailCollapseAnimation(() => {
+        setDetailCollapsed((current) => !current);
+      });
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    beginDetailCollapseAnimation,
+    closeOverlay,
+    collapseOverlay,
+    keepAliveActive,
+    overlayLayout,
+    selected,
+    visibleWorkspaceTabIds,
+  ]);
 
   function handleSectionChange(next: OrganizationSectionId) {
-    navigate(getOrganizationSectionHref(organizationSlug, next), {
-      replace: true,
-    });
+    if (!selectedSlugValue || !isOrganizationCardSectionId(next)) return;
+    setCardSection(next);
+    navigate(
+      getOrganizationOverlayHref(selectedSlugValue, {
+        section: next === "overview" ? undefined : next,
+        layout: overlayLayout,
+        groupId: selectedGroupId,
+      }),
+      { replace: true },
+    );
   }
 
   function renderSection(sectionId: OrganizationSectionId) {
-    if (sectionId === "activity") {
-      return (
-        <CrmActivityFeedView
-          items={activityFeed.items}
-          loading={activityFeed.loading}
-          error={activityFeed.error}
-          nextCursor={activityFeed.nextCursor}
-          onLoadMore={activityFeed.loadMore}
-          onSubmitNote={activityFeed.submitNote}
-          onOpenMeeting={(meetingId) =>
-            navigate(`/calendar/meetings/${encodeURIComponent(meetingId)}`)
-          }
-        />
-      );
-    }
+    if (!selected || !selectedSlugValue) return null;
+    const organization = selected;
+    const organizationSlug = selectedSlugValue;
 
     if (sectionId === "projects") {
       return (
@@ -697,11 +1687,13 @@ function OrganizationsPageBody() {
             navigate(
               buildOrganizationProjectsHref(organizationSlug, {
                 view: nextView,
-              }));
+              }),
+            );
           }}
           onSelectProject={(key) => {
             const match = projects.find(
-              (entry) => entry.key.toLowerCase() === key.toLowerCase());
+              (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+            );
             const href = getOrganizationProjectHref(organizationSlug, key);
             if (match?.name) primeTabTitle(href, match.name);
             const state: ProjectLocationState | undefined = match?.type
@@ -738,7 +1730,8 @@ function OrganizationsPageBody() {
             const match =
               projects.find((entry) => entry.id === id) ??
               projects.find(
-                (entry) => entry.key.toLowerCase() === key.toLowerCase());
+                (entry) => entry.key.toLowerCase() === key.toLowerCase(),
+              );
             if (match?.name) primeTabTitle(href, match.name);
             navigate(href);
           }}
@@ -759,7 +1752,14 @@ function OrganizationsPageBody() {
       return (
         <ScopedLettersListView
           letters={orgLetters}
-          onSelectLetter={(letter) => navigate(getLettersHref(letter.number))}
+          onSelectLetter={(letter) =>
+            navigate(
+              resolveScopedLetterDetailHref(letter, {
+                kind: "organization",
+                organizationRouteParam: organizationSlug,
+              }),
+            )
+          }
           onStatusChange={(letterId, status: TaskStatus) => {
             void workspace.patchLetter(letterId, { status });
           }}
@@ -857,19 +1857,14 @@ function OrganizationsPageBody() {
     return null;
   }
 
-  return (
-    <>
-      {keepAliveActive ? (
-        <>
-          <RegisterPageTitle title={organization.name} />
-          {activeSection === "overview" ? (
-            <RegisterEntityDeleteAction
-              entityLabel={`organization "${organization.name}"`}
-              onDelete={handleDeleteOrganization}
-            />
-          ) : null}
-        </>
-      ) : null}
+  function renderOrganizationDetail() {
+    const organization = panelOrganization ?? selected;
+    if (!organization) return null;
+    const syncedAvatarSrc = organizationAvatarSrc[organization.id] ?? null;
+    const avatarSrc =
+      avatarOverride !== undefined ? avatarOverride : syncedAvatarSrc;
+
+    return (
       <OrganizationDetailView
         organization={{
           id: organization.id,
@@ -882,48 +1877,66 @@ function OrganizationsPageBody() {
               : organization.key ?? null,
           phone: details?.phone ?? null,
           email: details?.email ?? null,
+          emails: coerceOrganizationEmailEntries(details?.emails),
+          phones: coerceOrganizationPhoneEntries(details?.phones),
           website: details?.website ?? null,
           address: details?.address ?? null,
           city: details?.city ?? null,
           postalCode: details?.postalCode ?? null,
           country: details?.country ?? null,
+          region: details?.region ?? null,
+          latitude: organizationLatitude,
+          longitude: organizationLongitude,
           summary: details?.summary ?? null,
-          moneybirdContactId:
-            details?.moneybirdContactId ?? moneybirdContactId,
+          size: details?.size ?? null,
+          socialAccounts: normalizeContactSocialAccounts(
+            details?.socialAccounts,
+          ),
+          chamberOfCommerce,
+          taxNumber,
+          moneybirdContactId: details?.moneybirdContactId ?? moneybirdContactId,
         }}
-        organizationSlug={organizationSlug}
-        sections={visibleSections}
-        section={activeSection}
+        sections={ORGANIZATION_CARD_SECTIONS}
+        section={profileSection}
         onSectionChange={handleSectionChange}
+        onMore={expandOverlay}
         renderSection={renderSection}
-        groupsSlot={
-          <div>
-            <CrmGroupsChips groups={crmGroups.memberGroups} />
-            <CrmGroupsManagePanel
-              groups={crmGroups.allGroups}
-              subjectType="organization"
-              subjectId={organization.id}
-              memberGroupIds={crmGroups.memberGroups.map((group) => group.id)}
-              onCreateGroup={crmGroups.createGroup}
-              onToggleMembership={crmGroups.toggleMembership}
-              onDeleteGroup={crmGroups.deleteGroup}
-            />
-          </div>
+        moneybirdHref={moneybirdHref}
+        mapImageSrc={mapImageSrc}
+        mapLoading={mapLoading}
+        mapHint={mapHint}
+        onAfterLocationSave={(parts) => {
+          geocodeAttemptKeyRef.current = null;
+          void resolveOrganizationLocation(organization.id, parts);
+        }}
+        activitySlot={
+          <CrmActivityFeedView
+            items={activityFeed.items}
+            loading={activityFeed.loading}
+            error={activityFeed.error}
+            nextCursor={activityFeed.nextCursor}
+            onLoadMore={activityFeed.loadMore}
+            onSubmitNote={activityFeed.submitNote}
+            onOpenMeeting={(meetingId) =>
+              navigate(`/calendar/meetings/${encodeURIComponent(meetingId)}`)
+            }
+          />
         }
+        groupOptions={groupOptions}
+        memberGroupIds={memberGroupIds}
+        onMemberGroupIdsChange={handleMemberGroupIdsChange}
         overviewHeaderAccessory={
           <AvatarUpload
             displayName={organization.name}
-            avatarSrc={
-              avatarOverride !== undefined
-                ? avatarOverride
-                : (organizationAvatarSrc[organization.id] ?? null)
-            }
+            avatarSrc={avatarSrc}
+            showHint={false}
             onUpload={async (file) => {
               const result = await uploadDesktopAvatar(
                 client,
                 "organization",
                 organization.id,
-                file);
+                file,
+              );
               if (result.ok) {
                 const url = URL.createObjectURL(file);
                 setAvatarOverride((current) => {
@@ -937,7 +1950,8 @@ function OrganizationsPageBody() {
               const result = await removeDesktopAvatar(
                 client,
                 "organization",
-                organization.id);
+                organization.id,
+              );
               if (result.ok) {
                 setAvatarOverride((current) => {
                   if (current) URL.revokeObjectURL(current);
@@ -956,6 +1970,148 @@ function OrganizationsPageBody() {
           void workspace.patchOrganization(organization.id, patch);
         }}
       />
-    </>
+    );
+  }
+
+  const organizationTabTitle = selected?.name ?? "Organizations";
+  const organizationTabAvatarSrc = selected
+    ? (avatarOverride !== undefined
+        ? avatarOverride
+        : (organizationAvatarSrc[selected.id] ?? null))
+    : null;
+
+  // Standalone list + resizable right detail rail (hide/show with ]).
+  // Only treat as "not found" when the slug matches nothing and we aren't
+  // still showing a lagged panel organization (switch fade / brief resolve miss).
+  if (routedSlug && !selected && !panelOrganization) {
+    return (
+      <div
+        className="organizations-page journal-day-layout desktop-journal-day-layout"
+        data-content-detail
+        data-detail-split
+      >
+        <div className="journal-day-layout__main">
+          <OrganizationsOverviewView
+            organizations={overviewOrganizations}
+            emptyMessage={
+              selectedGroupId
+                ? "No organizations in this group yet."
+                : "No organizations yet."
+            }
+            pinnedOrganizationId={pinnedOrganizationId}
+            onSelect={(organization) => openOrganization(organization)}
+            onAdd={createAndOpenOrganization}
+          />
+        </div>
+        <EntityDetailLayout
+          sectionLabel="Organizations"
+          title={null}
+          emptyMessage="Organization not found."
+        />
+      </div>
+    );
+  }
+
+  const panelOpen = Boolean(panelOrganization ?? selected);
+
+  // List is only covered during expanded page layout (or the expand fade-out
+  // while the overlay is still open). Never keep the catalog invisible after
+  // breadcrumb / Escape leave the overlay — that matched a stuck `listFaded`.
+  const listExpandFaded = listFaded && panelOpen;
+
+  return (
+    <div
+      className={[
+        "organizations-page",
+        "journal-day-layout",
+        "desktop-journal-day-layout",
+        panelOpen && detailCollapsed ? "is-calendar-collapsed" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-content-detail
+      data-detail-split
+      data-calendar-collapsed={
+        panelOpen && detailCollapsed ? "true" : "false"
+      }
+    >
+      {keepAliveActive && selected ? (
+        <>
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={location.pathname}
+            title={
+              overlayLayout === "page" ? organizationTabTitle : "Organizations"
+            }
+          />
+          <RegisterPageIcon
+            active={keepAliveActive}
+            href={location.pathname}
+            icon={overlayLayout === "page" ? organizationTabAvatarSrc : null}
+          />
+          {activeSection === "overview" ? (
+            <RegisterEntityDeleteAction
+              entityLabel={`organization "${selected.name}"`}
+              onDelete={handleDeleteOrganization}
+            />
+          ) : null}
+        </>
+      ) : keepAliveActive ? (
+        <>
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={location.pathname}
+            title="Organizations"
+          />
+          <RegisterPageIcon
+            active={keepAliveActive}
+            href={location.pathname}
+            icon={null}
+          />
+        </>
+      ) : null}
+
+      <div
+        className={[
+          "journal-day-layout__main",
+          listExpandFaded ? "is-expand-faded" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <OrganizationsOverviewView
+          organizations={overviewOrganizations}
+          emptyMessage={
+            selectedGroupId
+              ? "No organizations in this group yet."
+              : "No organizations yet."
+          }
+          selectedId={selected?.id ?? null}
+          pinnedOrganizationId={pinnedOrganizationId}
+          onSelect={(organization) => openOrganization(organization)}
+          onAdd={createAndOpenOrganization}
+        />
+      </div>
+
+      <OrganizationDetailOverlay
+        open={panelOpen}
+        collapsed={detailCollapsed}
+        collapseAnimating={detailCollapseAnimating}
+        contentFaded={contentFaded}
+        workspaceFaded={workspaceFaded}
+        overlayLayout={overlayLayout}
+        title={panelOrganization?.name ?? selected?.name ?? "Organization"}
+        onExpand={expandOverlay}
+        onCollapse={collapseOverlay}
+        onHide={hideDetail}
+        onShow={showDetail}
+        workspaceTabs={visibleWorkspaceTabs}
+        workspaceTab={workspaceTab}
+        onWorkspaceTabChange={setWorkspaceTab}
+        renderWorkspaceTab={(tab) => renderSection(tab)}
+      >
+        {renderOrganizationDetail()}
+      </OrganizationDetailOverlay>
+    </div>
   );
 }

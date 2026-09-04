@@ -196,14 +196,30 @@ export function letterFilingCalendarParts(
   return { yyyy, mm, dd, dateStamp: `${yyyy}-${mm}-${dd}` };
 }
 
+/**
+ * Vault/file subject from a PDF display name.
+ * Strips `.pdf` and a leading `YYYY-MM-DD - ` so filing can re-apply Received Date.
+ */
+export function letterPdfSubjectFromFilename(filename: string): string {
+  const withoutExt = filename.trim().replace(/\.pdf$/i, "").trim();
+  const withoutLeadingDate = withoutExt
+    .replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "")
+    .trim();
+  return withoutLeadingDate || withoutExt || "Letter";
+}
+
 /** Letter PDFs: Letters/YYYY/MM/YYYY-MM-DD - Subject.pdf */
 export function buildLetterPdfStorageKey(input: {
   title: string;
+  /** Prefer over title when set (renamed PDF / upload basename). */
+  subject?: string | null;
   receivedDate?: Date | string | null;
   attachmentId?: string;
 }): string {
   const { yyyy, mm, dateStamp } = letterFilingCalendarParts(input.receivedDate);
-  const subject = safeSegment(input.title.trim() || "Letter");
+  const subject = safeSegment(
+    (input.subject?.trim() || input.title.trim() || "Letter"),
+  );
   const suffix = input.attachmentId
     ? ` (${safeSegment(input.attachmentId.slice(0, 8))})`
     : "";
@@ -265,6 +281,37 @@ export function buildTaskImageStorageKey(
     taskId,
     `${safeSegment(imageId)}.${ext}`,
   );
+}
+
+/** Task file attachments under `.backsteros/attachments/tasks/{taskId}/…`. */
+export function buildTaskAttachmentStorageKey(
+  taskId: string,
+  attachmentId: string,
+  fileName: string,
+): string {
+  const trimmed = fileName.trim() || "attachment";
+  const extMatch = trimmed.match(/\.([a-z0-9]{1,16})$/i);
+  const ext = safeSegment(extMatch?.[1]?.toLowerCase() || "bin");
+  const baseName = extMatch
+    ? trimmed.slice(0, -extMatch[0].length)
+    : trimmed;
+  const base = safeSegment(baseName.trim() || "attachment");
+  const suffix = safeSegment(attachmentId.slice(0, 8) || "att");
+  return buildPrivateStorageKey(
+    "",
+    "attachments",
+    taskId,
+    `${base}-${suffix}.${ext}`,
+  );
+}
+
+/** @deprecated Use {@link buildTaskAttachmentStorageKey}. */
+export function buildTaskPdfAttachmentStorageKey(
+  taskId: string,
+  attachmentId: string,
+  fileName: string,
+): string {
+  return buildTaskAttachmentStorageKey(taskId, attachmentId, fileName);
 }
 
 export function assertPrivateStorageKey(

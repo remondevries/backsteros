@@ -200,17 +200,17 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   pillFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(20, 20, 22, 0.45)",
   },
   pillBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: FLOATING_COMPOSE_PILL_SIZE / 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255, 255, 255, 0.14)",
   },
   hit: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 2,
     alignItems: "center",
     justifyContent: "center",

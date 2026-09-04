@@ -1,5 +1,8 @@
 import { appendOpsLog } from "../../lib/ops-log-buffer.js";
-import { getCoreReplicationConfig } from "./config.js";
+import {
+  getCoreReplicationConfig,
+  resolveReplicationIntervalMs,
+} from "./config.js";
 import { applyRemoteChanges } from "./apply.js";
 import {
   fetchLocalChanges,
@@ -12,7 +15,6 @@ import type { ReplicationApplyRequest, ReplicationChangesResponse } from "./type
 import { pullPeerSyncEvents } from "./sync-event-replication.js";
 import { syncVaultWithPeer } from "./vault-replication.js";
 
-const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const PAGE_SIZE = 100;
 
@@ -136,17 +138,29 @@ export async function runCoreReplicationTick(): Promise<void> {
     });
   }
 
+  // Per-table isolation: one peer schema lag / apply 500 must not stall every
+  // later table (e.g. workspace_integration_secrets blocking api_keys).
   const tables = await listActiveReplicatedTables();
+  const tableErrors: string[] = [];
   for (const table of tables) {
     try {
       await pullTable(table);
       await pushTable(table);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`core replication failed on table ${table}: ${message}`, {
-        cause: error,
-      });
+      tableErrors.push(`${table}: ${message}`);
+      appendOpsLog(
+        "error",
+        `core replication failed on table ${table}`,
+        message,
+      );
+      console.error(`core replication failed on table ${table}`, error);
     }
+  }
+  if (tableErrors.length > 0) {
+    throw new Error(
+      `core replication failed on ${tableErrors.length} table(s): ${tableErrors.join("; ")}`,
+    );
   }
 
   if (config.role === "local") {
@@ -164,10 +178,12 @@ export async function runCoreReplicationTick(): Promise<void> {
 let workerTimer: ReturnType<typeof setInterval> | null = null;
 let tickInFlight = false;
 
-export function startCoreReplicationWorker(intervalMs = DEFAULT_INTERVAL_MS): void {
+export function startCoreReplicationWorker(intervalMs?: number): void {
   if (workerTimer || !getCoreReplicationConfig()) {
     return;
   }
+
+  const resolvedIntervalMs = intervalMs ?? resolveReplicationIntervalMs();
 
   const tick = () => {
     if (tickInFlight) {
@@ -186,8 +202,12 @@ export function startCoreReplicationWorker(intervalMs = DEFAULT_INTERVAL_MS): vo
   };
 
   tick();
-  workerTimer = setInterval(tick, intervalMs);
-  appendOpsLog("info", "core replication worker started");
+  workerTimer = setInterval(tick, resolvedIntervalMs);
+  appendOpsLog(
+    "info",
+    "core replication worker started",
+    `interval=${resolvedIntervalMs}ms`,
+  );
 }
 
 export function stopCoreReplicationWorker(): void {

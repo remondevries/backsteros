@@ -47,6 +47,10 @@ function KnowledgePageBody() {
     string | null
   >(null);
 
+  useEffect(() => {
+    void workspace.softRefreshApiDocuments();
+  }, [workspace.softRefreshApiDocuments]);
+
   const knowledgeDocs = useMemo(() => {
     const omitted = new Set(omittedDocumentIds);
     return knowledgeDocuments.filter(
@@ -175,7 +179,11 @@ function KnowledgePageBody() {
     <>
       {keepAliveActive ? (
         <>
-          <RegisterPageTitle title={selected.title} />
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={location.pathname}
+            title={selected.title}
+          />
           <RegisterEntityDeleteAction
             entityLabel={`document "${selected.title}"`}
             onDelete={handleDeleteDocument}
@@ -187,6 +195,7 @@ function KnowledgePageBody() {
         title={selected.title}
         resetKey={selected.id}
         startInEditMode={pendingEditDocumentId === selected.id}
+        shortcutsEnabled={keepAliveActive}
         icon={
           <DocumentDetailIcon
             documentId={selected.id}

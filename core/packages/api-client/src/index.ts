@@ -13,6 +13,7 @@ import {
   type LetterAttachment,
   type PowerSyncCredentials,
   type PowerSyncWriteInput,
+  type TaskAttachment,
   type TaskImage,
 } from "@backsteros/contracts";
 
@@ -505,6 +506,29 @@ export type BacksterosApiClient = {
     contentType?: string,
   ): Promise<TaskImage>;
   downloadTaskImage(taskId: string, imageId: string): Promise<Blob>;
+  listTaskAttachments(
+    taskId: string,
+  ): Promise<{ attachments: TaskAttachment[] }>;
+  uploadTaskAttachment(
+    taskId: string,
+    file: Blob | ArrayBuffer,
+    filename?: string,
+    options?: UploadRequestOptions,
+  ): Promise<TaskAttachment>;
+  reorderTaskAttachments(
+    taskId: string,
+    orderedIds: string[],
+  ): Promise<{ attachments: TaskAttachment[] }>;
+  downloadTaskAttachment(taskId: string, attachmentId: string): Promise<Blob>;
+  updateTaskAttachment(
+    taskId: string,
+    attachmentId: string,
+    input: { originalFilename: string },
+  ): Promise<TaskAttachment>;
+  deleteTaskAttachment(
+    taskId: string,
+    attachmentId: string,
+  ): Promise<TaskAttachment>;
   uploadBankAccountCsv(
     bankAccountId: string,
     csv: Blob | ArrayBuffer,
@@ -638,6 +662,58 @@ export function createApiClient(options: ApiClientOptions): BacksterosApiClient 
     downloadTaskImage: (taskId, imageId) =>
       requestBinary(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`,
+      ),
+    listTaskAttachments: (taskId) =>
+      requestJson<{ attachments: TaskAttachment[] }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments`,
+      ),
+    uploadTaskAttachment: (taskId, file, filename, uploadOptions) => {
+      const body =
+        typeof Blob !== "undefined" && file instanceof Blob
+          ? file
+          : new Blob([file], { type: "application/octet-stream" });
+      const contentType =
+        body.type && body.type !== ""
+          ? body.type
+          : "application/octet-stream";
+      return uploadBinaryWithProgress(
+        normalized,
+        "POST",
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments`,
+        body,
+        {
+          "content-type": contentType,
+          ...(filename ? { "x-filename": filename } : {}),
+        },
+        uploadOptions,
+      ) as Promise<TaskAttachment>;
+    },
+    reorderTaskAttachments: (taskId, orderedIds) =>
+      requestJson<{ attachments: TaskAttachment[] }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments/reorder`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ orderedIds }),
+        },
+      ),
+    downloadTaskAttachment: (taskId, attachmentId) =>
+      requestBinary(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      ),
+    updateTaskAttachment: (taskId, attachmentId, input) =>
+      requestJson<TaskAttachment>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      ),
+    deleteTaskAttachment: (taskId, attachmentId) =>
+      requestJson<TaskAttachment>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        { method: "DELETE" },
       ),
     uploadBankAccountCsv: (bankAccountId, csv, filename, uploadOptions) =>
       uploadBinaryWithProgress(

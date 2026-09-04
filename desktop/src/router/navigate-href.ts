@@ -4,6 +4,7 @@ import {
   formatResolvedAppHref,
   resolveAppHref,
 } from "../lib/resolve-app-href";
+import { rememberProjectNavFromHref } from "../lib/project-type-cache";
 import { rememberSectionEntryFromNav } from "../lib/section-entry-store";
 import {
   dismissKeepAliveForOutletNavigation,
@@ -44,6 +45,8 @@ export function navigateToHref(
   options?: { replace?: boolean; state?: unknown },
 ): void {
   const target = formatResolvedAppHref(resolveAppHref(href));
+  // Warm flips skip TanStack state — cache nav-from so Development/Areas stay highlighted.
+  rememberProjectNavFromHref(target, options?.state);
   if (tryWarmKeepAliveFlip(target, { replace: options?.replace })) {
     return;
   }

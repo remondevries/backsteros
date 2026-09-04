@@ -6,6 +6,7 @@ import type { HistoryEntryDisplay } from "../../navigation/resolve-history-entry
 import type { NavigationItemIconId } from "../../navigation/navigation.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
 import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
+import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { DocumentIcon } from "../documents/document-icon.js";
 import { LetterIcon } from "../letters/letter-icon.js";
@@ -24,6 +25,7 @@ import {
   KnowledgeBaseNavIcon,
   LettersNavIcon,
   OrganizationsNavIcon,
+  SocialNavIcon,
   TasksNavIcon,
 } from "../shell/sidebar-nav-icons.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
@@ -56,6 +58,16 @@ function SettingsHistoryIcon({ className }: { className?: string }) {
 
 const ICON_CLASS = "size-3.5 shrink-0 text-foreground/70";
 
+/** Avatar URLs stored on tabs via RegisterPageIcon (blob / http(s) / data). */
+function looksLikeAvatarSrc(icon: string): boolean {
+  return (
+    icon.startsWith("blob:") ||
+    icon.startsWith("data:") ||
+    icon.startsWith("http://") ||
+    icon.startsWith("https://")
+  );
+}
+
 const NAVIGATION_ICONS: Record<
   NavigationItemIconId,
   ComponentType<{ className?: string }>
@@ -72,6 +84,7 @@ const NAVIGATION_ICONS: Record<
   development: DevelopmentNavIcon,
   letters: LettersNavIcon,
   finance: FinanceNavIcon,
+  social: SocialNavIcon,
   contacts: ContactsNavIcon,
   organizations: OrganizationsNavIcon,
   settings: SettingsHistoryIcon,
@@ -158,6 +171,23 @@ export function HistoryEntryIcon({
     return (
       <span className="app-side-panel-history-entry-icon" aria-hidden="true">
         <NavIcon className={ICON_CLASS} />
+      </span>
+    );
+  }
+
+  if (
+    (display.kind === "contact" || display.kind === "organization") &&
+    icon &&
+    looksLikeAvatarSrc(icon)
+  ) {
+    return (
+      <span className="app-side-panel-history-entry-icon" aria-hidden="true">
+        <EntityAvatarIcon
+          src={icon}
+          size={14}
+          className={ICON_CLASS}
+          kind={display.kind}
+        />
       </span>
     );
   }

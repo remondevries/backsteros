@@ -4,10 +4,15 @@ import {
   EntityActionsMenu,
   type EntityActionsMenuItem,
 } from "./entity-actions-menu.js";
-import { useEntityHeaderActionsContext } from "./entity-header-actions-context.js";
+import { useEntityHeaderActionsContextOptional } from "./entity-header-actions-context.js";
 import { useMounted } from "./use-mounted.js";
 
 export function EntityDeleteMenu() {
+  const context = useEntityHeaderActionsContextOptional();
+  const mounted = useMounted();
+
+  if (!context) return null;
+
   const {
     deleteConfig,
     duplicateConfig,
@@ -16,8 +21,7 @@ export function EntityDeleteMenu() {
     isDuplicatePending,
     openDeleteModal,
     runDuplicate,
-  } = useEntityHeaderActionsContext();
-  const mounted = useMounted();
+  } = context;
 
   if (
     !mounted ||

@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  coerceContactLanguages,
+  formatContactDisplayName,
   getContactEmailAddresses,
+  taskInvolvesContact,
   type MapboxGeocodeResult,
   type MapboxSettings,
 } from "@backsteros/contracts";
@@ -10,46 +13,70 @@ import {
   AvatarUpload,
   ContactDetailOverlay,
   ContactDetailView,
+  ContactEmailsListView,
+  ContactMeetingsListView,
   ContactRelationshipsListView,
   ContactTasksListView,
   ContactsOverviewView,
+  CONTACT_CARD_SECTIONS,
+  CONTACT_DETAIL_COLLAPSE_DURATION_MS,
+  CONTACT_DETAIL_CONTENT_FADE_MS,
+  CONTACT_DETAIL_EXPAND_FADE_MS,
+  CONTACT_EXPANDED_WORKSPACE_TAB_IDS,
   CONTACT_SECTIONS,
   CrmActivityFeedView,
   EntityDetailLayout,
   RegisterEntityDeleteAction,
+  RegisterPageIcon,
   RegisterPageTitle,
   ScopedLettersListView,
-  buildSourceTaskTrailHref,
-  contactMatchesSlug,
   formatContactAddressLine,
   getContactOverlayHref,
   getContactsGroupHref,
   getEmailComposeHref,
   getOrganizationSectionHref,
   getScopedContactBasePath,
+  getScopedContactEmailHref,
+  getScopedContactEmailsListHref,
   getScopedContactLetterHref,
+  getScopedContactMeetingHref,
+  getScopedContactMeetingsListHref,
   getScopedContactSectionHref,
+  getScopedContactTaskHref,
   getScopedContactsListHref,
+  resolveLetterDetailHref,
   getUniqueListItemRouteParam,
+  isContactCardSectionId,
+  isContactScopedEntityDetailPath,
+  isContactSectionDetailPath,
   isContactSectionId,
   isHabitLinkedTask,
   migrateLegacyTaskStatus,
+  parseContactOverlayLayout,
+  parseContactScopedEntityDetail,
   parseContactSectionId,
   parseCrmGroupId,
+  parseSectionTabIndex,
   requestOpenComposeModal,
+  resolveListItemFromSlug,
   resolveCountryOption,
   shouldHandleGlobalShortcut,
+  type ContactExpandedWorkspaceTabId,
   type ContactListItem,
   type ContactLocationParts,
   type ContactOverviewDetails,
+  type ContactOverlayLayout,
   type ContactRouteScope,
+  type ContactScopedEntityDetail,
   type ContactSectionId,
   type TaskStatus,
   taskReorderPatches,
 } from "@backsteros/ui";
 
 import { isAgentPanelToggleShortcut } from "../lib/agent/agent-panel-toggle-shortcut";
+import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
+import { useDesktopPowerSync } from "../lib/powersync-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
 import {
   removeDesktopAvatar,
@@ -60,11 +87,15 @@ import {
   writeEmailComposeSession,
 } from "../lib/email-compose-session";
 import {
+  addCrmGroupMemberWithRetry,
+  notifyCrmGroupsChanged,
   useContactRelationships,
   useCrmActivityFeed,
+  useCrmContactGroupsByContactId,
   useCrmGroupContactIds,
   useCrmGroupsCatalog,
   useCrmGroupsForSubject,
+  useCrmRelationshipLabels,
 } from "../lib/use-crm-data";
 import {
   useKeepAliveActive,
@@ -75,13 +106,24 @@ import {
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import { useDesktopWorkspaceData } from "../lib/workspace-data";
 import { navigateToHref } from "../router/navigate-href";
+import { EmailPage } from "./email-page";
+import { LettersPage } from "./letters-page";
+import { MeetingDetailPage } from "./meeting-detail-page";
+import { TaskDetailPage } from "./task-detail-page";
 
-function contactSlug(contact: {
-  number?: number | null;
-  key?: string | null;
-  id: string;
-}) {
-  return contact.number ?? contact.key ?? contact.id;
+function contactSlug(
+  contact: {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  },
+  siblings: readonly {
+    number?: number | null;
+    key?: string | null;
+    id: string;
+  }[],
+) {
+  return getUniqueListItemRouteParam(contact, siblings);
 }
 
 function normalizeContactSocialAccounts(
@@ -154,6 +196,52 @@ function normalizeContactEmails(
   return out.slice(0, 20);
 }
 
+function normalizeContactPhones(
+  raw: unknown,
+): { label: "personal" | "work" | "other"; number: string }[] {
+  let phones: unknown = raw ?? [];
+  if (typeof phones === "string") {
+    try {
+      phones = JSON.parse(phones) as unknown;
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(phones)) return [];
+  const out: { label: "personal" | "work" | "other"; number: string }[] = [];
+  const seen = new Set<string>();
+  for (const entry of phones) {
+    let number = "";
+    let label: "personal" | "work" | "other" = "other";
+    if (typeof entry === "string") {
+      number = entry.trim();
+    } else if (entry != null && typeof entry === "object") {
+      const record = entry as {
+        number?: unknown;
+        phone?: unknown;
+        label?: unknown;
+      };
+      number = String(record.number ?? record.phone ?? "").trim();
+      const rawLabel = String(record.label ?? "")
+        .trim()
+        .toLowerCase();
+      if (
+        rawLabel === "personal" ||
+        rawLabel === "work" ||
+        rawLabel === "other"
+      ) {
+        label = rawLabel;
+      }
+    }
+    if (!number) continue;
+    const key = number.replace(/[^\d+]/g, "").toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label, number });
+  }
+  return out.slice(0, 20);
+}
+
 function asCoord(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -197,8 +285,10 @@ export function ContactsPage({
   );
   const contactsListHref = getScopedContactsListHref(routeScope);
   const workspace = useDesktopWorkspaceData();
+  const agentMail = useAgentMail();
   const keepAliveFrozen = useKeepAliveFrozen();
   const { client } = useDesktopApi();
+  const powerSync = useDesktopPowerSync();
   const [avatarOverride, setAvatarOverride] = useState<
     string | null | undefined
   >(undefined);
@@ -208,7 +298,7 @@ export function ContactsPage({
   const [mapHint, setMapHint] = useState<string | null>(null);
   const [geocodeFailed, setGeocodeFailed] = useState(false);
   const contacts = workspace.contacts;
-  const { organizations, allTasks: tasks, letters } = workspace;
+  const { organizations, allTasks: tasks, letters, meetings } = workspace;
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
     keepAliveFrozen ? [] : contacts,
@@ -219,24 +309,84 @@ export function ContactsPage({
   );
 
   const isStandalone = routeScope.kind === "standalone";
+  const workspaceDetail = useMemo(
+    () =>
+      isStandalone ? parseContactScopedEntityDetail(location.pathname) : null,
+    [isStandalone, location.pathname],
+  );
+  const overlayLayout: ContactOverlayLayout =
+    workspaceDetail != null
+      ? "page"
+      : parseContactOverlayLayout(location.searchStr ?? "");
   const selectedGroupId = parseCrmGroupId(location.searchStr ?? "");
   const groupsCatalog = useCrmGroupsCatalog(isStandalone && keepAliveActive);
   const groupMembers = useCrmGroupContactIds(
     selectedGroupId,
     isStandalone && keepAliveActive && Boolean(selectedGroupId),
   );
+  const groupsByContactId = useCrmContactGroupsByContactId(keepAliveActive);
   const selectedGroupName = selectedGroupId
     ? (groupsCatalog.groups.find((group) => group.id === selectedGroupId)
         ?.name ?? null)
     : null;
   const selected = routedSlug
-    ? (contacts.find((contact) => contactMatchesSlug(contact, routedSlug)) ??
-      null)
+    ? resolveListItemFromSlug(contacts, routedSlug)
     : null;
   const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [detailCollapseAnimating, setDetailCollapseAnimating] = useState(false);
+  const detailCollapseAnimTimerRef = useRef<number | null>(null);
+  const detailCollapseRafRef = useRef<number | null>(null);
+  const detailCloseNavTimerRef = useRef<number | null>(null);
+  const detailCollapsedRef = useRef(detailCollapsed);
+  detailCollapsedRef.current = detailCollapsed;
+  /** Contact id shown in the panel — lags `selected` during switch fade. */
+  const [panelContactId, setPanelContactId] = useState<string | null>(
+    selected?.id ?? null,
+  );
+  const [contentFaded, setContentFaded] = useState(false);
+  const contentFadeTokenRef = useRef(0);
+  /** Contacts list opacity during expand/collapse to page workspace. */
+  const [listFaded, setListFaded] = useState(
+    () => overlayLayout === "page",
+  );
+  /** Expanded workspace opacity during expand/collapse. */
+  const [workspaceFaded, setWorkspaceFaded] = useState(false);
+  const expandAnimTokenRef = useRef(0);
+  const expandAnimTimerRef = useRef<number | null>(null);
+  const pendingWorkspaceFadeInRef = useRef(false);
+  const pendingListFadeInRef = useRef(false);
+  /** Keep a just-created contact at the top of the list until navigation leaves it. */
+  const [pinnedContactId, setPinnedContactId] = useState<string | null>(null);
+  const pinnedWasSelectedRef = useRef(false);
+  const [workspaceTab, setWorkspaceTab] =
+    useState<ContactExpandedWorkspaceTabId>("meetings");
+  /** Activity / Details on the profile card — local so they never close workspace entities. */
+  const [cardSection, setCardSection] = useState<"overview" | "details">(
+    "overview",
+  );
 
-  const details = selected
-    ? (workspace.contactDetails[selected.id] ?? null)
+  useEffect(() => {
+    if (!pinnedContactId) {
+      pinnedWasSelectedRef.current = false;
+      return;
+    }
+    if (selected?.id === pinnedContactId) {
+      pinnedWasSelectedRef.current = true;
+      return;
+    }
+    if (pinnedWasSelectedRef.current) {
+      setPinnedContactId(null);
+    }
+  }, [pinnedContactId, selected?.id]);
+
+  useEffect(() => {
+    if (!workspaceDetail) return;
+    setWorkspaceTab(workspaceDetail.kind);
+    setDetailCollapsed(false);
+  }, [workspaceDetail]);
+
+  const details = panelContactId
+    ? (workspace.contactDetails[panelContactId] ?? null)
     : null;
 
   const contactLatitude = asCoord(details?.latitude);
@@ -400,19 +550,27 @@ export function ContactsPage({
   );
 
   const activeSection = parseContactSectionId(sectionParam);
+  // Standalone card tabs (Activity / Details) are local; URL section is for
+  // deep links and org-scoped cards that still host Tasks/Letters.
+  const profileSection: ContactSectionId = isStandalone
+    ? cardSection
+    : activeSection;
   const activityFeed = useCrmActivityFeed(
     "contact",
-    selected?.id ?? null,
-    keepAliveActive && Boolean(selected) && activeSection === "overview",
+    panelContactId,
+    keepAliveActive && Boolean(panelContactId) && profileSection === "overview",
   );
   const relationships = useContactRelationships(
-    selected?.id ?? null,
-    keepAliveActive && Boolean(selected) && activeSection === "details",
+    panelContactId,
+    keepAliveActive && Boolean(panelContactId) && profileSection === "details",
+  );
+  const relationshipLabels = useCrmRelationshipLabels(
+    keepAliveActive && Boolean(panelContactId) && profileSection === "details",
   );
   const crmGroups = useCrmGroupsForSubject(
     "contact",
-    selected?.id ?? null,
-    keepAliveActive && Boolean(selected),
+    panelContactId,
+    keepAliveActive && Boolean(panelContactId),
   );
   const groupOptions = useMemo(
     () =>
@@ -445,46 +603,105 @@ export function ContactsPage({
     [crmGroups.toggleMembership, memberGroupIds],
   );
   const sectionLabel =
-    activeSection === "overview"
+    profileSection === "overview"
       ? null
-      : (CONTACT_SECTIONS.find((entry) => entry.id === activeSection)?.label ??
+      : (CONTACT_SECTIONS.find((entry) => entry.id === profileSection)?.label ??
         null);
 
-  const selectedSlugValue = selected ? String(contactSlug(selected)) : null;
+  const selectedSlugValue = selected
+    ? String(contactSlug(selected, contacts))
+    : null;
 
   useEffect(() => {
     setAvatarOverride(undefined);
-  }, [selected?.id]);
+  }, [panelContactId]);
 
   useEffect(() => {
-    setDetailCollapsed(false);
-  }, [selected?.id]);
+    setCardSection("overview");
+  }, [panelContactId]);
+
+  // Sync Activity / Details from deep-link URLs when no workspace entity is open.
+  useEffect(() => {
+    if (!isStandalone || workspaceDetail) return;
+    if (
+      sectionParam === "details" ||
+      sectionParam === "activity" ||
+      sectionParam === "relationships"
+    ) {
+      setCardSection("details");
+      return;
+    }
+    if (!sectionParam || sectionParam === "overview") {
+      setCardSection("overview");
+    }
+  }, [isStandalone, sectionParam, workspaceDetail]);
 
   // Invalid section segment → overview (standalone overlay / org detail).
   // Legacy `/activity` and `/relationships` → `/details`.
+  // Standalone `/tasks`, `/letters`, `/meetings`, and `/emails` list roots →
+  // expanded workspace tabs. Nested entity details stay on this page.
   useEffect(() => {
     if (!keepAliveActive) return;
     if (!selected || !sectionParam || !selectedSlugValue) return;
     if (sectionParam === "activity" || sectionParam === "relationships") {
+      // Card-only remapping — never leave a nested task/letter/meeting/email.
+      if (workspaceDetail) {
+        setCardSection("details");
+        return;
+      }
       navigate(
         getScopedContactSectionHref(selectedSlugValue, "details", routeScope),
         { replace: true },
       );
       return;
     }
+    if (
+      isStandalone &&
+      (sectionParam === "tasks" ||
+        sectionParam === "letters" ||
+        sectionParam === "meetings" ||
+        sectionParam === "emails") &&
+      !isContactSectionDetailPath(location.pathname, selectedSlugValue) &&
+      !isContactScopedEntityDetailPath(location.pathname)
+    ) {
+      setWorkspaceTab(
+        sectionParam as "meetings" | "tasks" | "letters" | "emails",
+      );
+      setDetailCollapsed(false);
+      navigate(
+        getContactOverlayHref(selectedSlugValue, {
+          layout: "page",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+      return;
+    }
     if (sectionParam === "overview" || !isContactSectionId(sectionParam)) {
+      // Workspace list roots are not ContactSectionIds.
+      if (
+        sectionParam === "meetings" ||
+        sectionParam === "emails" ||
+        sectionParam === "social"
+      ) {
+        return;
+      }
       navigate(
         getScopedContactSectionHref(selectedSlugValue, "overview", routeScope),
         { replace: true },
       );
     }
   }, [
+    isStandalone,
     keepAliveActive,
+    location.pathname,
     navigate,
     routeScope,
     sectionParam,
     selected,
+    selectedGroupId,
     selectedSlugValue,
+    workspaceDetail,
   ]);
 
   useDesktopSectionBreadcrumb(
@@ -509,7 +726,7 @@ export function ContactsPage({
             {
               label: selected.name,
               href:
-                activeSection === "overview" || !selectedSlugValue
+                profileSection === "overview" || !selectedSlugValue
                   ? undefined
                   : getScopedContactSectionHref(
                       selectedSlugValue,
@@ -527,9 +744,10 @@ export function ContactsPage({
             {
               label: selected.name,
               href:
-                activeSection === "overview" || !selectedSlugValue
+                profileSection === "overview" || !selectedSlugValue
                   ? undefined
                   : getContactOverlayHref(selectedSlugValue, {
+                      layout: overlayLayout,
                       groupId: selectedGroupId,
                     }),
             },
@@ -540,7 +758,7 @@ export function ContactsPage({
             label: selectedGroupName ?? "Contacts",
           },
         ],
-    { enabled: keepAliveActive },
+    { enabled: keepAliveActive && workspaceDetail == null },
   );
 
   const organizationOptions = useMemo(
@@ -559,10 +777,17 @@ export function ContactsPage({
     const mapped = contacts.map((contact) => ({
       ...contact,
       avatarSrc: contactAvatarSrc[contact.id] ?? contact.avatarSrc ?? null,
+      groups: groupsByContactId.get(contact.id) ?? null,
     }));
     if (!selectedGroupId) return mapped;
     return mapped.filter((contact) => groupMembers.contactIds.has(contact.id));
-  }, [contactAvatarSrc, contacts, groupMembers.contactIds, selectedGroupId]);
+  }, [
+    contactAvatarSrc,
+    contacts,
+    groupMembers.contactIds,
+    groupsByContactId,
+    selectedGroupId,
+  ]);
 
   const handleDeleteContact = useCallback(async () => {
     if (!selected) {
@@ -594,17 +819,17 @@ export function ContactsPage({
   ]);
 
   const contactLetters = useMemo(() => {
-    if (!selected) return [];
+    if (!panelContactId) return [];
     return letters.filter((letter) => {
-      if (letter.contactId === selected.id) return true;
+      if (letter.contactId === panelContactId) return true;
       const record = workspace.letterRecords[letter.id];
-      return record?.contactId === selected.id;
+      return record?.contactId === panelContactId;
     });
-  }, [letters, selected, workspace.letterRecords]);
+  }, [letters, panelContactId, workspace.letterRecords]);
 
   const activityTimelineItems = useMemo(() => {
-    if (!selected) return activityFeed.items;
-    const contactId = selected.id;
+    if (!panelContactId) return activityFeed.items;
+    const contactId = panelContactId;
     const fromFeed = activityFeed.items.map((item) => ({
       id: item.id,
       kind: item.kind,
@@ -614,13 +839,11 @@ export function ContactsPage({
       meetingId: item.meetingId,
       meetingTitle: item.meetingTitle,
     }));
-    // Same scoping as ContactTasksListView: assignee or linked contact.
+    // Same scoping as ContactTasksListView: assignee, linked, or Related.
     const completedTasks = tasks
       .filter((task) => {
         if (isHabitLinkedTask(task)) return false;
-        const linked =
-          task.assigneeId === contactId || task.contactId === contactId;
-        if (!linked) return false;
+        if (!taskInvolvesContact(task, contactId)) return false;
         return migrateLegacyTaskStatus(task.status) === "completed";
       })
       .map((task) => {
@@ -628,12 +851,15 @@ export function ContactsPage({
           typeof task.updatedAt === "number"
             ? new Date(task.updatedAt).toISOString()
             : new Date().toISOString();
+        const taskRelation =
+          task.assigneeId === contactId ? ("assigned" as const) : ("related" as const);
         return {
           id: `task:${task.id}`,
           kind: "task" as const,
           occurredAt,
           taskId: task.id,
           taskTitle: task.title,
+          taskRelation,
         };
       });
     const letterItems = contactLetters
@@ -668,7 +894,7 @@ export function ContactsPage({
   }, [
     activityFeed.items,
     contactLetters,
-    selected,
+    panelContactId,
     tasks,
     workspace.letterRecords,
   ]);
@@ -689,18 +915,357 @@ export function ContactsPage({
     [contacts, isStandalone, navigate, routeScope, selectedGroupId],
   );
 
-  const closeOverlay = useCallback(() => {
+  const createAndOpenContact = useCallback(() => {
+    void workspace
+      .createContact({ firstName: "New", lastName: "contact" })
+      .then(async (created) => {
+        if (selectedGroupId) {
+          try {
+            await addCrmGroupMemberWithRetry(client, powerSync, {
+              groupId: selectedGroupId,
+              subjectType: "contact",
+              subjectId: created.id,
+            });
+            notifyCrmGroupsChanged();
+          } catch (error) {
+            console.warn("[desktop] assign contact to group failed", error);
+          }
+        }
+        setPinnedContactId(created.id);
+        const match =
+          contacts.find((entry) => entry.id === created.id) ??
+          overviewContacts.find((entry) => entry.id === created.id);
+        if (match) openContact(match);
+        else
+          navigate(
+            getContactOverlayHref(
+              getUniqueListItemRouteParam(created, [
+                ...contacts,
+                { id: created.id, key: created.key },
+              ]),
+              {
+                groupId: selectedGroupId,
+              },
+            ),
+          );
+      });
+  }, [
+    client,
+    contacts,
+    navigate,
+    openContact,
+    overviewContacts,
+    selectedGroupId,
+    workspace,
+  ]);
+
+  const expandOverlay = useCallback(() => {
+    if (!selectedSlugValue) return;
+    if (overlayLayout === "page") return;
     setDetailCollapsed(false);
-    navigate(getContactsGroupHref(selectedGroupId), { replace: true });
-  }, [navigate, selectedGroupId]);
+    const token = ++expandAnimTokenRef.current;
+    pendingListFadeInRef.current = false;
+    pendingWorkspaceFadeInRef.current = true;
+    setListFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setWorkspaceFaded(true);
+      navigate(
+        getContactOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "page",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+    }, CONTACT_DETAIL_EXPAND_FADE_MS);
+  }, [
+    cardSection,
+    navigate,
+    overlayLayout,
+    selectedGroupId,
+    selectedSlugValue,
+  ]);
+
+  const collapseOverlay = useCallback(() => {
+    if (!selectedSlugValue) return;
+    setDetailCollapsed(false);
+    // Keep nested entity URL when collapsing chrome; only shrink layout.
+    if (workspaceDetail) {
+      return;
+    }
+    if (overlayLayout !== "page") {
+      navigate(
+        getContactOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "panel",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+      return;
+    }
+    const token = ++expandAnimTokenRef.current;
+    pendingWorkspaceFadeInRef.current = false;
+    pendingListFadeInRef.current = true;
+    setWorkspaceFaded(true);
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+    }
+    expandAnimTimerRef.current = window.setTimeout(() => {
+      expandAnimTimerRef.current = null;
+      if (expandAnimTokenRef.current !== token) return;
+      setListFaded(true);
+      navigate(
+        getContactOverlayHref(selectedSlugValue, {
+          section: cardSection === "overview" ? undefined : cardSection,
+          layout: "panel",
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+    }, CONTACT_DETAIL_EXPAND_FADE_MS);
+  }, [
+    cardSection,
+    navigate,
+    overlayLayout,
+    selectedGroupId,
+    selectedSlugValue,
+    workspaceDetail,
+  ]);
+
+  // After expand navigates to page: fade workspace in.
+  useLayoutEffect(() => {
+    if (overlayLayout !== "page") return;
+    if (!pendingWorkspaceFadeInRef.current) {
+      setListFaded(true);
+      return;
+    }
+    pendingWorkspaceFadeInRef.current = false;
+    setWorkspaceFaded(true);
+    setListFaded(true);
+    const token = expandAnimTokenRef.current;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (expandAnimTokenRef.current !== token) return;
+        setWorkspaceFaded(false);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [overlayLayout]);
+
+  // After collapse navigates to panel: fade list back in.
+  // Direct leave from page (breadcrumb / Escape) skips the pending flag — still
+  // restore the catalog so it is not left at opacity 0.
+  useLayoutEffect(() => {
+    if (overlayLayout !== "panel") return;
+    if (!pendingListFadeInRef.current) {
+      if (!selected) {
+        setListFaded(false);
+        setWorkspaceFaded(false);
+      }
+      return;
+    }
+    pendingListFadeInRef.current = false;
+    setListFaded(true);
+    setWorkspaceFaded(false);
+    const token = expandAnimTokenRef.current;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        if (expandAnimTokenRef.current !== token) return;
+        setListFaded(false);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [overlayLayout, selected]);
+
+  useEffect(() => {
+    return () => {
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+      }
+    };
+  }, []);
+
+  const beginDetailCollapseAnimation = useCallback((apply: () => void) => {
+    setDetailCollapseAnimating(true);
+    if (detailCollapseAnimTimerRef.current != null) {
+      window.clearTimeout(detailCollapseAnimTimerRef.current);
+      detailCollapseAnimTimerRef.current = null;
+    }
+    if (detailCollapseRafRef.current != null) {
+      window.cancelAnimationFrame(detailCollapseRafRef.current);
+      detailCollapseRafRef.current = null;
+    }
+    // Enable transition for one paint, then flip collapsed so width interpolates.
+    detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+      detailCollapseRafRef.current = window.requestAnimationFrame(() => {
+        detailCollapseRafRef.current = null;
+        apply();
+        detailCollapseAnimTimerRef.current = window.setTimeout(() => {
+          detailCollapseAnimTimerRef.current = null;
+          setDetailCollapseAnimating(false);
+        }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (detailCollapseAnimTimerRef.current != null) {
+        window.clearTimeout(detailCollapseAnimTimerRef.current);
+      }
+      if (detailCollapseRafRef.current != null) {
+        window.cancelAnimationFrame(detailCollapseRafRef.current);
+      }
+      if (detailCloseNavTimerRef.current != null) {
+        window.clearTimeout(detailCloseNavTimerRef.current);
+      }
+    };
+  }, []);
 
   const hideDetail = useCallback(() => {
-    setDetailCollapsed(true);
-  }, []);
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+  }, [beginDetailCollapseAnimation]);
 
   const showDetail = useCallback(() => {
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(false);
+    });
+  }, [beginDetailCollapseAnimation]);
+
+  const closeOverlay = useCallback(() => {
+    if (detailCloseNavTimerRef.current != null) {
+      window.clearTimeout(detailCloseNavTimerRef.current);
+      detailCloseNavTimerRef.current = null;
+    }
+
+    const leave = () => {
+      expandAnimTokenRef.current += 1;
+      pendingListFadeInRef.current = false;
+      pendingWorkspaceFadeInRef.current = false;
+      if (expandAnimTimerRef.current != null) {
+        window.clearTimeout(expandAnimTimerRef.current);
+        expandAnimTimerRef.current = null;
+      }
+      setListFaded(false);
+      setWorkspaceFaded(false);
+      setDetailCollapsed(false);
+      navigate(getContactsGroupHref(selectedGroupId), { replace: true });
+    };
+
+    // Already on the reopen strip — leave immediately.
+    if (detailCollapsedRef.current) {
+      leave();
+      return;
+    }
+
+    // Slide closed, then navigate so Escape matches `]` hide animation.
+    beginDetailCollapseAnimation(() => {
+      setDetailCollapsed(true);
+    });
+    detailCloseNavTimerRef.current = window.setTimeout(() => {
+      detailCloseNavTimerRef.current = null;
+      leave();
+    }, CONTACT_DETAIL_COLLAPSE_DURATION_MS);
+  }, [beginDetailCollapseAnimation, navigate, selectedGroupId]);
+
+  // Selecting a contact while the reopen strip is showing should NOT slide
+  // the panel open — stay collapsed. First open (no prior selection) uses the
+  // overlay enter slide; switching while expanded fades card content.
+  const prevSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevId = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selected?.id ?? null;
+
+    if (!selected?.id) {
+      setDetailCollapsed(false);
+      return;
+    }
+    // Switching contacts while the strip is showing: keep the strip.
+    if (detailCollapsed && prevId != null) return;
+  }, [selected?.id, detailCollapsed]);
+
+  // Opacity crossfade when switching contacts while the panel is open.
+  // useLayoutEffect so fade-out starts before paint (no flash of new chrome).
+  useLayoutEffect(() => {
+    const nextId = selected?.id ?? null;
+    if (nextId === panelContactId) return;
+
+    // Route can briefly miss a match while keep-alive href flips — keep the
+    // current card mounted so we don't abort mid-fade / remount the rail.
+    if (nextId == null) return;
+
+    const canFade =
+      panelContactId != null &&
+      !detailCollapsed &&
+      !detailCollapseAnimating;
+
+    if (!canFade) {
+      contentFadeTokenRef.current += 1;
+      setPanelContactId(nextId);
+      setContentFaded(false);
+      return;
+    }
+
+    const token = ++contentFadeTokenRef.current;
+    setContentFaded(true);
+    const timer = window.setTimeout(() => {
+      if (contentFadeTokenRef.current !== token) return;
+      setPanelContactId(nextId);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (contentFadeTokenRef.current !== token) return;
+          setContentFaded(false);
+        });
+      });
+    }, CONTACT_DETAIL_CONTENT_FADE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    detailCollapseAnimating,
+    detailCollapsed,
+    panelContactId,
+    selected?.id,
+  ]);
+
+  const panelContact =
+    panelContactId == null
+      ? null
+      : (contacts.find((entry) => entry.id === panelContactId) ??
+        (selected?.id === panelContactId ? selected : null));
+
+  // Close the panel only when the route truly leaves contacts (no slug).
+  useLayoutEffect(() => {
+    if (routedSlug) return;
+    contentFadeTokenRef.current += 1;
+    expandAnimTokenRef.current += 1;
+    pendingListFadeInRef.current = false;
+    pendingWorkspaceFadeInRef.current = false;
+    if (expandAnimTimerRef.current != null) {
+      window.clearTimeout(expandAnimTimerRef.current);
+      expandAnimTimerRef.current = null;
+    }
+    setPanelContactId(null);
+    setContentFaded(false);
+    setListFaded(false);
+    setWorkspaceFaded(false);
     setDetailCollapsed(false);
-  }, []);
+  }, [routedSlug]);
 
   useEffect(() => {
     if (!keepAliveActive || !isStandalone || !selected) return;
@@ -710,26 +1275,102 @@ export function ContactsPage({
         if (!shouldHandleGlobalShortcut(event)) return;
         event.preventDefault();
         event.stopPropagation();
-        closeOverlay();
+        // Nested detail → workspace lists; expanded → narrow card; narrow → leave.
+        if (workspaceDetail && selectedSlugValue) {
+          navigate(
+            getContactOverlayHref(selectedSlugValue, {
+              layout: "page",
+              groupId: selectedGroupId,
+            }),
+          );
+        } else if (overlayLayout === "page") {
+          collapseOverlay();
+        } else {
+          closeOverlay();
+        }
         return;
       }
+
+      if (
+        overlayLayout === "page" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        const tabIndex = parseSectionTabIndex(event.key);
+        if (tabIndex != null) {
+          const tab = CONTACT_EXPANDED_WORKSPACE_TAB_IDS[tabIndex];
+          if (tab) {
+            if (!shouldHandleGlobalShortcut(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            setWorkspaceTab(tab);
+            if (workspaceDetail && selectedSlugValue) {
+              navigate(
+                getContactOverlayHref(selectedSlugValue, {
+                  layout: "page",
+                  groupId: selectedGroupId,
+                }),
+              );
+            }
+          }
+          return;
+        }
+      }
+
       if (!isAgentPanelToggleShortcut(event)) return;
+      // Nested task owns `]` for the agent/chat panel.
+      if (workspaceDetail) return;
       if (!shouldHandleGlobalShortcut(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      setDetailCollapsed((current) => !current);
+      beginDetailCollapseAnimation(() => {
+        setDetailCollapsed((current) => !current);
+      });
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [closeOverlay, isStandalone, keepAliveActive, selected]);
+  }, [
+    beginDetailCollapseAnimation,
+    closeOverlay,
+    collapseOverlay,
+    isStandalone,
+    keepAliveActive,
+    navigate,
+    overlayLayout,
+    selected,
+    selectedGroupId,
+    selectedSlugValue,
+    workspaceDetail,
+  ]);
 
   function handleSectionChange(next: ContactSectionId) {
     if (!selectedSlugValue) return;
+
+    // Activity / Details belong to the right-hand card only — never change the
+    // workspace URL (that would close an open task / letter / meeting / email).
+    if (isStandalone && isContactCardSectionId(next)) {
+      setCardSection(next);
+      if (workspaceDetail) return;
+      navigate(
+        getContactOverlayHref(selectedSlugValue, {
+          section: next === "overview" ? undefined : next,
+          layout: overlayLayout,
+          groupId: selectedGroupId,
+        }),
+        { replace: true },
+      );
+      return;
+    }
+
     if (isStandalone) {
       navigate(
         getContactOverlayHref(selectedSlugValue, {
           section: next === "overview" ? undefined : next,
+          layout: overlayLayout,
           groupId: selectedGroupId,
         }),
         { replace: true },
@@ -757,18 +1398,13 @@ export function ContactsPage({
               navigate(`/tasks/${taskId}`);
               return;
             }
-            const contactKey =
-              contact.key ??
-              (contact.number != null ? `C-${contact.number}` : null);
             navigate(
-              buildSourceTaskTrailHref(
-                getScopedContactBasePath(contactRouteSlug, routeScope),
-                {
-                  id: task.id,
-                  number: task.number,
-                  projectKey: task.projectKey,
-                  contactKey,
-                },
+              getScopedContactTaskHref(
+                task,
+                contact,
+                workspace.projects,
+                routeScope,
+                contactRouteSlug,
               ),
             );
           }}
@@ -841,9 +1477,100 @@ export function ContactsPage({
     return null;
   }
 
-  function renderContactDetail() {
+  function contactWorkspaceBreadcrumbPrefix(
+    sectionLabel: string,
+    sectionHref: string,
+  ): { label: string; href?: string }[] {
+    if (!selected || !selectedSlugValue) return [];
+    return [
+      { label: "Contacts", href: getContactsGroupHref(selectedGroupId) },
+      {
+        label: selected.name,
+        href: getContactOverlayHref(selectedSlugValue, {
+          layout: "page",
+          groupId: selectedGroupId,
+        }),
+      },
+      { label: sectionLabel, href: sectionHref },
+    ];
+  }
+
+  function renderWorkspaceEntityDetail(detail: ContactScopedEntityDetail) {
     if (!selected || !selectedSlugValue) return null;
-    const contact = selected;
+    const contactRouteSlug = selectedSlugValue;
+
+    if (detail.kind === "meetings") {
+      const backHref = getScopedContactMeetingsListHref(
+        contactRouteSlug,
+        routeScope,
+      );
+      return (
+        <MeetingDetailPage
+          meetingRouteParam={detail.id}
+          backHref={backHref}
+          breadcrumbItems={contactWorkspaceBreadcrumbPrefix(
+            "Meetings",
+            backHref,
+          )}
+        />
+      );
+    }
+
+    if (detail.kind === "tasks") {
+      const backHref = getScopedContactSectionHref(
+        contactRouteSlug,
+        "tasks",
+        routeScope,
+      );
+      return (
+        <TaskDetailPage
+          taskRouteParam={detail.id}
+          backHref={backHref}
+          breadcrumbItems={contactWorkspaceBreadcrumbPrefix("Tasks", backHref)}
+          initialAgentCollapsed={true}
+          agentFillsHostColumn={true}
+        />
+      );
+    }
+
+    if (detail.kind === "letters") {
+      const backHref = getScopedContactSectionHref(
+        contactRouteSlug,
+        "letters",
+        routeScope,
+      );
+      return (
+        <LettersPage
+          letterRouteParam={detail.id}
+          backHref={backHref}
+          breadcrumbItems={contactWorkspaceBreadcrumbPrefix("Letters", backHref)}
+          disableAutoSelectFirst
+        />
+      );
+    }
+
+    if (detail.kind === "emails") {
+      const backHref = getScopedContactEmailsListHref(
+        contactRouteSlug,
+        routeScope,
+      );
+      return (
+        <EmailPage
+          embedInboxId={detail.inboxId}
+          embedMessageId={detail.messageId}
+          embedDraftId={detail.draftId}
+          breadcrumbItems={contactWorkspaceBreadcrumbPrefix("Emails", backHref)}
+        />
+      );
+    }
+
+    return null;
+  }
+
+  function renderContactDetail() {
+    const contact = panelContact ?? selected;
+    if (!contact) return null;
+    const contactRouteSlug = String(contactSlug(contact, contacts));
     const syncedAvatarSrc = contactAvatarSrc[contact.id] ?? null;
     const avatarSrc =
       avatarOverride !== undefined ? avatarOverride : syncedAvatarSrc;
@@ -858,8 +1585,11 @@ export function ContactsPage({
           displayId:
             contact.number != null ? `C-${contact.number}` : contact.key,
           email: details?.email ?? null,
-          emails: normalizeContactEmails(details?.emails ?? selected.emails),
-          phone: details?.phone ?? null,
+          emails: normalizeContactEmails(details?.emails ?? contact.emails),
+          phone: details?.phone ?? contact.phone ?? null,
+          phones: normalizeContactPhones(
+            details?.phones ?? contact.phones ?? [],
+          ),
           title: details?.title ?? null,
           address: details?.address ?? null,
           city: details?.city ?? null,
@@ -874,23 +1604,34 @@ export function ContactsPage({
           socialAccounts: normalizeContactSocialAccounts(
             details?.socialAccounts,
           ),
-          birthday: details?.birthday ?? selected.birthday ?? null,
+          birthday: details?.birthday ?? contact.birthday ?? null,
+          languages: coerceContactLanguages(
+            details?.languages ?? contact.languages ?? [],
+          ),
         }}
         organizationOptions={organizationOptions}
         groupOptions={groupOptions}
         memberGroupIds={memberGroupIds}
         onMemberGroupIdsChange={handleMemberGroupIdsChange}
-        section={activeSection}
+        sections={isStandalone ? CONTACT_CARD_SECTIONS : CONTACT_SECTIONS}
+        section={profileSection}
         onSectionChange={handleSectionChange}
+        onMore={isStandalone ? expandOverlay : undefined}
         renderSection={renderSection}
         relationshipsSlot={
           <ContactRelationshipsListView
             items={relationships.items}
             loading={relationships.loading}
             error={relationships.error}
+            relationshipLabels={relationshipLabels.labels}
             contactOptions={contacts
               .filter((entry) => entry.id !== contact.id)
-              .map((entry) => ({ id: entry.id, name: entry.name }))}
+              .map((entry) => ({
+                id: entry.id,
+                name: entry.name,
+                avatarSrc:
+                  contactAvatarSrc[entry.id] ?? entry.avatarSrc ?? null,
+              }))}
             onSelectContact={(contactId) => {
               const target = contacts.find((entry) => entry.id === contactId);
               if (!target) return;
@@ -898,6 +1639,9 @@ export function ContactsPage({
             }}
             onAdd={relationships.add}
             onRemove={relationships.remove}
+            onCreateLabel={relationshipLabels.createLabel}
+            onUpdateLabel={relationshipLabels.updateLabel}
+            onDeleteLabel={relationshipLabels.deleteLabel}
           />
         }
         activitySlot={
@@ -908,8 +1652,55 @@ export function ContactsPage({
             nextCursor={activityFeed.nextCursor}
             onLoadMore={activityFeed.loadMore}
             onSubmitNote={activityFeed.submitNote}
+            onCreateTask={() => {
+              requestOpenComposeModal({ relatedContactIds: [contact.id] });
+            }}
+            onCreateEmail={() => {
+              const to =
+                getContactEmailAddresses({
+                  email: details?.email ?? contact.email,
+                  emails: normalizeContactEmails(
+                    details?.emails ?? contact.emails,
+                  ),
+                })[0] || undefined;
+              resetEmailComposeSession();
+              writeEmailComposeSession({
+                sessionId: crypto.randomUUID(),
+                draftId: null,
+                inboxId: null,
+                prefill: to ? { to } : null,
+              });
+              navigate(getEmailComposeHref());
+            }}
+            onCreateLetter={() => {
+              void workspace
+                .createLetter({
+                  title: "New letter",
+                  contactId: contact.id,
+                  organizationId: contact.organizationId ?? null,
+                  status: "triage",
+                })
+                .then((created) => {
+                  const href = resolveLetterDetailHref({
+                    id: created.id,
+                    number: created.number,
+                    listBaseHref: getScopedContactSectionHref(
+                      contactRouteSlug,
+                      "letters",
+                      routeScope,
+                    ),
+                  });
+                  navigate(href);
+                });
+            }}
             onOpenMeeting={(meetingId) =>
-              navigate(`/calendar/meetings/${encodeURIComponent(meetingId)}`)
+              navigate(
+                getScopedContactMeetingHref(
+                  contactRouteSlug,
+                  meetingId,
+                  routeScope,
+                ),
+              )
             }
             onOpenTask={(taskId) => {
               const task = tasks.find((entry) => entry.id === taskId);
@@ -917,18 +1708,13 @@ export function ContactsPage({
                 navigate(`/tasks/${taskId}`);
                 return;
               }
-              const contactKey =
-                contact.key ??
-                (contact.number != null ? `C-${contact.number}` : null);
               navigate(
-                buildSourceTaskTrailHref(
-                  getScopedContactBasePath(selectedSlugValue, routeScope),
-                  {
-                    id: task.id,
-                    number: task.number,
-                    projectKey: task.projectKey,
-                    contactKey,
-                  },
+                getScopedContactTaskHref(
+                  task,
+                  contact,
+                  workspace.projects,
+                  routeScope,
+                  contactRouteSlug,
                 ),
               );
             }}
@@ -939,7 +1725,7 @@ export function ContactsPage({
               if (!letter) return;
               navigate(
                 getScopedContactLetterHref(
-                  selectedSlugValue,
+                  contactRouteSlug,
                   letter.number,
                   routeScope,
                 ),
@@ -951,7 +1737,6 @@ export function ContactsPage({
           void workspace.createOrganization({ name: query }).then((created) => {
             void workspace.patchContact(contact.id, {
               organizationId: created.id,
-              organizationName: query.trim(),
             });
           });
         }}
@@ -1009,45 +1794,21 @@ export function ContactsPage({
         mapImageSrc={mapImageSrc}
         mapLoading={mapLoading}
         mapHint={mapHint}
-        onAddTask={() => {
-          requestOpenComposeModal();
-        }}
-        onAddMeeting={() => {
-          const start = new Date();
-          start.setMinutes(0, 0, 0);
-          start.setHours(start.getHours() + 1);
-          const end = new Date(start.getTime() + 30 * 60 * 1000);
-          void workspace
-            .createMeeting({
-              title: `Meeting with ${contact.name}`,
-              status: "triage",
-              startAt: start.toISOString(),
-              endAt: end.toISOString(),
-            })
-            .then((created) => {
-              navigate(`/calendar/meetings/${encodeURIComponent(created.id)}`);
-            });
-        }}
-        onSendEmail={() => {
-          const to =
-            getContactEmailAddresses({
-              email: details?.email ?? contact.email,
-              emails: normalizeContactEmails(
-                details?.emails ?? contact.emails,
-              ),
-            })[0] || undefined;
-          resetEmailComposeSession();
-          writeEmailComposeSession({
-            sessionId: crypto.randomUUID(),
-            draftId: null,
-            inboxId: null,
-            prefill: to ? { to } : null,
-          });
-          navigate(getEmailComposeHref());
-        }}
       />
     );
   }
+
+  const contactTabTitle = selected
+    ? formatContactDisplayName(
+        selected.firstName ?? "",
+        selected.lastName,
+      ) || selected.name
+    : "Contacts";
+  const contactTabAvatarSrc = selected
+    ? (avatarOverride !== undefined
+        ? avatarOverride
+        : (contactAvatarSrc[selected.id] ?? null))
+    : null;
 
   // Org-scoped: keep full-page detail (org list stays in left panel).
   if (!isStandalone) {
@@ -1073,7 +1834,16 @@ export function ContactsPage({
       <>
         {keepAliveActive ? (
           <>
-            <RegisterPageTitle title={selected.name} />
+            <RegisterPageTitle
+              active={keepAliveActive}
+              href={location.pathname}
+              title={contactTabTitle}
+            />
+            <RegisterPageIcon
+              active={keepAliveActive}
+              href={location.pathname}
+              icon={contactTabAvatarSrc}
+            />
             {activeSection === "overview" ? (
               <RegisterEntityDeleteAction
                 entityLabel={`contact "${selected.name}"`}
@@ -1088,7 +1858,9 @@ export function ContactsPage({
   }
 
   // Standalone: list + resizable right detail rail (hide/show with ]).
-  if (routedSlug && !selected) {
+  // Only treat as "not found" when the slug matches nothing and we aren't
+  // still showing a lagged panel contact (switch fade / brief resolve miss).
+  if (routedSlug && !selected && !panelContact) {
     return (
       <div
         className="contacts-page journal-day-layout desktop-journal-day-layout"
@@ -1103,23 +1875,9 @@ export function ContactsPage({
                 ? "No contacts in this group yet."
                 : "No contacts yet."
             }
+            pinnedContactId={pinnedContactId}
             onSelect={(contact) => openContact(contact)}
-            onAdd={() => {
-              void workspace
-                .createContact({ firstName: "New", lastName: "contact" })
-                .then((created) => {
-                  const match = contacts.find(
-                    (entry) => entry.id === created.id,
-                  );
-                  if (match) openContact(match);
-                  else
-                    navigate(
-                      getContactOverlayHref(created.key, {
-                        groupId: selectedGroupId,
-                      }),
-                    );
-                });
-            }}
+            onAdd={createAndOpenContact}
           />
         </div>
         <EntityDetailLayout
@@ -1131,25 +1889,44 @@ export function ContactsPage({
     );
   }
 
+  const panelOpen = Boolean(panelContact ?? selected);
+
+  // Same rule as organizations: never leave the catalog at opacity 0 after
+  // breadcrumb / Escape close the overlay.
+  const listExpandFaded = listFaded && panelOpen;
+
   return (
     <div
       className={[
         "contacts-page",
         "journal-day-layout",
         "desktop-journal-day-layout",
-        selected && detailCollapsed ? "is-calendar-collapsed" : null,
+        panelOpen && detailCollapsed ? "is-calendar-collapsed" : null,
       ]
         .filter(Boolean)
         .join(" ")}
       data-content-detail
       data-detail-split
       data-calendar-collapsed={
-        selected && detailCollapsed ? "true" : "false"
+        panelOpen && detailCollapsed ? "true" : "false"
       }
     >
       {keepAliveActive && selected ? (
         <>
-          <RegisterPageTitle title={selected.name} />
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={location.pathname}
+            title={
+              overlayLayout === "page" ? contactTabTitle : "Contacts"
+            }
+          />
+          <RegisterPageIcon
+            active={keepAliveActive}
+            href={location.pathname}
+            icon={
+              overlayLayout === "page" ? contactTabAvatarSrc : null
+            }
+          />
           {activeSection === "overview" ? (
             <RegisterEntityDeleteAction
               entityLabel={`contact "${selected.name}"`}
@@ -1158,10 +1935,28 @@ export function ContactsPage({
           ) : null}
         </>
       ) : keepAliveActive ? (
-        <RegisterPageTitle title="Contacts" />
+        <>
+          <RegisterPageTitle
+            active={keepAliveActive}
+            href={location.pathname}
+            title="Contacts"
+          />
+          <RegisterPageIcon
+            active={keepAliveActive}
+            href={location.pathname}
+            icon={null}
+          />
+        </>
       ) : null}
 
-      <div className="journal-day-layout__main">
+      <div
+        className={[
+          "journal-day-layout__main",
+          listExpandFaded ? "is-expand-faded" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <ContactsOverviewView
           contacts={overviewContacts}
           emptyMessage={
@@ -1170,33 +1965,85 @@ export function ContactsPage({
               : "No contacts yet."
           }
           selectedId={selected?.id ?? null}
+          pinnedContactId={pinnedContactId}
           onSelect={(contact) => openContact(contact)}
-          onAdd={() => {
-            void workspace
-              .createContact({ firstName: "New", lastName: "contact" })
-              .then((created) => {
-                const match =
-                  contacts.find((entry) => entry.id === created.id) ??
-                  overviewContacts.find((entry) => entry.id === created.id);
-                if (match) openContact(match);
-                else
-                  navigate(
-                    getContactOverlayHref(created.key, {
-                      groupId: selectedGroupId,
-                    }),
-                  );
-              });
-          }}
+          onAdd={createAndOpenContact}
         />
       </div>
 
       <ContactDetailOverlay
-        open={Boolean(selected)}
+        open={panelOpen}
         collapsed={detailCollapsed}
-        title={selected?.name ?? "Contact"}
-        onClose={closeOverlay}
+        collapseAnimating={detailCollapseAnimating}
+        contentFaded={contentFaded}
+        workspaceFaded={workspaceFaded}
+        overlayLayout={overlayLayout}
+        title={panelContact?.name ?? selected?.name ?? "Contact"}
+        onExpand={expandOverlay}
+        onCollapse={collapseOverlay}
         onHide={hideDetail}
         onShow={showDetail}
+        hideWorkspaceTabs={Boolean(workspaceDetail)}
+        workspaceTab={workspaceTab}
+        onWorkspaceTabChange={(tab) => {
+          setWorkspaceTab(tab);
+          if (workspaceDetail && selectedSlugValue) {
+            navigate(
+              getContactOverlayHref(selectedSlugValue, {
+                layout: "page",
+                groupId: selectedGroupId,
+              }),
+            );
+          }
+        }}
+        renderWorkspaceTab={(tab) => {
+          if (workspaceDetail) {
+            return renderWorkspaceEntityDetail(workspaceDetail);
+          }
+          if (tab === "meetings" && selected) {
+            return (
+              <ContactMeetingsListView
+                contactId={selected.id}
+                meetings={meetings}
+                onSelectMeeting={(meetingId) => {
+                  if (!selectedSlugValue) return;
+                  navigate(
+                    getScopedContactMeetingHref(
+                      selectedSlugValue,
+                      meetingId,
+                      routeScope,
+                    ),
+                  );
+                }}
+              />
+            );
+          }
+          if (tab === "emails" && selected) {
+            return (
+              <ContactEmailsListView
+                contactId={selected.id}
+                contactEmail={details?.email ?? selected.email}
+                contactEmails={normalizeContactEmails(
+                  details?.emails ?? selected.emails,
+                )}
+                emails={keepAliveFrozen ? [] : agentMail.messages}
+                onSelectEmail={(email) => {
+                  if (!selectedSlugValue) return;
+                  navigate(
+                    getScopedContactEmailHref(
+                      selectedSlugValue,
+                      email,
+                      routeScope,
+                    ),
+                  );
+                }}
+              />
+            );
+          }
+          if (tab === "tasks") return renderSection("tasks");
+          if (tab === "letters") return renderSection("letters");
+          return null;
+        }}
       >
         {renderContactDetail()}
       </ContactDetailOverlay>

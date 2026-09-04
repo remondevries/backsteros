@@ -13,6 +13,10 @@ import { ContentSidePanelList } from "../content/content-side-panel-list.js";
 import { CrmGroupColorDot } from "../crm/crm-group-label.js";
 import { CrmGroupColorPicker } from "../crm/crm-group-color-picker.js";
 import { SidePanelPlusIcon } from "../shell/side-panel-plus-icon.js";
+import {
+  KebabHorizontalIcon,
+  RelationshipLabelOverflowMenu,
+} from "./relationship-label-overflow-menu.js";
 
 export type ContactsSidePanelLinkComponent = ComponentType<{
   to: string;
@@ -34,32 +38,64 @@ export type CreateCrmGroupInput = {
   color: string;
 };
 
+export type UpdateCrmGroupInput = {
+  name: string;
+  color: string;
+};
+
 export type ContactsSidePanelViewProps = {
   /** Selected CRM group id; `null` means All contacts. */
   selectedGroupId?: string | null;
   groups: ContactsSidePanelGroupItem[];
   Link: ContactsSidePanelLinkComponent;
   onCreateGroup?: (input: CreateCrmGroupInput) => void | Promise<void>;
+  onUpdateGroup?: (
+    groupId: string,
+    input: UpdateCrmGroupInput,
+  ) => void | Promise<void>;
+  onDeleteGroup?: (groupId: string) => void | Promise<void>;
   highlightedId?: string | null;
+  /**
+   * Href builder for All / group rows. Defaults to contacts catalog;
+   * organizations reuses this panel with {@link getOrganizationsGroupHref}.
+   */
+  getGroupHref?: (groupId: string | null) => string;
+};
+
+type MenuState = {
+  groupId: string;
+  x: number;
+  y: number;
 };
 
 /**
  * Left content side panel for standalone Contacts — All, then CRM groups,
- * with create below the list (name + color).
+ * with create below the list (name + color). Group rows show ⋯ on hover
+ * for Edit / Delete when handlers are provided.
  */
 export function ContactsSidePanelView({
   selectedGroupId = null,
   groups,
   Link,
   onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
   highlightedId = null,
+  getGroupHref = getContactsGroupHref,
 }: ContactsSidePanelViewProps) {
   const [draftName, setDraftName] = useState("");
   const [draftColor, setDraftColor] = useState(DEFAULT_CRM_GROUP_COLOR);
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState(DEFAULT_CRM_GROUP_COLOR);
+  const [menu, setMenu] = useState<MenuState | null>(null);
   const allActive = selectedGroupId == null;
+  const canManageGroups = Boolean(onUpdateGroup || onDeleteGroup);
 
   function startCreating() {
+    setEditingId(null);
+    setMenu(null);
     setDraftColor(nextCrmGroupPresetColor(groups.length));
     setCreating(true);
   }
@@ -82,28 +118,38 @@ export function ContactsSidePanelView({
     });
   }
 
+  function startEditing(group: ContactsSidePanelGroupItem) {
+    setCreating(false);
+    setMenu(null);
+    setEditingId(group.id);
+    setEditName(group.name);
+    setEditColor(group.color?.trim() || DEFAULT_CRM_GROUP_COLOR);
+  }
+
+  function cancelEditing() {
+    setEditingId(null);
+    setEditName("");
+    setEditColor(DEFAULT_CRM_GROUP_COLOR);
+  }
+
+  function submitEditing() {
+    const name = editName.trim();
+    if (!name || !editingId || !onUpdateGroup) return;
+    void Promise.resolve(
+      onUpdateGroup(editingId, { name, color: editColor }),
+    ).then(() => {
+      cancelEditing();
+    });
+  }
+
   return (
     <div className="app-content-side-panel app-content-side-panel--contacts">
-      <ContentSidePanelHeader
-        title="Groups"
-        actions={
-          onCreateGroup ? (
-            <button
-              type="button"
-              className="app-side-panel-section-action"
-              aria-label="Create group"
-              onClick={startCreating}
-            >
-              <SidePanelPlusIcon />
-            </button>
-          ) : undefined
-        }
-      />
+      <ContentSidePanelHeader title="Groups" />
       <div className="app-content-side-panel-main">
         <ContentSidePanelList aria-label="Contact groups">
           <li data-keyboard-nav-item={CONTACTS_SIDE_PANEL_ALL_ID}>
             <Link
-              to={getContactsGroupHref(null)}
+              to={getGroupHref(null)}
               className={sidePanelItemClass({
                 active: allActive,
                 keyboardHighlighted: highlightedId === CONTACTS_SIDE_PANEL_ALL_ID,
@@ -115,19 +161,91 @@ export function ContactsSidePanelView({
           </li>
           {groups.map((group) => {
             const isActive = selectedGroupId === group.id;
-            return (
-              <li key={group.id} data-keyboard-nav-item={group.id}>
-                <Link
-                  to={getContactsGroupHref(group.id)}
-                  className={sidePanelItemClass({
-                    active: isActive,
-                    keyboardHighlighted: highlightedId === group.id,
-                  })}
-                  aria-current={isActive ? "page" : undefined}
+            const isEditing = editingId === group.id;
+            const isMenuOpen = menu?.groupId === group.id;
+
+            if (isEditing && onUpdateGroup) {
+              return (
+                <li
+                  key={group.id}
+                  data-keyboard-nav-item={group.id}
+                  className="contacts-side-panel-group-row is-editing"
                 >
-                  <CrmGroupColorDot color={group.color} size={8} />
-                  <span className="app-side-panel-item-label">{group.name}</span>
-                </Link>
+                  <form
+                    className="contacts-side-panel-create__fields contacts-side-panel-group-edit"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      submitEditing();
+                    }}
+                  >
+                    <input
+                      className="app-side-panel-add-folder-input"
+                      value={editName}
+                      placeholder="Group name"
+                      aria-label="Group name"
+                      autoFocus
+                      onChange={(event) => setEditName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelEditing();
+                        }
+                      }}
+                    />
+                    <CrmGroupColorPicker
+                      value={editColor}
+                      onChange={setEditColor}
+                    />
+                  </form>
+                </li>
+              );
+            }
+
+            return (
+              <li
+                key={group.id}
+                data-keyboard-nav-item={group.id}
+                className={`contacts-side-panel-group-row${
+                  isMenuOpen ? " is-menu-open" : ""
+                }`}
+              >
+                <div className="contacts-side-panel-group-row__inner">
+                  <Link
+                    to={getGroupHref(group.id)}
+                    className={sidePanelItemClass({
+                      active: isActive,
+                      keyboardHighlighted: highlightedId === group.id,
+                    })}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    <CrmGroupColorDot color={group.color} size={8} />
+                    <span className="app-side-panel-item-label">
+                      {group.name}
+                    </span>
+                  </Link>
+                  {canManageGroups ? (
+                    <button
+                      type="button"
+                      className="contacts-side-panel-group-row__menu-trigger"
+                      aria-label={`Actions for ${group.name}`}
+                      aria-expanded={isMenuOpen}
+                      aria-haspopup="menu"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setMenu({
+                          groupId: group.id,
+                          x: rect.right,
+                          y: rect.bottom + 4,
+                        });
+                      }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <KebabHorizontalIcon />
+                    </button>
+                  ) : null}
+                </div>
               </li>
             );
           })}
@@ -175,6 +293,32 @@ export function ContactsSidePanelView({
           </div>
         ) : null}
       </div>
+
+      {menu ? (
+        <RelationshipLabelOverflowMenu
+          open
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onEdit={
+            onUpdateGroup
+              ? () => {
+                  const group = groups.find(
+                    (entry) => entry.id === menu.groupId,
+                  );
+                  if (group) startEditing(group);
+                }
+              : undefined
+          }
+          onDelete={
+            onDeleteGroup
+              ? () => {
+                  void Promise.resolve(onDeleteGroup(menu.groupId));
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }

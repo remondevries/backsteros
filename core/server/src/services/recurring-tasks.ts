@@ -21,6 +21,13 @@ import { appendOpsLog } from "../lib/ops-log-buffer.js";
 import { toIso } from "../lib/mappers.js";
 import * as taskProjectService from "./tasks-projects.js";
 
+/** Local-core must not spawn — cloud leader owns due ticks to avoid duplicate tasks. */
+function shouldRunRecurringTaskSpawner(): boolean {
+  return process.env.CORE_REPLICATION_ROLE?.trim().toLowerCase() !== "local";
+}
+
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
+
 function toRecurringTask(row: DbRecurringTask): RecurringTask {
   return {
     id: row.id,
@@ -41,9 +48,10 @@ function toRecurringTask(row: DbRecurringTask): RecurringTask {
 async function assertProjectInWorkspace(
   workspaceId: string,
   projectId: string | null | undefined,
+  executor: DbExecutor = db,
 ) {
   if (!projectId) return;
-  const [row] = await db
+  const [row] = await executor
     .select({ id: projects.id })
     .from(projects)
     .where(
@@ -61,8 +69,9 @@ async function assertProjectInWorkspace(
 
 export async function listRecurringTasks(
   workspaceId: string,
+  executor: DbExecutor = db,
 ): Promise<RecurringTask[]> {
-  const rows = await db
+  const rows = await executor
     .select()
     .from(recurringTasks)
     .where(
@@ -75,21 +84,41 @@ export async function listRecurringTasks(
   return rows.map(toRecurringTask);
 }
 
+export async function getRecurringTaskById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+): Promise<DbRecurringTask | null> {
+  const [row] = await executor
+    .select()
+    .from(recurringTasks)
+    .where(
+      and(
+        eq(recurringTasks.workspaceId, workspaceId),
+        eq(recurringTasks.id, id),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export async function createRecurringTask(
   workspaceId: string,
   input: CreateRecurringTaskInput,
+  id: string = newId(),
+  executor: DbExecutor = db,
 ): Promise<RecurringTask> {
   const cronExpression = assertValidCronExpression(input.cronExpression);
-  await assertProjectInWorkspace(workspaceId, input.projectId);
+  await assertProjectInWorkspace(workspaceId, input.projectId, executor);
   const now = new Date();
   const nextRunAt = getNextCronDate(cronExpression, now);
   const projectId = input.projectId ?? null;
   const inbox = input.inbox ?? !projectId;
 
-  const [row] = await db
+  const [row] = await executor
     .insert(recurringTasks)
     .values({
-      id: newId(),
+      id,
       workspaceId,
       title: input.title,
       description: input.description ?? null,
@@ -108,8 +137,9 @@ export async function updateRecurringTask(
   workspaceId: string,
   id: string,
   input: UpdateRecurringTaskInput,
+  executor: DbExecutor = db,
 ): Promise<RecurringTask | null> {
-  const [existing] = await db
+  const [existing] = await executor
     .select()
     .from(recurringTasks)
     .where(
@@ -123,7 +153,7 @@ export async function updateRecurringTask(
   if (!existing) return null;
 
   if (input.projectId !== undefined) {
-    await assertProjectInWorkspace(workspaceId, input.projectId);
+    await assertProjectInWorkspace(workspaceId, input.projectId, executor);
   }
 
   const cronExpression =
@@ -149,7 +179,7 @@ export async function updateRecurringTask(
       ? getNextCronDate(cronExpression, new Date())
       : existing.nextRunAt;
 
-  const [row] = await db
+  const [row] = await executor
     .update(recurringTasks)
     .set({
       title: input.title ?? existing.title,
@@ -162,6 +192,7 @@ export async function updateRecurringTask(
       cronExpression,
       enabled: enabledNow,
       nextRunAt,
+      updatedAt: new Date(),
     })
     .where(eq(recurringTasks.id, id))
     .returning();
@@ -169,13 +200,55 @@ export async function updateRecurringTask(
   return row ? toRecurringTask(row) : null;
 }
 
+/** Apply runner/sync fields that are not part of the public update schema. */
+export async function applyRecurringTaskSyncState(
+  workspaceId: string,
+  id: string,
+  input: {
+    nextRunAt?: Date | null;
+    lastRunAt?: Date | null;
+    lastTaskId?: string | null;
+  },
+  executor: DbExecutor = db,
+): Promise<DbRecurringTask | null> {
+  const existing = await getRecurringTaskById(workspaceId, id, executor);
+  if (!existing || existing.deletedAt) return null;
+  const patch: {
+    updatedAt: Date;
+    nextRunAt?: Date;
+    lastRunAt?: Date | null;
+    lastTaskId?: string | null;
+  } = { updatedAt: new Date() };
+  if (input.nextRunAt !== undefined && input.nextRunAt !== null) {
+    patch.nextRunAt = input.nextRunAt;
+  }
+  if (input.lastRunAt !== undefined) {
+    patch.lastRunAt = input.lastRunAt;
+  }
+  if (input.lastTaskId !== undefined) {
+    patch.lastTaskId = input.lastTaskId;
+  }
+  const [row] = await executor
+    .update(recurringTasks)
+    .set(patch)
+    .where(
+      and(
+        eq(recurringTasks.workspaceId, workspaceId),
+        eq(recurringTasks.id, id),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
 export async function deleteRecurringTask(
   workspaceId: string,
   id: string,
-): Promise<boolean> {
-  const [row] = await db
+  executor: DbExecutor = db,
+): Promise<DbRecurringTask | null> {
+  const [row] = await executor
     .update(recurringTasks)
-    .set({ deletedAt: new Date(), enabled: false })
+    .set({ deletedAt: new Date(), enabled: false, updatedAt: new Date() })
     .where(
       and(
         eq(recurringTasks.workspaceId, workspaceId),
@@ -183,12 +256,19 @@ export async function deleteRecurringTask(
         isNull(recurringTasks.deletedAt),
       ),
     )
-    .returning({ id: recurringTasks.id });
-  return Boolean(row);
+    .returning();
+  return row ?? null;
 }
 
 /** Claim due templates and spawn tasks. Safe to call on overlapping ticks. */
 export async function runDueRecurringTasks(now = new Date()): Promise<number> {
+  if (!shouldRunRecurringTaskSpawner()) {
+    return 0;
+  }
+
+  const { recordRecurringTaskRestSyncEvent, recordTaskRestSyncEvent } =
+    await import("./sync.js");
+
   const due = await db
     .select()
     .from(recurringTasks)
@@ -211,6 +291,7 @@ export async function runDueRecurringTasks(now = new Date()): Promise<number> {
         .set({
           nextRunAt,
           lastRunAt: now,
+          updatedAt: now,
         })
         .where(
           and(
@@ -237,10 +318,19 @@ export async function runDueRecurringTasks(now = new Date()): Promise<number> {
       );
 
       if (task) {
-        await db
+        const [updated] = await db
           .update(recurringTasks)
-          .set({ lastTaskId: task.id })
-          .where(eq(recurringTasks.id, row.id));
+          .set({ lastTaskId: task.id, updatedAt: new Date() })
+          .where(eq(recurringTasks.id, row.id))
+          .returning();
+        await recordTaskRestSyncEvent(row.workspaceId, task, "upsert");
+        if (updated) {
+          await recordRecurringTaskRestSyncEvent(
+            row.workspaceId,
+            updated,
+            "upsert",
+          );
+        }
         spawned += 1;
         appendOpsLog(
           "info",
@@ -261,6 +351,13 @@ let runnerTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startRecurringTaskRunner(intervalMs = 60_000): void {
   if (runnerTimer) return;
+  if (!shouldRunRecurringTaskSpawner()) {
+    appendOpsLog(
+      "info",
+      "recurring task runner skipped (local-core; cloud leader spawns)",
+    );
+    return;
+  }
   const tick = () => {
     void runDueRecurringTasks().catch((error) => {
       console.error("recurring task runner tick failed", error);
@@ -282,3 +379,5 @@ export function stopRecurringTaskRunner(): void {
     runnerTimer = null;
   }
 }
+
+export { toRecurringTask };

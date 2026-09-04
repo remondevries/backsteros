@@ -917,6 +917,7 @@ function toApiMessage(message: {
   messageId: string;
   subject: string;
   from: string;
+  to?: string[];
   preview: string | null;
   timestamp: string;
 }): AgentMailMessage {
@@ -929,6 +930,7 @@ function toApiMessage(message: {
     inReplyToMessageId: null,
     subject: message.subject,
     from: message.from,
+    ...(message.to && message.to.length > 0 ? { to: message.to } : {}),
     preview: message.preview,
     timestamp: message.timestamp,
   };
@@ -1541,12 +1543,7 @@ export async function sendAgentMailDraft(
     threadId: sent.threadId,
     messageId: sent.messageId,
   });
-  await emailThreadsService.getOrCreateEmailThreadMetadata(
-    workspaceId,
-    sent.inboxId,
-    threadKey,
-  );
-  await emailThreadsService.updateEmailThreadMetadata(
+  await emailThreadsService.patchEmailThreadMetadataLeaderAware(
     workspaceId,
     sent.inboxId,
     threadKey,
@@ -1902,7 +1899,7 @@ async function removeAgentMailMessageAndLocal(
     threadId,
     messageId,
   });
-  await emailThreadsService.deleteEmailThreadLocal(
+  await emailThreadsService.deleteEmailThreadLeaderAware(
     workspaceId,
     inboxId,
     threadKey,
@@ -1999,7 +1996,7 @@ export async function deleteAgentMailThreadMessage(
       threadId,
       messageId,
     });
-    await emailThreadsService.deleteEmailThreadLocal(
+    await emailThreadsService.deleteEmailThreadLeaderAware(
       workspaceId,
       inboxId,
       threadKey,

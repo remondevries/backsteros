@@ -5,12 +5,16 @@ import type { useShellTabs } from "./use-shell-tabs";
 export function ShellShortcutHost({
   tabs,
   setComposeOpen,
+  setComposeAssigneeOverride,
+  setComposeRelatedContactIdsOverride,
   showSidePanel,
   panelPathname,
   toggleSidePanelCollapsed,
 }: {
   tabs: ReturnType<typeof useShellTabs>;
   setComposeOpen: (open: boolean) => void;
+  setComposeAssigneeOverride: (id: string | null | undefined) => void;
+  setComposeRelatedContactIdsOverride: (ids: string[] | undefined) => void;
   showSidePanel: boolean;
   panelPathname: string;
   toggleSidePanelCollapsed: () => void;
@@ -18,6 +22,8 @@ export function ShellShortcutHost({
   useShellShortcuts({
     tabs,
     setComposeOpen,
+    setComposeAssigneeOverride,
+    setComposeRelatedContactIdsOverride,
     showSidePanel,
     panelPathname,
     toggleSidePanelCollapsed,

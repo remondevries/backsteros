@@ -139,27 +139,14 @@ export async function getCursorSettings(
   };
 }
 
-export async function updateCursorSettings(
-  workspaceId: string,
+/**
+ * Build the `{ cursor: … }` workspace_settings patch for a Cursor prefs update.
+ * Returns null when the patch does not touch synced prefs (e.g. API key only).
+ */
+export function buildCursorWorkspaceSettingsPatch(
+  currentSettings: Record<string, unknown>,
   patch: UpdateCursorSettingsInput,
-): Promise<CursorSettings> {
-  if (patch.apiKey !== undefined) {
-    const nextKey = patch.apiKey.trim();
-    await db
-      .insert(workspaceIntegrationSecrets)
-      .values({
-        workspaceId,
-        cursorApiKey: nextKey.length > 0 ? nextKey : null,
-      })
-      .onConflictDoUpdate({
-        target: workspaceIntegrationSecrets.workspaceId,
-        set: {
-          cursorApiKey: nextKey.length > 0 ? nextKey : null,
-          updatedAt: new Date(),
-        },
-      });
-  }
-
+): { cursor: Record<string, unknown> } | null {
   const touchesPrefs =
     patch.spellcheckEnabled !== undefined ||
     patch.spellcheckModel !== undefined ||
@@ -167,58 +154,91 @@ export async function updateCursorSettings(
     patch.researchEnabled !== undefined ||
     patch.researchModel !== undefined ||
     patch.researchInstructions !== undefined;
+  if (!touchesPrefs) return null;
 
-  if (touchesPrefs) {
-    const current = (await circleService.getSettings(
+  const prefs = readCursorPrefs(currentSettings);
+  const rawCursor =
+    currentSettings.cursor &&
+    typeof currentSettings.cursor === "object" &&
+    !Array.isArray(currentSettings.cursor)
+      ? { ...(currentSettings.cursor as Record<string, unknown>) }
+      : {};
+
+  const nextSpellcheckInstructions = applyInstructionPatch(
+    readStoredInstruction(rawCursor, "spellcheckInstructions"),
+    patch.spellcheckInstructions,
+  );
+  const nextResearchInstructions = applyInstructionPatch(
+    readStoredInstruction(rawCursor, "researchInstructions"),
+    patch.researchInstructions,
+  );
+
+  const nextCursor: Record<string, unknown> = {
+    ...rawCursor,
+    spellcheckEnabled:
+      patch.spellcheckEnabled !== undefined
+        ? patch.spellcheckEnabled
+        : prefs.spellcheckEnabled,
+    spellcheckModel:
+      patch.spellcheckModel !== undefined
+        ? patch.spellcheckModel.trim() || DEFAULT_MODEL
+        : prefs.spellcheckModel,
+    researchEnabled:
+      patch.researchEnabled !== undefined
+        ? patch.researchEnabled
+        : prefs.researchEnabled,
+    researchModel:
+      patch.researchModel !== undefined
+        ? patch.researchModel.trim() || DEFAULT_MODEL
+        : prefs.researchModel,
+  };
+
+  delete nextCursor.spellcheckInstructions;
+  delete nextCursor.researchInstructions;
+  if (nextSpellcheckInstructions !== undefined) {
+    nextCursor.spellcheckInstructions = nextSpellcheckInstructions;
+  }
+  if (nextResearchInstructions !== undefined) {
+    nextCursor.researchInstructions = nextResearchInstructions;
+  }
+
+  return { cursor: nextCursor };
+}
+
+export async function updateCursorApiKey(
+  workspaceId: string,
+  apiKey: string,
+): Promise<void> {
+  const nextKey = apiKey.trim();
+  await db
+    .insert(workspaceIntegrationSecrets)
+    .values({
       workspaceId,
-    )) as Record<string, unknown>;
-    const prefs = readCursorPrefs(current);
-    const rawCursor =
-      current.cursor &&
-      typeof current.cursor === "object" &&
-      !Array.isArray(current.cursor)
-        ? { ...(current.cursor as Record<string, unknown>) }
-        : {};
+      cursorApiKey: nextKey.length > 0 ? nextKey : null,
+    })
+    .onConflictDoUpdate({
+      target: workspaceIntegrationSecrets.workspaceId,
+      set: {
+        cursorApiKey: nextKey.length > 0 ? nextKey : null,
+        updatedAt: new Date(),
+      },
+    });
+}
 
-    const nextSpellcheckInstructions = applyInstructionPatch(
-      readStoredInstruction(rawCursor, "spellcheckInstructions"),
-      patch.spellcheckInstructions,
-    );
-    const nextResearchInstructions = applyInstructionPatch(
-      readStoredInstruction(rawCursor, "researchInstructions"),
-      patch.researchInstructions,
-    );
+export async function updateCursorSettings(
+  workspaceId: string,
+  patch: UpdateCursorSettingsInput,
+): Promise<CursorSettings> {
+  if (patch.apiKey !== undefined) {
+    await updateCursorApiKey(workspaceId, patch.apiKey);
+  }
 
-    const nextCursor: Record<string, unknown> = {
-      ...rawCursor,
-      spellcheckEnabled:
-        patch.spellcheckEnabled !== undefined
-          ? patch.spellcheckEnabled
-          : prefs.spellcheckEnabled,
-      spellcheckModel:
-        patch.spellcheckModel !== undefined
-          ? patch.spellcheckModel.trim() || DEFAULT_MODEL
-          : prefs.spellcheckModel,
-      researchEnabled:
-        patch.researchEnabled !== undefined
-          ? patch.researchEnabled
-          : prefs.researchEnabled,
-      researchModel:
-        patch.researchModel !== undefined
-          ? patch.researchModel.trim() || DEFAULT_MODEL
-          : prefs.researchModel,
-    };
-
-    delete nextCursor.spellcheckInstructions;
-    delete nextCursor.researchInstructions;
-    if (nextSpellcheckInstructions !== undefined) {
-      nextCursor.spellcheckInstructions = nextSpellcheckInstructions;
-    }
-    if (nextResearchInstructions !== undefined) {
-      nextCursor.researchInstructions = nextResearchInstructions;
-    }
-
-    await circleService.updateSettings(workspaceId, { cursor: nextCursor });
+  const current = (await circleService.getSettings(
+    workspaceId,
+  )) as Record<string, unknown>;
+  const settingsPatch = buildCursorWorkspaceSettingsPatch(current, patch);
+  if (settingsPatch) {
+    await circleService.updateSettings(workspaceId, settingsPatch);
   }
 
   return getCursorSettings(workspaceId);

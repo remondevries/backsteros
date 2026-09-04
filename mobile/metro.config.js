@@ -24,11 +24,21 @@ const nodeModulesPaths = [
 ];
 config.resolver.nodeModulesPaths = nodeModulesPaths;
 
-// Prefer mobile's React / RN (public-hoist-pattern in .npmrc) so other
-// workspace apps cannot introduce a second copy.
+// Prefer mobile's React / RN / Reanimated / Worklets (public-hoist-pattern in
+// .npmrc) so other workspace apps / orphan pnpm peers cannot introduce a
+// second copy. A stray react-native-worklets@0.7.4 next to native 0.10.1
+// breaks the floating tab bar (reanimated) and collapses the (app) layout.
 config.resolver.extraNodeModules = {
   react: path.resolve(projectRoot, "node_modules/react"),
   "react-native": path.resolve(projectRoot, "node_modules/react-native"),
+  "react-native-reanimated": path.resolve(
+    projectRoot,
+    "node_modules/react-native-reanimated",
+  ),
+  "react-native-worklets": path.resolve(
+    projectRoot,
+    "node_modules/react-native-worklets",
+  ),
 };
 
 // Allow Metro to walk pnpm's nested node_modules (needed for packages like
@@ -59,6 +69,24 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     typeof defaultResolveRequest === "function"
       ? defaultResolveRequest
       : context.resolveRequest;
+
+  // Force a single Worklets / Reanimated copy — hierarchical lookup can
+  // otherwise pick orphan pnpm peers (e.g. worklets@0.7.4 next to native 0.10.1).
+  if (
+    moduleName === "react-native-worklets" ||
+    moduleName.startsWith("react-native-worklets/") ||
+    moduleName === "react-native-reanimated" ||
+    moduleName.startsWith("react-native-reanimated/")
+  ) {
+    try {
+      return {
+        type: "sourceFile",
+        filePath: require.resolve(moduleName, { paths: [projectRoot] }),
+      };
+    } catch {
+      // Fall through to Metro's resolver (subpath / exports edge cases).
+    }
+  }
 
   // @expo/metro-runtime still requires ../../LogBox; map to @expo/log-box.
   if (

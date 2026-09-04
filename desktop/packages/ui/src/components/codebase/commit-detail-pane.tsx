@@ -37,6 +37,8 @@ export type CommitDetailPaneProps = {
   requestJson: CodebaseRequestJson;
   /** Present when opened from a PR; workbench owns back navigation. */
   parentPullRequest?: GithubPullRequest | null;
+  /** When true, claim j/k on the changed-files list (Tab/Enter into detail). */
+  hotkeysEnabled?: boolean;
 };
 
 export function CommitDetailPane({
@@ -44,6 +46,7 @@ export function CommitDetailPane({
   commit,
   repository,
   requestJson,
+  hotkeysEnabled = false,
 }: CommitDetailPaneProps) {
   const subject = commitSubject(commit.message);
   const body = commitBody(commit.message);
@@ -123,6 +126,7 @@ export function CommitDetailPane({
               projectId={projectId}
               sha={commit.sha}
               requestJson={requestJson}
+              autoFocusList={hotkeysEnabled}
             />
           </div>
         </div>

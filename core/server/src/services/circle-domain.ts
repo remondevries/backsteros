@@ -17,7 +17,7 @@ import {
   workspaceSettings,
 } from "../db/schema.js";
 import { newId } from "../lib/crypto.js";
-import { normalizeContactEmailsInput } from "@backsteros/contracts";
+import { normalizeContactEmailsInput, normalizeContactPhonesInput } from "@backsteros/contracts";
 import {
   assertPrivateStorageKey,
   buildLetterPdfStorageKey,
@@ -25,6 +25,7 @@ import {
   checksumForContent,
   deleteObject,
   getObject,
+  letterPdfSubjectFromFilename,
   moveObject,
   putObject,
 } from "../lib/storage.js";
@@ -38,11 +39,20 @@ type OrganizationInput = {
   summary?: string | null;
   phone?: string | null;
   email?: string | null;
+  emails?: { label: "general" | "support" | "other"; address: string }[];
+  phones?: { label: "general" | "support" | "other"; number: string }[];
   website?: string | null;
   address?: string | null;
   city?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  region?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  size?: string | null;
+  socialAccounts?: { platform: string; url: string }[];
+  chamberOfCommerce?: string | null;
+  taxNumber?: string | null;
   avatarStorageKey?: string | null;
   avatarContentType?: string | null;
   sortOrder?: number;
@@ -69,6 +79,7 @@ type ContactInput = {
   avatarContentType?: string | null;
   sortOrder?: number;
   phone?: string | null;
+  phones?: { label: "personal" | "work" | "other"; number: string }[];
   role?: string | null;
   notes?: string | null;
   address?: string | null;
@@ -80,6 +91,7 @@ type ContactInput = {
   longitude?: number | null;
   socialAccounts?: ContactSocialAccount[];
   birthday?: string | null;
+  languages?: Array<"nl" | "en" | "de" | "es" | "fr" | "pl">;
 };
 
 function formatContactDisplayName(
@@ -124,6 +136,11 @@ type LetterInput = {
   receivedDate?: string | null;
   direction?: string;
   originalFilename?: string;
+  storageKey?: string;
+  contentType?: string;
+  byteSize?: number;
+  checksum?: string | null;
+  contentEtag?: string | null;
   extractedText?: string | null;
   sortOrder?: number;
 };
@@ -144,7 +161,9 @@ async function nextEntityNumber(
       maxNumber: sql<number>`coalesce(max(${table.number}), 0)`,
     })
     .from(table)
-    .where(eq(table.workspaceId, workspaceId));
+    .where(
+      and(eq(table.workspaceId, workspaceId), isNull(table.deletedAt)),
+    );
   const minNext = Number(maxRow?.maxNumber ?? 0) + 1;
 
   const [counter] = await executor
@@ -168,6 +187,53 @@ async function nextEntityNumber(
     })
     .returning({ nextValue: entityCounters.nextValue });
   return counter!.nextValue - 1;
+}
+
+async function entityNumberTaken(
+  workspaceId: string,
+  entity: "organization" | "contact" | "letter",
+  number: number,
+  executor: DbExecutor = db,
+  exceptId?: string,
+) {
+  const table =
+    entity === "organization"
+      ? organizations
+      : entity === "contact"
+        ? contacts
+        : letters;
+  const conditions = [
+    eq(table.workspaceId, workspaceId),
+    eq(table.number, number),
+    isNull(table.deletedAt),
+  ];
+  if (exceptId) {
+    conditions.push(ne(table.id, exceptId));
+  }
+  const [row] = await executor
+    .select({ id: table.id })
+    .from(table)
+    .where(and(...conditions))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Prefer an explicit number only when it is free; otherwise allocate. */
+async function resolveEntityNumber(
+  workspaceId: string,
+  entity: "organization" | "contact" | "letter",
+  requested: number | null | undefined,
+  executor: DbExecutor = db,
+) {
+  if (
+    requested != null &&
+    Number.isFinite(requested) &&
+    requested > 0 &&
+    !(await entityNumberTaken(workspaceId, entity, requested, executor))
+  ) {
+    return requested;
+  }
+  return nextEntityNumber(workspaceId, entity, executor);
 }
 
 async function organizationExists(
@@ -235,7 +301,12 @@ export async function createOrganization(
   id = newId(),
   executor: DbExecutor = db,
 ) {
-  const number = input.number ?? (await nextEntityNumber(workspaceId, "organization", executor));
+  const number = await resolveEntityNumber(
+    workspaceId,
+    "organization",
+    input.number,
+    executor,
+  );
   const [row] = await executor
     .insert(organizations)
     .values({ id, workspaceId, ...input, number })
@@ -374,16 +445,25 @@ export async function createContact(
   if (!names.firstName) {
     throw new Error("CONTACT_NAME_REQUIRED");
   }
-  const number = input.number ?? (await nextEntityNumber(workspaceId, "contact", executor));
-  const { name: _legacyName, firstName: _f, lastName: _l, email, emails, ...rest } =
+  const number = await resolveEntityNumber(
+    workspaceId,
+    "contact",
+    input.number,
+    executor,
+  );
+  const { name: _legacyName, firstName: _f, lastName: _l, email, emails, phone, phones, ...rest } =
     input;
   const emailFields = normalizeContactEmailsInput({
     email: email ?? null,
     emails: emails ?? [],
   });
+  const phoneFields = normalizeContactPhonesInput({
+    phone: phone ?? null,
+    phones: phones ?? [],
+  });
   const [row] = await executor
     .insert(contacts)
-    .values({ id, workspaceId, ...rest, ...names, ...emailFields, number })
+    .values({ id, workspaceId, ...rest, ...names, ...emailFields, ...phoneFields, number })
     .returning();
   return row!;
 }
@@ -406,7 +486,15 @@ export async function getContactRelations(workspaceId: string, id: string) {
   if (!contact) return null;
   const [organization, taskRows, letterRows] = await Promise.all([
     contact.organizationId ? getOrganizationById(workspaceId, contact.organizationId) : null,
-    db.select().from(tasks).where(and(eq(tasks.workspaceId, workspaceId), or(eq(tasks.contactId, id), eq(tasks.assigneeId, id)), isNull(tasks.deletedAt))),
+    db.select().from(tasks).where(and(
+      eq(tasks.workspaceId, workspaceId),
+      or(
+        eq(tasks.contactId, id),
+        eq(tasks.assigneeId, id),
+        sql`${tasks.relatedContactIds} @> ${JSON.stringify([id])}::jsonb`,
+      ),
+      isNull(tasks.deletedAt),
+    )),
     listLetters(workspaceId, { contactId: id }),
   ]);
   return { contact, organization, tasks: taskRows, letters: letterRows };
@@ -463,29 +551,41 @@ export async function updateContact(
     input.name !== undefined;
   const touchesEmails =
     input.email !== undefined || input.emails !== undefined;
+  const touchesPhones =
+    input.phone !== undefined || input.phones !== undefined;
   let namePatch: { firstName: string; lastName: string; name: string } | null =
     null;
   let emailPatch: {
     email: string | null;
     emails: { label: "personal" | "work" | "other"; address: string }[];
   } | null = null;
-  if (touchesNames || touchesEmails) {
+  let phonePatch: {
+    phone: string | null;
+    phones: { label: "personal" | "work" | "other"; number: string }[];
+  } | null = null;
+  if (touchesNames || touchesEmails || touchesPhones) {
     const existing = await getContactById(workspaceId, id, executor);
     if (!existing) return null;
     if (touchesNames) {
-      namePatch = resolveContactNameFields({
-        firstName:
-          input.firstName !== undefined ? input.firstName : existing.firstName,
-        lastName:
-          input.lastName !== undefined ? input.lastName : existing.lastName,
-        name:
-          input.firstName === undefined &&
-          input.lastName === undefined &&
-          input.name !== undefined
-            ? input.name
-            : undefined,
-      });
-      if (!namePatch.firstName) {
+      // ADR-032: structured first/last win. Legacy `name`-only patches replace
+      // identity (map onto firstName) so clients that still send a single name
+      // field do not no-op against an existing firstName.
+      if (input.firstName !== undefined || input.lastName !== undefined) {
+        namePatch = resolveContactNameFields({
+          firstName:
+            input.firstName !== undefined
+              ? input.firstName
+              : existing.firstName,
+          lastName:
+            input.lastName !== undefined ? input.lastName : existing.lastName,
+        });
+      } else if (input.name !== undefined) {
+        namePatch = resolveContactNameFields({
+          firstName: input.name,
+          lastName: "",
+        });
+      }
+      if (!namePatch?.firstName) {
         throw new Error("CONTACT_NAME_REQUIRED");
       }
     }
@@ -495,15 +595,30 @@ export async function updateContact(
         emails: input.emails !== undefined ? input.emails : existing.emails,
       });
     }
+    if (touchesPhones) {
+      phonePatch = normalizeContactPhonesInput({
+        phone: input.phone !== undefined ? input.phone : existing.phone,
+        phones: input.phones !== undefined ? input.phones : existing.phones,
+      });
+    }
   }
-  const { name: _legacyName, firstName: _f, lastName: _l, email: _e, emails: _es, ...rest } =
-    input;
+  const {
+    name: _legacyName,
+    firstName: _f,
+    lastName: _l,
+    email: _e,
+    emails: _es,
+    phone: _p,
+    phones: _ps,
+    ...rest
+  } = input;
   const [row] = await executor
     .update(contacts)
     .set({
       ...rest,
       ...(namePatch ?? {}),
       ...(emailPatch ?? {}),
+      ...(phonePatch ?? {}),
       updatedAt: new Date(),
     })
     .where(
@@ -630,7 +745,12 @@ export async function createLetter(
   if (input.contactId && !(await contactExists(workspaceId, input.contactId, executor))) {
     throw new Error("CONTACT_NOT_FOUND");
   }
-  const number = input.number ?? (await nextEntityNumber(workspaceId, "letter", executor));
+  const number = await resolveEntityNumber(
+    workspaceId,
+    "letter",
+    input.number,
+    executor,
+  );
   const [row] = await executor
     .insert(letters)
     .values({
@@ -693,6 +813,8 @@ export async function updateLetter(
   }
   const shouldRelocatePdfs =
     input.receivedDate !== undefined || input.title !== undefined;
+  const titleChanged =
+    input.title !== undefined && typeof input.title === "string";
   const [row] = await executor
     .update(letters)
     .set({
@@ -711,10 +833,90 @@ export async function updateLetter(
     .returning();
   if (!row) return null;
   if (shouldRelocatePdfs) {
+    // Keep primary PDF tab label aligned with the letter title.
+    if (titleChanged) {
+      await syncPrimaryLetterAttachmentFilename(
+        workspaceId,
+        row.id,
+        `${row.title.trim() || "Letter"}.pdf`,
+      );
+    }
     await relocateLetterPdfAttachments(workspaceId, row);
     return (await getLetterById(workspaceId, id, executor)) ?? row;
   }
   return row;
+}
+
+function attachmentFilingSubject(
+  attachment: Pick<typeof letterAttachments.$inferSelect, "originalFilename">,
+  letterTitle: string,
+): string {
+  const fromFilename = attachment.originalFilename?.trim()
+    ? letterPdfSubjectFromFilename(attachment.originalFilename)
+    : "";
+  return fromFilename || letterTitle.trim() || "Letter";
+}
+
+async function syncPrimaryLetterAttachmentFilename(
+  workspaceId: string,
+  letterId: string,
+  originalFilename: string,
+) {
+  const attachments = await listLetterAttachments(workspaceId, letterId);
+  const primary = attachments?.[0];
+  if (!primary) return;
+  const filename = originalFilename.trim();
+  if (!filename || primary.originalFilename === filename) return;
+  await db
+    .update(letterAttachments)
+    .set({ originalFilename: filename, updatedAt: new Date() })
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.id, primary.id),
+        isNull(letterAttachments.deletedAt),
+      ),
+    );
+}
+
+async function moveLetterAttachmentToKey(
+  workspaceId: string,
+  attachment: typeof letterAttachments.$inferSelect,
+  nextKey: string,
+): Promise<typeof letterAttachments.$inferSelect | null> {
+  if (nextKey === attachment.storageKey) return attachment;
+  try {
+    await moveObject(attachment.storageKey, nextKey);
+  } catch (error) {
+    // Keep the existing key when the blob is missing. Updating metadata to a
+    // path with no file breaks hybrid cloud→local (cloud has no PDF bytes)
+    // and surfaces as 500 "Internal server error" on download.
+    if (
+      error instanceof Error &&
+      error.message === "STORAGE_OBJECT_NOT_FOUND"
+    ) {
+      console.warn(
+        "[api] letter PDF relocate skipped; object missing",
+        attachment.storageKey,
+        "→",
+        nextKey,
+      );
+      return attachment;
+    }
+    throw error;
+  }
+  const [updated] = await db
+    .update(letterAttachments)
+    .set({ storageKey: nextKey, updatedAt: new Date() })
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.id, attachment.id),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .returning();
+  return updated ?? { ...attachment, storageKey: nextKey };
 }
 
 /** Re-file letter PDFs under Letters/YYYY/MM using Received Date (else today). */
@@ -729,35 +931,15 @@ async function relocateLetterPdfAttachments(
   for (const attachment of attachments) {
     const nextKey = buildLetterPdfStorageKey({
       title: letter.title,
+      subject: attachmentFilingSubject(attachment, letter.title),
       receivedDate: letter.receivedDate,
       attachmentId: attachment.id,
     });
-    if (nextKey === attachment.storageKey) {
-      if (!movedPrimary) movedPrimary = attachment;
-      continue;
-    }
-    try {
-      await moveObject(attachment.storageKey, nextKey);
-    } catch (error) {
-      // Missing source file — still point metadata at the correct filing key.
-      if (
-        !(error instanceof Error) ||
-        error.message !== "STORAGE_OBJECT_NOT_FOUND"
-      ) {
-        throw error;
-      }
-    }
-    const [updated] = await db
-      .update(letterAttachments)
-      .set({ storageKey: nextKey, updatedAt: new Date() })
-      .where(
-        and(
-          eq(letterAttachments.workspaceId, workspaceId),
-          eq(letterAttachments.id, attachment.id),
-          isNull(letterAttachments.deletedAt),
-        ),
-      )
-      .returning();
+    const updated = await moveLetterAttachmentToKey(
+      workspaceId,
+      attachment,
+      nextKey,
+    );
     if (updated && !movedPrimary) movedPrimary = updated;
   }
 
@@ -844,8 +1026,10 @@ export async function createLetterAttachment(
   if (!letter) return null;
 
   const attachmentId = newId();
+  const originalFilename = fileName || "letter.pdf";
   const key = buildLetterPdfStorageKey({
     title: letter.title,
+    subject: letterPdfSubjectFromFilename(originalFilename),
     receivedDate: letter.receivedDate,
     attachmentId,
   });
@@ -857,7 +1041,7 @@ export async function createLetterAttachment(
       workspaceId,
       letterId,
       storageKey: key,
-      originalFilename: fileName || "letter.pdf",
+      originalFilename,
       contentType: "application/pdf",
       byteSize: stored.byteSize,
       checksum: checksumForContent(bytes),
@@ -889,6 +1073,87 @@ export async function putLetterPdf(
   return result?.letter ?? null;
 }
 
+async function readLetterAttachmentObject(
+  workspaceId: string,
+  row: typeof letterAttachments.$inferSelect,
+  letter?: typeof letters.$inferSelect | null,
+) {
+  assertPrivateStorageKey(workspaceId, row.storageKey);
+  try {
+    const object = await getObject(row.storageKey);
+    return { row, bytes: object.bytes };
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      error.message !== "STORAGE_OBJECT_NOT_FOUND"
+    ) {
+      throw error;
+    }
+  }
+
+  // Heal stale keys (e.g. cloud renamed filing path without the local blob).
+  const letterRow =
+    letter ?? (await getLetterById(workspaceId, row.letterId));
+  const fallbackKeys = [
+    letterRow?.storageKey,
+    letterRow
+      ? buildLetterPdfStorageKey({
+          title: letterRow.title,
+          subject: attachmentFilingSubject(row, letterRow.title),
+          receivedDate: letterRow.receivedDate,
+          attachmentId: row.id,
+        })
+      : null,
+    letterRow
+      ? buildLetterPdfStorageKey({
+          title: letterRow.title,
+          receivedDate: letterRow.receivedDate,
+          attachmentId: row.id,
+        })
+      : null,
+  ].filter(
+    (key): key is string =>
+      Boolean(key) && key !== row.storageKey,
+  );
+
+  for (const key of fallbackKeys) {
+    try {
+      assertPrivateStorageKey(workspaceId, key);
+      const object = await getObject(key);
+      const [healed] = await db
+        .update(letterAttachments)
+        .set({ storageKey: key, updatedAt: new Date() })
+        .where(
+          and(
+            eq(letterAttachments.workspaceId, workspaceId),
+            eq(letterAttachments.id, row.id),
+            isNull(letterAttachments.deletedAt),
+          ),
+        )
+        .returning();
+      const nextRow = healed ?? { ...row, storageKey: key };
+      await syncLetterPrimaryAttachment(workspaceId, row.letterId, nextRow);
+      console.warn(
+        "[api] healed letter attachment storage key",
+        row.storageKey,
+        "→",
+        key,
+      );
+      return { row: nextRow, bytes: object.bytes };
+    } catch (fallbackError) {
+      if (
+        fallbackError instanceof Error &&
+        fallbackError.message === "STORAGE_OBJECT_NOT_FOUND"
+      ) {
+        continue;
+      }
+      throw fallbackError;
+    }
+  }
+
+  throw new Error("STORAGE_OBJECT_NOT_FOUND");
+}
+
 export async function getLetterAttachment(
   workspaceId: string,
   letterId: string,
@@ -907,9 +1172,7 @@ export async function getLetterAttachment(
     )
     .limit(1);
   if (!row?.storageKey) return null;
-  assertPrivateStorageKey(workspaceId, row.storageKey);
-  const object = await getObject(row.storageKey);
-  return { row, bytes: object.bytes };
+  return readLetterAttachmentObject(workspaceId, row);
 }
 
 export async function getLetterPdf(workspaceId: string, id: string) {
@@ -928,8 +1191,18 @@ export async function getLetterPdf(workspaceId: string, id: string) {
     .limit(1);
   if (!row?.storageKey) return null;
   assertPrivateStorageKey(workspaceId, row.storageKey);
-  const object = await getObject(row.storageKey);
-  return { row, bytes: object.bytes };
+  try {
+    const object = await getObject(row.storageKey);
+    return { row, bytes: object.bytes };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "STORAGE_OBJECT_NOT_FOUND"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function deleteLetterAttachment(
@@ -984,16 +1257,43 @@ export async function updateLetterAttachment(
   const filename = input.originalFilename.trim();
   if (!filename) return null;
 
+  const letter = await getLetterById(workspaceId, letterId);
+  if (!letter) return null;
+
+  const [current] = await db
+    .select()
+    .from(letterAttachments)
+    .where(
+      and(
+        eq(letterAttachments.workspaceId, workspaceId),
+        eq(letterAttachments.letterId, letterId),
+        eq(letterAttachments.id, attachmentId),
+        isNull(letterAttachments.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!current) return null;
+
+  const subject = letterPdfSubjectFromFilename(filename);
+  const nextKey = buildLetterPdfStorageKey({
+    title: letter.title,
+    subject,
+    receivedDate: letter.receivedDate,
+    attachmentId: current.id,
+  });
+  const moved =
+    (await moveLetterAttachmentToKey(workspaceId, current, nextKey)) ?? current;
+
   const [row] = await db
     .update(letterAttachments)
     .set({
       originalFilename: filename,
+      storageKey: moved.storageKey,
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(letterAttachments.workspaceId, workspaceId),
-        eq(letterAttachments.letterId, letterId),
         eq(letterAttachments.id, attachmentId),
         isNull(letterAttachments.deletedAt),
       ),
@@ -1003,7 +1303,21 @@ export async function updateLetterAttachment(
 
   const attachments = await listLetterAttachments(workspaceId, letterId);
   const primary = attachments?.[0];
-  if (primary?.id === attachmentId) {
+  const isPrimary = primary?.id === attachmentId;
+  if (isPrimary) {
+    // Letter title follows the primary PDF name so vault browsing stays clear.
+    if (letter.title !== subject) {
+      await db
+        .update(letters)
+        .set({ title: subject, updatedAt: new Date() })
+        .where(
+          and(
+            eq(letters.workspaceId, workspaceId),
+            eq(letters.id, letterId),
+            isNull(letters.deletedAt),
+          ),
+        );
+    }
     await syncLetterPrimaryAttachment(workspaceId, letterId, row);
   }
   return row;
@@ -1079,7 +1393,9 @@ export async function putAvatar(
   entityId: string,
   bytes: Uint8Array,
   contentType: string,
+  options?: { updateEntityColumns?: boolean },
 ) {
+  const updateEntityColumns = options?.updateEntityColumns !== false;
   const id = newId();
   const key = buildPrivateStorageKey(workspaceId, "avatars", entityId, "avatar");
   const stored = await putObject(key, bytes, contentType);
@@ -1108,27 +1424,29 @@ export async function putAvatar(
       },
     })
     .returning();
-  if (entityType === "organization") {
-    await db
-      .update(organizations)
-      .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
-      .where(and(eq(organizations.workspaceId, workspaceId), eq(organizations.id, entityId)));
-  } else if (entityType === "contact") {
-    await db
-      .update(contacts)
-      .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
-      .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
-  } else if (entityType === "bank_account") {
-    await db
-      .update(bankAccounts)
-      .set({
-        avatarStorageKey: key,
-        avatarContentType: contentType,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
-      );
+  if (updateEntityColumns) {
+    if (entityType === "organization") {
+      await db
+        .update(organizations)
+        .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
+        .where(and(eq(organizations.workspaceId, workspaceId), eq(organizations.id, entityId)));
+    } else if (entityType === "contact") {
+      await db
+        .update(contacts)
+        .set({ avatarStorageKey: key, avatarContentType: contentType, updatedAt: new Date() })
+        .where(and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)));
+    } else if (entityType === "bank_account") {
+      await db
+        .update(bankAccounts)
+        .set({
+          avatarStorageKey: key,
+          avatarContentType: contentType,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
+        );
+    }
   }
   return row!;
 }
@@ -1155,7 +1473,9 @@ export async function deleteAvatar(
   workspaceId: string,
   entityType: string,
   entityId: string,
+  options?: { updateEntityColumns?: boolean },
 ) {
+  const updateEntityColumns = options?.updateEntityColumns !== false;
   const [row] = await db
     .select()
     .from(avatars)
@@ -1186,42 +1506,44 @@ export async function deleteAvatar(
       ),
     );
 
-  if (entityType === "organization") {
-    await db
-      .update(organizations)
-      .set({
-        avatarStorageKey: null,
-        avatarContentType: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(organizations.workspaceId, workspaceId),
-          eq(organizations.id, entityId),
-        ),
-      );
-  } else if (entityType === "contact") {
-    await db
-      .update(contacts)
-      .set({
-        avatarStorageKey: null,
-        avatarContentType: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
-      );
-  } else if (entityType === "bank_account") {
-    await db
-      .update(bankAccounts)
-      .set({
-        avatarStorageKey: null,
-        avatarContentType: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
-      );
+  if (updateEntityColumns) {
+    if (entityType === "organization") {
+      await db
+        .update(organizations)
+        .set({
+          avatarStorageKey: null,
+          avatarContentType: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(organizations.workspaceId, workspaceId),
+            eq(organizations.id, entityId),
+          ),
+        );
+    } else if (entityType === "contact") {
+      await db
+        .update(contacts)
+        .set({
+          avatarStorageKey: null,
+          avatarContentType: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(contacts.workspaceId, workspaceId), eq(contacts.id, entityId)),
+        );
+    } else if (entityType === "bank_account") {
+      await db
+        .update(bankAccounts)
+        .set({
+          avatarStorageKey: null,
+          avatarContentType: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(bankAccounts.workspaceId, workspaceId), eq(bankAccounts.id, entityId)),
+        );
+    }
   }
 
   return row;
@@ -1287,19 +1609,52 @@ export function listMentions(workspaceId: string, userId?: string | null) {
   return db.select().from(mentions).where(and(...conditions)).orderBy(desc(mentions.createdAt));
 }
 
+export async function getMentionById(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
+    .select()
+    .from(mentions)
+    .where(and(eq(mentions.workspaceId, workspaceId), eq(mentions.id, id)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function createMention(
   workspaceId: string,
-  input: { userId?: string | null; sourceType: string; sourceId: string; excerpt?: string },
+  input: {
+    userId?: string | null;
+    sourceType: string;
+    sourceId: string;
+    excerpt?: string | null;
+    readAt?: string | null;
+  },
+  id = newId(),
+  executor: DbExecutor = db,
 ) {
-  const [row] = await db
+  const [row] = await executor
     .insert(mentions)
-    .values({ id: newId(), workspaceId, ...input })
+    .values({
+      id,
+      workspaceId,
+      userId: input.userId ?? null,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      excerpt: input.excerpt ?? null,
+      readAt: input.readAt ? new Date(input.readAt) : null,
+    })
     .returning();
   return row!;
 }
 
-export async function markMentionRead(workspaceId: string, id: string) {
-  const [row] = await db
+export async function markMentionRead(
+  workspaceId: string,
+  id: string,
+  executor: DbExecutor = db,
+) {
+  const [row] = await executor
     .update(mentions)
     .set({ readAt: new Date() })
     .where(and(eq(mentions.workspaceId, workspaceId), eq(mentions.id, id)))

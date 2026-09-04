@@ -23,11 +23,15 @@ export function MentionChipHoverShell({
   asChild,
 }: MentionChipHoverShellProps) {
   const isBlock = layout === "block";
+  // Inline chips wrap in a span trigger so HoverCard always has a stable DOM
+  // node (ClientLink asChild was easy to miss / miss-measure). Block cards keep
+  // asChild so the whole card link is the hit target.
+  const useAsChild = asChild ?? isBlock;
 
   return (
     <HoverCard openDelay={150} closeDelay={120}>
       <HoverCardTrigger
-        asChild={asChild ?? isBlock}
+        asChild={useAsChild}
         className={
           isBlock
             ? "mention-chip-hover-shell mention-chip-hover-shell--block"

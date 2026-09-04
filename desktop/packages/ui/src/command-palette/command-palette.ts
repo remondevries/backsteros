@@ -241,6 +241,8 @@ export type CommandPaletteHit = {
   subtitle?: string | null;
   href: string;
   section: CommandPaletteResultSection;
+  /** Resolved avatar URL for contact/organization hits. */
+  avatarSrc?: string | null;
 };
 
 /** Empty-query contacts list when the palette is scoped to Contacts. */
@@ -251,6 +253,8 @@ export type CommandPaletteRecentContact = {
   title: string;
   subtitle?: string | null;
   href: string;
+  /** Resolved avatar URL when the contact has an uploaded image. */
+  avatarSrc?: string | null;
   /** Epoch ms — higher = more recent. */
   updatedAt?: number | null;
 };
@@ -271,4 +275,36 @@ export function isCommandPaletteContactsListScope(options: {
 }): boolean {
   if (options.filterMode === "contacts") return true;
   return options.searchContext?.kind === "contacts";
+}
+
+/** Empty-query organizations list when the palette is scoped to Organizations. */
+export const COMMAND_PALETTE_RECENT_ORGANIZATIONS_LIMIT = 10;
+
+export type CommandPaletteRecentOrganization = {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  href: string;
+  /** Resolved avatar URL when the organization has an uploaded image. */
+  avatarSrc?: string | null;
+  /** Epoch ms — higher = more recent. */
+  updatedAt?: number | null;
+};
+
+export function selectRecentCommandPaletteOrganizations(
+  organizations: readonly CommandPaletteRecentOrganization[],
+  limit = COMMAND_PALETTE_RECENT_ORGANIZATIONS_LIMIT,
+): CommandPaletteRecentOrganization[] {
+  return [...organizations]
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, Math.max(0, limit));
+}
+
+/** True when empty-query results should be organizations (not Navigate). */
+export function isCommandPaletteOrganizationsListScope(options: {
+  filterMode: CommandPaletteFilterMode;
+  searchContext: { kind: string } | null;
+}): boolean {
+  if (options.filterMode === "organizations") return true;
+  return options.searchContext?.kind === "organizations";
 }

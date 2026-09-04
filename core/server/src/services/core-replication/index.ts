@@ -6,6 +6,7 @@ export { applyRemoteChanges, bootstrapTableFromPeer } from "./apply.js";
 export {
   getCoreReplicationConfig,
   isCoreReplicationEnabled,
+  resolveReplicationIntervalMs,
   type CoreReplicationConfig,
   type CoreReplicationRole,
 } from "./config.js";
@@ -26,6 +27,12 @@ export {
   pullPeerSyncEvents,
   buildSyncEventsFeed,
 } from "./sync-event-replication.js";
+export {
+  notifyPeerOfDocumentWrite,
+  notifyReplicaOfCloudWrite,
+  handleReplicationNudge,
+} from "./nudge.js";
+export { publishWorkspaceUpdatedFromSyncEvent } from "./sync-event-live-publish.js";
 export {
   isAvatarStorageKey,
   fetchAvatarFromPeer,

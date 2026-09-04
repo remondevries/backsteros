@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent } from "./task-property-dropdown-keys.js";
+import {
+  resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent,
+  resolveTaskPropertyDropdownOpenCandidatesFromEvent,
+} from "./task-property-dropdown-keys.js";
 
 describe("resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent", () => {
   it("maps list hotkeys without shift", () => {
@@ -74,6 +77,27 @@ describe("resolveFinanceTxPropertyDropdownOpenCandidatesFromEvent", () => {
         shiftKey: false,
       }),
       [],
+    );
+  });
+});
+
+describe("resolveTaskPropertyDropdownOpenCandidatesFromEvent", () => {
+  it("maps R to related contacts then letter received date", () => {
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "r",
+        code: "KeyR",
+        shiftKey: false,
+      }),
+      ["related", "receivedDate"],
+    );
+    assert.deepEqual(
+      resolveTaskPropertyDropdownOpenCandidatesFromEvent({
+        key: "R",
+        code: "KeyR",
+        shiftKey: false,
+      }),
+      ["related", "receivedDate"],
     );
   });
 });

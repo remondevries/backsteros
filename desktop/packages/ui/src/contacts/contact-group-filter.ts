@@ -28,6 +28,11 @@ export function getContactsGroupHref(groupId: string | null): string {
   return `/contacts${withCrmGroupSearch("", groupId)}`;
 }
 
+/** Catalog root with optional group filter (`/organizations` or `?crmGroup=`). */
+export function getOrganizationsGroupHref(groupId: string | null): string {
+  return `/organizations${withCrmGroupSearch("", groupId)}`;
+}
+
 /** Append (or replace) search onto a path that may already include `?…`. */
 export function mergeHrefSearch(path: string, search: string): string {
   if (!search || search === "?") return path;

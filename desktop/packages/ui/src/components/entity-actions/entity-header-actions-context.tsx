@@ -405,3 +405,8 @@ export function useEntityHeaderActionsContext() {
   }
   return context;
 }
+
+/** Soft read — null when the shell provider is absent or a duplicate module graph. */
+export function useEntityHeaderActionsContextOptional() {
+  return useContext(EntityHeaderActionsContext);
+}

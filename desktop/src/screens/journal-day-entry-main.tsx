@@ -243,7 +243,11 @@ function JournalEntryDetail({
     <>
       {keepAliveActive ? (
         <>
-          <RegisterPageIcon icon={metadataIcon} />
+          <RegisterPageIcon
+            active={keepAliveActive}
+            href={location.pathname}
+            icon={metadataIcon}
+          />
           {documentId ? (
             <RegisterEntityDeleteAction
               entityLabel={`journal entry "${displayTitle}"`}
@@ -258,6 +262,7 @@ function JournalEntryDetail({
         resetKey={documentId ?? dateSlug}
         titleEditable={false}
         previewTitleEditable={false}
+        shortcutsEnabled={keepAliveActive}
         embedded
         leading={<JournalWhoopLeading dateSlug={dateSlug} fetchEnabled />}
         icon={
@@ -325,7 +330,7 @@ function JournalEntryDetail({
             onSelectTask={handleSelectDueTask}
             onToggleHabit={(item, checked) => {
               void patchTask(item.taskId, {
-                status: checked ? "completed" : "ready_to_start",
+                status: checked ? "completed" : "canceled",
               });
             }}
           />

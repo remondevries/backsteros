@@ -21,19 +21,15 @@ import {
   type SpellcheckSegment,
 } from "../../shared/text-diff-ranges.js";
 import { useContentTitleEditorNavigation } from "../../content/use-content-title-editor-navigation.js";
+import { ContentMarkdownDescriptionLayout } from "../content/content-markdown-description-layout.js";
 import {
   ContentMarkdownPreviewColumn,
-  ContentMarkdownViewLayout,
   useMarkdownDetailEditor,
   type MarkdownDetailEditorMode,
 } from "../content/content-markdown-view-layout.js";
 import { ContentDetailTitleHeader } from "../content/content-detail-title-header.js";
-import { DocumentMarkdownEditor } from "../documents/document-markdown-editor.js";
 import { ResizableSidePanel } from "../shell/resizable-side-panel.js";
-import {
-  DocumentMarkdownPreview,
-  type ResolveMarkdownImageSrc,
-} from "../documents/document-markdown-preview.js";
+import { type ResolveMarkdownImageSrc } from "../documents/document-markdown-preview.js";
 import { FloatingPillToggleDock } from "../shared/floating-pill-toggle-dock.js";
 import { OverviewNameEditor } from "../content/overview-name-editor.js";
 import { SegmentedPillToggle } from "../list-nav/list-board-view-shell.js";
@@ -46,8 +42,11 @@ import {
 import type { TrackedTimerSessionMeta } from "../../tracked-timer/tracked-timer-context.js";
 import { TaskPropertiesInlineChips } from "./task-properties-inline-chips.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { TaskLinkAttachments } from "./task-link-attachments.js";
-import type { TaskLinkPickerOption } from "./task-link-attachments.js";
+import {
+  TaskLinkAttachments,
+  type TaskFileAttachmentItem,
+  type TaskLinkPickerOption,
+} from "./task-link-attachments.js";
 import type { UploadMarkdownImages } from "../../documents/markdown-image-paste.js";
 
 /** Below this width, properties render as inline chips; at/above as the card rail. */
@@ -111,7 +110,13 @@ export type TaskDetailViewProps = {
   onToggleSpellcheckDescriptionSegment?: (segmentId: string) => void;
   onSaveDescription?: (value: string) => void | Promise<void>;
   onChangeLinks?: (links: TaskLink[]) => void;
+  fileAttachments?: readonly TaskFileAttachmentItem[];
+  fileUploading?: boolean;
+  onUploadFile?: (file: File) => void | Promise<void>;
+  onRemoveFile?: (attachmentId: string) => void;
+  onOpenFile?: (attachmentId: string) => void;
   documentLinkOptions?: readonly TaskLinkPickerOption[];
+  letterLinkOptions?: readonly TaskLinkPickerOption[];
   emailLinkOptions?: readonly TaskLinkPickerOption[];
   onNavigateLink?: (href: string) => void;
   /** Upload clipboard/drop images for Linear-style markdown embeds. */
@@ -133,12 +138,15 @@ export type TaskDetailViewProps = {
   onPriorityChange?: (priority: number) => void;
   onDueDateChange?: (dueDate: Date | null) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
+  onRelatedChange?: (related: import("../../tasks/task-related-entities.js").TaskRelatedSelection) => void;
   onProjectChange?: (projectKey: string | null) => void;
   assigneeOptions?: SearchableDropdownOption<string>[];
+  relatedOptions?: SearchableDropdownOption<string>[];
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeNavigateHref?: string | null;
   projectNavigateHref?: string | null;
   onCreateAssigneeFromQuery?: (query: string) => void;
+  onCreateRelatedContactFromQuery?: (query: string) => void;
   /** Sign-off for agent-created tasks — removes from Agents inbox subgroup. */
   onAgentInboxApprove?: () => void;
   onTrackedDurationSecondsChange?: (seconds: number | null) => void;
@@ -161,7 +169,13 @@ export function TaskDetailView({
   onToggleSpellcheckDescriptionSegment,
   onSaveDescription,
   onChangeLinks,
+  fileAttachments,
+  fileUploading,
+  onUploadFile,
+  onRemoveFile,
+  onOpenFile,
   documentLinkOptions,
+  letterLinkOptions,
   emailLinkOptions,
   onNavigateLink,
   onUploadImages,
@@ -173,12 +187,15 @@ export function TaskDetailView({
   onPriorityChange,
   onDueDateChange,
   onAssigneeChange,
+  onRelatedChange,
   onProjectChange,
   assigneeOptions,
+  relatedOptions,
   projectOptions,
   assigneeNavigateHref,
   projectNavigateHref,
   onCreateAssigneeFromQuery,
+  onCreateRelatedContactFromQuery,
   onAgentInboxApprove,
   onTrackedDurationSecondsChange,
   onTimerSessionChange,
@@ -367,26 +384,9 @@ export function TaskDetailView({
       <p className="content-detail-display-id">{task.displayId}</p>
     ) : null;
 
-  const descriptionEditor = (
-    <DocumentMarkdownEditor
-      value={value}
-      onChange={(next) => {
-        clearHighlights();
-        handleChange(next);
-      }}
-      onBlur={handleBlurSave}
-      focusRequest={editorFocusRequest}
-      scrollWithContent
-      highlightRanges={descriptionMarkRanges}
-      onUploadImages={onUploadImages}
-      ariaLabel="Task description"
-    />
-  );
-
-  const descriptionPreview = (
-    <ContentMarkdownPreviewColumn includeTopInset={false}>
-      {hasSpellcheckHighlights &&
-      spellcheckHasChanges(descriptionSegments) ? (
+  const descriptionPreview =
+    hasSpellcheckHighlights && spellcheckHasChanges(descriptionSegments) ? (
+      <ContentMarkdownPreviewColumn includeTopInset={false}>
         <div
           className="spellcheck-highlight-description"
           aria-label="Spellchecked description"
@@ -396,17 +396,8 @@ export function TaskDetailView({
             onToggleSegment={onToggleSpellcheckDescriptionSegment}
           />
         </div>
-      ) : value.trim() ? (
-        <DocumentMarkdownPreview
-          body={value}
-          onChange={handleChange}
-          resolveImageSrc={resolveImageSrc}
-        />
-      ) : (
-        <p className="overview-empty">Add a description…</p>
-      )}
-    </ContentMarkdownPreviewColumn>
-  );
+      </ContentMarkdownPreviewColumn>
+    ) : undefined;
 
   const belowDescriptionNode = belowDescription ? (
     <div className="task-detail-below-description">
@@ -484,10 +475,15 @@ export function TaskDetailView({
                     onPriorityChange={onPriorityChange}
                     onDueDateChange={onDueDateChange}
                     onAssigneeChange={onAssigneeChange}
+                    onRelatedChange={onRelatedChange}
                     onProjectChange={onProjectChange}
                     assigneeOptions={assigneeOptions}
+                    relatedOptions={relatedOptions}
                     projectOptions={projectOptions}
                     onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+                    onCreateRelatedContactFromQuery={
+                      onCreateRelatedContactFromQuery
+                    }
                     onTrackedDurationSecondsChange={
                       onTrackedDurationSecondsChange
                     }
@@ -502,11 +498,22 @@ export function TaskDetailView({
                 }
                 style={usePropertiesRail ? { display: "contents" } : undefined}
               >
-                <ContentMarkdownViewLayout
+                <ContentMarkdownDescriptionLayout
                   mode={mode}
                   editorActivated={editorActivated}
                   onToggleMode={handleToggleViewMode}
-                  editor={descriptionEditor}
+                  value={value}
+                  onChange={(next) => {
+                    clearHighlights();
+                    handleChange(next);
+                  }}
+                  onBlur={handleBlurSave}
+                  focusRequest={editorFocusRequest}
+                  highlightRanges={descriptionMarkRanges}
+                  onUploadImages={onUploadImages}
+                  resolveImageSrc={resolveImageSrc}
+                  ariaLabel="Task description"
+                  emptyMessage="Add a description…"
                   preview={descriptionPreview}
                   toggle={usePropertiesRail ? undefined : viewModeDock}
                 />
@@ -514,8 +521,14 @@ export function TaskDetailView({
                   links={task.links}
                   onChangeLinks={onChangeLinks}
                   documentOptions={documentLinkOptions}
+                  letterOptions={letterLinkOptions}
                   emailOptions={emailLinkOptions}
                   onNavigate={onNavigateLink}
+                  fileAttachments={fileAttachments}
+                  fileUploading={fileUploading}
+                  onUploadFile={onUploadFile}
+                  onRemoveFile={onRemoveFile}
+                  onOpenFile={onOpenFile}
                 />
                 {belowDescriptionNode}
                 {errorNode}
@@ -539,12 +552,17 @@ export function TaskDetailView({
                 onPriorityChange={onPriorityChange}
                 onDueDateChange={onDueDateChange}
                 onAssigneeChange={onAssigneeChange}
+                onRelatedChange={onRelatedChange}
                 onProjectChange={onProjectChange}
                 assigneeOptions={assigneeOptions}
+                relatedOptions={relatedOptions}
                 projectOptions={projectOptions}
                 assigneeNavigateHref={assigneeNavigateHref}
                 projectNavigateHref={projectNavigateHref}
                 onCreateAssigneeFromQuery={onCreateAssigneeFromQuery}
+                onCreateRelatedContactFromQuery={
+                  onCreateRelatedContactFromQuery
+                }
                 agentInboxPending={agentInboxPending}
                 onAgentInboxApprove={onAgentInboxApprove}
                 onTrackedDurationSecondsChange={

@@ -271,14 +271,22 @@ export function FileCodeViewer({
     const leaveEditor = onLeaveEditor;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.repeat) return;
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
-        return;
-      }
+      if (event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
 
       const view = editorView;
       if (!view?.hasFocus) return;
 
+      if (event.key === "Tab" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        view.contentDOM.blur();
+        leaveEditor();
+        return;
+      }
+
+      if (event.key !== "Escape") return;
+      if (event.shiftKey) return;
       if (isVimBusyMode(view)) return;
 
       event.preventDefault();

@@ -73,6 +73,7 @@ export { BreadcrumbChromeSkeleton } from "../components/skeletons/breadcrumb-chr
 export {
   RegisterPageTitle,
   RegisterPageTitleProvider,
+  shouldApplyPageTitleToChrome,
   useRegisterPageTitleContext,
   type RegisterPageTitleContextValue,
 } from "../navigation-history/register-page-title.js";
@@ -101,6 +102,7 @@ export {
 export {
   buildProductTabHref,
   createProductTab,
+  normalizeTabHref,
   syncActiveTabToPath,
   type ProductTab,
   type ProductTabsState,

@@ -26,6 +26,10 @@ BacksterOS is a personal / company ops system:
 - **Shells:** Expo (mobile), Tauri + Vite/React (desktop)
 - **Linear-style sync:** offline-first, cursor deltas, batch mutations
 - **Agent-friendly API:** search, read/write markdown, lazy PDF fetch
+- **API agents → cloud-core** (`https://agent.backsteros.com` + `sk_live_…`);
+  desktop/mobile stay on local-core and receive cloud writes via replication
+  nudge + workspace SSE (see `docs/13-hybrid-cloud-local-core.md`,
+  `docs/04-api-and-sync.md` live documents)
 
 Public Next.js product/admin and hosting portals are **out of scope** for active v2 work (see `legacy/`).
 

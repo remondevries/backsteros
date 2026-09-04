@@ -94,6 +94,8 @@ export type AgentMailMessageSummary = {
   messageId: string;
   subject: string;
   from: string;
+  /** Present when AgentMail includes recipients on the list summary. */
+  to: string[];
   preview: string | null;
   timestamp: string;
 };
@@ -188,6 +190,7 @@ export function mapAgentMailMessageSummary(
     messageId: asRequiredString(raw.message_id, "message_id"),
     subject: asOptionalString(raw.subject) ?? "",
     from: formatAgentMailAddress(raw.from),
+    to: mapAddressList(raw.to),
     preview: asOptionalString(raw.preview),
     timestamp: asTimestamp(raw.timestamp, raw.created_at),
   };

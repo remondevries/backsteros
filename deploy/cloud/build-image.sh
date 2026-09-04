@@ -8,7 +8,6 @@ export DOCKER_BUILDKIT=1
 
 docker buildx build \
   --platform linux/amd64 \
-  --ssh default \
   -f deploy/cloud/Dockerfile \
   -t backsteros-cloud:latest \
   --load \

@@ -45,14 +45,22 @@ import {
   JournalHabitsList,
 } from "./journal-habits-section";
 import { JournalWhoopLeading, useWhoopDaySnapshot } from "./journal-whoop-leading";
+import { JournalMarkdownBody } from "./journal-markdown-body";
 import { SegmentedPillToggle } from "./segmented-pill-toggle";
 import { TextInput } from "./app-text-input";
+import { toggleMarkdownTaskListItem } from "../lib/markdown-task-list";
 
 type JournalDayListMode = "tasks" | "habits";
+type JournalBodyViewMode = "edit" | "preview";
 
 const JOURNAL_DAY_LIST_OPTIONS = [
   { value: "tasks" as const, label: "Tasks" },
   { value: "habits" as const, label: "Habits" },
+] as const;
+
+const JOURNAL_BODY_VIEW_OPTIONS = [
+  { value: "edit" as const, label: "Edit" },
+  { value: "preview" as const, label: "Preview" },
 ] as const;
 
 type SyncedTaskRow = GroupedTaskRow & {
@@ -118,6 +126,8 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   const [bodyLoading, setBodyLoading] = useState(true);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [draftBody, setDraftBody] = useState("");
+  const [bodyViewMode, setBodyViewMode] =
+    useState<JournalBodyViewMode>("edit");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -300,10 +310,18 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         ...current,
         [item.taskId]: checked,
       }));
-      void recordHabitDay(client, item.habitId, {
-        dueYmd: dateSlug,
-        status: checked ? "completed" : "canceled",
-      }).catch(() => {
+      void recordHabitDay(
+        client,
+        item.habitId,
+        {
+          dueYmd: dateSlug,
+          status: checked ? "completed" : "canceled",
+        },
+        {
+          ...powerSync,
+          todayTaskId: item.taskId,
+        },
+      ).catch(() => {
         setHabitCheckedOverride((current) => {
           const next = { ...current };
           delete next[item.taskId];
@@ -311,7 +329,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         });
       });
     },
-    [client, dateSlug],
+    [client, dateSlug, powerSync],
   );
 
   const onPressRow = useCallback(
@@ -332,13 +350,17 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   const displayBody = body ?? snippetBody;
   const bodyReady = Boolean(documentId) && !bodyLoading && !bodyError;
 
-  /** Body stays inline-editable — no Edit button. Seed once per open. */
+  /** Seed draft when opening a day. */
   useEffect(() => {
     if (!bodyReady) return;
     setDraftBody(displayBody);
     setSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed keys only
   }, [dateSlug, bodyReady]);
+
+  useEffect(() => {
+    setBodyViewMode("edit");
+  }, [dateSlug]);
 
   const saveEditing = useCallback(async () => {
     if (!documentId || saving || !bodyReady) return;
@@ -384,11 +406,95 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     title,
   ]);
 
+  const handleBodyViewModeChange = useCallback(
+    (next: JournalBodyViewMode) => {
+      if (next === bodyViewMode) return;
+      if (bodyViewMode === "edit" && next === "preview") {
+        void saveEditing();
+      }
+      setBodyViewMode(next);
+    },
+    [bodyViewMode, saveEditing],
+  );
+
+  const handleToggleTaskCheckbox = useCallback(
+    (index: number) => {
+      const next = toggleMarkdownTaskListItem(draftBody, index);
+      if (next == null) return;
+      setDraftBody(next);
+      queueMicrotask(() => {
+        void (async () => {
+          if (!documentId || saving || !bodyReady) return;
+          if (contentVersion == null) return;
+          if (next === displayBody) return;
+          setSaving(true);
+          setSaveError(null);
+          try {
+            const nextContent = mergeJournalContent(dateSlug, next);
+            const updated = await saveDocumentContent(
+              client,
+              documentId,
+              nextContent,
+              contentVersion,
+            );
+            setBody(
+              getJournalDisplayBody(
+                updated.content ?? nextContent,
+                dateSlug,
+                title,
+              ),
+            );
+            setContentVersion(updated.contentVersion);
+          } catch (reason) {
+            if (reason instanceof DocumentContentEmptyBodyRejectedError) {
+              setSaveError(null);
+              return;
+            }
+            setSaveError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not save journal.",
+            );
+          } finally {
+            setSaving(false);
+          }
+        })();
+      });
+    },
+    [
+      bodyReady,
+      client,
+      contentVersion,
+      dateSlug,
+      displayBody,
+      documentId,
+      draftBody,
+      saving,
+      title,
+    ],
+  );
+
+  const chromeColor = inPadJournalSplit ? colors.surface : colors.background;
+
   const listHeader = useMemo(
     () => (
-      <View style={{ paddingTop: inPadJournalSplit ? 12 : 4 }}>
-        <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
+      <View style={{ paddingTop: inPadJournalSplit ? 8 : 0 }}>
         <ContentPageTitle title={title} />
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingBottom: 8,
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <SegmentedPillToggle
+            value={bodyViewMode}
+            options={JOURNAL_BODY_VIEW_OPTIONS}
+            onChange={handleBodyViewModeChange}
+            accessibilityLabel="Journal body view mode"
+          />
+        </View>
         <View
           style={{ paddingHorizontal: 16, paddingBottom: 20, minHeight: 24 }}
         >
@@ -396,7 +502,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
             <ActivityIndicator color={colors.muted} />
           ) : bodyError ? (
             <Text style={ui.error}>{bodyError}</Text>
-          ) : (
+          ) : bodyViewMode === "edit" ? (
             <>
               <TextInput
                 value={draftBody}
@@ -417,6 +523,20 @@ export function JournalDetailScreen({ dateSlug }: Props) {
                   lineHeight: 22,
                 }}
               />
+              {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
+            </>
+          ) : (
+            <>
+              {draftBody.trim() ? (
+                <JournalMarkdownBody
+                  body={draftBody}
+                  onToggleTaskCheckbox={handleToggleTaskCheckbox}
+                />
+              ) : (
+                <Text style={{ color: colors.muted, fontSize: 15 }}>
+                  No journal entry yet.
+                </Text>
+              )}
               {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
             </>
           )}
@@ -465,9 +585,12 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       bodyError,
       bodyLoading,
       bodyReady,
+      bodyViewMode,
       dateSlug,
       draftBody,
       habitItems,
+      handleBodyViewModeChange,
+      handleToggleTaskCheckbox,
       inPadJournalSplit,
       listMode,
       onToggleHabit,
@@ -475,7 +598,6 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       saveError,
       saving,
       title,
-      whoop,
     ],
   );
 
@@ -490,30 +612,36 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         }}
       />
       <View style={styles.page}>
-        <GroupedTaskList
-          rows={listMode === "tasks" ? rows : []}
-          groupByStatus={listMode === "tasks"}
-          emptyText={
-            listMode === "tasks" ? "No tasks due on this date." : ""
-          }
-          contentConstrained={isPad}
-          listHeader={listHeader}
-          onPressRow={listMode === "tasks" ? onPressRow : undefined}
-          onAddToStatus={
-            listMode === "tasks"
-              ? (status) => {
-                  router.push({
-                    pathname: "/create/task",
-                    params: { status, dueYmd: dateSlug },
-                  });
-                }
-              : undefined
-          }
-        />
-        <View pointerEvents="none" style={styles.headerFade}>
-          <ContentHeaderFade
-            color={inPadJournalSplit ? colors.surface : colors.background}
+        {/* Whoop sits above the scroll + header fade so the rings stay clear. */}
+        {whoop.authenticated !== false ? (
+          <View style={[styles.whoopChrome, { backgroundColor: chromeColor }]}>
+            <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
+          </View>
+        ) : null}
+        <View style={styles.scrollPane}>
+          <GroupedTaskList
+            rows={listMode === "tasks" ? rows : []}
+            groupByStatus={listMode === "tasks"}
+            emptyText={
+              listMode === "tasks" ? "No tasks due on this date." : ""
+            }
+            contentConstrained={isPad}
+            listHeader={listHeader}
+            onPressRow={listMode === "tasks" ? onPressRow : undefined}
+            onAddToStatus={
+              listMode === "tasks"
+                ? (status) => {
+                    router.push({
+                      pathname: "/create/task",
+                      params: { status, dueYmd: dateSlug },
+                    });
+                  }
+                : undefined
+            }
           />
+          <View pointerEvents="none" style={styles.headerFade}>
+            <ContentHeaderFade color={chromeColor} />
+          </View>
         </View>
       </View>
     </>
@@ -524,9 +652,16 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
   },
+  whoopChrome: {
+    paddingTop: 4,
+    zIndex: 5,
+  },
+  scrollPane: {
+    flex: 1,
+  },
   headerFade: {
     position: "absolute",
-    // 1px into the nav/chrome so scrolling content doesn't flash a seam.
+    // 1px into the Whoop/nav chrome so scrolling content doesn't flash a seam.
     top: -1,
     left: 0,
     right: 0,

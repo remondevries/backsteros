@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDesktopApi } from "./api-context";
 import {
+  discardDocumentContentCache,
   fetchDocumentContent,
   peekDocumentContentCache,
   writeDocumentContentCache,
 } from "./document-content-cache";
 import { usePowerSyncQuery } from "./powersync-context";
 import { DOCUMENT_VERSION_ROW_COMPARATOR } from "./powersync-row-comparators";
+import {
+  WORKSPACE_DOCUMENT_UPDATED_EVENT,
+  type WorkspaceDocumentUpdatedDetail,
+} from "./workspace-events";
 
 export {
   peekDocumentContentCache,
   prefetchDocumentContent,
 } from "./document-content-cache";
+
+/** Coalesce bursty agent patches into one Tier D refetch. */
+const SSE_REFETCH_DEBOUNCE_MS = 150;
 
 function asContentVersion(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -30,8 +38,9 @@ function asContentVersion(value: unknown): number | null {
  * - `refreshing` — revalidate while showing cached body for the *same* id
  * - persisted LRU + shared inflight with `prefetchDocumentContent`
  * - keeps the body in the bounded LRU after leave (return visits / reload)
- * - when PowerSync `content_version` advances past the local body version,
- *   refetch Tier D content (live refresh across clients)
+ * - **primary live path:** workspace SSE (agent writes) → force GET (no
+ *   PowerSync wait). Dirty edit drafts are preserved by the markdown editor.
+ * - **fallback:** PowerSync `content_version` advance → force GET
  *
  * By default, switching document ids never keeps the previous entry's body
  * (Knowledge). Pass `keepPreviousOnMiss` to keep prior body visible.
@@ -64,6 +73,8 @@ export function useDesktopDocumentContent(
   );
   const [refreshing, setRefreshing] = useState(false);
   const [activeId, setActiveId] = useState(documentId);
+  const contentVersionRef = useRef(contentVersion);
+  contentVersionRef.current = contentVersion;
 
   const syncedVersionRows = usePowerSyncQuery<Record<string, unknown>>(
     enabled && documentId
@@ -148,7 +159,58 @@ export function useDesktopDocumentContent(
     };
   }, [client, documentId, enabled, keepPreviousOnMiss, skeletonUntilFetched]);
 
-  // Remote save bumped content_version in PowerSync — refetch Tier D body.
+  // Primary live path: agent/vault SSE → force Tier D refetch (no PowerSync wait).
+  useEffect(() => {
+    if (!documentId || !enabled) return;
+
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const onDocumentUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceDocumentUpdatedDetail>)
+        .detail;
+      if (!detail || detail.documentId !== documentId) return;
+      // Metadata-only events (move/rename) have no contentVersion — skip body GET.
+      if (detail.contentVersion == null) return;
+      // Skip if we already have this version (or newer) locally.
+      if (
+        contentVersionRef.current != null &&
+        detail.contentVersion <= contentVersionRef.current
+      ) {
+        return;
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (cancelled) return;
+        const fetchId = documentId;
+        discardDocumentContentCache(fetchId);
+        setRefreshing(true);
+        void fetchDocumentContent(client, fetchId, { force: true }).then(
+          (data) => {
+            if (cancelled || !data) {
+              if (!cancelled) setRefreshing(false);
+              return;
+            }
+            setInitialBody(data.content);
+            setContentVersion(data.contentVersion);
+            setRefreshing(false);
+          },
+        );
+      }, SSE_REFETCH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(WORKSPACE_DOCUMENT_UPDATED_EVENT, onDocumentUpdated);
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener(
+        WORKSPACE_DOCUMENT_UPDATED_EVENT,
+        onDocumentUpdated,
+      );
+    };
+  }, [client, documentId, enabled]);
+
+  // Fallback: PowerSync content_version advanced (SSE missed / offline catch-up).
   useEffect(() => {
     if (!documentId || !enabled) return;
     if (syncedContentVersion == null || contentVersion == null) return;

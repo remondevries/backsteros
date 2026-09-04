@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -68,6 +68,17 @@ const tasksSectionRetainedRouteParamRef: { current: string | null } = {
   current: null,
 };
 
+function taskHasRouteNumber(
+  number: number | null | undefined,
+): number is number {
+  return typeof number === "number" && Number.isFinite(number) && number > 0;
+}
+
+function primeTasksSectionBootstrap(bootstrap: TaskDetailBootstrap) {
+  // Ref must update synchronously: warm keep-alive re-renders before setState.
+  tasksSectionBootstrapRef.current = bootstrap;
+}
+
 export function TaskListPage() {
   const { taskId, taskSlug } = useShellParams() as {
     taskId?: string;
@@ -75,6 +86,9 @@ export function TaskListPage() {
   };
   const taskRouteParam = taskSlug ?? taskId;
   const showDetail = Boolean(taskRouteParam);
+  const [bootstrapTask, setBootstrapTask] = useState<TaskDetailBootstrap | null>(
+    null,
+  );
   if (taskRouteParam) {
     tasksSectionRetainedRouteParamRef.current = taskRouteParam;
     tasksSectionDetailHostEverRef.current = true;
@@ -97,6 +111,13 @@ export function TaskListPage() {
   const retainedTaskRouteParam =
     taskRouteParam ?? tasksSectionRetainedRouteParamRef.current;
   const detailHostMounted = tasksSectionDetailHostEverRef.current;
+  const resolvedBootstrap =
+    bootstrapTask &&
+    retainedTaskRouteParam &&
+    (bootstrapTask.routeSlug === retainedTaskRouteParam ||
+      bootstrapTask.id === retainedTaskRouteParam)
+      ? bootstrapTask
+      : tasksSectionBootstrapRef.current;
 
   return (
     <div className="tasks-section-page">
@@ -105,7 +126,18 @@ export function TaskListPage() {
         hidden={showDetail}
         aria-hidden={showDetail || undefined}
       >
-        <TaskListPageBody listHidden={showDetail} />
+        <TaskListPageBody
+          listHidden={showDetail}
+          onBootstrapTask={(next) => {
+            if (next) {
+              primeTasksSectionBootstrap(next);
+              setBootstrapTask(next);
+              return;
+            }
+            tasksSectionBootstrapRef.current = null;
+            setBootstrapTask(null);
+          }}
+        />
       </div>
       {detailHostMounted && retainedTaskRouteParam ? (
         <div
@@ -120,7 +152,7 @@ export function TaskListPage() {
           <TaskDetailPage
             taskRouteParam={retainedTaskRouteParam}
             detailVisible={showDetail}
-            bootstrapTask={tasksSectionBootstrapRef.current}
+            bootstrapTask={resolvedBootstrap}
           />
         </div>
       ) : null}
@@ -131,7 +163,13 @@ export function TaskListPage() {
 const NO_ENTITIES: [] = [];
 const NO_EMAIL_ROWS: ReturnType<typeof mapEmailMessagesToTaskRows> = [];
 
-function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
+function TaskListPageBody({
+  listHidden = false,
+  onBootstrapTask,
+}: {
+  listHidden?: boolean;
+  onBootstrapTask: (bootstrap: TaskDetailBootstrap | null) => void;
+}) {
   const navigate = useNavigate();
   const { tasks, allTasks } = useDesktopWorkspaceTasks();
   const { projects } = useDesktopWorkspaceProjects();
@@ -232,10 +270,15 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
     return collapseHabitItemsByHabitId(items);
   }, [allTasks, habits]);
 
-  const pendingCreatedTaskTitleRef = useRef<string | null>(null);
+  const pendingCreatedTaskRef = useRef<{
+    title: string;
+    status: string;
+  } | null>(null);
 
   const findListTask = (id: string) =>
-    tasksWithEmails.find((entry) => entry.id === id) ?? null;
+    tasksWithEmails.find((entry) => entry.id === id) ??
+    allTasks.find((entry) => entry.id === id) ??
+    null;
 
   const navigateToTask = (id: string, titleHint?: string | null) => {
     const task = findListTask(id);
@@ -247,31 +290,29 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
       return;
     }
     const due = dueFilter ?? "today";
-    if (!task || isEmailTaskListItem(task)) {
+    const pending = pendingCreatedTaskRef.current;
+    const title =
+      task?.title || titleHint?.trim() || pending?.title?.trim() || "Task";
+    const status = task?.status || pending?.status || "ready_to_start";
+    const number = taskHasRouteNumber(task?.number) ? task.number : null;
+
+    // Prefer id until a display number exists — `in-null` slugs flash Not found.
+    if (!task || isEmailTaskListItem(task) || number == null) {
       const href = `/tasks/${due}/${id}`;
-      const title = titleHint?.trim();
-      if (title) primeTabTitle(href, title);
-      tasksSectionBootstrapRef.current = task
-        ? {
-            id: task.id,
-            title: task.title,
-            number: task.number,
-            status: task.status,
-            priority: task.priority,
-            projectKey: task.projectKey ?? null,
-            projectId: task.projectId ?? null,
-            projectName: task.projectName ?? null,
-            agentChatId: task.agentChatId ?? null,
-            assigneeId: task.assigneeId ?? null,
-            routeSlug: id,
-          }
-        : {
-            id,
-            title: titleHint?.trim() ?? "Task",
-            number: 0,
-            status: "backlog",
-            routeSlug: id,
-          };
+      primeTabTitle(href, title);
+      onBootstrapTask({
+        id,
+        title,
+        number: number ?? null,
+        status,
+        priority: task?.priority,
+        projectKey: task?.projectKey ?? null,
+        projectId: task?.projectId ?? null,
+        projectName: task?.projectName ?? null,
+        agentChatId: task?.agentChatId ?? null,
+        assigneeId: task?.assigneeId ?? null,
+        routeSlug: id,
+      });
       navigateToHref(navigate, href);
       return;
     }
@@ -279,17 +320,16 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
       ? contacts.find((entry) => entry.id === task.contactId)
       : null;
     const slug = getInboxTaskRouteSlugForTask({
-      number: task.number,
+      number,
       projectKey: task.projectKey,
       contactKey: contact?.key ?? null,
     });
     const href = `/tasks/${due}/${slug}`;
-    const title = task.title || titleHint?.trim() || null;
-    if (title) primeTabTitle(href, title);
-    tasksSectionBootstrapRef.current = {
+    primeTabTitle(href, title);
+    onBootstrapTask({
       id: task.id,
       title: task.title,
-      number: task.number,
+      number,
       status: task.status,
       priority: task.priority,
       projectKey: task.projectKey ?? null,
@@ -298,7 +338,7 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
       agentChatId: task.agentChatId ?? null,
       assigneeId: task.assigneeId ?? null,
       routeSlug: slug,
-    };
+    });
     navigateToHref(navigate, href);
   };
 
@@ -309,7 +349,7 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
       listKeyboardEnabled={keepAliveActive && !listHidden}
       onToggleTodayHabit={(item, checked) => {
         void workspace.patchTask(item.taskId, {
-          status: checked ? "completed" : "ready_to_start",
+          status: checked ? "completed" : "canceled",
         });
       }}
       projectOptions={projectOptions}
@@ -378,6 +418,7 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
         }
         void workspace.patchTask(taskId, {
           projectId: project?.id ?? null,
+          ...(project ? { inbox: false } : {}),
         });
       }}
       onAssigneeChange={(taskId, assigneeId) => {
@@ -441,17 +482,29 @@ function TaskListPageBody({ listHidden = false }: { listHidden?: boolean }) {
           dueFilter ?? "today",
         );
         const dueDate = parseYmdLocal(dueYmd);
-        pendingCreatedTaskTitleRef.current = title;
-        return workspace.createInboxTask({
+        pendingCreatedTaskRef.current = { title, status };
+        // Due lists are non-inbox (`isTasksListTask`). Creating with inbox:true
+        // opened the detail briefly then vanished from Today/Tomorrow after leave.
+        const created = await workspace.createInboxTask({
           title,
           status,
           dueDate: dueDate ? dueDate.toISOString() : null,
+          inbox: false,
         });
+        // Seed detail before navigation so the first paint never flashes Not found.
+        onBootstrapTask({
+          id: created.id,
+          title,
+          number: created.number ?? null,
+          status,
+          routeSlug: created.id,
+        });
+        return created;
       }}
       onCreatedTask={(taskId) => {
-        const titleHint = pendingCreatedTaskTitleRef.current;
-        pendingCreatedTaskTitleRef.current = null;
-        navigateToTask(taskId, titleHint);
+        const pending = pendingCreatedTaskRef.current;
+        pendingCreatedTaskRef.current = null;
+        navigateToTask(taskId, pending?.title);
       }}
     />
   );

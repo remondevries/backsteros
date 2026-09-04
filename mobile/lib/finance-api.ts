@@ -357,6 +357,68 @@ export function buildMoneybirdInvoicesPeriodFilter(year: number): string {
   return `period:${year}0101..${year}1231`;
 }
 
+/**
+ * Billed Moneybird sales-invoice states (same set as invoice-revenue).
+ * Draft / uncollectible are excluded at the API filter.
+ */
+export const MONEYBIRD_BILLED_INVOICE_STATE_FILTER =
+  "state:open|scheduled|pending_payment|reminded|late|paid";
+
+/** Moneybird list filter for billed invoices dated in a calendar month (`YYYY-MM`). */
+export function buildMoneybirdInvoicesMonthPeriodFilter(monthKey: string): string {
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const lastDay = new Date(year, month, 0).getDate();
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
+  return `period:${prefix}01..${prefix}${String(lastDay).padStart(2, "0")},${MONEYBIRD_BILLED_INVOICE_STATE_FILTER}`;
+}
+
+/** Moneybird list filter for billed invoices dated in a calendar year. */
+export function buildMoneybirdInvoicesBilledYearFilter(year: number): string {
+  return `${buildMoneybirdInvoicesPeriodFilter(year)},${MONEYBIRD_BILLED_INVOICE_STATE_FILTER}`;
+}
+
+/** Paginate Moneybird sales invoices for a calendar month (billed states only). */
+export async function fetchAllMoneybirdInvoicesForMonth(
+  client: BacksterosApiClient,
+  monthKey: string,
+): Promise<MoneybirdSalesInvoiceSummary[]> {
+  const monthFilter = buildMoneybirdInvoicesMonthPeriodFilter(monthKey);
+  let invoices = await paginateMoneybirdInvoices(client, monthFilter);
+
+  // Fall back to the year list (same path as invoice-revenue) and filter
+  // client-side — some Moneybird admins return empty for tight month ranges.
+  if (invoices.length === 0) {
+    const year = Number(monthKey.slice(0, 4));
+    const yearInvoices = await paginateMoneybirdInvoices(
+      client,
+      buildMoneybirdInvoicesBilledYearFilter(year),
+    );
+    invoices = yearInvoices.filter(
+      (invoice) => (invoice.invoiceDate ?? "").slice(0, 7) === monthKey,
+    );
+  }
+
+  return invoices;
+}
+
+async function paginateMoneybirdInvoices(
+  client: BacksterosApiClient,
+  filter: string,
+): Promise<MoneybirdSalesInvoiceSummary[]> {
+  const invoices: MoneybirdSalesInvoiceSummary[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const result = await fetchMoneybirdInvoices(client, {
+      page,
+      perPage: 100,
+      filter,
+    });
+    invoices.push(...result.invoices);
+    if (!result.hasMore || result.invoices.length === 0) break;
+  }
+  return invoices;
+}
+
 /** Moneybird filter that lists invoices for a contact across all periods. */
 export function buildMoneybirdContactInvoicesFilter(contactId: string): string {
   return `contact_id:${contactId.trim()}`;
