@@ -33,6 +33,8 @@ export type FinanceHrefNavigate = (
 ) => void;
 
 const MONEYBIRD_SYNC_DEBOUNCE_MS = 60_000;
+/** Re-pull from Moneybird when the account has not synced for this long. */
+const MONEYBIRD_STALE_MS = 5 * 60_000;
 
 export function useFinanceTransactions({
   client,
@@ -99,7 +101,7 @@ export function useFinanceTransactions({
     useState(false);
   const [moneybirdSyncPending, setMoneybirdSyncPending] = useState(false);
   const moneybirdSyncAtByAccountRef = useRef<Record<string, number>>({});
-  const moneybirdSyncInFlightRef = useRef<string | null>(null);
+  const moneybirdSyncInFlightRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -261,15 +263,19 @@ export function useFinanceTransactions({
       if (!account?.moneybirdFinancialAccountId) return null;
 
       const lastAt = moneybirdSyncAtByAccountRef.current[accountId] ?? 0;
-      if (
-        !opts?.force &&
-        Date.now() - lastAt < MONEYBIRD_SYNC_DEBOUNCE_MS
-      ) {
-        return null;
+      const serverSyncedAt = account.moneybirdLastSyncedAt
+        ? new Date(account.moneybirdLastSyncedAt).getTime()
+        : 0;
+      const stale =
+        !Number.isFinite(serverSyncedAt) ||
+        Date.now() - serverSyncedAt >= MONEYBIRD_STALE_MS;
+      if (!opts?.force) {
+        if (!stale) return null;
+        if (Date.now() - lastAt < MONEYBIRD_SYNC_DEBOUNCE_MS) return null;
       }
-      if (moneybirdSyncInFlightRef.current === accountId) return null;
+      if (moneybirdSyncInFlightRef.current.has(accountId)) return null;
 
-      moneybirdSyncInFlightRef.current = accountId;
+      moneybirdSyncInFlightRef.current.add(accountId);
       setMoneybirdSyncPending(true);
       try {
         const result = await client.requestJson<MoneybirdBankAccountSyncResult>(
@@ -285,28 +291,24 @@ export function useFinanceTransactions({
       } catch {
         return null;
       } finally {
-        if (moneybirdSyncInFlightRef.current === accountId) {
-          moneybirdSyncInFlightRef.current = null;
-        }
-        setMoneybirdSyncPending(false);
+        moneybirdSyncInFlightRef.current.delete(accountId);
+        setMoneybirdSyncPending(moneybirdSyncInFlightRef.current.size > 0);
       }
     },
     [accounts, client, loadTransactions, refreshAccounts, selected],
   );
 
   useEffect(() => {
-    if (!showTransactions) return;
-    if (allAccountsSelected || !selected?.moneybirdFinancialAccountId) {
-      return;
+    // Keep Moneybird-linked ledgers fresh for balances + the all-accounts list —
+    // not only when a single linked account is selected.
+    const linked = accounts.filter((account) =>
+      Boolean(account.moneybirdFinancialAccountId?.trim()),
+    );
+    if (linked.length === 0) return;
+    for (const account of linked) {
+      void syncMoneybirdAccount({ accountId: account.id });
     }
-    void syncMoneybirdAccount();
-  }, [
-    allAccountsSelected,
-    selected?.id,
-    selected?.moneybirdFinancialAccountId,
-    showTransactions,
-    syncMoneybirdAccount,
-  ]);
+  }, [accounts, syncMoneybirdAccount]);
 
   useEffect(() => {
     if (!importOpen) return;

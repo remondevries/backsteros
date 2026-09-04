@@ -47,6 +47,19 @@ export function formatJournalEntryTitle(dateSlug: string): string {
   });
 }
 
+/** iPhone journal list — short weekday + month day (year when not current). */
+export function formatJournalListDateLabel(dateSlug: string): string {
+  const date = parseJournalDateSlug(dateSlug);
+  if (!date) return dateSlug;
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
+}
+
 /** List / side-panel label — always the canonical `YYYY-MM-DD` slug (desktop parity). */
 export function formatJournalSidePanelLabel(dateSlug: string): string {
   return dateSlug;

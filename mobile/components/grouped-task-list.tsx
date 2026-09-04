@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
-import type { FlashListRef } from "@shopify/flash-list";
+import { FlatList, Pressable, Text, View } from "react-native";
 
 import { isPadDevice } from "../lib/device";
 import { resolveInboxEmailIconColor } from "../lib/email-list";
@@ -9,6 +8,7 @@ import {
   findFlatGroupedRowIndex,
   flattenGroupedSections,
   type FlatGroupedRow,
+  type GroupedSection,
 } from "../lib/lists/flatten-grouped-sections";
 import { getTaskStatusHeaderGradient } from "../lib/status-header-gradient";
 import {
@@ -88,6 +88,11 @@ type Props = {
    * When `"inbox"`, group by Overdue / Triage / On Hold / In Review.
    */
   groupByStatus?: boolean | "inbox";
+  /**
+   * Keep empty status columns (Tasks / project / contact with +).
+   * Default true. Set false to avoid FlashList mounting nine empty headers.
+   */
+  includeEmptyGroups?: boolean;
   /**
    * `inbox` — stacked desktop side-panel rows (type icon + title / meta).
    * `default` — phone compact or iPad task-board horizontal rows.
@@ -180,6 +185,7 @@ export function GroupedTaskList({
   listHeader,
   showProject = true,
   groupByStatus = true,
+  includeEmptyGroups = true,
   rowLayout = "default",
   contentConstrained = false,
 }: Props) {
@@ -238,15 +244,15 @@ export function GroupedTaskList({
         data: collapsed.has(group.status) ? [] : group.data,
       }));
     }
-    return groupTasksByStatus(mergedRows, { includeEmpty: true }).map(
-      (group) => ({
-        key: group.status,
-        title: group.label,
-        status: group.status,
-        data: collapsed.has(group.status) ? [] : group.tasks,
-      }),
-    );
-  }, [collapsed, groupByStatus, mergedRows]);
+    return groupTasksByStatus(mergedRows, {
+      includeEmpty: includeEmptyGroups,
+    }).map((group) => ({
+      key: group.status,
+      title: group.label,
+      status: group.status,
+      data: collapsed.has(group.status) ? [] : group.tasks,
+    }));
+  }, [collapsed, groupByStatus, includeEmptyGroups, mergedRows]);
 
   const { rowIndexByItemId: flatMeta } = useMemo(
     () =>
@@ -263,7 +269,7 @@ export function GroupedTaskList({
     [sections],
   );
 
-  const listRef = useRef<FlashListRef<FlatGroupedRow<GroupedTaskRow>>>(null);
+  const listRef = useRef<FlatList<FlatGroupedRow<GroupedTaskRow>>>(null);
   const rowsById = useMemo(() => {
     const map = new Map<string, GroupedTaskRow>();
     for (const row of mergedRows) map.set(row.id, row);
@@ -399,11 +405,22 @@ export function GroupedTaskList({
   );
 
   const renderSectionFooter = useCallback(
-    (section: Section) => {
+    (
+      section: GroupedSection<GroupedTaskRow>,
+      _allSections: readonly GroupedSection<GroupedTaskRow>[],
+    ) => {
       if (!groupByStatus) return null;
-      return statusGroupEmptySectionFooter(sections, section);
+      return statusGroupEmptySectionFooter(sections, section as Section);
     },
     [groupByStatus, sections],
+  );
+
+  const renderGroupedSectionHeader = useCallback(
+    (
+      section: GroupedSection<GroupedTaskRow>,
+      _meta: { collapsed: boolean },
+    ) => renderSectionHeader(section as Section),
+    [renderSectionHeader],
   );
 
   const listHeaderElement = listHeader ? (
@@ -417,12 +434,8 @@ export function GroupedTaskList({
       stickySectionHeaders={isPad && Boolean(groupByStatus)}
       highlightedId={highlightedId}
       renderItem={renderTaskItem}
-      renderSectionHeader={(section) => renderSectionHeader(section as Section)}
-      renderSectionFooter={
-        groupByStatus
-          ? (section) => renderSectionFooter(section as Section)
-          : undefined
-      }
+      renderSectionHeader={renderGroupedSectionHeader}
+      renderSectionFooter={groupByStatus ? renderSectionFooter : undefined}
       emptyText={emptyText}
       listHeader={listHeaderElement}
       refreshing={refreshing}

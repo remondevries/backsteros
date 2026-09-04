@@ -4,8 +4,10 @@ import {
   ActivityIndicator,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCalendarTimeZone } from "../lib/calendar-timezone";
 import {
@@ -24,7 +26,12 @@ import {
   mergeJournalContent,
 } from "../lib/journal-content";
 import { withDisplayId } from "../lib/map-task-row";
+import {
+  formatMobileUserFacingError,
+  isMobileApiNetworkError,
+} from "../lib/probe-core-health";
 import { useMobilePowerSync } from "../lib/powersync-context";
+import { floatingComposeOverlayInsets } from "../lib/tab-bar-inset";
 import { tabDetailScreenOptions } from "../lib/tab-stack-options";
 import { filterTasksDueOnJournalDate } from "../lib/task-due-date";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
@@ -32,10 +39,6 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
-import {
-  CONTENT_HEADER_FADE_HEIGHT,
-  ContentHeaderFade,
-} from "./content-header-fade";
 import { ContentPageTitle } from "./content-page-title";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 import { collapseHabitItemsByHabitId } from "./tasks-today-habits-chips";
@@ -108,6 +111,8 @@ export function JournalDetailScreen({ dateSlug }: Props) {
   const isPad = isPadDevice();
   const inPadJournalSplit =
     isPad && (segments as string[]).includes("journal");
+  const { width: windowWidth } = useWindowDimensions();
+  const safeInsets = useSafeAreaInsets();
 
   const client = useMobileApiClient();
   const whoop = useWhoopDaySnapshot(dateSlug);
@@ -151,16 +156,25 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         if (cancelled) return;
         setRestDocId(null);
         setBodyLoading(false);
+        const message =
+          reason instanceof Error ? reason.message : String(reason);
+        if (isMobileApiNetworkError(message)) {
+          // Offline without a local doc — keep the day usable (tasks still show).
+          setBodyError(null);
+          setBody(getJournalDisplayBody("", dateSlug, title));
+          return;
+        }
         setBodyError(
-          reason instanceof Error
-            ? reason.message
-            : "Could not open journal entry.",
+          formatMobileUserFacingError(
+            reason,
+            "Could not open journal entry.",
+          ),
         );
       });
     return () => {
       cancelled = true;
     };
-  }, [client, dateSlug, docSyncLoading, localDocId, powerSync.ready]);
+  }, [client, dateSlug, docSyncLoading, localDocId, powerSync.ready, title]);
 
   // Tier D: fetch markdown body on open (never bulk-synced).
   useEffect(() => {
@@ -181,9 +195,22 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       })
       .catch((reason) => {
         if (cancelled) return;
+        const message =
+          reason instanceof Error ? reason.message : String(reason);
+        if (isMobileApiNetworkError(message)) {
+          // Prefer synced snippet over Expo fetch noise while offline.
+          setBody(
+            getJournalDisplayBody(localSnippet ?? "", dateSlug, title),
+          );
+          setBodyError(null);
+          return;
+        }
         setBody(null);
         setBodyError(
-          reason instanceof Error ? reason.message : String(reason),
+          formatMobileUserFacingError(
+            reason,
+            "Could not load journal entry.",
+          ),
         );
       })
       .finally(() => {
@@ -192,7 +219,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, dateSlug, documentId, title]);
+  }, [client, dateSlug, documentId, localSnippet, title]);
 
   // Remote save bumped content_version in PowerSync — refetch Tier D body.
   useEffect(() => {
@@ -210,8 +237,17 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       })
       .catch((reason) => {
         if (cancelled) return;
+        const message =
+          reason instanceof Error ? reason.message : String(reason);
+        if (isMobileApiNetworkError(message)) {
+          // Keep current body; sync will catch up when online.
+          return;
+        }
         setBodyError(
-          reason instanceof Error ? reason.message : String(reason),
+          formatMobileUserFacingError(
+            reason,
+            "Could not refresh journal entry.",
+          ),
         );
       })
       .finally(() => {
@@ -389,7 +425,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         return;
       }
       setSaveError(
-        reason instanceof Error ? reason.message : "Could not save journal.",
+        formatMobileUserFacingError(reason, "Could not save journal."),
       );
     } finally {
       setSaving(false);
@@ -451,9 +487,7 @@ export function JournalDetailScreen({ dateSlug }: Props) {
               return;
             }
             setSaveError(
-              reason instanceof Error
-                ? reason.message
-                : "Could not save journal.",
+              formatMobileUserFacingError(reason, "Could not save journal."),
             );
           } finally {
             setSaving(false);
@@ -474,27 +508,17 @@ export function JournalDetailScreen({ dateSlug }: Props) {
     ],
   );
 
-  const chromeColor = inPadJournalSplit ? colors.surface : colors.background;
-
   const listHeader = useMemo(
     () => (
       <View style={{ paddingTop: inPadJournalSplit ? 8 : 0 }}>
-        <ContentPageTitle title={title} />
-        <View
-          style={{
-            paddingHorizontal: 16,
-            paddingBottom: 8,
-            flexDirection: "row",
-            alignItems: "center",
-          }}
-        >
-          <SegmentedPillToggle
-            value={bodyViewMode}
-            options={JOURNAL_BODY_VIEW_OPTIONS}
-            onChange={handleBodyViewModeChange}
-            accessibilityLabel="Journal body view mode"
-          />
-        </View>
+        {whoop.authenticated !== false ? (
+          <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
+        ) : null}
+        <ContentPageTitle
+          title={title}
+          align={isPad ? "left" : "center"}
+          paddingTop={whoop.authenticated !== false ? 2 : 8}
+        />
         <View
           style={{ paddingHorizontal: 16, paddingBottom: 20, minHeight: 24 }}
         >
@@ -589,17 +613,22 @@ export function JournalDetailScreen({ dateSlug }: Props) {
       dateSlug,
       draftBody,
       habitItems,
-      handleBodyViewModeChange,
       handleToggleTaskCheckbox,
       inPadJournalSplit,
+      isPad,
       listMode,
       onToggleHabit,
       saveEditing,
       saveError,
       saving,
       title,
+      whoop,
     ],
   );
+
+  const viewModeDockInsets = inPadJournalSplit
+    ? { right: 16, bottom: Math.max(safeInsets.bottom, 16) }
+    : floatingComposeOverlayInsets(windowWidth, safeInsets.bottom);
 
   return (
     <>
@@ -612,37 +641,41 @@ export function JournalDetailScreen({ dateSlug }: Props) {
         }}
       />
       <View style={styles.page}>
-        {/* Whoop sits above the scroll + header fade so the rings stay clear. */}
-        {whoop.authenticated !== false ? (
-          <View style={[styles.whoopChrome, { backgroundColor: chromeColor }]}>
-            <JournalWhoopLeading dateSlug={dateSlug} state={whoop} />
+        <GroupedTaskList
+          rows={listMode === "tasks" ? rows : []}
+          groupByStatus={listMode === "tasks"}
+          emptyText={
+            listMode === "tasks" ? "No tasks due on this date." : ""
+          }
+          contentConstrained={isPad}
+          listHeader={listHeader}
+          onPressRow={listMode === "tasks" ? onPressRow : undefined}
+          onAddToStatus={
+            listMode === "tasks"
+              ? (status) => {
+                  router.push({
+                    pathname: "/create/task",
+                    params: { status, dueYmd: dateSlug },
+                  });
+                }
+              : undefined
+          }
+        />
+        {!bodyLoading && !bodyError ? (
+          <View
+            pointerEvents="box-none"
+            style={[styles.viewModeDock, viewModeDockInsets]}
+          >
+            <View style={styles.viewModeDockInner}>
+              <SegmentedPillToggle
+                value={bodyViewMode}
+                options={JOURNAL_BODY_VIEW_OPTIONS}
+                onChange={handleBodyViewModeChange}
+                accessibilityLabel="Journal body view mode"
+              />
+            </View>
           </View>
         ) : null}
-        <View style={styles.scrollPane}>
-          <GroupedTaskList
-            rows={listMode === "tasks" ? rows : []}
-            groupByStatus={listMode === "tasks"}
-            emptyText={
-              listMode === "tasks" ? "No tasks due on this date." : ""
-            }
-            contentConstrained={isPad}
-            listHeader={listHeader}
-            onPressRow={listMode === "tasks" ? onPressRow : undefined}
-            onAddToStatus={
-              listMode === "tasks"
-                ? (status) => {
-                    router.push({
-                      pathname: "/create/task",
-                      params: { status, dueYmd: dateSlug },
-                    });
-                  }
-                : undefined
-            }
-          />
-          <View pointerEvents="none" style={styles.headerFade}>
-            <ContentHeaderFade color={chromeColor} />
-          </View>
-        </View>
       </View>
     </>
   );
@@ -652,20 +685,15 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
   },
-  whoopChrome: {
-    paddingTop: 4,
-    zIndex: 5,
-  },
-  scrollPane: {
-    flex: 1,
-  },
-  headerFade: {
+  viewModeDock: {
     position: "absolute",
-    // 1px into the Whoop/nav chrome so scrolling content doesn't flash a seam.
-    top: -1,
-    left: 0,
-    right: 0,
-    zIndex: 4,
-    height: CONTENT_HEADER_FADE_HEIGHT,
+    zIndex: 10,
+  },
+  viewModeDockInner: {
+    padding: 2,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
 });

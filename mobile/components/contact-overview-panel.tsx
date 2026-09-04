@@ -22,6 +22,7 @@ import {
 import { organizationDetailHref } from "../lib/detail-href";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
 import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { formatMobileUserFacingError } from "../lib/probe-core-health";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
@@ -360,7 +361,7 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
         }
       } catch (reason) {
         setSaveError(
-          reason instanceof Error ? reason.message : "Could not save contact.",
+          formatMobileUserFacingError(reason, "Could not save contact."),
         );
       }
     },
@@ -401,7 +402,7 @@ export function ContactOverviewPanel({ contactId, onNameChange }: Props) {
       ).catch(() => {});
     } catch (reason) {
       setAvatarError(
-        reason instanceof Error ? reason.message : "Could not update photo.",
+        formatMobileUserFacingError(reason, "Could not update photo."),
       );
     } finally {
       setPickingAvatar(false);

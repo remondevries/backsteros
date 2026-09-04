@@ -13,6 +13,7 @@ import {
   useContactRelationships,
   useCrmGroupsForSubject,
 } from "../lib/use-crm-data";
+import { formatMobileUserFacingError } from "../lib/probe-core-health";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
@@ -91,51 +92,56 @@ export function ContactCrmSections({ contactId }: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Relationships</Text>
-          <Pressable
-            onPress={() => setRelPickerOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Add relationship"
-          >
-            <Text style={styles.addLabel}>Add</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.sectionLabel}>Relationships</Text>
         {relationships.loading && relationships.items.length === 0 ? (
           <ActivityIndicator color={colors.muted} />
         ) : null}
         {relationships.items.length === 0 && !relationships.loading ? (
           <Text style={ui.hint}>No relationships yet.</Text>
         ) : null}
-        {relationships.items.map((item) => (
-          <View key={item.id} style={styles.row}>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={styles.rowTitle}>{item.relatedContactName}</Text>
-              <Text style={styles.rowMeta}>{item.typeLabel}</Text>
+        <View style={styles.list}>
+          {relationships.items.map((item) => (
+            <View key={item.id} style={styles.row}>
+              <View style={styles.labelChip}>
+                <Text style={styles.labelText}>{item.typeLabel}</Text>
+              </View>
+              <Text style={styles.value} numberOfLines={1}>
+                {item.relatedContactName}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setBusy(true);
+                  setError(null);
+                  void relationships
+                    .remove(item.id)
+                    .catch((reason) => {
+                      setError(
+                        formatMobileUserFacingError(
+                          reason,
+                          "Could not remove.",
+                        ),
+                      );
+                    })
+                    .finally(() => setBusy(false));
+                }}
+                disabled={busy}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove relationship with ${item.relatedContactName}`}
+              >
+                <Text style={styles.remove}>×</Text>
+              </Pressable>
             </View>
-            <Pressable
-              onPress={() => {
-                setBusy(true);
-                setError(null);
-                void relationships
-                  .remove(item.id)
-                  .catch((reason) => {
-                    setError(
-                      reason instanceof Error
-                        ? reason.message
-                        : "Could not remove.",
-                    );
-                  })
-                  .finally(() => setBusy(false));
-              }}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel="Remove relationship"
-            >
-              <Text style={styles.removeLabel}>Remove</Text>
-            </Pressable>
-          </View>
-        ))}
+          ))}
+        </View>
+        <Pressable
+          onPress={() => setRelPickerOpen(true)}
+          style={styles.add}
+          accessibilityRole="button"
+          accessibilityLabel="Add relationship"
+        >
+          <Text style={styles.addLabel}>+ Relationship</Text>
+        </Pressable>
       </View>
 
       <View style={styles.section}>
@@ -146,7 +152,7 @@ export function ContactCrmSections({ contactId }: Props) {
             accessibilityRole="button"
             accessibilityLabel="Manage groups"
           >
-            <Text style={styles.addLabel}>Manage</Text>
+            <Text style={styles.headerAction}>Manage</Text>
           </Pressable>
         </View>
         {groups.memberGroups.length === 0 ? (
@@ -198,9 +204,10 @@ export function ContactCrmSections({ contactId }: Props) {
             .add({ toContactId: pendingRelatedId, type: value })
             .catch((reason) => {
               setError(
-                reason instanceof Error
-                  ? reason.message
-                  : "Could not add relationship.",
+                formatMobileUserFacingError(
+                  reason,
+                  "Could not add relationship.",
+                ),
               );
             })
             .finally(() => {
@@ -227,9 +234,10 @@ export function ContactCrmSections({ contactId }: Props) {
             .toggleMembership(value, nextMember)
             .catch((reason) => {
               setError(
-                reason instanceof Error
-                  ? reason.message
-                  : "Could not update group.",
+                formatMobileUserFacingError(
+                  reason,
+                  "Could not update group.",
+                ),
               );
             })
             .finally(() => setBusy(false));
@@ -243,9 +251,17 @@ export function ContactCrmSections({ contactId }: Props) {
 const styles = StyleSheet.create({
   wrap: {
     gap: 24,
+    paddingHorizontal: 16,
   },
   section: {
-    gap: 10,
+    gap: 8,
+  },
+  sectionLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -257,31 +273,60 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  addLabel: {
+  headerAction: {
     color: colors.muted,
     fontSize: 14,
     fontWeight: "500",
   },
-  removeLabel: {
-    color: colors.muted,
-    fontSize: 13,
+  list: {
+    gap: 8,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 10,
     paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
   },
-  rowTitle: {
+  labelChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    flexShrink: 0,
+    maxWidth: 120,
+  },
+  labelText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  value: {
+    flex: 1,
+    minWidth: 0,
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: "500",
+    paddingVertical: 2,
   },
-  rowMeta: {
+  remove: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 22,
+    lineHeight: 24,
+    paddingHorizontal: 4,
+  },
+  add: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  addLabel: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "500",
   },
   chips: {
     flexDirection: "row",

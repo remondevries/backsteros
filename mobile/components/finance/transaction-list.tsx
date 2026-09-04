@@ -15,8 +15,8 @@ import {
   StyleSheet,
   Text,
   View,
+  type ListRenderItemInfo,
 } from "react-native";
-import type { ListRenderItemInfo } from "@shopify/flash-list";
 
 import {
   TransactionMonthHeader,

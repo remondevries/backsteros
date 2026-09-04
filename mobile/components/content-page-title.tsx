@@ -10,15 +10,21 @@ type Props = {
   trailing?: ReactNode;
   /** When the native header is hidden (e.g. Knowledge phone), pad for the status bar. */
   includeTopSafeArea?: boolean;
+  /** Default left; journal day on phone uses center. */
+  align?: "left" | "center";
+  /** Override default top padding (e.g. tighter under Whoop rings). */
+  paddingTop?: number;
 };
 
 /**
- * In-content page title — left-aligned, scrolls with the page (not sticky header).
+ * In-content page title — scrolls with the page (not sticky header).
  */
 export function ContentPageTitle({
   title,
   trailing,
   includeTopSafeArea = false,
+  align = "left",
+  paddingTop,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -27,9 +33,17 @@ export function ContentPageTitle({
       style={[
         styles.row,
         includeTopSafeArea ? { paddingTop: insets.top + 8 } : null,
+        paddingTop != null && !includeTopSafeArea
+          ? { paddingTop }
+          : null,
+        align === "center" ? styles.rowCenter : null,
       ]}
     >
-      <Text style={styles.title} accessibilityRole="header" numberOfLines={2}>
+      <Text
+        style={[styles.title, align === "center" ? styles.titleCenter : null]}
+        accessibilityRole="header"
+        numberOfLines={2}
+      >
         {title}
       </Text>
       {trailing}
@@ -47,6 +61,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
   },
+  rowCenter: {
+    justifyContent: "center",
+  },
   title: {
     flex: 1,
     minWidth: 0,
@@ -56,5 +73,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.02 * 22,
     lineHeight: 28,
     textAlign: "left",
+  },
+  titleCenter: {
+    textAlign: "center",
   },
 });

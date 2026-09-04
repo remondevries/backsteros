@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
@@ -70,7 +69,9 @@ export function statusGroupEmptySectionFooter<
 >(sections: readonly T[], section: T) {
   if (section.data.length > 0) return null;
   const index = sections.findIndex((entry) => entry.status === section.status);
-  if (index < 0 || index >= sections.length - 1) return null;
+  if (index < 0 || index >= sections.length - 1) {
+    return <View style={styles.emptySectionGapTail} />;
+  }
   return <StatusGroupEmptySectionGap />;
 }
 
@@ -82,6 +83,9 @@ export function StatusGroupSectionSeparator() {
 /**
  * Desktop-parity status group header — solid base + status tint gradient,
  * status icon, and title (see `.status-group-header-row`).
+ *
+ * Gradient uses percentage SVG sizing (no onLayout setState) so FlashList v2
+ * does not hit nested layout updates when many empty status headers mount.
  */
 export function StatusGroupHeader({
   title,
@@ -96,39 +100,7 @@ export function StatusGroupHeader({
 }: Props) {
   const from = parseCssHexColor(gradient.from);
   const to = parseCssHexColor(gradient.to);
-  const [size, setSize] = useState({ width: 0, height: 0 });
   const gradientId = `sgh-${title.replace(/[^a-zA-Z0-9]+/g, "-")}`;
-
-  const onLayout = (width: number, height: number) => {
-    if (width === size.width && height === size.height) return;
-    setSize({ width, height });
-  };
-
-  const gradientLayer =
-    size.width > 0 && size.height > 0 ? (
-      <Svg
-        pointerEvents="none"
-        style={StyleSheet.absoluteFill}
-        width={size.width}
-        height={size.height}
-      >
-        <Defs>
-          <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-            <Stop
-              offset="0"
-              stopColor={from.color}
-              stopOpacity={from.opacity}
-            />
-            <Stop offset="1" stopColor={to.color} stopOpacity={to.opacity} />
-          </LinearGradient>
-        </Defs>
-        <Rect
-          width={size.width}
-          height={size.height}
-          fill={`url(#${gradientId})`}
-        />
-      </Svg>
-    ) : null;
 
   const mainContent = (
     <>
@@ -157,14 +129,26 @@ export function StatusGroupHeader({
   );
 
   return (
-    <View
-      style={[styles.row, spaced ? styles.rowSpaced : null]}
-      onLayout={(event) => {
-        const { width, height } = event.nativeEvent.layout;
-        onLayout(width, height);
-      }}
-    >
-      {gradientLayer}
+    <View style={[styles.row, spaced ? styles.rowSpaced : null]}>
+      <Svg
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+        width="100%"
+        height="100%"
+        preserveAspectRatio="none"
+      >
+        <Defs>
+          <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+            <Stop
+              offset="0"
+              stopColor={from.color}
+              stopOpacity={from.opacity}
+            />
+            <Stop offset="1" stopColor={to.color} stopOpacity={to.opacity} />
+          </LinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill={`url(#${gradientId})`} />
+      </Svg>
       {onToggle ? (
         <Pressable
           accessibilityRole="button"
@@ -189,6 +173,9 @@ export function StatusGroupHeader({
 const styles = StyleSheet.create({
   emptySectionGap: {
     height: STATUS_GROUP_EMPTY_SECTION_GAP,
+  },
+  emptySectionGapTail: {
+    height: 0,
   },
   rowSpaced: {
     marginTop: STATUS_GROUP_EMPTY_SECTION_GAP,

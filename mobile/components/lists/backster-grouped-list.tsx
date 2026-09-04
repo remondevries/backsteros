@@ -1,4 +1,3 @@
-import type { FlashListRef } from "@shopify/flash-list";
 import {
   forwardRef,
   useCallback,
@@ -7,7 +6,12 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { RefreshControl, Text, type ViewStyle } from "react-native";
+import {
+  FlatList,
+  RefreshControl,
+  Text,
+  type ViewStyle,
+} from "react-native";
 
 import {
   flattenGroupedSections,
@@ -16,7 +20,10 @@ import {
 } from "../../lib/lists/flatten-grouped-sections";
 import { findFlatGroupedRowIndex } from "../../lib/lists/flatten-grouped-sections";
 import { ui } from "../../lib/ui";
-import { BacksterFlashList, type BacksterFlashListProps } from "./backster-flash-list";
+import {
+  BacksterFlashList,
+  type BacksterFlashListProps,
+} from "./backster-flash-list";
 
 export type BacksterGroupedListProps<T extends { id: string }> = {
   sections: readonly GroupedSection<T>[];
@@ -72,8 +79,10 @@ function BacksterGroupedListInner<T extends { id: string }>(
     contentContainerStyle,
     ...listProps
   }: BacksterGroupedListProps<T>,
-  ref: Ref<FlashListRef<FlatGroupedRow<T>>>,
+  ref: Ref<FlatList<FlatGroupedRow<T>>>,
 ) {
+  void estimatedItemSize;
+  void estimatedHeaderSize;
   const groupedSections = useMemo(
     () =>
       sections.map((section) => ({
@@ -84,17 +93,17 @@ function BacksterGroupedListInner<T extends { id: string }>(
     [keyForSection, sections],
   );
 
-  const { rows, stickyHeaderIndices, rowIndexByItemId } = useMemo(
+  const includeEmptyFooters = Boolean(renderSectionFooter);
+
+  const { rows, stickyHeaderIndices } = useMemo(
     () =>
       flattenGroupedSections(groupedSections, {
-        includeEmptyFooter: renderSectionFooter
+        includeEmptyFooter: includeEmptyFooters
           ? (section) => section.data.length === 0
           : undefined,
       }),
-    [groupedSections, renderSectionFooter],
+    [groupedSections, includeEmptyFooters],
   );
-
-  const getItemType = useCallback((item: FlatGroupedRow<T>) => item.kind, []);
 
   const renderRow = useCallback(
     ({ item }: { item: FlatGroupedRow<T> }) => {
@@ -130,17 +139,12 @@ function BacksterGroupedListInner<T extends { id: string }>(
     ],
   );
 
-  const overrideItemLayout = useCallback(
-    (layout: { span?: number; size?: number }, item: FlatGroupedRow<T>) => {
-      if (item.kind === "header") {
-        layout.size = estimatedHeaderSize;
-      } else if (item.kind === "footer") {
-        layout.size = 24;
-      } else {
-        layout.size = estimatedItemSize;
-      }
-    },
-    [estimatedHeaderSize, estimatedItemSize],
+  const listContentStyle = useMemo(
+    () => ({
+      paddingTop: listHeader ? 0 : 8,
+      ...contentContainerStyle,
+    }),
+    [contentContainerStyle, listHeader],
   );
 
   return (
@@ -148,10 +152,8 @@ function BacksterGroupedListInner<T extends { id: string }>(
       ref={ref}
       data={rows}
       keyExtractor={(item) => item.key}
-      getItemType={getItemType}
       renderItem={renderRow}
       stickyHeaderIndices={stickySectionHeaders ? stickyHeaderIndices : undefined}
-      overrideItemLayout={overrideItemLayout}
       ListHeaderComponent={listHeader ? <>{listHeader}</> : undefined}
       ListEmptyComponent={
         emptyText ? <Text style={ui.empty}>{emptyText}</Text> : undefined
@@ -161,10 +163,7 @@ function BacksterGroupedListInner<T extends { id: string }>(
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         ) : undefined
       }
-      contentContainerStyle={{
-        paddingTop: listHeader ? 0 : 8,
-        ...contentContainerStyle,
-      }}
+      contentContainerStyle={listContentStyle}
       {...listProps}
     />
   );
@@ -174,7 +173,8 @@ export const BacksterGroupedList = forwardRef(BacksterGroupedListInner) as <
   T extends { id: string },
 >(
   props: BacksterGroupedListProps<T> & {
-    ref?: Ref<FlashListRef<FlatGroupedRow<T>>>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ref?: Ref<any>;
   },
 ) => ReactElement | null;
 

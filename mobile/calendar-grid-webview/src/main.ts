@@ -1,4 +1,4 @@
-import { Calendar } from "@fullcalendar/core";
+import { Calendar, type EventContentArg } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -60,6 +60,22 @@ declare global {
   }
 }
 
+/** Mirrors mobile `TASK_STATUS_COLORS` / desktop dark-scheme status accents. */
+const TASK_STATUS_COLORS: Record<string, string> = {
+  triage: "#ee7a47",
+  backlog: "#c4c4c8",
+  ready_to_start: "#e8e8e8",
+  in_progress: "#e9c141",
+  on_hold: "#da615d",
+  in_review: "#52a450",
+  completed: "#606acc",
+  canceled: "#e8e8e8",
+  duplicated: "#a8b0c0",
+};
+
+const MEETING_ACCENT = "#e9c141";
+const BIRTHDAY_ACCENT = "#ca8a04";
+
 function post(message: HostMessage) {
   window.ReactNativeWebView?.postMessage(JSON.stringify(message));
 }
@@ -67,6 +83,56 @@ function post(message: HostMessage) {
 function viewModeToFcView(mode: InitMessage["viewMode"]): string {
   if (mode === "month") return "dayGridMonth";
   return "timeGridDay";
+}
+
+function migrateLegacyTaskStatus(status: string | null | undefined): string {
+  switch (status) {
+    case "todo":
+      return "ready_to_start";
+    case "done":
+      return "completed";
+    default:
+      return status && status in TASK_STATUS_COLORS ? status : "backlog";
+  }
+}
+
+function statusAccentColor(props: Record<string, unknown>): string {
+  if (props.entityType === "birthday") return BIRTHDAY_ACCENT;
+  if (props.entityType === "meeting") return MEETING_ACCENT;
+  const status =
+    typeof props.status === "string" ? props.status : "ready_to_start";
+  return (
+    TASK_STATUS_COLORS[migrateLegacyTaskStatus(status)] ??
+    TASK_STATUS_COLORS.backlog
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderEventContent(arg: EventContentArg): { html: string } {
+  const props = arg.event.extendedProps as Record<string, unknown>;
+  const accent = statusAccentColor(props);
+  const title = escapeHtml(arg.event.title?.trim() || "Untitled");
+  const timeText = arg.timeText ? escapeHtml(arg.timeText) : "";
+  return {
+    html: `<div class="task-calendar-event__content">
+      <div class="task-calendar-event__row">
+        <span class="task-calendar-event__status-dot" style="background:${accent}" aria-hidden="true"></span>
+        ${
+          timeText
+            ? `<span class="task-calendar-event__time">${timeText}</span>`
+            : ""
+        }
+        <span class="task-calendar-event__title">${title}</span>
+      </div>
+    </div>`,
+  };
 }
 
 function entityFromEvent(event: {
@@ -117,6 +183,7 @@ function mountCalendar(payload: InitMessage) {
     selectMirror: true,
     nowIndicator: true,
     events: payload.events,
+    eventContent: renderEventContent,
     eventClick(info) {
       const entity = entityFromEvent(info.event);
       if (entity.entityType === "birthday") {

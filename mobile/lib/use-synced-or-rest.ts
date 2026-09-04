@@ -59,6 +59,8 @@ export function useSyncedOrRest<
   const [restError, setRestError] = useState<string | null>(null);
   const [restLoading, setRestLoading] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
+  /** Background hydrate finished (success or fail) — stops empty-list spinner. */
+  const [restAttempted, setRestAttempted] = useState(false);
   const restRowsRef = useRef(restRows);
   restRowsRef.current = restRows;
 
@@ -85,9 +87,16 @@ export function useSyncedOrRest<
     try {
       setRestRows(await fetchRestRef.current());
     } catch (reason) {
-      setRestError(reason instanceof Error ? reason.message : String(reason));
-      // Keep prior REST snapshot on transient failures.
+      const message =
+        reason instanceof Error ? reason.message : String(reason);
+      if (userPull) {
+        setRestError(message);
+      }
+      // Background failure: leave restRows as-is (null or prior snapshot).
+      // Never settle to [] — that would wipe a non-empty local SQLite cache
+      // while disconnected (`resolveSyncedOrRestRows` prefers loaded REST).
     } finally {
+      setRestAttempted(true);
       if (userPull) setPullRefreshing(false);
       setRestLoading(false);
     }
@@ -112,6 +121,7 @@ export function useSyncedOrRest<
   const waitingForSync =
     rows.length === 0 &&
     restRows == null &&
+    !restAttempted &&
     (powerSync.status === "connecting" ||
       powerSync.status === "idle" ||
       syncLoading);

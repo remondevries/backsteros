@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchTransactions,
   patchTransaction,
+  syncStaleMoneybirdBankAccounts,
   type TransactionFilters,
 } from "./finance-api";
 import { useMobileApiClient } from "./use-mobile-api-client";
@@ -63,6 +64,9 @@ export function useFinanceTransactions(filters: TransactionFilters) {
         error: null,
       }));
       try {
+        await syncStaleMoneybirdBankAccounts(client, {
+          accountId: filtersRef.current.accountId,
+        });
         const page = await fetchTransactions(client, {
           ...filtersRef.current,
           cursor: undefined,

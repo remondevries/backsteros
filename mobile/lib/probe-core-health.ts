@@ -74,10 +74,28 @@ export async function probeCoreReachability(input: {
 }
 
 const NETWORK_ERROR_RE =
-  /network request failed|failed to fetch|could not connect|timed out|aborted/i;
+  /network request failed|network connection was lost|fetch failed|failed to fetch|could not connect|timed out|aborted|internet connection appears to be offline/i;
 
 export function isMobileApiNetworkError(detail: string): boolean {
   return NETWORK_ERROR_RE.test(detail);
+}
+
+/** Short copy for UI — never surface Expo/native fetch stack traces. */
+export function formatMobileUserFacingError(
+  reason: unknown,
+  fallback: string,
+): string {
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === "string"
+        ? reason
+        : "";
+  if (message && isMobileApiNetworkError(message)) {
+    return "Couldn’t reach the server. Try again when you’re back online.";
+  }
+  const trimmed = message.trim();
+  return trimmed || fallback;
 }
 
 export function formatMobileApiNetworkError(input: {

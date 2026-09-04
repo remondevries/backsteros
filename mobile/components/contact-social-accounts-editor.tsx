@@ -18,6 +18,7 @@ import {
   PropertyOptionSheet,
   type PropertyOption,
 } from "./property-option-sheet";
+import { SocialPlatformIcon } from "./social-platform-icon";
 
 export type ContactSocialAccount = {
   platform: string;
@@ -55,7 +56,7 @@ function hasCompletableUrl(entry: ContactSocialAccount): boolean {
 }
 
 /**
- * Social accounts editor — platform chip + @handle; full URL persisted.
+ * Social accounts editor — platform icon chip + @handle; full URL persisted.
  */
 export function ContactSocialAccountsEditor({
   value,
@@ -167,6 +168,9 @@ export function ContactSocialAccountsEditor({
           draftHandles[index] ??
           formatSocialHandleInput(entry.platform, entry.url);
         const muted = !hasCompletableUrl(entry);
+        const platformLabel = socialPlatformLabel(
+          dropdownValue(entry.platform),
+        );
         return (
           <View
             key={`social-${index}`}
@@ -177,11 +181,9 @@ export function ContactSocialAccountsEditor({
               onPress={() => setPlatformIndex(index)}
               style={styles.labelChip}
               accessibilityRole="button"
-              accessibilityLabel={`Social platform: ${socialPlatformLabel(entry.platform)}`}
+              accessibilityLabel={`Social platform: ${platformLabel}`}
             >
-              <Text style={styles.labelText}>
-                {socialPlatformLabel(dropdownValue(entry.platform))}
-              </Text>
+              <SocialPlatformIcon platform={entry.platform} size={14} />
             </Pressable>
             <TextInput
               value={handleValue}
@@ -252,16 +254,13 @@ const styles = StyleSheet.create({
   },
   rowMuted: { opacity: 0.7 },
   labelChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    width: 28,
+    height: 28,
     borderRadius: 8,
     backgroundColor: colors.background,
-    maxWidth: 110,
-  },
-  labelText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   value: {
     flex: 1,

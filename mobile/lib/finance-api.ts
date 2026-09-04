@@ -14,6 +14,7 @@ import type {
   FinancialRecurring,
   FinancialRecurringInput,
   FinancialTransaction,
+  MoneybirdBankAccountSyncResult,
   MoneybirdInvoiceRevenue,
   MoneybirdSalesInvoiceDetail,
   MoneybirdSalesInvoiceSummary,
@@ -139,6 +140,68 @@ export async function fetchBankAccountBalances(
     byId[balance.bankAccountId] = balance.balanceCents;
   }
   return byId;
+}
+
+const MONEYBIRD_STALE_MS = 5 * 60_000;
+const MONEYBIRD_SYNC_DEBOUNCE_MS = 60_000;
+const moneybirdSyncAttemptAt = new Map<string, number>();
+
+export function syncBankAccountFromMoneybird(
+  client: BacksterosApiClient,
+  accountId: string,
+): Promise<MoneybirdBankAccountSyncResult> {
+  return client.requestJson<MoneybirdBankAccountSyncResult>(
+    `/api/v1/bank-accounts/${encodeURIComponent(accountId)}/moneybird-sync`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * Pull Moneybird mutations for linked accounts that look stale.
+ * Returns total rows inserted (0 when everything was already current).
+ */
+export async function syncStaleMoneybirdBankAccounts(
+  client: BacksterosApiClient,
+  options?: { accountId?: string; force?: boolean },
+): Promise<number> {
+  let accounts: BankAccount[];
+  try {
+    accounts = await fetchBankAccounts(client);
+  } catch {
+    return 0;
+  }
+
+  const linked = accounts.filter((account) =>
+    Boolean(account.moneybirdFinancialAccountId?.trim()),
+  );
+  const targets = options?.accountId
+    ? linked.filter((account) => account.id === options.accountId)
+    : linked;
+  if (targets.length === 0) return 0;
+
+  let inserted = 0;
+  for (const account of targets) {
+    const lastAttempt = moneybirdSyncAttemptAt.get(account.id) ?? 0;
+    const serverSyncedAt = account.moneybirdLastSyncedAt
+      ? new Date(account.moneybirdLastSyncedAt).getTime()
+      : 0;
+    const stale =
+      !Number.isFinite(serverSyncedAt) ||
+      Date.now() - serverSyncedAt >= MONEYBIRD_STALE_MS;
+    if (!options?.force) {
+      if (!stale) continue;
+      if (Date.now() - lastAttempt < MONEYBIRD_SYNC_DEBOUNCE_MS) continue;
+    }
+
+    moneybirdSyncAttemptAt.set(account.id, Date.now());
+    try {
+      const result = await syncBankAccountFromMoneybird(client, account.id);
+      inserted += result.inserted;
+    } catch {
+      // Soft-fail: ledger stays on last successful sync.
+    }
+  }
+  return inserted;
 }
 
 /** Monthly income/expense for one bank account (desktop account detail chart). */

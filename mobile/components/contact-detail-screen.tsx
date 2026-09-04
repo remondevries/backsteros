@@ -1,8 +1,9 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { DetailHeaderDeleteButton } from "./detail-header-delete-button";
+import { FloatingBottomRightPlusButton } from "./floating-bottom-right-plus-button";
 
 import {
   CONTACT_SECTIONS,
@@ -14,15 +15,16 @@ import {
   TabStackHeaderPlusButton,
   tabDetailScreenOptions,
 } from "../lib/tab-stack-options";
+import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
 import { useSectionTabShortcuts } from "../lib/use-section-tab-shortcuts";
 import { ContactActivityPanel } from "./contact-activity-panel";
 import { ContactOverviewPanel } from "./contact-overview-panel";
 import { ContactTasksPanel } from "./contact-tasks-panel";
-import { ContentPageTitle } from "./content-page-title";
-import { PillNav, type PillNavItem } from "./pill-nav";
+import type { PillNavItem } from "./pill-nav";
 import { ScopedLettersPanel } from "./scoped-letters-panel";
+import { SectionedDetailHeader } from "./sectioned-detail-header";
 
 type Props = {
   contactId: string;
@@ -35,18 +37,33 @@ const CONTACT_PILL_ITEMS: readonly PillNavItem<ContactSectionId>[] =
     label: entry.label,
   }));
 
-/** Contact detail shell — Activity / Details / Tasks / Letters. */
+const CREATE_SECTIONS = new Set<ContactSectionId>(["tasks", "letters"]);
+
+function headerRightActions(actions: ReactNode) {
+  return <View style={styles.headerRightCluster}>{actions}</View>;
+}
+
+/** Contact detail shell — name + tabs in header (project chrome parity). */
 export function ContactDetailScreen({ contactId, title }: Props) {
   const router = useRouter();
   const segments = useSegments();
+  const isPad = isPadDevice();
   const inPadContactsSplit =
-    isPadDevice() && (segments as string[]).includes("contacts");
+    isPad && (segments as string[]).includes("contacts");
 
   const [section, setSection] = useState<ContactSectionId>(
     DEFAULT_CONTACT_SECTION,
   );
   const [displayTitle, setDisplayTitle] = useState(title);
   const { confirmAndDelete } = useEntitySoftDelete();
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/contacts");
+  }, [router]);
 
   const onDeleteContact = useCallback(() => {
     confirmAndDelete("contacts", contactId, displayTitle);
@@ -87,8 +104,10 @@ export function ContactDetailScreen({ contactId, title }: Props) {
     }
   }, [contactId, router, section]);
 
-  const createTrailing =
-    section === "tasks" || section === "letters" ? (
+  const showPhoneFloatingCreate = !isPad && CREATE_SECTIONS.has(section);
+
+  const padCreateAction =
+    isPad && CREATE_SECTIONS.has(section) ? (
       <TabStackHeaderPlusButton
         onPress={onPressCreate}
         accessibilityLabel={
@@ -97,37 +116,38 @@ export function ContactDetailScreen({ contactId, title }: Props) {
       />
     ) : null;
 
-  const headerTitle = useCallback(
-    () => (
-      <View style={styles.headerTitleCluster}>
-        <PillNav
-          accessibilityLabel="Contact sections"
-          value={section}
-          onChange={setSection}
-          align="start"
-          density="header"
-          items={CONTACT_PILL_ITEMS}
-        />
-      </View>
-    ),
-    [section],
-  );
-
-  const headerRight = useCallback(
-    () => <DetailHeaderDeleteButton onDelete={onDeleteContact} />,
-    [onDeleteContact],
+  const headerRight = headerRightActions(
+    <>
+      {padCreateAction}
+      <DetailHeaderDeleteButton onDelete={onDeleteContact} />
+    </>,
   );
 
   const screenOptions = useMemo(
     () => ({
-      ...tabDetailScreenOptions({ embedded: isPadDevice() }),
-      title: "",
-      headerTitleAlign: "left" as const,
-      headerTitle,
-      ...(inPadContactsSplit ? { headerBackVisible: false } : null),
-      headerRight,
+      ...tabDetailScreenOptions({ embedded: isPad }),
+      header: () => (
+        <SectionedDetailHeader
+          title={displayTitle}
+          tab={section}
+          onTabChange={setSection}
+          tabItems={CONTACT_PILL_ITEMS}
+          tabsAccessibilityLabel="Contact sections"
+          onBack={handleBack}
+          showBack={!inPadContactsSplit}
+          headerRight={headerRight}
+        />
+      ),
+      contentStyle: { backgroundColor: colors.background },
     }),
-    [headerRight, headerTitle, inPadContactsSplit],
+    [
+      displayTitle,
+      handleBack,
+      headerRight,
+      inPadContactsSplit,
+      isPad,
+      section,
+    ],
   );
 
   return (
@@ -143,35 +163,34 @@ export function ContactDetailScreen({ contactId, title }: Props) {
               onNameChange={setDisplayTitle}
             />
           ) : section === "tasks" ? (
-            <>
-              <ContentPageTitle
-                title={displayTitle}
-                trailing={createTrailing}
-              />
+            <View style={{ flex: 1, minHeight: 0 }}>
               <ContactTasksPanel contactId={contactId} />
-            </>
+            </View>
           ) : (
-            <>
-              <ContentPageTitle
-                title={displayTitle}
-                trailing={createTrailing}
-              />
+            <View style={{ flex: 1, minHeight: 0 }}>
               <ScopedLettersPanel
                 scope={{ kind: "contact", id: contactId }}
                 emptyText="No letters linked to this contact."
               />
-            </>
+            </View>
           )}
         </View>
+        <FloatingBottomRightPlusButton
+          visible={showPhoneFloatingCreate}
+          onPress={onPressCreate}
+          accessibilityLabel={
+            section === "tasks" ? "Create task" : "Create letter"
+          }
+        />
       </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  headerTitleCluster: {
-    alignItems: "flex-start",
-    justifyContent: "center",
-    maxWidth: 420,
+  headerRightCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
   },
 });

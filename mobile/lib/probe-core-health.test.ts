@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   formatMobileApiNetworkError,
+  formatMobileUserFacingError,
   isMobileApiNetworkError,
   normalizeCoreOrigin,
   resolveCoreApiUrl,
@@ -85,6 +86,28 @@ describe("formatMobileApiNetworkError", () => {
 
   it("detects network errors", () => {
     assert.equal(isMobileApiNetworkError("Network request failed"), true);
+    assert.equal(
+      isMobileApiNetworkError(
+        "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+      ),
+      true,
+    );
     assert.equal(isMobileApiNetworkError("not_found"), false);
+  });
+
+  it("formats user-facing errors without Expo stack traces", () => {
+    assert.equal(
+      formatMobileUserFacingError(
+        new Error(
+          "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+        ),
+        "Could not save.",
+      ),
+      "Couldn’t reach the server. Try again when you’re back online.",
+    );
+    assert.equal(
+      formatMobileUserFacingError(new Error("Title is required."), "fallback"),
+      "Title is required.",
+    );
   });
 });

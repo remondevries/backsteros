@@ -156,14 +156,15 @@ export function ContactsListPane({
     [search.query, sourceRows],
   );
 
-  const avatarSrcById = useEntityAvatarSrcMap(
-    "contact",
-    rows.map((row) => ({
-      id: row.id,
-      avatarStorageKey: row.avatar_storage_key,
-    })),
-    client,
+  const avatarEntities = useMemo(
+    () =>
+      rows.map((row) => ({
+        id: row.id,
+        avatarStorageKey: row.avatar_storage_key,
+      })),
+    [rows],
   );
+  const avatarSrcById = useEntityAvatarSrcMap("contact", avatarEntities, client);
 
   const sections = useMemo<Section[]>(
     () =>

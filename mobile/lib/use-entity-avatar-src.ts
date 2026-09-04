@@ -9,7 +9,13 @@ type AvatarEntity = {
 
 type AvatarKind = "contact" | "organization" | "bank_account";
 
+type AvatarTarget = {
+  id: string;
+  storageKey: string;
+};
+
 const AVATAR_DOWNLOAD_CONCURRENCY = 4;
+const EMPTY_URLS: Record<string, string> = {};
 
 async function blobToBytes(blob: Blob): Promise<Uint8Array> {
   if (typeof blob.arrayBuffer === "function") {
@@ -91,6 +97,30 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+function targetsFromEntities(entities: readonly AvatarEntity[]): AvatarTarget[] {
+  return entities
+    .filter((entry) => entry.avatarStorageKey)
+    .map((entry) => ({
+      id: entry.id,
+      storageKey: entry.avatarStorageKey!.trim(),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function fingerprintTargets(targets: readonly AvatarTarget[]): string {
+  return targets.map((t) => `${t.id}\0${t.storageKey}`).join("|");
+}
+
+function urlsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
 /**
  * Resolve local file URIs for entities that have an uploaded avatar.
  * Entities without `avatarStorageKey` are omitted (text-only rows).
@@ -100,30 +130,27 @@ export function useEntityAvatarSrcMap(
   entities: readonly AvatarEntity[],
   client: BacksterosApiClient | null,
 ): Record<string, string> {
-  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [urls, setUrls] = useState<Record<string, string>>(EMPTY_URLS);
 
-  const targets = useMemo(
-    () =>
-      entities
-        .filter((entry) => entry.avatarStorageKey)
-        .map((entry) => ({
-          id: entry.id,
-          storageKey: entry.avatarStorageKey!.trim(),
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+  // Primitive fingerprint so unstable `entities` array identity does not re-fire the effect.
+  const fingerprint = useMemo(
+    () => fingerprintTargets(targetsFromEntities(entities)),
     [entities],
   );
 
-  const fingerprint = useMemo(
-    () => targets.map((t) => `${t.id}\0${t.storageKey}`).join("|"),
-    [targets],
-  );
-
   useEffect(() => {
-    if (!client || targets.length === 0) {
-      setUrls({});
+    if (!client || fingerprint.length === 0) {
+      setUrls((prev) => (Object.keys(prev).length === 0 ? prev : EMPTY_URLS));
       return;
     }
+
+    const targets = fingerprint.split("|").map((part) => {
+      const sep = part.indexOf("\0");
+      return {
+        id: part.slice(0, sep),
+        storageKey: part.slice(sep + 1),
+      };
+    });
 
     let cancelled = false;
 
@@ -151,13 +178,13 @@ export function useEntityAvatarSrcMap(
       for (const pair of pairs) {
         if (pair) next[pair[0]] = pair[1];
       }
-      setUrls(next);
+      setUrls((prev) => (urlsEqual(prev, next) ? prev : next));
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [client, fingerprint, kind, targets]);
+  }, [client, fingerprint, kind]);
 
   return urls;
 }

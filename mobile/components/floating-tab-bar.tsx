@@ -527,7 +527,14 @@ export function FloatingTabBar({
   const bar = (
     <Animated.View
       pointerEvents={hidden ? "none" : "box-none"}
-      style={[styles.host, { paddingBottom: bottom }, hostAnimatedStyle]}
+      style={[
+        styles.host,
+        // Expand to the full window while a menu is open so the dismiss
+        // scrim can catch taps outside the pill / dropdown.
+        menuMounted ? styles.hostFill : null,
+        { paddingBottom: bottom },
+        hostAnimatedStyle,
+      ]}
     >
       {menuMounted ? (
         <Animated.View
@@ -742,6 +749,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIDE_INSET,
     paddingTop: 8,
   },
+  hostFill: {
+    top: 0,
+    justifyContent: "flex-end",
+  },
   dismissScrim: {
     ...StyleSheet.absoluteFill,
   },
@@ -752,6 +763,7 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: ROW_MAX_WIDTH,
     alignSelf: "center",
+    zIndex: 2,
   },
   primaryWrap: {
     flex: 1,

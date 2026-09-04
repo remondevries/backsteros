@@ -25,4 +25,26 @@ describe("flattenGroupedSections", () => {
     assert.equal(rowIndexByItemId.get("2"), 2);
     assert.equal(findFlatGroupedRowIndex(rowIndexByItemId, "2"), 2);
   });
+
+  it("adds empty footers between sections but never after the last", () => {
+    const { rows } = flattenGroupedSections(
+      [
+        { key: "a", title: "A", data: [] },
+        { key: "b", title: "B", data: [] },
+        { key: "c", title: "C", data: [] },
+      ],
+      { includeEmptyFooter: (section) => section.data.length === 0 },
+    );
+
+    assert.deepEqual(
+      rows.map((row) => row.key),
+      [
+        "header:a",
+        "footer:a",
+        "header:b",
+        "footer:b",
+        "header:c",
+      ],
+    );
+  });
 });

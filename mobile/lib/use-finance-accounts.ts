@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router/react-navigation";
 
-import { fetchBankAccountBalances, fetchBankAccounts } from "./finance-api";
+import {
+  fetchBankAccountBalances,
+  fetchBankAccounts,
+  syncStaleMoneybirdBankAccounts,
+} from "./finance-api";
 import { useEntityAvatarSrcMap } from "./use-entity-avatar-src";
 import { useMobileApiClient } from "./use-mobile-api-client";
 import { useSyncedOrRest } from "./use-synced-or-rest";
@@ -118,6 +123,8 @@ export function useBankAccountBalances() {
 
   const reload = useCallback(async () => {
     try {
+      // Pull Moneybird first so the SUM behind /balances includes new mutations.
+      await syncStaleMoneybirdBankAccounts(client);
       setBalances(await fetchBankAccountBalances(client));
     } catch {
       // Keep the previous snapshot on transient failures.
@@ -126,9 +133,11 @@ export function useBankAccountBalances() {
     }
   }, [client]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
 
   return { balances, loading, reload };
 }

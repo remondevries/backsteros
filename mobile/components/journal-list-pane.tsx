@@ -14,11 +14,14 @@ import { isPadDevice } from "../lib/device";
 import { useMobileCoreApiUrl } from "../lib/api-url-context";
 import {
   formatJournalEntryTitle,
+  formatJournalListDateLabel,
   formatJournalSidePanelLabel,
   getTodayJournalDateSlug,
 } from "../lib/journal";
 import { useMobilePowerSync } from "../lib/powersync-context";
-import { colors } from "../lib/theme";
+import { getTaskDueDateYmd } from "../lib/task-due-date";
+import { migrateLegacyTaskStatus } from "../lib/task-status";
+import { colors, spacing } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useListJkNavigation } from "../lib/use-list-jk-navigation";
@@ -27,6 +30,7 @@ import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
 import { useRestListHydration } from "../lib/use-rest-list-hydration";
 import { useRestReloadFlags } from "../lib/use-rest-reload-flags";
+import { JournalWhoopListTrailing } from "./journal-whoop-leading";
 import { BacksterFlashList } from "./lists/index";
 
 export type JournalListRow = {
@@ -34,11 +38,25 @@ export type JournalListRow = {
   journal_date: string;
 };
 
+type CompletedTaskRow = {
+  due_date: string | null;
+  status: string | null;
+  habit_id: string | null;
+};
+
 const JOURNAL_SQL = `SELECT id, journal_date FROM documents
  WHERE deleted_at IS NULL
    AND type = 'journal'
    AND journal_date IS NOT NULL
  ORDER BY journal_date DESC`;
+
+/** Non-habit completed tasks with a due date — aggregated per journal day. */
+const COMPLETED_TASKS_SQL = `SELECT due_date, status, habit_id FROM tasks
+ WHERE deleted_at IS NULL
+   AND habit_id IS NULL
+   AND due_date IS NOT NULL
+   AND due_date != ''
+   AND status = 'completed'`;
 
 /** `/journal/<dateSlug>` → dateSlug / null. */
 export function journalSelectedDateFromPathname(
@@ -48,6 +66,12 @@ export function journalSelectedDateFromPathname(
   const match = normalized.match(/^\/journal\/([^/]+)$/);
   if (!match?.[1] || match[1] === "new") return null;
   return match[1];
+}
+
+function formatCompletedTasksLabel(count: number): string {
+  if (count <= 0) return "No tasks completed";
+  if (count === 1) return "1 task completed";
+  return `${count} tasks completed`;
 }
 
 type Props = {
@@ -66,7 +90,8 @@ type Props = {
 
 /**
  * Journal entry list — shared by phone full-screen and iPad left pane.
- * Labels match desktop: `YYYY-MM-DD` + optional Today badge.
+ * iPhone: date + completed-task count, Whoop rings on the right.
+ * iPad: compact date slug list (side-panel parity).
  */
 export function JournalListPane({
   selectedDateSlug = null,
@@ -80,12 +105,16 @@ export function JournalListPane({
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
   const isPad = isPadDevice();
+  const phoneLayout = !isPad;
 
   const pathSelected =
     selectedDateSlug ?? journalSelectedDateFromPathname(pathname);
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<JournalListRow>(JOURNAL_SQL);
+  const { data: completedTaskRows } = useLocalQuery<CompletedTaskRow>(
+    COMPLETED_TASKS_SQL,
+  );
 
   const [restRows, setRestRows] = useState<JournalListRow[] | null>(null);
   const [restError, setRestError] = useState<string | null>(null);
@@ -99,6 +128,18 @@ export function JournalListPane({
 
   const todaySlug = getTodayJournalDateSlug();
   const localRows = syncedRows ?? [];
+
+  const completedByDate = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of completedTaskRows ?? []) {
+      if (row.habit_id?.trim()) continue;
+      if (migrateLegacyTaskStatus(row.status) !== "completed") continue;
+      const ymd = getTaskDueDateYmd(row.due_date);
+      if (!ymd) continue;
+      counts.set(ymd, (counts.get(ymd) ?? 0) + 1);
+    }
+    return counts;
+  }, [completedTaskRows]);
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
@@ -234,7 +275,7 @@ export function JournalListPane({
     <BacksterFlashList
       ref={listRef}
       data={rows}
-      estimatedItemSize={40}
+      estimatedItemSize={phoneLayout ? 88 : 40}
       keyExtractor={(item) => item.id}
       refreshing={pullRefreshing}
       onRefresh={() => {
@@ -256,8 +297,46 @@ export function JournalListPane({
         const selected = pathSelected === item.journal_date;
         const highlighted = highlightedId === item.id;
         const isToday = item.journal_date === todaySlug;
-        const label = formatJournalSidePanelLabel(item.journal_date);
+        const completedCount = completedByDate.get(item.journal_date) ?? 0;
 
+        if (phoneLayout) {
+          const dateLabel = formatJournalListDateLabel(item.journal_date);
+          const completedLabel = formatCompletedTasksLabel(completedCount);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                isToday
+                  ? `${formatJournalEntryTitle(item.journal_date)}, Today, ${completedLabel}`
+                  : `${formatJournalEntryTitle(item.journal_date)}, ${completedLabel}`
+              }
+              onPress={() => onPressRow(item)}
+              style={({ pressed }) => [
+                styles.phoneRow,
+                selected ? styles.rowSelected : null,
+                highlighted ? ui.keyboardNavHighlight : null,
+                pressed ? styles.rowPressed : null,
+              ]}
+            >
+              <View style={styles.phoneCopy}>
+                <Text style={styles.phoneDate} numberOfLines={1}>
+                  {dateLabel}
+                  {isToday ? (
+                    <Text style={styles.todayBadge}> · Today</Text>
+                  ) : null}
+                </Text>
+                <Text style={styles.phoneMeta} numberOfLines={1}>
+                  {completedLabel}
+                </Text>
+              </View>
+              <View style={styles.phoneWhoop} pointerEvents="none">
+                <JournalWhoopListTrailing dateSlug={item.journal_date} />
+              </View>
+            </Pressable>
+          );
+        }
+
+        const label = formatJournalSidePanelLabel(item.journal_date);
         return (
           <Pressable
             accessibilityRole="button"
@@ -292,6 +371,39 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 6,
   },
+  phoneRow: {
+    marginHorizontal: spacing.screenX,
+    marginVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 80,
+  },
+  phoneCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  phoneDate: {
+    color: colors.foreground,
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.02 * 17,
+  },
+  phoneMeta: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "400",
+  },
+  phoneWhoop: {
+    flexShrink: 0,
+  },
   rowPressed: {
     backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
@@ -306,7 +418,7 @@ const styles = StyleSheet.create({
   },
   todayBadge: {
     color: "rgba(237, 237, 237, 0.4)",
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "400",
   },
 });

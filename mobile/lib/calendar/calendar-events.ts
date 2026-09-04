@@ -154,6 +154,7 @@ export function taskCalendarEventClassNames(
   return classNames;
 }
 
+/** Status-tinted fill + border — for callers that want accented chips. */
 export function taskCalendarEventColors(status: string): {
   backgroundColor: string;
   borderColor: string;
@@ -162,7 +163,18 @@ export function taskCalendarEventColors(status: string): {
   const borderColor = TASK_STATUS_COLORS[statusKey];
   return {
     borderColor,
-    backgroundColor: `${borderColor}44`,
+    backgroundColor: `color-mix(in srgb, ${borderColor} 26%, transparent)`,
+  };
+}
+
+/** Neutral chip styling — status color lives on the icon/dot (matches desktop). */
+export function taskCalendarEventNeutralColors(): {
+  backgroundColor: string;
+  borderColor: string;
+} {
+  return {
+    borderColor: "color-mix(in srgb, var(--foreground) 22%, transparent)",
+    backgroundColor: "color-mix(in srgb, var(--foreground) 7%, transparent)",
   };
 }
 
@@ -173,15 +185,12 @@ export function taskToCalendarEvent(
   if (!start) return null;
 
   const habitId = task.habitId?.trim() || null;
-  const colors = taskCalendarEventColors(task.status);
   const base = {
     id: task.id,
     title: task.title || (habitId ? "Untitled habit" : "Untitled task"),
     classNames: taskCalendarEventClassNames(task.status, {
       habit: Boolean(habitId),
     }),
-    backgroundColor: colors.backgroundColor,
-    borderColor: colors.borderColor,
     extendedProps: {
       entityType: "task" as const,
       taskId: task.id,
@@ -299,8 +308,6 @@ export function meetingToCalendarEvent(
     end: end.toISOString(),
     allDay: false,
     classNames: meetingCalendarEventClassNames(finished),
-    backgroundColor: "#606acc44",
-    borderColor: "#606acc",
     extendedProps: {
       entityType: "meeting",
       meetingId: meeting.id,
@@ -454,8 +461,6 @@ export function birthdaysToCalendarEvents(
         start,
         allDay: true,
         classNames: ["task-calendar-event", "birthday-calendar-event"],
-        backgroundColor: "rgba(244, 114, 182, 0.28)",
-        borderColor: "#f472b6",
         extendedProps: {
           entityType: "birthday",
           contactId: contact.id,

@@ -26,6 +26,10 @@ import {
   type CrmGroupRow,
   type CrmRelationshipLabelRow,
 } from "./crm-row-mappers";
+import {
+  formatMobileUserFacingError,
+  isMobileApiNetworkError,
+} from "./probe-core-health";
 import { useLocalQuery } from "./use-local-query";
 import { useMobileApiClient } from "./use-mobile-api-client";
 import { useMobilePowerSync } from "./powersync-context";
@@ -176,11 +180,21 @@ export function useCrmActivityFeed(
         });
         return;
       }
+      const message =
+        error instanceof Error ? error.message : "Failed to load activity";
+      // Background hydrate while offline — don't flash Expo fetch noise.
+      if (isMobileApiNetworkError(message)) {
+        setRestState((prev) => ({
+          ...prev,
+          loading: false,
+          error: null,
+        }));
+        return;
+      }
       setRestState((prev) => ({
         ...prev,
         loading: false,
-        error:
-          error instanceof Error ? error.message : "Failed to load activity",
+        error: formatMobileUserFacingError(error, "Failed to load activity"),
       }));
     }
   }, [basePath, enabled, localEnabled, subjectId]);
@@ -294,8 +308,14 @@ export function useContactRelationships(
       }>(`/api/v1/contacts/${encodeURIComponent(contactId)}/relationships`);
       setRestItems(body.relationships);
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load relationships";
+      if (isMobileApiNetworkError(message)) {
+        setError(null);
+        return;
+      }
       setError(
-        err instanceof Error ? err.message : "Failed to load relationships",
+        formatMobileUserFacingError(err, "Failed to load relationships"),
       );
     } finally {
       setRestLoading(false);

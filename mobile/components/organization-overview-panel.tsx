@@ -8,6 +8,7 @@ import {
 } from "../lib/avatar-upload";
 import { entityProfileStyles as profileStyles } from "../lib/entity-profile-styles";
 import { patchEntityViaPowerSyncOrApi } from "../lib/entity-mutations";
+import { formatMobileUserFacingError } from "../lib/probe-core-health";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { useHideTabBar } from "../lib/tab-bar-visibility";
 import { colors } from "../lib/theme";
@@ -183,9 +184,10 @@ export function OrganizationOverviewPanel({
         }
       } catch (reason) {
         setSaveError(
-          reason instanceof Error
-            ? reason.message
-            : "Could not save organization.",
+          formatMobileUserFacingError(
+            reason,
+            "Could not save organization.",
+          ),
         );
       }
     },

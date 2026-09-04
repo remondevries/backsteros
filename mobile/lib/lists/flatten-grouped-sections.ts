@@ -23,7 +23,8 @@ export function flattenGroupedSections<T extends { id: string }>(
   const stickyHeaderIndices: number[] = [];
   const rowIndexByItemId = new Map<string, number>();
 
-  for (const section of sections) {
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = sections[index]!;
     const headerIndex = rows.length;
     rows.push({
       kind: "header",
@@ -34,17 +35,20 @@ export function flattenGroupedSections<T extends { id: string }>(
     stickyHeaderIndices.push(headerIndex);
 
     for (const item of section.data) {
-      const index = rows.length;
+      const rowIndex = rows.length;
       rows.push({
         kind: "row",
         key: item.id,
         sectionKey: section.key,
         item,
       });
-      rowIndexByItemId.set(item.id, index);
+      rowIndexByItemId.set(item.id, rowIndex);
     }
 
-    if (options?.includeEmptyFooter?.(section)) {
+    // Only between sections — a trailing empty footer measures as 0/`null` and
+    // fights FlashList v2's estimated footer size (infinite layout loop).
+    const isLast = index === sections.length - 1;
+    if (!isLast && options?.includeEmptyFooter?.(section)) {
       rows.push({
         kind: "footer",
         key: `footer:${section.key}`,

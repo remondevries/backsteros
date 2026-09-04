@@ -1,5 +1,4 @@
-import { FlashList } from "@shopify/flash-list";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, FlatList, StyleSheet, Text, View } from "react-native";
 
 import { colors, spacing } from "../../lib/theme";
 import { TaskStatusIcon } from "../task-status-icon";
@@ -36,7 +35,7 @@ export function BoardColumn({
         <Text style={styles.headerTitle}>{title}</Text>
         <Text style={styles.count}>{rows.length}</Text>
       </View>
-      <FlashList
+      <FlatList
         data={rows}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (

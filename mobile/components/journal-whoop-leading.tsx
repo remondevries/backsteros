@@ -6,9 +6,10 @@ import Svg, { Circle } from "react-native-svg";
 import { colors } from "../lib/theme";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 
-const RING_SIZE = 44;
-const RING_RADIUS = 10;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+/** Journal detail rings — large enough for two-digit / strain values. */
+const RING_SIZE = 58;
+/** Desktop geometry: r=10 in a 24 viewBox → keep the same fill ratio. */
+const RING_RADIUS_RATIO = 10 / 24;
 
 const METRIC_MAX = {
   sleep: 100,
@@ -117,12 +118,6 @@ export function useWhoopDaySnapshot(dateSlug: string): WhoopDayViewState {
   return state;
 }
 
-function valueToDash(value: number | null | undefined, max: number): number {
-  if (value == null || Number.isNaN(value) || value < 0) return 0;
-  const clamped = Math.min(max, Math.max(0, value));
-  return (clamped / max) * RING_CIRCUMFERENCE;
-}
-
 function formatValue(
   value: number | null | undefined,
   max: number,
@@ -143,6 +138,8 @@ function WhoopMetricRing({
   digits = 0,
   loading,
   targetValue,
+  size = RING_SIZE,
+  showLabel = true,
 }: {
   label: string;
   value: number | null | undefined;
@@ -151,56 +148,74 @@ function WhoopMetricRing({
   digits?: number;
   loading: boolean;
   targetValue?: number | null;
+  size?: number;
+  showLabel?: boolean;
 }) {
-  const dash = valueToDash(loading ? 0 : value, max);
-  const targetDash = valueToDash(loading ? 0 : targetValue, max);
+  const scale = size / RING_SIZE;
+  const radius = size * RING_RADIUS_RATIO;
+  const circumference = 2 * Math.PI * radius;
+  const stroke = Math.max(2.5, 3 * scale);
+  const center = size / 2;
+  const dash =
+    value == null || Number.isNaN(value) || value < 0
+      ? 0
+      : (Math.min(max, Math.max(0, value)) / max) * circumference;
+  const targetDash =
+    targetValue == null || Number.isNaN(targetValue) || targetValue < 0
+      ? 0
+      : (Math.min(max, Math.max(0, targetValue)) / max) * circumference;
   const display = loading ? " " : formatValue(value, max, digits);
+  const valueFont = Math.max(10, Math.round(14 * scale));
 
   return (
     <View
       accessible
       accessibilityLabel={`${label} ${display}`}
-      style={{ alignItems: "center", width: 64, gap: 4 }}
+      style={{
+        alignItems: "center",
+        width: showLabel ? Math.max(72, size + 14) : size + 4,
+        gap: 4,
+      }}
     >
-      <View style={{ width: RING_SIZE, height: RING_SIZE }}>
-        <Svg width={RING_SIZE} height={RING_SIZE} viewBox="0 0 24 24">
+      <View style={{ width: size, height: size }}>
+        <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <Circle
-            cx="12"
-            cy="12"
-            r={RING_RADIUS}
+            cx={center}
+            cy={center}
+            r={radius}
             fill="none"
             stroke={color}
-            strokeWidth={3}
+            strokeWidth={stroke}
             opacity={0.18}
           />
           {targetDash > 0 ? (
             <Circle
-              cx="12"
-              cy="12"
-              r={RING_RADIUS}
+              cx={center}
+              cy={center}
+              r={radius}
               fill="none"
               stroke={color}
-              strokeWidth={3}
+              strokeWidth={stroke}
               strokeLinecap="round"
-              strokeDasharray={`${RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
-              strokeDashoffset={RING_CIRCUMFERENCE - targetDash}
+              strokeDasharray={`${circumference} ${circumference}`}
+              strokeDashoffset={circumference - targetDash}
               opacity={0.35}
               rotation={-90}
-              origin="12, 12"
+              origin={`${center}, ${center}`}
             />
           ) : null}
           <Circle
-            cx="12"
-            cy="12"
-            r={RING_RADIUS}
+            cx={center}
+            cy={center}
+            r={radius}
             fill="none"
             stroke={color}
-            strokeWidth={3}
+            strokeWidth={stroke}
             strokeLinecap="round"
-            strokeDasharray={`${RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
-            strokeDashoffset={RING_CIRCUMFERENCE - dash}
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={circumference - dash}
             rotation={-90}
-            origin="12, 12"
+            origin={`${center}, ${center}`}
           />
         </Svg>
         <View
@@ -218,7 +233,7 @@ function WhoopMetricRing({
           <Text
             style={{
               color,
-              fontSize: 12,
+              fontSize: valueFont,
               fontWeight: "700",
               fontVariant: ["tabular-nums"],
             }}
@@ -227,16 +242,18 @@ function WhoopMetricRing({
           </Text>
         </View>
       </View>
-      <Text
-        style={{
-          color: colors.muted,
-          fontSize: 11,
-          fontWeight: "600",
-          letterSpacing: 0.2,
-        }}
-      >
-        {label}
-      </Text>
+      {showLabel ? (
+        <Text
+          style={{
+            color: colors.muted,
+            fontSize: 11,
+            fontWeight: "600",
+            letterSpacing: 0.2,
+          }}
+        >
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -247,15 +264,22 @@ function WhoopHeaderSkeleton() {
       style={{
         flexDirection: "row",
         justifyContent: "center",
-        gap: 20,
+        gap: 24,
         paddingTop: 4,
-        paddingBottom: 12,
+        paddingBottom: 4,
       }}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
       {[0, 1, 2].map((key) => (
-        <View key={key} style={{ alignItems: "center", width: 64, gap: 4 }}>
+        <View
+          key={key}
+          style={{
+            alignItems: "center",
+            width: Math.max(72, RING_SIZE + 14),
+            gap: 4,
+          }}
+        >
           <View
             style={{
               width: RING_SIZE,
@@ -278,15 +302,23 @@ function WhoopHeaderSkeleton() {
   );
 }
 
-function WhoopHeader({ snapshot }: { snapshot: WhoopSnapshot }) {
+function WhoopHeader({
+  snapshot,
+  compact = false,
+}: {
+  snapshot: WhoopSnapshot;
+  compact?: boolean;
+}) {
+  const ringSize = compact ? 34 : RING_SIZE;
   return (
     <View
       style={{
         flexDirection: "row",
-        justifyContent: "center",
-        gap: 20,
-        paddingTop: 4,
-        paddingBottom: 12,
+        justifyContent: compact ? "flex-end" : "center",
+        alignItems: "center",
+        gap: compact ? 8 : 24,
+        paddingTop: compact ? 0 : 4,
+        paddingBottom: compact ? 0 : 4,
       }}
     >
       <WhoopMetricRing
@@ -295,6 +327,8 @@ function WhoopHeader({ snapshot }: { snapshot: WhoopSnapshot }) {
         max={METRIC_MAX.sleep}
         color={METRIC_COLORS.sleep}
         loading={false}
+        size={ringSize}
+        showLabel={!compact}
       />
       <WhoopMetricRing
         label="Recovery"
@@ -302,6 +336,8 @@ function WhoopHeader({ snapshot }: { snapshot: WhoopSnapshot }) {
         max={METRIC_MAX.recovery}
         color={METRIC_COLORS.recovery}
         loading={false}
+        size={ringSize}
+        showLabel={!compact}
       />
       <WhoopMetricRing
         label="Strain"
@@ -311,6 +347,8 @@ function WhoopHeader({ snapshot }: { snapshot: WhoopSnapshot }) {
         digits={1}
         loading={false}
         targetValue={snapshot.strainTarget?.value}
+        size={ringSize}
+        showLabel={!compact}
       />
     </View>
   );
@@ -343,4 +381,56 @@ export function JournalWhoopLeading({
     } satisfies WhoopSnapshot);
 
   return <WhoopHeader snapshot={display} />;
+}
+
+const LIST_RING_SIZE = 34;
+
+function WhoopListSkeleton() {
+  return (
+    <View
+      style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {[0, 1, 2].map((key) => (
+        <View
+          key={key}
+          style={{
+            width: LIST_RING_SIZE,
+            height: LIST_RING_SIZE,
+            borderRadius: LIST_RING_SIZE / 2,
+            backgroundColor: colors.faint,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Compact sleep / recovery / strain rings for journal list rows (iPhone).
+ * Fetches via shared day cache — safe to mount per visible row.
+ */
+export function JournalWhoopListTrailing({ dateSlug }: { dateSlug: string }) {
+  const state = useWhoopDaySnapshot(dateSlug);
+
+  if (state.ready && state.authenticated === false) {
+    return null;
+  }
+
+  if (!state.ready) {
+    return <WhoopListSkeleton />;
+  }
+
+  const display =
+    state.snapshot ??
+    ({
+      id: `whoop-${dateSlug}`,
+      date: dateSlug,
+      sleepPerformance: null,
+      recoveryScore: null,
+      strainScore: null,
+    } satisfies WhoopSnapshot);
+
+  return <WhoopHeader snapshot={display} compact />;
 }

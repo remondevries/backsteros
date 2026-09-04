@@ -77,7 +77,7 @@ export const KeyboardAwareScrollView = forwardRef<ScrollView, Props>(
           ] as StyleProp<ViewStyle>
         }
         keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-        keyboardDismissMode="interactive"
+        keyboardDismissMode="on-drag"
         onScroll={handleScroll}
         scrollEventThrottle={16}
         onContentSizeChange={(width, height) => {
