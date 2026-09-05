@@ -97,15 +97,6 @@ export function TaskListPage() {
   useEffect(() => {
     void taskDetailPage.load();
     void import("../components/desktop-task-layout");
-    const preloadAgent = () => {
-      void import("../components/desktop-agent-chat-panel");
-    };
-    if (typeof requestIdleCallback !== "undefined") {
-      const idleId = requestIdleCallback(preloadAgent);
-      return () => cancelIdleCallback(idleId);
-    }
-    const timer = window.setTimeout(preloadAgent, 150);
-    return () => window.clearTimeout(timer);
   }, []);
 
   const retainedTaskRouteParam =

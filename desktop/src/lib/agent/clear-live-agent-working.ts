@@ -1,10 +1,9 @@
 /**
- * Mark / clear live "agent working" without importing the terminal panel
- * (keeps apply-agent-turn-completed and session start free of circular deps).
+ * Mark / clear live "agent working" without importing UI panels
+ * (keeps Research / presence writers free of circular deps).
  *
- * Multiple subscribers can register (PTY live activity + status-context UI
- * working set). Mark runs when a turn starts; clear runs when it ends or the
- * task is stopped/held.
+ * Multiple subscribers can register (status-context UI working set).
+ * Mark runs when Research (or another writer) starts; clear when it ends.
  */
 
 type WorkingFn = (taskId: string) => void;
@@ -26,7 +25,7 @@ export function registerClearLiveAgentWorking(fn: WorkingFn): () => void {
   };
 }
 
-/** Optimistic working mark (list pulse + title shimmer) before PTY hooks attach. */
+/** Optimistic working mark (list pulse + title shimmer). */
 export function markLiveAgentWorkingForTask(taskId: string): void {
   const id = taskId.trim();
   if (!id) return;

@@ -393,31 +393,7 @@ function InboxPageBody() {
           />
         </>
       ) : null}
-      <DesktopTaskLayout
-        taskId={selectedTask.id}
-        projectId={project?.id ?? null}
-        projectLabel={project?.name ?? selectedTask.projectName ?? "Task"}
-        taskDisplayId={displayId}
-        cwd={workingDirectory?.trim() || "~"}
-        agentChatId={selectedTaskRecord?.agentChatId ?? null}
-        taskStatus={selectedTaskRecord?.status ?? selectedTask.status}
-        preferWideTaskPanel
-        detailColumnToggleShortcutEnabled={false}
-        viewScope={project?.type === "codebase" ? "codebase" : "rail"}
-        taskSummary={{
-          number: selectedTask.number ?? 0,
-          title: selectedTask.title,
-          description: fetchedDescription || null,
-          projectKey: resolvedProjectKey,
-          projectId: project?.id ?? null,
-          projectName: project?.name ?? selectedTask.projectName ?? null,
-          displayId: getInboxItemDisplayId(selectedTask),
-          workingDirectory: workingDirectory,
-        }}
-        patchTaskValues={async (values) => {
-          await workspace.patchTask(selectedTask.id, values);
-        }}
-      >
+      <DesktopTaskLayout>
       <TaskDetailView
         sectionLabel="Inbox"
         headerMeta={
@@ -517,7 +493,9 @@ function InboxPageBody() {
         }}
         fileAttachments={fileAttachments}
         fileUploading={fileUploading}
-        onUploadFile={uploadFile}
+        onUploadFile={async (file) => {
+          await uploadFile(file);
+        }}
         onRemoveFile={removeFileAttachment}
         onOpenFile={openFileAttachment}
         documentLinkOptions={documentLinkOptions}

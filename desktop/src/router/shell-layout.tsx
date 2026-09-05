@@ -384,8 +384,6 @@ export function ContactScopedTaskDetailPage() {
         },
         { label: "Tasks", href: backHref },
       ]}
-      initialAgentCollapsed
-      agentFillsHostColumn
     />
   );
 }

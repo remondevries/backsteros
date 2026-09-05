@@ -7,6 +7,7 @@ import {
   RegisterPageTitle,
   TaskDetailSkeleton,
   TaskDetailView,
+  TaskLinkedCommitSection,
   buildAssigneeDropdownOptions,
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
@@ -48,6 +49,7 @@ import {
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
 import { useEnsureProjectVault } from "../lib/use-ensure-project-vault";
+import { useDesktopApi } from "../lib/api-context";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import {
   buildDocumentLinkOptions,
@@ -75,18 +77,9 @@ export type TaskDetailPageProps = {
   bootstrapTask?: TaskDetailBootstrap | null;
   /**
    * Embed in a host panel (calendar overlay / Timetracking rail):
-   * render task + properties only — no DesktopTaskLayout agent split.
+   * render task + properties only.
    */
   overlayMode?: boolean;
-  /** Start with the agent/chat column collapsed (contact workspace embed). */
-  initialAgentCollapsed?: boolean;
-  /**
-   * When the agent opens, fill the host column only (collapse task detail).
-   * Keeps sibling chrome such as the contact card in place.
-   */
-  agentFillsHostColumn?: boolean;
-  /** Notify host when the agent column is collapsed/expanded. */
-  onAgentCollapsedChange?: (collapsed: boolean) => void;
 };
 
 type TaskRouteRow = {
@@ -98,10 +91,13 @@ type TaskRouteRow = {
   contactKey?: string | null;
   assigneeId?: string | null;
   agentChatId?: string | null;
+  linkedCommitSha?: string | null;
   projectName?: string | null;
-  title?: string;
-  status?: string;
-  priority?: number;
+  title: string;
+  status: string;
+  priority: number;
+  /** Epoch ms when known (workspace rows); absent on bootstrap rows. */
+  updatedAt?: number;
 };
 
 export type TaskDetailBootstrap = {
@@ -151,7 +147,7 @@ function bootstrapToRouteRow(bootstrap: TaskDetailBootstrap): TaskRouteRow {
     projectName: bootstrap.projectName ?? null,
     title: bootstrap.title,
     status: bootstrap.status,
-    priority: bootstrap.priority,
+    priority: bootstrap.priority ?? 0,
   };
 }
 
@@ -186,11 +182,13 @@ function buildTaskRouteIndex(
     });
     keys.add(slug);
     keys.add(slug.toLowerCase());
-    if (entry.projectKey) {
-      keys.add(encodeTaskSlug(entry.projectKey, entry.number));
-    }
-    if (contactKey) {
-      keys.add(encodeTaskSlug(contactKey, entry.number));
+    if (entry.number != null) {
+      if (entry.projectKey) {
+        keys.add(encodeTaskSlug(entry.projectKey, entry.number));
+      }
+      if (contactKey) {
+        keys.add(encodeTaskSlug(contactKey, entry.number));
+      }
     }
     for (const key of keys) {
       index.set(key, entry);
@@ -206,9 +204,6 @@ export function TaskDetailPage({
   detailVisible = true,
   bootstrapTask = null,
   overlayMode = false,
-  initialAgentCollapsed = false,
-  agentFillsHostColumn = false,
-  onAgentCollapsedChange,
 }: TaskDetailPageProps = {}) {
   const navigate = useNavigate();
   const location = useShellLocation();
@@ -241,6 +236,11 @@ export function TaskDetailPage({
   const { knowledgeDocuments, projectDocuments } =
     useDesktopWorkspaceDocuments();
   const workspace = useDesktopWorkspaceActions();
+  const { client } = useDesktopApi();
+  const requestJson = useCallback(
+    <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
+    [client],
+  );
   const tasksReady = useWorkspaceSurfaceReady("tasks");
   const keepAliveActive = useKeepAliveActive();
   const agentMail = useAgentMail();
@@ -629,7 +629,18 @@ export function TaskDetailPage({
   const project =
     projects.find((entry) => entry.key === task.projectKey) ?? null;
   const workingDirectory = project?.localWorkingDirectory ?? null;
-  const isCodebaseTask = project?.type === "codebase";
+  const canLinkCommit =
+    project?.type === "codebase" &&
+    Boolean(project.id) &&
+    Boolean(project.githubRepository?.trim());
+  const linkedCommitSha =
+    (typeof base?.linkedCommitSha === "string"
+      ? base.linkedCommitSha.trim()
+      : "") ||
+    (typeof taskDetails[task.id]?.linkedCommitSha === "string"
+      ? String(taskDetails[task.id]?.linkedCommitSha).trim()
+      : "") ||
+    null;
 
   const patchStatus = (next: string) => {
     void workspace.patchTask(task.id, { status: next });
@@ -673,7 +684,8 @@ export function TaskDetailPage({
       : null;
     const redirectBase = {
       taskId: task.id,
-      taskNumber: task.number,
+      // Same `?? 0` convention as the confirmed-number rewrite below.
+      taskNumber: task.number ?? 0,
       oldProjectKey: previousProjectKey,
       newProjectKey: nextProject?.key ?? null,
       newOrganizationRouteParam: nextProject
@@ -709,7 +721,7 @@ export function TaskDetailPage({
         const confirmedNumber =
           typeof result?.number === "number" && result.number > 0
             ? result.number
-            : task.number > 0
+            : task.number != null && task.number > 0
               ? task.number
               : null;
         const prettyPath = buildTaskProjectChangeRedirectPath(interimPath, {
@@ -832,7 +844,9 @@ export function TaskDetailPage({
           onChangeLinks={changeLinks}
           fileAttachments={fileAttachments}
           fileUploading={fileUploading}
-          onUploadFile={uploadFile}
+          onUploadFile={async (file) => {
+            await uploadFile(file);
+          }}
           onRemoveFile={removeFileAttachment}
           onOpenFile={openFileAttachment}
           documentLinkOptions={documentLinkOptions}
@@ -858,6 +872,24 @@ export function TaskDetailPage({
           onAgentInboxApprove={() => {
             void workspace.patchTask(task.id, { agentInboxApproved: true });
           }}
+          afterAttachments={
+            canLinkCommit && project ? (
+              <TaskLinkedCommitSection
+                projectId={project.id}
+                defaultBranch={null}
+                linkedCommitSha={linkedCommitSha}
+                requestJson={requestJson}
+                onLinkCommit={async (sha) => {
+                  await workspace.patchTask(task.id, { linkedCommitSha: sha });
+                }}
+                onUnlinkCommit={async () => {
+                  await workspace.patchTask(task.id, {
+                    linkedCommitSha: null,
+                  });
+                }}
+              />
+            ) : null
+          }
           belowDescription={
             belowDescriptionReady
               ? ({ mode }) => activityPanel(mode === "preview")
@@ -887,44 +919,7 @@ export function TaskDetailPage({
       {overlayMode ? (
         <div className="task-detail-page-overlay">{detailView}</div>
       ) : (
-        <DesktopTaskLayout
-          key={
-            agentFillsHostColumn
-              ? `contact-task-layout-${task.id}`
-              : `task-layout-${task.id}`
-          }
-          taskId={task.id}
-          projectId={project?.id ?? null}
-          projectLabel={project?.name ?? task.projectName ?? "Task"}
-          taskDisplayId={task.displayId ?? null}
-          cwd={
-            isCodebaseTask
-              ? workingDirectory
-              : workingDirectory?.trim() || "~"
-          }
-          agentChatId={base?.agentChatId ?? null}
-          taskStatus={task.status}
-          taskSummary={taskAgentSummary}
-          patchTaskValues={async (values) => {
-            await workspace.patchTask(task.id, values);
-          }}
-          autoStartOnReadyToStart={isCodebaseTask}
-          preferWideTaskPanel={!isCodebaseTask}
-          viewScope={isCodebaseTask ? "codebase" : "rail"}
-          requireWorkingDirectory={isCodebaseTask}
-          initialAgentCollapsed={initialAgentCollapsed || agentFillsHostColumn}
-          agentFillsHostColumn={agentFillsHostColumn}
-          onAgentCollapsedChange={onAgentCollapsedChange}
-          onWorkingDirectoryChange={
-            isCodebaseTask && project
-              ? async (directory) => {
-                  await workspace.patchProject(project.id, {
-                    localWorkingDirectory: directory,
-                  });
-                }
-              : undefined
-          }
-        >
+        <DesktopTaskLayout key={`task-layout-${task.id}`}>
           {detailView}
         </DesktopTaskLayout>
       )}

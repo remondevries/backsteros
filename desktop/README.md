@@ -2,8 +2,9 @@
 
 Tauri 2 + Vite + React product client for macOS/Windows/Linux.
 
-**Status:** Product UI parity with web via `@backsteros/ui` + Clerk/API/PowerSync.
-Requires Clerk — no demo fixtures when signed out or when the publishable key is missing.
+**Status:** Product UI via `@backsteros/ui` + local-core API/PowerSync.
+Opens without Clerk sign-in (local-shell bearer). Clerk is optional for
+GitHub connect / account profile.
 
 ## Intent
 
@@ -22,7 +23,7 @@ Requires Clerk — no demo fixtures when signed out or when the publishable key 
 | Shared UI | `@backsteros/ui` |
 | API | `VITE_API_URL` → `@backsteros/api-client` |
 | Offline | `@powersync/web` local SQLite (Tier A/B) |
-| Auth | Clerk SPA when `VITE_CLERK_PUBLISHABLE_KEY` is set |
+| Auth | Local-shell bearer by default; optional Clerk for GitHub / account |
 | PDF | `react-pdf` + `pdfjs-dist` (workers copied to `public/`) |
 
 ## Develop
@@ -31,7 +32,7 @@ Requires Clerk — no demo fixtures when signed out or when the publishable key 
 pnpm install
 pnpm --filter @backsteros/ui build
 cp desktop/.env.example desktop/.env
-# Edit .env: VITE_API_URL=http://127.0.0.1:8788 and Clerk publishable key
+# Edit .env: VITE_API_URL=http://127.0.0.1:8788 (Clerk key optional)
 
 # Recommended — menu-bar hub starts Docker + core API + PTY
 pnpm --filter @backsteros/hub dev
@@ -43,6 +44,21 @@ pnpm --filter @backsteros/desktop dev
 pnpm --filter @backsteros/desktop dev:vite
 ```
 
+### Checks (CI `desktop` job runs the same)
+
+```bash
+pnpm --filter @backsteros/ui build        # desktop typecheck reads ui/dist
+pnpm --filter @backsteros/ui typecheck
+pnpm --filter @backsteros/desktop typecheck
+pnpm --filter @backsteros/desktop lint    # eslint: react-hooks + typescript-eslint
+pnpm --filter @backsteros/ui test         # node:test via tsx
+pnpm --filter @backsteros/desktop test    # node:test via tsx (+ src/test/node-test-setup.mjs shim)
+```
+
+Tests are `node:test` + `node:assert/strict` (no vitest). UI tests import from
+`src/`, never `dist/`. Do not let `tsc` emit `.js` next to `.ts` in
+`packages/ui/src` — Vite resolves the `.js` first (gitignored as a guard).
+
 Vite HMR can remount providers while PowerSync holds an IndexedDB SQLite handle. The desktop shell reuses that handle across Fast Refresh, surfaces a connect timeout as a recoverable error, and wraps the tree in an ErrorBoundary plus a boot-splash watchdog (Continue / Reload) so a bad hot update does not require killing the Tauri process.
 
 Manual alternative (without hub):
@@ -51,30 +67,33 @@ Manual alternative (without hub):
 # Terminal 1 — local core API
 pnpm dev
 
-# Terminal 2 — local PTY sidecar (required for Start Agent / task terminal)
+# Terminal 2 — PTY sidecar (required for **mobile** Agent Chat over Tailscale)
 pnpm --filter @backsteros/desktop pty
 
 # Terminal 3 — desktop shell
 pnpm --filter @backsteros/desktop dev
 ```
 
-### Agent Chat (task view)
+### Agents (desktop product decision)
 
-Desktop task detail includes a collapsible right **agent Chat rail** (T3-style Cursor ACP). **Start Agent** talks to the local Node sidecar (`ws://127.0.0.1:3101`).
+Desktop no longer embeds Agent Chat / ACP. Use:
 
-- Run `pnpm --filter @backsteros/desktop pty` (or `cd desktop && pnpm pty`) before using Chat.
-- Cursor Agent CLI (`agent`) must be on PATH and logged in (`agent login`).
-- Start ensures an ACP session (`POST /agent/acp/ensure`) and sends the bootstrap prompt via ACP. Switching tasks does not stop background turns — the sidecar projects the live timeline into the shared transcript store.
-- Collapsing the rail / leaving the task only detaches the Chat event subscriber. Stop Agent ends the ACP session.
-- Default bind is loopback. For **iPad over Tailscale**, run with e.g.:
+- **Grok Bot** (`agents/` → cloud-core) for always-on team bots
+- **BacksterOS (development)** / T3 Code for interactive Cursor agents
+
+Task list / status-bar presence still reflects Research and shared `agent-presence` (including T3). `agentChatId` remains on tasks for **mobile** Chat bindings.
+
+### PTY sidecar (mobile Agent Chat)
+
+Hub Start still runs the desktop package PTY sidecar (`ws` / HTTP on port 3101). Desktop Settings → Cursor → Agents can list/kill sessions. Desktop itself does not spawn ACP Chat.
+
+- Default bind is loopback. For **iPad over Tailscale**:
 
 ```bash
 PTY_HOST=0.0.0.0 PTY_AUTH_TOKEN=your-secret pnpm --filter @backsteros/desktop pty
 ```
 
   Set the same token on core (`AGENT_PTY_AUTH_TOKEN`) and `AGENT_PTY_PUBLIC_URL` to the Tailscale-reachable origin (e.g. `http://macbook.tailnet.ts.net:3101`). Desktop can set `VITE_PTY_AUTH_TOKEN` to match when auth is enabled.
-
-  Reference patterns: clone [pingdotgg/t3code](https://github.com/pingdotgg/t3code) to `tmp/t3-code` (gitignored).
 
 ### Cursor spellcheck
 
@@ -84,10 +103,11 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 ### Auth / API smoke
 
-1. Start API locally (`8788`) and ensure Clerk allowed origins include Vite `:1420` / Tauri hosts (see `.env.example`).
-2. Set `VITE_CLERK_PUBLISHABLE_KEY` — without it the app only shows the configure-auth screen.
-3. Until a session exists, Clerk sign-in is shown (no empty/demo workspace).
-4. Command palette (⌘K) uses live global search when authenticated; lists use PowerSync local SQLite.
+1. Start API locally (`8788`). Local-shell auth (`Bearer local`) is on by default
+   for local-core — desktop opens straight into the workspace.
+2. Optional: set `VITE_CLERK_PUBLISHABLE_KEY` for Settings → GitHub / account.
+   Ensure Clerk allowed origins include Vite `:1420` / Tauri hosts.
+3. Command palette (⌘K) uses live global search; lists use PowerSync local SQLite.
 
 ## Ship / package
 

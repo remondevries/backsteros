@@ -35,7 +35,6 @@ import {
   getContactsGroupHref,
   getEmailComposeHref,
   getOrganizationSectionHref,
-  getScopedContactBasePath,
   getScopedContactEmailHref,
   getScopedContactEmailsListHref,
   getScopedContactLetterHref,
@@ -52,6 +51,7 @@ import {
   isContactSectionId,
   isHabitLinkedTask,
   migrateLegacyTaskStatus,
+  normalizeContactSocialAccounts,
   parseContactOverlayLayout,
   parseContactScopedEntityDetail,
   parseContactSectionId,
@@ -78,6 +78,10 @@ import { useAgentMail } from "../lib/agentmail-context";
 import { useDesktopApi } from "../lib/api-context";
 import { useDesktopPowerSync } from "../lib/powersync-context";
 import { useDesktopAvatarSrcMap } from "../lib/avatar-src";
+import {
+  normalizeContactEmails,
+  normalizeContactPhones,
+} from "../lib/contact-row-normalizers";
 import {
   removeDesktopAvatar,
   uploadDesktopAvatar,
@@ -124,122 +128,6 @@ function contactSlug(
   }[],
 ) {
   return getUniqueListItemRouteParam(contact, siblings);
-}
-
-function normalizeContactSocialAccounts(
-  raw: unknown,
-): { platform: string; url: string }[] {
-  let accounts: unknown = raw ?? [];
-  if (typeof accounts === "string") {
-    try {
-      accounts = JSON.parse(accounts) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(accounts)) return [];
-  return accounts
-    .filter(
-      (entry): entry is { platform: unknown; url: unknown } =>
-        entry != null &&
-        typeof entry === "object" &&
-        "platform" in entry &&
-        "url" in entry,
-    )
-    .map((entry) => ({
-      platform: String(entry.platform ?? ""),
-      url: String(entry.url ?? ""),
-    }))
-    .filter((entry) => entry.platform.length > 0 && entry.url.length > 0)
-    .slice(0, 20);
-}
-
-function normalizeContactEmails(
-  raw: unknown,
-): { label: "personal" | "work" | "other"; address: string }[] {
-  let emails: unknown = raw ?? [];
-  if (typeof emails === "string") {
-    try {
-      emails = JSON.parse(emails) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(emails)) return [];
-  const out: { label: "personal" | "work" | "other"; address: string }[] = [];
-  const seen = new Set<string>();
-  for (const entry of emails) {
-    let address = "";
-    let label: "personal" | "work" | "other" = "other";
-    if (typeof entry === "string") {
-      address = entry.trim();
-    } else if (entry != null && typeof entry === "object") {
-      const record = entry as { address?: unknown; email?: unknown; label?: unknown };
-      address = String(record.address ?? record.email ?? "").trim();
-      const rawLabel = String(record.label ?? "")
-        .trim()
-        .toLowerCase();
-      if (
-        rawLabel === "personal" ||
-        rawLabel === "work" ||
-        rawLabel === "other"
-      ) {
-        label = rawLabel;
-      }
-    }
-    if (!address) continue;
-    const key = address.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ label, address });
-  }
-  return out.slice(0, 20);
-}
-
-function normalizeContactPhones(
-  raw: unknown,
-): { label: "personal" | "work" | "other"; number: string }[] {
-  let phones: unknown = raw ?? [];
-  if (typeof phones === "string") {
-    try {
-      phones = JSON.parse(phones) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(phones)) return [];
-  const out: { label: "personal" | "work" | "other"; number: string }[] = [];
-  const seen = new Set<string>();
-  for (const entry of phones) {
-    let number = "";
-    let label: "personal" | "work" | "other" = "other";
-    if (typeof entry === "string") {
-      number = entry.trim();
-    } else if (entry != null && typeof entry === "object") {
-      const record = entry as {
-        number?: unknown;
-        phone?: unknown;
-        label?: unknown;
-      };
-      number = String(record.number ?? record.phone ?? "").trim();
-      const rawLabel = String(record.label ?? "")
-        .trim()
-        .toLowerCase();
-      if (
-        rawLabel === "personal" ||
-        rawLabel === "work" ||
-        rawLabel === "other"
-      ) {
-        label = rawLabel;
-      }
-    }
-    if (!number) continue;
-    const key = number.replace(/[^\d+]/g, "").toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push({ label, number });
-  }
-  return out.slice(0, 20);
 }
 
 function asCoord(value: unknown): number | null {
@@ -1441,15 +1329,16 @@ export function ContactsPage({
       return (
         <ScopedLettersListView
           letters={contactLetters}
-          onSelectLetter={(letter) =>
+          onSelectLetter={(letter) => {
+            if (letter.number == null) return;
             navigate(
               getScopedContactLetterHref(
                 contactRouteSlug,
                 letter.number,
                 routeScope,
               ),
-            )
-          }
+            );
+          }}
           onStatusChange={(letterId, status: TaskStatus) => {
             void workspace.patchLetter(letterId, { status });
           }}
@@ -1527,8 +1416,6 @@ export function ContactsPage({
           taskRouteParam={detail.id}
           backHref={backHref}
           breadcrumbItems={contactWorkspaceBreadcrumbPrefix("Tasks", backHref)}
-          initialAgentCollapsed={true}
-          agentFillsHostColumn={true}
         />
       );
     }
@@ -1722,7 +1609,7 @@ export function ContactsPage({
               const letter = contactLetters.find(
                 (entry) => entry.id === letterId,
               );
-              if (!letter) return;
+              if (!letter || letter.number == null) return;
               navigate(
                 getScopedContactLetterHref(
                   contactRouteSlug,

@@ -140,6 +140,7 @@ export function mapTask(
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
+    linkedCommitSha: task.linkedCommitSha ?? null,
     habitId: task.habitId ?? null,
     agentCreatedAt: asEpoch(task.agentCreatedAt),
     agentInboxApprovedAt: asEpoch(task.agentInboxApprovedAt),

@@ -7,7 +7,6 @@ import {
   type DragEvent,
   type MouseEvent,
   type ReactNode,
-  type SyntheticEvent,
 } from "react";
 
 import type { GroupedListPointerItemBind } from "../../list-nav/use-grouped-list-pointer-reorder.js";
@@ -84,6 +83,8 @@ export type TaskItemRowTask = {
   updatedAt?: number;
   /** Cursor Agent chat id bound to this task (core), if any. */
   agentChatId?: string | null;
+  /** GitHub commit SHA linked as this task’s change record. */
+  linkedCommitSha?: string | null;
   /** Habit definition this daily instance belongs to, if any. */
   habitId?: string | null;
   /** Set when created via API key or agent actor. */

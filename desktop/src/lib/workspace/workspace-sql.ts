@@ -28,6 +28,7 @@ export const TASK_LIST_COLUMNS = [
   "inbox",
   "links",
   "agent_chat_id",
+  "linked_commit_sha",
   "habit_id",
   "agent_created_at",
   "agent_inbox_approved_at",

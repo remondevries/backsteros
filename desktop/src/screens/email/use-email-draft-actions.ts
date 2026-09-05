@@ -21,7 +21,7 @@ import {
 import {
   extractAgentReplyBody,
   resolveEditableEmailDraftBody,
-} from "../../lib/agent/email-agent-prompt";
+} from "../../lib/email-draft-body";
 import { useDesktopApi } from "../../lib/api-context";
 import { useAgentMail } from "../../lib/agentmail-context";
 import {

@@ -133,6 +133,7 @@ export function taskApiPatchToSqlite(
     } else if (key === "projectId") sqliteValues.project_id = value;
     else if (key === "contactId") sqliteValues.contact_id = value;
     else if (key === "agentChatId") sqliteValues.agent_chat_id = value;
+    else if (key === "linkedCommitSha") sqliteValues.linked_commit_sha = value;
     else if (key === "agentInboxApproved") {
       if (value === true) {
         sqliteValues.agent_inbox_approved_at = new Date().toISOString();

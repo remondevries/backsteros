@@ -175,6 +175,7 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     inbox: row.inbox,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
+    linked_commit_sha: row.linkedCommitSha ?? null,
     habit_id: row.habitId ?? null,
     completed_at: row.completedAt?.toISOString() ?? null,
     agent_created_at: row.agentCreatedAt?.toISOString() ?? null,
@@ -1939,6 +1940,9 @@ function mapTaskUpsert(
     agentChatId: asNullableString(
       payload.agent_chat_id ?? payload.agentChatId,
     ),
+    linkedCommitSha: asNullableString(
+      payload.linked_commit_sha ?? payload.linkedCommitSha,
+    ),
     habitId: asNullableString(payload.habit_id ?? payload.habitId),
     trackedMinutes: asNullableNumber(
       payload.tracked_minutes ?? payload.trackedMinutes,
@@ -2092,6 +2096,7 @@ export async function applySyncChange(
           inbox: input.inbox,
           links: input.links,
           agentChatId: input.agentChatId,
+          linkedCommitSha: input.linkedCommitSha,
           habitId: input.habitId,
           trackedMinutes: input.trackedMinutes,
           trackedDurationSeconds: input.trackedDurationSeconds,

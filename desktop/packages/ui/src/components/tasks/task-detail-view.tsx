@@ -103,6 +103,8 @@ export type TaskDetailViewProps = {
   belowDescription?:
     | ReactNode
     | ((ctx: TaskDetailBelowDescriptionContext) => ReactNode);
+  /** Optional content below attachments (e.g. linked commit Changes). */
+  afterAttachments?: ReactNode;
   /** When set, show interactive orange/grey spellcheck segments. */
   spellcheckHighlight?: TaskSpellcheckHighlight | null;
   onSpellcheckHighlightClear?: () => void;
@@ -163,6 +165,7 @@ export function TaskDetailView({
   headerMeta,
   showDisplayId = true,
   belowDescription,
+  afterAttachments,
   spellcheckHighlight = null,
   onSpellcheckHighlightClear,
   onToggleSpellcheckTitleSegment,
@@ -530,6 +533,7 @@ export function TaskDetailView({
                   onRemoveFile={onRemoveFile}
                   onOpenFile={onOpenFile}
                 />
+                {afterAttachments}
                 {belowDescriptionNode}
                 {errorNode}
               </div>

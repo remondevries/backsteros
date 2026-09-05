@@ -518,8 +518,9 @@ export function SettingsCursorTab() {
         <section className="settings-card">
           <h2>Active agents</h2>
           <p>
-            Local Cursor ACP agent sessions owned by the PTY sidecar. Leaving a
-            task only detaches the Chat viewer; Kill stops that ACP session. The
+            Local Cursor ACP sessions owned by the PTY sidecar (used by **mobile**
+            Agent Chat). Desktop no longer attaches a Chat viewer. Kill stops that
+            ACP session. The
             task&apos;s <code>agentChatId</code> in core is left alone so you can
             bind a new session later.
           </p>

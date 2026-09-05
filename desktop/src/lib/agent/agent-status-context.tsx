@@ -17,18 +17,19 @@ import {
   clearDynamicIslandAgentsWorking,
   publishDynamicIslandAgentsWorking,
 } from "../dynamic-island-agents-working";
+import { useDesktopApi } from "../api-context";
 import {
   registerClearLiveAgentWorking,
   registerMarkLiveAgentWorking,
 } from "./clear-live-agent-working";
-import type {
-  AgentAttachRequest,
-  AgentEndRequest,
-  PendingBootstrapPrompt,
-} from "./cursor-agent-cli";
 
 /** Keep island heartbeat fresh so a crashed desktop ages out (~90s stale). */
 const DYNAMIC_ISLAND_AGENTS_HEARTBEAT_MS = 30_000;
+/** Shared BacksterOS core presence TTL is 45s — heartbeat faster than that. */
+const SHARED_AGENT_PRESENCE_HEARTBEAT_MS = 15_000;
+const SHARED_AGENT_PRESENCE_POLL_MS = 12_000;
+
+const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
 export type DesktopAgentStatusContextValue = {
   summary: AgentActivitySummary;
@@ -41,61 +42,15 @@ export type DesktopAgentStatusContextValue = {
   setOpenTaskIds: (taskIds: readonly string[]) => void;
   /**
    * Mark a task as agent-working for UI surfaces (list pulse, activity
-   * “Agent is working…”, status bar) without relying on a live PTY hook.
-   * Used by Research and by the Chat ACP turn lifecycle.
+   * “Agent is working…”, status bar) without a Chat rail.
+   * Used by Research and by shared presence writers (e.g. T3).
    */
   setTaskResearchWorking: (taskId: string, working: boolean) => void;
   isTaskWorking: (taskId: string) => boolean;
-  /**
-   * True when the ACP poll/socket path marks this task busy — excludes
-   * optimistic research marks from Start/composer (stale list pulses).
-   */
+  /** @deprecated ACP session busy — always false after desktop Chat removal. */
   isTaskAcpSessionBusy: (taskId: string) => boolean;
   isTaskAgentOpen: (taskId: string) => boolean;
-  agentAttachRequest: AgentAttachRequest | null;
-  agentEndRequest: AgentEndRequest | null;
-  /** Start-agent optimistic user prompt before ACP ensure finishes. */
-  pendingBootstrapPrompt: PendingBootstrapPrompt | null;
-  setPendingBootstrapPrompt: (value: PendingBootstrapPrompt | null) => void;
-  requestAttach: (request: AgentAttachRequest) => void;
-  clearAttachRequest: () => void;
-  requestEnd: (request: AgentEndRequest) => void;
-  clearEndRequest: () => void;
-  terminalCollapsed: boolean;
-  setTerminalCollapsed: (collapsed: boolean) => void;
-  expandTerminal: () => void;
-  /**
-   * True after Start / View / focus until Hide or Stop. Prevents the
-   * "no agentChatId yet" window after clearAttach from collapsing the rail.
-   */
-  agentRailPinned: boolean;
-  focusRequest: number;
-  bumpFocusRequest: () => void;
-  /** Expand the agent rail and focus the terminal. */
-  focusAgentTab: () => void;
 };
-
-const TERMINAL_COLLAPSED_KEY = "backsteros-desktop.terminal-collapsed";
-
-function readCollapsedFlag(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const raw = window.localStorage.getItem(TERMINAL_COLLAPSED_KEY);
-    if (raw == null) return true;
-    return raw === "1" || raw === "true";
-  } catch {
-    return true;
-  }
-}
-
-function writeCollapsedFlag(collapsed: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(TERMINAL_COLLAPSED_KEY, collapsed ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
-}
 
 const DesktopAgentStatusContext =
   createContext<DesktopAgentStatusContextValue | null>(null);
@@ -105,30 +60,23 @@ export function DesktopAgentStatusProvider({
 }: {
   children: ReactNode;
 }) {
+  const { client } = useDesktopApi();
   const [summary, setSummary] = useState<AgentActivitySummary>(
     emptyAgentActivitySummary,
   );
   const [statusItems, setStatusItems] = useState<StatusBarAgentItem[]>([]);
-  const [ptyWorkingTaskIds, setWorkingTaskIdsState] = useState<
+  const [localWorkingTaskIds, setWorkingTaskIdsState] = useState<
     ReadonlySet<string>
   >(() => new Set());
   const [researchWorkingTaskIds, setResearchWorkingTaskIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [remoteWorkingTaskIds, setRemoteWorkingTaskIds] = useState<
+    ReadonlySet<string>
+  >(EMPTY_WORKING_TASK_IDS);
   const [openTaskIds, setOpenTaskIdsState] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [agentAttachRequest, setAgentAttachRequest] =
-    useState<AgentAttachRequest | null>(null);
-  const [agentEndRequest, setAgentEndRequest] =
-    useState<AgentEndRequest | null>(null);
-  const [pendingBootstrapPrompt, setPendingBootstrapPrompt] =
-    useState<PendingBootstrapPrompt | null>(null);
-  const [terminalCollapsed, setTerminalCollapsedState] = useState(
-    readCollapsedFlag,
-  );
-  const [agentRailPinned, setAgentRailPinned] = useState(false);
-  const [focusRequest, setFocusRequest] = useState(0);
 
   const setWorkingTaskIds = useCallback((taskIds: readonly string[]) => {
     setWorkingTaskIdsState((current) => {
@@ -158,7 +106,6 @@ export function DesktopAgentStatusProvider({
     [],
   );
 
-  // Start / composer / ACP bootstrap mark this UI set without a live PTY hook.
   useEffect(() => {
     return registerMarkLiveAgentWorking((taskId) => {
       setResearchWorkingTaskIds((current) => {
@@ -167,10 +114,19 @@ export function DesktopAgentStatusProvider({
         next.add(taskId);
         return next;
       });
+      void client
+        .requestJson(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ source: "desktop" }),
+          },
+        )
+        .catch(() => {});
     });
-  }, []);
+  }, [client]);
 
-  // Turn-complete / Stop / On Hold clear PTY marks and this UI set together.
   useEffect(() => {
     return registerClearLiveAgentWorking((taskId) => {
       setResearchWorkingTaskIds((current) => {
@@ -179,17 +135,80 @@ export function DesktopAgentStatusProvider({
         next.delete(taskId);
         return next;
       });
+      void client
+        .requestJson(
+          `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
+          {
+            method: "DELETE",
+          },
+        )
+        .catch(() => {});
     });
-  }, []);
+  }, [client]);
 
-  const workingTaskIds = useMemo(() => {
-    if (researchWorkingTaskIds.size === 0) return ptyWorkingTaskIds;
-    const merged = new Set(ptyWorkingTaskIds);
+  const mergedLocalWorking = useMemo(() => {
+    if (researchWorkingTaskIds.size === 0) return localWorkingTaskIds;
+    const merged = new Set(localWorkingTaskIds);
     for (const id of researchWorkingTaskIds) merged.add(id);
     return merged;
-  }, [ptyWorkingTaskIds, researchWorkingTaskIds]);
+  }, [localWorkingTaskIds, researchWorkingTaskIds]);
 
-  // Mirror live working set to Dynamic Island (file bridge).
+  const workingTaskIds = useMemo(() => {
+    if (remoteWorkingTaskIds.size === 0) return mergedLocalWorking;
+    const merged = new Set(mergedLocalWorking);
+    for (const id of remoteWorkingTaskIds) merged.add(id);
+    return merged;
+  }, [mergedLocalWorking, remoteWorkingTaskIds]);
+
+  useEffect(() => {
+    const heartbeat = () => {
+      for (const taskId of mergedLocalWorking) {
+        void client
+          .requestJson(
+            `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
+            {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ source: "desktop" }),
+            },
+          )
+          .catch(() => {});
+      }
+    };
+    heartbeat();
+    const timer = window.setInterval(
+      heartbeat,
+      SHARED_AGENT_PRESENCE_HEARTBEAT_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [client, mergedLocalWorking]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void client
+        .requestJson<{ presence?: Array<{ taskId: string }> }>(
+          "/api/v1/agent-presence",
+        )
+        .then((payload) => {
+          if (cancelled) return;
+          const rows = payload.presence ?? [];
+          if (rows.length === 0) {
+            setRemoteWorkingTaskIds(EMPTY_WORKING_TASK_IDS);
+            return;
+          }
+          setRemoteWorkingTaskIds(new Set(rows.map((row) => row.taskId)));
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, SHARED_AGENT_PRESENCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [client]);
+
   useEffect(() => {
     publishDynamicIslandAgentsWorking(workingTaskIds);
     const timer = window.setInterval(() => {
@@ -251,53 +270,6 @@ export function DesktopAgentStatusProvider({
     });
   }, []);
 
-  const setTerminalCollapsed = useCallback((collapsed: boolean) => {
-    writeCollapsedFlag(collapsed);
-    setTerminalCollapsedState(collapsed);
-    // Hide / Stop unpin; expanding from elsewhere pins via expandTerminal.
-    if (collapsed) setAgentRailPinned(false);
-  }, []);
-
-  const expandTerminal = useCallback(() => {
-    writeCollapsedFlag(false);
-    setTerminalCollapsedState(false);
-    setAgentRailPinned(true);
-  }, []);
-
-  const bumpFocusRequest = useCallback(() => {
-    setFocusRequest((n) => n + 1);
-  }, []);
-
-  const focusAgentTab = useCallback(() => {
-    writeCollapsedFlag(false);
-    setTerminalCollapsedState(false);
-    setAgentRailPinned(true);
-    setFocusRequest((n) => n + 1);
-  }, []);
-
-  const requestAttach = useCallback((request: AgentAttachRequest) => {
-    if (request.focusUi !== false) {
-      writeCollapsedFlag(false);
-      setTerminalCollapsedState(false);
-      setAgentRailPinned(true);
-      setFocusRequest((n) => n + 1);
-    }
-    setAgentAttachRequest(request);
-  }, []);
-
-  const clearAttachRequest = useCallback(() => {
-    setAgentAttachRequest(null);
-  }, []);
-
-  const requestEnd = useCallback((request: AgentEndRequest) => {
-    setAgentRailPinned(false);
-    setAgentEndRequest(request);
-  }, []);
-
-  const clearEndRequest = useCallback(() => {
-    setAgentEndRequest(null);
-  }, []);
-
   const value = useMemo<DesktopAgentStatusContextValue>(
     () => ({
       summary,
@@ -310,49 +282,18 @@ export function DesktopAgentStatusProvider({
       setOpenTaskIds,
       setTaskResearchWorking,
       isTaskWorking: (taskId) => workingTaskIds.has(taskId),
-      isTaskAcpSessionBusy: (taskId) => ptyWorkingTaskIds.has(taskId),
+      isTaskAcpSessionBusy: () => false,
       isTaskAgentOpen: (taskId) => openTaskIds.has(taskId),
-      agentAttachRequest,
-      agentEndRequest,
-      pendingBootstrapPrompt,
-      setPendingBootstrapPrompt,
-      requestAttach,
-      clearAttachRequest,
-      requestEnd,
-      clearEndRequest,
-      terminalCollapsed,
-      setTerminalCollapsed,
-      expandTerminal,
-      agentRailPinned,
-      focusRequest,
-      bumpFocusRequest,
-      focusAgentTab,
     }),
     [
-      agentAttachRequest,
-      agentEndRequest,
-      agentRailPinned,
-      bumpFocusRequest,
-      clearAttachRequest,
-      clearEndRequest,
-      expandTerminal,
-      focusAgentTab,
-      focusRequest,
       openTaskIds,
-      pendingBootstrapPrompt,
-      ptyWorkingTaskIds,
-      requestAttach,
-      requestEnd,
-      setPendingBootstrapPrompt,
       setOpenTaskIds,
       setStatusItemsStable,
       setSummaryStable,
-      setTerminalCollapsed,
       setTaskResearchWorking,
       setWorkingTaskIds,
       statusItems,
       summary,
-      terminalCollapsed,
       workingTaskIds,
     ],
   );

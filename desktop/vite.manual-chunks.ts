@@ -14,17 +14,11 @@ export const desktopManualChunks: ManualChunksOption = (id) => {
   ) {
     return "vendor-powersync";
   }
-  if (id.includes("lexical") || id.includes("@lexical/")) {
-    return "vendor-lexical";
-  }
   if (id.includes("@codemirror/")) {
     return "vendor-codemirror";
   }
   if (id.includes("pdfjs") || id.includes("react-pdf")) {
     return "vendor-pdfjs";
-  }
-  if (id.includes("@xterm/")) {
-    return "vendor-xterm";
   }
   if (id.includes("@fullcalendar/")) {
     return "vendor-fullcalendar";

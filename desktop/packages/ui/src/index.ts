@@ -314,6 +314,7 @@ export {
   taskBelongsInInbox,
   emailBelongsInInbox,
   meetingBelongsInInbox,
+  buildInboxMeetingListItem,
   meetingInboxItemId,
   parseMeetingInboxItemId,
   isEmailIncomingStatus,
@@ -2615,6 +2616,8 @@ export {
 
 export {
   agentWorkTotals,
+  ACTIVITY_COALESCE_WINDOW_MS,
+  coalescePropertyActivities,
   formatActivityDurationMs,
   formatActivityTokenCount,
   groupConsecutiveAgentWorked,
@@ -3722,6 +3725,7 @@ export {
   shouldHandleListKeyboardActivate,
   shouldHandleBoardKeyboardNavigation,
   boardKeyboardNavDirection,
+  isShiftJkNavigation,
 } from "./list-nav/should-handle-list-keyboard-navigation.js";
 export {
   setKeyboardNavMouseResumeHandler,
@@ -3887,6 +3891,10 @@ export {
   CommitDetailPane,
   type CommitDetailPaneProps,
 } from "./components/codebase/commit-detail-pane.js";
+export {
+  TaskLinkedCommitSection,
+  type TaskLinkedCommitSectionProps,
+} from "./components/codebase/task-linked-commit-section.js";
 export {
   PullRequestDetailPane,
   type PullDetailTab,

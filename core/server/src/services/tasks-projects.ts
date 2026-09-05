@@ -683,7 +683,7 @@ async function createTaskWithExecutor(
   id: string,
   executor: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "clerk" },
+  options?: { authKind?: "api_key" | "clerk" | "local_shell" },
 ) {
   if (input.projectId) {
     const project = await getProjectById(workspaceId, input.projectId, executor);
@@ -769,6 +769,7 @@ async function createTaskWithExecutor(
       inbox: input.inbox ?? (!input.projectId && !input.contactId),
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
+      linkedCommitSha: input.linkedCommitSha ?? null,
       habitId: input.habitId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
@@ -843,7 +844,7 @@ export async function createTask(
   id = newId(),
   executor?: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "clerk" },
+  options?: { authKind?: "api_key" | "clerk" | "local_shell" },
 ) {
   if (executor) {
     return createTaskWithExecutor(
@@ -1012,6 +1013,7 @@ export async function updateTask(
           : undefined),
       links: input.links,
       agentChatId: input.agentChatId,
+      linkedCommitSha: input.linkedCommitSha,
       habitId: input.habitId,
       trackedMinutes: input.trackedMinutes,
       trackedDurationSeconds: input.trackedDurationSeconds,

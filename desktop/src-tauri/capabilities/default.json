@@ -39,7 +39,6 @@
     "allow-whoop",
     "allow-system-stats",
     "allow-cursor-usage",
-    "allow-oauth-windows",
-    "allow-agent-browser"
+    "allow-oauth-windows"
   ]
 }

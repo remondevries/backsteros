@@ -108,7 +108,8 @@
 /* With attachments / activity under the description, size to content instead of
    filling the pane (which pinned the slot to the bottom). */
 .task-detail-stacked__content:has(.task-detail-attachments),
-.task-detail-stacked__content:has(.task-detail-below-description) {
+.task-detail-stacked__content:has(.task-detail-below-description),
+.task-detail-stacked__content:has(.task-linked-commit) {
   flex: 0 0 auto;
 }
 

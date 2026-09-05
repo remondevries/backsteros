@@ -5,9 +5,6 @@
 @import "./styles/sign-in.css";
 @import "./styles/overlay-windows.css";
 @import "./styles/task-agent-layout.css";
-@import "./styles/agent-surface.css";
-@import "./styles/agent-chat.css";
-@import "./styles/agent-composer.css";
 @import "./styles/status-bar.css";
 @import "./styles/finance-shell.css";
 @import "./styles/finance-filter-dock.css";

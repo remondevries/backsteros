@@ -348,11 +348,11 @@ fork of the Next deployment pipeline.
 
 ## ADR-025: Agent Chat = Cursor ACP + server projection (no Herdr)
 
-**Status:** Accepted (2026-07)  
+**Status:** Superseded for **desktop** (2026-09, BOD-49) — still describes **mobile** ACP Chat + PTY sidecar  
 **Supersedes:** ADR-023 (agent path), ADR-024 Terminal/Herdr half  
 **Context:** Herdr shared-TTY made Chat leave/return unreliable. Streaming timelines were UI-owned and filtered to the selected task, so background conversations did not project like T3 Code. T3’s solid model is: durable threads + live provider sessions + server-side runtime ingestion; the UI is a disposable viewer.
 
-**Decision:**
+**Decision (historical / mobile):**
 
 - **Agent Chat is ACP-only** (Cursor `agent acp`): ensure / prompt / mode / cancel / permissions
 - **Server projects** ACP `session/update` into `~/.backsteros/agent-chat-transcripts/<chatId>.json` while the turn runs — independent of which task is focused
@@ -360,6 +360,8 @@ fork of the Next deployment pipeline.
 - **No Herdr** for agent sessions: remove Herdr ensure/attach/poll from the agent path
 - **Reference checkout:** `tmp/t3-code` (gitignored) — prefer matching ProviderService / RuntimeIngestion patterns when fixing agent Chat
 - Shell `node-pty` remains for non-agent terminals if needed later
+
+**Desktop product change (BOD-49):** In-app Agent Chat / ACP client was **removed** from `@backsteros/desktop`. Desktop coding agents live in **Grok** (`agents/` → cloud-core) and **BacksterOS (development)** / T3 Code. The PTY sidecar + Hub PTY toggle remain for **mobile** Chat. `agentChatId` stays on tasks for mobile bindings.
 
 **Alternatives rejected:** Keep Herdr as Terminal viewer alongside ACP; hybrid Chat→Herdr typing; full Effect/orchestration port of T3.
 

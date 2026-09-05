@@ -55,6 +55,7 @@ const tasks = new Table(
     inbox: column.integer,
     links: column.text,
     agent_chat_id: column.text,
+    linked_commit_sha: column.text,
     habit_id: column.text,
     completed_at: column.text,
     agent_created_at: column.text,

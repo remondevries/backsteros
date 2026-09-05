@@ -386,6 +386,11 @@ export const taskSchema = z.object({
   links: z.array(taskLinkSchema),
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
+  /**
+   * GitHub commit SHA for this task’s change record (desktop Diff view).
+   * Null when no commit is linked.
+   */
+  linkedCommitSha: z.string().nullable(),
   /** Habit definition this daily instance belongs to, if any. */
   habitId: z.string().nullable().optional(),
   completedAt: z.string().datetime().nullable(),
@@ -422,6 +427,10 @@ export const createTaskSchema = z.object({
   inbox: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
+  /** GitHub commit SHA (7–64 hex chars) or null to clear. */
+  linkedCommitSha: z
+    .union([z.string().regex(/^[0-9a-fA-F]{7,64}$/), z.null()])
+    .optional(),
   habitId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
   trackedDurationSeconds: z.number().int().nonnegative().nullable().optional(),
@@ -555,6 +564,34 @@ export const taskActivitySchema = z.object({
   actorName: z.string(),
   data: z.record(z.unknown()),
   createdAt: z.string().datetime(),
+});
+
+/**
+ * Live “agent is working on this task” presence — orthogonal to workflow
+ * `status`. Clients heartbeat while a turn is running; rows expire by TTL.
+ */
+export const taskAgentPresenceSourceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .default("unknown");
+
+export const upsertTaskAgentPresenceSchema = z.object({
+  source: taskAgentPresenceSourceSchema.optional(),
+  sessionId: z.string().trim().min(1).max(128).nullable().optional(),
+});
+
+export const taskAgentPresenceSchema = z.object({
+  taskId: z.string(),
+  source: z.string(),
+  sessionId: z.string().nullable(),
+  startedAt: z.string().datetime(),
+  lastHeartbeatAt: z.string().datetime(),
+});
+
+export const listTaskAgentPresenceQuerySchema = z.object({
+  projectId: z.string().min(1).optional(),
 });
 
 export const apiKeySchema = z.object({
@@ -2754,6 +2791,10 @@ export type CreateMeetingBookingInput = z.infer<
 export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type TaskComment = z.infer<typeof taskCommentSchema>;
 export type TaskActivity = z.infer<typeof taskActivitySchema>;
+export type TaskAgentPresence = z.infer<typeof taskAgentPresenceSchema>;
+export type UpsertTaskAgentPresenceInput = z.infer<
+  typeof upsertTaskAgentPresenceSchema
+>;
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
 export type CreateTaskActivityInput = z.infer<typeof createTaskActivitySchema>;
 export type AgentWorkedActivityData = z.infer<

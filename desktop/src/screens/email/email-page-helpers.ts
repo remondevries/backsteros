@@ -10,7 +10,7 @@ import {
   type TaskStatus,
 } from "@backsteros/ui";
 
-import type { EmailAgentTaskCardPayload } from "../../lib/agent/email-agent-prompt";
+import type { EmailAgentTaskCardPayload } from "../../lib/email-task-card";
 
 export function resolveEmailThreadKey(message: AgentMailMessageDetail): string {
   return message.threadId?.trim() || message.messageId.trim();

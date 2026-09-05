@@ -1,4 +1,3 @@
-mod agent_browser;
 mod cursor_usage;
 mod overlay;
 mod system_stats;
@@ -555,15 +554,6 @@ pub fn run() {
             focus_main_window,
             toggle_desktop_overlay_palette,
             toggle_desktop_overlay_compose,
-            agent_browser::agent_browser_create,
-            agent_browser::agent_browser_set_bounds,
-            agent_browser::agent_browser_show,
-            agent_browser::agent_browser_hide,
-            agent_browser::agent_browser_destroy,
-            agent_browser::agent_browser_navigate,
-            agent_browser::agent_browser_reload,
-            agent_browser::agent_browser_go_back,
-            agent_browser::agent_browser_go_forward,
         ])
         .on_menu_event(|app, event| {
             if event.id() == "command-palette" || event.id() == "command-palette-shift" {

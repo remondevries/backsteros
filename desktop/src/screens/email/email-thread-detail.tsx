@@ -34,7 +34,7 @@ import {
 import {
   formatEmailAgentTaskCardComment,
   parseEmailAgentTaskCard,
-} from "../../lib/agent/email-agent-prompt";
+} from "../../lib/email-task-card";
 import { useDesktopApi } from "../../lib/api-context";
 import { useAgentMail } from "../../lib/agentmail-context";
 import {

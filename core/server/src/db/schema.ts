@@ -559,6 +559,11 @@ export const tasks = pgTable(
       .default(sql`'[]'::jsonb`),
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
+    /**
+     * GitHub commit SHA linked as this task’s change record (desktop Diff view).
+     * Full or abbreviated SHA as returned by the project’s GitHub API.
+     */
+    linkedCommitSha: text("linked_commit_sha"),
     /** Habit definition this daily instance belongs to, if any. */
     habitId: text("habit_id").references(() => habits.id, {
       onDelete: "set null",
@@ -888,6 +893,38 @@ export const taskActivities = pgTable(
     index("task_activities_created_at_idx").on(table.createdAt),
     index("task_activities_type_idx").on(table.type),
     index("task_activities_actor_contact_id_idx").on(table.actorContactId),
+  ],
+);
+
+/**
+ * Ephemeral live agent-working presence per task. Not replicated — clients
+ * heartbeat against the core API; stale rows expire by last_heartbeat_at TTL.
+ */
+export const taskAgentPresence = pgTable(
+  "task_agent_presence",
+  {
+    taskId: text("task_id")
+      .primaryKey()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Client that owns the live run: t3 | desktop | … */
+    source: text("source").notNull().default("unknown"),
+    sessionId: text("session_id"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("task_agent_presence_workspace_id_idx").on(table.workspaceId),
+    index("task_agent_presence_workspace_heartbeat_idx").on(
+      table.workspaceId,
+      table.lastHeartbeatAt,
+    ),
   ],
 );
 

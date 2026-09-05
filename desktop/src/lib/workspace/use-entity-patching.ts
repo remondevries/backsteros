@@ -606,6 +606,11 @@ export function useWorkspaceEntityPatching({
               ? error
               : new Error("Could not persist agent chat on the task.");
           }
+          if ("linkedCommitSha" in values) {
+            throw error instanceof Error
+              ? error
+              : new Error("Could not persist linked commit on the task.");
+          }
           if (taskPatchRequiresRestWrite(values)) {
             throw error instanceof Error
               ? error
@@ -621,11 +626,12 @@ export function useWorkspaceEntityPatching({
 
       // Match Next.js: optimistic local SQLite + REST so other clients see
       // changes even when the PowerSync upload queue is slow or stalled.
-      if (powerSync.ready && powerSync.patchMetadata) {
+      if (powerSync.ready) {
         applyOptimisticEntityPatch(table, id, values);
         const mustAwaitRest =
           authenticated &&
           ("agentChatId" in values ||
+            "linkedCommitSha" in values ||
             "moneybirdContactId" in values ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));
@@ -643,7 +649,7 @@ export function useWorkspaceEntityPatching({
           body: JSON.stringify(apiValues),
         });
         await applyTaskServerRow(updated);
-        if ("links" in apiValues || "agentChatId" in apiValues) {
+        if ("links" in apiValues || "agentChatId" in apiValues || "linkedCommitSha" in apiValues) {
           void softRefreshApiTasks();
         }
         return typeof updated?.number === "number"
