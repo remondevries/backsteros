@@ -1,0 +1,184 @@
+/* Activity timeline chrome matching BacksterOS desktop `task-activity.css`. */
+
+.bos-task-activity__empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
+.bos-task-activity__more {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+
+.bos-task-activity-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.bos-task-activity-event {
+  --bos-activity-marker-size: 12px;
+  --bos-activity-branch-color: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --bos-activity-column-gap: 12px;
+  display: grid;
+  grid-template-columns: var(--bos-activity-marker-size) minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--bos-activity-column-gap);
+  position: relative;
+}
+
+.bos-task-activity-event__leading {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--bos-activity-marker-size);
+  align-self: stretch;
+  min-height: var(--bos-activity-marker-size);
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.bos-task-activity-event__rail {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--bos-activity-marker-size);
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-height: var(--bos-activity-marker-size);
+  padding-top: 5px;
+}
+
+.bos-task-activity-event__rail::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bos-activity-branch-color);
+  z-index: 0;
+}
+
+.bos-task-activity-timeline
+  > .bos-task-activity-event:first-child
+  .bos-task-activity-event__rail::before {
+  top: calc(5px + var(--bos-activity-marker-size) / 2);
+}
+
+.bos-task-activity-timeline
+  > .bos-task-activity-event:last-child
+  .bos-task-activity-event__rail::before {
+  bottom: calc(100% - 5px - var(--bos-activity-marker-size) / 2);
+}
+
+.bos-task-activity-event__marker {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bos-activity-marker-size);
+  height: var(--bos-activity-marker-size);
+  flex-shrink: 0;
+  overflow: visible;
+  border-radius: 0;
+  background: #161616;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  line-height: 0;
+  opacity: 0.85;
+}
+
+.bos-task-activity-event__marker--avatar {
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.bos-task-activity-event--agent_working .bos-task-activity-event__marker {
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
+.bos-task-activity-event--agent_working .bos-task-activity-event__rail {
+  overflow: visible;
+}
+
+.bos-task-activity-event--agent_working .bos-task-activity-event__loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bos-activity-marker-size);
+  height: var(--bos-activity-marker-size);
+  line-height: 0;
+  overflow: visible;
+}
+
+.bos-task-activity-event--agent_working .bos-task-activity-event__loader .bos-task-status-working-pulse {
+  display: block;
+  width: var(--bos-activity-marker-size);
+  height: var(--bos-activity-marker-size);
+  overflow: visible;
+}
+
+.bos-task-activity-event--agent_working .bos-task-activity-event__text {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.bos-task-activity-event__marker > svg,
+.bos-task-activity-event__marker > img,
+.bos-task-activity-event__glyph {
+  display: block;
+  width: var(--bos-activity-marker-size);
+  height: var(--bos-activity-marker-size);
+  flex-shrink: 0;
+}
+
+.bos-task-activity-event__text {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  min-width: 0;
+  padding-block: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+}
+
+.bos-task-activity-event__text strong {
+  font-weight: 550;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+}
+
+.bos-task-activity-event__count {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.bos-task-activity-event__time {
+  grid-column: 3;
+  grid-row: 1;
+  padding-block: 5px;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--foreground) 28%, transparent);
+  white-space: nowrap;
+}

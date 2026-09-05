@@ -1,0 +1,77 @@
+/* Animated twin of the in-progress status ring (agent working affordance).
+   Ported from BacksterOS desktop `status-activity.css`. */
+
+.bos-task-status-working-pulse {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.bos-task-status-working-pulse__halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bos-task-status-working-halo 1.85s ease-out infinite;
+}
+
+.bos-task-status-working-pulse--compact .bos-task-status-working-pulse__halo {
+  animation-name: bos-task-status-working-halo-compact;
+}
+
+.bos-task-status-working-pulse__wedge {
+  animation: bos-task-status-working-wedge 1.85s ease-in-out infinite;
+}
+
+.bos-task-status-working-pulse__ring {
+  animation: bos-task-status-working-ring 1.85s ease-in-out infinite;
+}
+
+@keyframes bos-task-status-working-halo {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.92);
+  }
+  65% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+/* Keep the halo inside small marker slots (activity rail is 12px). */
+@keyframes bos-task-status-working-halo-compact {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.94);
+  }
+  65% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+@keyframes bos-task-status-working-wedge {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes bos-task-status-working-ring {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}

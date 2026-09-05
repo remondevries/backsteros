@@ -1,0 +1,66 @@
+/* Mirrors BacksterOS desktop `.segmented-pill-toggle` (edit/preview). */
+
+.bos-segmented-pill-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 0.5px solid color-mix(in srgb, var(--sidebar-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-foreground) 5%, transparent);
+  box-shadow: none;
+}
+
+.bos-segmented-pill-toggle__indicator {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 999px;
+  border: 0.5px solid color-mix(in srgb, var(--sidebar-foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+  transition:
+    transform 200ms ease-out,
+    width 200ms ease-out,
+    height 200ms ease-out,
+    opacity 200ms ease-out;
+}
+
+.bos-segmented-pill-toggle-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--sidebar-foreground) 55%, transparent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bos-segmented-pill-toggle-btn:hover {
+  color: var(--sidebar-foreground);
+}
+
+.bos-segmented-pill-toggle-btn.is-active {
+  background: transparent;
+  color: var(--sidebar-foreground);
+  font-weight: 500;
+}
+
+.bos-segmented-pill-toggle.is-disabled {
+  opacity: 0.6;
+}
+
+.bos-segmented-pill-toggle-btn:disabled {
+  cursor: not-allowed;
+}

@@ -1,0 +1,260 @@
+/** Project overview task list — mirrors BacksterOS desktop list chrome. */
+
+.bos-tasks-overview {
+  --bos-sticky-list-header-bg: var(--background);
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bos-tasks-overview__scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 4px 12px 4rem;
+}
+
+.bos-tasks-overview__grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bos-tasks-overview__empty {
+  margin: 2rem auto;
+  max-width: 18rem;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 0.875rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.bos-status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+}
+
+.bos-status-group__header-row {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--foreground);
+  box-sizing: border-box;
+  background-color: var(--bos-sticky-list-header-bg);
+  background-image: var(--bos-status-group-gradient);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.bos-status-group__header {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.bos-status-group__header:hover {
+  opacity: 0.9;
+}
+
+.bos-status-group__toggle {
+  position: relative;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.bos-status-group__icon,
+.bos-status-group__chevron {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 120ms ease;
+}
+
+.bos-status-group__chevron {
+  opacity: 0;
+}
+
+.bos-status-group__header-row:hover .bos-status-group__icon,
+.bos-status-group__header:focus-visible .bos-status-group__icon {
+  opacity: 0;
+}
+
+.bos-status-group__header-row:hover .bos-status-group__chevron,
+.bos-status-group__header:focus-visible .bos-status-group__chevron {
+  opacity: 1;
+}
+
+.bos-status-group__chevron[data-expanded="true"] svg {
+  transform: rotate(0deg);
+}
+
+.bos-status-group__chevron[data-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.bos-status-group__chevron svg {
+  transition: transform 120ms ease;
+}
+
+.bos-status-group__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--foreground) 52%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bos-status-group__count {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bos-status-group__items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bos-task-row-item {
+  list-style: none;
+}
+
+.bos-task-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bos-task-row:hover {
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.bos-task-row.is-selected {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.bos-task-row__priority,
+.bos-task-row__status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.bos-task-row__id {
+  box-sizing: content-box;
+  flex-shrink: 0;
+  width: calc(var(--bos-task-id-column-ch, 6) * 1ch);
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+.bos-task-row__title-wrap {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.bos-task-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.bos-task-row__properties {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.bos-task-row__due {
+  display: inline-flex;
+  max-width: 14ch;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 12px;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.bos-task-row__due.is-late {
+  color: var(--task-due-late-color, #da615d);
+}
+
+.bos-task-row__due-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
