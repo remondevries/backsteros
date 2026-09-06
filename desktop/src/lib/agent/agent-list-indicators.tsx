@@ -38,7 +38,7 @@ export function isTaskAgentWorkingForUi(
 /**
  * Title-trailing indicator for task rows (inbox / project tasks).
  * Bound/open agent → robot glyph (also while working). Working pulse only when
- * it is not already shown on the status icon.
+ * it is not already shown on the status icon (`workingShownOnStatusIcon`).
  */
 export function renderTaskAgentTitleTrailing(options: {
   taskId: string;

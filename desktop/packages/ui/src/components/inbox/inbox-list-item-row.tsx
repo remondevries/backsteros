@@ -33,6 +33,7 @@ import {
   type TaskStatus,
 } from "../../tasks/task-status.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
+import { ShimmerText } from "../shared/shimmer-text.js";
 import { stopFieldEvent } from "../../shared/stop-field-event.js";
 import { Tooltip } from "../shared/tooltip.js";
 
@@ -60,8 +61,10 @@ export type InboxListItemRowProps = {
   Link: InboxListItemLinkComponent;
   /** Narrow rail: status icon + display id only. */
   minimized?: boolean;
-  /** Optional trailing control next to the title (e.g. agent busy loader). */
+  /** Optional trailing control next to the title (e.g. agent-bound robot badge). */
   titleTrailing?: ReactNode;
+  /** When true, status icon becomes the agent-working pulse. */
+  agentWorking?: boolean;
   projectOptions?: SearchableDropdownOption<string>[];
   assigneeOptions?: SearchableDropdownOption<string>[];
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
@@ -102,6 +105,7 @@ export function InboxListItemRowComponent({
   Link,
   minimized = false,
   titleTrailing = null,
+  agentWorking = false,
   projectOptions = [],
   assigneeOptions = [],
   onStatusChange,
@@ -110,6 +114,23 @@ export function InboxListItemRowComponent({
   onProjectChange,
   onAssigneeChange,
 }: InboxListItemRowProps) {
+  // Hooks must run unconditionally: `minimized` toggles at runtime on a
+  // mounted row, and the letter/minimized branches below return early.
+  const isEmail = item.kind === "email";
+  // Letter items carry no status; only email rows tint the icon.
+  const emailStatus = item.kind === "email" ? item.status : null;
+  const colorScheme = useSyncExternalStore(
+    subscribeToPreferredColorScheme,
+    getPreferredColorSchemeSnapshot,
+    () => "dark" as const,
+  );
+  const emailIconStyle = useMemo(() => {
+    if (emailStatus == null) return undefined;
+    return iconSvgColorStyle(
+      resolveInboxEmailIconColor(emailStatus, { colorScheme }),
+    );
+  }, [colorScheme, emailStatus]);
+
   if (minimized) {
     const displayId = getInboxItemDisplayId(item);
     return (
@@ -162,18 +183,6 @@ export function InboxListItemRowComponent({
     );
   }
 
-  const isEmail = item.kind === "email";
-  const colorScheme = useSyncExternalStore(
-    subscribeToPreferredColorScheme,
-    getPreferredColorSchemeSnapshot,
-    () => "dark" as const,
-  );
-  const emailIconStyle = useMemo(() => {
-    if (!isEmail) return undefined;
-    return iconSvgColorStyle(
-      resolveInboxEmailIconColor(item.status, { colorScheme }),
-    );
-  }, [colorScheme, isEmail, item.status]);
   const hasProjectMeta = Boolean(
     item.projectId || item.projectName || item.projectKey,
   );
@@ -255,7 +264,11 @@ export function InboxListItemRowComponent({
                         style={emailIconStyle}
                       />
                     ) : (
-                      <TaskStatusIcon status={status} size={14} />
+                      <TaskStatusIcon
+                        status={status}
+                        size={14}
+                        working={agentWorking}
+                      />
                     )}
                   </button>
                 )}
@@ -274,10 +287,20 @@ export function InboxListItemRowComponent({
               />
             </span>
           ) : (
-            <TaskStatusIcon status={status} size={14} />
+            <TaskStatusIcon
+              status={status}
+              size={14}
+              working={agentWorking}
+            />
           )}
           <span className="inbox-list-item-title-wrap">
-            <span className="inbox-list-item-title">{item.title}</span>
+            <span className="inbox-list-item-title">
+              {agentWorking && !isEmail ? (
+                <ShimmerText>{item.title}</ShimmerText>
+              ) : (
+                item.title
+              )}
+            </span>
             {isEmail && item.partyLabel ? (
               <span className="inbox-list-item-email-party">{item.partyLabel}</span>
             ) : null}

@@ -55,7 +55,10 @@ import { buildMailboxByIdMap } from "../lib/email-list-tasks";
 import { agentMailMessagesSignature } from "../lib/agentmail-list-cache";
 import { dispatchEmailListPatch } from "../lib/use-agentmail-mailboxes";
 import { habitsWithTodayTasks } from "../lib/habit-today-tasks";
-import { renderTaskAgentTitleTrailing } from "../lib/agent/agent-list-indicators";
+import {
+  isTaskAgentWorkingForUi,
+  renderTaskAgentTitleTrailing,
+} from "../lib/agent/agent-list-indicators";
 import { useDesktopAgentStatusOptional } from "../lib/agent/agent-status-context";
 import {
   useDesktopAvatarSrcMap,
@@ -499,6 +502,14 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
         void workspaceActions.patchTask(itemId, { assigneeId });
       }}
       groupByAttentionStatus
+      isItemAgentWorking={(item) => {
+        if (item.kind !== "task") return false;
+        const task = allTasksById.get(item.id);
+        return isTaskAgentWorkingForUi(
+          { id: item.id, status: task?.status ?? item.status },
+          agentStatus,
+        );
+      }}
       renderTitleTrailing={(item) => {
         if (item.kind !== "task") return null;
         const task = allTasksById.get(item.id);
@@ -507,6 +518,7 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
           agentChatId: task?.agentChatId,
           taskStatus: task?.status,
           agentStatus,
+          workingShownOnStatusIcon: true,
         });
       }}
     />

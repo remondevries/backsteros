@@ -81,8 +81,10 @@ export type InboxSidePanelViewProps = {
    */
   collapsedGroups?: ReadonlySet<string>;
   onToggleGroup?: (status: string) => void;
-  /** Optional trailing control next to each task title (e.g. agent busy). */
+  /** Optional trailing control next to each task title (e.g. agent-bound robot). */
   renderTitleTrailing?: (item: InboxListItem) => ReactNode;
+  /** When true for an item, its status icon becomes the agent-working pulse. */
+  isItemAgentWorking?: (item: InboxListItem) => boolean;
   emptyLabel?: string;
   /** Hide the local "Inbox" pane header when a parent chrome breadcrumb is used. */
   showHeader?: boolean;
@@ -123,6 +125,7 @@ export function InboxSidePanelView({
   collapsedGroups = EMPTY_COLLAPSED_GROUPS,
   onToggleGroup,
   renderTitleTrailing,
+  isItemAgentWorking,
   emptyLabel = "Your inbox is empty.",
   showHeader = true,
   minimized = false,
@@ -212,6 +215,7 @@ export function InboxSidePanelView({
         Link={Link}
         minimized={minimized}
         titleTrailing={minimized ? null : renderTitleTrailing?.(item) ?? null}
+        agentWorking={isItemAgentWorking?.(item) ?? false}
         projectOptions={minimized ? undefined : projectOptions}
         assigneeOptions={minimized ? undefined : assigneeOptions}
         onStatusChange={minimized ? undefined : onStatusChange}
