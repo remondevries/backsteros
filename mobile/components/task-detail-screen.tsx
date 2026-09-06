@@ -23,7 +23,6 @@ import {
 import {
   parseAttendeeContactIds,
 } from "../lib/meeting-detail-model";
-import { noteLocalTaskStatusPatch } from "../lib/agent-status-notifications";
 import {
   flattenInboxAttentionOrder,
   isAgentInboxPending,
@@ -438,9 +437,6 @@ export function TaskDetailScreen({ taskId }: Props) {
   ) {
     if (!task) return;
     setPropertyError(null);
-    if (typeof values.status === "string") {
-      noteLocalTaskStatusPatch(task.id);
-    }
     const sqliteValues: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
       if (key === "dueDate") sqliteValues.due_date = value;

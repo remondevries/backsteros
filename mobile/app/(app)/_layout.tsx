@@ -25,7 +25,6 @@ import { TerminalConsoleIcon } from "../../components/terminal-console-icon";
 import { CommandPaletteProvider } from "../../lib/use-command-palette";
 import { isPadDevice } from "../../lib/device";
 import { HabitConfettiHost } from "../../lib/habits/habit-complete-confetti";
-import { useAgentAttentionNotifications } from "../../lib/use-agent-attention-notifications";
 import { useGoNavigationShortcuts } from "../../lib/use-go-navigation-shortcuts";
 import { useHomeGlanceWidgetRefresh } from "../../lib/use-home-glance-widget-refresh";
 import { colors } from "../../lib/theme";
@@ -55,7 +54,6 @@ function tabOverflowOptions(routeName: string) {
 
 function SignedInTabs() {
   useGoNavigationShortcuts(true);
-  useAgentAttentionNotifications();
   useHomeGlanceWidgetRefresh(true);
 
   return (
