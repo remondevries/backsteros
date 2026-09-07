@@ -155,6 +155,68 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
+  it.effect("falls back to Node fetch when Electron net.fetch cannot reach BacksterOS", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+      netFetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+      const previousFetch = globalThis.fetch;
+      const nodeFetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ projects: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      globalThis.fetch = nodeFetchMock as typeof fetch;
+
+      const previousUrl = process.env.BACKSTEROS_API_URL;
+      process.env.BACKSTEROS_API_URL = "http://127.0.0.1:8788";
+
+      try {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const protocol = yield* ElectronProtocol.ElectronProtocol;
+            yield* protocol.registerDesktopProtocol({
+              scheme: "t3code",
+              targetOrigin: new URL("http://127.0.0.1:3773/"),
+              backendOrigin: new URL("http://127.0.0.1:3773/"),
+              clerkFrontendApiHostname: undefined,
+            });
+            assert.isDefined(handler);
+
+            const response = yield* Effect.promise(() =>
+              handler!(
+                new Request("t3code://app/backsteros-api/api/v1/projects?type=codebase", {
+                  headers: { accept: "application/json" },
+                }),
+              ),
+            );
+            assert.equal(response.status, 200);
+            assert.equal(
+              yield* Effect.promise(() => response.text()),
+              JSON.stringify({ projects: [] }),
+            );
+          }),
+        );
+      } finally {
+        globalThis.fetch = previousFetch;
+        if (previousUrl === undefined) {
+          delete process.env.BACKSTEROS_API_URL;
+        } else {
+          process.env.BACKSTEROS_API_URL = previousUrl;
+        }
+      }
+
+      assert.equal(
+        nodeFetchMock.mock.calls[0]?.[0],
+        "http://127.0.0.1:8788/api/v1/projects?type=codebase",
+      );
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
   it.effect("rejects custom protocol requests for another host", () =>
     Effect.gen(function* () {
       let handler: ((request: Request) => Promise<Response>) | undefined;

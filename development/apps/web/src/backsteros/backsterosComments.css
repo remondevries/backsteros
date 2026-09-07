@@ -21,6 +21,14 @@
 
 .bos-task-comment-card--composer {
   padding: 0;
+  transition:
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+
+.bos-task-comment-card--composer:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
 .bos-task-comment-card--resolved-summary {
@@ -192,8 +200,14 @@
 }
 
 .bos-task-comment-reply {
+  position: relative;
   border-top: 0.5px solid rgb(255 255 255 / 0.1);
   border-radius: 0 0 10px 10px;
+  transition: box-shadow 200ms ease-out;
+}
+
+.bos-task-comment-reply:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 58%, transparent);
 }
 
 .bos-task-comment-composer__input,
@@ -267,6 +281,15 @@
   border: 0.5px solid rgb(255 255 255 / 0.12);
   border-radius: 8px;
   background: rgb(255 255 255 / 0.03);
+  transition:
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+
+.bos-task-comment-edit__input:focus {
+  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent);
+  outline: none;
 }
 
 .bos-task-comment-edit__footer {

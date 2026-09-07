@@ -3,7 +3,7 @@
 .bos-task-detail-properties {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
 }
 
@@ -109,6 +109,13 @@
   width: 17.5rem !important;
   min-width: 17.5rem !important;
   max-width: 17.5rem;
+}
+
+/* Desktop PropertyDropdown default panel width */
+.bos-task-property-menu--searchable {
+  width: 280px !important;
+  min-width: 280px !important;
+  max-width: min(280px, calc(100vw - 24px));
 }
 
 .bos-task-property-menu > div {

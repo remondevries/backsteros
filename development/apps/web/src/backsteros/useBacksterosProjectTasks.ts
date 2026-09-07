@@ -2,10 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchBacksterosProjectTasks } from "./client";
 import type { BacksterosTask } from "./types";
-import {
-  stableJsonFingerprint,
-  useBacksterosSoftPoll,
-} from "./useBacksterosSoftPoll";
+import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export type BacksterosProjectTasksState =
   | { readonly status: "idle" }
@@ -26,6 +23,7 @@ export function useBacksterosProjectTasks(projectId: string | null): {
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const requestGenerationRef = useRef(0);
 
   const patchLocalTask = useCallback(
     (
@@ -48,26 +46,32 @@ export function useBacksterosProjectTasks(projectId: string | null): {
 
   useEffect(() => {
     if (!projectId) {
+      requestGenerationRef.current += 1;
       setState({ status: "idle" });
       return;
     }
 
+    const generation = ++requestGenerationRef.current;
     const controller = new AbortController();
     setState((current) => (current.status === "ready" ? current : { status: "loading" }));
 
     void fetchBacksterosProjectTasks(projectId, controller.signal)
       .then((tasks) => {
-        if (controller.signal.aborted) return;
+        // Commit even if cleanup aborted the signal after the response arrived —
+        // gating on `signal.aborted` left the UI stuck on "Loading tasks…".
+        if (generation !== requestGenerationRef.current) return;
         setState({ status: "ready", tasks });
       })
       .catch((error: unknown) => {
+        if (generation !== requestGenerationRef.current) return;
         if (controller.signal.aborted) return;
-        const message =
-          error instanceof Error ? error.message : "Failed to load BacksterOS tasks";
+        const message = error instanceof Error ? error.message : "Failed to load BacksterOS tasks";
         setState({ status: "error", message });
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+    };
   }, [projectId, reloadToken]);
 
   useBacksterosSoftPoll(Boolean(projectId) && state.status === "ready", async () => {

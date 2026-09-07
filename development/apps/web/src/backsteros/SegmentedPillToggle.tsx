@@ -1,9 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -54,8 +49,7 @@ export function SegmentedPillToggle<T extends string>(props: {
 
     function updateIndicator() {
       const container = containerRef.current;
-      const activeButton =
-        activeIndex >= 0 ? buttonRefs.current[activeIndex] : null;
+      const activeButton = activeIndex >= 0 ? buttonRefs.current[activeIndex] : null;
 
       if (!container || !activeButton) {
         setIndicator(INITIAL_INDICATOR);
@@ -90,8 +84,7 @@ export function SegmentedPillToggle<T extends string>(props: {
 
     const resizeObserver = new ResizeObserver(updateIndicator);
     resizeObserver.observe(container);
-    const activeButton =
-      activeIndex >= 0 ? buttonRefs.current[activeIndex] : null;
+    const activeButton = activeIndex >= 0 ? buttonRefs.current[activeIndex] : null;
     if (activeButton) resizeObserver.observe(activeButton);
     window.addEventListener("resize", updateIndicator);
 
@@ -111,11 +104,7 @@ export function SegmentedPillToggle<T extends string>(props: {
   return (
     <div
       ref={containerRef}
-      className={cn(
-        "bos-segmented-pill-toggle",
-        disabled && "is-disabled",
-        className,
-      )}
+      className={cn("bos-segmented-pill-toggle", disabled && "is-disabled", className)}
       role="group"
       aria-label={ariaLabel}
     >
@@ -133,23 +122,28 @@ export function SegmentedPillToggle<T extends string>(props: {
               buttonRefs.current[index] = element;
             }}
             type="button"
-            className={cn(
-              "bos-segmented-pill-toggle-btn",
-              active && "is-active",
-            )}
+            className={cn("bos-segmented-pill-toggle-btn", active && "is-active")}
             aria-pressed={active}
             disabled={disabled}
-            title={
-              option.shortcut
-                ? `${option.label} (${option.shortcut})`
-                : option.label
-            }
+            title={option.shortcut ? `${option.label} (${option.shortcut})` : option.label}
             onClick={() => onChange(option.value)}
           >
             {option.label}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** Bottom-right dock for Edit/Preview — desktop `FloatingPillToggleDock`. */
+export function FloatingPillToggleDock(props: {
+  readonly children: ReactNode;
+  readonly className?: string;
+}) {
+  return (
+    <div className={cn("content-view-mode-toggle", props.className)}>
+      <div className="content-view-mode-toggle__inner">{props.children}</div>
     </div>
   );
 }

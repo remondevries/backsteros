@@ -10,13 +10,9 @@ import {
   type BacksterosTaskRelatedSelection,
 } from "./taskRelated";
 import type { BacksterosContact, BacksterosOrganization } from "./types";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "~/components/ui/menu";
+import { useFocusPropertyMenuSearch } from "./useFocusPropertyMenuSearch";
+import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 
 type RelatedOption = {
   readonly value: string;
@@ -41,10 +37,7 @@ function SidePanelPlusIcon() {
 function MultiSelectCheck(props: { readonly checked: boolean }) {
   return (
     <span
-      className={[
-        "bos-task-related-menu__checkbox",
-        props.checked ? "is-checked" : null,
-      ]
+      className={["bos-task-related-menu__checkbox", props.checked ? "is-checked" : null]
         .filter(Boolean)
         .join(" ")}
       aria-hidden="true"
@@ -77,14 +70,16 @@ export function BacksterosRelatedPropertyChips(props: {
   readonly contactAvatarSrcById: Readonly<Record<string, string>>;
   readonly organizationAvatarSrcById: Readonly<Record<string, string>>;
   readonly disabled?: boolean;
+  /** Desktop `data-task-property-dropdown` — R opens related. */
+  readonly taskPropertyDropdownId?: string;
   readonly onChange: (next: BacksterosTaskRelatedSelection) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useFocusPropertyMenuSearch(open);
 
   const values = useMemo(
-    () =>
-      encodeBacksterosTaskRelatedValues(props.contactIds, props.organizationIds),
+    () => encodeBacksterosTaskRelatedValues(props.contactIds, props.organizationIds),
     [props.contactIds, props.organizationIds],
   );
   const selectedSet = useMemo(() => new Set(values), [values]);
@@ -108,10 +103,7 @@ export function BacksterosRelatedPropertyChips(props: {
     const organizationOptions = props.organizations.map((organization) => ({
       value: encodeBacksterosTaskRelatedValue("organization", organization.id),
       label: organization.name,
-      searchText: [organization.name, organization.key]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase(),
+      searchText: [organization.name, organization.key].filter(Boolean).join(" ").toLowerCase(),
       icon: (
         <BacksterosEntityAvatarIcon
           src={props.organizationAvatarSrcById[organization.id] ?? null}
@@ -157,8 +149,7 @@ export function BacksterosRelatedPropertyChips(props: {
     if (!normalized) return options;
     return options.filter(
       (option) =>
-        option.label.toLowerCase().includes(normalized) ||
-        option.searchText.includes(normalized),
+        option.label.toLowerCase().includes(normalized) || option.searchText.includes(normalized),
     );
   }, [options, query]);
 
@@ -193,6 +184,7 @@ export function BacksterosRelatedPropertyChips(props: {
         }
         aria-label={values.length === 0 ? "Related" : "Add related"}
         title={values.length === 0 ? undefined : "Add related"}
+        data-task-property-dropdown={props.taskPropertyDropdownId ?? "related"}
       >
         {values.length === 0 ? (
           <>
@@ -205,15 +197,14 @@ export function BacksterosRelatedPropertyChips(props: {
           <SidePanelPlusIcon />
         )}
       </MenuTrigger>
-      <MenuPopup
-        align="start"
-        className="bos-task-property-menu bos-task-property-menu--related"
-      >
+      <MenuPopup align="start" className="bos-task-property-menu bos-task-property-menu--related">
         <div className="bos-task-property-menu__search">
           <input
-            autoFocus
+            ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={stopPropertyMenuSearchKeyPropagation}
+            onKeyUp={stopPropertyMenuSearchKeyPropagation}
             placeholder="Add related…"
             className="bos-task-property-menu__search-input"
             aria-label="Search related contacts and organizations"
@@ -242,12 +233,8 @@ export function BacksterosRelatedPropertyChips(props: {
                   >
                     <span className="bos-task-property-menu__option-main">
                       <MultiSelectCheck checked={selectedSet.has(option.value)} />
-                      <span className="bos-task-property-menu__option-icon">
-                        {option.icon}
-                      </span>
-                      <span className="bos-task-property-menu__option-label">
-                        {option.label}
-                      </span>
+                      <span className="bos-task-property-menu__option-icon">{option.icon}</span>
+                      <span className="bos-task-property-menu__option-label">{option.label}</span>
                     </span>
                   </MenuItem>
                 </div>

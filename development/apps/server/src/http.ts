@@ -436,13 +436,27 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
       try: () => fetch(targetUrl, init),
       catch: (cause) => cause,
     }).pipe(
-      Effect.orElseSucceed(
-        () =>
-          new Response(JSON.stringify({ error: "BacksterOS is unreachable" }), {
-            status: 502,
-            headers: { "Content-Type": "application/json" },
-          }),
-      ),
+      Effect.catchAll((cause) => {
+        const detail =
+          cause instanceof Error
+            ? cause.message
+            : typeof cause === "string"
+              ? cause
+              : "unknown error";
+        return Effect.succeed(
+          new Response(
+            JSON.stringify({
+              error: "BacksterOS is unreachable",
+              detail,
+              origin: resolveBacksterosApiOrigin(),
+            }),
+            {
+              status: 502,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }),
     );
 
     return HttpServerResponse.fromWeb(response);

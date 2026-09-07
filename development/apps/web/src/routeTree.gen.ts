@@ -28,6 +28,7 @@ import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$proje
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
+import { Route as ChatBacksterosProjectsRouteImport } from './routes/_chat.backsteros.projects'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 import { Route as ChatBacksterosProjectProjectIdRouteImport } from './routes/_chat.backsteros.project.$projectId'
 
@@ -125,6 +126,11 @@ const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   path: '/draft/$draftId',
   getParentRoute: () => ChatRoute,
 } as any)
+const ChatBacksterosProjectsRoute = ChatBacksterosProjectsRouteImport.update({
+  id: '/backsteros/projects',
+  path: '/backsteros/projects',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatEnvironmentIdThreadIdRoute =
   ChatEnvironmentIdThreadIdRouteImport.update({
     id: '/$environmentId/$threadId',
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
 }
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
 }
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/_chat/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/_chat/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
 }
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/source-control'
     | '/$environmentId/$threadId'
+    | '/backsteros/projects'
     | '/draft/$draftId'
     | '/backsteros/project/$projectId'
   fileRoutesByTo: FileRoutesByTo
@@ -249,6 +259,7 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/'
     | '/$environmentId/$threadId'
+    | '/backsteros/projects'
     | '/draft/$draftId'
     | '/backsteros/project/$projectId'
   id:
@@ -272,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
+    | '/_chat/backsteros/projects'
     | '/_chat/draft/$draftId'
     | '/_chat/backsteros/project/$projectId'
   fileRoutesById: FileRoutesById
@@ -421,6 +433,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatDraftDraftIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/backsteros/projects': {
+      id: '/_chat/backsteros/projects'
+      path: '/backsteros/projects'
+      fullPath: '/backsteros/projects'
+      preLoaderRoute: typeof ChatBacksterosProjectsRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/$environmentId/$threadId': {
       id: '/_chat/$environmentId/$threadId'
       path: '/$environmentId/$threadId'
@@ -442,6 +461,7 @@ interface ChatRouteChildren {
   ChatPullRequestsRoute: typeof ChatPullRequestsRoute
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
+  ChatBacksterosProjectsRoute: typeof ChatBacksterosProjectsRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
   ChatBacksterosProjectProjectIdRoute: typeof ChatBacksterosProjectProjectIdRoute
 }
@@ -450,6 +470,7 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatPullRequestsRoute: ChatPullRequestsRoute,
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
+  ChatBacksterosProjectsRoute: ChatBacksterosProjectsRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
   ChatBacksterosProjectProjectIdRoute: ChatBacksterosProjectProjectIdRoute,
 }

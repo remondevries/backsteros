@@ -1,4 +1,3 @@
-import { TerminalIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "@tanstack/react-router";
 
@@ -6,7 +5,9 @@ import { BacksterosContactPersonIcon } from "~/backsteros/ContactPersonIcon";
 import { createBacksterosTask, fetchBacksterosContacts } from "~/backsteros/client";
 import { BacksterosDueDatePropertyMenu } from "~/backsteros/DueDatePropertyMenu";
 import { BacksterosEntityAvatarIcon } from "~/backsteros/EntityAvatarIcon";
+import { BacksterosMarkdownDescription } from "~/backsteros/markdown-editor";
 import { openBacksterosTaskChat } from "~/backsteros/openTaskChat";
+import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import {
   BACKSTEROS_TASK_PRIORITY_LABELS,
@@ -35,6 +36,7 @@ import {
 } from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import "~/backsteros/backsterosPropertyMenu.css";
+import "~/backsteros/overview-name-editor.css";
 
 function PropertyChipMenu(props: {
   readonly label: string;
@@ -43,16 +45,17 @@ function PropertyChipMenu(props: {
   readonly children: ReactNode;
   readonly disabled?: boolean;
   readonly muted?: boolean;
+  readonly taskPropertyDropdownId?: string;
 }) {
   return (
     <Menu>
       <MenuTrigger
         disabled={props.disabled}
-        className={cn(
-          "bos-task-property-chip",
-          props.muted && "bos-task-property-chip--muted",
-        )}
+        className={cn("bos-task-property-chip", props.muted && "bos-task-property-chip--muted")}
         aria-label={props.label}
+        {...(props.taskPropertyDropdownId
+          ? { "data-task-property-dropdown": props.taskPropertyDropdownId }
+          : {})}
       >
         <span className="bos-task-property-chip__icon">{props.icon}</span>
         <span className="bos-task-property-chip__label">{props.label}</span>
@@ -163,27 +166,41 @@ export function BacksterosCreateTaskForm({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <input
-          autoFocus
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSubmit) {
-              event.preventDefault();
-              void handleCreate();
-            }
-          }}
-          placeholder="Task title"
-          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-base font-semibold text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring"
-        />
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 -mt-3 pb-3">
+        <div className="bos-overview-name-editor">
+          <h1 className="bos-overview-name-editor__title text-[17px] font-semibold leading-[1.3] tracking-[-0.02em]">
+            <textarea
+              autoFocus
+              rows={1}
+              value={title}
+              onChange={(event) => {
+                const next = event.target.value.replace(/[\n\r\u2028\u2029]/g, "");
+                setTitle(next);
+                event.currentTarget.style.height = "0px";
+                event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  if ((event.metaKey || event.ctrlKey) && canSubmit) {
+                    void handleCreate();
+                  }
+                }
+              }}
+              placeholder="Task title"
+              aria-label="Task name"
+              className="bos-overview-name-editor__input"
+            />
+          </h1>
+        </div>
 
-        <div className="bos-task-detail-properties mt-3">
+        <div className="bos-task-detail-properties mt-6">
           <PropertyChipMenu
             disabled={submitting}
             searchHint="Set status…"
             label={getBacksterosTaskStatusLabel(status)}
             icon={<BacksterosTaskStatusIcon status={status} size={12} className="shrink-0" />}
+            taskPropertyDropdownId="status"
           >
             <MenuRadioGroup
               value={status}
@@ -212,6 +229,7 @@ export function BacksterosCreateTaskForm({
             searchHint="Set priority…"
             label={getBacksterosTaskPriorityLabel(priority)}
             icon={<BacksterosTaskPriorityIcon priority={priority} size={12} />}
+            taskPropertyDropdownId="priority"
           >
             <MenuRadioGroup
               value={String(priority)}
@@ -245,12 +263,10 @@ export function BacksterosCreateTaskForm({
             searchHint="Set assignee…"
             label={assignee?.name ?? "Unassigned"}
             muted={!assignee}
+            taskPropertyDropdownId="assignee"
             icon={
               assignee ? (
-                <BacksterosEntityAvatarIcon
-                  src={avatarSrcById[assignee.id] ?? null}
-                  size={12}
-                />
+                <BacksterosEntityAvatarIcon src={avatarSrcById[assignee.id] ?? null} size={12} />
               ) : (
                 <BacksterosContactPersonIcon size={12} className="opacity-70" />
               )
@@ -289,9 +305,7 @@ export function BacksterosCreateTaskForm({
                         size={14}
                       />
                     </span>
-                    <span className="bos-task-property-menu__option-label">
-                      {contact.name}
-                    </span>
+                    <span className="bos-task-property-menu__option-label">{contact.name}</span>
                   </span>
                 </MenuRadioItem>
               ))}
@@ -300,7 +314,12 @@ export function BacksterosCreateTaskForm({
 
           <span className="bos-task-property-chip bos-task-property-chip--static">
             <span className="bos-task-property-chip__icon">
-              <TerminalIcon className="size-3 shrink-0 opacity-70" />
+              <ProjectOcticon
+                icon={project.icon}
+                type={project.type}
+                size={12}
+                className="shrink-0 opacity-70"
+              />
             </span>
             <span className="bos-task-property-chip__label">{project.name}</span>
           </span>
@@ -310,12 +329,13 @@ export function BacksterosCreateTaskForm({
           <div className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
             Description
           </div>
-          <textarea
+          <BacksterosMarkdownDescription
+            mode="edit"
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={5}
+            onChange={setDescription}
+            ariaLabel="Task description"
             placeholder="Add a description…"
-            className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring"
+            focusOnEdit={false}
           />
         </div>
       </div>
@@ -330,12 +350,7 @@ export function BacksterosCreateTaskForm({
         >
           Cancel
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={!canSubmit}
-          onClick={() => void handleCreate()}
-        >
+        <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void handleCreate()}>
           {submitting ? "Creating…" : "Create task"}
         </Button>
       </div>

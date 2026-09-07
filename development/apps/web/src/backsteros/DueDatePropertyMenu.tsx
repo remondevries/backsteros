@@ -11,12 +11,9 @@ import {
   getTaskDueDateUrgency,
   toApiDueDateIso,
 } from "./taskDueDate";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuTrigger,
-} from "~/components/ui/menu";
+import { useFocusPropertyMenuSearch } from "./useFocusPropertyMenuSearch";
+import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 
 function parseQuickDueQuery(query: string): string | null | "clear" | "pick" {
   const normalized = query.trim().toLowerCase();
@@ -35,11 +32,7 @@ function parseQuickDueQuery(query: string): string | null | "clear" | "pick" {
     tomorrow.setDate(tomorrow.getDate() + 1);
     return formatLocalYmd(tomorrow);
   }
-  if (
-    normalized.includes("week") ||
-    normalized === "in one week" ||
-    normalized === "next week"
-  ) {
+  if (normalized.includes("week") || normalized === "in one week" || normalized === "next week") {
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     return formatLocalYmd(nextWeek);
@@ -54,24 +47,23 @@ export function BacksterosDueDatePropertyMenu(props: {
   readonly dueDate: string | null;
   readonly status?: string | null;
   readonly disabled?: boolean;
+  /** Desktop `data-task-property-dropdown` — Shift+D opens due date. */
+  readonly taskPropertyDropdownId?: string;
   readonly onChange: (dueDateIso: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pickingDate, setPickingDate] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useFocusPropertyMenuSearch(open && !pickingDate);
+  const dateInputRef = useFocusPropertyMenuSearch(open && pickingDate);
   const ymdValue = formatDueDateInputValue(props.dueDate);
   const hasDueDate = Boolean(ymdValue);
   const urgency = useMemo(
     () => getTaskDueDateUrgency(ymdValue || null, new Date(), { status: props.status }),
     [props.status, ymdValue],
   );
-  const displayLabel = ymdValue
-    ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
-    : "No due date";
-  const options = useMemo(
-    () => buildTaskDueDateDropdownOptions(ymdValue || null),
-    [ymdValue],
-  );
+  const displayLabel = ymdValue ? (formatTaskDueMetaLabel(ymdValue) ?? ymdValue) : "No due date";
+  const options = useMemo(() => buildTaskDueDateDropdownOptions(ymdValue || null), [ymdValue]);
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return options;
@@ -105,6 +97,7 @@ export function BacksterosDueDatePropertyMenu(props: {
         disabled={props.disabled}
         className="bos-task-property-chip"
         aria-label="Change due date"
+        data-task-property-dropdown={props.taskPropertyDropdownId ?? "dueDate"}
         style={
           urgency === "overdue"
             ? { color: "#ef4444" }
@@ -123,7 +116,7 @@ export function BacksterosDueDatePropertyMenu(props: {
           <div className="bos-task-property-menu__due">
             <div className="bos-task-property-menu__due-label">Pick a date</div>
             <input
-              autoFocus
+              ref={dateInputRef}
               type="date"
               value={ymdValue}
               onChange={(event) => {
@@ -148,10 +141,11 @@ export function BacksterosDueDatePropertyMenu(props: {
           <>
             <div className="bos-task-property-menu__search">
               <input
-                autoFocus
+                ref={searchRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
+                  stopPropertyMenuSearchKeyPropagation(event);
                   if (event.key !== "Enter") return;
                   event.preventDefault();
                   const parsed = parseQuickDueQuery(query);
@@ -172,6 +166,7 @@ export function BacksterosDueDatePropertyMenu(props: {
                   const first = filteredOptions[0];
                   if (first) applyOption(first.value);
                 }}
+                onKeyUp={stopPropertyMenuSearchKeyPropagation}
                 placeholder="tomorrow, next week, pick a date…"
                 className="bos-task-property-menu__search-input"
                 aria-label="Search due dates"

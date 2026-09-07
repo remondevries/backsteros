@@ -22,16 +22,16 @@ const draftBinding: BacksterosTaskChatBinding = {
 
 describe("openTaskChat helpers", () => {
   beforeEach(() => {
-    useBacksterosTaskChatStore.setState({ byTaskId: {} });
+    useBacksterosTaskChatStore.setState({ byTaskId: {}, retiredThreadKeys: [] });
   });
 
   it("matches draft and server routes to task bindings", () => {
-    expect(
-      isBacksterosTaskChatActive(draftBinding, { kind: "draft", draftId: "draft-1" }),
-    ).toBe(true);
-    expect(
-      isBacksterosTaskChatActive(draftBinding, { kind: "draft", draftId: "draft-2" }),
-    ).toBe(false);
+    expect(isBacksterosTaskChatActive(draftBinding, { kind: "draft", draftId: "draft-1" })).toBe(
+      true,
+    );
+    expect(isBacksterosTaskChatActive(draftBinding, { kind: "draft", draftId: "draft-2" })).toBe(
+      false,
+    );
 
     expect(
       isBacksterosTaskChatActive(draftBinding, {

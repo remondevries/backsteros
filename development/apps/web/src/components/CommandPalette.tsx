@@ -86,6 +86,10 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject, useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
+import {
+  collectBacksterosVibeHiddenChatKeys,
+  useBacksterosTaskChatStore,
+} from "~/backsteros/taskChatStore";
 import * as ThreadPr from "./ThreadStatusIndicators";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -661,7 +665,21 @@ function OpenCommandPaletteDialog(props: {
     }
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useThreadShells();
+  const allThreads = useThreadShells();
+  const backsterosTaskChatByTaskId = useBacksterosTaskChatStore((state) => state.byTaskId) ?? {};
+  const backsterosRetiredThreadKeys =
+    useBacksterosTaskChatStore((state) => state.retiredThreadKeys) ?? [];
+  const threads = useMemo(() => {
+    const hidden = collectBacksterosVibeHiddenChatKeys({
+      byTaskId: backsterosTaskChatByTaskId,
+      retiredThreadKeys: backsterosRetiredThreadKeys,
+    });
+    if (hidden.threadKeys.size === 0) return allThreads;
+    return allThreads.filter(
+      (thread) =>
+        !hidden.threadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+    );
+  }, [allThreads, backsterosTaskChatByTaskId, backsterosRetiredThreadKeys]);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
   const providers = useAtomValue(primaryServerProvidersAtom);

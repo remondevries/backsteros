@@ -14,17 +14,26 @@ export const BACKSTEROS_TASK_KICKOFF_LEAD =
   "Implement this Backsteros task. Start working now." as const;
 
 /**
+ * True while the composer still holds our auto-prefilled kickoff (not a user rewrite).
+ */
+export function isBacksterosManagedKickoffPrompt(prompt: string): boolean {
+  return prompt.trimStart().startsWith(BACKSTEROS_TASK_KICKOFF_LEAD);
+}
+
+/** Reads `Working directory:` from a managed kickoff so live sync can preserve cwd. */
+export function extractKickoffWorkingDirectory(prompt: string): string | null {
+  const match = /^Working directory:\s*(.+)$/m.exec(prompt);
+  const value = match?.[1]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
+/**
  * Prefill for a new BacksterDEV task chat (composer draft).
  * Mirrors BacksterOS desktop `buildReadyToStartAgentPrompt`, plus CLI workflow.
  */
-export function buildBacksterosTaskKickoffPrompt(
-  task: BacksterosTaskKickoffInput,
-): string {
+export function buildBacksterosTaskKickoffPrompt(task: BacksterosTaskKickoffInput): string {
   const displayId =
-    getBacksterosTaskDisplayId(
-      { number: task.number },
-      task.projectKey ?? null,
-    ) ?? task.id;
+    getBacksterosTaskDisplayId({ number: task.number }, task.projectKey ?? null) ?? task.id;
   const description = task.description?.trim() || "(none)";
   const workingDirectory = task.workingDirectory?.trim() || "~";
 
@@ -43,7 +52,7 @@ export function buildBacksterosTaskKickoffPrompt(
     "",
     "BacksterOS workflow:",
     "- Use the `backsteros` CLI for task/comment updates (auth: ~/.config/backsteros/cli.env).",
-    "- Examples: `backsteros comment create DOT-1 -m \"…\"` · `backsteros task get DOT-1`",
+    '- Examples: `backsteros comment create DOT-1 -m "…"` · `backsteros task get DOT-1`',
     "- BacksterDEV auto-moves status to In Progress while you work and In Review when you go idle — do not fight that.",
     "- When you finish, leave a short `backsteros comment` on this task explaining what changed.",
     "- Only change status yourself when the user asks (e.g. completed) or you are blocked (`on_hold`).",

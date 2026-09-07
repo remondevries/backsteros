@@ -1,3 +1,4 @@
+import { BACKSTEROS_INBOX_ATTENTION_STATUSES, backsterosInboxDueBeforeIso } from "./inboxDue";
 import { DEFAULT_BACKSTEROS_API_URL, readBacksterosConnectionSettings } from "./settingsStore";
 import type {
   BacksterosCodebaseProject,
@@ -150,7 +151,12 @@ export async function fetchBacksterosCodebaseProjects(
     "/api/v1/projects?type=codebase",
     optionalSignalInit(signal),
   );
-  return (payload.projects ?? []).filter((project) => project.type === "codebase");
+  return (payload.projects ?? [])
+    .filter((project) => project.type === "codebase")
+    .map((project) => ({
+      ...project,
+      icon: project.icon ?? null,
+    }));
 }
 
 export async function fetchBacksterosProjectTasks(
@@ -166,34 +172,39 @@ export async function fetchBacksterosProjectTasks(
 }
 
 /** Statuses surfaced in the BacksterOS rail Inbox (attention queue). */
-export const BACKSTEROS_INBOX_ATTENTION_STATUSES = [
-  "triage",
-  "in_review",
-  "in_progress",
-  "on_hold",
-] as const;
+export { BACKSTEROS_INBOX_ATTENTION_STATUSES } from "./inboxDue";
 
 /**
- * Cross-project attention tasks: Triage, In Review, and On Hold.
- * Fetches each status in parallel (core list API filters one status at a time).
+ * Cross-project attention tasks: Triage, In Review, In Progress, On Hold,
+ * plus open tasks due today or earlier (`GET /api/v1/tasks/due`).
  */
 export async function fetchBacksterosInboxAttentionTasks(
   signal?: AbortSignal,
 ): Promise<readonly BacksterosTask[]> {
-  const payloads = await Promise.all(
-    BACKSTEROS_INBOX_ATTENTION_STATUSES.map(async (status) => {
-      const params = new URLSearchParams({ status });
-      return backsterosFetchJson<BacksterosTasksResponse>(
-        `/api/v1/tasks?${params.toString()}`,
-        optionalSignalInit(signal),
-      );
-    }),
-  );
+  const dueBefore = backsterosInboxDueBeforeIso();
+  const [statusPayloads, duePayload] = await Promise.all([
+    Promise.all(
+      BACKSTEROS_INBOX_ATTENTION_STATUSES.map(async (status) => {
+        const params = new URLSearchParams({ status });
+        return backsterosFetchJson<BacksterosTasksResponse>(
+          `/api/v1/tasks?${params.toString()}`,
+          optionalSignalInit(signal),
+        );
+      }),
+    ),
+    backsterosFetchJson<BacksterosTasksResponse>(
+      `/api/v1/tasks/due?${new URLSearchParams({ before: dueBefore }).toString()}`,
+      optionalSignalInit(signal),
+    ),
+  ]);
   const byId = new Map<string, BacksterosTask>();
-  for (const payload of payloads) {
+  for (const payload of statusPayloads) {
     for (const task of payload.tasks ?? []) {
       byId.set(task.id, task);
     }
+  }
+  for (const task of duePayload.tasks ?? []) {
+    byId.set(task.id, task);
   }
   return [...byId.values()];
 }
@@ -288,6 +299,19 @@ export async function updateBacksterosTask(
     method: "PATCH",
     body: patch,
   });
+}
+
+export async function updateBacksterosProject(
+  projectId: string,
+  patch: { readonly sortOrder: number },
+): Promise<BacksterosCodebaseProject> {
+  return backsterosFetchJson<BacksterosCodebaseProject>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}`,
+    {
+      method: "PATCH",
+      body: patch,
+    },
+  );
 }
 
 export async function createBacksterosTaskActivity(

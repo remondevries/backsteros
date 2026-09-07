@@ -3,14 +3,29 @@ import { useEffect, useRef } from "react";
 /** Default soft-live interval for open BacksterOS panels. */
 export const BACKSTEROS_SOFT_POLL_INTERVAL_MS = 3_000;
 
+/** Cap so a dead core does not wait forever before probing again. */
+export const BACKSTEROS_SOFT_POLL_MAX_INTERVAL_MS = 60_000;
+
 function documentIsVisible(): boolean {
   if (typeof document === "undefined") return true;
   return document.visibilityState !== "hidden";
 }
 
+/** Exponential backoff after consecutive soft-poll failures (3s → 6s → … → 60s). */
+export function softPollDelayMs(
+  baseIntervalMs: number,
+  consecutiveFailures: number,
+  maxIntervalMs: number = BACKSTEROS_SOFT_POLL_MAX_INTERVAL_MS,
+): number {
+  const safeFailures = Math.max(0, consecutiveFailures);
+  const delay = baseIntervalMs * 2 ** safeFailures;
+  return Math.min(delay, maxIntervalMs);
+}
+
 /**
  * Visibility-aware interval for soft live refresh.
  * Does not run while the document is hidden; resumes on visible.
+ * Backs off when ticks throw (e.g. BacksterOS 502) so console spam stays quiet.
  */
 export function useBacksterosSoftPoll(
   enabled: boolean,
@@ -26,6 +41,7 @@ export function useBacksterosSoftPoll(
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
+    let consecutiveFailures = 0;
 
     const clearTimer = () => {
       if (timer != null) {
@@ -37,9 +53,10 @@ export function useBacksterosSoftPoll(
     const schedule = () => {
       clearTimer();
       if (cancelled || !documentIsVisible()) return;
+      const delayMs = softPollDelayMs(intervalMs, consecutiveFailures);
       timer = setTimeout(() => {
         void runTick();
-      }, intervalMs);
+      }, delayMs);
     };
 
     const runTick = async () => {
@@ -50,8 +67,10 @@ export function useBacksterosSoftPoll(
       inFlight = true;
       try {
         await onTickRef.current();
+        consecutiveFailures = 0;
       } catch {
-        // Soft polls are best-effort; keep the last good snapshot.
+        // Soft polls are best-effort; keep the last good snapshot and slow down.
+        consecutiveFailures += 1;
       } finally {
         inFlight = false;
         schedule();

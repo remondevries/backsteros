@@ -21,12 +21,13 @@ import type {
   BacksterosTaskDetail,
   BacksterosTaskUpdatePatch,
 } from "./types";
-import { subscribeBacksterosTaskStatusChanged, notifyBacksterosTaskStatusChanged } from "./promoteWorkingTask";
-import { migrateBacksterosTaskStatus } from "./taskStatus";
 import {
-  stableJsonFingerprint,
-  useBacksterosSoftPoll,
-} from "./useBacksterosSoftPoll";
+  subscribeBacksterosTaskStatusChanged,
+  notifyBacksterosTaskStatusChanged,
+} from "./promoteWorkingTask";
+import { migrateBacksterosTaskStatus } from "./taskStatus";
+import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
+import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export type BacksterosTaskDetailState =
   | { readonly status: "idle" }
@@ -67,20 +68,14 @@ function taskDetailFingerprint(
 export function useBacksterosTaskDetail(taskId: string | null): {
   readonly state: BacksterosTaskDetailState;
   readonly reload: () => void;
-  readonly addComment: (
-    body: string,
-    parentCommentId?: string | null,
-  ) => Promise<void>;
+  readonly addComment: (body: string, parentCommentId?: string | null) => Promise<void>;
   readonly editComment: (
     commentId: string,
     patch: { readonly body?: string; readonly resolvedAt?: string | null },
   ) => Promise<void>;
   readonly deleteComment: (commentId: string) => Promise<void>;
   readonly patchTask: (patch: BacksterosTaskUpdatePatch) => Promise<void>;
-  readonly postTimerActivity: (
-    action: "start" | "pause",
-    sessionSeconds?: number | null,
-  ) => void;
+  readonly postTimerActivity: (action: "start" | "pause", sessionSeconds?: number | null) => void;
 } {
   const [state, setState] = useState<BacksterosTaskDetailState>({ status: "idle" });
   const [reloadToken, setReloadToken] = useState(0);
@@ -110,19 +105,14 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         ]);
         if (controller.signal.aborted) return;
 
-        const comments =
-          settled[0].status === "fulfilled" ? settled[0].value : [];
-        const activities =
-          settled[1].status === "fulfilled" ? settled[1].value : [];
-        const contacts =
-          settled[2].status === "fulfilled" ? settled[2].value : [];
-        const organizations =
-          settled[3].status === "fulfilled" ? settled[3].value : [];
+        const comments = settled[0].status === "fulfilled" ? settled[0].value : [];
+        const activities = settled[1].status === "fulfilled" ? settled[1].value : [];
+        const contacts = settled[2].status === "fulfilled" ? settled[2].value : [];
+        const organizations = settled[3].status === "fulfilled" ? settled[3].value : [];
 
         let assignee: BacksterosContact | null = null;
         if (task.assigneeId) {
-          assignee =
-            contacts.find((contact) => contact.id === task.assigneeId) ?? null;
+          assignee = contacts.find((contact) => contact.id === task.assigneeId) ?? null;
           if (!assignee) {
             try {
               assignee = await fetchBacksterosContact(task.assigneeId, controller.signal);
@@ -145,8 +135,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") return;
-        const message =
-          error instanceof Error ? error.message : "Failed to load BacksterOS task";
+        const message = error instanceof Error ? error.message : "Failed to load BacksterOS task";
         setState({ status: "error", message });
       }
     })();
@@ -171,17 +160,14 @@ export function useBacksterosTaskDetail(taskId: string | null): {
           ? commentsResult.value.filter((comment) => comment.deletedAt == null)
           : current.comments;
       const activities =
-        activitiesResult.status === "fulfilled"
-          ? activitiesResult.value
-          : current.activities;
+        activitiesResult.status === "fulfilled" ? activitiesResult.value : current.activities;
 
       let assignee = current.assignee;
       if (task.assigneeId !== current.task.assigneeId) {
         if (!task.assigneeId) {
           assignee = null;
         } else {
-          assignee =
-            current.contacts.find((contact) => contact.id === task.assigneeId) ?? null;
+          assignee = current.contacts.find((contact) => contact.id === task.assigneeId) ?? null;
           if (!assignee) {
             try {
               assignee = await fetchBacksterosContact(task.assigneeId, controller.signal);
@@ -200,6 +186,15 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         current.assignee,
       );
       if (nextFingerprint === prevFingerprint) return;
+
+      if (task.title !== current.task.title || task.description !== current.task.description) {
+        syncBacksterosTaskKickoffDraftPrompt({
+          taskId,
+          number: task.number,
+          title: task.title,
+          description: task.description,
+        });
+      }
 
       setState({
         status: "ready",
@@ -237,11 +232,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
       if (!taskId) return;
       const trimmed = body.trim();
       if (!trimmed) return;
-      const created = await createBacksterosTaskComment(
-        taskId,
-        trimmed,
-        parentCommentId,
-      );
+      const created = await createBacksterosTaskComment(taskId, trimmed, parentCommentId);
       setState((current) => {
         if (current.status !== "ready" || current.task.id !== taskId) return current;
         return {
@@ -286,8 +277,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         return {
           ...current,
           comments: current.comments.filter(
-            (comment) =>
-              comment.id !== commentId && comment.parentCommentId !== commentId,
+            (comment) => comment.id !== commentId && comment.parentCommentId !== commentId,
           ),
         };
       });
@@ -299,8 +289,12 @@ export function useBacksterosTaskDetail(taskId: string | null): {
     async (patch: BacksterosTaskUpdatePatch) => {
       if (!taskId) return;
 
-      let rollback: Extract<BacksterosTaskDetailState, { status: "ready" }> | null =
-        null;
+      let rollback: Extract<BacksterosTaskDetailState, { status: "ready" }> | null = null;
+      let optimisticKickoffSync: {
+        readonly number: number;
+        readonly title: string;
+        readonly description: string | null;
+      } | null = null;
 
       setState((current) => {
         if (current.status !== "ready" || current.task.id !== taskId) return current;
@@ -313,16 +307,33 @@ export function useBacksterosTaskDetail(taskId: string | null): {
             : (current.contacts.find((contact) => contact.id === nextAssigneeId) ??
               (current.assignee?.id === nextAssigneeId ? current.assignee : null));
         const { activityActor: _activityActor, ...taskPatch } = patch;
+        const nextTask = normalizeTask({
+          ...current.task,
+          ...taskPatch,
+          assigneeId: nextAssigneeId,
+        });
+        if (patch.title != null || patch.description !== undefined) {
+          optimisticKickoffSync = {
+            number: nextTask.number,
+            title: nextTask.title,
+            description: nextTask.description,
+          };
+        }
         return {
           ...current,
-          task: normalizeTask({
-            ...current.task,
-            ...taskPatch,
-            assigneeId: nextAssigneeId,
-          }),
+          task: nextTask,
           assignee: "assigneeId" in patch ? optimisticAssignee : current.assignee,
         };
       });
+
+      if (optimisticKickoffSync) {
+        syncBacksterosTaskKickoffDraftPrompt({
+          taskId,
+          number: optimisticKickoffSync.number,
+          title: optimisticKickoffSync.title,
+          description: optimisticKickoffSync.description,
+        });
+      }
 
       if (patch.status != null) {
         notifyBacksterosTaskStatusChanged({
@@ -335,17 +346,14 @@ export function useBacksterosTaskDetail(taskId: string | null): {
         const updated = normalizeTask(await updateBacksterosTask(taskId, patch));
         const [activities, assignee] = await Promise.all([
           fetchBacksterosTaskActivities(taskId),
-          updated.assigneeId
-            ? fetchBacksterosContact(updated.assigneeId)
-            : Promise.resolve(null),
+          updated.assigneeId ? fetchBacksterosContact(updated.assigneeId) : Promise.resolve(null),
         ]);
         setState((current) => {
           if (current.status !== "ready" || current.task.id !== taskId) return current;
           const resolvedAssignee =
             assignee ??
             (updated.assigneeId
-              ? (current.contacts.find((contact) => contact.id === updated.assigneeId) ??
-                null)
+              ? (current.contacts.find((contact) => contact.id === updated.assigneeId) ?? null)
               : null);
           return {
             ...current,
@@ -354,6 +362,14 @@ export function useBacksterosTaskDetail(taskId: string | null): {
             assignee: resolvedAssignee,
           };
         });
+        if (patch.title != null || patch.description !== undefined) {
+          syncBacksterosTaskKickoffDraftPrompt({
+            taskId,
+            number: updated.number,
+            title: updated.title,
+            description: updated.description,
+          });
+        }
         if (patch.status != null) {
           notifyBacksterosTaskStatusChanged({
             taskId,
@@ -382,7 +398,7 @@ export function useBacksterosTaskDetail(taskId: string | null): {
       if (!taskId) return;
       const body =
         action === "start"
-          ? ({ type: "timer_started" as const })
+          ? { type: "timer_started" as const }
           : {
               type: "timer_stopped" as const,
               data: {

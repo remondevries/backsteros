@@ -7,6 +7,8 @@ export interface BacksterosCodebaseProject {
   readonly type: string;
   readonly status: string;
   readonly sortOrder?: number;
+  /** Serialized entity icon (`octicon` key, emoji JSON, or null for type default). */
+  readonly icon?: string | null;
   readonly githubRepository: string | null;
   readonly localWorkingDirectory: string | null;
   readonly updatedAt: string;
@@ -121,6 +123,8 @@ export type BacksterosTaskUpdatePatch = {
   readonly priority?: number;
   readonly dueDate?: string | null;
   readonly assigneeId?: string | null;
+  readonly projectId?: string | null;
+  readonly inbox?: boolean;
   readonly relatedContactIds?: readonly string[];
   readonly relatedOrganizationIds?: readonly string[];
   readonly trackedDurationSeconds?: number | null;

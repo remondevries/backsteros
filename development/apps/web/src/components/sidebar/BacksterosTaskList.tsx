@@ -1,6 +1,7 @@
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { isBacksterosInboxDueTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import {
@@ -14,25 +15,31 @@ import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
+const DUE_GROUP_KEY = "due";
+
 function BacksterosTaskRow(props: {
   readonly task: BacksterosTask;
   readonly active: boolean;
+  readonly keyboardFocused: boolean;
   readonly working: boolean;
   readonly projectName?: string | null;
   readonly onSelect: (task: BacksterosTask) => void;
 }) {
-  const { task, active, working, projectName, onSelect } = props;
+  const { task, active, keyboardFocused, working, projectName, onSelect } = props;
   return (
     <li>
       <button
         type="button"
         onClick={() => onSelect(task)}
         aria-current={active ? "page" : undefined}
+        data-keyboard-nav-item={task.id}
         className={cn(
           "flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
           active
             ? "bg-sidebar-row-active text-sidebar-foreground"
             : "text-sidebar-foreground hover:bg-sidebar-row-hover",
+          keyboardFocused &&
+            "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)] text-sidebar-foreground",
         )}
       >
         <BacksterosTaskStatusIcon
@@ -59,6 +66,7 @@ function BacksterosTaskStatusGroup(props: {
   readonly tasks: readonly BacksterosTask[];
   readonly collapsed: boolean;
   readonly activeTaskId: string | null;
+  readonly keyboardFocusTaskId: string | null;
   readonly workingTaskIds: ReadonlySet<string>;
   readonly projectNameById?: ReadonlyMap<string, string>;
   readonly onToggle: () => void;
@@ -69,6 +77,7 @@ function BacksterosTaskStatusGroup(props: {
     tasks,
     collapsed,
     activeTaskId,
+    keyboardFocusTaskId,
     workingTaskIds,
     projectNameById,
     onToggle,
@@ -96,6 +105,7 @@ function BacksterosTaskStatusGroup(props: {
               key={task.id}
               task={task}
               active={activeTaskId === task.id}
+              keyboardFocused={keyboardFocusTaskId === task.id}
               working={workingTaskIds.has(task.id)}
               projectName={
                 task.projectId && projectNameById
@@ -115,9 +125,13 @@ export function BacksterosTaskList(props: {
   readonly state: BacksterosProjectTasksState;
   readonly onRetry: () => void;
   readonly activeTaskId: string | null;
+  /** j/k cursor — primary outline while this list owns keyboard focus. */
+  readonly keyboardFocusTaskId?: string | null;
   readonly searchQuery?: string;
   readonly emptyLabel?: string;
   readonly statusFilter?: ReadonlySet<BacksterosTaskStatus>;
+  /** When true, due today/overdue tasks get a separate "Due" group at the bottom. */
+  readonly showDueGroup?: boolean;
   readonly projectNameById?: ReadonlyMap<string, string>;
   readonly onSelectTask: (task: BacksterosTask) => void;
 }) {
@@ -125,13 +139,15 @@ export function BacksterosTaskList(props: {
     state,
     onRetry,
     activeTaskId,
+    keyboardFocusTaskId = null,
     searchQuery = "",
     emptyLabel = "No tasks yet",
     statusFilter,
+    showDueGroup = false,
     projectNameById,
     onSelectTask,
   } = props;
-  const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const isSearching = searchQuery.trim().length > 0;
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
 
@@ -139,24 +155,38 @@ export function BacksterosTaskList(props: {
     if (state.status !== "ready") return [];
     let tasks = state.tasks;
     if (statusFilter) {
-      tasks = tasks.filter((task) =>
-        statusFilter.has(migrateBacksterosTaskStatus(task.status)),
-      );
+      tasks = tasks.filter((task) => {
+        const status = migrateBacksterosTaskStatus(task.status);
+        if (statusFilter.has(status)) return true;
+        return showDueGroup && isBacksterosInboxDueTask(task);
+      });
     }
     if (!isSearching) return tasks;
     return tasks.filter((task) => {
       const projectName =
-        task.projectId && projectNameById
-          ? (projectNameById.get(task.projectId) ?? "")
-          : "";
-      return matchesBacksterosSearchQuery(
-        [task.title, task.number, projectName],
-        searchQuery,
-      );
+        task.projectId && projectNameById ? (projectNameById.get(task.projectId) ?? "") : "";
+      return matchesBacksterosSearchQuery([task.title, task.number, projectName], searchQuery);
     });
-  }, [isSearching, projectNameById, searchQuery, state, statusFilter]);
+  }, [isSearching, projectNameById, searchQuery, showDueGroup, state, statusFilter]);
 
-  const groups = useMemo(() => groupBacksterosTasksByStatus(filteredTasks), [filteredTasks]);
+  const groups = useMemo(() => {
+    if (!showDueGroup) {
+      return groupBacksterosTasksByStatus(filteredTasks).map((group) => ({
+        key: group.status,
+        label: group.label,
+        tasks: group.tasks,
+      }));
+    }
+
+    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(filteredTasks);
+    const statusGroups = groupBacksterosTasksByStatus(attentionTasks).map((group) => ({
+      key: group.status,
+      label: group.label,
+      tasks: group.tasks,
+    }));
+    if (dueTasks.length === 0) return statusGroups;
+    return [...statusGroups, { key: DUE_GROUP_KEY, label: "Due", tasks: dueTasks }];
+  }, [filteredTasks, showDueGroup]);
 
   if (state.status === "idle" || state.status === "loading") {
     return (
@@ -195,19 +225,20 @@ export function BacksterosTaskList(props: {
     <ul role="list" className="flex flex-col gap-2 px-1 pb-2">
       {groups.map((group) => (
         <BacksterosTaskStatusGroup
-          key={group.status}
+          key={group.key}
           label={group.label}
           tasks={group.tasks}
-          collapsed={!isSearching && collapsed.has(group.status)}
+          collapsed={!isSearching && collapsed.has(group.key)}
           activeTaskId={activeTaskId}
+          keyboardFocusTaskId={keyboardFocusTaskId}
           workingTaskIds={workingTaskIds}
           projectNameById={projectNameById}
           onSelectTask={onSelectTask}
           onToggle={() =>
             setCollapsed((current) => {
               const next = new Set(current);
-              if (next.has(group.status)) next.delete(group.status);
-              else next.add(group.status);
+              if (next.has(group.key)) next.delete(group.key);
+              else next.add(group.key);
               return next;
             })
           }

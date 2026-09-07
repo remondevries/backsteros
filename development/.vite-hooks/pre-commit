@@ -1,1 +1,2 @@
-vp staged
+# Hooks live under development/; git commits run from the monorepo root.
+vp -C development staged

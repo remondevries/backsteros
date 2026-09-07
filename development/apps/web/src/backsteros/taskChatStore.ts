@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "~/lib/storage";
 
 const BACKSTEROS_TASK_CHAT_STORAGE_KEY = "t3code:backsteros-task-chats";
-const BACKSTEROS_TASK_CHAT_STORAGE_VERSION = 3;
+const BACKSTEROS_TASK_CHAT_STORAGE_VERSION = 4;
 
 export type BacksterosTaskChatBinding =
   | {
@@ -34,9 +34,27 @@ export type BacksterosTaskChatBinding =
 
 interface BacksterosTaskChatStoreState {
   readonly byTaskId: Record<string, BacksterosTaskChatBinding>;
+  /**
+   * Scoped thread keys (`environmentId:threadId`) from prior task-chat
+   * sessions (e.g. after /clear). Kept so vibe mode does not resurface them.
+   */
+  readonly retiredThreadKeys: readonly string[];
   readonly setBinding: (taskId: string, binding: BacksterosTaskChatBinding) => void;
   readonly clearBinding: (taskId: string) => void;
   readonly getBinding: (taskId: string) => BacksterosTaskChatBinding | null;
+}
+
+function bindingThreadKey(binding: BacksterosTaskChatBinding): string {
+  return `${binding.environmentId}:${binding.threadId}`;
+}
+
+function withRetiredThreadKey(
+  retiredThreadKeys: readonly string[],
+  threadKey: string,
+): readonly string[] {
+  return retiredThreadKeys.includes(threadKey)
+    ? retiredThreadKeys
+    : [...retiredThreadKeys, threadKey];
 }
 
 function normalizeBinding(raw: unknown): BacksterosTaskChatBinding | null {
@@ -52,8 +70,7 @@ function normalizeBinding(raw: unknown): BacksterosTaskChatBinding | null {
   ) {
     return null;
   }
-  const projectTitle =
-    typeof value.projectTitle === "string" ? value.projectTitle : "";
+  const projectTitle = typeof value.projectTitle === "string" ? value.projectTitle : "";
   const displayId = typeof value.displayId === "string" ? value.displayId : null;
   if (value.kind === "draft") {
     if (typeof value.draftId !== "string") return null;
@@ -81,22 +98,52 @@ function normalizeBinding(raw: unknown): BacksterosTaskChatBinding | null {
   };
 }
 
+function normalizeRetiredThreadKeys(raw: unknown): readonly string[] {
+  if (!Array.isArray(raw)) return [];
+  const keys: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry === "string" && entry.includes(":") && !keys.includes(entry)) {
+      keys.push(entry);
+    }
+  }
+  return keys;
+}
+
 export const useBacksterosTaskChatStore = create<BacksterosTaskChatStoreState>()(
   persist(
     (set, get) => ({
       byTaskId: {},
+      retiredThreadKeys: [],
       setBinding: (taskId, binding) =>
-        set((state) => ({
-          byTaskId: {
-            ...state.byTaskId,
-            [taskId]: binding,
-          },
-        })),
+        set((state) => {
+          const previous = state.byTaskId[taskId];
+          let retiredThreadKeys = state.retiredThreadKeys;
+          if (previous) {
+            const previousKey = bindingThreadKey(previous);
+            if (previousKey !== bindingThreadKey(binding)) {
+              retiredThreadKeys = withRetiredThreadKey(retiredThreadKeys, previousKey);
+            }
+          }
+          return {
+            byTaskId: {
+              ...state.byTaskId,
+              [taskId]: binding,
+            },
+            retiredThreadKeys,
+          };
+        }),
       clearBinding: (taskId) =>
         set((state) => {
-          if (!(taskId in state.byTaskId)) return state;
+          const previous = state.byTaskId[taskId];
+          if (!previous) return state;
           const { [taskId]: _removed, ...byTaskId } = state.byTaskId;
-          return { byTaskId };
+          return {
+            byTaskId,
+            retiredThreadKeys: withRetiredThreadKey(
+              state.retiredThreadKeys,
+              bindingThreadKey(previous),
+            ),
+          };
         }),
       getBinding: (taskId) => get().byTaskId[taskId] ?? null,
     }),
@@ -106,20 +153,58 @@ export const useBacksterosTaskChatStore = create<BacksterosTaskChatStoreState>()
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ byTaskId: state.byTaskId }),
+      partialize: (state) => ({
+        byTaskId: state.byTaskId,
+        retiredThreadKeys: state.retiredThreadKeys,
+      }),
       migrate: (persisted) => {
-        const state = persisted as { byTaskId?: Record<string, unknown> } | null;
+        const state = persisted as {
+          byTaskId?: Record<string, unknown>;
+          retiredThreadKeys?: unknown;
+        } | null;
         const byTaskId: Record<string, BacksterosTaskChatBinding> = {};
         for (const [taskId, raw] of Object.entries(state?.byTaskId ?? {})) {
           const binding = normalizeBinding(raw);
           if (binding) byTaskId[taskId] = binding;
         }
-        return { byTaskId };
+        return {
+          byTaskId,
+          retiredThreadKeys: normalizeRetiredThreadKeys(state?.retiredThreadKeys),
+        };
       },
     },
   ),
 );
 
+export const BACKSTEROS_TASK_LOGICAL_PROJECT_KEY_PREFIX = "backsteros:task:" as const;
+
 export function backsterosTaskLogicalProjectKey(taskId: string): string {
-  return `backsteros:task:${taskId}`;
+  return `${BACKSTEROS_TASK_LOGICAL_PROJECT_KEY_PREFIX}${taskId}`;
+}
+
+export function isBacksterosTaskLogicalProjectKey(key: string): boolean {
+  return key.startsWith(BACKSTEROS_TASK_LOGICAL_PROJECT_KEY_PREFIX);
+}
+
+/**
+ * Draft ids and scoped thread keys (`environmentId:threadId`) that belong to
+ * log-mode BacksterOS task chats. Vibe mode should hide these so task work
+ * does not pollute the normal T3 thread list.
+ */
+export function collectBacksterosVibeHiddenChatKeys(input: {
+  readonly byTaskId?: Readonly<Record<string, BacksterosTaskChatBinding>> | null;
+  readonly retiredThreadKeys?: readonly string[] | null;
+}): {
+  readonly draftIds: ReadonlySet<string>;
+  readonly threadKeys: ReadonlySet<string>;
+} {
+  const draftIds = new Set<string>();
+  const threadKeys = new Set<string>(input.retiredThreadKeys ?? []);
+  for (const binding of Object.values(input.byTaskId ?? {})) {
+    threadKeys.add(bindingThreadKey(binding));
+    if (binding.kind === "draft") {
+      draftIds.add(binding.draftId);
+    }
+  }
+  return { draftIds, threadKeys };
 }

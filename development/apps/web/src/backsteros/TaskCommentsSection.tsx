@@ -3,23 +3,53 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
 } from "react";
 
 import { formatBacksterosActivityRelativeTime } from "./activityTime";
+import { isBacksterosGoEditableTarget } from "./backsterosRailMode";
 import { BacksterosEntityAvatarIcon } from "./EntityAvatarIcon";
 import type { BacksterosTaskComment } from "./types";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { toastManager } from "~/components/ui/toast";
 import "./backsterosComments.css";
+
+const COMMENT_FOCUS_ATTR = "data-task-comment-focus";
+
+function isVisibleFocusTarget(el: HTMLElement): boolean {
+  return el.getClientRects().length > 0;
+}
+
+function isCommentEditorRoot(el: Element | null): el is HTMLElement {
+  return el instanceof HTMLElement && el.hasAttribute(COMMENT_FOCUS_ATTR);
+}
+
+function findCommentEditorRoot(el: Element | null): HTMLElement | null {
+  if (!el) return null;
+  if (isCommentEditorRoot(el)) return el;
+  return el.closest<HTMLElement>(`[${COMMENT_FOCUS_ATTR}]`);
+}
+
+function focusCommentEditorRoot(root: HTMLElement) {
+  root.scrollIntoView({ block: "nearest" });
+  root.focus({ preventScroll: true });
+}
+
+/** Shift+C — same chord as BacksterOS desktop task activity comments. */
+export function isCommentComposerFocusShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "code" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey" | "repeat"
+  >,
+): boolean {
+  if (event.repeat) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  if (!event.shiftKey) return false;
+  return (event.key.length === 1 && event.key.toLowerCase() === "c") || event.code === "KeyC";
+}
 
 function CommentSubmitButton(props: {
   readonly disabled?: boolean;
@@ -46,6 +76,7 @@ function CommentComposer(props: {
   readonly placeholder: string;
   readonly ariaLabel: string;
   readonly variant: "composer" | "reply";
+  readonly focusAttr: string;
 }) {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -62,9 +93,7 @@ function CommentComposer(props: {
   return (
     <form
       className={
-        props.variant === "composer"
-          ? "bos-task-comment-composer"
-          : "bos-task-comment-reply"
+        props.variant === "composer" ? "bos-task-comment-composer" : "bos-task-comment-reply"
       }
       onSubmit={handleSubmit}
     >
@@ -75,6 +104,7 @@ function CommentComposer(props: {
         placeholder={props.placeholder}
         aria-label={props.ariaLabel}
         rows={props.variant === "composer" ? 2 : 1}
+        data-task-comment-focus={props.focusAttr}
         className={
           props.variant === "composer"
             ? "bos-task-comment-composer__input"
@@ -99,16 +129,10 @@ function CommentAuthorMeta(props: {
   return (
     <div className="bos-task-comment__meta">
       <span className="bos-task-comment__avatar" aria-hidden="true">
-        <BacksterosEntityAvatarIcon
-          src={props.avatarSrc}
-          size={16}
-          kind="contact"
-        />
+        <BacksterosEntityAvatarIcon src={props.avatarSrc} size={16} kind="contact" />
       </span>
       <span className="bos-task-comment__author">{props.authorName}</span>
-      {props.resolved ? (
-        <span className="bos-task-comment__resolved">Resolved</span>
-      ) : null}
+      {props.resolved ? <span className="bos-task-comment__resolved">Resolved</span> : null}
       <time className="bos-task-comment__time" dateTime={props.createdAt}>
         {formatBacksterosActivityRelativeTime(props.createdAt)}
       </time>
@@ -148,11 +172,7 @@ function CommentActionsMenu(props: {
           </MenuItem>
         ) : null}
         <MenuSeparator className="bos-task-property-menu__separator" />
-        <MenuItem
-          closeOnClick
-          className="bos-task-property-menu__option"
-          onClick={props.onDelete}
-        >
+        <MenuItem closeOnClick className="bos-task-property-menu__option" onClick={props.onDelete}>
           <span className="bos-task-property-menu__option-label">Delete</span>
         </MenuItem>
       </MenuPopup>
@@ -212,9 +232,8 @@ export function BacksterosTaskCommentsSection(props: {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
-  const [expandedResolvedIds, setExpandedResolvedIds] = useState<Record<string, true>>(
-    {},
-  );
+  const [expandedResolvedIds, setExpandedResolvedIds] = useState<Record<string, true>>({});
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   const rootComments = useMemo(() => {
     return [...props.comments]
@@ -242,6 +261,83 @@ export function BacksterosTaskCommentsSection(props: {
     setEditingCommentId(null);
     setExpandedResolvedIds({});
   }, [props.taskId]);
+
+  useEffect(() => {
+    function collectCommentFocusTargets(): HTMLElement[] {
+      const root = panelRef.current;
+      if (!root) return [];
+      return Array.from(root.querySelectorAll<HTMLElement>(`[${COMMENT_FOCUS_ATTR}]`)).filter(
+        isVisibleFocusTarget,
+      );
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const eventTarget = event.target;
+      if (eventTarget instanceof HTMLElement) {
+        if (eventTarget.closest(".xterm")) return;
+        // Don't steal Shift+C from other editors (e.g. description / chat).
+        if (isBacksterosGoEditableTarget(eventTarget) && !findCommentEditorRoot(eventTarget)) {
+          return;
+        }
+        if (eventTarget.closest("[data-slot='command-dialog-popup']")) return;
+        if (eventTarget.closest("[data-slot='menu-popup']")) return;
+      }
+
+      if (isCommentComposerFocusShortcut(event)) {
+        // Don't steal Shift+C while typing (chat box, inputs, etc.).
+        if (isBacksterosGoEditableTarget(event.target)) return;
+        if (isBacksterosGoEditableTarget(document.activeElement)) return;
+        const composer = panelRef.current?.querySelector<HTMLElement>(
+          `[${COMMENT_FOCUS_ATTR}="composer"]`,
+        );
+        if (!composer || !isVisibleFocusTarget(composer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        focusCommentEditorRoot(composer);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        const activeRoot = findCommentEditorRoot(document.activeElement);
+        if (!activeRoot || !panelRef.current?.contains(activeRoot)) return;
+        // Edit form owns Escape (cancel); don't blur underneath it.
+        if (activeRoot.closest(".bos-task-comment-edit")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const activeRoot = findCommentEditorRoot(document.activeElement);
+      if (!activeRoot || !panelRef.current?.contains(activeRoot)) return;
+
+      const targets = collectCommentFocusTargets();
+      const index = targets.indexOf(activeRoot);
+      if (index < 0) return;
+
+      const nextIndex = event.shiftKey
+        ? (index - 1 + targets.length) % targets.length
+        : (index + 1) % targets.length;
+      const next = targets[nextIndex];
+      if (!next || next === activeRoot) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      focusCommentEditorRoot(next);
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
 
   const submitComposer = useCallback(async () => {
     const trimmed = draft.trim();
@@ -381,21 +477,18 @@ export function BacksterosTaskCommentsSection(props: {
         </form>
       );
     }
-    return (
-      <div className="bos-task-comment__body">
-        {comment.body}
-      </div>
-    );
+    return <div className="bos-task-comment__body">{comment.body}</div>;
   };
 
   return (
-    <div className="bos-task-comments">
+    <div ref={panelRef} className="bos-task-comments">
       <section
         className="bos-task-comment-card bos-task-comment-card--composer"
         aria-label="New comment"
       >
         <CommentComposer
           variant="composer"
+          focusAttr="composer"
           value={draft}
           onChange={setDraft}
           onSubmit={() => void submitComposer()}
@@ -521,6 +614,7 @@ export function BacksterosTaskCommentsSection(props: {
             {!isEditingThread ? (
               <CommentComposer
                 variant="reply"
+                focusAttr={`reply:${comment.id}`}
                 value={replyDraft}
                 onChange={(value) =>
                   setReplyDrafts((current) => ({

@@ -8,11 +8,17 @@ export function SidePanelToggleIcon({
 }: {
   size?: number;
   collapsed?: boolean;
-  rail?: "start" | "end";
+  rail?: "start" | "end" | "bottom";
   className?: string;
 }) {
-  const railWidth = 1.5;
-  const railX = rail === "end" ? 10.5 : 4;
+  // Slightly chunkier than the desktop twin so the open panel reads at 16px.
+  // Bottom rail needs a bit more mass — a horizontal bar reads thinner than a
+  // vertical one at the same thickness.
+  const railThickness = rail === "bottom" ? 3 : 2.5;
+  const railLength = rail === "bottom" ? 8 : 7;
+  const isBottom = rail === "bottom";
+  const railX = isBottom ? 4 : rail === "end" ? 9.75 : 3.75;
+  const railY = isBottom ? 9.25 : 4.5;
   return (
     <svg
       width={size}
@@ -33,10 +39,10 @@ export function SidePanelToggleIcon({
         />
         <rect
           x={railX}
-          y="5"
-          width={railWidth}
-          height="6"
-          rx="0.75"
+          y={railY}
+          width={isBottom ? railLength : railThickness}
+          height={isBottom ? railThickness : railLength}
+          rx="1"
           style={{
             opacity: collapsed ? 0.35 : 1,
             transitionProperty: "opacity",

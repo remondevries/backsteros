@@ -3,12 +3,7 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
-import type {
-  EnvironmentId,
-  ProjectId,
-  ScopedProjectRef,
-  ThreadId,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedProjectRef, ThreadId } from "@t3tools/contracts";
 
 import { toastManager } from "~/components/ui/toast";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -17,6 +12,7 @@ import { readThreadShell } from "~/state/entities";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import type { Project } from "~/types";
 import { fetchBacksterosTask } from "./client";
+import { requestBacksterosComposerFocusSoon } from "./composerFocusStore";
 import { resolveT3ProjectRefForBacksterosProject } from "./resolveT3Project";
 import {
   backsterosTaskLogicalProjectKey,
@@ -24,7 +20,12 @@ import {
   useBacksterosTaskChatStore,
 } from "./taskChatStore";
 import { buildBacksterosTaskKickoffPrompt } from "./taskKickoffPrompt";
-import { getBacksterosTaskDisplayId, type BacksterosCodebaseProject, type BacksterosTask } from "./types";
+import { useBacksterosTaskKickoffGateStore } from "./taskKickoffGateStore";
+import {
+  getBacksterosTaskDisplayId,
+  type BacksterosCodebaseProject,
+  type BacksterosTask,
+} from "./types";
 
 type NavigateFn = (opts: {
   to: string;
@@ -151,10 +152,7 @@ export async function openBacksterosTaskChat(input: {
     readonly title: string;
   }) => Promise<ScopedProjectRef | null>;
 }): Promise<void> {
-  let projectRef = resolveT3ProjectRefForBacksterosProject(
-    input.projects,
-    input.backsterosProject,
-  );
+  let projectRef = resolveT3ProjectRefForBacksterosProject(input.projects, input.backsterosProject);
   if (!projectRef) {
     const workspaceRoot = input.backsterosProject.localWorkingDirectory?.trim() ?? "";
     if (workspaceRoot.length === 0) {
@@ -192,6 +190,7 @@ export async function openBacksterosTaskChat(input: {
     };
     useBacksterosTaskChatStore.getState().setBinding(input.task.id, next);
     await navigateToBinding(input.navigate, next);
+    requestBacksterosComposerFocusSoon();
     return;
   }
 
@@ -201,6 +200,7 @@ export async function openBacksterosTaskChat(input: {
     projectRef,
     navigate: input.navigate,
   });
+  requestBacksterosComposerFocusSoon();
 }
 
 async function createBacksterosTaskDraft(input: {
@@ -237,10 +237,11 @@ async function createBacksterosTaskDraft(input: {
   };
   useBacksterosTaskChatStore.getState().setBinding(input.task.id, binding);
 
-  await prefillBacksterosTaskKickoffPrompt({
-    draftId,
+  await prepareBacksterosTaskKickoffGate({
+    taskId: input.task.id,
     task: input.task,
     backsterosProject: input.backsterosProject,
+    draftId,
   });
 
   await input.navigate({
@@ -249,20 +250,23 @@ async function createBacksterosTaskDraft(input: {
   });
 }
 
-async function prefillBacksterosTaskKickoffPrompt(input: {
+/**
+ * Build the kickoff text and open the composer in advanced mode so the message
+ * box is present and ready to edit/send (Start working remains one click away
+ * via the send button with the prefilled kickoff).
+ */
+async function prepareBacksterosTaskKickoffGate(input: {
+  readonly taskId: string;
   readonly draftId: DraftId | string;
   readonly task: Pick<BacksterosTask, "id" | "number" | "title">;
-  readonly backsterosProject: Pick<
-    BacksterosCodebaseProject,
-    "key" | "localWorkingDirectory"
-  >;
+  readonly backsterosProject: Pick<BacksterosCodebaseProject, "key" | "localWorkingDirectory">;
   readonly description?: string | null;
 }): Promise<void> {
   let number = input.task.number;
   let title = input.task.title;
   let description = input.description ?? null;
-  let projectKey = input.backsterosProject.key;
-  let workingDirectory = input.backsterosProject.localWorkingDirectory;
+  const projectKey = input.backsterosProject.key;
+  const workingDirectory = input.backsterosProject.localWorkingDirectory;
 
   try {
     const detail = await fetchBacksterosTask(input.task.id);
@@ -273,17 +277,37 @@ async function prefillBacksterosTaskKickoffPrompt(input: {
     // Keep callers' list fields when detail fetch fails.
   }
 
-  useComposerDraftStore.getState().setPrompt(
-    input.draftId as DraftId,
-    buildBacksterosTaskKickoffPrompt({
-      id: input.task.id,
-      number,
-      title,
-      description,
-      projectKey,
-      workingDirectory,
-    }),
-  );
+  const kickoffPrompt = buildBacksterosTaskKickoffPrompt({
+    id: input.task.id,
+    number,
+    title,
+    description,
+    projectKey,
+    workingDirectory,
+  });
+
+  useBacksterosTaskKickoffGateStore.getState().setGate(input.taskId, {
+    mode: "advanced",
+    kickoffPrompt,
+  });
+  useComposerDraftStore.getState().setPrompt(input.draftId as DraftId, kickoffPrompt);
+}
+
+/** @deprecated Prefer prepareBacksterosTaskKickoffGate — kept for clear-session callers. */
+async function prefillBacksterosTaskKickoffPrompt(input: {
+  readonly draftId: DraftId | string;
+  readonly task: Pick<BacksterosTask, "id" | "number" | "title">;
+  readonly backsterosProject: Pick<BacksterosCodebaseProject, "key" | "localWorkingDirectory">;
+  readonly description?: string | null;
+  readonly taskId?: string;
+}): Promise<void> {
+  await prepareBacksterosTaskKickoffGate({
+    taskId: input.taskId ?? input.task.id,
+    draftId: input.draftId,
+    task: input.task,
+    backsterosProject: input.backsterosProject,
+    description: input.description,
+  });
 }
 
 /**
@@ -308,15 +332,14 @@ export async function clearBacksterosTaskChatSession(input: {
   const createdAt = new Date().toISOString();
 
   store.clearBinding(input.taskId);
+  useBacksterosTaskKickoffGateStore.getState().clear(input.taskId);
 
-  useComposerDraftStore
-    .getState()
-    .setLogicalProjectDraftThreadId(logicalKey, projectRef, draftId, {
-      threadId,
-      createdAt,
-      branch: null,
-      worktreePath: null,
-    });
+  useComposerDraftStore.getState().setLogicalProjectDraftThreadId(logicalKey, projectRef, draftId, {
+    threadId,
+    createdAt,
+    branch: null,
+    worktreePath: null,
+  });
   useComposerDraftStore.getState().applyStickyState(draftId);
 
   store.setBinding(input.taskId, {
@@ -341,6 +364,7 @@ export async function clearBacksterosTaskChatSession(input: {
 
   await prefillBacksterosTaskKickoffPrompt({
     draftId,
+    taskId: input.taskId,
     task: {
       id: input.taskId,
       number: Number.isFinite(numberFromDisplay) ? numberFromDisplay : 0,
@@ -362,10 +386,7 @@ export async function clearBacksterosTaskChatSession(input: {
 
 export function resolveActiveBacksterosTaskId(input: {
   readonly byTaskId: Record<string, BacksterosTaskChatBinding>;
-  readonly route:
-    | { kind: "draft"; draftId: string }
-    | { kind: "server"; threadKey: string }
-    | null;
+  readonly route: { kind: "draft"; draftId: string } | { kind: "server"; threadKey: string } | null;
 }): string | null {
   if (!input.route) return null;
   for (const [taskId, binding] of Object.entries(input.byTaskId)) {
@@ -377,10 +398,7 @@ export function resolveActiveBacksterosTaskId(input: {
 
 export function resolveActiveBacksterosTaskChatBinding(input: {
   readonly byTaskId: Record<string, BacksterosTaskChatBinding>;
-  readonly route:
-    | { kind: "draft"; draftId: string }
-    | { kind: "server"; threadKey: string }
-    | null;
+  readonly route: { kind: "draft"; draftId: string } | { kind: "server"; threadKey: string } | null;
 }): BacksterosTaskChatBinding | null {
   if (!input.route) return null;
   for (const [taskId, binding] of Object.entries(input.byTaskId)) {

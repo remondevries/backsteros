@@ -1,4 +1,4 @@
-import { Maximize2Icon, Minimize2Icon, PanelBottomIcon } from "lucide-react";
+import { Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { memo } from "react";
 
 import { SidePanelToggleIcon } from "~/backsteros/SidePanelToggleIcon";
@@ -50,7 +50,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               size="sm"
               disabled={!terminalAvailable}
             >
-              <PanelBottomIcon className="size-4" />
+              <SidePanelToggleIcon size={16} rail="bottom" collapsed={!terminalOpen} />
             </Toggle>
           </TooltipTrigger>
           <TooltipPopup side="bottom">

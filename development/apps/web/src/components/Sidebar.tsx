@@ -128,7 +128,26 @@ import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { BacksterosComposeIcon } from "~/backsteros/BacksterosComposeIcon";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
+import {
+  collectBacksterosVibeHiddenChatKeys,
+  isBacksterosTaskLogicalProjectKey,
+  useBacksterosTaskChatStore,
+} from "~/backsteros/taskChatStore";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
+import {
+  backsterosRailModeShortcutLabel,
+  captureBacksterosInboxRailTaskDetail,
+  captureBacksterosProjectsRailResume,
+  clearBacksterosGoLeader,
+  locationFromTaskChatBinding,
+  resolveBacksterosRailModeGoShortcut,
+  resolveProjectsRailResumeLocation,
+} from "~/backsteros/backsterosRailMode";
+import { shouldHandleListKeyboardTabNavigation } from "~/backsteros/listKeyboardNav";
+import {
+  handleListKeyboardNavEvent,
+  useListKeyboardNavStore,
+} from "~/backsteros/listKeyboardNavStore";
 import {
   captureSidebarModeResumeLocation,
   sidebarModeResumeLocationsEqual,
@@ -136,11 +155,9 @@ import {
   type SidebarModeResumeLocation,
   type SidebarModeTaskDetailResume,
 } from "~/backsteros/sidebarModeStore";
+import { resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
-import {
-  BacksterosPanel,
-  BACKSTEROS_RAIL_MODE_OPTIONS,
-} from "./sidebar/BacksterosPanel";
+import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -636,6 +653,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectFaviconPathByKey: ReadonlyMap<string, string | null | undefined>;
   projectIconByKey: ReadonlyMap<string, ProjectIconOverride | null | undefined>;
   scopedProjectKeys: ReadonlySet<string> | null;
+  /** Log-mode task chats — keep out of vibe mode draft rows. */
+  hiddenDraftIds: ReadonlySet<string>;
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
@@ -676,6 +695,12 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         continue;
       }
       if (
+        props.hiddenDraftIds.has(draftKey) ||
+        isBacksterosTaskLogicalProjectKey(session.logicalProjectKey)
+      ) {
+        continue;
+      }
+      if (
         props.scopedProjectKeys !== null &&
         !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
       ) {
@@ -702,6 +727,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     draftThreadsByThreadKey,
     draftsByThreadKey,
     frozenActive,
+    props.hiddenDraftIds,
     props.routeDraftId,
     props.scopedProjectKeys,
   ]);
@@ -2130,10 +2156,24 @@ export default function Sidebar() {
   const setBacksterosRailMode = useSidebarModeStore((state) => state.setBacksterosRailMode);
   const rememberVibeLocation = useSidebarModeStore((state) => state.rememberVibeLocation);
   const rememberLogLocation = useSidebarModeStore((state) => state.rememberLogLocation);
+  const rememberProjectsRail = useSidebarModeStore((state) => state.rememberProjectsRail);
+  const rememberInboxRail = useSidebarModeStore((state) => state.rememberInboxRail);
   const savedVibeLocation = useSidebarModeStore((state) => state.vibeLocation);
   const savedLogLocation = useSidebarModeStore((state) => state.logLocation);
   const savedLogTaskDetail = useSidebarModeStore((state) => state.logTaskDetail);
+  const savedInboxRailTaskDetail = useSidebarModeStore((state) => state.inboxRailTaskDetail);
   const isBacksterosScope = logModeEnabled;
+  const backsterosTaskChatByTaskId = useBacksterosTaskChatStore((state) => state.byTaskId) ?? {};
+  const backsterosRetiredThreadKeys =
+    useBacksterosTaskChatStore((state) => state.retiredThreadKeys) ?? [];
+  const vibeHiddenTaskChatKeys = useMemo(
+    () =>
+      collectBacksterosVibeHiddenChatKeys({
+        byTaskId: backsterosTaskChatByTaskId,
+        retiredThreadKeys: backsterosRetiredThreadKeys,
+      }),
+    [backsterosTaskChatByTaskId, backsterosRetiredThreadKeys],
+  );
   const openCreateTaskDetail = useBacksterosTaskDetailUiStore(
     (state) => state.openCreateTaskDetail,
   );
@@ -2146,9 +2186,7 @@ export default function Sidebar() {
   const routeBacksterosProjectId = useParams({
     strict: false,
     select: (params) =>
-      typeof params.projectId === "string" && params.projectId.trim()
-        ? params.projectId
-        : null,
+      typeof params.projectId === "string" && params.projectId.trim() ? params.projectId : null,
   });
   const backsterosCreateTaskProject = useMemo(() => {
     if (backsterosTaskSelection?.project) return backsterosTaskSelection.project;
@@ -2177,12 +2215,7 @@ export default function Sidebar() {
       backsterosProjectId: routeBacksterosProjectId,
       backsterosProjectTitle: backsterosProjectTitleForResume,
     });
-  }, [
-    backsterosProjectTitleForResume,
-    routeBacksterosProjectId,
-    routeTarget,
-    routeThreadRef,
-  ]);
+  }, [backsterosProjectTitleForResume, routeBacksterosProjectId, routeTarget, routeThreadRef]);
 
   const navigateToSidebarModeResumeLocation = useCallback(
     (location: SidebarModeResumeLocation) => {
@@ -2330,10 +2363,17 @@ export default function Sidebar() {
   // (every non-promoted session with content); it can overcount by one for
   // an open never-left draft, which only softens the empty state.
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
+  const vibeHiddenDraftIds = vibeHiddenTaskChatKeys.draftIds;
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
       if (session.promotedTo != null) {
+        continue;
+      }
+      if (
+        vibeHiddenDraftIds.has(draftKey) ||
+        isBacksterosTaskLogicalProjectKey(session.logicalProjectKey)
+      ) {
         continue;
       }
       if (!composerDraftHasUserContent(store.draftsByThreadKey[draftKey])) {
@@ -2395,12 +2435,25 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        (scopedProjectKeys === null ||
-          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-    );
+    const visible = threads.filter((thread) => {
+      if (thread.archivedAt !== null) return false;
+      if (
+        scopedProjectKeys !== null &&
+        !scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)
+      ) {
+        return false;
+      }
+      // Task chats opened from log mode are real T3 threads; hide them in vibe
+      // mode so the two sidebars stay distinct.
+      if (
+        vibeHiddenTaskChatKeys.threadKeys.has(
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
@@ -2451,7 +2504,14 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+    vibeHiddenTaskChatKeys,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -2704,13 +2764,163 @@ export default function Sidebar() {
 
   const handleBacksterosRailModeChange = useCallback(
     (mode: typeof backsterosRailMode) => {
+      if (mode === backsterosRailMode) return;
       clearThreadSearch();
+
+      const selectionProjectId = backsterosTaskSelection?.project.id ?? null;
+      const selectionProjectTitle = backsterosTaskSelection?.project.name ?? null;
+      const selectionTaskId = backsterosTaskSelection?.taskId ?? null;
+      const currentLocation = captureCurrentSidebarModeLocation();
+      const routeForTaskLookup =
+        currentLocation.kind === "draft"
+          ? { kind: "draft" as const, draftId: currentLocation.draftId }
+          : currentLocation.kind === "thread"
+            ? {
+                kind: "server" as const,
+                threadKey: `${currentLocation.environmentId}:${currentLocation.threadId}`,
+              }
+            : null;
+      const routeBoundTaskId = resolveActiveBacksterosTaskId({
+        byTaskId: useBacksterosTaskChatStore.getState().byTaskId,
+        route: routeForTaskLookup,
+      });
+      const resumeTaskId = selectionTaskId ?? routeBoundTaskId;
+      const resumeBinding = resumeTaskId
+        ? useBacksterosTaskChatStore.getState().getBinding(resumeTaskId)
+        : null;
+
       if (mode === "inbox") {
+        // Leaving Projects: remember open chat via route and/or task binding.
+        const projectsResume = captureBacksterosProjectsRailResume({
+          selectionProjectId: selectionProjectId ?? resumeBinding?.backsterosProjectId ?? null,
+          selectionProjectTitle: selectionProjectTitle ?? resumeBinding?.projectTitle ?? null,
+          selectionTaskId: resumeTaskId,
+          routeProjectId: routeBacksterosProjectId,
+          routeProjectTitle: backsterosProjectTitleForResume,
+          draftId: currentLocation.kind === "draft" ? currentLocation.draftId : null,
+          environmentId: currentLocation.kind === "thread" ? currentLocation.environmentId : null,
+          threadId: currentLocation.kind === "thread" ? currentLocation.threadId : null,
+          binding: resumeBinding,
+        });
+        rememberProjectsRail(projectsResume.location, projectsResume.taskDetail);
+        setBacksterosRailMode("inbox");
+        if (savedInboxRailTaskDetail) {
+          restoreLogTaskDetail(savedInboxRailTaskDetail);
+        } else {
+          clearTaskDetail();
+        }
+        // Leave the projects-mode chat / project overview so the main pane clears.
+        if (
+          currentLocation.kind === "draft" ||
+          currentLocation.kind === "thread" ||
+          currentLocation.kind === "backsteros-project" ||
+          resumeBinding != null
+        ) {
+          void router.navigate({ to: "/backsteros/projects" });
+        }
+        return;
+      }
+
+      // Leaving Inbox: remember the open inbox task, restore last Projects place.
+      rememberInboxRail(
+        captureBacksterosInboxRailTaskDetail({
+          selectionProjectId,
+          selectionTaskId,
+        }),
+      );
+      setBacksterosRailMode("projects");
+
+      // Read from the store so we always use what was saved when leaving Projects.
+      const { projectsRailLocation: savedLocation, projectsRailTaskDetail: savedTaskDetail } =
+        useSidebarModeStore.getState();
+      const binding =
+        savedTaskDetail?.taskId != null
+          ? useBacksterosTaskChatStore.getState().getBinding(savedTaskDetail.taskId)
+          : null;
+      const restoreLocation =
+        locationFromTaskChatBinding(binding) ??
+        resolveProjectsRailResumeLocation({
+          location: savedLocation,
+          taskDetail: savedTaskDetail,
+          binding,
+        });
+      if (restoreLocation) {
+        const latestLocation = captureCurrentSidebarModeLocation();
+        if (!sidebarModeResumeLocationsEqual(restoreLocation, latestLocation)) {
+          navigateToSidebarModeResumeLocation(restoreLocation);
+        }
+      }
+      if (savedTaskDetail) {
+        restoreLogTaskDetail(savedTaskDetail);
+      } else {
         clearTaskDetail();
       }
-      setBacksterosRailMode(mode);
     },
-    [clearTaskDetail, clearThreadSearch, setBacksterosRailMode],
+    [
+      backsterosProjectTitleForResume,
+      backsterosRailMode,
+      backsterosTaskSelection,
+      captureCurrentSidebarModeLocation,
+      clearTaskDetail,
+      clearThreadSearch,
+      navigateToSidebarModeResumeLocation,
+      rememberInboxRail,
+      rememberProjectsRail,
+      restoreLogTaskDetail,
+      routeBacksterosProjectId,
+      router,
+      savedInboxRailTaskDetail,
+      setBacksterosRailMode,
+    ],
+  );
+
+  // G I / G P switch Inbox ↔ Projects while log mode is active (BacksterOS desktop chords).
+  // Tab / Shift+Tab also flips the rail when both lists are available (not drilled into a project).
+  useEffect(() => {
+    if (!isBacksterosScope) return;
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const goResult = resolveBacksterosRailModeGoShortcut(event);
+      if (goResult) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (goResult.kind === "arm") return;
+        if (goResult.mode === backsterosRailMode) return;
+        handleBacksterosRailModeChange(goResult.mode);
+        return;
+      }
+      if (
+        !routeBacksterosProjectId &&
+        shouldHandleListKeyboardTabNavigation({
+          event,
+          terminalFocus: isTerminalFocused(),
+          modelPickerOpen: isModelPickerOpen(),
+        })
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleBacksterosRailModeChange(backsterosRailMode === "inbox" ? "projects" : "inbox");
+      }
+    };
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown, true);
+      clearBacksterosGoLeader();
+    };
+  }, [
+    backsterosRailMode,
+    handleBacksterosRailModeChange,
+    isBacksterosScope,
+    routeBacksterosProjectId,
+  ]);
+
+  const backsterosRailModeOptions = useMemo(
+    () =>
+      BACKSTEROS_RAIL_MODE_OPTIONS.map((option) => ({
+        ...option,
+        shortcut: backsterosRailModeShortcutLabel(option.value),
+      })),
+    [],
   );
 
   const handleLogModeChange = useCallback(
@@ -2734,10 +2944,7 @@ export default function Sidebar() {
         setLogModeEnabled(true);
         const restoreLocation = savedLogLocation;
         const restoreTaskDetail = savedLogTaskDetail;
-        if (
-          restoreLocation &&
-          !sidebarModeResumeLocationsEqual(restoreLocation, currentLocation)
-        ) {
+        if (restoreLocation && !sidebarModeResumeLocationsEqual(restoreLocation, currentLocation)) {
           navigateToSidebarModeResumeLocation(restoreLocation);
         }
         if (restoreTaskDetail) {
@@ -3718,14 +3925,51 @@ export default function Sidebar() {
 
   // Thread jump (cmd+1..9) and prev/next traversal reuse the same commands as
   // v1 — the keybinding layer is shared, only the ordered list differs.
+  // Log mode owns these shortcuts for the BacksterOS project/task lists
+  // (see BacksterosPanel); skip vibe thread traversal while that list is shown.
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
       : false,
   );
+  const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
+  const setListKeyboardActiveZone = useListKeyboardNavStore((state) => state.setActiveZone);
+
   useEffect(() => {
+    if (isBacksterosScope) return;
+    setListKeyboardActiveZone("sidepanel");
+    return registerListKeyboardNav({
+      zone: "sidepanel",
+      getItemIds: () => orderedThreadKeysRef.current,
+      getSelectedId: () => routeThreadKey,
+      onActivate: (threadKey) => {
+        const targetThread = threadByKey.get(threadKey);
+        if (!targetThread) return;
+        navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
+      },
+    });
+  }, [
+    isBacksterosScope,
+    navigateToThread,
+    registerListKeyboardNav,
+    routeThreadKey,
+    setListKeyboardActiveZone,
+    threadByKey,
+  ]);
+
+  useEffect(() => {
+    if (isBacksterosScope) return;
     const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) return;
+      if (event.defaultPrevented) return;
+      if (
+        handleListKeyboardNavEvent(event, {
+          terminalFocus: isTerminalFocused(),
+          modelPickerOpen: isModelPickerOpen(),
+        })
+      ) {
+        return;
+      }
+      if (event.repeat) return;
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
         context: {
@@ -3758,9 +4002,10 @@ export default function Sidebar() {
       if (jumpIndex === null) return;
       navigateToThreadKey(orderedThreadKeys[jumpIndex] ?? null);
     };
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
   }, [
+    isBacksterosScope,
     keybindings,
     navigateToThread,
     orderedThreadKeys,
@@ -3895,7 +4140,7 @@ export default function Sidebar() {
             {isBacksterosScope ? (
               <SegmentedPillToggle
                 value={backsterosRailMode}
-                options={BACKSTEROS_RAIL_MODE_OPTIONS}
+                options={backsterosRailModeOptions}
                 onChange={handleBacksterosRailModeChange}
                 ariaLabel="BacksterOS list mode"
                 className="mb-0.5"
@@ -3925,9 +4170,7 @@ export default function Sidebar() {
                       : isSearchingThreads && threadSearchResults.length > 0
                   }
                   aria-controls={
-                    !isBacksterosScope &&
-                    isSearchingThreads &&
-                    threadSearchResults.length > 0
+                    !isBacksterosScope && isSearchingThreads && threadSearchResults.length > 0
                       ? "sidebar-thread-search-results"
                       : undefined
                   }
@@ -3946,9 +4189,7 @@ export default function Sidebar() {
                     size="icon-micro"
                     variant="ghost"
                     className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-                    aria-label={
-                      isBacksterosScope ? "Clear search" : "Clear thread search"
-                    }
+                    aria-label={isBacksterosScope ? "Clear search" : "Clear thread search"}
                     onClick={() => {
                       clearThreadSearch();
                       threadSearchInputRef.current?.focus();
@@ -4363,6 +4604,7 @@ export default function Sidebar() {
                       projectFaviconPathByKey={projectFaviconPathByKey}
                       projectIconByKey={projectIconByKey}
                       scopedProjectKeys={scopedProjectKeys}
+                      hiddenDraftIds={vibeHiddenTaskChatKeys.draftIds}
                       routeDraftId={routeDraftIdForRows}
                       onNavigateToDraft={navigateToDraft}
                     />,

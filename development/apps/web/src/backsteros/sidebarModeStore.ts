@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "~/lib/storage";
 
 const SIDEBAR_MODE_STORAGE_KEY = "t3code:sidebar-mode";
-const SIDEBAR_MODE_STORAGE_VERSION = 2;
+const SIDEBAR_MODE_STORAGE_VERSION = 3;
 
 /** Last place the user was in vibe (T3 threads) or log (BacksterOS) mode. */
 export type SidebarModeResumeLocation =
@@ -35,6 +35,11 @@ interface SidebarModeState {
   readonly vibeLocation: SidebarModeResumeLocation | null;
   readonly logLocation: SidebarModeResumeLocation | null;
   readonly logTaskDetail: SidebarModeTaskDetailResume | null;
+  /** Last Projects-rail place (project route + optional open task). */
+  readonly projectsRailLocation: SidebarModeResumeLocation | null;
+  readonly projectsRailTaskDetail: SidebarModeTaskDetailResume | null;
+  /** Last Inbox-rail open task (detail panel). */
+  readonly inboxRailTaskDetail: SidebarModeTaskDetailResume | null;
   readonly setLogModeEnabled: (enabled: boolean) => void;
   readonly setBacksterosRailMode: (mode: BacksterosRailMode) => void;
   readonly rememberVibeLocation: (location: SidebarModeResumeLocation) => void;
@@ -42,6 +47,11 @@ interface SidebarModeState {
     location: SidebarModeResumeLocation,
     taskDetail: SidebarModeTaskDetailResume | null,
   ) => void;
+  readonly rememberProjectsRail: (
+    location: SidebarModeResumeLocation,
+    taskDetail: SidebarModeTaskDetailResume | null,
+  ) => void;
+  readonly rememberInboxRail: (taskDetail: SidebarModeTaskDetailResume | null) => void;
 }
 
 function normalizeLocation(raw: unknown): SidebarModeResumeLocation | null {
@@ -66,9 +76,7 @@ function normalizeLocation(raw: unknown): SidebarModeResumeLocation | null {
     return {
       kind: "backsteros-project",
       projectId: value.projectId,
-      ...(typeof value.title === "string" && value.title.trim()
-        ? { title: value.title }
-        : {}),
+      ...(typeof value.title === "string" && value.title.trim() ? { title: value.title } : {}),
     };
   }
   return null;
@@ -131,9 +139,7 @@ export function sidebarModeResumeLocationsEqual(
       return b.kind === "draft" && a.draftId === b.draftId;
     case "thread":
       return (
-        b.kind === "thread" &&
-        a.environmentId === b.environmentId &&
-        a.threadId === b.threadId
+        b.kind === "thread" && a.environmentId === b.environmentId && a.threadId === b.threadId
       );
     case "backsteros-project":
       return b.kind === "backsteros-project" && a.projectId === b.projectId;
@@ -148,11 +154,17 @@ export const useSidebarModeStore = create<SidebarModeState>()(
       vibeLocation: null,
       logLocation: null,
       logTaskDetail: null,
+      projectsRailLocation: null,
+      projectsRailTaskDetail: null,
+      inboxRailTaskDetail: null,
       setLogModeEnabled: (enabled) => set({ logModeEnabled: enabled }),
       setBacksterosRailMode: (mode) => set({ backsterosRailMode: mode }),
       rememberVibeLocation: (location) => set({ vibeLocation: location }),
       rememberLogLocation: (location, taskDetail) =>
         set({ logLocation: location, logTaskDetail: taskDetail }),
+      rememberProjectsRail: (location, taskDetail) =>
+        set({ projectsRailLocation: location, projectsRailTaskDetail: taskDetail }),
+      rememberInboxRail: (taskDetail) => set({ inboxRailTaskDetail: taskDetail }),
     }),
     {
       name: SIDEBAR_MODE_STORAGE_KEY,
@@ -166,6 +178,9 @@ export const useSidebarModeStore = create<SidebarModeState>()(
         vibeLocation: state.vibeLocation,
         logLocation: state.logLocation,
         logTaskDetail: state.logTaskDetail,
+        projectsRailLocation: state.projectsRailLocation,
+        projectsRailTaskDetail: state.projectsRailTaskDetail,
+        inboxRailTaskDetail: state.inboxRailTaskDetail,
       }),
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
@@ -175,6 +190,9 @@ export const useSidebarModeStore = create<SidebarModeState>()(
           vibeLocation: normalizeLocation(state.vibeLocation),
           logLocation: normalizeLocation(state.logLocation),
           logTaskDetail: normalizeTaskDetail(state.logTaskDetail),
+          projectsRailLocation: normalizeLocation(state.projectsRailLocation),
+          projectsRailTaskDetail: normalizeTaskDetail(state.projectsRailTaskDetail),
+          inboxRailTaskDetail: normalizeTaskDetail(state.inboxRailTaskDetail),
         };
       },
     },

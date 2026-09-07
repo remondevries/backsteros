@@ -1,0 +1,319 @@
+/* Ported from desktop packages/ui markdown-editor + task description layout.
+   Presentation-only subset for BacksterDEV BacksterOS description fields. */
+
+.content-markdown-view-layout {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-markdown-view-layout__edit,
+.content-markdown-view-layout__preview {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-markdown-view-layout__preview {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.content-markdown-editor-column {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  flex: 1;
+  flex-direction: column;
+}
+
+.content-markdown-preview-column {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3.5rem;
+  box-sizing: border-box;
+}
+
+.content-markdown-preview-column--no-top {
+  padding-top: 0;
+}
+
+.content-markdown-preview-body {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.content-markdown-preview-body--rendered {
+  white-space: normal;
+}
+
+.content-markdown-preview-body--rendered > :first-child {
+  margin-top: 0;
+}
+
+.content-markdown-preview-body--rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.content-markdown-preview-body--rendered h1,
+.content-markdown-preview-body--rendered h2,
+.content-markdown-preview-body--rendered h3,
+.content-markdown-preview-body--rendered h4 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.content-markdown-preview-body--rendered h1 {
+  font-size: 1.35rem;
+}
+
+.content-markdown-preview-body--rendered h2 {
+  font-size: 1.15rem;
+}
+
+.content-markdown-preview-body--rendered h3 {
+  font-size: 1rem;
+}
+
+.content-markdown-preview-body--rendered p {
+  margin: 0;
+}
+
+.content-markdown-preview-body--rendered ul,
+.content-markdown-preview-body--rendered ol {
+  margin: 0.65em 0;
+  padding-left: 1.35em;
+}
+
+.content-markdown-preview-body--rendered ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.content-markdown-preview-body--rendered li {
+  display: list-item;
+  margin: 0.25em 0;
+}
+
+.content-markdown-preview-body--rendered code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.06);
+  font-size: 0.92em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.content-markdown-preview-body--rendered pre {
+  margin: 0.85em 0;
+  padding: 0.85em 1em;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.04);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border, rgb(255 255 255 / 0.12)) 78%, transparent)
+    transparent;
+}
+
+.content-markdown-preview-body--rendered pre::-webkit-scrollbar {
+  height: var(--app-scrollbar-width, 6px);
+  width: var(--app-scrollbar-width, 6px);
+}
+
+.content-markdown-preview-body--rendered pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content-markdown-preview-body--rendered pre::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--app-scrollbar-thumb, rgb(255 255 255 / 8%));
+}
+
+.content-markdown-preview-body--rendered pre::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover, rgb(255 255 255 / 12%));
+}
+
+.content-markdown-preview-body--rendered pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.content-markdown-preview-body--rendered a,
+.content-markdown-preview-link {
+  color: color-mix(in srgb, var(--foreground) 88%, #60a5fa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.content-markdown-preview-body--rendered a:hover,
+.content-markdown-preview-link:hover {
+  color: var(--foreground);
+}
+
+.content-markdown-preview-body--rendered blockquote {
+  margin: 0.65em 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid rgb(255 255 255 / 0.15);
+  color: rgb(255 255 255 / 0.65);
+  font-style: italic;
+}
+
+.content-markdown-preview-body--rendered hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.content-markdown-preview-body--rendered table {
+  width: 100%;
+  max-width: 100%;
+  margin: 0.5em 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  table-layout: fixed;
+}
+
+.content-markdown-preview-body--rendered th,
+.content-markdown-preview-body--rendered td {
+  padding: 0.5rem 0.625rem;
+  vertical-align: middle;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.content-markdown-preview-body--rendered th:last-child,
+.content-markdown-preview-body--rendered td:last-child {
+  border-right: 0;
+}
+
+.content-markdown-preview-body--rendered tr:last-child th,
+.content-markdown-preview-body--rendered tr:last-child td {
+  border-bottom: 0;
+}
+
+.overview-empty {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+/* Borderless CodeMirror root — no form-field chrome. */
+.document-codemirror {
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+}
+
+.document-codemirror .cm-editor {
+  background: transparent;
+}
+
+.document-codemirror .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* CodeMirror can grow wide lines; keep the same thin bar as preview `pre`. */
+.document-codemirror .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb, rgb(255 255 255 / 8%)) transparent;
+}
+
+.document-codemirror .cm-scroller::-webkit-scrollbar {
+  height: var(--app-scrollbar-width, 6px);
+  width: var(--app-scrollbar-width, 6px);
+}
+
+.document-codemirror .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.document-codemirror .cm-scroller::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--app-scrollbar-thumb, rgb(255 255 255 / 8%));
+}
+
+.document-codemirror .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover, rgb(255 255 255 / 12%));
+}
+
+/* Task description: size to content (activity sits below), flush with panel padding. */
+.bos-task-description-section {
+  position: relative;
+  margin-top: 12px;
+}
+
+.bos-task-description.content-markdown-view-layout {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 120px;
+  overflow: visible;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  /* Room for the floating Preview/Edit dock (desktop stacked detail parity). */
+  padding-bottom: 52px;
+  box-sizing: border-box;
+}
+
+.bos-task-description .content-markdown-view-layout__edit,
+.bos-task-description .content-markdown-view-layout__preview {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.bos-task-description .content-markdown-editor-column,
+.bos-task-description .content-markdown-preview-column {
+  max-width: none;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+}
+
+.bos-task-description .document-codemirror,
+.bos-task-description .document-codemirror .cm-editor,
+.bos-task-description .document-codemirror .cm-scroller {
+  height: auto !important;
+  flex: none !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+.bos-task-description .document-codemirror .cm-content {
+  padding-bottom: 0 !important;
+}
+
+.bos-task-description .overview-empty {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}

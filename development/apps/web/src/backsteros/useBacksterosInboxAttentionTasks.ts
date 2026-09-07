@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchBacksterosInboxAttentionTasks } from "./client";
+import { isBacksterosInboxAttentionStatus, isBacksterosInboxDueTask } from "./inboxDue";
 import type { BacksterosTask } from "./types";
 import type { BacksterosProjectTasksState } from "./useBacksterosProjectTasks";
-import {
-  stableJsonFingerprint,
-  useBacksterosSoftPoll,
-} from "./useBacksterosSoftPoll";
+import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export function useBacksterosInboxAttentionTasks(enabled: boolean): {
   readonly state: BacksterosProjectTasksState;
@@ -21,6 +19,7 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const requestGenerationRef = useRef(0);
 
   const patchLocalTask = useCallback(
     (
@@ -34,17 +33,10 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
           if (task.id !== taskId) return [task];
           changed = true;
           const next = { ...task, ...patch };
-          // Drop out of inbox when status leaves the attention set.
-          if (
-            patch.status != null &&
-            patch.status !== "triage" &&
-            patch.status !== "in_review" &&
-            patch.status !== "in_progress" &&
-            patch.status !== "on_hold"
-          ) {
-            return [];
+          if (isBacksterosInboxAttentionStatus(next.status) || isBacksterosInboxDueTask(next)) {
+            return [next];
           }
-          return [next];
+          return [];
         });
         return changed ? { ...current, tasks } : current;
       });
@@ -54,26 +46,30 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
 
   useEffect(() => {
     if (!enabled) {
+      requestGenerationRef.current += 1;
       setState({ status: "idle" });
       return;
     }
 
+    const generation = ++requestGenerationRef.current;
     const controller = new AbortController();
     setState((current) => (current.status === "ready" ? current : { status: "loading" }));
 
     void fetchBacksterosInboxAttentionTasks(controller.signal)
       .then((tasks) => {
-        if (controller.signal.aborted) return;
+        if (generation !== requestGenerationRef.current) return;
         setState({ status: "ready", tasks });
       })
       .catch((error: unknown) => {
+        if (generation !== requestGenerationRef.current) return;
         if (controller.signal.aborted) return;
-        const message =
-          error instanceof Error ? error.message : "Failed to load BacksterOS inbox";
+        const message = error instanceof Error ? error.message : "Failed to load BacksterOS inbox";
         setState({ status: "error", message });
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+    };
   }, [enabled, reloadToken]);
 
   useBacksterosSoftPoll(enabled && state.status === "ready", async () => {

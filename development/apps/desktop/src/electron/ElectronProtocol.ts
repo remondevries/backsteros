@@ -149,9 +149,7 @@ export function isBacksterosApiPath(pathname: string): boolean {
   );
 }
 
-export function resolveBacksterosApiOrigin(
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env): string {
   return (env.BACKSTEROS_API_URL?.trim() || "http://127.0.0.1:8788").replace(/\/$/, "");
 }
 
@@ -180,6 +178,57 @@ function stripHopByHopHeaders(headers: Headers): Headers {
     next.delete(name);
   }
   return next;
+}
+
+function backsterosUnreachableResponse(cause: unknown): Response {
+  const detail =
+    cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "unknown error";
+  return new Response(
+    JSON.stringify({
+      error: "BacksterOS is unreachable",
+      detail,
+      origin: resolveBacksterosApiOrigin(),
+    }),
+    {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/**
+ * Prefer Chromium `net.fetch` (matches browser cookies / session). If that
+ * fails to reach local-core — common after core restarts or under Chromium
+ * loopback quirks — fall back to Node's fetch.
+ */
+async function fetchBacksterosUpstream(
+  targetUrl: string,
+  init: RequestInit,
+  method: string,
+): Promise<Response> {
+  try {
+    return method === "GET" || method === "HEAD"
+      ? await fetchWithTransientRetry(targetUrl, init)
+      : await Electron.net.fetch(targetUrl, init);
+  } catch (electronError) {
+    try {
+      const nodeInit: RequestInit = {
+        method: init.method,
+        headers: init.headers,
+      };
+      if (method !== "GET" && method !== "HEAD" && init.body != null) {
+        // Body may already be a locked stream after Electron.net.fetch; buffer if needed.
+        if (init.body instanceof ReadableStream) {
+          nodeInit.body = await new Response(init.body).arrayBuffer();
+        } else {
+          nodeInit.body = init.body;
+        }
+      }
+      return await fetch(targetUrl, nodeInit);
+    } catch {
+      throw electronError;
+    }
+  }
 }
 
 /**
@@ -211,19 +260,10 @@ async function proxyBacksterosRequest(
   }
 
   try {
-    const response =
-      request.method === "GET" || request.method === "HEAD"
-        ? await fetchWithTransientRetry(targetUrl, init)
-        : await Electron.net.fetch(targetUrl, init);
+    const response = await fetchBacksterosUpstream(targetUrl, init, request.method);
     return withContentSecurityPolicy(response, contentSecurityPolicy);
-  } catch {
-    return withContentSecurityPolicy(
-      new Response(JSON.stringify({ error: "BacksterOS is unreachable" }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      }),
-      contentSecurityPolicy,
-    );
+  } catch (cause) {
+    return withContentSecurityPolicy(backsterosUnreachableResponse(cause), contentSecurityPolicy);
   }
 }
 

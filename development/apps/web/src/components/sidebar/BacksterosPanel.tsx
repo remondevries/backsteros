@@ -1,44 +1,58 @@
+import { useAtomValue } from "@effect/atom-react";
 import { ArrowLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
-import { BACKSTEROS_INBOX_ATTENTION_STATUSES } from "~/backsteros/client";
+import { BACKSTEROS_INBOX_ATTENTION_STATUSES, updateBacksterosProject } from "~/backsteros/client";
+import { isBacksterosInboxDueTask } from "~/backsteros/inboxDue";
 import {
-  openBacksterosTaskChat,
-  resolveActiveBacksterosTaskId,
-} from "~/backsteros/openTaskChat";
+  orderedBacksterosInboxTaskIds,
+  orderedBacksterosProjectIds,
+  orderedBacksterosTaskIds,
+  resolveAdjacentListItemId,
+} from "~/backsteros/listTraversal";
+import {
+  useListKeyboardNavStore,
+  handleListKeyboardNavEvent,
+} from "~/backsteros/listKeyboardNavStore";
+import { isBacksterosGoEditableTarget } from "~/backsteros/backsterosRailMode";
+import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
+import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import {
   usePromoteWorkingBacksterosTasks,
   subscribeBacksterosTaskStatusChanged,
 } from "~/backsteros/promoteWorkingTask";
+import type { BacksterosProjectSortPatch } from "~/backsteros/project-reorder";
 import { useSyncBacksterosAgentPresence } from "~/backsteros/useBacksterosAgentPresence";
+import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
-import {
-  useSidebarModeStore,
-  type BacksterosRailMode,
-} from "~/backsteros/sidebarModeStore";
+import { useSidebarModeStore, type BacksterosRailMode } from "~/backsteros/sidebarModeStore";
 import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosInboxAttentionTasks } from "~/backsteros/useBacksterosInboxAttentionTasks";
 import { useBacksterosProjectTasks } from "~/backsteros/useBacksterosProjectTasks";
 import { useEnsureBacksterosT3Project } from "~/backsteros/useEnsureBacksterosT3Project";
-import type { BacksterosTaskStatus } from "~/backsteros/taskStatus";
+import { migrateBacksterosTaskStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
+import {
+  resolveShortcutCommand,
+  threadJumpIndexFromCommand,
+  threadTraversalDirectionFromCommand,
+} from "~/keybindings";
+import { isTerminalFocused } from "~/lib/terminalFocus";
+import { isModelPickerOpen } from "~/modelPickerVisibility";
 import { useProjects } from "~/state/entities";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
+import { toastManager } from "../ui/toast";
 import { BacksterosProjectList } from "./BacksterosProjectList";
 import { BacksterosTaskList } from "./BacksterosTaskList";
 
-const INBOX_STATUS_FILTER = new Set<BacksterosTaskStatus>(
-  BACKSTEROS_INBOX_ATTENTION_STATUSES,
-);
+const INBOX_STATUS_FILTER = new Set<BacksterosTaskStatus>(BACKSTEROS_INBOX_ATTENTION_STATUSES);
 
-export function BacksterosPanel({
-  searchQuery = "",
-}: {
-  readonly searchQuery?: string;
-}) {
+export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: string }) {
   const router = useRouter();
   const projects = useProjects();
   const ensureT3Project = useEnsureBacksterosT3Project();
@@ -46,7 +60,29 @@ export function BacksterosPanel({
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
   const railMode = useSidebarModeStore((state) => state.backsterosRailMode);
-  const { state: projectsState, reload: reloadProjects } = useBacksterosCodebaseProjects(true);
+  const {
+    state: projectsState,
+    reload: reloadProjects,
+    applySortOrderPatches,
+  } = useBacksterosCodebaseProjects(true);
+
+  const handleReorderProjects = useCallback(
+    (patches: readonly BacksterosProjectSortPatch[]) => {
+      if (patches.length === 0) return;
+      applySortOrderPatches(patches);
+      void Promise.all(
+        patches.map((patch) => updateBacksterosProject(patch.id, { sortOrder: patch.sortOrder })),
+      ).catch((error: unknown) => {
+        reloadProjects();
+        toastManager.add({
+          type: "error",
+          title: "Could not reorder projects",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      });
+    },
+    [applySortOrderPatches, reloadProjects],
+  );
 
   const projectById = useMemo(() => {
     if (projectsState.status !== "ready") {
@@ -67,12 +103,13 @@ export function BacksterosPanel({
    * Left rail drills into a project's tasks when a task is open or create-task
    * is active for that project (Projects mode). Create uses `taskId: null`.
    */
-  const taskListProject =
-    railMode === "projects" && selection != null ? selection.project : null;
+  const taskListProject = railMode === "projects" && selection != null ? selection.project : null;
 
-  const { state: tasksState, reload: reloadTasks, patchLocalTask } = useBacksterosProjectTasks(
-    taskListProject?.id ?? null,
-  );
+  const {
+    state: tasksState,
+    reload: reloadTasks,
+    patchLocalTask,
+  } = useBacksterosProjectTasks(taskListProject?.id ?? null);
   const {
     state: inboxState,
     reload: reloadInbox,
@@ -83,9 +120,7 @@ export function BacksterosPanel({
   const selectedProjectId = useParams({
     strict: false,
     select: (params) =>
-      typeof params.projectId === "string" && params.projectId.trim()
-        ? params.projectId
-        : null,
+      typeof params.projectId === "string" && params.projectId.trim() ? params.projectId : null,
   });
   const routeTarget = useParams({
     strict: false,
@@ -101,16 +136,13 @@ export function BacksterosPanel({
       threadKey: scopedThreadKey(routeTarget.threadRef),
     };
   }, [routeTarget]);
-  const activeTaskId = useMemo(() => {
-    if (selection?.taskId) return selection.taskId;
-    return resolveActiveBacksterosTaskId({ byTaskId, route: activeRoute });
-  }, [activeRoute, byTaskId, selection?.taskId]);
-
-  useEffect(() => {
-    if (taskListProject?.id) {
-      reloadTasks();
-    }
-  }, [reloadTasks, taskListProject?.id]);
+  const routeFromBinding = useMemo(
+    () => resolveActiveBacksterosTaskId({ byTaskId, route: activeRoute }),
+    [activeRoute, byTaskId],
+  );
+  // Selection wins while browsing the log-mode list (Cmd+Shift+[ / ]).
+  // Fall back to the route binding when nothing is selected yet.
+  const activeTaskId = selection?.taskId ?? routeFromBinding ?? null;
 
   usePromoteWorkingBacksterosTasks();
   useSyncBacksterosAgentPresence(true);
@@ -135,9 +167,12 @@ export function BacksterosPanel({
     [ensureT3Project, openTaskDetail, projects, router],
   );
 
-  const handleSelectProject = useCallback(
-    (project: BacksterosCodebaseProject) => {
+  const openProject = useCallback(
+    (project: BacksterosCodebaseProject, options?: { readonly focusTasks?: boolean }) => {
       clearTaskDetail();
+      if (options?.focusTasks) {
+        useListKeyboardNavStore.getState().setActiveZone("main");
+      }
       void router.navigate({
         to: "/backsteros/project/$projectId",
         params: { projectId: project.id },
@@ -147,10 +182,34 @@ export function BacksterosPanel({
     [clearTaskDetail, router],
   );
 
+  /** Mouse / Enter confirmation — open project and hand j/k to its task list. */
+  const handleSelectProject = useCallback(
+    (project: BacksterosCodebaseProject) => {
+      openProject(project, { focusTasks: true });
+    },
+    [openProject],
+  );
+
+  /** j/k preview — open project in the main pane but keep list focus on the rail. */
+  const handlePreviewProject = useCallback(
+    (project: BacksterosCodebaseProject) => {
+      openProject(project);
+    },
+    [openProject],
+  );
+
+  const leaveOpenProject = useCallback(() => {
+    clearTaskDetail();
+    useListKeyboardNavStore.getState().setActiveZone("sidepanel");
+    void router.navigate({ to: "/backsteros/projects" });
+    return true;
+  }, [clearTaskDetail, router]);
+
   const handleBackToProjects = useCallback(() => {
     const project = taskListProject;
     clearTaskDetail();
     if (!project) return;
+    useListKeyboardNavStore.getState().setActiveZone("main");
     void router.navigate({
       to: "/backsteros/project/$projectId",
       params: { projectId: project.id },
@@ -177,26 +236,357 @@ export function BacksterosPanel({
     [openTask, projectById, selection?.project],
   );
 
+  const isSearching = searchQuery.trim().length > 0;
+
+  const visibleProjects = useMemo(() => {
+    if (projectsState.status !== "ready") return [];
+    if (!isSearching) return projectsState.projects;
+    return projectsState.projects.filter((project) =>
+      matchesBacksterosSearchQuery(
+        [
+          project.name,
+          project.key,
+          project.summary,
+          project.githubRepository,
+          project.localWorkingDirectory,
+        ],
+        searchQuery,
+      ),
+    );
+  }, [isSearching, projectsState, searchQuery]);
+
+  const visibleInboxTasks = useMemo(() => {
+    if (inboxState.status !== "ready" || projectsState.status !== "ready") return [];
+    return inboxState.tasks.filter((task) => {
+      if (task.projectId == null || !projectById.has(task.projectId)) return false;
+      const status = migrateBacksterosTaskStatus(task.status);
+      const inAttention = INBOX_STATUS_FILTER.has(status);
+      if (!inAttention && !isBacksterosInboxDueTask(task)) return false;
+      if (!isSearching) return true;
+      const projectName = task.projectId ? (projectNameById.get(task.projectId) ?? "") : "";
+      return matchesBacksterosSearchQuery([task.title, task.number, projectName], searchQuery);
+    });
+  }, [inboxState, isSearching, projectById, projectNameById, projectsState.status, searchQuery]);
+
+  const visibleProjectTasks = useMemo(() => {
+    if (!taskListProject || tasksState.status !== "ready") return [];
+    if (!isSearching) return tasksState.tasks;
+    return tasksState.tasks.filter((task) =>
+      matchesBacksterosSearchQuery([task.title, task.number], searchQuery),
+    );
+  }, [isSearching, searchQuery, taskListProject, tasksState]);
+
+  const listMode = useMemo(() => {
+    if (railMode === "inbox") {
+      return {
+        kind: "tasks" as const,
+        itemIds: orderedBacksterosInboxTaskIds(visibleInboxTasks),
+        currentItemId: activeTaskId,
+        activate: (id: string) => {
+          const task = visibleInboxTasks.find((entry) => entry.id === id);
+          if (task) handleSelectInboxTask(task);
+        },
+      };
+    }
+    if (taskListProject) {
+      return {
+        kind: "tasks" as const,
+        itemIds: orderedBacksterosTaskIds(visibleProjectTasks),
+        currentItemId: activeTaskId,
+        activate: (id: string) => {
+          const task = visibleProjectTasks.find((entry) => entry.id === id);
+          if (task) handleSelectProjectTask(task);
+        },
+      };
+    }
+    return {
+      kind: "projects" as const,
+      itemIds: orderedBacksterosProjectIds(visibleProjects),
+      currentItemId: selectedProjectId,
+      // j/k previews the project; Enter (enterMovesToMain) hands focus to tasks.
+      activate: (id: string) => {
+        const project = visibleProjects.find((entry) => entry.id === id);
+        if (project) handlePreviewProject(project);
+      },
+    };
+  }, [
+    activeTaskId,
+    handlePreviewProject,
+    handleSelectInboxTask,
+    handleSelectProjectTask,
+    railMode,
+    selectedProjectId,
+    taskListProject,
+    visibleInboxTasks,
+    visibleProjectTasks,
+    visibleProjects,
+  ]);
+
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
+  const routeTerminalOpen = useTerminalUiStateStore((state) =>
+    routeThreadRef
+      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+      : false,
+  );
+
+  const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
+  const [sidepanelHighlightId, setSidepanelHighlightId] = useState<string | null>(null);
+  const sidepanelHighlightIdRef = useRef(sidepanelHighlightId);
+  sidepanelHighlightIdRef.current = sidepanelHighlightId;
+  const listModeRef = useRef(listMode);
+  listModeRef.current = listMode;
+
+  // Keep the j/k cursor on the open/selected row after Inbox ↔ Projects (and
+  // other list-mode flips). Do not clear while item ids are still loading —
+  // that used to drop the highlight and never put it back.
+  useEffect(() => {
+    const seedId = listMode.currentItemId;
+    const ids = listMode.itemIds;
+    if (seedId != null && (ids.length === 0 || ids.includes(seedId))) {
+      setSidepanelHighlightId(seedId);
+      return;
+    }
+    setSidepanelHighlightId(null);
+  }, [listMode.kind, listMode.currentItemId, railMode, taskListProject?.id]);
+
+  useEffect(() => {
+    // Rail switches should show the left-list outline again (composer/main may
+    // have held the zone while a task chat was focused).
+    useListKeyboardNavStore.getState().setActiveZone("sidepanel");
+  }, [railMode]);
+
+  useEffect(() => {
+    const ids = listMode.itemIds;
+    if (ids.length === 0) return;
+
+    if (sidepanelHighlightId != null && ids.includes(sidepanelHighlightId)) {
+      return;
+    }
+
+    const seedId = listMode.currentItemId;
+    if (seedId != null && ids.includes(seedId)) {
+      setSidepanelHighlightId(seedId);
+      return;
+    }
+
+    if (sidepanelHighlightId != null) {
+      setSidepanelHighlightId(null);
+    }
+  }, [listMode.currentItemId, listMode.itemIds, sidepanelHighlightId]);
+
+  useEffect(() => {
+    // Do not force activeZone here — Enter / project open moves focus to main,
+    // and re-registering on listMode changes must not steal it back.
+    const isTaskList = listMode.kind === "tasks";
+    return registerListKeyboardNav({
+      zone: "sidepanel",
+      getItemIds: () => listModeRef.current.itemIds,
+      getSelectedId: () =>
+        isTaskList ? sidepanelHighlightIdRef.current : listModeRef.current.currentItemId,
+      onHighlight: isTaskList ? (id) => setSidepanelHighlightId(id) : undefined,
+      onActivate: (id) => listModeRef.current.activate(id),
+      enterMovesToMain: listMode.kind === "projects",
+    });
+  }, [listMode.kind, registerListKeyboardNav]);
+
+  const listKeyboardActiveZone = useListKeyboardNavStore((state) => state.activeZone);
+  // Open/route selection stays distinct from the j/k cursor outline.
+  const sidepanelActiveTaskId = activeTaskId;
+
+  // Only one primary outline at a time: hide the list keyboard ring while the
+  // chat composer (or any editable) owns DOM focus.
+  const [editableHasFocus, setEditableHasFocus] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setEditableHasFocus(isBacksterosGoEditableTarget(document.activeElement));
+    };
+    sync();
+    const onFocusOut = () => {
+      // focusout runs before the new target receives focus.
+      queueMicrotask(sync);
+    };
+    document.addEventListener("focusin", sync);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", sync);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+
+  const showSidepanelKeyboardOutline = listKeyboardActiveZone === "sidepanel" && !editableHasFocus;
+
+  // Prefer the j/k cursor; fall back to the open row so a primary outline still
+  // shows after a rail switch before the first j/k press.
+  const sidepanelKeyboardFocusTaskId =
+    listMode.kind === "tasks" && showSidepanelKeyboardOutline
+      ? (sidepanelHighlightId ?? activeTaskId)
+      : null;
+  const sidepanelKeyboardFocusProjectId =
+    listMode.kind === "projects" && showSidepanelKeyboardOutline
+      ? (sidepanelHighlightId ?? selectedProjectId)
+      : null;
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
+      // Escape hierarchy while browsing BacksterOS projects:
+      // 0) property dropdown open → close menu only (do not leave task/project)
+      // 1) yield to composer / editable (blur first)
+      // 2) open task → return focus to the task list (keep task open)
+      // 3) create-task sheet → dismiss
+      // 4) project page → projects rail root
+      // Tab switches sidepanel ↔ main without leaving.
+      if (
+        event.key === "Escape" &&
+        !event.repeat &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isTerminalFocused() &&
+        !isModelPickerOpen()
+      ) {
+        // Let Base UI dismiss the open property menu; skip back-navigation.
+        if (isBacksterosPropertyMenuOpen()) {
+          return;
+        }
+
+        const openTaskId = selection?.taskId ?? null;
+        const editable = isBacksterosGoEditableTarget(event.target);
+
+        // Composer focused on an open task: blur and return j/k to the left
+        // sidepanel task list (keep the task/chat open).
+        if (editable && openTaskId && selection) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.target instanceof HTMLElement) {
+            event.target.blur();
+          }
+          setSidepanelHighlightId(openTaskId);
+          useListKeyboardNavStore.getState().setActiveZone("sidepanel");
+          return;
+        }
+
+        if (editable) return;
+
+        if (openTaskId && selection) {
+          event.preventDefault();
+          event.stopPropagation();
+          const { activeZone } = useListKeyboardNavStore.getState();
+          // Return focus to the left sidepanel list while keeping the task open.
+          if (activeZone !== "sidepanel") {
+            setSidepanelHighlightId(openTaskId);
+            useListKeyboardNavStore.getState().setActiveZone("sidepanel");
+            return;
+          }
+          // Already on the sidepanel list — step up to the projects rail.
+          leaveOpenProject();
+          return;
+        }
+
+        if (selection != null) {
+          // Create-task empty state — dismiss the sheet.
+          event.preventDefault();
+          event.stopPropagation();
+          clearTaskDetail();
+          if (selectedProjectId) {
+            useListKeyboardNavStore.getState().setActiveZone("main");
+          }
+          return;
+        }
+
+        if (selectedProjectId) {
+          event.preventDefault();
+          event.stopPropagation();
+          const { activeZone } = useListKeyboardNavStore.getState();
+          // From the project task list → projects rail (keep project open).
+          if (activeZone !== "sidepanel") {
+            useListKeyboardNavStore.getState().setActiveZone("sidepanel");
+            return;
+          }
+          // Already on the projects list — leave the project.
+          leaveOpenProject();
+          return;
+        }
+      }
+
+      if (
+        handleListKeyboardNavEvent(event, {
+          terminalFocus: isTerminalFocused(),
+          modelPickerOpen: isModelPickerOpen(),
+          // Project overview registers `main` after navigation; Enter should
+          // still hand j/k to the task list immediately.
+          assumeMainAfterSidepanelEnter: listMode.kind === "projects",
+        })
+      ) {
+        return;
+      }
+      if (event.repeat) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        platform: navigator.platform,
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen: routeTerminalOpen,
+          modelPickerOpen: isModelPickerOpen(),
+        },
+      });
+      const activateTarget = (targetId: string | null) => {
+        if (!targetId) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        listMode.activate(targetId);
+        return true;
+      };
+      const traversalDirection = threadTraversalDirectionFromCommand(command);
+      if (traversalDirection !== null) {
+        activateTarget(
+          resolveAdjacentListItemId({
+            itemIds: listMode.itemIds,
+            currentItemId: listMode.currentItemId,
+            direction: traversalDirection,
+          }),
+        );
+        return;
+      }
+      const jumpIndex = threadJumpIndexFromCommand(command ?? "");
+      if (jumpIndex === null) return;
+      activateTarget(listMode.itemIds[jumpIndex] ?? null);
+    };
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => window.removeEventListener("keydown", onWindowKeyDown, true);
+  }, [
+    clearTaskDetail,
+    keybindings,
+    leaveOpenProject,
+    listMode,
+    routeTerminalOpen,
+    router,
+    selectedProjectId,
+    selection,
+  ]);
+
   if (railMode === "inbox") {
     const projectsReady = projectsState.status === "ready";
-    const inboxListState =
-      !projectsReady
-        ? ({ status: "loading" } as const)
-        : inboxState.status === "ready"
-          ? {
-              ...inboxState,
-              tasks: inboxState.tasks.filter(
-                (task) => task.projectId != null && projectById.has(task.projectId),
-              ),
-            }
-          : inboxState;
+    const inboxListState = !projectsReady
+      ? ({ status: "loading" } as const)
+      : inboxState.status === "ready"
+        ? {
+            ...inboxState,
+            tasks: inboxState.tasks.filter(
+              (task) => task.projectId != null && projectById.has(task.projectId),
+            ),
+          }
+        : inboxState;
     return (
       <BacksterosTaskList
         state={inboxListState}
         searchQuery={searchQuery}
         onRetry={reloadInbox}
-        activeTaskId={activeTaskId}
+        activeTaskId={sidepanelActiveTaskId}
+        keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
         statusFilter={INBOX_STATUS_FILTER}
+        showDueGroup
         projectNameById={projectNameById}
         emptyLabel="Nothing needs attention"
         onSelectTask={handleSelectInboxTask}
@@ -224,7 +614,8 @@ export function BacksterosPanel({
           state={tasksState}
           searchQuery={searchQuery}
           onRetry={reloadTasks}
-          activeTaskId={activeTaskId}
+          activeTaskId={sidepanelActiveTaskId}
+          keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
           onSelectTask={handleSelectProjectTask}
         />
       </div>
@@ -236,8 +627,10 @@ export function BacksterosPanel({
       state={projectsState}
       searchQuery={searchQuery}
       selectedProjectId={selectedProjectId}
+      keyboardFocusProjectId={sidepanelKeyboardFocusProjectId}
       onRetry={reloadProjects}
       onSelectProject={handleSelectProject}
+      onReorderProjects={handleReorderProjects}
     />
   );
 }

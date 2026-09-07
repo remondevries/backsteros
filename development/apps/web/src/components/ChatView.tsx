@@ -301,6 +301,7 @@ import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { BacksterosTaskKickoffStart } from "./chat/BacksterosTaskKickoffStart";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -317,8 +318,11 @@ import {
   resolveActiveBacksterosTaskChatBinding,
   resolveActiveBacksterosTaskId,
 } from "~/backsteros/openTaskChat";
+import { useBacksterosComposerFocusRequest } from "~/backsteros/useBacksterosComposerFocusRequest";
 import { fetchBacksterosTask } from "~/backsteros/client";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
+import { useBacksterosTaskKickoffGateStore } from "~/backsteros/taskKickoffGateStore";
+import { isBacksterosManagedKickoffPrompt } from "~/backsteros/taskKickoffPrompt";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import { getBacksterosTaskDisplayId } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
@@ -593,31 +597,14 @@ function eventPathContainsSelector(event: Event, selector: string): boolean {
 
 /**
  * Whether input that landed outside any editable or interactive element
- * should be redirected into the composer. Shared by type-to-focus and
- * paste-to-focus so both honour the same surfaces.
+ * should be redirected into the composer. Used by paste-to-focus so a
+ * resting (blurred) composer still receives clipboard text.
  */
 function shouldRedirectInputToComposer(event: Event): boolean {
   if (event.defaultPrevented) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
   if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;
-  return true;
-}
-
-function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
-  if (event.isComposing) return false;
-  if (event.metaKey || event.ctrlKey || event.altKey) return false;
-  if (event.key.length !== 1) return false;
-  if (!shouldRedirectInputToComposer(event)) return false;
-
-  // The right-panel surface launcher claims its shortcut letters while it is
-  // visible (data attribute set in RightPanelTabs); those keys open surfaces
-  // instead of typing into the composer.
-  const launcherKeys = document
-    .querySelector("[data-surface-launcher-keys]")
-    ?.getAttribute("data-surface-launcher-keys");
-  if (launcherKeys && launcherKeys.toLowerCase().includes(event.key.toLowerCase())) return false;
-
   return true;
 }
 
@@ -811,11 +798,7 @@ interface PersistentThreadTerminalDrawerProps {
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
 }
 
-function PreviewOwnerSync({
-  threadRef,
-}: {
-  threadRef: ScopedThreadRef;
-}) {
+function PreviewOwnerSync({ threadRef }: { threadRef: ScopedThreadRef }) {
   // Keep server preview sessions warm for owners of project-scoped browser tabs
   // without mirroring into React state (that caused update loops).
   usePreviewSession(threadRef);
@@ -1794,6 +1777,11 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [backsterosTaskChatByTaskId, draftId, routeKind, routeThreadKey],
   );
+  const backsterosKickoffGate = useBacksterosTaskKickoffGateStore((state) =>
+    activeBacksterosTaskId ? (state.byTaskId[activeBacksterosTaskId] ?? null) : null,
+  );
+  const setBacksterosKickoffMode = useBacksterosTaskKickoffGateStore((state) => state.setMode);
+  const clearBacksterosKickoffGate = useBacksterosTaskKickoffGateStore((state) => state.clear);
   const { state: backsterosProjectsState } = useBacksterosCodebaseProjects(
     Boolean(activeBacksterosTaskChat),
   );
@@ -1801,12 +1789,18 @@ export default function ChatView(props: ChatViewProps) {
     backsterosProjectsState.status === "ready" ? backsterosProjectsState.projects : [];
   const taskDetailSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const taskDetailVisible = useBacksterosTaskDetailUiStore((state) => state.visible);
+  const descriptionEditingTaskId = useBacksterosTaskDetailUiStore(
+    (state) => state.descriptionEditingTaskId,
+  );
   const openTaskDetail = useBacksterosTaskDetailUiStore((state) => state.openTaskDetail);
   const closeTaskDetail = useBacksterosTaskDetailUiStore((state) => state.closeTaskDetail);
+  const backsterosDescriptionEditing = Boolean(
+    activeBacksterosTaskId && descriptionEditingTaskId === activeBacksterosTaskId,
+  );
   const taskDetailOpenForActiveChat = Boolean(
     activeBacksterosTaskId &&
-      taskDetailVisible &&
-      taskDetailSelection?.taskId === activeBacksterosTaskId,
+    taskDetailVisible &&
+    taskDetailSelection?.taskId === activeBacksterosTaskId,
   );
   const handleToggleTaskDetail = useCallback(() => {
     if (!activeBacksterosTaskId || !activeBacksterosTaskChat) return;
@@ -1818,9 +1812,7 @@ export default function ChatView(props: ChatViewProps) {
       backsterosProjects.find(
         (entry) => entry.id === activeBacksterosTaskChat.backsterosProjectId,
       ) ??
-      (taskDetailSelection?.taskId === activeBacksterosTaskId
-        ? taskDetailSelection.project
-        : null);
+      (taskDetailSelection?.taskId === activeBacksterosTaskId ? taskDetailSelection.project : null);
     if (!project) return;
     openTaskDetail({ taskId: activeBacksterosTaskId, project });
   }, [
@@ -1878,9 +1870,7 @@ export default function ChatView(props: ChatViewProps) {
             threadId,
             draftThread,
             fallbackDraftProject?.defaultModelSelection ?? NO_PROVIDER_MODEL_SELECTION,
-            activeBacksterosTaskChat?.title
-              ? { title: activeBacksterosTaskChat.title }
-              : undefined,
+            activeBacksterosTaskChat?.title ? { title: activeBacksterosTaskChat.title } : undefined,
           )
         : undefined,
     [
@@ -3178,6 +3168,85 @@ export default function ChatView(props: ChatViewProps) {
     draftHeroDockRequested,
     backgroundSubmissionPending,
   });
+  const showBacksterosKickoffGate = Boolean(
+    activeBacksterosTaskId && backsterosKickoffGate?.mode === "gate" && isDraftHeroState,
+  );
+  const hideComposerForBacksterosKickoff = Boolean(
+    activeBacksterosTaskId &&
+    backsterosKickoffGate &&
+    (backsterosKickoffGate.mode === "gate" || backsterosKickoffGate.mode === "pending-send") &&
+    isDraftHeroState,
+  );
+  const handleBacksterosStartWorking = useCallback(() => {
+    if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
+    const text = backsterosKickoffGate.kickoffPrompt;
+    setComposerDraftPrompt(draftId, text);
+    promptRef.current = text;
+    setBacksterosKickoffMode(activeBacksterosTaskId, "pending-send");
+  }, [
+    activeBacksterosTaskId,
+    backsterosKickoffGate,
+    draftId,
+    setBacksterosKickoffMode,
+    setComposerDraftPrompt,
+  ]);
+  const handleBacksterosKickoffAdvanced = useCallback(() => {
+    if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
+    const text = backsterosKickoffGate.kickoffPrompt;
+    setComposerDraftPrompt(draftId, text);
+    promptRef.current = text;
+    setBacksterosKickoffMode(activeBacksterosTaskId, "advanced");
+    queueMicrotask(() => {
+      composerRef.current?.resetCursorState({ prompt: text, cursor: text.length });
+      composerRef.current?.focusAtEnd();
+    });
+  }, [
+    activeBacksterosTaskId,
+    backsterosKickoffGate,
+    composerRef,
+    draftId,
+    setBacksterosKickoffMode,
+    setComposerDraftPrompt,
+  ]);
+  useEffect(() => {
+    if (!activeBacksterosTaskId || backsterosKickoffGate?.mode !== "pending-send") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      composerRef.current?.submitForeground();
+      clearBacksterosKickoffGate(activeBacksterosTaskId);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeBacksterosTaskId,
+    backsterosKickoffGate?.mode,
+    clearBacksterosKickoffGate,
+    composerRef,
+  ]);
+  useEffect(() => {
+    if (!activeBacksterosTaskId) return;
+    if (timelineEntries.length === 0 && !isWorking) return;
+    clearBacksterosKickoffGate(activeBacksterosTaskId);
+  }, [activeBacksterosTaskId, clearBacksterosKickoffGate, isWorking, timelineEntries.length]);
+  useEffect(() => {
+    if (!activeBacksterosTaskId || !draftId || !isDraftHeroState) return;
+    if (backsterosKickoffGate) return;
+    const prompt = useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt ?? "";
+    if (prompt.trim().length === 0) return;
+    // Legacy unsent drafts that still have the auto kickoff in the composer.
+    if (!isBacksterosManagedKickoffPrompt(prompt)) return;
+    useBacksterosTaskKickoffGateStore.getState().setGate(activeBacksterosTaskId, {
+      mode: "gate",
+      kickoffPrompt: prompt,
+    });
+    setComposerDraftPrompt(draftId, "");
+  }, [
+    activeBacksterosTaskId,
+    backsterosKickoffGate,
+    draftId,
+    isDraftHeroState,
+    setComposerDraftPrompt,
+  ]);
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -3429,6 +3498,17 @@ export default function ChatView(props: ChatViewProps) {
       focusComposer();
     });
   }, [focusComposer]);
+
+  // Enter / click on a BacksterOS task focuses the chat composer once mounted.
+  useBacksterosComposerFocusRequest({
+    composerRef,
+    focusComposer,
+    activeBacksterosTaskId,
+    draftId,
+    setComposerDraftPrompt,
+    setBacksterosKickoffMode,
+    promptRef,
+  });
   const useArtifactTemplate = useCallback(
     (template: CodexArtifactTemplate) => {
       const composer = composerRef.current;
@@ -4380,9 +4460,7 @@ export default function ChatView(props: ChatViewProps) {
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
-      useRightPanelStore
-        .getState()
-        .activateSurface(activeThreadRef, surface.id, activeProjectRef);
+      useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id, activeProjectRef);
       if (surface.kind === "preview" && surface.resourceId) {
         setActivePreviewTab(ownerThreadRefForSurface(surface, activeThreadRef), surface.resourceId);
       }
@@ -4437,10 +4515,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const closeAfterAgentBrowserConfirmation = useCallback(
     (surfaces: readonly RightPanelSurface[], closeSurfaces: () => void) => {
-      const message = agentControlledBrowserCloseConfirmation(
-        surfaces,
-        composedDesktopByTabId,
-      );
+      const message = agentControlledBrowserCloseConfirmation(surfaces, composedDesktopByTabId);
       if (!message) {
         closeSurfaces();
         return;
@@ -5101,16 +5176,6 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(() => {
     setIsRevertingCheckpoint(false);
   }, [activeThread?.id]);
-
-  useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen) return;
-    const frame = window.requestAnimationFrame(() => {
-      focusComposer();
-    });
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -5995,24 +6060,27 @@ export default function ChatView(props: ChatViewProps) {
         terminalFocus: terminalFocusOwner !== null,
         terminalOpen: Boolean(terminalUiState.terminalOpen),
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+        composerFocus: composerRef.current?.isFocused() ?? false,
       };
-
-      if (
-        !shortcutContext.terminalFocus &&
-        !shortcutContext.modelPickerOpen &&
-        shouldTypeToFocusComposer(event)
-      ) {
-        if (composerRef.current?.insertTextAtEnd(event.key)) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-      }
 
       const command = resolveShortcutCommand(event, keybindings, {
         context: shortcutContext,
       });
       if (!command) return;
+
+      if (command === "composer.focus") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) focusComposer();
+        return;
+      }
+
+      if (command === "composer.blur") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.blur();
+        return;
+      }
 
       if (command === "thread.copyReference") {
         event.preventDefault();
@@ -6205,6 +6273,7 @@ export default function ChatView(props: ChatViewProps) {
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
+    focusComposer,
     composerRef,
   ]);
 
@@ -8139,7 +8208,7 @@ export default function ChatView(props: ChatViewProps) {
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div className="group/composer-stack pointer-events-auto relative z-10">
-                  {isDraftHeroState ? (
+                  {isDraftHeroState && !showBacksterosKickoffGate ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
                         className="pb-8 group-has-data-[composer-shoulder-tab]/composer-stack:pb-4"
@@ -8168,156 +8237,193 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
-                      <ComposerSurface.Host>
-                        <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
-                          <ChatComposer
-                            composerRef={composerRef}
-                            composerDraftTarget={composerDraftTarget}
-                            environmentId={environmentId}
-                            attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
-                            supportsAttachmentUploads={supportsAttachmentUploads}
-                            maxFileAttachmentBytes={maxFileAttachmentBytes}
-                            routeKind={routeKind}
-                            routeThreadRef={routeThreadRef}
-                            draftId={draftId}
-                            activeThreadId={activeThreadId}
-                            activeThreadEnvironmentId={activeThread?.environmentId}
-                            activeThread={activeThread}
-                            isServerThread={isServerThread}
-                            isLocalDraftThread={isLocalDraftThread}
-                            forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
-                            projectSelectionRequired={isLocalDraftThread && activeProject === null}
-                            phase={phase}
-                            isConnecting={isConnecting}
-                            isSendBusy={isSendBusy}
-                            sendDisabledReason={
-                              feedbackUploading
-                                ? "Sending feedback"
-                                : threadDetailLoading
-                                  ? "Messages loading"
-                                  : null
-                            }
-                            isPreparingWorktree={isPreparingWorktree}
-                            bannerItems={composerBannerItems}
-                            environmentUnavailable={activeEnvironmentUnavailableState}
-                            activePendingApproval={activePendingApproval}
-                            pendingApprovals={pendingApprovals}
-                            pendingUserInputs={pendingUserInputs}
-                            activePendingProgress={activePendingProgress}
-                            activePendingResolvedAnswers={activePendingResolvedAnswers}
-                            activePendingIsResponding={activePendingIsResponding}
-                            activePendingDraftAnswers={activePendingDraftAnswers}
-                            activePendingQuestionIndex={activePendingQuestionIndex}
-                            respondingRequestIds={respondingRequestIds}
-                            showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-                            activeProposedPlan={activeProposedPlan}
-                            activeTasksProgress={activeComposerTasksProgress}
-                            activeTaskSteps={activeComposerTaskSteps}
-                            threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
-                            runtimeMode={runtimeMode}
-                            interactionMode={interactionMode}
-                            lockedProvider={lockedProvider}
-                            providerStatuses={providerStatuses as ServerProvider[]}
-                            activeProjectDefaultModelSelection={
-                              activeProject?.defaultModelSelection
-                            }
-                            activeThreadModelSelection={activeThread?.modelSelection}
-                            activeContextWindow={activeContextWindow}
-                            compactThreadUnavailable={compactThreadUnavailable}
-                            compactDisabled={compactDisabled}
-                            compactDisabledReason={compactDisabledReason}
-                            resolvedTheme={resolvedTheme}
-                            settings={settings}
-                            keybindings={keybindings}
-                            terminalOpen={Boolean(terminalUiState.terminalOpen)}
-                            gitCwd={gitCwd}
-                            restingControlsHost={restingComposerControlsHost}
-                            restingControlsHaveLeadingContext={
-                              isGitRepo || showComposerEnvironmentIndicator
-                            }
-                            onRestingControlsVisibilityChange={setRestingComposerControlsVisible}
-                            getTimelineScrollableNode={getTimelineScrollableNode}
-                            isTimelineAtLogicalEnd={isTimelineAtLogicalEnd}
-                            onComposerOverlayHeightChange={publishComposerOverlayHeight}
-                            onRestingChange={onComposerRestingChange}
-                            promptRef={promptRef}
-                            composerImagesRef={composerImagesRef}
-                            composerFilesRef={composerFilesRef}
-                            composerTerminalContextsRef={composerTerminalContextsRef}
-                            composerElementContextsRef={composerElementContextsRef}
-                            onPageScrollKeyDown={onComposerPageScrollKeyDown}
-                            onPageScrollKeyUp={onComposerPageScrollKeyUp}
-                            onPageScrollRelease={onComposerPageScrollRelease}
-                            onSend={onSend}
-                            onInterrupt={onInterrupt}
-                            onClearChatSession={handleClearChatSession}
-                            onImplementPlanInNewThread={onImplementPlanInNewThread}
-                            onRespondToApproval={onRespondToApproval}
-                            onSelectActivePendingUserInputOption={
-                              onSelectActivePendingUserInputOption
-                            }
-                            onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                            onPreviousActivePendingUserInputQuestion={
-                              onPreviousActivePendingUserInputQuestion
-                            }
-                            onChangeActivePendingUserInputCustomAnswer={
-                              onChangeActivePendingUserInputCustomAnswer
-                            }
-                            onProviderModelSelect={onProviderModelSelect}
-                            onOpenProviderSetup={openProviderSetup}
-                            getModelDisabledReason={getModelDisabledReason}
-                            toggleInteractionMode={toggleInteractionMode}
-                            handleRuntimeModeChange={handleRuntimeModeChange}
-                            handleInteractionModeChange={handleInteractionModeChange}
-                            focusComposer={focusComposer}
-                            scheduleComposerFocus={scheduleComposerFocus}
-                            setThreadError={setThreadError}
-                            onExpandImage={onExpandTimelineImage}
-                            onFileOpen={openFileAttachment}
-                          />
-                        </div>
-                      </ComposerSurface.Host>
-                      <div className="min-h-0">
-                        <div
-                          data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
-                          className="relative z-0"
-                        >
-                          {mountComposerContextStrip && (
-                            <div className="pointer-events-auto">
-                              <BranchToolbar
-                                environmentId={activeThread.environmentId}
-                                threadId={activeThread.id}
-                                showGitControls={isGitRepo}
-                                {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                                onEnvModeChange={onEnvModeChange}
-                                startFromOrigin={startFromOrigin}
-                                onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
-                                  : {})}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? {
-                                      activeThreadBranchOverride: activeThreadBranch,
-                                      onActiveThreadBranchOverrideChange:
-                                        setPendingServerThreadBranch,
-                                    }
-                                  : {})}
-                                envLocked={envLocked}
-                                onComposerFocusRequest={scheduleComposerFocus}
-                                {...(canCheckoutPullRequestIntoThread
-                                  ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                  : {})}
-                                {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                                availableEnvironments={logicalProjectEnvironments}
-                                composerControlsHostRef={setRestingComposerControlsHost}
-                                contextStripVisible={showComposerContextStrip}
-                              />
-                            </div>
-                          )}
-                        </div>
+                    {showBacksterosKickoffGate && activeBacksterosTaskChat ? (
+                      <div className="pointer-events-auto pb-2">
+                        <BacksterosTaskKickoffStart
+                          displayId={activeBacksterosTaskChat.displayId}
+                          title={activeBacksterosTaskChat.title}
+                          busy={isSendBusy || isConnecting || backsterosDescriptionEditing}
+                          startDisabledReason={
+                            backsterosDescriptionEditing
+                              ? "Switch the description to Preview before starting"
+                              : null
+                          }
+                          onStartWorking={handleBacksterosStartWorking}
+                          onAdvanced={handleBacksterosKickoffAdvanced}
+                        />
                       </div>
-                    </ComposerSurface.Shell>
+                    ) : null}
+                    <div
+                      className={
+                        hideComposerForBacksterosKickoff
+                          ? "pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+                          : "relative z-10"
+                      }
+                      aria-hidden={hideComposerForBacksterosKickoff || undefined}
+                    >
+                      <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
+                        <ComposerSurface.Host>
+                          <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
+                            <ChatComposer
+                              composerRef={composerRef}
+                              composerDraftTarget={composerDraftTarget}
+                              environmentId={environmentId}
+                              attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
+                              supportsAttachmentUploads={supportsAttachmentUploads}
+                              maxFileAttachmentBytes={maxFileAttachmentBytes}
+                              routeKind={routeKind}
+                              routeThreadRef={routeThreadRef}
+                              draftId={draftId}
+                              activeThreadId={activeThreadId}
+                              activeThreadEnvironmentId={activeThread?.environmentId}
+                              activeThread={activeThread}
+                              isServerThread={isServerThread}
+                              isLocalDraftThread={isLocalDraftThread}
+                              forceExpandedOnMobile={
+                                forceExpandedMobileComposer && isDraftHeroState
+                              }
+                              projectSelectionRequired={
+                                // Missing project *entity* (still hydrating / deleted) must not
+                                // lock BacksterOS task chats — those already bind a T3 project.
+                                isLocalDraftThread &&
+                                activeProject === null &&
+                                !activeBacksterosTaskChat
+                              }
+                              phase={phase}
+                              isConnecting={isConnecting}
+                              isSendBusy={isSendBusy}
+                              sendDisabledReason={
+                                feedbackUploading
+                                  ? "Sending feedback"
+                                  : threadDetailLoading
+                                    ? "Messages loading"
+                                    : backsterosDescriptionEditing
+                                      ? "Switch the description to Preview before sending"
+                                      : null
+                              }
+                              isPreparingWorktree={isPreparingWorktree}
+                              bannerItems={composerBannerItems}
+                              environmentUnavailable={activeEnvironmentUnavailableState}
+                              activePendingApproval={activePendingApproval}
+                              pendingApprovals={pendingApprovals}
+                              pendingUserInputs={pendingUserInputs}
+                              activePendingProgress={activePendingProgress}
+                              activePendingResolvedAnswers={activePendingResolvedAnswers}
+                              activePendingIsResponding={activePendingIsResponding}
+                              activePendingDraftAnswers={activePendingDraftAnswers}
+                              activePendingQuestionIndex={activePendingQuestionIndex}
+                              respondingRequestIds={respondingRequestIds}
+                              showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+                              activeProposedPlan={activeProposedPlan}
+                              activeTasksProgress={activeComposerTasksProgress}
+                              activeTaskSteps={activeComposerTaskSteps}
+                              threadSyncPhase={
+                                activeEnvironmentUnavailable ? null : threadSyncPhase
+                              }
+                              runtimeMode={runtimeMode}
+                              interactionMode={interactionMode}
+                              lockedProvider={lockedProvider}
+                              providerStatuses={providerStatuses as ServerProvider[]}
+                              activeProjectDefaultModelSelection={
+                                activeProject?.defaultModelSelection
+                              }
+                              activeThreadModelSelection={activeThread?.modelSelection}
+                              activeContextWindow={activeContextWindow}
+                              compactThreadUnavailable={compactThreadUnavailable}
+                              compactDisabled={compactDisabled}
+                              compactDisabledReason={compactDisabledReason}
+                              resolvedTheme={resolvedTheme}
+                              settings={settings}
+                              keybindings={keybindings}
+                              terminalOpen={Boolean(terminalUiState.terminalOpen)}
+                              gitCwd={gitCwd}
+                              restingControlsHost={restingComposerControlsHost}
+                              restingControlsHaveLeadingContext={
+                                isGitRepo || showComposerEnvironmentIndicator
+                              }
+                              onRestingControlsVisibilityChange={setRestingComposerControlsVisible}
+                              getTimelineScrollableNode={getTimelineScrollableNode}
+                              isTimelineAtLogicalEnd={isTimelineAtLogicalEnd}
+                              onComposerOverlayHeightChange={publishComposerOverlayHeight}
+                              onRestingChange={onComposerRestingChange}
+                              promptRef={promptRef}
+                              composerImagesRef={composerImagesRef}
+                              composerFilesRef={composerFilesRef}
+                              composerTerminalContextsRef={composerTerminalContextsRef}
+                              composerElementContextsRef={composerElementContextsRef}
+                              onPageScrollKeyDown={onComposerPageScrollKeyDown}
+                              onPageScrollKeyUp={onComposerPageScrollKeyUp}
+                              onPageScrollRelease={onComposerPageScrollRelease}
+                              onSend={onSend}
+                              onInterrupt={onInterrupt}
+                              onClearChatSession={handleClearChatSession}
+                              onImplementPlanInNewThread={onImplementPlanInNewThread}
+                              onRespondToApproval={onRespondToApproval}
+                              onSelectActivePendingUserInputOption={
+                                onSelectActivePendingUserInputOption
+                              }
+                              onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                              onPreviousActivePendingUserInputQuestion={
+                                onPreviousActivePendingUserInputQuestion
+                              }
+                              onChangeActivePendingUserInputCustomAnswer={
+                                onChangeActivePendingUserInputCustomAnswer
+                              }
+                              onProviderModelSelect={onProviderModelSelect}
+                              onOpenProviderSetup={openProviderSetup}
+                              getModelDisabledReason={getModelDisabledReason}
+                              toggleInteractionMode={toggleInteractionMode}
+                              handleRuntimeModeChange={handleRuntimeModeChange}
+                              handleInteractionModeChange={handleInteractionModeChange}
+                              focusComposer={focusComposer}
+                              scheduleComposerFocus={scheduleComposerFocus}
+                              setThreadError={setThreadError}
+                              onExpandImage={onExpandTimelineImage}
+                              onFileOpen={openFileAttachment}
+                            />
+                          </div>
+                        </ComposerSurface.Host>
+                        <div className="min-h-0">
+                          <div
+                            data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
+                            className="relative z-0"
+                          >
+                            {mountComposerContextStrip && (
+                              <div className="pointer-events-auto">
+                                <BranchToolbar
+                                  environmentId={activeThread.environmentId}
+                                  threadId={activeThread.id}
+                                  showGitControls={isGitRepo}
+                                  {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                                  onEnvModeChange={onEnvModeChange}
+                                  startFromOrigin={startFromOrigin}
+                                  onStartFromOriginChange={onStartFromOriginChange}
+                                  {...(canOverrideServerThreadEnvMode
+                                    ? { effectiveEnvModeOverride: envMode }
+                                    : {})}
+                                  {...(canOverrideServerThreadEnvMode
+                                    ? {
+                                        activeThreadBranchOverride: activeThreadBranch,
+                                        onActiveThreadBranchOverrideChange:
+                                          setPendingServerThreadBranch,
+                                      }
+                                    : {})}
+                                  envLocked={envLocked}
+                                  onComposerFocusRequest={scheduleComposerFocus}
+                                  {...(canCheckoutPullRequestIntoThread
+                                    ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                    : {})}
+                                  {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                                  availableEnvironments={logicalProjectEnvironments}
+                                  composerControlsHostRef={setRestingComposerControlsHost}
+                                  contextStripVisible={showComposerContextStrip}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </ComposerSurface.Shell>
+                    </div>
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

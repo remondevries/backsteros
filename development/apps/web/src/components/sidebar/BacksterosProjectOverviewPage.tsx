@@ -1,13 +1,15 @@
 import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
+import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
+import { orderedBacksterosTaskIds } from "~/backsteros/listTraversal";
+import { useListKeyboardNavStore } from "~/backsteros/listKeyboardNavStore";
 import {
-  openBacksterosTaskChat,
-  resolveActiveBacksterosTaskId,
-} from "~/backsteros/openTaskChat";
-import { usePromoteWorkingBacksterosTasks, subscribeBacksterosTaskStatusChanged } from "~/backsteros/promoteWorkingTask";
+  usePromoteWorkingBacksterosTasks,
+  subscribeBacksterosTaskStatusChanged,
+} from "~/backsteros/promoteWorkingTask";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
@@ -19,10 +21,7 @@ import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import {
-  WorkspaceBreadcrumb,
-  WorkspaceBreadcrumbItem,
-} from "../WorkspaceBreadcrumb";
+import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { Button } from "../ui/button";
 import { BacksterosProjectTasksOverview } from "./BacksterosProjectTasksOverview";
 
@@ -48,9 +47,11 @@ export function BacksterosProjectOverviewPage({
   const openCreateTaskDetail = useBacksterosTaskDetailUiStore(
     (store) => store.openCreateTaskDetail,
   );
-  const { state: tasksState, reload: reloadTasks, patchLocalTask } = useBacksterosProjectTasks(
-    projectId,
-  );
+  const {
+    state: tasksState,
+    reload: reloadTasks,
+    patchLocalTask,
+  } = useBacksterosProjectTasks(projectId);
   const byTaskId = useBacksterosTaskChatStore((state) => state.byTaskId);
   const routeTarget = useParams({
     strict: false,
@@ -87,9 +88,8 @@ export function BacksterosProjectOverviewPage({
   );
 
   const selectedTaskId =
-    selection?.taskId && selection.project.id === projectId
-      ? selection.taskId
-      : activeTaskId;
+    activeTaskId ??
+    (selection?.taskId && selection.project.id === projectId ? selection.taskId : null);
 
   const handleNewTask = useCallback(() => {
     if (!project) return;
@@ -111,6 +111,73 @@ export function BacksterosProjectOverviewPage({
     [ensureT3Project, openTaskDetail, project, projects, router],
   );
 
+  const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
+  const listKeyboardActiveZone = useListKeyboardNavStore((state) => state.activeZone);
+  const [keyboardHighlightId, setKeyboardHighlightId] = useState<string | null>(null);
+  const keyboardHighlightIdRef = useRef(keyboardHighlightId);
+  keyboardHighlightIdRef.current = keyboardHighlightId;
+  const tasksStateRef = useRef(tasksState);
+  tasksStateRef.current = tasksState;
+  const handleSelectTaskRef = useRef(handleSelectTask);
+  handleSelectTaskRef.current = handleSelectTask;
+
+  const mainListItemIds = useMemo(() => {
+    if (tasksState.status !== "ready") return [] as string[];
+    return orderedBacksterosTaskIds(tasksState.tasks);
+  }, [tasksState]);
+  const mainListItemIdsRef = useRef(mainListItemIds);
+  mainListItemIdsRef.current = mainListItemIds;
+
+  useEffect(() => {
+    setKeyboardHighlightId(null);
+  }, [projectId]);
+
+  // Enter from the projects rail lands on main — highlight the first task (or the
+  // open task) so the primary outline shows immediately.
+  useEffect(() => {
+    if (listKeyboardActiveZone !== "main") return;
+
+    if (selection?.taskId && selection.project.id === projectId) {
+      setKeyboardHighlightId(selection.taskId);
+      return;
+    }
+
+    if (mainListItemIds.length === 0) return;
+    setKeyboardHighlightId((current) =>
+      current != null && mainListItemIds.includes(current) ? current : (mainListItemIds[0] ?? null),
+    );
+  }, [
+    listKeyboardActiveZone,
+    mainListItemIds,
+    projectId,
+    selection?.project.id,
+    selection?.taskId,
+  ]);
+
+  // Main-column task list so Tab / Enter from the projects rail can hand j/k here.
+  // Keep the list registered while a task is open so Escape can return focus here
+  // without closing the task. Create-task (taskId null) still owns the sidepanel.
+  // Use a ref for ids so loading→ready does not thrash register/unregister.
+  useEffect(() => {
+    if (selection?.taskId === null) return;
+    return registerListKeyboardNav({
+      zone: "main",
+      getItemIds: () => mainListItemIdsRef.current,
+      getSelectedId: () => keyboardHighlightIdRef.current,
+      onHighlight: (taskId) => setKeyboardHighlightId(taskId),
+      onActivate: (taskId) => {
+        const currentTasks = tasksStateRef.current;
+        const task =
+          currentTasks.status === "ready"
+            ? currentTasks.tasks.find((entry) => entry.id === taskId)
+            : undefined;
+        if (!task) return;
+        setKeyboardHighlightId(taskId);
+        handleSelectTaskRef.current(task);
+      },
+    });
+  }, [registerListKeyboardNav, selection?.taskId]);
+
   usePromoteWorkingBacksterosTasks();
   useEffect(() => {
     return subscribeBacksterosTaskStatusChanged(({ taskId, status }) => {
@@ -118,20 +185,17 @@ export function BacksterosProjectOverviewPage({
     });
   }, [patchLocalTask]);
 
+  const keyboardFocusTaskId = listKeyboardActiveZone === "main" ? keyboardHighlightId : null;
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-background text-foreground">
       <WorkspacePageHeader
         electron={isElectron}
-        className={cn(
-          "border-b border-border/50",
-          isElectron && "drag-region",
-        )}
+        className={cn("border-b border-border/50", isElectron && "drag-region")}
       >
         <WorkspaceBreadcrumb ariaLabel="Project breadcrumb" className="min-w-0 flex-1">
           <WorkspaceBreadcrumbItem current className="min-w-0">
-            <h2 className="min-w-0 truncate text-sm font-medium text-foreground">
-              {projectName}
-            </h2>
+            <h2 className="min-w-0 truncate text-sm font-medium text-foreground">{projectName}</h2>
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
         {project ? (
@@ -151,6 +215,7 @@ export function BacksterosProjectOverviewPage({
         state={tasksState}
         projectKey={project?.key ?? null}
         selectedTaskId={selectedTaskId}
+        keyboardFocusTaskId={keyboardFocusTaskId}
         onRetry={reloadTasks}
         onSelectTask={handleSelectTask}
       />

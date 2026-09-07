@@ -4,15 +4,10 @@ import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import { useThreadShells } from "~/state/entities";
 
 import { fetchBacksterosTask, updateBacksterosTask } from "./client";
-import {
-  useBacksterosTaskChatStore,
-  type BacksterosTaskChatBinding,
-} from "./taskChatStore";
-import {
-  migrateBacksterosTaskStatus,
-  type BacksterosTaskStatus,
-} from "./taskStatus";
+import { useBacksterosTaskChatStore, type BacksterosTaskChatBinding } from "./taskChatStore";
+import { migrateBacksterosTaskStatus, type BacksterosTaskStatus } from "./taskStatus";
 import { useBacksterosWorkingTaskIds } from "./taskChatWorking";
+import { clearBacksterosDisplayedAgentPresence } from "./useBacksterosAgentPresence";
 
 const promoteInFlight = new Set<string>();
 const reviewInFlight = new Set<string>();
@@ -66,9 +61,7 @@ const REVIEWABLE_STATUSES = new Set<BacksterosTaskStatus>([
  *
  * @returns true when the status was changed.
  */
-export async function markBacksterosTaskInProgressForAgent(
-  taskId: string,
-): Promise<boolean> {
+export async function markBacksterosTaskInProgressForAgent(taskId: string): Promise<boolean> {
   const task = await fetchBacksterosTask(taskId);
   const status = migrateBacksterosTaskStatus(task.status);
   if (status === "in_progress") return false;
@@ -85,9 +78,7 @@ export async function markBacksterosTaskInProgressForAgent(
  *
  * @returns true when the status was changed.
  */
-export async function markBacksterosTaskInReviewForAgent(
-  taskId: string,
-): Promise<boolean> {
+export async function markBacksterosTaskInReviewForAgent(taskId: string): Promise<boolean> {
   const task = await fetchBacksterosTask(taskId);
   const status = migrateBacksterosTaskStatus(task.status);
   if (status === "in_review") return false;
@@ -173,6 +164,9 @@ export function usePromoteWorkingBacksterosTasks() {
       reviewInFlight.add(taskId);
       void markBacksterosTaskInReviewForAgent(taskId)
         .then((changed) => {
+          // Work stretch ended — drop presence so the pulse cannot linger on
+          // a stale remote poll while status already reads In Review.
+          clearBacksterosDisplayedAgentPresence(taskId);
           if (!changed) return;
           publishBacksterosTaskStatusChanged({ taskId, status: "in_review" });
         })

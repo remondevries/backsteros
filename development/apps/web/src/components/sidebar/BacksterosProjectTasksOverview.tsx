@@ -2,17 +2,11 @@ import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { useMemo, useState, type CSSProperties } from "react";
 
 import { getBacksterosTaskDisplayId, type BacksterosTask } from "~/backsteros/types";
-import {
-  formatTaskDueMetaLabel,
-  getTaskDueDateUrgency,
-} from "~/backsteros/taskDueDate";
+import { formatTaskDueMetaLabel, getTaskDueDateUrgency } from "~/backsteros/taskDueDate";
 import { getBacksterosTaskPriorityLabel } from "~/backsteros/taskDetailFormat";
 import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
-import {
-  groupBacksterosTasksByStatus,
-  type BacksterosTaskStatus,
-} from "~/backsteros/taskStatus";
+import { groupBacksterosTasksByStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
 import { getBacksterosTaskStatusHeaderGradientStyle } from "~/backsteros/taskStatusHeaderGradient";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
@@ -39,10 +33,11 @@ function BacksterosOverviewTaskRow(props: {
   readonly task: BacksterosTask;
   readonly projectKey: string | null | undefined;
   readonly selected: boolean;
+  readonly keyboardFocused: boolean;
   readonly working: boolean;
   readonly onSelect: (task: BacksterosTask) => void;
 }) {
-  const { task, projectKey, selected, working, onSelect } = props;
+  const { task, projectKey, selected, keyboardFocused, working, onSelect } = props;
   const displayId = getBacksterosTaskDisplayId(task, projectKey);
   const dueLabel = formatTaskDueMetaLabel(task.dueDate);
   const urgency = getTaskDueDateUrgency(task.dueDate, new Date(), {
@@ -56,12 +51,14 @@ function BacksterosOverviewTaskRow(props: {
         type="button"
         onClick={() => onSelect(task)}
         aria-current={selected ? "true" : undefined}
-        className={cn("bos-task-row", selected && "is-selected")}
+        data-keyboard-nav-item={task.id}
+        className={cn(
+          "bos-task-row",
+          selected && "is-selected",
+          keyboardFocused && "is-keyboard-focus",
+        )}
       >
-        <span
-          className="bos-task-row__priority"
-          title={getBacksterosTaskPriorityLabel(priority)}
-        >
+        <span className="bos-task-row__priority" title={getBacksterosTaskPriorityLabel(priority)}>
           <BacksterosTaskPriorityIcon priority={priority} size={14} />
         </span>
         {displayId ? <span className="bos-task-row__id">{displayId}</span> : null}
@@ -93,6 +90,7 @@ function BacksterosOverviewStatusGroup(props: {
   readonly projectKey: string | null | undefined;
   readonly collapsed: boolean;
   readonly selectedTaskId: string | null;
+  readonly keyboardFocusTaskId: string | null;
   readonly workingTaskIds: ReadonlySet<string>;
   readonly onToggle: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
@@ -104,6 +102,7 @@ function BacksterosOverviewStatusGroup(props: {
     projectKey,
     collapsed,
     selectedTaskId,
+    keyboardFocusTaskId,
     workingTaskIds,
     onToggle,
     onSelectTask,
@@ -144,6 +143,7 @@ function BacksterosOverviewStatusGroup(props: {
               task={task}
               projectKey={projectKey}
               selected={selectedTaskId === task.id}
+              keyboardFocused={keyboardFocusTaskId === task.id}
               working={workingTaskIds.has(task.id)}
               onSelect={onSelectTask}
             />
@@ -158,13 +158,20 @@ export function BacksterosProjectTasksOverview(props: {
   readonly state: BacksterosProjectTasksState;
   readonly projectKey?: string | null;
   readonly selectedTaskId: string | null;
+  /** j/k cursor — primary outline while this list owns keyboard focus. */
+  readonly keyboardFocusTaskId?: string | null;
   readonly onRetry: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
 }) {
-  const { state, projectKey, selectedTaskId, onRetry, onSelectTask } = props;
-  const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(
-    () => new Set(),
-  );
+  const {
+    state,
+    projectKey,
+    selectedTaskId,
+    keyboardFocusTaskId = null,
+    onRetry,
+    onSelectTask,
+  } = props;
+  const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(() => new Set());
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
 
   const groups = useMemo(
@@ -175,10 +182,7 @@ export function BacksterosProjectTasksOverview(props: {
   const columnStyle = useMemo((): CSSProperties | undefined => {
     if (state.status !== "ready") return undefined;
     return {
-      ["--bos-task-id-column-ch" as string]: computeTaskIdColumnCh(
-        state.tasks,
-        projectKey,
-      ),
+      ["--bos-task-id-column-ch" as string]: computeTaskIdColumnCh(state.tasks, projectKey),
     };
   }, [projectKey, state]);
 
@@ -209,9 +213,7 @@ export function BacksterosProjectTasksOverview(props: {
   if (state.tasks.length === 0) {
     return (
       <div className="bos-tasks-overview">
-        <p className="bos-tasks-overview__empty">
-          No tasks yet. Create one in the side panel.
-        </p>
+        <p className="bos-tasks-overview__empty">No tasks yet. Create one in the side panel.</p>
       </div>
     );
   }
@@ -229,6 +231,7 @@ export function BacksterosProjectTasksOverview(props: {
               projectKey={projectKey}
               collapsed={collapsed.has(group.status)}
               selectedTaskId={selectedTaskId}
+              keyboardFocusTaskId={keyboardFocusTaskId}
               workingTaskIds={workingTaskIds}
               onSelectTask={onSelectTask}
               onToggle={() =>

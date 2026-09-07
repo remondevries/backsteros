@@ -1104,6 +1104,10 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
+  /** Blur the prompt editor so page hotkeys (e.g. G I / G P) can run. */
+  blur: () => void;
+  /** True while the prompt editor (or composer chrome) holds focus. */
+  isFocused: () => boolean;
   /** Undo only a scroll-triggered collapse when the timeline returns to its live edge. */
   restoreAfterTimelineReachedEnd: () => void;
   addDroppedFiles: (files: File[]) => void;
@@ -1116,6 +1120,8 @@ export interface ChatComposerHandle {
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
   compactContext: () => void;
+  /** Submit the current composer draft as a foreground provider turn. */
+  submitForeground: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -4306,7 +4312,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (inserted && isComposerCollapsedMobile) {
         // The expanded editor is hidden at phone widths, so its scheduled
         // focus cannot expand the composer by itself. Reveal it before the
-        // focus frame runs to preserve type-to-focus and external inserts.
+        // focus frame runs to preserve paste-to-focus and external inserts.
         expandMobileComposer();
       }
       return inserted;
@@ -4519,10 +4525,53 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerRef,
     () => ({
       focusAtEnd: () => {
-        composerEditorRef.current?.focusAtEnd();
+        if (composerBlurFrameRef.current !== null) {
+          window.cancelAnimationFrame(composerBlurFrameRef.current);
+          composerBlurFrameRef.current = null;
+        }
+        // Expand resting / scroll-collapsed chrome so focus is visible.
+        setIsComposerScrollCollapsed(false);
+        setIsComposerFocused(true);
+        window.requestAnimationFrame(() => {
+          composerEditorRef.current?.focusAtEnd();
+        });
       },
       focusAt: (cursor: number) => {
         composerEditorRef.current?.focusAt(cursor);
+      },
+      blur: () => {
+        if (composerBlurFrameRef.current !== null) {
+          window.cancelAnimationFrame(composerBlurFrameRef.current);
+          composerBlurFrameRef.current = null;
+        }
+        if (isComposerModelPickerOpen) {
+          setIsComposerModelPickerOpen(false);
+          return;
+        }
+        if (isStashMenuOpen) {
+          setIsStashMenuOpen(false);
+          return;
+        }
+        if (composerTrigger) {
+          setComposerTrigger(null);
+          setComposerHighlightedItemId(null);
+          return;
+        }
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          composerFormRef.current?.contains(activeElement)
+        ) {
+          activeElement.blur();
+        }
+        setIsComposerFocused(false);
+      },
+      isFocused: () => {
+        const activeElement = document.activeElement;
+        if (activeElement instanceof Element && composerFormRef.current?.contains(activeElement)) {
+          return true;
+        }
+        return isComposerFocused;
       },
       restoreAfterTimelineReachedEnd: () => {
         setIsComposerScrollCollapsed(false);
@@ -4548,6 +4597,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       compactContext: compactThreadContext,
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      submitForeground: () => {
+        submitComposer(undefined, "foreground");
+      },
       readSnapshot: () => {
         return readComposerSnapshot();
       },
@@ -4657,6 +4709,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       projectSelectionRequired,
       applyPromptReplacement,
       isComposerModelPickerOpen,
+      isComposerFocused,
+      isStashMenuOpen,
+      composerTrigger,
       openModelPicker,
       readComposerSnapshot,
       selectedModel,
@@ -4670,6 +4725,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       interactionMode,
       planModeUiEnabled,
       compactThreadContext,
+      submitComposer,
     ],
   );
 
@@ -5417,12 +5473,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
                                 : "Ask anything, @tag files/folders, $use skills, or / for commands"
                   }
-                  disabled={
-                    isConnecting ||
-                    isComposerApprovalState ||
-                    projectSelectionRequired ||
-                    isChoiceOnlyPendingQuestion
-                  }
+                  disabled={isConnecting || isComposerApprovalState || isChoiceOnlyPendingQuestion}
                 />
                 {isComposerResting ? collapsedComposerImagePreviews : null}
                 {showMobilePendingAnswerActions ? (
