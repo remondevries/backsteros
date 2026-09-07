@@ -6,6 +6,7 @@ import {
   softPollDelayMs,
   stableJsonFingerprint,
 } from "./useBacksterosSoftPoll";
+import { BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS } from "./useBacksterosInboxAttentionTasks";
 
 describe("stableJsonFingerprint", () => {
   it("matches equal structures", () => {
@@ -18,6 +19,13 @@ describe("stableJsonFingerprint", () => {
 
   it("exposes the default soft-poll interval", () => {
     expect(BACKSTEROS_SOFT_POLL_INTERVAL_MS).toBe(3_000);
+  });
+
+  it("exposes a longer inbox soft-poll interval", () => {
+    expect(BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS).toBe(8_000);
+    expect(BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS).toBeGreaterThan(
+      BACKSTEROS_SOFT_POLL_INTERVAL_MS,
+    );
   });
 });
 

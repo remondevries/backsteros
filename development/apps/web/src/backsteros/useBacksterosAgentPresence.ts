@@ -14,8 +14,11 @@ import { useBacksterosTaskChatStore } from "./taskChatStore";
 
 const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
 
-/** How often T3 refreshes remote presence from BacksterOS core (SSE is primary). */
-export const BACKSTEROS_AGENT_PRESENCE_POLL_MS = 12_000;
+/**
+ * Fallback poll when SSE is down. SSE is primary; keep this slow to avoid
+ * rewriting the whole task list every few seconds.
+ */
+export const BACKSTEROS_AGENT_PRESENCE_POLL_MS = 30_000;
 /** How often T3 heartbeats tasks it locally knows are working. */
 export const BACKSTEROS_AGENT_PRESENCE_HEARTBEAT_MS = 15_000;
 
@@ -82,48 +85,6 @@ export function applyBacksterosAgentPresenceSseData(data: string): void {
   }
 }
 
-async function runBacksterosAgentPresenceEventsLoop(signal: AbortSignal): Promise<void> {
-  let attempt = 0;
-  while (!signal.aborted) {
-    try {
-      const response = await openBacksterosAgentPresenceEvents(signal);
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Agent presence events stream has no body");
-      const decoder = new TextDecoder();
-      let buffer = "";
-      attempt = 0;
-      while (!signal.aborted) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          parseSseChunk(part, (event, data) => {
-            if (event !== "agent.presence") return;
-            applyBacksterosAgentPresenceSseData(data);
-          });
-        }
-      }
-    } catch {
-      if (signal.aborted) return;
-      attempt += 1;
-      const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, delay);
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          { once: true },
-        );
-      });
-    }
-  }
-}
-
 /**
  * Publishes heartbeats for locally working task chats and polls BacksterOS
  * core for live presence (so desktop-started work also shows in T3).
@@ -176,6 +137,7 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
 
     let cancelled = false;
     const controller = new AbortController();
+    let pollTimer: number | null = null;
 
     const refresh = () => {
       void fetchBacksterosAgentPresence({ signal: controller.signal })
@@ -190,23 +152,72 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
         .catch(() => {});
     };
 
+    const clearPoll = () => {
+      if (pollTimer != null) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+
+    const startPoll = () => {
+      if (pollTimer != null || cancelled) return;
+      pollTimer = window.setInterval(refresh, BACKSTEROS_AGENT_PRESENCE_POLL_MS);
+    };
+
+    // One snapshot up front; while SSE is live we skip the interval.
     refresh();
-    const timer = window.setInterval(refresh, BACKSTEROS_AGENT_PRESENCE_POLL_MS);
+
+    const runEvents = async () => {
+      let attempt = 0;
+      while (!cancelled && !controller.signal.aborted) {
+        try {
+          const response = await openBacksterosAgentPresenceEvents(controller.signal);
+          const reader = response.body?.getReader();
+          if (!reader) throw new Error("Agent presence events stream has no body");
+          const decoder = new TextDecoder();
+          let buffer = "";
+          attempt = 0;
+          clearPoll();
+          while (!cancelled && !controller.signal.aborted) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() ?? "";
+            for (const part of parts) {
+              parseSseChunk(part, (event, data) => {
+                if (event !== "agent.presence") return;
+                applyBacksterosAgentPresenceSseData(data);
+              });
+            }
+          }
+        } catch {
+          if (cancelled || controller.signal.aborted) return;
+        }
+        startPoll();
+        attempt += 1;
+        const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, delay);
+          controller.signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+      }
+    };
+
+    void runEvents();
     return () => {
       cancelled = true;
       controller.abort();
-      window.clearInterval(timer);
+      clearPoll();
     };
   }, [enabled, setRemoteWorkingTaskIds]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const controller = new AbortController();
-    void runBacksterosAgentPresenceEventsLoop(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [enabled]);
 }
 
 /** Local T3 chat working ∪ remote BacksterOS presence — for status-icon pulse. */

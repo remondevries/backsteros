@@ -117,6 +117,7 @@ export function shouldMarkBacksterosTaskInReviewAfterWorking(input: {
 /**
  * When a bound task chat enters Working → `in_progress`; when that stretch
  * ends in a quiet ready state → `in_review` so the user can check the chat.
+ * Safe to mount from Panel + Overview: in-flight sets dedupe status writes.
  */
 export function usePromoteWorkingBacksterosTasks() {
   const workingTaskIds = useBacksterosWorkingTaskIds();

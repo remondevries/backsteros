@@ -25,9 +25,10 @@ import {
   subscribeBacksterosTaskStatusChanged,
   notifyBacksterosTaskStatusChanged,
 } from "./promoteWorkingTask";
+import { backsterosTaskDetailRevisionFingerprint } from "./backsterosEntityFingerprint";
 import { migrateBacksterosTaskStatus } from "./taskStatus";
 import { syncBacksterosTaskKickoffDraftPrompt } from "./taskKickoffDraftSync";
-import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
+import { useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export type BacksterosTaskDetailState =
   | { readonly status: "idle" }
@@ -57,11 +58,21 @@ function taskDetailFingerprint(
   activities: readonly BacksterosTaskActivity[],
   assignee: BacksterosContact | null,
 ): string {
-  return stableJsonFingerprint({
-    task,
+  return backsterosTaskDetailRevisionFingerprint({
+    taskId: task.id,
+    taskUpdatedAt: task.updatedAt,
+    assigneeId: assignee?.id ?? task.assigneeId,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    priority: task.priority,
+    dueDate: task.dueDate,
+    dueEndDate: task.dueEndDate,
+    contactId: task.contactId,
+    relatedContactIds: task.relatedContactIds,
+    relatedOrganizationIds: task.relatedOrganizationIds,
     comments,
     activities,
-    assigneeId: assignee?.id ?? null,
   });
 }
 

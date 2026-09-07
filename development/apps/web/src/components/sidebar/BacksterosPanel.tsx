@@ -336,13 +336,18 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   sidepanelHighlightIdRef.current = sidepanelHighlightId;
   const listModeRef = useRef(listMode);
   listModeRef.current = listMode;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const selectedProjectIdRef = useRef(selectedProjectId);
+  selectedProjectIdRef.current = selectedProjectId;
+  const listItemIdsKey = listMode.itemIds.join("\0");
 
   // Keep the j/k cursor on the open/selected row after Inbox ↔ Projects (and
   // other list-mode flips). Do not clear while item ids are still loading —
   // that used to drop the highlight and never put it back.
   useEffect(() => {
-    const seedId = listMode.currentItemId;
-    const ids = listMode.itemIds;
+    const seedId = listModeRef.current.currentItemId;
+    const ids = listModeRef.current.itemIds;
     if (seedId != null && (ids.length === 0 || ids.includes(seedId))) {
       setSidepanelHighlightId(seedId);
       return;
@@ -357,14 +362,14 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   }, [railMode]);
 
   useEffect(() => {
-    const ids = listMode.itemIds;
+    const ids = listModeRef.current.itemIds;
     if (ids.length === 0) return;
 
     if (sidepanelHighlightId != null && ids.includes(sidepanelHighlightId)) {
       return;
     }
 
-    const seedId = listMode.currentItemId;
+    const seedId = listModeRef.current.currentItemId;
     if (seedId != null && ids.includes(seedId)) {
       setSidepanelHighlightId(seedId);
       return;
@@ -373,7 +378,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     if (sidepanelHighlightId != null) {
       setSidepanelHighlightId(null);
     }
-  }, [listMode.currentItemId, listMode.itemIds, sidepanelHighlightId]);
+  }, [listMode.currentItemId, listItemIdsKey, sidepanelHighlightId]);
 
   useEffect(() => {
     // Do not force activeZone here — Enter / project open moves focus to main,
@@ -427,9 +432,21 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       ? (sidepanelHighlightId ?? selectedProjectId)
       : null;
 
+  const clearTaskDetailRef = useRef(clearTaskDetail);
+  clearTaskDetailRef.current = clearTaskDetail;
+  const leaveOpenProjectRef = useRef(leaveOpenProject);
+  leaveOpenProjectRef.current = leaveOpenProject;
+  const keybindingsRef = useRef(keybindings);
+  keybindingsRef.current = keybindings;
+  const routeTerminalOpenRef = useRef(routeTerminalOpen);
+  routeTerminalOpenRef.current = routeTerminalOpen;
+
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      const mode = listModeRef.current;
+      const currentSelection = selectionRef.current;
+      const currentSelectedProjectId = selectedProjectIdRef.current;
 
       // Escape hierarchy while browsing BacksterOS projects:
       // 0) property dropdown open → close menu only (do not leave task/project)
@@ -452,12 +469,12 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
           return;
         }
 
-        const openTaskId = selection?.taskId ?? null;
+        const openTaskId = currentSelection?.taskId ?? null;
         const editable = isBacksterosGoEditableTarget(event.target);
 
         // Composer focused on an open task: blur and return j/k to the left
         // sidepanel task list (keep the task/chat open).
-        if (editable && openTaskId && selection) {
+        if (editable && openTaskId && currentSelection) {
           event.preventDefault();
           event.stopPropagation();
           if (event.target instanceof HTMLElement) {
@@ -470,7 +487,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
 
         if (editable) return;
 
-        if (openTaskId && selection) {
+        if (openTaskId && currentSelection) {
           event.preventDefault();
           event.stopPropagation();
           const { activeZone } = useListKeyboardNavStore.getState();
@@ -481,22 +498,22 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
             return;
           }
           // Already on the sidepanel list — step up to the projects rail.
-          leaveOpenProject();
+          leaveOpenProjectRef.current();
           return;
         }
 
-        if (selection != null) {
+        if (currentSelection != null) {
           // Create-task empty state — dismiss the sheet.
           event.preventDefault();
           event.stopPropagation();
-          clearTaskDetail();
-          if (selectedProjectId) {
+          clearTaskDetailRef.current();
+          if (currentSelectedProjectId) {
             useListKeyboardNavStore.getState().setActiveZone("main");
           }
           return;
         }
 
-        if (selectedProjectId) {
+        if (currentSelectedProjectId) {
           event.preventDefault();
           event.stopPropagation();
           const { activeZone } = useListKeyboardNavStore.getState();
@@ -506,7 +523,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
             return;
           }
           // Already on the projects list — leave the project.
-          leaveOpenProject();
+          leaveOpenProjectRef.current();
           return;
         }
       }
@@ -517,17 +534,17 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
           modelPickerOpen: isModelPickerOpen(),
           // Project overview registers `main` after navigation; Enter should
           // still hand j/k to the task list immediately.
-          assumeMainAfterSidepanelEnter: listMode.kind === "projects",
+          assumeMainAfterSidepanelEnter: mode.kind === "projects",
         })
       ) {
         return;
       }
       if (event.repeat) return;
-      const command = resolveShortcutCommand(event, keybindings, {
+      const command = resolveShortcutCommand(event, keybindingsRef.current, {
         platform: navigator.platform,
         context: {
           terminalFocus: isTerminalFocused(),
-          terminalOpen: routeTerminalOpen,
+          terminalOpen: routeTerminalOpenRef.current,
           modelPickerOpen: isModelPickerOpen(),
         },
       });
@@ -535,15 +552,15 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         if (!targetId) return false;
         event.preventDefault();
         event.stopPropagation();
-        listMode.activate(targetId);
+        mode.activate(targetId);
         return true;
       };
       const traversalDirection = threadTraversalDirectionFromCommand(command);
       if (traversalDirection !== null) {
         activateTarget(
           resolveAdjacentListItemId({
-            itemIds: listMode.itemIds,
-            currentItemId: listMode.currentItemId,
+            itemIds: mode.itemIds,
+            currentItemId: mode.currentItemId,
             direction: traversalDirection,
           }),
         );
@@ -551,20 +568,11 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       }
       const jumpIndex = threadJumpIndexFromCommand(command ?? "");
       if (jumpIndex === null) return;
-      activateTarget(listMode.itemIds[jumpIndex] ?? null);
+      activateTarget(mode.itemIds[jumpIndex] ?? null);
     };
     window.addEventListener("keydown", onWindowKeyDown, true);
     return () => window.removeEventListener("keydown", onWindowKeyDown, true);
-  }, [
-    clearTaskDetail,
-    keybindings,
-    leaveOpenProject,
-    listMode,
-    routeTerminalOpen,
-    router,
-    selectedProjectId,
-    selection,
-  ]);
+  }, [listMode.kind]);
 
   if (railMode === "inbox") {
     const projectsReady = projectsState.status === "ready";

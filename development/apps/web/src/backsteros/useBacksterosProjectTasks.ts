@@ -1,14 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { backsterosEntityListFingerprint } from "./backsterosEntityFingerprint";
+import { createBacksterosSharedQuery, type BacksterosSharedQuery } from "./backsterosQueryStore";
 import { fetchBacksterosProjectTasks } from "./client";
 import type { BacksterosTask } from "./types";
-import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
 
 export type BacksterosProjectTasksState =
   | { readonly status: "idle" }
   | { readonly status: "loading" }
   | { readonly status: "ready"; readonly tasks: readonly BacksterosTask[] }
   | { readonly status: "error"; readonly message: string };
+
+const projectTasksQueries = new Map<string, BacksterosSharedQuery<readonly BacksterosTask[]>>();
+
+function getProjectTasksQuery(projectId: string): BacksterosSharedQuery<readonly BacksterosTask[]> {
+  let query = projectTasksQueries.get(projectId);
+  if (!query) {
+    query = createBacksterosSharedQuery({
+      fetch: (signal) => fetchBacksterosProjectTasks(projectId, signal),
+      fingerprint: backsterosEntityListFingerprint,
+      errorMessage: "Failed to load BacksterOS tasks",
+    });
+    projectTasksQueries.set(projectId, query);
+  }
+  return query;
+}
+
+function toTasksState(
+  snapshot: ReturnType<BacksterosSharedQuery<readonly BacksterosTask[]>["getSnapshot"]>,
+): BacksterosProjectTasksState {
+  if (snapshot.status === "ready") {
+    return { status: "ready", tasks: snapshot.data };
+  }
+  return snapshot;
+}
 
 export function useBacksterosProjectTasks(projectId: string | null): {
   readonly state: BacksterosProjectTasksState;
@@ -19,69 +44,52 @@ export function useBacksterosProjectTasks(projectId: string | null): {
   ) => void;
 } {
   const [state, setState] = useState<BacksterosProjectTasksState>({ status: "idle" });
-  const [reloadToken, setReloadToken] = useState(0);
-  const reload = useCallback(() => setReloadToken((token) => token + 1), []);
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  const requestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    if (!projectId) {
+      setState({ status: "idle" });
+      return;
+    }
+    const query = getProjectTasksQuery(projectId);
+    setState(toTasksState(query.getSnapshot()));
+    return query.subscribe(() => {
+      setState(toTasksState(query.getSnapshot()));
+    });
+  }, [projectId]);
+
+  const reload = useCallback(() => {
+    if (!projectId) return;
+    getProjectTasksQuery(projectId).reload();
+  }, [projectId]);
 
   const patchLocalTask = useCallback(
     (
       taskId: string,
       patch: Partial<Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate">>,
     ) => {
-      setState((current) => {
-        if (current.status !== "ready") return current;
+      if (!projectId) return;
+      getProjectTasksQuery(projectId).patchReadyData((tasks) => {
         let changed = false;
-        const tasks = current.tasks.map((task) => {
+        const next = tasks.map((task) => {
           if (task.id !== taskId) return task;
           changed = true;
           return { ...task, ...patch };
         });
-        return changed ? { ...current, tasks } : current;
+        return changed ? next : tasks;
       });
     },
-    [],
+    [projectId],
   );
 
-  useEffect(() => {
-    if (!projectId) {
-      requestGenerationRef.current += 1;
-      setState({ status: "idle" });
-      return;
-    }
-
-    const generation = ++requestGenerationRef.current;
-    const controller = new AbortController();
-    setState((current) => (current.status === "ready" ? current : { status: "loading" }));
-
-    void fetchBacksterosProjectTasks(projectId, controller.signal)
-      .then((tasks) => {
-        // Commit even if cleanup aborted the signal after the response arrived —
-        // gating on `signal.aborted` left the UI stuck on "Loading tasks…".
-        if (generation !== requestGenerationRef.current) return;
-        setState({ status: "ready", tasks });
-      })
-      .catch((error: unknown) => {
-        if (generation !== requestGenerationRef.current) return;
-        if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : "Failed to load BacksterOS tasks";
-        setState({ status: "error", message });
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [projectId, reloadToken]);
-
-  useBacksterosSoftPoll(Boolean(projectId) && state.status === "ready", async () => {
-    if (!projectId) return;
-    const current = stateRef.current;
-    if (current.status !== "ready") return;
-    const tasks = await fetchBacksterosProjectTasks(projectId);
-    if (stableJsonFingerprint(tasks) === stableJsonFingerprint(current.tasks)) return;
-    setState({ status: "ready", tasks });
-  });
-
   return { state, reload, patchLocalTask };
+}
+
+/** Test helper. */
+export function getBacksterosProjectTasksQueryDebugStats(projectId: string) {
+  return (
+    projectTasksQueries.get(projectId)?.getDebugStats() ?? {
+      subscriberCount: 0,
+      softPollActive: false,
+    }
+  );
 }

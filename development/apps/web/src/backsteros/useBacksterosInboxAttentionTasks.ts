@@ -1,10 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 
+import { backsterosEntityListFingerprint } from "./backsterosEntityFingerprint";
+import { createBacksterosSharedQuery, useBacksterosSharedQuery } from "./backsterosQueryStore";
 import { fetchBacksterosInboxAttentionTasks } from "./client";
 import { isBacksterosInboxAttentionStatus, isBacksterosInboxDueTask } from "./inboxDue";
 import type { BacksterosTask } from "./types";
 import type { BacksterosProjectTasksState } from "./useBacksterosProjectTasks";
-import { stableJsonFingerprint, useBacksterosSoftPoll } from "./useBacksterosSoftPoll";
+
+/** Inbox attention is a 6-request fan-out; poll slower than project lists. */
+export const BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS = 8_000;
+
+const inboxQuery = createBacksterosSharedQuery({
+  fetch: fetchBacksterosInboxAttentionTasks,
+  fingerprint: backsterosEntityListFingerprint,
+  errorMessage: "Failed to load BacksterOS inbox",
+  softPollIntervalMs: BACKSTEROS_INBOX_SOFT_POLL_INTERVAL_MS,
+});
+
+function toTasksState(
+  snapshot: ReturnType<typeof inboxQuery.getSnapshot>,
+): BacksterosProjectTasksState {
+  if (snapshot.status === "ready") {
+    return { status: "ready", tasks: snapshot.data };
+  }
+  return snapshot;
+}
 
 export function useBacksterosInboxAttentionTasks(enabled: boolean): {
   readonly state: BacksterosProjectTasksState;
@@ -14,71 +34,42 @@ export function useBacksterosInboxAttentionTasks(enabled: boolean): {
     patch: Partial<Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate">>,
   ) => void;
 } {
-  const [state, setState] = useState<BacksterosProjectTasksState>({ status: "idle" });
-  const [reloadToken, setReloadToken] = useState(0);
-  const reload = useCallback(() => setReloadToken((token) => token + 1), []);
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  const requestGenerationRef = useRef(0);
+  const snapshot = useBacksterosSharedQuery(inboxQuery, enabled);
+  const reload = useCallback(() => inboxQuery.reload(), []);
 
   const patchLocalTask = useCallback(
     (
       taskId: string,
       patch: Partial<Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate">>,
     ) => {
-      setState((current) => {
-        if (current.status !== "ready") return current;
+      inboxQuery.patchReadyData((tasks) => {
         let changed = false;
-        const tasks = current.tasks.flatMap((task) => {
+        const next = tasks.flatMap((task) => {
           if (task.id !== taskId) return [task];
           changed = true;
-          const next = { ...task, ...patch };
-          if (isBacksterosInboxAttentionStatus(next.status) || isBacksterosInboxDueTask(next)) {
-            return [next];
+          const updated = { ...task, ...patch };
+          if (
+            isBacksterosInboxAttentionStatus(updated.status) ||
+            isBacksterosInboxDueTask(updated)
+          ) {
+            return [updated];
           }
           return [];
         });
-        return changed ? { ...current, tasks } : current;
+        return changed ? next : tasks;
       });
     },
     [],
   );
 
-  useEffect(() => {
-    if (!enabled) {
-      requestGenerationRef.current += 1;
-      setState({ status: "idle" });
-      return;
-    }
+  return {
+    state: toTasksState(snapshot),
+    reload,
+    patchLocalTask,
+  };
+}
 
-    const generation = ++requestGenerationRef.current;
-    const controller = new AbortController();
-    setState((current) => (current.status === "ready" ? current : { status: "loading" }));
-
-    void fetchBacksterosInboxAttentionTasks(controller.signal)
-      .then((tasks) => {
-        if (generation !== requestGenerationRef.current) return;
-        setState({ status: "ready", tasks });
-      })
-      .catch((error: unknown) => {
-        if (generation !== requestGenerationRef.current) return;
-        if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : "Failed to load BacksterOS inbox";
-        setState({ status: "error", message });
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [enabled, reloadToken]);
-
-  useBacksterosSoftPoll(enabled && state.status === "ready", async () => {
-    const current = stateRef.current;
-    if (current.status !== "ready") return;
-    const tasks = await fetchBacksterosInboxAttentionTasks();
-    if (stableJsonFingerprint(tasks) === stableJsonFingerprint(current.tasks)) return;
-    setState({ status: "ready", tasks });
-  });
-
-  return { state, reload, patchLocalTask };
+/** Test helper. */
+export function getBacksterosInboxAttentionQueryDebugStats() {
+  return inboxQuery.getDebugStats();
 }
