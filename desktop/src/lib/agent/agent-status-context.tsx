@@ -14,6 +14,10 @@ import {
   type StatusBarAgentItem,
 } from "./agent-activity";
 import {
+  applyAgentPresenceLiveEvent,
+  startAgentPresenceEventsLoop,
+} from "./agent-presence-events";
+import {
   clearDynamicIslandAgentsWorking,
   publishDynamicIslandAgentsWorking,
 } from "../dynamic-island-agents-working";
@@ -27,6 +31,7 @@ import {
 const DYNAMIC_ISLAND_AGENTS_HEARTBEAT_MS = 30_000;
 /** Shared BacksterOS core presence TTL is 45s — heartbeat faster than that. */
 const SHARED_AGENT_PRESENCE_HEARTBEAT_MS = 15_000;
+/** Poll reconciles crash/TTL aging; live start/stop arrives via agent-presence SSE. */
 const SHARED_AGENT_PRESENCE_POLL_MS = 12_000;
 
 const EMPTY_WORKING_TASK_IDS: ReadonlySet<string> = new Set();
@@ -206,6 +211,22 @@ export function DesktopAgentStatusProvider({
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+    };
+  }, [client]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    startAgentPresenceEventsLoop({
+      client,
+      signal: controller.signal,
+      onPresence: (payload) => {
+        setRemoteWorkingTaskIds((current) =>
+          applyAgentPresenceLiveEvent(current, payload),
+        );
+      },
+    });
+    return () => {
+      controller.abort();
     };
   }, [client]);
 

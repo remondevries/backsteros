@@ -76,7 +76,9 @@ async function readBacksterosJsonBody<T>(response: Response): Promise<T> {
   try {
     return JSON.parse(trimmed) as T;
   } catch {
-    throw new Error("BacksterOS returned a non-JSON response. Check the API URL and key in Settings → Integrations.");
+    throw new Error(
+      "BacksterOS returned a non-JSON response. Check the API URL and key in Settings → Integrations.",
+    );
   }
 }
 
@@ -123,10 +125,7 @@ async function backsterosFetchJson<T>(
   return readBacksterosJsonBody<T>(response);
 }
 
-async function backsterosFetchBlob(
-  pathWithQuery: string,
-  signal?: AbortSignal,
-): Promise<Blob> {
+async function backsterosFetchBlob(pathWithQuery: string, signal?: AbortSignal): Promise<Blob> {
   const request = resolveBacksterosRequest(pathWithQuery);
   const response = await fetch(request.url, {
     method: "GET",
@@ -285,13 +284,10 @@ export async function updateBacksterosTask(
   taskId: string,
   patch: BacksterosTaskUpdatePatch,
 ): Promise<BacksterosTaskDetail> {
-  return backsterosFetchJson<BacksterosTaskDetail>(
-    `/api/v1/tasks/${encodeURIComponent(taskId)}`,
-    {
-      method: "PATCH",
-      body: patch,
-    },
-  );
+  return backsterosFetchJson<BacksterosTaskDetail>(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+    method: "PATCH",
+    body: patch,
+  });
 }
 
 export async function createBacksterosTaskActivity(
@@ -307,12 +303,10 @@ export async function createBacksterosTaskActivity(
   );
 }
 
-export async function fetchBacksterosAgentPresence(
-  options?: {
-    readonly projectId?: string | null;
-    readonly signal?: AbortSignal;
-  },
-): Promise<readonly BacksterosTaskAgentPresence[]> {
+export async function fetchBacksterosAgentPresence(options?: {
+  readonly projectId?: string | null;
+  readonly signal?: AbortSignal;
+}): Promise<readonly BacksterosTaskAgentPresence[]> {
   const params = new URLSearchParams();
   if (options?.projectId?.trim()) {
     params.set("projectId", options.projectId.trim());
@@ -347,6 +341,26 @@ export async function clearBacksterosTaskAgentPresence(taskId: string): Promise<
     `/api/v1/tasks/${encodeURIComponent(taskId)}/agent-presence`,
     { method: "DELETE" },
   );
+}
+
+/**
+ * Open the live agent-presence SSE stream. Caller owns AbortSignal + reader loop.
+ */
+export async function openBacksterosAgentPresenceEvents(signal: AbortSignal): Promise<Response> {
+  const request = resolveBacksterosRequest("/api/v1/agent-presence/events");
+  const response = await fetch(request.url, {
+    method: "GET",
+    headers: {
+      ...request.headers,
+      Accept: "text/event-stream",
+    },
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`BacksterOS agent presence events failed (${response.status})`);
+  }
+  return response;
 }
 
 export async function fetchBacksterosContacts(

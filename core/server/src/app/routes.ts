@@ -29,6 +29,7 @@ import {
   financialRecurringInputSchema,
   cashflowPlannerEntryInputSchema,
   listFinancialTransactionsQuerySchema,
+  listTaskAgentPresenceQuerySchema,
   projectFsCreateEntrySchema,
   projectFsWriteFileSchema,
   reorderLetterAttachmentsSchema,
@@ -61,6 +62,7 @@ import {
   updateTaskCommentSchema,
   updateVaultStorageSettingsSchema,
   upsertDevicePushTokenSchema,
+  upsertTaskAgentPresenceSchema,
   deleteDevicePushTokenSchema,
   moneybirdSalesInvoicesQuerySchema,
   moneybirdInvoiceRevenueQuerySchema,
@@ -122,6 +124,7 @@ import { MoneybirdApiError } from "../lib/moneybird-client.js";
 import { MapboxApiError } from "../lib/mapbox-client.js";
 import { AgentMailApiError } from "../lib/agentmail-client.js";
 import { subscribeEmailUpdated } from "../lib/email-inbox-events.js";
+import { subscribeAgentPresence } from "../lib/agent-presence-events.js";
 import {
   publishDocumentWorkspaceUpdated,
   subscribeWorkspaceUpdated,
@@ -152,6 +155,7 @@ import { resolveGithubAccessToken } from "../services/github-auth.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
 import * as taskActivityService from "../services/task-activities.js";
+import * as taskAgentPresenceService from "../services/task-agent-presence.js";
 import * as taskCommentService from "../services/task-comments.js";
 import * as taskImageService from "../services/task-images.js";
 import * as taskAttachmentService from "../services/task-attachments.js";
@@ -1667,6 +1671,101 @@ export function registerApiRoutes(app: Hono) {
     );
     if (!rows) return c.json(notFound("Task"), 404);
     return c.json({ activities: rows.map(toTaskActivity) });
+  });
+
+  app.get(
+    "/api/v1/agent-presence",
+    zValidator("query", listTaskAgentPresenceQuerySchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:read")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const query = c.req.valid("query");
+      const presence = await taskAgentPresenceService.listLiveTaskAgentPresence(
+        auth.workspaceId,
+        { projectId: query.projectId },
+      );
+      return c.json({ presence });
+    },
+  );
+
+  /** Live agent-working hints for open shells (instant pulse; poll is fallback). */
+  app.get("/api/v1/agent-presence/events", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:read")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const workspaceId = auth.workspaceId;
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      const unsubscribe = subscribeAgentPresence(workspaceId, (event) => {
+        if (closed) return;
+        void stream.writeSSE({
+          event: "agent.presence",
+          data: JSON.stringify({
+            taskId: event.taskId,
+            live: event.live,
+          }),
+        });
+      });
+      stream.onAbort(() => {
+        closed = true;
+        unsubscribe();
+      });
+      await stream.writeSSE({
+        event: "ready",
+        data: JSON.stringify({ ok: true }),
+      });
+      while (!closed) {
+        await stream.sleep(15_000);
+        if (closed) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "{}" });
+        } catch {
+          closed = true;
+          break;
+        }
+      }
+      unsubscribe();
+    });
+  });
+
+  app.put(
+    "/api/v1/tasks/:id/agent-presence",
+    zValidator("json", upsertTaskAgentPresenceSchema),
+    async (c) => {
+      const auth = getAuth(c);
+      if (!requireScope("tasks:write")(auth)) {
+        return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+      }
+      const body = c.req.valid("json");
+      const presence = await taskAgentPresenceService.upsertTaskAgentPresence(
+        auth.workspaceId,
+        c.req.param("id"),
+        {
+          source: body.source,
+          sessionId: body.sessionId,
+        },
+      );
+      if (!presence) return c.json(notFound("Task"), 404);
+      return c.json(presence);
+    },
+  );
+
+  app.delete("/api/v1/tasks/:id/agent-presence", async (c) => {
+    const auth = getAuth(c);
+    if (!requireScope("tasks:write")(auth)) {
+      return c.json(auth ? forbidden() : unauthorized(), auth ? 403 : 401);
+    }
+    const taskId = c.req.param("id");
+    const task = await taskProjectService.getTaskById(auth.workspaceId, taskId);
+    if (!task) return c.json(notFound("Task"), 404);
+    await taskAgentPresenceService.clearTaskAgentPresence(
+      auth.workspaceId,
+      taskId,
+    );
+    return c.body(null, 204);
   });
 
   app.post(
