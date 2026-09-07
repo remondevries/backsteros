@@ -7,7 +7,7 @@ import {
   buildAccountIncomeExpenseChartSeries,
   buildAccountIncomeExpenseChartSeriesFromCashflow,
   buildMonthIncomeExpenseDailyChartSeries,
-} from "../../dist/finance/account-income-expense-chart-series.js";
+} from "./account-income-expense-chart-series.js";
 import type { FinancialTransaction } from "@backsteros/contracts";
 
 function tx(
@@ -31,6 +31,7 @@ function tx(
     fingerprint: partial.id,
     sourceCode: null,
     sourceType: null,
+    settlementState: null,
     raw: {},
     organizationId: null,
     projectId: null,

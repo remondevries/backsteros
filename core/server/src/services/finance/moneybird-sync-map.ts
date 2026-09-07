@@ -1,4 +1,5 @@
 import type { MoneybirdFinancialMutation } from "../../lib/moneybird-client.js";
+import { normalizeFinancialSettlementState } from "@backsteros/contracts";
 import { parseDecimalAmountToCents } from "./fingerprint.js";
 import { toCashflowAmountCents } from "./ledger-polarity.js";
 
@@ -25,6 +26,7 @@ export function mapMoneybirdMutationToLedgerRow(
   fingerprint: string;
   sourceCode: string;
   sourceType: string | null;
+  settlementState: string | null;
   raw: Record<string, unknown>;
 } {
   const sourceAmountCents = parseMoneybirdAmountToCents(mutation.amount);
@@ -39,6 +41,7 @@ export function mapMoneybirdMutationToLedgerRow(
     fingerprint: moneybirdMutationFingerprint(mutation.id),
     sourceCode: "moneybird",
     sourceType: mutation.state?.trim() || null,
+    settlementState: normalizeFinancialSettlementState(mutation.settlementState),
     raw: mutation.raw,
   };
 }

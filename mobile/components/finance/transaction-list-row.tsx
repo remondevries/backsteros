@@ -1,4 +1,5 @@
 import type { FinancialTransaction } from "@backsteros/contracts";
+import { isVoidFinancialSettlement } from "@backsteros/contracts";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { FinanceAccountAvatar } from "./finance-account-avatar";
@@ -43,13 +44,16 @@ export function TransactionListRow({
   onPress,
 }: Props) {
   const title = transactionDisplayTitle(transaction);
+  const voided = isVoidFinancialSettlement(transaction.settlementState);
   const amountStyle = [
     density === "pad" ? styles.padAmount : styles.phoneAmount,
-    transaction.amountCents > 0
-      ? styles.amountPositive
-      : transaction.amountCents < 0
-        ? styles.amountNegative
-        : null,
+    voided
+      ? styles.amountVoid
+      : transaction.amountCents > 0
+        ? styles.amountPositive
+        : transaction.amountCents < 0
+          ? styles.amountNegative
+          : null,
   ];
   const amountLabel = formatSignedCents(
     transaction.amountCents,
@@ -398,5 +402,10 @@ const styles = StyleSheet.create({
   },
   amountNegative: {
     color: "#c45b5b",
+  },
+  amountVoid: {
+    color: colors.muted,
+    textDecorationLine: "line-through",
+    fontWeight: "400",
   },
 });

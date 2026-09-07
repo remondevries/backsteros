@@ -49,6 +49,7 @@ import {
   putObject,
 } from "../../lib/storage.js";
 import {
+  balanceAffectingTransactionSql,
   cashflowCategoryLeftJoinOn,
   cashflowTransactionSql,
 } from "./cashflow-exclusion.js";
@@ -103,7 +104,12 @@ export async function listBankAccountBalances(workspaceId: string) {
       balanceCents: sql<number>`coalesce(sum(${financialTransactions.amountCents}), 0)::int`,
     })
     .from(financialTransactions)
-    .where(eq(financialTransactions.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(financialTransactions.workspaceId, workspaceId),
+        balanceAffectingTransactionSql(),
+      ),
+    )
     .groupBy(financialTransactions.bankAccountId);
 
   const byId = new Map(
@@ -257,6 +263,7 @@ export async function getFinanceAssetsDebt(
         eq(financialTransactions.workspaceId, workspaceId),
         gte(financialTransactions.bookedOn, startIso),
         lt(financialTransactions.bookedOn, endExclusive),
+        balanceAffectingTransactionSql(),
       ),
     )
     .groupBy(
@@ -1081,6 +1088,7 @@ export async function sumSavedCentsByGoalId(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         isNotNull(financialTransactions.goalId),
+        balanceAffectingTransactionSql(),
       ),
     )
     .groupBy(financialTransactions.goalId);
@@ -1106,6 +1114,7 @@ export async function getGoalSavedCents(
       and(
         eq(financialTransactions.workspaceId, workspaceId),
         eq(financialTransactions.goalId, goalId),
+        balanceAffectingTransactionSql(),
       ),
     );
   return Number(row?.savedCents) || 0;
@@ -1740,6 +1749,7 @@ export type FinancialTransactionSyncCreateInput = {
   fingerprint: string;
   sourceCode?: string | null;
   sourceType?: string | null;
+  settlementState?: string | null;
   raw?: unknown;
   /** Always ignored on sync create — import batches are local-only. */
   importBatchId?: string | null;
@@ -1791,6 +1801,7 @@ export async function insertTransactionFromSync(
   const externalId = asSyncNullableString(payload.externalId) ?? null;
   const sourceCode = asSyncNullableString(payload.sourceCode) ?? null;
   const sourceType = asSyncNullableString(payload.sourceType) ?? null;
+  const settlementState = asSyncNullableString(payload.settlementState) ?? null;
   const raw =
     payload.raw && typeof payload.raw === "object" && !Array.isArray(payload.raw)
       ? payload.raw
@@ -1815,6 +1826,7 @@ export async function insertTransactionFromSync(
         fingerprint,
         sourceCode,
         sourceType,
+        settlementState,
         raw,
       })
       .onConflictDoNothing({
@@ -1864,6 +1876,7 @@ export function financialTransactionCreateSyncPayload(
     fingerprint: input.fingerprint,
     source_code: input.sourceCode ?? null,
     source_type: input.sourceType ?? null,
+    settlement_state: input.settlementState ?? null,
     raw: input.raw ?? {},
     import_batch_id: null,
   };
@@ -1929,6 +1942,7 @@ export async function commitFinancialTransactionCreates(
         fingerprint: row.fingerprint,
         sourceCode: row.sourceCode,
         sourceType: row.sourceType,
+        settlementState: row.settlementState,
         raw: row.raw,
       },
     );

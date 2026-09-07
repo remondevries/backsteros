@@ -389,6 +389,12 @@
   color: #3f9d6e;
 }
 
+.finance-tx-row__amount.is-void {
+  color: var(--muted, #8a8a8a);
+  text-decoration: line-through;
+  font-weight: 400;
+}
+
 .finance-month-totals {
   display: inline-flex;
   align-items: baseline;

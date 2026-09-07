@@ -8,6 +8,7 @@ import type {
   FinancialRecurring,
   FinancialTransaction,
 } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DEFAULT_ENTITY_ICON_COLOR } from "../../entity/entity-icon.js";
@@ -181,7 +182,10 @@ export function GoalDetailPanel({
   useEffect(() => {
     if (!goal || transactionsLoading || autoPromoteRef.current) return;
     const actualSavedCents = transactions.reduce(
-      (sum, tx) => sum + tx.amountCents,
+      (sum, tx) =>
+        isBalanceAffectingFinancialSettlement(tx.settlementState)
+          ? sum + tx.amountCents
+          : sum,
       0,
     );
     const nextListing = nextGoalListingForSavings(
@@ -223,7 +227,10 @@ export function GoalDetailPanel({
     savingMode,
   };
   const actualSavedCents = transactions.reduce(
-    (sum, tx) => sum + tx.amountCents,
+    (sum, tx) =>
+      isBalanceAffectingFinancialSettlement(tx.settlementState)
+        ? sum + tx.amountCents
+        : sum,
     0,
   );
   const savedCents = Math.max(

@@ -4,6 +4,7 @@ import { ChevronDownIcon } from "@primer/octicons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { FinancialTransaction } from "@backsteros/contracts";
+import { isVoidFinancialSettlement } from "@backsteros/contracts";
 
 import {
   isBlockingModalOpen,
@@ -230,8 +231,17 @@ export function FinanceTransactionDetailPanel({
             <span
               className={[
                 "finance-transactions-view__detail-amount",
-                transaction.amountCents < 0 ? "is-debit" : "is-credit",
+                isVoidFinancialSettlement(transaction.settlementState)
+                  ? "is-void"
+                  : transaction.amountCents < 0
+                    ? "is-debit"
+                    : "is-credit",
               ].join(" ")}
+              title={
+                isVoidFinancialSettlement(transaction.settlementState)
+                  ? `Not counted · ${transaction.settlementState}`
+                  : undefined
+              }
             >
               {formatAmount(transaction.amountCents, transaction.currency)}
             </span>
@@ -482,8 +492,17 @@ export function FinanceTransactionDetailPanel({
               </div>
               <div>
                 <dt>Amount</dt>
-                <dd>
+                <dd
+                  className={
+                    isVoidFinancialSettlement(transaction.settlementState)
+                      ? "finance-tx-row__amount is-void"
+                      : undefined
+                  }
+                >
                   {formatAmount(transaction.amountCents, transaction.currency)}
+                  {isVoidFinancialSettlement(transaction.settlementState)
+                    ? ` · ${transaction.settlementState}`
+                    : ""}
                 </dd>
               </div>
               <div>

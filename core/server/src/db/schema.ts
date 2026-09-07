@@ -1474,6 +1474,11 @@ export const financialTransactions = pgTable(
     fingerprint: text("fingerprint").notNull(),
     sourceCode: text("source_code"),
     sourceType: text("source_type"),
+    /**
+     * Moneybird settlement_state (refused / cancelled / settled / …).
+     * Null for CSV imports — treated as settled for balance math.
+     */
+    settlementState: text("settlement_state"),
     raw: jsonb("raw").notNull().default(sql`'{}'::jsonb`),
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "set null",

@@ -149,6 +149,7 @@ export async function syncBankAccountFromMoneybird(
         fingerprint: ledger.fingerprint,
         sourceCode: ledger.sourceCode,
         sourceType: ledger.sourceType,
+        settlementState: ledger.settlementState,
         raw: ledger.raw,
       });
       existingIds.add(mutation.id);

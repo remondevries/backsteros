@@ -431,6 +431,7 @@ export function toFinancialTransaction(
     fingerprint: row.fingerprint,
     sourceCode: row.sourceCode,
     sourceType: row.sourceType,
+    settlementState: row.settlementState,
     raw,
     organizationId: row.organizationId,
     projectId: row.projectId,

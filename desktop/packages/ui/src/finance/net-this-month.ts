@@ -90,7 +90,10 @@ export function buildNetThisMonthPeriods(
 
 function sumIncomeSpend(
   transactions: ReadonlyArray<
-    Pick<FinancialTransaction, "bookedOn" | "amountCents" | "categoryId">
+    Pick<
+      FinancialTransaction,
+      "bookedOn" | "amountCents" | "categoryId" | "settlementState"
+    >
   >,
   period: NetThisMonthPeriod,
   nonCashflowCategoryIds: ReadonlySet<string>,
@@ -115,10 +118,16 @@ function sumIncomeSpend(
 export function computeNetThisMonthStats(input: {
   month: string;
   transactions: ReadonlyArray<
-    Pick<FinancialTransaction, "bookedOn" | "amountCents" | "categoryId">
+    Pick<
+      FinancialTransaction,
+      "bookedOn" | "amountCents" | "categoryId" | "settlementState"
+    >
   >;
   priorTransactions: ReadonlyArray<
-    Pick<FinancialTransaction, "bookedOn" | "amountCents" | "categoryId">
+    Pick<
+      FinancialTransaction,
+      "bookedOn" | "amountCents" | "categoryId" | "settlementState"
+    >
   >;
   /** Category ids with kind transfer or listing excluded. */
   nonCashflowCategoryIds?: ReadonlySet<string>;

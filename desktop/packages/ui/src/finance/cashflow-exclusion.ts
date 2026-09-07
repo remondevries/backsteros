@@ -1,4 +1,5 @@
 import type { FinancialCategory } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 
 export type CashflowCategoryMeta = Pick<
   FinancialCategory,
@@ -34,9 +35,13 @@ export function buildNonCashflowCategoryIdSet(
 }
 
 export function isCashflowTransaction(
-  tx: { categoryId?: string | null },
+  tx: {
+    categoryId?: string | null;
+    settlementState?: string | null;
+  },
   nonCashflowCategoryIds: ReadonlySet<string>,
 ): boolean {
+  if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) return false;
   if (!tx.categoryId) return true;
   return !nonCashflowCategoryIds.has(tx.categoryId);
 }

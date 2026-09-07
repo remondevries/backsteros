@@ -2,6 +2,7 @@ import type {
   FinancialCategory,
   FinancialTransaction,
 } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 
 import { ENTITY_ICON_COLOR_PRESETS } from "../entity/entity-icon.js";
 
@@ -196,6 +197,7 @@ export function buildCategorySpendBarSeries(input: {
   }
 
   for (const tx of transactions) {
+    if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) continue;
     const bookedOn = tx.bookedOn;
     if (!bookedOn || !/^\d{4}-\d{2}/.test(bookedOn)) continue;
     const month = bookedOn.slice(0, 7);

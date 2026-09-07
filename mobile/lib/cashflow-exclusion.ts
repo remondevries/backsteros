@@ -1,8 +1,11 @@
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
+
 import type { FinanceCategoryRow } from "./finance-categories";
 
 /**
  * Cashflow inclusion rules (desktop `cashflow-exclusion` parity).
  * Uncategorized counts; live `transfer` / `excluded` categories do not.
+ * Void Moneybird settlements (refused / cancelled / …) never count.
  */
 
 export function isCashflowCategory(
@@ -26,9 +29,13 @@ export function buildNonCashflowCategoryIdSet(
 }
 
 export function isCashflowTransaction(
-  tx: { categoryId?: string | null },
+  tx: {
+    categoryId?: string | null;
+    settlementState?: string | null;
+  },
   nonCashflowCategoryIds: ReadonlySet<string>,
 ): boolean {
+  if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) return false;
   if (!tx.categoryId) return true;
   return !nonCashflowCategoryIds.has(tx.categoryId);
 }

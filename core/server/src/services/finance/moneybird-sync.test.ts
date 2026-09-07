@@ -52,6 +52,15 @@ describe("moneybird-sync mapping", () => {
     );
     assert.equal(row.sourceCode, "moneybird");
     assert.equal(row.sourceType, "unprocessed");
+    assert.equal(row.settlementState, "settled");
+  });
+
+  it("normalizes refused settlement state", () => {
+    const row = mapMoneybirdMutationToLedgerRow(
+      sampleMutation({ settlementState: " Refused " }),
+      "bank_account",
+    );
+    assert.equal(row.settlementState, "refused");
   });
 
   it("applies credit-card cashflow polarity", () => {

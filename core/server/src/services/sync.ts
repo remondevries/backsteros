@@ -1435,6 +1435,7 @@ const financialTransactionKeys = {
   fingerprint: "fingerprint",
   source_code: "sourceCode",
   source_type: "sourceType",
+  settlement_state: "settlementState",
   raw: "raw",
   import_batch_id: "importBatchId",
 };
@@ -1590,6 +1591,7 @@ function financialTransactionSnapshot(
     fingerprint: row.fingerprint,
     source_code: row.sourceCode,
     source_type: row.sourceType,
+    settlement_state: row.settlementState,
     raw: row.raw,
     // Never round-trip import_batch_id: batches are local-only (not replicated).
     import_batch_id: null,

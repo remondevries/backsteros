@@ -3,6 +3,7 @@ import type {
   FinancialGoalSavingMode,
   FinancialTransaction,
 } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 
 export type GoalChartPoint = {
   /** Period key used as the Nivo x value (stable, sortable). */
@@ -215,6 +216,7 @@ export function buildGoalChartSeries({
   let running = 0;
   const savedByPeriod = new Map<number, number>();
   for (const tx of sortedTx) {
+    if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) continue;
     const booked = parseCalendarDate(tx.bookedOn);
     if (!booked) continue;
     const index = periodIndexOnOrBefore(startDay, booked, mode);

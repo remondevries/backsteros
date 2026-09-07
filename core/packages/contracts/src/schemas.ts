@@ -1502,6 +1502,12 @@ export const financialTransactionSchema = z.object({
   fingerprint: z.string(),
   sourceCode: z.string().nullable(),
   sourceType: z.string().nullable(),
+  /**
+   * Moneybird `settlement_state` (or equivalent). Null for CSV imports /
+   * unknown → treat as settled. Void states (refused, cancelled, …) stay in
+   * the ledger for classification but must not affect balances or cashflow.
+   */
+  settlementState: z.string().nullable(),
   /** Original CSV row columns preserved at import time. */
   raw: z.record(z.string(), z.string()).default({}),
   organizationId: z.string().nullable(),

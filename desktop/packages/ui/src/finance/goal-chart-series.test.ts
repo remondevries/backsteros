@@ -25,6 +25,7 @@ function tx(
     fingerprint: partial.id,
     sourceCode: null,
     sourceType: null,
+    settlementState: null,
     raw: {},
     organizationId: null,
     projectId: null,

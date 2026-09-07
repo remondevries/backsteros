@@ -520,7 +520,7 @@
       "tag": "0082_contact_region",
       "breakpoints": true
     },
-      {
+    {
       "idx": 74,
       "version": "7",
       "when": 1791000000000,
@@ -616,6 +616,13 @@
       "version": "7",
       "when": 1792300000000,
       "tag": "0096_task_linked_commit_sha",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792310000000,
+      "tag": "0097_financial_transaction_settlement_state",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,7 @@
 import { useCallback } from "react";
 
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
+
 import type { useFinanceSectionData } from "./use-finance-section-data";
 import type { useFinanceTransactions } from "./use-finance-transactions";
 
@@ -268,9 +270,13 @@ export function useFinanceSectionPatchHandlers({
         if (!current) return current;
         if (patch.bankAccountId && patch.bankAccountId !== current.accountId) {
           const moved = current.transactions.find((tx) => tx.id === id);
+          const movedCents =
+            moved && isBalanceAffectingFinancialSettlement(moved.settlementState)
+              ? moved.amountCents
+              : 0;
           return {
             ...current,
-            balanceCents: current.balanceCents - (moved?.amountCents ?? 0),
+            balanceCents: current.balanceCents - movedCents,
             transactions: current.transactions.filter((tx) => tx.id !== id),
           };
         }
@@ -313,7 +319,10 @@ export function useFinanceSectionPatchHandlers({
         if (patch.bankAccountId && patch.bankAccountId !== current.accountId) {
           const removed = current.transactions.filter((tx) => idSet.has(tx.id));
           const removedCents = removed.reduce(
-            (sum, tx) => sum + tx.amountCents,
+            (sum, tx) =>
+              isBalanceAffectingFinancialSettlement(tx.settlementState)
+                ? sum + tx.amountCents
+                : sum,
             0,
           );
           return {

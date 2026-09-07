@@ -7,6 +7,7 @@ import type {
   MoneybirdBankAccountSyncResult,
   MoneybirdFinancialAccount,
 } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
@@ -283,9 +284,46 @@ export function useFinanceTransactions({
           { method: "POST" },
         );
         moneybirdSyncAtByAccountRef.current[accountId] = Date.now();
-        if (result.inserted > 0) {
+
+        // Force Sync must refresh even when Moneybird returns inserted=0
+        // (row already ingested by auto-sync). Otherwise the open list stays stale.
+        if (opts?.force || result.inserted > 0) {
           await loadTransactions();
+
+          const params = new URLSearchParams({ limit: "500" });
+          let cursor: string | null = null;
+          const allTransactions: FinancialTransaction[] = [];
+          let balanceCents = 0;
+          do {
+            if (cursor) params.set("cursor", cursor);
+            else params.delete("cursor");
+            const body = await client.requestJson<{
+              transactions: FinancialTransaction[];
+              nextCursor: string | null;
+            }>(
+              `/api/v1/bank-accounts/${encodeURIComponent(accountId)}/transactions?${params}`,
+            );
+            for (const tx of body.transactions) {
+              allTransactions.push(tx);
+              if (isBalanceAffectingFinancialSettlement(tx.settlementState)) {
+                balanceCents += tx.amountCents;
+              }
+            }
+            cursor = body.nextCursor;
+          } while (cursor);
+          allTransactions.sort((a, b) =>
+            a.bookedOn < b.bookedOn ? 1 : a.bookedOn > b.bookedOn ? -1 : 0,
+          );
+          setAccountMetrics((current) => {
+            if (!current || current.accountId !== accountId) return current;
+            return {
+              ...current,
+              balanceCents,
+              transactions: allTransactions,
+            };
+          });
         }
+
         await refreshAccounts?.().catch(() => undefined);
         return result;
       } catch {
@@ -295,7 +333,14 @@ export function useFinanceTransactions({
         setMoneybirdSyncPending(moneybirdSyncInFlightRef.current.size > 0);
       }
     },
-    [accounts, client, loadTransactions, refreshAccounts, selected],
+    [
+      accounts,
+      client,
+      loadTransactions,
+      refreshAccounts,
+      selected,
+      setAccountMetrics,
+    ],
   );
 
   useEffect(() => {
@@ -609,7 +654,10 @@ export function useFinanceTransactions({
         if (!current) return current;
         const removed = current.transactions.filter((tx) => idSet.has(tx.id));
         const removedCents = removed.reduce(
-          (sum, tx) => sum + tx.amountCents,
+          (sum, tx) =>
+            isBalanceAffectingFinancialSettlement(tx.settlementState)
+              ? sum + tx.amountCents
+              : sum,
           0,
         );
         return {

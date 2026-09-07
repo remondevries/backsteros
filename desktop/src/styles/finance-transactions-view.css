@@ -214,6 +214,12 @@
   color: #3f9d6e;
 }
 
+.finance-transactions-view__detail-amount.is-void {
+  color: var(--muted, #8a8a8a);
+  text-decoration: line-through;
+  font-weight: 400;
+}
+
 .finance-transactions-view__detail-account {
   display: inline-flex;
   min-width: 0;

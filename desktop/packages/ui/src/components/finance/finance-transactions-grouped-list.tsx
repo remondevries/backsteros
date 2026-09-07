@@ -7,6 +7,10 @@ import type {
   FinancialCategory,
   FinancialTransaction,
 } from "@backsteros/contracts";
+import {
+  isBalanceAffectingFinancialSettlement,
+  isVoidFinancialSettlement,
+} from "@backsteros/contracts";
 
 import type { TransactionMonthGroup } from "../../finance/group-transactions-by-month-week.js";
 import { isDirectRoleButtonActivationKey } from "../../shortcuts/shortcut-guards.js";
@@ -82,6 +86,7 @@ function summarizeMonthAmounts(items: FinancialTransaction[]): {
   let spendCents = 0;
   for (const tx of items) {
     if (tx.currency !== currency) continue;
+    if (!isBalanceAffectingFinancialSettlement(tx.settlementState)) continue;
     if (tx.amountCents > 0) incomeCents += tx.amountCents;
     else if (tx.amountCents < 0) spendCents += tx.amountCents;
   }
@@ -644,10 +649,18 @@ export function FinanceTransactionsGroupedList({
                           </div>
                           <span className="finance-tx-row__spacer" />
                           <span
-                            className={
-                              tx.amountCents < 0
-                                ? "finance-tx-row__amount is-debit"
-                                : "finance-tx-row__amount is-credit"
+                            className={[
+                              "finance-tx-row__amount",
+                              isVoidFinancialSettlement(tx.settlementState)
+                                ? "is-void"
+                                : tx.amountCents < 0
+                                  ? "is-debit"
+                                  : "is-credit",
+                            ].join(" ")}
+                            title={
+                              isVoidFinancialSettlement(tx.settlementState)
+                                ? `Not counted · ${tx.settlementState}`
+                                : undefined
                             }
                           >
                             {formatAmount(tx.amountCents, tx.currency)}

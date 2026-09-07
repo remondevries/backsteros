@@ -47,4 +47,15 @@ describe("isCashflowTransaction", () => {
     assert.equal(isCashflowTransaction({ categoryId: "a" }, exclude), true);
     assert.equal(isCashflowTransaction({ categoryId: "b" }, exclude), false);
   });
+
+  it("drops void settlements", () => {
+    const exclude = new Set<string>();
+    assert.equal(
+      isCashflowTransaction(
+        { categoryId: "a", settlementState: "refused" },
+        exclude,
+      ),
+      false,
+    );
+  });
 });

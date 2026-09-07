@@ -5,6 +5,7 @@ import type {
   FinancialCategory,
   FinancialTransaction,
 } from "@backsteros/contracts";
+import { isBalanceAffectingFinancialSettlement } from "@backsteros/contracts";
 import {
   previousMonthKey,
   type FinanceAccountMetrics,
@@ -476,7 +477,9 @@ export function useFinanceSectionData({
         );
         for (const tx of body.transactions) {
           allTransactions.push(tx);
-          balanceCents += tx.amountCents;
+          if (isBalanceAffectingFinancialSettlement(tx.settlementState)) {
+            balanceCents += tx.amountCents;
+          }
         }
         cursor = body.nextCursor;
       } while (cursor);

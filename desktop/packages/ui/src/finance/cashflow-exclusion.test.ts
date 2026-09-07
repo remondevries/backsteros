@@ -5,7 +5,7 @@ import {
   buildNonCashflowCategoryIdSet,
   isCashflowCategory,
   isCashflowTransaction,
-} from "../../dist/finance/cashflow-exclusion.js";
+} from "./cashflow-exclusion.js";
 
 describe("isCashflowCategory", () => {
   it("counts uncategorized and regular categories", () => {
@@ -57,5 +57,30 @@ describe("isCashflowTransaction", () => {
     assert.equal(isCashflowTransaction({ categoryId: null }, excluded), true);
     assert.equal(isCashflowTransaction({ categoryId: "a" }, excluded), true);
     assert.equal(isCashflowTransaction({ categoryId: "b" }, excluded), false);
+  });
+
+  it("drops refused / cancelled settlements even when categorized", () => {
+    const excluded = new Set<string>();
+    assert.equal(
+      isCashflowTransaction(
+        { categoryId: "a", settlementState: "refused" },
+        excluded,
+      ),
+      false,
+    );
+    assert.equal(
+      isCashflowTransaction(
+        { categoryId: null, settlementState: "cancelled" },
+        excluded,
+      ),
+      false,
+    );
+    assert.equal(
+      isCashflowTransaction(
+        { categoryId: "a", settlementState: "settled" },
+        excluded,
+      ),
+      true,
+    );
   });
 });

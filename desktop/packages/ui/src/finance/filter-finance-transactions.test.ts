@@ -7,13 +7,13 @@ import {
   DROPDOWN_NONE_VALUE,
   DROPDOWN_NO_GOAL_VALUE,
   DROPDOWN_NO_RECURRING_VALUE,
-} from "../../dist/components/dropdowns/dropdown-options.js";
+} from "../components/dropdowns/dropdown-options.js";
 import {
   buildAmountHistogramBins,
   computeAmountRangeDomain,
   filterFinanceTransactions,
   isFullAmountRange,
-} from "../../dist/finance/filter-finance-transactions.js";
+} from "./filter-finance-transactions.js";
 
 function tx(
   partial: Partial<FinancialTransaction> & {
@@ -36,6 +36,7 @@ function tx(
     fingerprint: partial.id,
     sourceCode: null,
     sourceType: null,
+    settlementState: null,
     raw: {},
     organizationId: null,
     projectId: null,
