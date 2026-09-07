@@ -30,19 +30,24 @@ function runListSelectAll(): boolean {
 
 /**
  * Shared entry for ⌘A / Ctrl+A and the Tauri `backsteros:select-all` menu event.
- * Editable fields keep text select-all; otherwise the active list selects rows.
+ * Editable fields keep text select-all (including inside blocking modals such as
+ * the command palette); otherwise the active list selects rows.
  */
 export function handleSelectAllRequest(event?: Event): boolean {
-  if (isBlockingModalOpen()) return false;
-
   const active =
     typeof document !== "undefined" ? document.activeElement : null;
   if (
     isEditableShortcutTarget(event?.target ?? null) ||
     isEditableShortcutTarget(active)
   ) {
+    // Must run before the blocking-modal guard: Tauri claims ⌘A via the Edit
+    // menu and only delivers `backsteros:select-all`, so the command-palette
+    // (and other modal) search fields never see a native keydown.
     return selectAllInFocusedEditable(active);
   }
+
+  // Don't select list rows / page content behind a blocking modal.
+  if (isBlockingModalOpen()) return false;
 
   if (runListSelectAll()) return true;
 
