@@ -1963,9 +1963,18 @@ export function registerApiRoutes(app: Hono) {
 
       try {
         const body = c.req.valid("json");
-        const { activityActor, ...createInput } = body;
+        const { activityActor, id: preferredId, ...createInput } = body;
+        if (preferredId) {
+          const existing = await taskProjectService.getTaskById(
+            auth.workspaceId,
+            preferredId,
+          );
+          if (existing) {
+            return c.json(toTask(existing), 200);
+          }
+        }
         if (isRestLeaderFirstWrite()) {
-          const taskId = newId();
+          const taskId = preferredId ?? newId();
           await commitRestEntityWrite({
             workspaceId: auth.workspaceId,
             entity: "task",
@@ -1985,7 +1994,7 @@ export function registerApiRoutes(app: Hono) {
         const row = await taskProjectService.createTask(
           auth.workspaceId,
           createInput,
-          undefined,
+          preferredId,
           undefined,
           writeActorFromAuth(auth, activityActor),
           { authKind: auth.kind },

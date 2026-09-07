@@ -410,6 +410,8 @@ export const taskSchema = z.object({
 });
 
 export const createTaskSchema = z.object({
+  /** Client-generated id for offline-first / PowerSync dual-write creates. */
+  id: z.string().min(1).max(64).optional(),
   projectId: z.string().nullable().optional(),
   contactId: z.string().nullable().optional(),
   assigneeId: z.string().nullable().optional(),

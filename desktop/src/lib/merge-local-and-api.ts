@@ -9,6 +9,18 @@ function updatedAtMs(value: string | number | Date | null | undefined): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+/**
+ * When the same task appears in list + inbox snapshots, keep the newer row so
+ * due dates (and other fields) stay consistent across side panel and detail.
+ */
+export function preferNewerByUpdatedAt<
+  T extends { updatedAt?: string | number | Date | null },
+>(current: T, incoming: T): T {
+  return updatedAtMs(incoming.updatedAt) >= updatedAtMs(current.updatedAt)
+    ? incoming
+    : current;
+}
+
 function linksMissing(value: unknown): boolean {
   if (value == null || value === "") return true;
   if (Array.isArray(value)) return value.length === 0;
@@ -25,9 +37,14 @@ function hasLinks(value: unknown): boolean {
 
 /**
  * Resolve list rows for the Linear-shaped client.
- * Once SQLite/PowerSync has any rows for an entity, trust local only —
- * do not LWW-merge against REST by wall-clock `updatedAt`.
- * REST remains a cold-start rescue when local is still empty.
+ * Once SQLite/PowerSync has rows, keep that membership — REST is only a
+ * cold-start rescue when local is empty.
+ *
+ * Still overlay an API row when its `updatedAt` is newer. Optimistic patches
+ * bump the API cache immediately while the SQLite watch is still a tick
+ * behind; without this, a re-render snaps status (and other fields) back to
+ * the stale local value until PowerSync catches up — or forever if sync
+ * briefly re-delivers the pre-patch row.
  */
 export function resolveLocalOrApiRows<
   T extends { id: string; updatedAt?: string | number | Date | null },
@@ -36,7 +53,13 @@ export function resolveLocalOrApiRows<
   apiRows: T[] | null | undefined,
 ): T[] {
   if (localRows != null && localRows.length > 0) {
-    return localRows;
+    if (!apiRows?.length) return localRows;
+    const apiById = new Map(apiRows.map((row) => [row.id, row]));
+    return localRows.map((local) => {
+      const api = apiById.get(local.id);
+      if (!api) return local;
+      return preferNewerByUpdatedAt(local, api);
+    });
   }
   return apiRows ?? localRows ?? [];
 }
@@ -346,6 +369,53 @@ export function fillMissingAgentChatIdFromApi<
 }
 
 /**
+ * When local omits `linkedCommitShas` (CLI/API write before PowerSync pull, or
+ * schema lag), copy them from the API row so task Changes stay visible.
+ * When the API row is newer (optimistic unlink/link), prefer API — including
+ * an empty list — so clears are not resurrected from stale SQLite.
+ */
+export function fillMissingLinkedCommitShasFromApi<
+  T extends {
+    id: string;
+    linkedCommitShas?: string[] | null;
+    updatedAt?: string | number | Date | null;
+  },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api) return row;
+    const local = Array.isArray(row.linkedCommitShas)
+      ? row.linkedCommitShas.filter(
+          (sha): sha is string =>
+            typeof sha === "string" && sha.trim().length > 0,
+        )
+      : [];
+    const apiShas = Array.isArray(api.linkedCommitShas)
+      ? api.linkedCommitShas.filter(
+          (sha): sha is string =>
+            typeof sha === "string" && sha.trim().length > 0,
+        )
+      : [];
+    if (updatedAtMs(api.updatedAt) > updatedAtMs(row.updatedAt)) {
+      if (
+        local.length === apiShas.length &&
+        local.every(
+          (sha, index) => sha.toLowerCase() === apiShas[index]?.toLowerCase(),
+        )
+      ) {
+        return row;
+      }
+      return { ...row, linkedCommitShas: api.linkedCommitShas ?? [] };
+    }
+    if (local.length > 0) return row;
+    if (apiShas.length === 0) return row;
+    return { ...row, linkedCommitShas: api.linkedCommitShas };
+  });
+}
+
+/**
  * PowerSync can keep habit-day rows after the server soft-deletes them
  * (`deleted_at IS NULL` sync query). REST is the membership snapshot — drop
  * local-only habit tasks so today's chips don't double up.
@@ -434,6 +504,7 @@ export function fillMissingMeetingPropertiesFromApi<
     organizationId?: string | null;
     attendeeContactIds?: unknown;
     format?: string | null;
+    locationOrganizationId?: string | null;
     updatedAt?: string | number | Date | null;
   },
 >(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
@@ -557,5 +628,39 @@ export function fillMissingHabitIdFromApi<
     const api = apiById.get(row.id);
     if (!api?.habitId) return row;
     return { ...row, habitId: api.habitId };
+  });
+}
+
+function entityNumberMissing(value: unknown): boolean {
+  return (
+    value == null ||
+    (typeof value === "number" && (!Number.isFinite(value) || value <= 0))
+  );
+}
+
+/**
+ * Server assigns `number` on create / scope move. Local PowerSync rows often
+ * keep `null` (or a stale inbox number after a project move) until download.
+ * Prefer the API number when local is missing, or when both rows share the
+ * same project scope but disagree on the number.
+ */
+export function fillMissingNumberFromApi<
+  T extends { id: string; number?: number | null; projectId?: string | null },
+>(mergedRows: T[], apiRows: T[] | null | undefined): T[] {
+  if (!apiRows?.length) return mergedRows;
+  const apiById = new Map(apiRows.map((row) => [row.id, row]));
+  return mergedRows.map((row) => {
+    const api = apiById.get(row.id);
+    if (!api || entityNumberMissing(api.number)) return row;
+    if (entityNumberMissing(row.number)) {
+      return { ...row, number: api.number };
+    }
+    if (
+      row.number !== api.number &&
+      (row.projectId ?? null) === (api.projectId ?? null)
+    ) {
+      return { ...row, number: api.number };
+    }
+    return row;
   });
 }

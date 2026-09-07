@@ -8,7 +8,12 @@ import { allocateUniqueProjectKey, toApiDueDateIso } from "@backsteros/ui";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
 import { resolveCreateAssigneeId } from "../default-assignee";
-import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
+import {
+  PENDING_ENTITY_NUMBER,
+  optimisticLocalMetadataCreate,
+} from "./optimistic-local-metadata-create";
+import { dualWriteTaskCreateAndApplyNumber } from "./dual-write-task-create";
+import { resolveEntityNumberAfterLocalCreate } from "./resolve-entity-number-after-local-create";
 import {
   cloneTaskLinksForDuplicate,
   parseTaskLinks,
@@ -82,14 +87,14 @@ export function useWorkspaceTaskActions({
         projectId: null,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      // Linear-shaped: one write path. When PowerSync is ready, local create +
-      // upload only — no REST dual-write.
+      // Local create + REST dual-write (same client id) so numbers appear even
+      // when the PowerSync CRUD queue is stuck.
       if (powerSync.ready && powerSync.createMetadata) {
         const id = crypto.randomUUID().replace(/-/g, "");
         const now = new Date().toISOString();
         const task = {
           id,
-          number: null,
+          number: PENDING_ENTITY_NUMBER,
           ...body,
           createdAt: now,
           updatedAt: now,
@@ -102,7 +107,7 @@ export function useWorkspaceTaskActions({
             );
           }
         };
-        const { number } = await optimisticLocalMetadataCreate({
+        const { number: resolvedFromUpload } = await optimisticLocalMetadataCreate({
           id,
           applyOptimistic: () => {
             setApiTasks((rows) => {
@@ -126,15 +131,42 @@ export function useWorkspaceTaskActions({
               id,
             ),
           errorLabel: "local task create",
-          resolveNumberAfterUpload: {
-            client,
-            powerSync,
-            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
-            setters: inbox
-              ? [setApiTasks, setApiInboxTasks]
-              : [setApiTasks],
-          },
         });
+        // Dual-write REST with the same client id so KEY-N / IN-N appear even
+        // when the PowerSync CRUD queue is stuck (local-only orphans).
+        if (authenticated) {
+          try {
+            const number = await dualWriteTaskCreateAndApplyNumber(
+              client,
+              powerSync,
+              {
+                id,
+                body,
+                setters: inbox
+                  ? [setApiTasks, setApiInboxTasks]
+                  : [setApiTasks],
+              },
+            );
+            if (number != null) return { id: task.id, number };
+          } catch (error) {
+            console.warn(
+              "[desktop] task create REST dual-write failed; falling back to upload resolve",
+              error,
+            );
+          }
+        }
+        if (resolvedFromUpload != null) {
+          return { id: task.id, number: resolvedFromUpload };
+        }
+        const number = await resolveEntityNumberAfterLocalCreate(
+          client,
+          powerSync,
+          `/api/v1/tasks/${encodeURIComponent(id)}`,
+          id,
+          ...(inbox
+            ? [setApiTasks, setApiInboxTasks]
+            : [setApiTasks]),
+        );
         return { id: task.id, number };
       }
 
@@ -225,18 +257,19 @@ export function useWorkspaceTaskActions({
         inbox: false,
         ...(input.links && input.links.length > 0 ? { links: input.links } : {}),
       };
-      // Linear-shaped: PowerSync-ready → local create only (no REST dual-write).
+      // Local create + REST dual-write (same client id) so numbers appear even
+      // when the PowerSync CRUD queue is stuck.
       if (powerSync.ready && powerSync.createMetadata) {
         const id = crypto.randomUUID().replace(/-/g, "");
         const now = new Date().toISOString();
         const task = {
           id,
-          number: null,
+          number: PENDING_ENTITY_NUMBER,
           ...body,
           createdAt: now,
           updatedAt: now,
         } as ApiTask;
-        const { number } = await optimisticLocalMetadataCreate({
+        await optimisticLocalMetadataCreate({
           id,
           applyOptimistic: () => {
             setApiTasks((rows) => {
@@ -254,13 +287,27 @@ export function useWorkspaceTaskActions({
               id,
             ),
           errorLabel: "local project task create",
-          resolveNumberAfterUpload: {
+        });
+        try {
+          const number = await dualWriteTaskCreateAndApplyNumber(
             client,
             powerSync,
-            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
-            setters: [setApiTasks],
-          },
-        });
+            { id, body, setters: [setApiTasks] },
+          );
+          if (number != null) return { id: task.id, number };
+        } catch (error) {
+          console.warn(
+            "[desktop] project task create REST dual-write failed; falling back to upload resolve",
+            error,
+          );
+        }
+        const number = await resolveEntityNumberAfterLocalCreate(
+          client,
+          powerSync,
+          `/api/v1/tasks/${encodeURIComponent(id)}`,
+          id,
+          setApiTasks,
+        );
         return { id: task.id, number };
       }
 
@@ -306,12 +353,12 @@ export function useWorkspaceTaskActions({
         const inbox = Boolean(body.inbox);
         const task = {
           id,
-          number: null,
+          number: PENDING_ENTITY_NUMBER,
           ...body,
           createdAt: now,
           updatedAt: now,
         } as ApiTask;
-        const { number } = await optimisticLocalMetadataCreate({
+        await optimisticLocalMetadataCreate({
           id,
           applyOptimistic: () => {
             setApiTasks((rows) => {
@@ -342,15 +389,35 @@ export function useWorkspaceTaskActions({
               id,
             ),
           errorLabel: "local task create",
-          resolveNumberAfterUpload: {
+        });
+        try {
+          const number = await dualWriteTaskCreateAndApplyNumber(
             client,
             powerSync,
-            fetchPath: `/api/v1/tasks/${encodeURIComponent(id)}`,
-            setters: inbox
-              ? [setApiTasks, setApiInboxTasks]
-              : [setApiTasks],
-          },
-        });
+            {
+              id,
+              body,
+              setters: inbox
+                ? [setApiTasks, setApiInboxTasks]
+                : [setApiTasks],
+            },
+          );
+          if (number != null) return { ...task, number };
+        } catch (error) {
+          console.warn(
+            "[desktop] task-from-body REST dual-write failed; falling back to upload resolve",
+            error,
+          );
+        }
+        const number = await resolveEntityNumberAfterLocalCreate(
+          client,
+          powerSync,
+          `/api/v1/tasks/${encodeURIComponent(id)}`,
+          id,
+          ...(inbox
+            ? [setApiTasks, setApiInboxTasks]
+            : [setApiTasks]),
+        );
         return { ...task, number };
       }
 
@@ -434,6 +501,10 @@ export function useWorkspaceTaskActions({
           ? { relatedOrganizationIds: source.relatedOrganizationIds }
           : {}),
         ...(links.length > 0 ? { links } : {}),
+        ...(Array.isArray(source.linkedCommitShas) &&
+        source.linkedCommitShas.length > 0
+          ? { linkedCommitShas: source.linkedCommitShas }
+          : {}),
       };
 
       const task = await createTaskFromBody(body);

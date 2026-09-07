@@ -1,7 +1,9 @@
 import {
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import type {
@@ -18,6 +20,7 @@ import type {
 import { formatContactDisplayName } from "@backsteros/contracts";
 import {
   buildInboxTaskListItem,
+  coerceTaskDisplayNumber,
   sortInboxItemsByAttentionStatus,
   taskBelongsInInbox,
   type InboxListItem,
@@ -35,13 +38,16 @@ import {
   dropStaleLocalHabitTasks,
   fillMissingCodebaseFieldsFromApi,
   fillMissingLinksFromApi,
+  fillMissingLinkedCommitShasFromApi,
   fillMissingLongTextFromApi,
   fillMissingMeetingPropertiesFromApi,
   fillMissingMoneybirdContactIdFromApi,
+  fillMissingNumberFromApi,
   fillMissingParentFromApi,
   fillMissingTypeFromApi,
   mergeLocalDocumentsWithLiveApi,
   mergeLocalWithPendingApiCreates,
+  preferNewerByUpdatedAt,
   resolveLocalOrApiRows,
 } from "../merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "../powersync-context";
@@ -51,6 +57,8 @@ import { rememberProjectTypes } from "../project-type-cache";
 import { noteLocalTaskStatusPatch } from "../agent/agent-status-notifications";
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
 import { rememberWorkspaceSectionEntries } from "../section-entry-hrefs";
+import { backfillLocalEntityNumbersFromApi } from "./backfill-local-entity-numbers";
+import { rescueUnuploadedLocalTasks } from "./rescue-unuploaded-local-tasks";
 import {
   asEpoch,
   mapContact,
@@ -127,6 +135,7 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
     const task = snakeRow(row) as ApiTask;
     return {
       ...task,
+      number: coerceTaskDisplayNumber(task.number),
       relatedContactIds: parseStringIdArray(task.relatedContactIds),
       relatedOrganizationIds: parseStringIdArray(task.relatedOrganizationIds),
     };
@@ -140,6 +149,7 @@ function splitLocalTaskRows(rows: Record<string, unknown>[] | null | undefined):
         dueDate: task.dueDate,
         agentCreatedAt: task.agentCreatedAt,
         agentInboxApprovedAt: task.agentInboxApprovedAt,
+        habitId: task.habitId,
       }),
     ),
   };
@@ -246,6 +256,74 @@ function useDesktopWorkspaceDataImpl(): {
     queriesGracePeriodExpired,
   } = useWorkspaceApiRows({ authenticated, client, powerSync });
 
+  // Copy REST numbers into SQLite when local rows still have null/0
+  // (create/scope-move lag). Re-runs when the missing set changes. Also rescue
+  // local-only orphans whose PowerSync PUT never reached Postgres — including
+  // rows that already exist on REST but still lack a local number.
+  const taskNumberBackfillKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (!powerSync.ready || !authenticated) return;
+    const localMapped = [
+      ...(localTasks ?? []),
+      ...(localInboxTasks ?? []),
+    ];
+    if (localMapped.length === 0) return;
+    const missingIds = localMapped
+      .filter(
+        (row) =>
+          row.number == null ||
+          (typeof row.number === "number" &&
+            (!Number.isFinite(row.number) || row.number <= 0)),
+      )
+      .map((row) => row.id)
+      .sort();
+    if (missingIds.length === 0) {
+      taskNumberBackfillKeyRef.current = "";
+      return;
+    }
+    const key = missingIds.join(",");
+    if (taskNumberBackfillKeyRef.current === key) return;
+    taskNumberBackfillKeyRef.current = key;
+    void (async () => {
+      try {
+        const rescued = await rescueUnuploadedLocalTasks(
+          client,
+          powerSync,
+          localMapped,
+          [setApiTasks, setApiInboxTasks],
+        );
+        let backfilled = 0;
+        if (apiTasks?.length) {
+          backfilled = await backfillLocalEntityNumbersFromApi(
+            powerSync,
+            "tasks",
+            localMapped,
+            [...apiTasks, ...(apiInboxTasks ?? [])],
+          );
+        }
+        // Auth/network blips: don't permanently lock this missing set.
+        if (rescued === 0 && backfilled === 0) {
+          taskNumberBackfillKeyRef.current = "";
+        }
+      } catch (error) {
+        if (taskNumberBackfillKeyRef.current === key) {
+          taskNumberBackfillKeyRef.current = "";
+        }
+        console.warn("[desktop] task number rescue/backfill failed", error);
+      }
+    })();
+  }, [
+    apiInboxTasks,
+    apiTasks,
+    authenticated,
+    client,
+    localInboxTasks,
+    localTasks,
+    powerSync,
+    setApiInboxTasks,
+    setApiTasks,
+  ]);
+
   const rawProjects = useMemo(() => {
     const localMapped =
       localProjects.data?.map((row) => snakeRow(row) as ApiProject) ?? null;
@@ -266,8 +344,13 @@ function useDesktopWorkspaceDataImpl(): {
   const projectsById = useMemo(() => {
     const map = new Map<string, ApiProject>();
     for (const project of rawProjects) map.set(project.id, project);
+    // Local-primary project membership can omit a row (sync lag) while tasks
+    // still reference it — keep API projects in the lookup so KEY-N resolves.
+    for (const project of apiProjects ?? []) {
+      if (!map.has(project.id)) map.set(project.id, project);
+    }
     return map;
-  }, [rawProjects]);
+  }, [apiProjects, rawProjects]);
 
   const rawOrganizations = useMemo(() => {
     const localMapped =
@@ -315,21 +398,29 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped = localTasks;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiTasks);
     const resolved = dropStaleLocalHabitTasks(
-      fillMissingDueDatesFromApi(
-        fillMissingHabitIdFromApi(
-          fillMissingAgentChatIdFromApi(
-            fillMissingLinksFromApi(
-              mergeLocalWithPendingApiCreates(
-                resolveLocalOrApiRows(localMapped, apiTasks),
-                apiTasks,
+      fillMissingNumberFromApi(
+        fillMissingDueDatesFromApi(
+          fillMissingHabitIdFromApi(
+            fillMissingLinkedCommitShasFromApi(
+              fillMissingAgentChatIdFromApi(
+                fillMissingLinksFromApi(
+                  mergeLocalWithPendingApiCreates(
+                    resolveLocalOrApiRows(localMapped, apiTasks),
+                    apiTasks,
+                  ),
+                  fillFrom,
+                ),
+                fillFrom,
               ),
-              fillFrom,
+              // Prefer live REST when PowerSync lags (CLI-linked commits, etc.).
+              apiTasks,
             ),
             fillFrom,
           ),
           fillFrom,
         ),
-        fillFrom,
+        // Live API: server number after create / project scope move.
+        apiTasks,
       ),
       fillFrom,
     );
@@ -340,21 +431,27 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped = localInboxTasks;
     const fillFrom = apiFillSourceForColdStart(localMapped, apiInboxTasks);
     const resolved = dropStaleLocalHabitTasks(
-      fillMissingDueDatesFromApi(
-        fillMissingHabitIdFromApi(
-          fillMissingAgentChatIdFromApi(
-            fillMissingLinksFromApi(
-              mergeLocalWithPendingApiCreates(
-                resolveLocalOrApiRows(localMapped, apiInboxTasks),
-                apiInboxTasks,
+      fillMissingNumberFromApi(
+        fillMissingDueDatesFromApi(
+          fillMissingHabitIdFromApi(
+            fillMissingLinkedCommitShasFromApi(
+              fillMissingAgentChatIdFromApi(
+                fillMissingLinksFromApi(
+                  mergeLocalWithPendingApiCreates(
+                    resolveLocalOrApiRows(localMapped, apiInboxTasks),
+                    apiInboxTasks,
+                  ),
+                  fillFrom,
+                ),
+                fillFrom,
               ),
-              fillFrom,
+              apiInboxTasks,
             ),
             fillFrom,
           ),
           fillFrom,
         ),
-        fillFrom,
+        apiInboxTasks,
       ),
       fillFrom,
     );
@@ -506,11 +603,16 @@ function useDesktopWorkspaceDataImpl(): {
           agentCreatedAt: task.agentCreatedAt,
           agentInboxApprovedAt: task.agentInboxApprovedAt,
           inboxUpdatedAt: task.inboxUpdatedAt,
+          habitId: task.habitId,
         })
       ) {
         continue;
       }
-      byId.set(task.id, task);
+      const existing = byId.get(task.id);
+      byId.set(
+        task.id,
+        existing ? preferNewerByUpdatedAt(existing, task) : task,
+      );
     }
     const inboxTaskItems: InboxListItem[] = [...byId.values()].map((task) => {
       const project = task.projectId
@@ -519,7 +621,7 @@ function useDesktopWorkspaceDataImpl(): {
       return buildInboxTaskListItem({
         id: task.id,
         title: task.title,
-        number: task.number ?? 0,
+        number: coerceTaskDisplayNumber(task.number) ?? 0,
         status: task.status,
         priority: task.priority,
         dueDate: asEpoch(task.dueDate),
@@ -648,7 +750,11 @@ function useDesktopWorkspaceDataImpl(): {
     const allTasksById = new Map<string, TaskItemRowTask>();
     for (const task of mappedTasks) allTasksById.set(task.id, task);
     for (const task of mappedInboxTasks) {
-      if (!allTasksById.has(task.id)) allTasksById.set(task.id, task);
+      const existing = allTasksById.get(task.id);
+      allTasksById.set(
+        task.id,
+        existing ? preferNewerByUpdatedAt(existing, task) : task,
+      );
     }
     return [...allTasksById.values()];
   }, [mappedInboxTasks, mappedTasks]);
@@ -763,7 +869,10 @@ function useDesktopWorkspaceDataImpl(): {
   const taskDetails = useMemo(() => {
     const details: Record<string, ApiTask> = {};
     for (const task of [...rawTasks, ...rawInboxTasks]) {
-      details[task.id] = task;
+      const existing = details[task.id];
+      details[task.id] = existing
+        ? preferNewerByUpdatedAt(existing, task)
+        : task;
     }
     return details;
   }, [rawInboxTasks, rawTasks]);
