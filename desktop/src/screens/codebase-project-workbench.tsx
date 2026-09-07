@@ -202,7 +202,7 @@ export function CodebaseProjectWorkbench({
           loading: false,
           reason: body.reason ?? null,
         });
-        // After Settings OAuth, status flips to connected — drop stale list errors.
+        // After Settings token connect, status flips — drop stale list errors.
         if (body.connected && wasConnectedRef.current === false) {
           setGithubRefreshToken((token) => token + 1);
         }
@@ -228,7 +228,7 @@ export function CodebaseProjectWorkbench({
     return () => controller.abort();
   }, [requestJson, project.id, statusRefreshToken]);
 
-  // Settings OAuth finishes in a popup; re-check when focus returns (debounced).
+  // Re-check when focus returns (e.g. after saving a token in Settings).
   useEffect(() => {
     let timer: number | null = null;
     function onFocus() {
@@ -685,7 +685,7 @@ export function CodebaseProjectWorkbench({
               {githubStatus.reason ? <p>{githubStatus.reason}</p> : null}
               <p>
                 <Link to="/settings/$tab" params={{ tab: "github" }}>
-                  Connect GitHub in Settings
+                  Add a GitHub token in Settings
                 </Link>{" "}
                 to browse commits and pull requests.
               </p>

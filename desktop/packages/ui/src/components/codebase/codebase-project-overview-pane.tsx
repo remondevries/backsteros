@@ -265,7 +265,11 @@ function ProjectCommitHistory({
   githubListTab: CodebaseGithubListTab;
   onGithubListTabChange?: (tab: CodebaseGithubListTab) => void;
   selectedCommitSha?: string | null;
-  onSelectCommit?: (commit: GithubCommit, repository: string) => void;
+  onSelectCommit?: (
+    commit: GithubCommit,
+    repository: string,
+    options?: { engageHotkeys?: boolean },
+  ) => void;
   selectedPullNumber?: number | null;
   onSelectPullRequest?: (
     pullRequest: GithubPullRequest,
@@ -276,7 +280,7 @@ function ProjectCommitHistory({
   onSelectFile?: SelectProjectFileHandler;
   onFileEntryDeleted?: (path: string) => void;
   fileTreeRefreshToken?: number;
-  /** Bumped after Settings OAuth so Clerk/GitHub fetches retry. */
+  /** Bumped after Settings GitHub token connect so fetches retry. */
   githubRefreshToken?: number;
   /** Project documents tree for the Docs tab (same slot as Files). */
   docsListPanel?: ReactNode;
@@ -1440,7 +1444,7 @@ export type CodebaseProjectOverviewPaneProps = {
   tasks?: ApiTask[] | null;
   /** Optional progress override; when set with tasks omitted, skips task fetch. */
   taskProgress?: { total: number; completed: number } | null;
-  /** Bumped after Settings OAuth so Clerk/GitHub fetches retry. */
+  /** Bumped after Settings GitHub token connect so fetches retry. */
   githubRefreshToken?: number;
 };
 

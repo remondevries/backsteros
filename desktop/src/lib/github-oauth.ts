@@ -107,7 +107,7 @@ export async function fetchGithubConnectionStatus(
     ) {
       return disconnectedStatus(
         error.message ||
-          "GitHub is not connected. Connect GitHub and grant repo + organization access.",
+          "GitHub is not connected. Add a personal access token in Settings → GitHub.",
       );
     }
     throw error;

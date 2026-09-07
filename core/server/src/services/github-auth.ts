@@ -9,6 +9,22 @@ export function isGithubServerTokenConfigured(): boolean {
   return getConfiguredGithubApiToken() != null;
 }
 
+/**
+ * Pure selection order for GitHub API access:
+ * workspace Settings PAT → env `GITHUB_API_TOKEN` → optional Clerk OAuth.
+ * Clerk is never required when a PAT is configured.
+ */
+export function selectGithubAccessToken(sources: {
+  workspaceToken: string | null;
+  envToken: string | null;
+  clerkOauthToken?: string | null;
+}): string | null {
+  if (sources.workspaceToken) return sources.workspaceToken;
+  if (sources.envToken) return sources.envToken;
+  if (sources.clerkOauthToken) return sources.clerkOauthToken;
+  return null;
+}
+
 async function githubServiceError(
   message: string,
   code: string,
@@ -19,30 +35,41 @@ async function githubServiceError(
 }
 
 /**
- * Clerk OAuth on desktop; GITHUB_API_TOKEN on cloud-core for portal API keys.
+ * Resolve a GitHub API token for the current auth.
+ *
+ * Prefer a workspace Settings PAT (or `GITHUB_API_TOKEN`) so commit/PR fetches
+ * never require Clerk. Optional Clerk OAuth is only a fallback when no PAT is
+ * configured and the request is authenticated as a Clerk user.
  */
 export async function resolveGithubAccessToken(
   auth: AuthContext,
 ): Promise<string> {
+  const { getWorkspaceGithubApiToken } = await import("./github-settings.js");
+  const workspaceToken = await getWorkspaceGithubApiToken(auth.workspaceId);
+  const envToken = getConfiguredGithubApiToken();
+  const fromPat = selectGithubAccessToken({
+    workspaceToken,
+    envToken,
+  });
+  if (fromPat) {
+    return fromPat;
+  }
+
   if (auth.kind === "clerk" && auth.clerkUserId) {
     const { getGithubAccessToken } = await import("./github.js");
     return getGithubAccessToken(auth.clerkUserId);
   }
 
-  if (auth.kind === "api_key") {
-    const token = getConfiguredGithubApiToken();
-    if (token) {
-      return token;
-    }
+  if (auth.kind === "api_key" || auth.kind === "local_shell") {
     return githubServiceError(
-      "GitHub is not configured on this server. Set GITHUB_API_TOKEN for API access.",
+      "GitHub is not configured. Add a personal access token in Settings → GitHub (or set GITHUB_API_TOKEN).",
       "github_token_missing",
       403,
     );
   }
 
   return githubServiceError(
-    "GitHub integration requires Clerk sign-in or a configured server token",
+    "GitHub integration requires a Settings → GitHub token, Clerk OAuth, or GITHUB_API_TOKEN",
     "github_auth_required",
     403,
   );

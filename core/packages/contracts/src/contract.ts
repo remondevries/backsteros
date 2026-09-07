@@ -1774,6 +1774,38 @@ export const apiContract = c.router(
       },
       summary: "Test Mapbox access token with a light geocode call",
     },
+    getGithubSettings: {
+      method: "GET",
+      path: "/api/v1/settings/github",
+      responses: {
+        200: s.githubSettingsSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Get GitHub integration settings (API token redacted)",
+    },
+    updateGithubSettings: {
+      method: "PATCH",
+      path: "/api/v1/settings/github",
+      body: s.updateGithubSettingsSchema,
+      responses: {
+        200: s.githubSettingsSchema,
+        400: badRequestSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Update GitHub personal access token",
+    },
+    testGithubConnection: {
+      method: "GET",
+      path: "/api/v1/settings/github/test",
+      responses: {
+        200: s.githubTestConnectionResultSchema,
+        401: errorSchema,
+        403: errorSchema,
+      },
+      summary: "Test GitHub API token with /user",
+    },
     mapboxGeocode: {
       method: "GET",
       path: "/api/v1/mapbox/geocode",

@@ -48,6 +48,7 @@ import {
   updateMapboxSettingsSchema,
   mapboxGeocodeQuerySchema,
   mapboxStaticMapQuerySchema,
+  updateGithubSettingsSchema,
   updateAgentMailSettingsSchema,
   updateEmailThreadMetadataSchema,
   createEmailThreadCommentSchema,
@@ -94,7 +95,7 @@ import {
   toTaskComment,
 } from "../lib/mappers.js";
 import type { AuthContext } from "../middleware/auth.js";
-import { requireScope, resolveAuth } from "../middleware/auth.js";
+import { requireScope, resolveAuth, isOwnerShellAuth } from "../middleware/auth.js";
 import {
   normalizeAvatarMimeType,
   resolveAvatarContentType,
@@ -114,6 +115,7 @@ import * as moneybirdBankSyncService from "../services/finance/moneybird-sync.js
 import * as cursorSettingsService from "../services/cursor-settings.js";
 import * as moneybirdSettingsService from "../services/moneybird-settings.js";
 import * as mapboxSettingsService from "../services/mapbox-settings.js";
+import * as githubSettingsService from "../services/github-settings.js";
 import * as agentmailSettingsService from "../services/agentmail-settings.js";
 import * as emailThreadsService from "../services/email-threads.js";
 import { MoneybirdApiError } from "../lib/moneybird-client.js";
@@ -146,6 +148,7 @@ import * as crmGroupsService from "../services/crm-groups.js";
 import * as crmRelationshipLabelsService from "../services/crm-relationship-labels.js";
 import * as crmActivitiesService from "../services/crm-activities.js";
 import * as githubService from "../services/github.js";
+import { resolveGithubAccessToken } from "../services/github-auth.js";
 import * as projectFsService from "../services/project-fs.js";
 import * as projectVaultService from "../services/project-vault.js";
 import * as taskActivityService from "../services/task-activities.js";
@@ -811,28 +814,21 @@ export function registerApiRoutes(app: Hono) {
     if (!auth) {
       return c.json(unauthorized(), 401);
     }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
-    }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const status = await githubService.getGithubConnectionStatus(token);
       return c.json(status);
     } catch (error) {
       if (error instanceof githubService.GithubServiceError) {
         if (
           error.code === "github_oauth_missing" ||
-          error.code === "github_oauth_unavailable"
+          error.code === "github_oauth_unavailable" ||
+          error.code === "github_token_missing" ||
+          error.code === "github_auth_required"
         ) {
           return c.json(githubService.disconnectedGithubStatus(error.message));
         }
@@ -850,21 +846,12 @@ export function registerApiRoutes(app: Hono) {
     if (!auth) {
       return c.json(unauthorized(), 401);
     }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
-    }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const repositories = await githubService.listUserRepositories(token);
       return c.json({ repositories });
     } catch (error) {
@@ -882,15 +869,6 @@ export function registerApiRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
-    }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
     }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
@@ -923,7 +901,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -951,15 +929,6 @@ export function registerApiRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
-    }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
     }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
@@ -1008,7 +977,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -1040,15 +1009,6 @@ export function registerApiRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
-    }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
     }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
@@ -1089,7 +1049,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -1119,15 +1079,6 @@ export function registerApiRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
-    }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
     }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
@@ -1169,7 +1120,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -1201,15 +1152,6 @@ export function registerApiRoutes(app: Hono) {
     if (!auth) {
       return c.json(unauthorized(), 401);
     }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
-    }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
     }
@@ -1249,7 +1191,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -1278,15 +1220,6 @@ export function registerApiRoutes(app: Hono) {
     const auth = getAuth(c);
     if (!auth) {
       return c.json(unauthorized(), 401);
-    }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
     }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
@@ -1335,7 +1268,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -1369,15 +1302,6 @@ export function registerApiRoutes(app: Hono) {
     if (!auth) {
       return c.json(unauthorized(), 401);
     }
-    if (auth.kind !== "clerk" || !auth.clerkUserId) {
-      return c.json(
-        {
-          error: "GitHub integration requires signing in with Clerk",
-          code: "clerk_required",
-        },
-        403,
-      );
-    }
     if (!requireScope("projects:read")(auth)) {
       return c.json(forbidden(), 403);
     }
@@ -1425,7 +1349,7 @@ export function registerApiRoutes(app: Hono) {
     }
 
     try {
-      const token = await githubService.getGithubAccessToken(auth.clerkUserId);
+      const token = await resolveGithubAccessToken(auth);
       const { owner, repo } = githubService.parseGithubRepositoryFullName(
         project.githubRepository,
       );
@@ -2071,7 +1995,7 @@ export function registerApiRoutes(app: Hono) {
             operation: "upsert",
             payload: buildTaskRestPayload(taskId, patch, {
               agentInboxApproved,
-              allowAgentInboxApproval: auth.kind === "clerk",
+              allowAgentInboxApproval: isOwnerShellAuth(auth),
             }),
           });
           const row = await taskProjectService.getTaskById(
@@ -2086,7 +2010,7 @@ export function registerApiRoutes(app: Hono) {
           { ...patch, agentInboxApproved },
           undefined,
           writeActorFromAuth(auth, activityActor),
-          { allowAgentInboxApproval: auth.kind === "clerk" },
+          { allowAgentInboxApproval: isOwnerShellAuth(auth) },
         );
         if (!row) {
           return c.json(notFound("Task"), 404);
@@ -5020,14 +4944,14 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", upsertDevicePushTokenSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (auth.kind !== "clerk" || !auth.userId) {
+      if (!isOwnerShellAuth(auth)) {
         return c.json(unauthorized(), 401);
       }
       const body = c.req.valid("json");
       try {
         await pushInboxTriageService.upsertDevicePushToken({
           workspaceId: auth.workspaceId,
-          userId: auth.userId,
+          userId: auth.userId!,
           platform: body.platform,
           token: body.token,
           deviceName: body.deviceName,
@@ -5046,13 +4970,13 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", deleteDevicePushTokenSchema),
     async (c) => {
       const auth = getAuth(c);
-      if (auth.kind !== "clerk" || !auth.userId) {
+      if (!isOwnerShellAuth(auth)) {
         return c.json(unauthorized(), 401);
       }
       const body = c.req.valid("json");
       await pushInboxTriageService.deleteDevicePushToken({
         workspaceId: auth.workspaceId,
-        userId: auth.userId,
+        userId: auth.userId!,
         token: body.token,
       });
       return c.json({ ok: true as const });
@@ -5287,6 +5211,37 @@ export function registerApiRoutes(app: Hono) {
     if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
     return c.json(
       await mapboxSettingsService.testMapboxConnection(auth.workspaceId),
+    );
+  });
+  app.get("/api/v1/settings/github", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await githubSettingsService.getGithubSettings(auth.workspaceId),
+    );
+  });
+  app.patch("/api/v1/settings/github", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:write")) return c.json(forbidden(), 403);
+    const parsed = updateGithubSettingsSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid GitHub settings", code: "bad_request" },
+        400,
+      );
+    }
+    return c.json(
+      await githubSettingsService.updateGithubSettings(
+        auth.workspaceId,
+        parsed.data,
+      ),
+    );
+  });
+  app.get("/api/v1/settings/github/test", async (c) => {
+    const auth = getAuth(c);
+    if (!can(auth, "settings:read")) return c.json(forbidden(), 403);
+    return c.json(
+      await githubSettingsService.testGithubConnection(auth.workspaceId),
     );
   });
   app.get(
@@ -7629,7 +7584,7 @@ export function registerApiRoutes(app: Hono) {
 
   app.get("/api/v1/api-keys", async (c) => {
     const auth = getAuth(c);
-    if (auth.kind !== "clerk" || !auth.userId) {
+    if (!isOwnerShellAuth(auth)) {
       return c.json(unauthorized(), 401);
     }
 
@@ -7642,14 +7597,14 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", createApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (auth.kind !== "clerk" || !auth.userId) {
+      if (!isOwnerShellAuth(auth)) {
         return c.json(unauthorized(), 401);
       }
 
       try {
         const { row, secret } = await apiKeyService.createApiKey(
           auth.workspaceId,
-          auth.userId,
+          auth.userId!,
           c.req.valid("json"),
         );
         return c.json({ apiKey: toApiKey(row), secret }, 201);
@@ -7667,7 +7622,7 @@ export function registerApiRoutes(app: Hono) {
     zValidator("json", updateApiKeySchema),
     async (c) => {
       const auth = getAuth(c);
-      if (auth.kind !== "clerk" || !auth.userId) {
+      if (!isOwnerShellAuth(auth)) {
         return c.json(unauthorized(), 401);
       }
 
@@ -7692,7 +7647,7 @@ export function registerApiRoutes(app: Hono) {
 
   app.delete("/api/v1/api-keys/:id", async (c) => {
     const auth = getAuth(c);
-    if (auth.kind !== "clerk" || !auth.userId) {
+    if (!isOwnerShellAuth(auth)) {
       return c.json(unauthorized(), 401);
     }
 

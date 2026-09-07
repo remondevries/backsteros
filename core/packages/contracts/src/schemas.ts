@@ -1883,6 +1883,27 @@ export const mapboxTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
 });
 
+export const githubSettingsSchema = z.object({
+  apiTokenConfigured: z.boolean(),
+  apiTokenPreview: z.string().nullable(),
+  /** True when a workspace PAT or env fallback is configured (not Clerk OAuth). */
+  connected: z.boolean(),
+  /** Env `GITHUB_API_TOKEN` is set (shown so Settings can explain fallback). */
+  envTokenConfigured: z.boolean(),
+});
+
+export const updateGithubSettingsSchema = z.object({
+  /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
+  apiToken: z.string().optional(),
+});
+
+export const githubTestConnectionResultSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().nullable(),
+  login: z.string().nullable(),
+});
+
+
 /** Shared place/geocode result for contacts (and later meetings). */
 export const mapboxGeocodeResultSchema = z.object({
   latitude: z.number().finite(),
@@ -2962,6 +2983,13 @@ export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
+export type GithubSettings = z.infer<typeof githubSettingsSchema>;
+export type UpdateGithubSettingsInput = z.infer<
+  typeof updateGithubSettingsSchema
+>;
+export type GithubTestConnectionResult = z.infer<
+  typeof githubTestConnectionResultSchema
+>;
 export type UpdateMapboxSettingsInput = z.infer<
   typeof updateMapboxSettingsSchema
 >;

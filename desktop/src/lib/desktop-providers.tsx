@@ -1,5 +1,4 @@
 import { ClerkProvider, useAuth, useClerk } from "@clerk/clerk-react";
-import { createClerkTokenProvider } from "@backsteros/api-client";
 import { invoke } from "./tauri-invoke-instrumentation";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
@@ -10,12 +9,11 @@ import { WorkspaceEventsProvider } from "./workspace-events-provider";
 import { dismissBootSplash } from "./boot-splash";
 import { mergeClerkHandshakeQuery } from "./clerk-oauth-handoff";
 import { getDesktopPublicEnvironment } from "./env";
+import { createDesktopTokenProvider } from "./local-shell-auth";
 import { PowerSyncProvider } from "./powersync-context";
 import { DesktopWorkspaceDataProvider } from "./workspace-data";
 import { isTauriRuntime } from "./whoop";
 import { BootSplashWatchdog } from "../components/boot-splash-watchdog";
-import { ConfigureAuthScreen } from "../screens/configure-auth-screen";
-import { SignInScreen } from "../screens/sign-in-screen";
 
 /** How often to poll Clerk for a session created in the OAuth popup. */
 const OAUTH_SESSION_POLL_MS = 400;
@@ -179,7 +177,40 @@ function useOauthSessionRecovery(
   }, [enabled, isLoaded, isSignedIn]);
 }
 
-function AuthenticatedProviders({
+function WorkspaceProviders({
+  children,
+  enablePowerSync,
+  getToken,
+}: {
+  children: ReactNode;
+  enablePowerSync: boolean;
+  getToken: ReturnType<typeof createDesktopTokenProvider>;
+}) {
+  const { apiUrl } = getDesktopPublicEnvironment();
+
+  return (
+    <ApiProvider apiUrl={apiUrl} getToken={getToken}>
+      <PowerSyncProvider authenticated={enablePowerSync} apiUrl={apiUrl}>
+        <DesktopWorkspaceDataProvider>
+          <WorkspaceEventsProvider>
+            <AgentMailProvider>
+              <DesktopAgentStatusProvider>
+                {children}
+              </DesktopAgentStatusProvider>
+            </AgentMailProvider>
+          </WorkspaceEventsProvider>
+        </DesktopWorkspaceDataProvider>
+      </PowerSyncProvider>
+    </ApiProvider>
+  );
+}
+
+/**
+ * When Clerk is configured: keep it for account features, but do not gate the
+ * product shell on sign-in — local-shell bearer opens the workspace. GitHub
+ * API access uses Settings PAT / env token, not Clerk OAuth.
+ */
+function ClerkOptionalProviders({
   children,
   enablePowerSync,
   isOverlay,
@@ -189,10 +220,13 @@ function AuthenticatedProviders({
   isOverlay: boolean;
 }) {
   const { getToken, isSignedIn, isLoaded } = useAuth();
-  const { apiUrl } = getDesktopPublicEnvironment();
   const tokenProvider = useMemo(
-    () => createClerkTokenProvider(getToken),
-    [getToken],
+    () =>
+      createDesktopTokenProvider(async () => {
+        const token = await getToken();
+        return token ?? null;
+      }, Boolean(isSignedIn)),
+    [getToken, isSignedIn],
   );
 
   useOauthSessionRecovery(isLoaded, Boolean(isSignedIn), !isOverlay);
@@ -203,8 +237,6 @@ function AuthenticatedProviders({
     }
   }, [isSignedIn]);
 
-  // GitHub account linking finished in the OAuth popup — reload Clerk user and
-  // stay signed in (do not remount / run sign-in SSO on main).
   const clerk = useClerk();
   useEffect(() => {
     if (!isSignedIn || isOverlay || !isTauriRuntime()) return;
@@ -237,61 +269,61 @@ function AuthenticatedProviders({
     };
   }, [clerk, isOverlay, isSignedIn]);
 
-  // Keep the HTML boot splash until Clerk resolves — do not mount a second
-  // "Loading session…" screen on top of (or replacing) it.
   useEffect(() => {
     if (isOverlay || isLoaded) {
       dismissBootSplash();
     }
   }, [isLoaded, isOverlay]);
 
-  const body = !isLoaded ? null : !isSignedIn ? (
-    isOverlay ? (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          padding: 24,
-          color: "rgba(255,255,255,0.85)",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: 14,
-          textAlign: "center",
-          background: "rgba(20,20,20,0.92)",
-          borderRadius: 12,
-        }}
+  // Wait for Clerk to load so we know whether to prefer a session JWT, then
+  // always mount the workspace (local-shell when signed out).
+  const body =
+    !isLoaded && !isOverlay ? null : (
+      <WorkspaceProviders
+        enablePowerSync={enablePowerSync}
+        getToken={tokenProvider}
       >
-        Sign in to BacksterOS in the main window, then try again.
-      </div>
-    ) : (
-      <SignInScreen />
-    )
-  ) : (
-    <ApiProvider apiUrl={apiUrl} getToken={tokenProvider}>
-      <PowerSyncProvider authenticated={enablePowerSync} apiUrl={apiUrl}>
-        <DesktopWorkspaceDataProvider>
-          <WorkspaceEventsProvider>
-            <AgentMailProvider>
-              <DesktopAgentStatusProvider>
-                {children}
-              </DesktopAgentStatusProvider>
-            </AgentMailProvider>
-          </WorkspaceEventsProvider>
-        </DesktopWorkspaceDataProvider>
-      </PowerSyncProvider>
-    </ApiProvider>
-  );
+        {children}
+      </WorkspaceProviders>
+    );
 
   return (
     <BootSplashWatchdog cleared={isOverlay || isLoaded}>{body}</BootSplashWatchdog>
   );
 }
 
+function LocalOnlyProviders({
+  children,
+  enablePowerSync,
+}: {
+  children: ReactNode;
+  enablePowerSync: boolean;
+}) {
+  const tokenProvider = useMemo(
+    () => createDesktopTokenProvider(async () => null, false),
+    [],
+  );
+
+  useEffect(() => {
+    dismissBootSplash();
+  }, []);
+
+  return (
+    <BootSplashWatchdog cleared>
+      <WorkspaceProviders
+        enablePowerSync={enablePowerSync}
+        getToken={tokenProvider}
+      >
+        {children}
+      </WorkspaceProviders>
+    </BootSplashWatchdog>
+  );
+}
+
 /**
- * Clerk SPA when `VITE_CLERK_PUBLISHABLE_KEY` is set.
- * Without a key, shows configure-auth (no demo fixtures / empty shell).
- * Always targets local core via `VITE_API_URL` (default `http://127.0.0.1:8788`).
+ * Opens the product shell immediately via local-shell auth.
+ * Clerk is optional — account UI when configured. GitHub commits use
+ * Settings PAT / GITHUB_API_TOKEN (not Clerk OAuth).
  *
  * `enablePowerSync` defaults on; the compose overlay webview sets it false so
  * we do not open a second SQLite sync connection.
@@ -308,14 +340,12 @@ export function DesktopProviders({
     typeof window !== "undefined" &&
     window.location.pathname.startsWith("/desktop-overlay");
 
-  useEffect(() => {
-    if (!clerkPublishableKey || isOverlay) {
-      dismissBootSplash();
-    }
-  }, [clerkPublishableKey, isOverlay]);
-
   if (!clerkPublishableKey) {
-    return isOverlay ? null : <ConfigureAuthScreen />;
+    return (
+      <LocalOnlyProviders enablePowerSync={enablePowerSync}>
+        {children}
+      </LocalOnlyProviders>
+    );
   }
 
   const redirectOrigins =
@@ -331,12 +361,12 @@ export function DesktopProviders({
       allowedRedirectOrigins={redirectOrigins}
       allowedRedirectProtocols={["http:", "https:", "tauri:"]}
     >
-      <AuthenticatedProviders
+      <ClerkOptionalProviders
         enablePowerSync={enablePowerSync}
         isOverlay={isOverlay}
       >
         {children}
-      </AuthenticatedProviders>
+      </ClerkOptionalProviders>
     </ClerkProvider>
   );
 }

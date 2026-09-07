@@ -121,6 +121,7 @@ export const workspaceIntegrationSecrets = pgTable(
     agentmailWebhookSecret: text("agentmail_webhook_secret"),
     agentmailWebhookUrl: text("agentmail_webhook_url"),
     mapboxAccessToken: text("mapbox_access_token"),
+    githubApiToken: text("github_api_token"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()

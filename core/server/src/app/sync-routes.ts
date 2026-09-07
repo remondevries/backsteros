@@ -61,6 +61,18 @@ function unauthorized() {
   return { error: "Unauthorized", code: "unauthorized" as const };
 }
 
+function canMintPowerSyncToken(auth: AuthContext | null): boolean {
+  if (!auth) return false;
+  if (auth.kind === "clerk" || auth.kind === "local_shell") {
+    return Boolean(auth.clerkUserId || auth.userId);
+  }
+  return false;
+}
+
+function powerSyncSubject(auth: AuthContext): string {
+  return auth.clerkUserId || auth.userId || "local_shell";
+}
+
 async function withClerkAuth(c: Context, next: Next) {
   const authorization = c.req.header("Authorization");
   if (!authorization) {
@@ -70,10 +82,10 @@ async function withClerkAuth(c: Context, next: Next) {
     );
   }
   const auth = await resolveAuth(authorization);
-  if (!auth || auth.kind !== "clerk" || !auth.clerkUserId) {
+  if (!canMintPowerSyncToken(auth)) {
     return c.json(unauthorized(), 401);
   }
-  c.set("auth", auth);
+  c.set("auth", auth!);
   await next();
 }
 
@@ -117,8 +129,8 @@ async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
   }
 
   const auth = await resolveAuth(header);
-  if (auth?.kind === "clerk" && auth.clerkUserId) {
-    c.set("auth", auth);
+  if (canMintPowerSyncToken(auth)) {
+    c.set("auth", auth!);
     await next();
     return;
   }
@@ -207,7 +219,7 @@ export function registerSyncRoutes(app: Hono) {
     }
 
     const token = await signPowerSyncToken(
-      auth.clerkUserId!,
+      powerSyncSubject(auth),
       auth.workspaceId,
     );
     return c.json({

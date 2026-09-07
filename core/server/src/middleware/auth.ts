@@ -13,10 +13,15 @@ import {
   hasScope,
   newId,
 } from "../lib/crypto.js";
+import {
+  isLocalShellAuthEnabled,
+  isLocalShellBearerToken,
+  resolveLocalShellOwner,
+} from "../services/local-shell-auth.js";
 import { resolveOrCreateWorkspace } from "../services/workspaces.js";
 import { warmVaultPathCache } from "../services/vault-settings.js";
 
-export type AuthKind = "api_key" | "clerk";
+export type AuthKind = "api_key" | "clerk" | "local_shell";
 
 export type AuthContext = {
   kind: AuthKind;
@@ -28,6 +33,12 @@ export type AuthContext = {
   membershipRole: string | null;
   scopes: ApiKeyScope[];
 };
+
+/** Clerk session or local-shell bearer — owner UI on local-core. */
+export function isOwnerShellAuth(auth: AuthContext | undefined | null): boolean {
+  if (!auth?.userId) return false;
+  return auth.kind === "clerk" || auth.kind === "local_shell";
+}
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -196,6 +207,26 @@ export async function authenticateClerk(
   };
 }
 
+export async function authenticateLocalShell(
+  token: string,
+): Promise<AuthContext | null> {
+  if (!isLocalShellAuthEnabled() || !isLocalShellBearerToken(token)) {
+    return null;
+  }
+
+  const owner = await resolveLocalShellOwner();
+  return {
+    kind: "local_shell",
+    userId: owner.userId,
+    clerkUserId: owner.clerkUserId,
+    apiKeyId: null,
+    contactId: null,
+    workspaceId: owner.workspaceId,
+    membershipRole: owner.membershipRole,
+    scopes: [],
+  };
+}
+
 export async function resolveAuth(authorization: string | undefined): Promise<AuthContext | null> {
   const token = getBearerToken(authorization);
   if (!token) {
@@ -205,6 +236,8 @@ export async function resolveAuth(authorization: string | undefined): Promise<Au
   let auth: AuthContext | null = null;
   if (token.startsWith("sk_live_")) {
     auth = await authenticateApiKey(token);
+  } else if (isLocalShellBearerToken(token)) {
+    auth = await authenticateLocalShell(token);
   } else {
     try {
       auth = await authenticateClerk(token);
@@ -259,7 +292,7 @@ export function requireScope(scope: ApiKeyScope) {
     if (!auth) {
       return false;
     }
-    if (auth.kind === "clerk") {
+    if (auth.kind === "clerk" || auth.kind === "local_shell") {
       return Boolean(auth.membershipRole);
     }
     return hasScope(auth.scopes, scope);

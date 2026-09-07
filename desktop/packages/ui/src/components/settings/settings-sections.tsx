@@ -264,11 +264,11 @@ export function GithubSettingsSectionView({
         <h2>Connection</h2>
         <div className="settings-card-body-copy">
           <p>
-            Link GitHub so project panels can browse your personal repositories
-            and repositories in organizations you belong to. Grant{" "}
-            <code>repo</code> and <code>read:org</code> when prompted. Org
-            owners may also need to approve the OAuth app under GitHub →
-            Settings → Third-party access.
+            Use a GitHub personal access token (Settings or{" "}
+            <code>GITHUB_API_TOKEN</code>) so commits and pull requests load
+            without Clerk. Optional Connect GitHub OAuth remains available when
+            you want per-user access. Token needs <code>repo</code> (and usually{" "}
+            <code>read:org</code>).
           </p>
         </div>
 
