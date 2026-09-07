@@ -8,7 +8,8 @@ import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js
 
 /**
  * Shift+Space — toggle the checkbox of the keyboard-highlighted list row
- * (transactions; same idea as clicking the row checkbox).
+ * (same idea as clicking the row checkbox). Shift+J/K instead navigate and
+ * extend selection via list keyboard nav.
  */
 export function isToggleHighlightedSelectionShortcut(
   event: Pick<

@@ -239,6 +239,10 @@ export function ContactTasksListView({
     [collapsed, groups],
   );
 
+  const extendSelectionAlongStepRef = useRef<
+    (fromId: string | null, toId: string) => void
+  >(() => {});
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
@@ -246,6 +250,9 @@ export function ContactTasksListView({
     onNavigate: (taskId) => selectTask(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
     enabled: itemIds.length > 0,
+    onShiftStep: ({ fromId, toId }) => {
+      extendSelectionAlongStepRef.current(fromId, toId);
+    },
   });
 
   const {
@@ -253,9 +260,13 @@ export function ContactTasksListView({
     hasBulkSelection,
     isSelected,
     toggleSelected,
+    extendSelectionAlongStep,
     selectAll,
     clearSelection,
-  } = useListMultiSelect(itemIds);
+  } = useListMultiSelect(itemIds, {
+    highlightedId,
+  });
+  extendSelectionAlongStepRef.current = extendSelectionAlongStep;
 
   const selectedTasks = useMemo(
     () => localTasks.filter((task) => selectedIds.has(task.id)),

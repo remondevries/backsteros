@@ -432,6 +432,10 @@ export function TasksOverviewView({
     return () => cancelAnimationFrame(frame);
   }, [itemIds, listKeyboardActive, setActiveZone]);
 
+  const extendSelectionAlongStepRef = useRef<
+    (fromId: string | null, toId: string) => void
+  >(() => {});
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
@@ -439,6 +443,10 @@ export function TasksOverviewView({
     onNavigate: (taskId) => selectTask(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
     enabled: listKeyboardActive,
+    onShiftStep: ({ fromId, toId }) => {
+      if (view !== "list") return;
+      extendSelectionAlongStepRef.current(fromId, toId);
+    },
   });
 
   const {
@@ -446,11 +454,15 @@ export function TasksOverviewView({
     hasBulkSelection,
     isSelected,
     toggleSelected,
+    extendSelectionAlongStep,
     selectAll,
     clearSelection,
   } = useListMultiSelect(itemIds, {
     selectAllShortcutEnabled: view === "list",
+    highlightedId,
+    toggleHighlightedShortcutEnabled: view === "list",
   });
+  extendSelectionAlongStepRef.current = extendSelectionAlongStep;
 
   const selectedTasks = useMemo(
     () => filtered.filter((task) => selectedIds.has(task.id)),

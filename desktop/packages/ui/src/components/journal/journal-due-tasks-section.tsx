@@ -149,6 +149,10 @@ export function JournalDueTasksSection({
     });
   }
 
+  const extendSelectionAlongStepRef = useRef<
+    (fromId: string | null, toId: string) => void
+  >(() => {});
+
   const { highlightedId } = useListKeyboardNavigation({
     containerRef: listRef,
     itemIds,
@@ -156,10 +160,22 @@ export function JournalDueTasksSection({
     onNavigate: (taskId) => onSelectTask?.(taskId),
     zone: LIST_KEYBOARD_NAV_ZONE_MAIN,
     enabled: listKeyboardEnabled && listMode === "tasks" && itemIds.length > 0,
+    onShiftStep: ({ fromId, toId }) => {
+      if (listMode !== "tasks") return;
+      extendSelectionAlongStepRef.current(fromId, toId);
+    },
   });
 
-  const { hasBulkSelection, isSelected, toggleSelected } =
-    useListMultiSelect(itemIds);
+  const {
+    hasBulkSelection,
+    isSelected,
+    toggleSelected,
+    extendSelectionAlongStep,
+  } = useListMultiSelect(itemIds, {
+    highlightedId,
+    toggleHighlightedShortcutEnabled: listMode === "tasks",
+  });
+  extendSelectionAlongStepRef.current = extendSelectionAlongStep;
 
   const dragEnabled =
     dayTimelineDraggable &&

@@ -49,6 +49,7 @@ import {
 } from "../../list-nav/list-keyboard-nav-zone.js";
 import {
   boardKeyboardNavDirection,
+  isShiftJkNavigation,
   listKeyboardNavDirection,
   shouldHandleBoardKeyboardNavigation,
   shouldHandleListKeyboardActivate,
@@ -116,6 +117,14 @@ export type ListKeyboardNavigationRegistration = {
   getHighlightedId: () => string | null;
   setHighlightedId: Dispatch<SetStateAction<string | null>>;
   onActivate: (itemId: string) => void;
+  /**
+   * Shift+J/K or Shift+ArrowUp/Down: after moving highlight, extend checkbox
+   * multi-select from the previous row through the newly highlighted row.
+   */
+  onShiftStep?: (step: {
+    fromId: string | null;
+    toId: string;
+  }) => void;
   priority: number;
   resolveNextItemId?: (params: {
     key: string;
@@ -915,14 +924,29 @@ function ListKeyboardNavigationGlobalListener({
           itemIds,
         );
         if (nextItemId === highlightedId && anchorId === highlightedId) {
+          if (isShiftJkNavigation(event) && nextItemId) {
+            event.preventDefault();
+            event.stopPropagation();
+            navigationRegistration.onShiftStep?.({
+              fromId: nextItemId,
+              toId: nextItemId,
+            });
+          }
           return;
         }
 
         event.preventDefault();
         event.stopPropagation();
         suppressKeyboardNavHover();
+        const stepFromId = highlightedId ?? hoverAnchorId ?? anchorId;
         navigationRegistration.setHighlightedId(nextItemId);
         scrollHighlightedItem(navigationRegistration, nextItemId);
+        if (isShiftJkNavigation(event)) {
+          navigationRegistration.onShiftStep?.({
+            fromId: stepFromId,
+            toId: nextItemId,
+          });
+        }
         return;
       }
 
@@ -973,6 +997,8 @@ export function useListKeyboardNavigation({
   priority,
   enabled = true,
   resolveNextItemId,
+  onShiftStep,
+  defaultHighlightedId = null,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   itemIds: string[];
@@ -986,7 +1012,20 @@ export function useListKeyboardNavigation({
     currentId: string | null;
     itemIds: string[];
   }) => string | null;
-}): { highlightedId: string | null } {
+  /**
+   * Shift+J/K or Shift+ArrowUp/Down after a highlight step — check boxes
+   * along the move (multi-select lists).
+   */
+  onShiftStep?: (step: { fromId: string | null; toId: string }) => void;
+  /**
+   * Initial j/k highlight on mount (e.g. restore the calendar's last
+   * highlighted event). Only read on first render.
+   */
+  defaultHighlightedId?: string | null;
+}): {
+  highlightedId: string | null;
+  setHighlightedId: Dispatch<SetStateAction<string | null>>;
+} {
   const context = useListKeyboardNavigationContext();
   const { activeZone, register } = context;
   const mountGate = useListKeyboardNavMountGate();
@@ -999,7 +1038,9 @@ export function useListKeyboardNavigation({
         ? LIST_KEYBOARD_NAV_CONTENT_PRIORITY
         : LIST_KEYBOARD_NAV_MAIN_PRIORITY);
 
-  const [manualHighlight, setManualHighlight] = useState<string | null>(null);
+  const [manualHighlight, setManualHighlight] = useState<string | null>(
+    defaultHighlightedId,
+  );
 
   // Drop stale j/k highlight when the keep-alive pane hides so a return visit
   // starts at the top instead of the previous row.
@@ -1011,6 +1052,7 @@ export function useListKeyboardNavigation({
   const itemIdsRef = useLatestRef(itemIds);
   const selectedIdRef = useLatestRef(selectedId);
   const onNavigateRef = useLatestRef(onNavigate);
+  const onShiftStepRef = useLatestRef(onShiftStep);
   const resolveNextItemIdRef = useLatestRef(resolveNextItemId);
   const registrationId = useId();
 
@@ -1094,6 +1136,7 @@ export function useListKeyboardNavigation({
       getHighlightedId: () => highlightedIdRef.current,
       setHighlightedId: setManualHighlight,
       onActivate: (itemId) => onNavigateRef.current(itemId),
+      onShiftStep: (step) => onShiftStepRef.current?.(step),
       priority: resolvedPriority,
       resolveNextItemId: resolveNextItemIdRef.current
         ? (params) => resolveNextItemIdRef.current!(params)
@@ -1106,6 +1149,7 @@ export function useListKeyboardNavigation({
     itemIds.length,
     itemIdsRef,
     onNavigateRef,
+    onShiftStepRef,
     register,
     registrationId,
     resolvedPriority,
@@ -1116,6 +1160,7 @@ export function useListKeyboardNavigation({
 
   return {
     highlightedId: activeZone === zone ? resolvedHighlight : null,
+    setHighlightedId: setManualHighlight,
   };
 }
 

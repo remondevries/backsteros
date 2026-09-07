@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
 import {
   isToggleHighlightedSelectionShortcut,
   shouldHandleToggleHighlightedSelectionShortcut,
 } from "./list-toggle-highlighted-selection-shortcut.js";
+
+// Editable-target guards use `instanceof HTMLElement`; node:test has no DOM.
+const previousHTMLElement = globalThis.HTMLElement;
+before(() => {
+  globalThis.HTMLElement = class HTMLElement {} as unknown as typeof HTMLElement;
+});
+after(() => {
+  globalThis.HTMLElement = previousHTMLElement;
+});
 
 function keyEvent(
   overrides: Partial<
@@ -30,6 +39,21 @@ function keyEvent(
 describe("isToggleHighlightedSelectionShortcut", () => {
   it("matches Shift+Space", () => {
     assert.equal(isToggleHighlightedSelectionShortcut(keyEvent()), true);
+  });
+
+  it("rejects Shift+J/K (those navigate + extend selection instead)", () => {
+    assert.equal(
+      isToggleHighlightedSelectionShortcut(
+        keyEvent({ key: "J", code: "KeyJ" }),
+      ),
+      false,
+    );
+    assert.equal(
+      isToggleHighlightedSelectionShortcut(
+        keyEvent({ key: "K", code: "KeyK" }),
+      ),
+      false,
+    );
   });
 
   it("rejects plain Space and modified chords", () => {

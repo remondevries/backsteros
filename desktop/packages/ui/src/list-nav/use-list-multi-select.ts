@@ -6,17 +6,30 @@ import {
 } from "./shift-range-selection.js";
 import { useListClearSelectionShortcut } from "./use-list-clear-selection-shortcut.js";
 import { useListSelectAllShortcut } from "./use-list-select-all-shortcut.js";
+import { useListToggleHighlightedSelectionShortcut } from "./use-list-toggle-highlighted-selection-shortcut.js";
 
 export type UseListMultiSelectOptions = {
   /** When false, ⌘A / Ctrl+A is ignored (e.g. board view). Default true. */
   selectAllShortcutEnabled?: boolean;
   /** When false, Escape does not clear selection. Default true. */
   clearSelectionShortcutEnabled?: boolean;
+  /**
+   * Keyboard-highlighted row id. When set, Shift+Space toggles that row's
+   * checkbox in place.
+   */
+  highlightedId?: string | null;
+  /**
+   * When false, Shift+Space toggle is ignored (e.g. board view).
+   * Default true when `highlightedId` is provided.
+   */
+  toggleHighlightedShortcutEnabled?: boolean;
 };
 
 /**
  * Multi-select for list rows (finance transactions → tasks).
- * Supports click toggle, shift-click ranges, ⌘A / Ctrl+A select all, and Escape clear.
+ * Supports click toggle, shift-click ranges, ⌘A / Ctrl+A select all,
+ * Shift+Space toggle highlighted, Shift+J/K and Shift+ArrowUp/Down
+ * extend-while-navigating (`extendSelectionAlongStep`), and Escape clear.
  */
 export function useListMultiSelect(
   orderedIds: readonly string[],
@@ -25,6 +38,8 @@ export function useListMultiSelect(
   const {
     selectAllShortcutEnabled = true,
     clearSelectionShortcutEnabled = true,
+    highlightedId = null,
+    toggleHighlightedShortcutEnabled = true,
   } = options;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const lastClickedIdRef = useRef<string | null>(null);
@@ -65,6 +80,27 @@ export function useListMultiSelect(
     [shiftHeld],
   );
 
+  /**
+   * Check boxes for the row you left and the row you landed on while
+   * Shift+J/K or Shift+ArrowUp/Down navigating (additive; does not uncheck).
+   */
+  const extendSelectionAlongStep = useCallback(
+    (fromId: string | null, toId: string) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (fromId) next.add(fromId);
+        next.add(toId);
+        return next;
+      });
+      if (!lastClickedIdRef.current && fromId) {
+        lastClickedIdRef.current = fromId;
+      } else {
+        lastClickedIdRef.current = toId;
+      }
+    },
+    [],
+  );
+
   const selectAll = useCallback(() => {
     const ids = orderedIdsRef.current;
     setSelectedIds(new Set(ids));
@@ -81,6 +117,22 @@ export function useListMultiSelect(
     onSelectAll: selectAll,
   });
 
+  const toggleHighlighted = useCallback(
+    (id: string) => {
+      toggleSelected(id, false);
+    },
+    [toggleSelected],
+  );
+
+  useListToggleHighlightedSelectionShortcut({
+    enabled:
+      toggleHighlightedShortcutEnabled &&
+      orderedIds.length > 0 &&
+      highlightedId != null,
+    highlightedId,
+    onToggle: toggleHighlighted,
+  });
+
   const hasBulkSelection = selectedIds.size > 0;
 
   useListClearSelectionShortcut({
@@ -94,9 +146,17 @@ export function useListMultiSelect(
       hasBulkSelection,
       isSelected: (id: string) => selectedIds.has(id),
       toggleSelected,
+      extendSelectionAlongStep,
       selectAll,
       clearSelection,
     }),
-    [clearSelection, hasBulkSelection, selectAll, selectedIds, toggleSelected],
+    [
+      clearSelection,
+      extendSelectionAlongStep,
+      hasBulkSelection,
+      selectAll,
+      selectedIds,
+      toggleSelected,
+    ],
   );
 }

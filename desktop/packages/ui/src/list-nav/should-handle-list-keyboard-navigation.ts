@@ -3,17 +3,39 @@ import { isAnyLeaderSequencePending } from "../shortcuts/leader-sequence-gate.js
 import { shouldHandleGlobalShortcut } from "../shortcuts/shortcut-guards.js";
 
 function isListKeyboardNavigationKey(key: string): boolean {
-  return key === "j" || key === "k" || key === "ArrowDown" || key === "ArrowUp";
+  return listKeyboardNavDirection(key) !== null;
 }
 
+/**
+ * j/k (and Shift+J/K — browsers report uppercase `key`) plus arrows
+ * (including Shift+ArrowUp/Down). Shift chords still navigate; multi-select
+ * lists may also check boxes on the step.
+ */
 function listKeyboardNavDirection(key: string): "up" | "down" | null {
-  if (key === "j" || key === "ArrowDown") {
+  const normalized = key.length === 1 ? key.toLowerCase() : key;
+  if (normalized === "j" || key === "ArrowDown") {
     return "down";
   }
-  if (key === "k" || key === "ArrowUp") {
+  if (normalized === "k" || key === "ArrowUp") {
     return "up";
   }
   return null;
+}
+
+/**
+ * Shift+J/K or Shift+ArrowUp/Down — navigate and optionally extend checkbox
+ * multi-select along the step (same behavior for both chord families).
+ */
+export function isShiftJkNavigation(
+  event: Pick<KeyboardEvent, "shiftKey" | "code">,
+): boolean {
+  return (
+    event.shiftKey &&
+    (event.code === "KeyJ" ||
+      event.code === "KeyK" ||
+      event.code === "ArrowUp" ||
+      event.code === "ArrowDown")
+  );
 }
 
 export function isSearchableDropdownPanelOpen(): boolean {
@@ -73,7 +95,9 @@ export function shouldHandleListKeyboardNavigation(
     return false;
   }
 
-  if ((key === "j" || key === "k") && isAnyLeaderSequencePending()) {
+  const jk =
+    key === "j" || key === "k" || key === "J" || key === "K";
+  if (jk && isAnyLeaderSequencePending()) {
     return false;
   }
 
