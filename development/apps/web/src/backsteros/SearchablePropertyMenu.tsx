@@ -6,6 +6,7 @@ import {
   useFocusPropertyMenuSearch,
   usePropertyMenuSearchTyping,
 } from "./useFocusPropertyMenuSearch";
+import { usePropertyMenuListKeyboard } from "./usePropertyMenuListKeyboard";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
 
 export type BacksterosSearchablePropertyOption<T extends string = string> = {
@@ -23,6 +24,7 @@ export type BacksterosSearchablePropertyOption<T extends string = string> = {
  *
  * Uses plain MenuItems (not RadioGroup) so Base UI does not steal focus onto
  * the checked option — the search field stays focused for immediate filtering.
+ * Arrow/j/k move a desktop-style list highlight while focus stays in search.
  */
 export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   readonly label: string;
@@ -54,6 +56,11 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
       return haystack.includes(normalized);
     });
   }, [props.options, query]);
+
+  const { handleSearchListKeyDown, optionHighlightClass } = usePropertyMenuListKeyboard(
+    open,
+    filteredOptions.length,
+  );
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -101,12 +108,15 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
                 }
                 return;
               }
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              const first = filteredOptions[0];
-              if (!first) return;
-              props.onChange(first.value);
-              setOpen(false);
+              handleSearchListKeyDown(event, {
+                query,
+                onActivateIndex: (index) => {
+                  const option = filteredOptions[index];
+                  if (!option) return;
+                  props.onChange(option.value);
+                  setOpen(false);
+                },
+              });
             }}
             onKeyUp={stopPropertyMenuSearchKeyPropagation}
             placeholder={props.searchPlaceholder}
@@ -118,14 +128,14 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
           {filteredOptions.length === 0 ? (
             <div className="bos-task-related-menu__empty">No matches</div>
           ) : (
-            filteredOptions.map((option) => (
+            filteredOptions.map((option, index) => (
               <div key={option.value}>
                 {option.separatorBefore ? (
                   <MenuSeparator className="bos-task-property-menu__separator" />
                 ) : null}
                 <MenuItem
                   closeOnClick
-                  className="bos-task-property-menu__option"
+                  className={cn("bos-task-property-menu__option", optionHighlightClass(index))}
                   data-checked={option.value === props.value ? "" : undefined}
                   onClick={() => props.onChange(option.value)}
                 >

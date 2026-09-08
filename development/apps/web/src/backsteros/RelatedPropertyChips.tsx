@@ -14,7 +14,9 @@ import {
   useFocusPropertyMenuSearch,
   usePropertyMenuSearchTyping,
 } from "./useFocusPropertyMenuSearch";
+import { usePropertyMenuListKeyboard } from "./usePropertyMenuListKeyboard";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
+import { cn } from "~/lib/utils";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 
 type RelatedOption = {
@@ -157,6 +159,11 @@ export function BacksterosRelatedPropertyChips(props: {
     );
   }, [options, query]);
 
+  const { handleSearchListKeyDown, optionHighlightClass } = usePropertyMenuListKeyboard(
+    open,
+    filteredOptions.length,
+  );
+
   useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
@@ -215,7 +222,16 @@ export function BacksterosRelatedPropertyChips(props: {
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={stopPropertyMenuSearchKeyPropagation}
+            onKeyDown={(event) => {
+              stopPropertyMenuSearchKeyPropagation(event);
+              handleSearchListKeyDown(event, {
+                query,
+                onActivateIndex: (index) => {
+                  const option = filteredOptions[index];
+                  if (option) toggleValue(option.value);
+                },
+              });
+            }}
             onKeyUp={stopPropertyMenuSearchKeyPropagation}
             placeholder="Add related…"
             className="bos-task-property-menu__search-input"
@@ -240,7 +256,7 @@ export function BacksterosRelatedPropertyChips(props: {
                   ) : null}
                   <MenuItem
                     closeOnClick={false}
-                    className="bos-task-property-menu__option"
+                    className={cn("bos-task-property-menu__option", optionHighlightClass(index))}
                     onClick={() => toggleValue(option.value)}
                   >
                     <span className="bos-task-property-menu__option-main">

@@ -19,7 +19,10 @@ import {
   useContentViewModeShortcut,
 } from "~/backsteros/markdown-editor";
 import { openBacksterosTaskChat } from "~/backsteros/openTaskChat";
-import { openTaskPropertyDropdown } from "~/backsteros/openTaskPropertyDropdown";
+import {
+  getTaskPropertyDropdownTrigger,
+  openTaskPropertyDropdown,
+} from "~/backsteros/openTaskPropertyDropdown";
 import { ProjectOcticon } from "~/backsteros/ProjectOcticon";
 import {
   BacksterosSearchablePropertyMenu,
@@ -807,8 +810,17 @@ export function BacksterosCreateTaskForm({
               advanceComposeTaskTab("description");
             }}
             onEnterPreview={() => {
-              // Land on the preview surface so Tab/Shift+Tab still work from content.
+              // Done editing content → highlight status (first property chip).
               // Sync focus (not rAF) so the focusout → Create recovery does not win.
+              // The preview host is not focusable until after the mode re-render, so
+              // focusing it here would leave body focused and recovery would steal
+              // to Create task.
+              composeTabCursorRef.current = "status";
+              const statusTrigger = getTaskPropertyDropdownTrigger("status", modalRef.current);
+              if (statusTrigger) {
+                statusTrigger.focus();
+                return;
+              }
               descriptionHostRef.current?.focus();
               composeTabCursorRef.current = "description";
             }}

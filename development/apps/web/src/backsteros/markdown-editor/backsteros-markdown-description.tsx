@@ -69,7 +69,7 @@ export function BacksterosMarkdownDescription({
 
   const preview = (
     <div className="content-markdown-preview-column content-markdown-preview-column--no-top">
-      {value.trim() ? (
+      {value.length > 0 ? (
         <BacksterosMarkdownPreview body={value} />
       ) : (
         <p className="overview-empty">{emptyMessage}</p>

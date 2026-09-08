@@ -203,7 +203,9 @@
 }
 
 .bos-task-property-menu__option:hover,
-.bos-task-property-menu__option[data-highlighted] {
+.bos-task-property-menu__option[data-highlighted],
+.bos-task-property-menu__option.keyboard-nav-item-highlight,
+.bos-task-property-menu__option.keyboard-nav-item-highlight:hover {
   background: var(--bos-task-property-menu-hover) !important;
 }
 

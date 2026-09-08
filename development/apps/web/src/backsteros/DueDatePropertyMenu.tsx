@@ -15,7 +15,9 @@ import {
   useFocusPropertyMenuSearch,
   usePropertyMenuSearchTyping,
 } from "./useFocusPropertyMenuSearch";
+import { usePropertyMenuListKeyboard } from "./usePropertyMenuListKeyboard";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
+import { cn } from "~/lib/utils";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 
 function parseQuickDueQuery(query: string): string | null | "clear" | "pick" {
@@ -77,6 +79,11 @@ export function BacksterosDueDatePropertyMenu(props: {
     if (!normalized) return options;
     return options.filter((option) => option.label.toLowerCase().includes(normalized));
   }, [options, query]);
+
+  const { handleSearchListKeyDown, optionHighlightClass } = usePropertyMenuListKeyboard(
+    open && !pickingDate,
+    filteredOptions.length,
+  );
 
   useEffect(() => {
     if (!open) {
@@ -172,25 +179,28 @@ export function BacksterosDueDatePropertyMenu(props: {
                     }
                     return;
                   }
-                  if (event.key !== "Enter") return;
-                  event.preventDefault();
-                  const parsed = parseQuickDueQuery(query);
-                  if (parsed === "clear") {
-                    props.onChange(null);
-                    setOpen(false);
-                    return;
-                  }
-                  if (parsed === "pick") {
-                    setPickingDate(true);
-                    return;
-                  }
-                  if (typeof parsed === "string") {
-                    props.onChange(toApiDueDateIso(parsed));
-                    setOpen(false);
-                    return;
-                  }
-                  const first = filteredOptions[0];
-                  if (first) applyOption(first.value);
+                  handleSearchListKeyDown(event, {
+                    query,
+                    onActivateIndex: (index) => {
+                      const parsed = parseQuickDueQuery(query);
+                      if (parsed === "clear") {
+                        props.onChange(null);
+                        setOpen(false);
+                        return;
+                      }
+                      if (parsed === "pick") {
+                        setPickingDate(true);
+                        return;
+                      }
+                      if (typeof parsed === "string") {
+                        props.onChange(toApiDueDateIso(parsed));
+                        setOpen(false);
+                        return;
+                      }
+                      const option = filteredOptions[index];
+                      if (option) applyOption(option.value);
+                    },
+                  });
                 }}
                 onKeyUp={stopPropertyMenuSearchKeyPropagation}
                 placeholder="tomorrow, next week, pick a date…"
@@ -199,11 +209,11 @@ export function BacksterosDueDatePropertyMenu(props: {
               />
             </div>
             <div className="bos-task-property-menu__list">
-              {filteredOptions.map((option) => (
+              {filteredOptions.map((option, index) => (
                 <MenuItem
                   key={option.value}
                   closeOnClick={option.value !== BACKSTEROS_PICK_DUE_DATE_VALUE}
-                  className="bos-task-property-menu__option"
+                  className={cn("bos-task-property-menu__option", optionHighlightClass(index))}
                   onClick={() => applyOption(option.value)}
                 >
                   <span className="bos-task-property-menu__option-main">

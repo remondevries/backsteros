@@ -67,6 +67,17 @@ export function splitMarkdownPreviewParagraphs(body: string): string[] {
     parts.push(rest);
   }
 
+  // CodeMirror shows a caret row for a trailing newline ("hello⏎" → empty line).
+  // Markdown blank-run splitting alone drops that row; keep it in preview.
+  if (body.endsWith("\n")) {
+    const lastIndexInParts = parts.length - 1;
+    const last = parts[lastIndexInParts];
+    if (last != null && last.endsWith("\n")) {
+      parts[lastIndexInParts] = last.replace(/\n+$/, "");
+    }
+    parts.push("");
+  }
+
   return parts;
 }
 
