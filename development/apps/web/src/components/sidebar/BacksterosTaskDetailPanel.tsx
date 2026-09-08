@@ -68,6 +68,7 @@ import {
   migrateBacksterosTaskStatus,
   type BacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
+import { useTaskDescriptionImages } from "~/backsteros/useTaskDescriptionImages";
 import { isElectron } from "~/env";
 import {
   getLocalStorageItem,
@@ -131,6 +132,8 @@ function BacksterosTaskDescriptionSection(props: {
       save: saveDescription,
     });
 
+  const { onUploadImages } = useTaskDescriptionImages(taskId);
+
   const descriptionHostRef = useRef<HTMLDivElement | null>(null);
   useContentViewModeShortcut({
     enabled: true,
@@ -180,6 +183,7 @@ function BacksterosTaskDescriptionSection(props: {
         ariaLabel="Task description"
         placeholder="Add a description…"
         emptyMessage="Add a description…"
+        onUploadImages={onUploadImages}
         toggle={
           <FloatingPillToggleDock>
             <SegmentedPillToggle

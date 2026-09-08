@@ -23,6 +23,10 @@ import {
   documentEditorSyntaxHighlighting,
   documentEditorTheme,
 } from "./document-editor-theme";
+import {
+  createMarkdownImagePasteExtensions,
+  type UploadMarkdownImages,
+} from "./markdown-image-paste";
 
 export type DocumentMarkdownEditorProps = {
   value: string;
@@ -39,6 +43,11 @@ export type DocumentMarkdownEditorProps = {
   scrollWithContent?: boolean;
   className?: string;
   placeholder?: string;
+  /**
+   * When set, clipboard / drag-drop image files are uploaded and inserted as
+   * `![screenshot](url)` markdown embeds.
+   */
+  onUploadImages?: UploadMarkdownImages;
 };
 
 function focusEditorView(view: EditorView): void {
@@ -95,7 +104,7 @@ function scheduleEditorFocusAttempts(getView: () => EditorView | null): () => vo
 
 /**
  * Slim CodeMirror 6 markdown editor ported from BacksterOS desktop.
- * No vim / mentions / image paste — description fields only.
+ * No vim / mentions — description fields only. Image paste when `onUploadImages` is set.
  */
 export function DocumentMarkdownEditor({
   value,
@@ -107,11 +116,14 @@ export function DocumentMarkdownEditor({
   scrollWithContent = false,
   className,
   placeholder,
+  onUploadImages,
 }: DocumentMarkdownEditorProps) {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const isEmptyDoc = value.length === 0;
+  const onUploadImagesRef = useRef(onUploadImages);
+  onUploadImagesRef.current = onUploadImages;
 
   const extensions = useMemo(
     () => [
@@ -123,6 +135,7 @@ export function DocumentMarkdownEditor({
       insertTabKeymap,
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
+      ...createMarkdownImagePasteExtensions(() => onUploadImagesRef.current),
       ...(placeholder
         ? [
             EditorView.contentAttributes.of({

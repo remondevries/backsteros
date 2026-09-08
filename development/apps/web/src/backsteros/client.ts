@@ -14,6 +14,7 @@ import type {
   BacksterosTaskComment,
   BacksterosTaskCommentsResponse,
   BacksterosTaskDetail,
+  BacksterosTaskImage,
   BacksterosTasksResponse,
   BacksterosTaskUpdatePatch,
 } from "./types";
@@ -434,6 +435,48 @@ export async function downloadBacksterosTaskImage(
     `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`,
     signal,
   );
+}
+
+/**
+ * Upload an inline task-description image (`POST /api/v1/tasks/:id/images`).
+ * Body is raw image bytes; Content-Type + optional X-Filename match the desktop client.
+ */
+export async function uploadBacksterosTaskImage(
+  taskId: string,
+  image: Blob,
+  filename?: string,
+  contentType?: string,
+  signal?: AbortSignal,
+): Promise<BacksterosTaskImage> {
+  const request = resolveBacksterosRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/images`);
+  const headers: Record<string, string> = {
+    ...request.headers,
+    "Content-Type": contentType || image.type || "application/octet-stream",
+  };
+  if (filename) {
+    headers["X-Filename"] = filename;
+  }
+
+  const response = await fetch(request.url, {
+    method: "POST",
+    headers,
+    cache: "no-store",
+    body: image,
+    ...(signal ? { signal } : {}),
+  });
+
+  if (!response.ok) {
+    const body = await readBacksterosJsonBody<{ error?: unknown } | null>(response).catch(
+      () => null,
+    );
+    const message =
+      typeof body?.error === "string"
+        ? body.error
+        : `BacksterOS image upload failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return readBacksterosJsonBody<BacksterosTaskImage>(response);
 }
 
 export async function fetchBacksterosOrganizations(

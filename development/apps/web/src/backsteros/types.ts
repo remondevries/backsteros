@@ -150,6 +150,17 @@ export type BacksterosTaskAgentPresence = {
   readonly lastHeartbeatAt: string;
 };
 
+/** Inline task-description image from `POST /api/v1/tasks/:id/images`. */
+export type BacksterosTaskImage = {
+  readonly id: string;
+  readonly taskId: string;
+  readonly contentType: string;
+  readonly byteSize: number;
+  readonly originalFilename: string;
+  /** Relative API path for markdown embeds. */
+  readonly url: string;
+};
+
 export const BACKSTEROS_SCOPE_KEY = "backsteros" as const;
 
 export function isBacksterosScopeKey(value: string | null | undefined): boolean {

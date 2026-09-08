@@ -4,6 +4,7 @@ import "./markdown-editor.css";
 
 import { BacksterosMarkdownPreview } from "./backsteros-markdown-preview";
 import { DocumentMarkdownEditor } from "./document-markdown-editor";
+import type { UploadMarkdownImages } from "./markdown-image-paste";
 
 export type BacksterosMarkdownDescriptionMode = "edit" | "preview";
 
@@ -20,6 +21,8 @@ export type BacksterosMarkdownDescriptionProps = {
   focusOnEdit?: boolean;
   /** Desktop floating Preview/Edit dock (rendered inside the layout). */
   toggle?: ReactNode;
+  /** Paste/drop image upload for markdown embeds (existing tasks only). */
+  onUploadImages?: UploadMarkdownImages;
 };
 
 /**
@@ -38,6 +41,7 @@ export function BacksterosMarkdownDescription({
   placeholder = "Add a description…",
   focusOnEdit = true,
   toggle,
+  onUploadImages,
 }: BacksterosMarkdownDescriptionProps) {
   const [focusRequest, setFocusRequest] = useState(0);
 
@@ -58,6 +62,7 @@ export function BacksterosMarkdownDescription({
         focusRequest={focusRequest}
         scrollWithContent
         placeholder={placeholder}
+        onUploadImages={onUploadImages}
       />
     </div>
   );
