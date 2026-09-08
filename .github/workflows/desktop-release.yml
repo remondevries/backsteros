@@ -18,6 +18,11 @@ env:
 jobs:
   build-macos:
     runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       - name: Prefer HTTPS for GitHub git dependencies
@@ -36,11 +41,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @backsteros/ui build
       - name: Import Apple certificate (optional)
-        if: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.KEYCHAIN_PASSWORD != '' }}
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        if: ${{ env.APPLE_CERTIFICATE != '' && env.KEYCHAIN_PASSWORD != '' }}
         run: |
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
@@ -52,9 +53,7 @@ jobs:
           CERT_ID=$(security find-identity -v -p codesigning build.keychain | awk -F'"' '/Developer ID Application|Apple Distribution/{print $2; exit}')
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
       - name: Write App Store Connect API key (optional notarization)
-        if: ${{ secrets.APPLE_API_KEY_BASE64 != '' }}
-        env:
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        if: ${{ env.APPLE_API_KEY_BASE64 != '' }}
         run: |
           mkdir -p "$RUNNER_TEMP/private_keys"
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/private_keys/AuthKey.p8"

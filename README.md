@@ -31,7 +31,9 @@ pnpm db:up && pnpm db:migrate && pnpm dev   # core API on :8788
 
 pnpm --filter @backsteros/mobile dev   # Expo
 pnpm --filter @backsteros/desktop dev  # Tauri product UI
-pnpm --filter @backsteros/development dev  # T3 Code agent console (nested monorepo)
+pnpm --filter @backsteros/development dev:desktop  # T3 Code agent console (Electron)
+# browser/web stack only (no Electron window):
+pnpm --filter @backsteros/development dev
 ```
 
 Or from each package directory: `cd mobile && pnpm dev`, `cd desktop && pnpm dev`, `cd hub && pnpm dev`.

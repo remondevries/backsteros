@@ -38,7 +38,7 @@ Single workspace: **`~/code/backsteros/`** (branch `v2`)
 | `mobile/` | Expo product shell |
 | `desktop/` | Tauri product shell |
 | `development/` | Nested T3 Code agent console (not a root workspace member) |
-| `tooling/development/` | Filter shim: `pnpm --filter @backsteros/development …` |
+| `tooling/development/` | Filter shim — `pnpm --filter @backsteros/development dev:desktop` (Electron); `dev` is browser-only |
 | `legacy/` | Frozen v1 apps (Next app/admin/development, sync-demo) |
 
 ## Runtime model
