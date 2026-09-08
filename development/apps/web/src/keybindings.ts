@@ -133,11 +133,32 @@ export function isShortcutEditableTarget(target: EventTarget | null): boolean {
   const tag = target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
   if (target.isContentEditable) return true;
+  // Nested `contenteditable="false"` widgets (Pierre annotations, Lexical chips)
+  // report isContentEditable=false; still treat the editable host as typing.
+  if (target.closest('[contenteditable]:not([contenteditable="false"])') != null) return true;
   if (target.closest("[role='textbox']") || target.closest(".cm-editor")) return true;
   if (target.closest(".xterm") || target.classList.contains("xterm-helper-textarea")) {
     return true;
   }
   return false;
+}
+
+/**
+ * Whether a bare / shift-only page shortcut must yield so typing is not stolen.
+ * Capture-phase listeners sometimes see a non-field `event.target` while focus
+ * is still in an editor — check `document.activeElement` as well.
+ */
+export function isBareKeyShortcutBlockedByEditable(
+  event: Pick<ShortcutEventLike, "metaKey" | "ctrlKey" | "altKey"> & {
+    readonly target?: EventTarget | null;
+  },
+  activeElement: EventTarget | null = typeof document !== "undefined"
+    ? document.activeElement
+    : null,
+): boolean {
+  if (!shouldGuardShortcutForEditableTarget(event)) return false;
+  if (isShortcutEditableTarget(event.target ?? null)) return true;
+  return isShortcutEditableTarget(activeElement);
 }
 
 function resolvePlatform(options: ShortcutMatchOptions | undefined): string {

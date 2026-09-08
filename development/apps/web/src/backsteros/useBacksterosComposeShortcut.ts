@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
-import { isBacksterosGoEditableTarget, isBacksterosGoLeaderPending } from "./backsterosRailMode";
+import { isBacksterosGoLeaderPending } from "./backsterosRailMode";
+import { shouldYieldPlainKeyHotkey } from "./plainKeyShortcutGuard";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { isModelPickerOpen } from "~/modelPickerVisibility";
 import { isTerminalFocused } from "~/lib/terminalFocus";
@@ -28,7 +29,7 @@ export function useBacksterosComposeShortcut(options: {
       if (!isComposeShortcutKey(event)) return;
       if (isCommandPaletteOpen() || isModelPickerOpen() || isTerminalFocused()) return;
       if (isBacksterosGoLeaderPending()) return;
-      if (isBacksterosGoEditableTarget(event.target)) return;
+      if (shouldYieldPlainKeyHotkey(event)) return;
       // Compose modal already open — do not re-fire.
       if (document.querySelector("[data-compose-modal]")) return;
 

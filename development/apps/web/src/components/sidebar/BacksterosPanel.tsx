@@ -9,7 +9,7 @@ import {
   updateBacksterosProject,
   updateBacksterosTask,
 } from "~/backsteros/client";
-import { isBacksterosInboxDueTask } from "~/backsteros/inboxDue";
+import { isBacksterosInboxMemberTask } from "~/backsteros/inboxDue";
 import {
   orderedBacksterosInboxTaskIds,
   orderedBacksterosProjectIds,
@@ -41,7 +41,7 @@ import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebas
 import { useBacksterosInboxAttentionTasks } from "~/backsteros/useBacksterosInboxAttentionTasks";
 import { useBacksterosProjectTasks } from "~/backsteros/useBacksterosProjectTasks";
 import { useEnsureBacksterosT3Project } from "~/backsteros/useEnsureBacksterosT3Project";
-import { migrateBacksterosTaskStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
+import { type BacksterosTaskStatus } from "~/backsteros/taskStatus";
 import {
   resolveShortcutCommand,
   threadJumpIndexFromCommand,
@@ -133,6 +133,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     reload: reloadInbox,
     patchLocalTask: patchInboxTask,
     applySortOrderPatches: applyInboxSortOrderPatches,
+    workingTaskIds: inboxWorkingTaskIds,
   } = useBacksterosInboxAttentionTasks(railMode === "inbox");
 
   const persistTaskSortOrderPatches = useCallback(
@@ -338,14 +339,26 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     if (inboxState.status !== "ready" || projectsState.status !== "ready") return [];
     return inboxState.tasks.filter((task) => {
       if (task.projectId == null || !projectById.has(task.projectId)) return false;
-      const status = migrateBacksterosTaskStatus(task.status);
-      const inAttention = INBOX_STATUS_FILTER.has(status);
-      if (!inAttention && !isBacksterosInboxDueTask(task)) return false;
+      if (
+        !isBacksterosInboxMemberTask(task, {
+          workingTaskIds: inboxWorkingTaskIds,
+        })
+      ) {
+        return false;
+      }
       if (!isSearching) return true;
       const projectName = task.projectId ? (projectNameById.get(task.projectId) ?? "") : "";
       return matchesBacksterosSearchQuery([task.title, task.number, projectName], searchQuery);
     });
-  }, [inboxState, isSearching, projectById, projectNameById, projectsState.status, searchQuery]);
+  }, [
+    inboxState,
+    inboxWorkingTaskIds,
+    isSearching,
+    projectById,
+    projectNameById,
+    projectsState.status,
+    searchQuery,
+  ]);
 
   const visibleProjectTasks = useMemo(() => {
     if (!taskListProject || tasksState.status !== "ready") return [];
@@ -359,7 +372,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     if (railMode === "inbox") {
       return {
         kind: "tasks" as const,
-        itemIds: orderedBacksterosInboxTaskIds(visibleInboxTasks),
+        itemIds: orderedBacksterosInboxTaskIds(visibleInboxTasks, inboxWorkingTaskIds),
         currentItemId: activeTaskId,
         activate: (id: string) => {
           const task = visibleInboxTasks.find((entry) => entry.id === id);
@@ -399,6 +412,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     visibleInboxTasks,
     visibleProjectTasks,
     visibleProjects,
+    inboxWorkingTaskIds,
   ]);
 
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -566,7 +580,9 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         }
 
         const openTaskId = currentSelection?.taskId ?? null;
-        const editable = isBacksterosGoEditableTarget(event.target);
+        const editable =
+          isBacksterosGoEditableTarget(event.target) ||
+          isBacksterosGoEditableTarget(document.activeElement);
 
         // Composer focused on an open task: blur and return j/k to the left
         // sidepanel task list (keep the task/chat open).

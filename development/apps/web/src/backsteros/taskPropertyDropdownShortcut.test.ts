@@ -101,6 +101,36 @@ describe("shouldHandleTaskPropertyDropdownShortcut", () => {
     ).toBe(false);
   });
 
+  it("yields while typing in a Pierre-style contenteditable textbox", () => {
+    const previousHTMLElement = globalThis.HTMLElement;
+    class FakeHTMLElement {
+      tagName = "DIV";
+      isContentEditable = true;
+      classList = { contains: () => false };
+      closest(selector: string) {
+        if (selector.includes("role='textbox'") || selector.includes('role="textbox"')) {
+          return this;
+        }
+        if (selector.includes("contenteditable")) return this;
+        return null;
+      }
+    }
+    globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
+    try {
+      const editor = new FakeHTMLElement();
+      expect(
+        shouldHandleTaskPropertyDropdownShortcut(
+          keyEvent({ target: editor as unknown as EventTarget }),
+          {
+            activeElement: editor as unknown as EventTarget,
+          },
+        ),
+      ).toBe(false);
+    } finally {
+      globalThis.HTMLElement = previousHTMLElement;
+    }
+  });
+
   it("yields while typing in an open property menu", () => {
     const input = fakeElement(['[data-slot="menu-popup"]']);
     expect(

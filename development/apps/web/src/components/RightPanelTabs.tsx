@@ -410,6 +410,14 @@ function RightPanelEmptyState(props: {
       if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
       const target = event.target;
       if (target instanceof Element && surfaceShortcutTargetsTypingContext(target)) return;
+      // Capture-phase listeners can see a non-field target while focus is still typing.
+      if (
+        document.activeElement instanceof Element &&
+        document.activeElement !== target &&
+        surfaceShortcutTargetsTypingContext(document.activeElement)
+      ) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       action.onClick();

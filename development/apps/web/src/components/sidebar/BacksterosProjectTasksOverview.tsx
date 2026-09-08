@@ -189,6 +189,7 @@ function BacksterosOverviewStatusGroup(props: {
   return (
     <li className="bos-status-group">
       <div
+        data-list-sticky-cover
         className="bos-status-group__header-row"
         style={getBacksterosTaskStatusHeaderGradientStyle(status)}
       >

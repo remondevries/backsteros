@@ -175,6 +175,75 @@ describe("shouldHandleListKeyboardNavigation", () => {
       }),
     ).toBe(false);
   });
+
+  it("yields while content edit mode is active", () => {
+    resetBacksterosGoLeaderForTests();
+    const previousDocument = globalThis.document;
+    globalThis.document = {
+      querySelectorAll: (selector: string) =>
+        selector.includes('data-content-view-mode="edit"') ? [{ closest: () => null }] : [],
+      activeElement: null,
+    } as unknown as Document;
+    try {
+      expect(
+        shouldHandleListKeyboardNavigation({
+          event: {
+            key: "j",
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            repeat: false,
+            target: null,
+          },
+        }),
+      ).toBe(false);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it("yields when focus is in a textbox even if event.target is not", () => {
+    resetBacksterosGoLeaderForTests();
+    const previousHTMLElement = globalThis.HTMLElement;
+    const previousDocument = globalThis.document;
+
+    class FakeHTMLElement {
+      tagName = "DIV";
+      isContentEditable = false;
+      classList = { contains: () => false };
+      closest(selector: string) {
+        return selector.includes("role='textbox'") || selector.includes('role="textbox"')
+          ? this
+          : null;
+      }
+    }
+    globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
+    const textbox = new FakeHTMLElement();
+    globalThis.document = {
+      querySelectorAll: () => [],
+      activeElement: textbox,
+    } as unknown as Document;
+
+    try {
+      expect(
+        shouldHandleListKeyboardNavigation({
+          event: {
+            key: "j",
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            shiftKey: false,
+            repeat: false,
+            target: { id: "outside" } as unknown as EventTarget,
+          },
+        }),
+      ).toBe(false);
+    } finally {
+      globalThis.HTMLElement = previousHTMLElement;
+      globalThis.document = previousDocument;
+    }
+  });
 });
 
 describe("list keyboard Tab helpers", () => {

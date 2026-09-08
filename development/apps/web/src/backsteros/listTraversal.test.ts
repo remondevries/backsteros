@@ -64,6 +64,28 @@ describe("orderedBacksterosInboxTaskIds", () => {
     // due-today stays under In Progress; only backlog late is in Due.
     expect(ids).toEqual(["triage", "due-today", "progress", "late"]);
   });
+
+  it("keeps live agent-working tasks with attention regardless of due date", () => {
+    const later = addDaysYmd(5);
+    const ids = orderedBacksterosInboxTaskIds(
+      [
+        {
+          id: "live",
+          status: "ready_to_start",
+          title: "Agent live",
+          dueDate: later,
+        },
+        {
+          id: "late",
+          status: "backlog",
+          title: "Late",
+          dueDate: addDaysYmd(-1),
+        },
+      ],
+      new Set(["live"]),
+    );
+    expect(ids).toEqual(["live", "late"]);
+  });
 });
 
 describe("orderedBacksterosProjectIds", () => {

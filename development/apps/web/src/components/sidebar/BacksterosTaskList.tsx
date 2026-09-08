@@ -17,18 +17,14 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
-import { isBacksterosInboxDueTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
+import { isBacksterosInboxMemberTask, partitionBacksterosInboxTasks } from "~/backsteros/inboxDue";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import {
   taskSortOrderPatchesForGroup,
   type BacksterosTaskSortPatch,
 } from "~/backsteros/task-reorder";
-import {
-  groupBacksterosTasksByStatus,
-  migrateBacksterosTaskStatus,
-  type BacksterosTaskStatus,
-} from "~/backsteros/taskStatus";
+import { groupBacksterosTasksByStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
 import type { BacksterosTask } from "~/backsteros/types";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
@@ -271,11 +267,11 @@ export function BacksterosTaskList(props: {
     if (state.status !== "ready") return [];
     let tasks = state.tasks;
     if (statusFilter) {
-      tasks = tasks.filter((task) => {
-        const status = migrateBacksterosTaskStatus(task.status);
-        if (statusFilter.has(status)) return true;
-        return showDueGroup && isBacksterosInboxDueTask(task);
-      });
+      tasks = tasks.filter((task) =>
+        isBacksterosInboxMemberTask(task, {
+          workingTaskIds,
+        }),
+      );
     }
     if (!isSearching) return tasks;
     return tasks.filter((task) => {
@@ -283,7 +279,7 @@ export function BacksterosTaskList(props: {
         task.projectId && projectNameById ? (projectNameById.get(task.projectId) ?? "") : "";
       return matchesBacksterosSearchQuery([task.title, task.number, projectName], searchQuery);
     });
-  }, [isSearching, projectNameById, searchQuery, showDueGroup, state, statusFilter]);
+  }, [isSearching, projectNameById, searchQuery, state, statusFilter, workingTaskIds]);
 
   const groups = useMemo(() => {
     if (!showDueGroup) {
@@ -294,7 +290,11 @@ export function BacksterosTaskList(props: {
       }));
     }
 
-    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(filteredTasks);
+    const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(
+      filteredTasks,
+      new Date(),
+      workingTaskIds,
+    );
     const statusGroups = groupBacksterosTasksByStatus(attentionTasks).map((group) => ({
       key: group.status,
       label: group.label,
@@ -302,7 +302,7 @@ export function BacksterosTaskList(props: {
     }));
     if (dueTasks.length === 0) return statusGroups;
     return [...statusGroups, { key: DUE_GROUP_KEY, label: "Due", tasks: dueTasks }];
-  }, [filteredTasks, showDueGroup]);
+  }, [filteredTasks, showDueGroup, workingTaskIds]);
 
   const handleReorderWithinGroup = useCallback(
     (_groupKey: string, orderedTasks: readonly BacksterosTask[]) => {

@@ -8,9 +8,11 @@ import {
 } from "@t3tools/contracts";
 import {
   formatShortcutLabel,
+  isBareKeyShortcutBlockedByEditable,
   isChatNewShortcut,
   isChatNewLocalShortcut,
   isDiffToggleShortcut,
+  isShortcutEditableTarget,
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
   isOpenFavoriteEditorShortcut,
@@ -1051,5 +1053,81 @@ describe("plus key parsing", () => {
         platform: "Linux",
       }),
     );
+  });
+});
+
+describe("bare-key editable guards", () => {
+  it("detects inputs, contenteditable hosts, and textbox roles", () => {
+    const previousHTMLElement = globalThis.HTMLElement;
+    class FakeHTMLElement {
+      tagName: string;
+      isContentEditable: boolean;
+      classList = { contains: () => false };
+      private readonly role: string | null;
+      constructor(tagName: string, options: { contentEditable?: boolean; role?: string } = {}) {
+        this.tagName = tagName;
+        this.isContentEditable = options.contentEditable ?? false;
+        this.role = options.role ?? null;
+      }
+      closest(selector: string) {
+        if (
+          this.role === "textbox" &&
+          (selector.includes("role='textbox'") || selector.includes('role="textbox"'))
+        ) {
+          return this;
+        }
+        if (this.isContentEditable && selector.includes("contenteditable")) return this;
+        return null;
+      }
+    }
+    globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
+
+    try {
+      assert.isTrue(isShortcutEditableTarget(new FakeHTMLElement("INPUT")));
+      assert.isTrue(
+        isShortcutEditableTarget(new FakeHTMLElement("DIV", { contentEditable: true })),
+      );
+      assert.isTrue(isShortcutEditableTarget(new FakeHTMLElement("DIV", { role: "textbox" })));
+      assert.isFalse(isShortcutEditableTarget(new FakeHTMLElement("DIV")));
+    } finally {
+      globalThis.HTMLElement = previousHTMLElement;
+    }
+  });
+
+  it("blocks bare keys when focus is in an editor, even if event.target is not", () => {
+    const previousHTMLElement = globalThis.HTMLElement;
+    class FakeHTMLElement {
+      tagName = "INPUT";
+      isContentEditable = false;
+      classList = { contains: () => false };
+      closest() {
+        return null;
+      }
+    }
+    globalThis.HTMLElement = FakeHTMLElement as unknown as typeof HTMLElement;
+
+    try {
+      const input = new FakeHTMLElement();
+      const outside = { id: "outside" };
+      assert.isTrue(
+        isBareKeyShortcutBlockedByEditable(
+          { metaKey: false, ctrlKey: false, altKey: false, target: outside as EventTarget },
+          input as unknown as EventTarget,
+        ),
+      );
+      assert.isFalse(
+        isBareKeyShortcutBlockedByEditable(
+          {
+            metaKey: true,
+            ctrlKey: false,
+            altKey: false,
+            target: input as unknown as EventTarget,
+          },
+          input as unknown as EventTarget,
+        ),
+      );
+    } finally {
+      globalThis.HTMLElement = previousHTMLElement;
+    }
   });
 });

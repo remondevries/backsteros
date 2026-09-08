@@ -1,3 +1,6 @@
+import { isShortcutEditableTarget } from "~/keybindings";
+
+import { shouldYieldPlainKeyHotkey } from "./plainKeyShortcutGuard";
 import type {
   BacksterosRailMode,
   SidebarModeResumeLocation,
@@ -134,19 +137,11 @@ export function captureBacksterosInboxRailTaskDetail(input: {
 
 /**
  * True when focus is in a field that should receive typed characters
- * (composer, search, terminal) — Go chords must yield.
+ * (composer, search, terminal, CodeMirror, Pierre file editor) — Go chords
+ * and other bare-key hotkeys must yield.
  */
 export function isBacksterosGoEditableTarget(target: EventTarget | null): boolean {
-  if (target == null || typeof HTMLElement === "undefined") return false;
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (target.isContentEditable) return true;
-  if (target.closest("[role='textbox']") || target.closest(".cm-editor")) return true;
-  if (target.closest(".xterm") || target.classList.contains("xterm-helper-textarea")) {
-    return true;
-  }
-  return false;
+  return isShortcutEditableTarget(target);
 }
 
 export type BacksterosRailModeGoShortcutResult =
@@ -174,7 +169,7 @@ export function resolveBacksterosRailModeGoShortcut(
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
 
   const key = event.key.toLowerCase();
-  const editable = options?.editable ?? isBacksterosGoEditableTarget(event.target);
+  const editable = options?.editable ?? shouldYieldPlainKeyHotkey(event);
   const now = options?.now ?? Date.now();
   const pending = isBacksterosGoLeaderPending(now);
 

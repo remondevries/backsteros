@@ -11,6 +11,7 @@ import {
   stepListKeyboardNavZone,
   type ListKeyboardNavZone,
 } from "./listKeyboardNav";
+import { scrollListKeyboardNavItemIntoView } from "./listKeyboardNavScroll";
 
 export type ListKeyboardNavRegistration = {
   readonly zone: ListKeyboardNavZone;
@@ -103,6 +104,8 @@ export function handleListKeyboardNavEvent(
     // Switch focus only — do not activate the first row (that would open a
     // different project / task). j/k continues from the zone’s current selection.
     setActiveZone(nextZone);
+    const selectedId = registrations.get(nextZone)?.getSelectedId() ?? null;
+    if (selectedId) scrollListKeyboardNavItemIntoView(selectedId);
     return true;
   }
 
@@ -112,6 +115,8 @@ export function handleListKeyboardNavEvent(
       event.preventDefault();
       event.stopPropagation();
       setActiveZone("sidepanel");
+      const selectedId = registrations.get("sidepanel")?.getSelectedId() ?? null;
+      if (selectedId) scrollListKeyboardNavItemIntoView(selectedId);
       return true;
     }
     if (options.onEscapeUp?.()) {
@@ -172,5 +177,6 @@ export function handleListKeyboardNavEvent(
   } else if (nextId !== registration.getSelectedId()) {
     registration.onActivate(nextId);
   }
+  scrollListKeyboardNavItemIntoView(nextId);
   return true;
 }

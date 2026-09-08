@@ -11,7 +11,11 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  isBareKeyShortcutBlockedByEditable,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
@@ -81,6 +85,8 @@ function SidebarControl() {
       ) {
         return;
       }
+      // Bare `[` / `⇧[` / `]` must not steal characters from editors / inputs.
+      if (isBareKeyShortcutBlockedByEditable(event)) return;
 
       const command = resolveShortcutCommand(event, keybindings);
       if (command === "sidebar.toggle") {
@@ -97,7 +103,7 @@ function SidebarControl() {
     };
 
     // Capture so bracket chords win before the composer treats them as text
-    // (same approach as the old Mod+B sidebar toggle).
+    // (same approach as the old Mod+B sidebar toggle) — but only when not typing.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar, toggleTaskDetail]);

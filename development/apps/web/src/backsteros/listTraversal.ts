@@ -16,6 +16,7 @@ export function orderedBacksterosTaskIds(
 /**
  * Flatten inbox tasks: attention status groups first, then Due-only tasks
  * (due today/overdue that are not already in an attention status).
+ * Live agent-working ids stay with attention regardless of status/due.
  */
 export function orderedBacksterosInboxTaskIds(
   tasks: readonly {
@@ -25,8 +26,13 @@ export function orderedBacksterosInboxTaskIds(
     readonly sortOrder?: number;
     readonly title?: string;
   }[],
+  workingTaskIds?: ReadonlySet<string>,
 ): string[] {
-  const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(tasks);
+  const { attentionTasks, dueTasks } = partitionBacksterosInboxTasks(
+    tasks,
+    new Date(),
+    workingTaskIds,
+  );
   return [...orderedBacksterosTaskIds(attentionTasks), ...dueTasks.map((task) => task.id)];
 }
 

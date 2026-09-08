@@ -1,3 +1,5 @@
+import { isShortcutEditableTarget } from "~/keybindings";
+
 import { isBacksterosGoLeaderPending } from "./backsterosRailMode";
 import {
   isBacksterosComposeModalOpen,
@@ -108,6 +110,11 @@ export function shouldHandleTaskPropertyDropdownShortcut(
   }
 
   if (isTaskPropertyLocalTypingTarget(event.target) || isTaskPropertyLocalTypingTarget(active)) {
+    return false;
+  }
+
+  // Generic inputs / contenteditable / Pierre file editor / terminal.
+  if (isShortcutEditableTarget(event.target) || isShortcutEditableTarget(active)) {
     return false;
   }
 

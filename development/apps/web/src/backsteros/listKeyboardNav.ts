@@ -1,5 +1,6 @@
-import { isBacksterosGoEditableTarget, isBacksterosGoLeaderPending } from "./backsterosRailMode";
+import { isBacksterosGoLeaderPending } from "./backsterosRailMode";
 import { isBacksterosPropertyMenuOpen } from "./isBacksterosPropertyMenuOpen";
+import { shouldYieldPlainKeyHotkey } from "./plainKeyShortcutGuard";
 
 export type ListKeyboardNavDirection = "up" | "down";
 export type ListKeyboardNavZone = "sidepanel" | "main";
@@ -99,7 +100,7 @@ export function shouldHandleListKeyboardNavigation(input: ListKeyboardNavGuardIn
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
   if (listKeyboardNavDirection(event.key) == null) return false;
   if (input.terminalFocus || input.commandPaletteOpen || input.modelPickerOpen) return false;
-  if (isBacksterosGoEditableTarget(event.target)) return false;
+  if (shouldYieldPlainKeyHotkey(event)) return false;
 
   const isJk = event.key === "j" || event.key === "k" || event.key === "J" || event.key === "K";
   if (isJk && isBacksterosGoLeaderPending()) return false;
@@ -115,7 +116,7 @@ export function shouldHandleListKeyboardTabNavigation(input: ListKeyboardNavGuar
   if (event.repeat) return false;
   if (!shouldHandleListKeyboardZoneTab(event)) return false;
   if (input.terminalFocus || input.commandPaletteOpen || input.modelPickerOpen) return false;
-  if (isBacksterosGoEditableTarget(event.target)) return false;
+  if (shouldYieldPlainKeyHotkey(event)) return false;
   return true;
 }
 
@@ -129,7 +130,7 @@ export function shouldHandleListKeyboardEscape(input: ListKeyboardNavGuardInput)
   if (event.key !== "Escape") return false;
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
   if (input.terminalFocus || input.commandPaletteOpen || input.modelPickerOpen) return false;
-  if (isBacksterosGoEditableTarget(event.target)) return false;
+  if (shouldYieldPlainKeyHotkey(event)) return false;
   if (isBacksterosPropertyMenuOpen()) return false;
   return true;
 }
@@ -148,6 +149,6 @@ export function shouldHandleListKeyboardActivate(input: ListKeyboardNavGuardInpu
   // Shift+Space is reserved elsewhere; plain Enter / Space activate.
   if (event.shiftKey && event.key !== "Enter") return false;
   if (input.terminalFocus || input.commandPaletteOpen || input.modelPickerOpen) return false;
-  if (isBacksterosGoEditableTarget(event.target)) return false;
+  if (shouldYieldPlainKeyHotkey(event)) return false;
   return true;
 }
