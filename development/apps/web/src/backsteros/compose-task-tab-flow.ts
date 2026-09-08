@@ -4,6 +4,7 @@ export type ComposeTaskTabField =
   | "dueDate"
   | "priority"
   | "assignee"
+  | "cancel"
   | "submit";
 
 export type ComposeTaskTabFlowContext = {
@@ -17,6 +18,7 @@ const COMPOSE_TASK_TAB_SEQUENCE: readonly ComposeTaskTabField[] = [
   "dueDate",
   "priority",
   "assignee",
+  "cancel",
   "submit",
 ];
 
@@ -45,4 +47,36 @@ export function getNextComposeTaskTabField(
   }
 
   return null;
+}
+
+/** Shift+Tab order through create-task controls. */
+export function getPreviousComposeTaskTabField(
+  current: ComposeTaskTabField,
+  context: ComposeTaskTabFlowContext,
+): ComposeTaskTabField | null {
+  const currentIndex = COMPOSE_TASK_TAB_SEQUENCE.indexOf(current);
+  const startIndex = currentIndex === -1 ? COMPOSE_TASK_TAB_SEQUENCE.length - 1 : currentIndex - 1;
+
+  for (let index = startIndex; index >= 0; index -= 1) {
+    const field = COMPOSE_TASK_TAB_SEQUENCE[index];
+    if (field && isComposeTaskTabFieldEnabled(field, context)) {
+      return field;
+    }
+  }
+
+  return null;
+}
+
+export function composeTaskTabFieldFromPropertyDropdownId(
+  id: string | null | undefined,
+): ComposeTaskTabField | null {
+  switch (id) {
+    case "status":
+    case "dueDate":
+    case "priority":
+    case "assignee":
+      return id;
+    default:
+      return null;
+  }
 }

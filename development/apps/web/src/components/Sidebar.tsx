@@ -1372,6 +1372,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
+                data-keyboard-nav-item={threadKey}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -1536,6 +1537,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
+              data-keyboard-nav-item={threadKey}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}
@@ -2925,6 +2927,10 @@ export default function Sidebar() {
           modelPickerOpen: isModelPickerOpen(),
         })
       ) {
+        // Create-task compose owns Tab while open.
+        if (useBacksterosTaskDetailUiStore.getState().composeProject != null) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         handleBacksterosRailModeChange(backsterosRailMode === "inbox" ? "projects" : "inbox");

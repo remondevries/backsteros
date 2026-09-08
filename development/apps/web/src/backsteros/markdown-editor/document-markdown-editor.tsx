@@ -1,7 +1,21 @@
 import { markdown } from "@codemirror/lang-markdown";
-import { EditorView } from "@codemirror/view";
+import { Prec } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+
+/** Insert a real tab in edit mode (compose modal Tab must not leave the editor). */
+const insertTabKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: "Tab",
+      run: (view) => {
+        view.dispatch(view.state.replaceSelection("\t"));
+        return true;
+      },
+    },
+  ]),
+);
 
 import { documentEditorListBullets } from "./document-editor-list-bullets";
 import {
@@ -106,6 +120,7 @@ export function DocumentMarkdownEditor({
       documentEditorSyntaxHighlighting,
       createDocumentEditorContentLayoutTheme(scrollWithContent),
       ...documentEditorListBullets,
+      insertTabKeymap,
       EditorView.lineWrapping,
       EditorView.editable.of(!disabled),
       ...(placeholder

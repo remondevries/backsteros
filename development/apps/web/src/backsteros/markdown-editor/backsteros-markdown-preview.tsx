@@ -1,18 +1,23 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ExpandedImageDialog } from "~/components/chat/ExpandedImageDialog";
 import type { ExpandedImagePreview } from "~/components/chat/ExpandedImagePreview";
 
 import { resolveBacksterosMarkdownImageSrc } from "../taskDescriptionImages";
+import {
+  splitMarkdownPreviewParagraphs,
+  withSoftLineHardBreaks,
+} from "./markdown-preview-paragraphs";
 
 export type BacksterosMarkdownPreviewProps = {
   body: string;
@@ -107,12 +112,55 @@ function MarkdownPreviewImage({
   );
 }
 
+function BlankParagraph() {
+  return (
+    <p className="content-markdown-preview-blank-line" aria-hidden="true">
+      <br />
+    </p>
+  );
+}
+
+function PreviewParagraph({ content, components }: { content: string; components: Components }) {
+  if (content.trim() === "") {
+    return <BlankParagraph />;
+  }
+
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {withSoftLineHardBreaks(content)}
+    </ReactMarkdown>
+  );
+}
+
 /**
  * GFM preview using desktop markdown presentation classes.
  * Resolves authenticated BacksterOS task-description image embeds.
+ * Blank lines match the editor (desktop DocumentMarkdownPreview parity).
  */
 export function BacksterosMarkdownPreview({ body, className }: BacksterosMarkdownPreviewProps) {
   const [expandedPreview, setExpandedPreview] = useState<ExpandedImagePreview | null>(null);
+
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ href, children, ...props }) => (
+        <a
+          {...props}
+          href={href}
+          className="content-markdown-preview-link"
+          target={href?.startsWith("http") ? "_blank" : undefined}
+          rel={href?.startsWith("http") ? "noreferrer" : undefined}
+        >
+          {children}
+        </a>
+      ),
+      img: ({ src, alt }) => (
+        <MarkdownPreviewImage src={src} alt={alt} onExpand={setExpandedPreview} />
+      ),
+    }),
+    [],
+  );
+
+  const paragraphs = splitMarkdownPreviewParagraphs(body);
 
   return (
     <>
@@ -125,27 +173,13 @@ export function BacksterosMarkdownPreview({ body, className }: BacksterosMarkdow
           .filter(Boolean)
           .join(" ")}
       >
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            a: ({ href, children, ...props }) => (
-              <a
-                {...props}
-                href={href}
-                className="content-markdown-preview-link"
-                target={href?.startsWith("http") ? "_blank" : undefined}
-                rel={href?.startsWith("http") ? "noreferrer" : undefined}
-              >
-                {children}
-              </a>
-            ),
-            img: ({ src, alt }) => (
-              <MarkdownPreviewImage src={src} alt={alt} onExpand={setExpandedPreview} />
-            ),
-          }}
-        >
-          {body}
-        </ReactMarkdown>
+        {paragraphs.map((paragraph, index) => (
+          <PreviewParagraph
+            key={`paragraph-${index}`}
+            content={paragraph}
+            components={components}
+          />
+        ))}
       </div>
       {expandedPreview ? (
         <ExpandedImageDialog preview={expandedPreview} onClose={() => setExpandedPreview(null)} />

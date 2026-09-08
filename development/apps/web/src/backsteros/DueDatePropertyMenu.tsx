@@ -53,6 +53,10 @@ export function BacksterosDueDatePropertyMenu(props: {
   /** Desktop `data-task-property-dropdown` — Shift+D opens due date. */
   readonly taskPropertyDropdownId?: string;
   readonly onChange: (dueDateIso: string | null) => void;
+  /** Tab from the open search field (e.g. next compose property). */
+  readonly onTabFromSearch?: () => void;
+  /** Shift+Tab from the open search field. */
+  readonly onShiftTabFromSearch?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pickingDate, setPickingDate] = useState(false);
@@ -158,6 +162,16 @@ export function BacksterosDueDatePropertyMenu(props: {
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
                   stopPropertyMenuSearchKeyPropagation(event);
+                  if (event.key === "Tab") {
+                    event.preventDefault();
+                    setOpen(false);
+                    if (event.shiftKey) {
+                      props.onShiftTabFromSearch?.();
+                    } else {
+                      props.onTabFromSearch?.();
+                    }
+                    return;
+                  }
                   if (event.key !== "Enter") return;
                   event.preventDefault();
                   const parsed = parseQuickDueQuery(query);

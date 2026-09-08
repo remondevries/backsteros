@@ -61,6 +61,12 @@
   white-space: normal;
 }
 
+/* Empty rows from `\n\n` runs — keep edit/preview height in sync. */
+.content-markdown-preview-blank-line {
+  margin: 0;
+  padding: 0;
+}
+
 .content-markdown-preview-body--rendered > :first-child {
   margin-top: 0;
 }

@@ -5,7 +5,9 @@ import { useRouter } from "@tanstack/react-router";
 import { BacksterosContactPersonIcon } from "~/backsteros/ContactPersonIcon";
 import { createBacksterosTask, fetchBacksterosContacts } from "~/backsteros/client";
 import {
+  composeTaskTabFieldFromPropertyDropdownId,
   getNextComposeTaskTabField,
+  getPreviousComposeTaskTabField,
   type ComposeTaskTabField,
 } from "~/backsteros/compose-task-tab-flow";
 import { BacksterosDueDatePropertyMenu } from "~/backsteros/DueDatePropertyMenu";
@@ -55,20 +57,40 @@ function CreateTaskDescriptionSection(props: {
   readonly onChange: (value: string) => void;
   readonly disabled: boolean;
   readonly hostRef: RefObject<HTMLDivElement | null>;
-  readonly onTabFromEdit: () => void;
+  readonly onShiftTabFromContent: () => void;
+  readonly onTabFromPreview: () => void;
+  readonly onEnterPreview: () => void;
 }) {
-  const { value, onChange, disabled, hostRef, onTabFromEdit } = props;
+  const {
+    value,
+    onChange,
+    disabled,
+    hostRef,
+    onShiftTabFromContent,
+    onTabFromPreview,
+    onEnterPreview,
+  } = props;
   const [mode, setMode] = useState<BacksterosMarkdownDescriptionMode>("edit");
+  // Stay off on first open so the title keeps autofocus; turn on after leaving edit
+  // so preview → edit focuses CodeMirror.
+  const [focusOnEdit, setFocusOnEdit] = useState(false);
 
-  const setViewMode = useCallback((next: BacksterosMarkdownDescriptionMode) => {
-    setMode(next);
-    if (next === "preview") {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) active.blur();
-      const focusedCm = document.querySelector(".cm-editor.cm-focused .cm-content");
-      if (focusedCm instanceof HTMLElement) focusedCm.blur();
-    }
-  }, []);
+  const setViewMode = useCallback(
+    (next: BacksterosMarkdownDescriptionMode) => {
+      if (next === "edit") {
+        setFocusOnEdit(true);
+      }
+      setMode(next);
+      if (next === "preview") {
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) active.blur();
+        const focusedCm = document.querySelector(".cm-editor.cm-focused .cm-content");
+        if (focusedCm instanceof HTMLElement) focusedCm.blur();
+        onEnterPreview();
+      }
+    },
+    [onEnterPreview],
+  );
 
   const toggleViewMode = useCallback(() => {
     setViewMode(mode === "edit" ? "preview" : "edit");
@@ -82,42 +104,64 @@ function CreateTaskDescriptionSection(props: {
   });
 
   useEffect(() => {
-    if (mode !== "edit") return;
-
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Tab" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
+        // Escape → preview (edit mode only).
+        if (event.key !== "Escape" || event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.repeat || mode !== "edit") return;
         const host = hostRef.current;
         const target = event.target;
-        if (!(target instanceof Node) || !host?.contains(target)) return;
+        if (
+          !(target instanceof Node) ||
+          !host ||
+          (!host.contains(target) && !(target instanceof Element && target.closest(".cm-editor")))
+        ) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
-        onTabFromEdit();
+        event.stopImmediatePropagation();
+        setViewMode("preview");
         return;
       }
 
-      if (event.key !== "Escape" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.repeat) return;
       const host = hostRef.current;
       const target = event.target;
-      if (
-        !(target instanceof Node) ||
-        !host ||
-        (!host.contains(target) && !(target instanceof Element && target.closest(".cm-editor")))
-      ) {
+      const inDescription =
+        (host != null && target instanceof Node && host.contains(target)) ||
+        (target instanceof Element && target.closest(".bos-compose-modal-description") != null);
+      if (!inDescription) return;
+
+      if (event.shiftKey) {
+        // Edit or preview: Shift+Tab leaves content for the title.
+        event.preventDefault();
+        event.stopPropagation();
+        onShiftTabFromContent();
         return;
       }
+
+      if (mode === "edit") {
+        // Let CodeMirror insert a tab character.
+        return;
+      }
+
+      // Preview: Tab advances into property chips.
       event.preventDefault();
       event.stopPropagation();
-      event.stopImmediatePropagation();
-      setViewMode("preview");
+      onTabFromPreview();
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [hostRef, mode, onTabFromEdit, setViewMode]);
+  }, [hostRef, mode, onShiftTabFromContent, onTabFromPreview, setViewMode]);
 
   return (
-    <div className="bos-task-description-section bos-compose-modal-description" ref={hostRef}>
+    <div
+      className="bos-task-description-section bos-compose-modal-description outline-none"
+      ref={hostRef}
+      tabIndex={mode === "preview" ? -1 : undefined}
+      data-compose-description-mode={mode}
+    >
       <BacksterosMarkdownDescription
         mode={mode}
         value={value}
@@ -126,8 +170,8 @@ function CreateTaskDescriptionSection(props: {
         ariaLabel="Task description"
         placeholder="Add a description…"
         emptyMessage="Add a description…"
-        // Keep title autofocus on open; user clicks or ⌘E to focus the editor.
-        focusOnEdit={false}
+        // Off on open (title autofocus); on after preview→edit so typing can start.
+        focusOnEdit={focusOnEdit}
         toggle={
           <FloatingPillToggleDock>
             <SegmentedPillToggle
@@ -173,6 +217,7 @@ export function BacksterosCreateTaskForm({
   const [submitting, setSubmitting] = useState(false);
 
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const descriptionHostRef = useRef<HTMLDivElement | null>(null);
   const composeTabCursorRef = useRef<ComposeTaskTabField>("description");
@@ -241,7 +286,7 @@ export function BacksterosCreateTaskForm({
     [assigneeId, contacts],
   );
 
-  const assigneeOptions = useMemo((): BacksterosSearchablePropertyOption[] => {
+  const assigneeOptions = useMemo((): readonly BacksterosSearchablePropertyOption[] => {
     const unassigned: BacksterosSearchablePropertyOption = {
       value: UNASSIGNED_VALUE,
       label: "Unassigned",
@@ -261,6 +306,14 @@ export function BacksterosCreateTaskForm({
   }, [avatarSrcById, contacts]);
   const canSubmit = title.trim().length > 0 && !submitting;
 
+  const tabFlowContext = useMemo(
+    () => ({
+      statusEnabled: true,
+      assigneeEnabled: contacts.length > 0,
+    }),
+    [contacts.length],
+  );
+
   const handleProjectChange = useCallback(
     (projectId: string) => {
       const next = codebaseProjects.find((entry) => entry.id === projectId);
@@ -275,13 +328,48 @@ export function BacksterosCreateTaskForm({
     [codebaseProjects, openCreateTaskDetail, selectedProject.id],
   );
 
+  const focusComposeTitle = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+    });
+  }, []);
+
+  const focusComposeSubmit = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      submitButtonRef.current?.focus();
+      composeTabCursorRef.current = "submit";
+    });
+  }, []);
+
+  const isComposeActionTarget = useCallback(
+    (target: EventTarget | null, action: "cancel" | "submit") => {
+      if (!(target instanceof Element)) return false;
+      if (action === "submit") {
+        return (
+          target === submitButtonRef.current ||
+          target.closest("[data-compose-action='submit']") != null
+        );
+      }
+      return (
+        target === cancelButtonRef.current ||
+        target.closest("[data-compose-action='cancel']") != null
+      );
+    },
+    [],
+  );
+
   const focusComposeTaskField = useCallback((field: ComposeTaskTabField) => {
     const scope = modalRef.current;
     switch (field) {
       case "description": {
+        const host = descriptionHostRef.current;
+        if (host?.getAttribute("data-compose-description-mode") === "preview") {
+          host.focus();
+          return;
+        }
         const content =
-          descriptionHostRef.current?.querySelector<HTMLElement>(".cm-content") ??
-          descriptionHostRef.current?.querySelector<HTMLElement>("[contenteditable='true']");
+          host?.querySelector<HTMLElement>(".cm-content") ??
+          host?.querySelector<HTMLElement>("[contenteditable='true']");
         content?.focus();
         return;
       }
@@ -297,28 +385,123 @@ export function BacksterosCreateTaskForm({
       case "assignee":
         openTaskPropertyDropdown("assignee", scope);
         return;
-      case "submit":
-        submitButtonRef.current?.focus();
+      case "cancel": {
+        const cancel =
+          cancelButtonRef.current ??
+          modalRef.current?.querySelector<HTMLButtonElement>("[data-compose-action='cancel']");
+        cancel?.focus();
         return;
+      }
+      case "submit": {
+        const submit =
+          submitButtonRef.current ??
+          modalRef.current?.querySelector<HTMLButtonElement>("[data-compose-action='submit']");
+        submit?.focus();
+        return;
+      }
       default:
         return;
     }
   }, []);
 
-  const advanceComposeTaskTab = useCallback(() => {
-    const nextField = getNextComposeTaskTabField(composeTabCursorRef.current, {
-      statusEnabled: true,
-      assigneeEnabled: contacts.length > 0,
-    });
-    if (!nextField) return;
-    composeTabCursorRef.current = nextField;
-    focusComposeTaskField(nextField);
-  }, [contacts.length, focusComposeTaskField]);
+  const syncComposeTabCursorFromFocus = useCallback(() => {
+    const active = document.activeElement;
+    if (!(active instanceof Element)) return composeTabCursorRef.current;
+
+    if (active === submitButtonRef.current) {
+      composeTabCursorRef.current = "submit";
+      return "submit";
+    }
+    if (active === cancelButtonRef.current) {
+      composeTabCursorRef.current = "cancel";
+      return "cancel";
+    }
+    if (active.closest(".bos-compose-modal-description") || active.closest(".cm-editor")) {
+      composeTabCursorRef.current = "description";
+      return "description";
+    }
+
+    const dropdown = active.closest("[data-task-property-dropdown]");
+    const field = composeTaskTabFieldFromPropertyDropdownId(
+      dropdown?.getAttribute("data-task-property-dropdown"),
+    );
+    if (field) {
+      composeTabCursorRef.current = field;
+      return field;
+    }
+
+    // Portaled property search input — match the open chip.
+    const openChip = modalRef.current?.querySelector(
+      '[data-task-property-dropdown][aria-expanded="true"]',
+    );
+    const openField = composeTaskTabFieldFromPropertyDropdownId(
+      openChip?.getAttribute("data-task-property-dropdown"),
+    );
+    if (openField) {
+      composeTabCursorRef.current = openField;
+      return openField;
+    }
+
+    return composeTabCursorRef.current;
+  }, []);
+
+  const advanceComposeTaskTab = useCallback(
+    (from?: ComposeTaskTabField) => {
+      const current = from ?? syncComposeTabCursorFromFocus();
+      const nextField = getNextComposeTaskTabField(current, tabFlowContext);
+      if (!nextField) return;
+      composeTabCursorRef.current = nextField;
+      window.requestAnimationFrame(() => {
+        focusComposeTaskField(nextField);
+      });
+    },
+    [focusComposeTaskField, syncComposeTabCursorFromFocus, tabFlowContext],
+  );
+
+  const retreatComposeTaskTab = useCallback(
+    (from?: ComposeTaskTabField) => {
+      const current = from ?? syncComposeTabCursorFromFocus();
+      const previousField = getPreviousComposeTaskTabField(current, tabFlowContext);
+      if (!previousField) {
+        // Before description → title.
+        focusComposeTitle();
+        return;
+      }
+      if (previousField === "description") {
+        const host = descriptionHostRef.current;
+        if (host?.getAttribute("data-compose-description-mode") === "preview") {
+          focusComposeTitle();
+          return;
+        }
+      }
+      composeTabCursorRef.current = previousField;
+      window.requestAnimationFrame(() => {
+        focusComposeTaskField(previousField);
+      });
+    },
+    [focusComposeTaskField, focusComposeTitle, syncComposeTabCursorFromFocus, tabFlowContext],
+  );
 
   const openComposeProjectDropdown = useCallback(() => {
     if (submitting) return;
     openTaskPropertyDropdown("project", modalRef.current);
   }, [submitting]);
+
+  const handlePropertyTabFromSearch = useCallback(
+    (field: ComposeTaskTabField) => {
+      composeTabCursorRef.current = field;
+      advanceComposeTaskTab(field);
+    },
+    [advanceComposeTaskTab],
+  );
+
+  const handlePropertyShiftTabFromSearch = useCallback(
+    (field: ComposeTaskTabField) => {
+      composeTabCursorRef.current = field;
+      retreatComposeTaskTab(field);
+    },
+    [retreatComposeTaskTab],
+  );
 
   const handleCreate = useCallback(async () => {
     const trimmedTitle = title.trim();
@@ -370,55 +553,131 @@ export function BacksterosCreateTaskForm({
     title,
   ]);
 
-  // Desktop compose Tab / Shift+Tab / Escape ownership while the modal is open.
+  // When nothing owns focus, land on Create task so Enter can submit.
+  useEffect(() => {
+    function recoverFocus() {
+      const active = document.activeElement;
+      if (active != null && active !== document.body) return;
+      if (isBacksterosPropertyMenuOpen()) return;
+      const submit = submitButtonRef.current;
+      if (submit && !submit.disabled) {
+        submit.focus();
+        composeTabCursorRef.current = "submit";
+        return;
+      }
+      cancelButtonRef.current?.focus();
+      composeTabCursorRef.current = "cancel";
+    }
+
+    const onFocusOut = () => {
+      queueMicrotask(recoverFocus);
+    };
+
+    document.addEventListener("focusout", onFocusOut);
+    return () => document.removeEventListener("focusout", onFocusOut);
+  }, []);
+
+  // Desktop compose Tab / Shift+Tab ownership while the modal is open.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return;
+      if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return;
 
-      if (event.key === "Tab" && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      if (event.shiftKey) {
         if (isBacksterosPropertyMenuOpen()) return;
         if (event.target === titleInputRef.current) {
           event.preventDefault();
           event.stopPropagation();
           openComposeProjectDropdown();
-        }
-        return;
-      }
-
-      if (event.key === "Tab" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
-        if (isBacksterosPropertyMenuOpen()) return;
-        if (event.target === titleInputRef.current) {
-          // Browser would leave the dialog; send focus into description → properties.
-          event.preventDefault();
-          event.stopPropagation();
-          composeTabCursorRef.current = "description";
-          focusComposeTaskField("description");
           return;
         }
-        if (event.target === submitButtonRef.current) return;
+        // Create → Cancel → assignee (do not rely on native order; focus recovery
+        // otherwise snaps back onto Create when Tab leaves the dialog shell).
+        if (isComposeActionTarget(event.target, "submit")) {
+          event.preventDefault();
+          event.stopPropagation();
+          composeTabCursorRef.current = "cancel";
+          const cancel =
+            cancelButtonRef.current ??
+            modalRef.current?.querySelector<HTMLButtonElement>("[data-compose-action='cancel']");
+          cancel?.focus();
+          return;
+        }
+        if (isComposeActionTarget(event.target, "cancel")) {
+          event.preventDefault();
+          event.stopPropagation();
+          retreatComposeTaskTab("cancel");
+          return;
+        }
 
         const modal = modalRef.current;
         const active = document.activeElement;
         const inModal =
           modal instanceof HTMLElement && active instanceof Node && modal.contains(active);
-        const focusRecoverable = active === document.body || active === null;
-        if (!inModal && !focusRecoverable) return;
-        // Description Tab is handled in CreateTaskDescriptionSection.
+        if (!inModal) return;
+
+        // Property chip focused (menu closed): Shift+Tab to previous property / title.
         if (
           active instanceof Element &&
-          (active.closest(".cm-editor") || active.closest(".bos-compose-modal-description"))
+          active.closest("[data-task-property-dropdown]") &&
+          !active.closest(".bos-compose-modal-header")
         ) {
-          return;
+          event.preventDefault();
+          event.stopPropagation();
+          retreatComposeTaskTab();
         }
+        return;
+      }
+
+      // Forward Tab
+      if (isBacksterosPropertyMenuOpen()) return;
+      if (event.target === titleInputRef.current) {
         event.preventDefault();
         event.stopPropagation();
-        advanceComposeTaskTab();
+        composeTabCursorRef.current = "description";
+        focusComposeTaskField("description");
+        return;
       }
+      if (isComposeActionTarget(event.target, "submit")) return;
+      if (isComposeActionTarget(event.target, "cancel")) {
+        event.preventDefault();
+        event.stopPropagation();
+        composeTabCursorRef.current = "submit";
+        focusComposeSubmit();
+        return;
+      }
+
+      const modal = modalRef.current;
+      const active = document.activeElement;
+      const inModal =
+        modal instanceof HTMLElement && active instanceof Node && modal.contains(active);
+      const focusRecoverable = active === document.body || active === null;
+      if (!inModal && !focusRecoverable) return;
+
+      // Description Tab is handled in CreateTaskDescriptionSection (edit inserts
+      // tab; preview advances). Do not steal it here.
+      if (
+        active instanceof Element &&
+        (active.closest(".cm-editor") || active.closest(".bos-compose-modal-description"))
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      advanceComposeTaskTab();
     }
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [advanceComposeTaskTab, focusComposeTaskField, openComposeProjectDropdown]);
+  }, [
+    advanceComposeTaskTab,
+    focusComposeSubmit,
+    focusComposeTaskField,
+    isComposeActionTarget,
+    openComposeProjectDropdown,
+    retreatComposeTaskTab,
+  ]);
 
   const propertyMenus = (
     <>
@@ -431,6 +690,17 @@ export function BacksterosCreateTaskForm({
         disabled={submitting}
         taskPropertyDropdownId="status"
         onChange={setStatus}
+        onTabFromSearch={() => handlePropertyTabFromSearch("status")}
+        onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("status")}
+      />
+
+      <BacksterosDueDatePropertyMenu
+        dueDate={dueDate}
+        status={status}
+        disabled={submitting}
+        onChange={setDueDate}
+        onTabFromSearch={() => handlePropertyTabFromSearch("dueDate")}
+        onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("dueDate")}
       />
 
       <BacksterosSearchablePropertyMenu
@@ -442,13 +712,8 @@ export function BacksterosCreateTaskForm({
         disabled={submitting}
         taskPropertyDropdownId="priority"
         onChange={(value) => setPriority(Number(value))}
-      />
-
-      <BacksterosDueDatePropertyMenu
-        dueDate={dueDate}
-        status={status}
-        disabled={submitting}
-        onChange={setDueDate}
+        onTabFromSearch={() => handlePropertyTabFromSearch("priority")}
+        onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("priority")}
       />
 
       <BacksterosSearchablePropertyMenu
@@ -469,6 +734,8 @@ export function BacksterosCreateTaskForm({
         onChange={(value) => {
           setAssigneeId(value === UNASSIGNED_VALUE ? null : value);
         }}
+        onTabFromSearch={() => handlePropertyTabFromSearch("assignee")}
+        onShiftTabFromSearch={() => handlePropertyShiftTabFromSearch("assignee")}
       />
     </>
   );
@@ -494,6 +761,7 @@ export function BacksterosCreateTaskForm({
               />
             }
             onChange={handleProjectChange}
+            onTabFromSearch={focusComposeTitle}
           />
         </div>
 
@@ -533,9 +801,16 @@ export function BacksterosCreateTaskForm({
             onChange={setDescription}
             disabled={submitting}
             hostRef={descriptionHostRef}
-            onTabFromEdit={() => {
+            onShiftTabFromContent={focusComposeTitle}
+            onTabFromPreview={() => {
               composeTabCursorRef.current = "description";
-              advanceComposeTaskTab();
+              advanceComposeTaskTab("description");
+            }}
+            onEnterPreview={() => {
+              // Land on the preview surface so Tab/Shift+Tab still work from content.
+              // Sync focus (not rAF) so the focusout → Create recovery does not win.
+              descriptionHostRef.current?.focus();
+              composeTabCursorRef.current = "description";
             }}
           />
         </div>
@@ -545,11 +820,16 @@ export function BacksterosCreateTaskForm({
         <div className="bos-compose-modal-properties">{propertyMenus}</div>
         <div className="bos-compose-modal-actions">
           <Button
+            ref={cancelButtonRef}
             type="button"
             size="sm"
             variant="ghost"
             disabled={submitting}
+            data-compose-action="cancel"
             onClick={closeCompose}
+            onFocus={() => {
+              composeTabCursorRef.current = "cancel";
+            }}
           >
             Cancel
           </Button>
@@ -558,6 +838,7 @@ export function BacksterosCreateTaskForm({
             type="button"
             size="sm"
             disabled={!canSubmit}
+            data-compose-action="submit"
             onClick={() => void handleCreate()}
             onFocus={() => {
               composeTabCursorRef.current = "submit";

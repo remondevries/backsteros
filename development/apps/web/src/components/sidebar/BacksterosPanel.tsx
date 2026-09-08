@@ -511,7 +511,9 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     };
   }, []);
 
-  const showSidepanelKeyboardOutline = listKeyboardActiveZone === "sidepanel" && !editableHasFocus;
+  const composeProject = useBacksterosTaskDetailUiStore((state) => state.composeProject);
+  const showSidepanelKeyboardOutline =
+    listKeyboardActiveZone === "sidepanel" && !editableHasFocus && composeProject == null;
 
   // Prefer the j/k cursor; fall back to the open row so a primary outline still
   // shows after a rail switch before the first j/k press.
@@ -611,6 +613,11 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
         }
       }
 
+      // Create-task compose owns keyboard focus — do not move list highlights.
+      if (isBacksterosComposeModalOpen()) {
+        return;
+      }
+
       if (
         handleListKeyboardNavEvent(event, {
           terminalFocus: isTerminalFocused(),
@@ -705,7 +712,10 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
             (taskListProject?.id === displayedProjectId ? taskListProject : null);
           return (
             <div className="flex min-h-0 flex-col">
-              <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-sidebar-border/60 bg-sidebar px-1 pb-1.5 pt-0.5">
+              <div
+                data-list-sticky-cover
+                className="sticky top-0 z-10 flex items-center gap-1 border-b border-sidebar-border/60 bg-sidebar px-1 pb-1.5 pt-0.5"
+              >
                 <button
                   type="button"
                   onClick={handleBackToProjects}
