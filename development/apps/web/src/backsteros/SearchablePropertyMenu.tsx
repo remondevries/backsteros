@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import {
-  Menu,
-  MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuSeparator,
-  MenuTrigger,
-} from "~/components/ui/menu";
-import { useFocusPropertyMenuSearch } from "./useFocusPropertyMenuSearch";
+  useFocusPropertyMenuSearch,
+  usePropertyMenuSearchTyping,
+} from "./useFocusPropertyMenuSearch";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
 
 export type BacksterosSearchablePropertyOption<T extends string = string> = {
@@ -24,6 +20,9 @@ export type BacksterosSearchablePropertyOption<T extends string = string> = {
 /**
  * Property chip + searchable menu (desktop PropertyDropdown parity).
  * Real search input filters options; panel width matches desktop (280px).
+ *
+ * Uses plain MenuItems (not RadioGroup) so Base UI does not steal focus onto
+ * the checked option — the search field stays focused for immediate filtering.
  */
 export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   readonly label: string;
@@ -41,6 +40,7 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useFocusPropertyMenuSearch(open);
+  usePropertyMenuSearchTyping(open, searchRef, setQuery);
 
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -56,7 +56,14 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
   }, [open]);
 
   return (
-    <Menu open={open} onOpenChange={setOpen}>
+    <Menu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) return;
+        searchRef.current?.focus({ preventScroll: true });
+      }}
+    >
       <MenuTrigger
         disabled={props.disabled}
         className={cn("bos-task-property-chip", props.muted && "bos-task-property-chip--muted")}
@@ -75,6 +82,7 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
         <div className="bos-task-property-menu__search">
           <input
             ref={searchRef}
+            autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -92,13 +100,7 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
             aria-label={props.searchPlaceholder}
           />
         </div>
-        <MenuRadioGroup
-          value={props.value}
-          onValueChange={(next) => {
-            props.onChange(next as T);
-            setOpen(false);
-          }}
-        >
+        <div className="bos-task-property-menu__list">
           {filteredOptions.length === 0 ? (
             <div className="bos-task-related-menu__empty">No matches</div>
           ) : (
@@ -107,10 +109,11 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
                 {option.separatorBefore ? (
                   <MenuSeparator className="bos-task-property-menu__separator" />
                 ) : null}
-                <MenuRadioItem
-                  value={option.value}
+                <MenuItem
                   closeOnClick
                   className="bos-task-property-menu__option"
+                  data-checked={option.value === props.value ? "" : undefined}
+                  onClick={() => props.onChange(option.value)}
                 >
                   <span className="bos-task-property-menu__option-main">
                     {option.icon != null ? (
@@ -118,11 +121,11 @@ export function BacksterosSearchablePropertyMenu<T extends string>(props: {
                     ) : null}
                     <span className="bos-task-property-menu__option-label">{option.label}</span>
                   </span>
-                </MenuRadioItem>
+                </MenuItem>
               </div>
             ))
           )}
-        </MenuRadioGroup>
+        </div>
       </MenuPopup>
     </Menu>
   );

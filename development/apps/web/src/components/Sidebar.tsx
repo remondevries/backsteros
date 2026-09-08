@@ -158,6 +158,7 @@ import {
 import { resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
+import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
@@ -4392,393 +4393,428 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
-          {isBacksterosScope ? (
-            <BacksterosPanel searchQuery={threadSearchQuery} />
-          ) : isSearchingThreads ? (
-            threadSearchResults.length > 0 ? (
-              <TooltipProvider
-                key="sidebar-thread-search-tooltips-150"
-                delay={150}
-                closeDelay={0}
-                timeout={400}
-              >
-                <ul
-                  id="sidebar-thread-search-results"
-                  role="listbox"
-                  aria-label="Thread search results"
-                  className="flex flex-col gap-px"
-                >
-                  {threadSearchResults.map((thread, index) => {
-                    const threadKey = scopedThreadKey(
-                      scopeThreadRef(thread.environmentId, thread.id),
-                    );
-                    return (
-                      <SidebarSearchResultRow
-                        key={threadKey}
-                        thread={thread}
-                        projectCwd={
-                          projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
-                        }
-                        projectFaviconPath={
-                          projectFaviconPathByKey.get(
-                            `${thread.environmentId}:${thread.projectId}`,
-                          ) ?? null
-                        }
-                        projectIcon={
-                          projectIconByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-                          null
-                        }
-                        projectTitle={
-                          projectTitleByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-                          null
-                        }
-                        projectDisplayName={
-                          projectDisplayNameByKey.get(
-                            `${thread.environmentId}:${thread.projectId}`,
-                          ) ?? null
-                        }
-                        environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
-                        environmentMachine={
-                          environmentMachineById.get(thread.environmentId) ?? "server"
-                        }
-                        providerEntryByInstanceId={
-                          providerEntriesByEnvironment.get(thread.environmentId) ??
-                          EMPTY_PROVIDER_ENTRIES
-                        }
-                        isHighlighted={activeSearchResultIndex === index}
-                        isRouteActive={routeThreadKey === threadKey}
-                        resultId={`sidebar-thread-search-result-${index}`}
-                        onHighlight={() => setActiveSearchResultIndex(index)}
-                        onSelect={() => selectThreadSearchResult(thread)}
-                      />
-                    );
-                  })}
-                </ul>
-              </TooltipProvider>
-            ) : (
-              <p
-                role="status"
-                className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
-              >
-                No threads found
-              </p>
-            )
-          ) : null}
-          {!isBacksterosScope && !isSearchingThreads ? (
-            <TooltipProvider
-              key="sidebar-thread-tooltips-150"
-              delay={150}
-              closeDelay={0}
-              timeout={400}
-            >
-              <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
-                {(() => {
-                  const renderThreadRow = (
-                    thread: EnvironmentThreadShell,
-                    section: "pinned" | "active" | "snoozed" | "settled",
-                    sortable?: SortablePinnedRowBag,
-                  ) => {
-                    const threadKey = scopedThreadKey(
-                      scopeThreadRef(thread.environmentId, thread.id),
-                    );
-                    // Settled and snoozed are the ONLY things that collapse a
-                    // row: every other thread is a full card. Density comes
-                    // from users (or the auto rules) actually parking work,
-                    // not from the sidebar second-guessing what still matters.
-                    const isCard = section === "active" || section === "pinned";
-                    const rowVariant = isCard ? "card" : "slim";
-                    return (
-                      <SidebarThreadRow
-                        // Keyed per variant on purpose: when a thread settles,
-                        // the card fades out in place and the slim row fades
-                        // in at its settled position instead of one element
-                        // FLIP-sliding through every row in between (rows here
-                        // are translucent, so a crossing row reads as text
-                        // painted over text).
-                        key={`${threadKey}:${rowVariant}`}
-                        thread={thread}
-                        variant={rowVariant}
-                        // Snoozed rows wake, settled rows un-settle, and cards settle.
-                        variantAction={
-                          section === "snoozed"
-                            ? "unsnooze"
-                            : section === "settled"
-                              ? "unsettle"
-                              : "settle"
-                        }
-                        settlementSupported={
-                          serverConfigs.get(thread.environmentId)?.environment.capabilities
-                            .threadSettlement === true
-                        }
-                        snoozeSupported={
-                          serverConfigs.get(thread.environmentId)?.environment.capabilities
-                            .threadSnooze === true
-                        }
-                        pinningSupported={
-                          serverConfigs.get(thread.environmentId)?.environment.capabilities
-                            .threadPinning === true
-                        }
-                        isPinned={thread.pinnedAt != null}
-                        sortable={sortable}
-                        snoozeWakeLabelText={
-                          section === "snoozed" && thread.snoozedUntil != null
-                            ? snoozeWakeLabel(thread.snoozedUntil, {
-                                now: new Date().toISOString(),
-                              })
-                            : null
-                        }
-                        // All sections: a woken thread can classify straight
-                        // into the settled tail (PR merged while snoozed), and
-                        // the wake signal must survive the trip. Still-snoozed
-                        // rows resolve to null on their own.
-                        wokeAt={threadWokeAt(thread, { now: snoozeNow })}
-                        isActive={routeThreadKey === threadKey}
-                        openPullRequestsInRightPanel={routeThreadRef !== null}
-                        jumpLabel={
-                          showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
-                        }
-                        currentEnvironmentId={primaryEnvironmentId}
-                        environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
-                        environmentMachine={
-                          environmentMachineById.get(thread.environmentId) ?? "server"
-                        }
-                        projectCwd={
-                          projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
-                        }
-                        projectFaviconPath={
-                          projectFaviconPathByKey.get(
-                            `${thread.environmentId}:${thread.projectId}`,
-                          ) ?? null
-                        }
-                        projectIcon={
-                          projectIconByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-                          null
-                        }
-                        projectTitle={
-                          projectTitleByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-                          null
-                        }
-                        projectDisplayName={
-                          projectDisplayNameByKey.get(
-                            `${thread.environmentId}:${thread.projectId}`,
-                          ) ?? null
-                        }
-                        providerEntryByInstanceId={
-                          providerEntriesByEnvironment.get(thread.environmentId) ??
-                          EMPTY_PROVIDER_ENTRIES
-                        }
-                        timestampFormat={timestampFormat}
-                        onThreadClick={handleThreadClick}
-                        onThreadActivate={navigateToThread}
-                        onStartRename={startThreadRename}
-                        onRenameTitleChange={setRenamingTitle}
-                        onCommitRename={commitThreadRename}
-                        onCancelRename={cancelThreadRename}
-                        isRenaming={renamingThreadKey === threadKey}
-                        renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
-                        onContextMenu={handleThreadContextMenu}
-                        onSettle={attemptSettle}
-                        onUnsettle={attemptUnsettle}
-                        onSnooze={attemptSnooze}
-                        onUnsnooze={attemptUnsnooze}
-                        onUnpin={attemptUnpin}
-                        onAcknowledgeWoke={acknowledgeWoke}
-                        changeRequestSnapshot={changeRequestSnapshotByKey.get(threadKey) ?? null}
-                        onChangeRequestSnapshot={setThreadChangeRequestSnapshot}
-                      />
-                    );
-                  };
-                  // Draft block above everything, then the pinned block:
-                  // full cards above the inbox, closed by a thin divider (the
-                  // pin glyphs carry the meaning, so no header text). Both
-                  // vanish entirely at count 0.
-                  // Pinned rows render in the one shared pinned order; only
-                  // reorder-capable rows register as sortable (legacy-server
-                  // pins render in place as plain rows).
-                  const items: ReactNode[] = [
-                    <SidebarDraftBlock
-                      key="draft-sessions"
-                      projectTitleByKey={projectTitleByKey}
-                      projectDisplayNameByKey={projectDisplayNameByKey}
-                      projectCwdByKey={projectCwdByKey}
-                      projectFaviconPathByKey={projectFaviconPathByKey}
-                      projectIconByKey={projectIconByKey}
-                      scopedProjectKeys={scopedProjectKeys}
-                      hiddenDraftIds={vibeHiddenTaskChatKeys.draftIds}
-                      routeDraftId={routeDraftIdForRows}
-                      onNavigateToDraft={navigateToDraft}
-                    />,
-                    pinnedThreads.length > 0 ? (
-                      <li key="pinned-dnd" className="list-none">
-                        <DndContext
-                          sensors={pinnedDndSensors}
-                          collisionDetection={closestCenter}
-                          modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
-                          onDragEnd={handlePinnedDragEnd}
-                        >
-                          <SortableContext
-                            items={orderedPinnedThreads
-                              .map((thread) =>
-                                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                              )
-                              .filter((threadKey) => reorderablePinnedKeys.has(threadKey))}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <ul
-                              role="list"
-                              aria-label="Pinned threads"
-                              className="flex flex-col gap-px"
-                            >
-                              {orderedPinnedThreads.map((thread) => {
-                                const threadKey = scopedThreadKey(
-                                  scopeThreadRef(thread.environmentId, thread.id),
-                                );
-                                if (!reorderablePinnedKeys.has(threadKey)) {
-                                  return renderThreadRow(thread, "pinned");
-                                }
-                                return (
-                                  <SortablePinnedThreadRow key={threadKey} id={threadKey}>
-                                    {(bag) => renderThreadRow(thread, "pinned", bag)}
-                                  </SortablePinnedThreadRow>
-                                );
-                              })}
-                            </ul>
-                          </SortableContext>
-                        </DndContext>
-                      </li>
-                    ) : null,
-                  ];
-                  if (pinnedThreads.length > 0) {
-                    items.push(
-                      <li
-                        key="pinned-divider"
-                        aria-hidden
-                        data-testid="sidebar-pinned-divider"
-                        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
-                      />,
-                    );
-                  }
-                  for (const thread of activeThreads) {
-                    items.push(renderThreadRow(thread, "active"));
-                  }
-                  // Snoozed shelf: between the inbox and Settled — out of the
-                  // way, never gone. The header always renders while anything
-                  // is snoozed (the count is the whole footprint when
-                  // collapsed); rows only when expanded. Vanishes entirely at
-                  // count 0.
-                  if (snoozedThreads.length > 0) {
-                    items.push(
-                      <li
-                        key="snoozed-shelf-header"
-                        data-thread-selection-safe
-                        className="list-none"
-                      >
-                        <button
-                          type="button"
-                          onClick={toggleSnoozedShelf}
-                          aria-expanded={snoozedShelfExpanded}
-                          data-testid="sidebar-snoozed-shelf-toggle"
-                          className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
-                        >
-                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                            {snoozedShelfExpanded
-                              ? "Snoozed"
-                              : `Snoozed (${snoozedThreads.length})`}
-                          </span>
-                          <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
-                          <ChevronDownIcon
-                            aria-hidden
-                            className={cn(
-                              "size-3 text-blue-600 transition-transform dark:text-blue-400",
-                              snoozedShelfExpanded && "rotate-180",
-                            )}
-                          />
-                        </button>
-                      </li>,
-                    );
-                    for (const thread of visibleSnoozedThreads) {
-                      items.push(renderThreadRow(thread, "snoozed"));
-                    }
-                  }
-                  if (settledThreads.length > 0) {
-                    items.push(
-                      <li
-                        key="settled-shelf-header"
-                        data-thread-selection-safe
-                        className="list-none"
-                      >
-                        <button
-                          type="button"
-                          onClick={toggleSettledShelf}
-                          aria-expanded={settledShelfExpanded}
-                          data-testid="sidebar-settled-shelf-toggle"
-                          className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/50">
-                            {settledShelfExpanded
-                              ? "Settled"
-                              : `Settled (${settledThreads.length})`}
-                          </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
-                          <ChevronDownIcon
-                            aria-hidden
-                            className={cn(
-                              "size-3 text-muted-foreground/50 transition-transform",
-                              settledShelfExpanded && "rotate-180",
-                            )}
-                          />
-                        </button>
-                      </li>,
-                    );
-                  }
-                  for (const thread of renderedSettledThreads) {
-                    items.push(renderThreadRow(thread, "settled"));
-                  }
-                  return items;
-                })()}
-                {settledShelfExpanded && hiddenSettledCount > 0 ? (
-                  <li className="list-none">
-                    <button
-                      type="button"
-                      onClick={showMoreSettled}
-                      className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                    >
-                      <PlusIcon aria-hidden className="size-4 shrink-0" />
-                      Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
-                    </button>
-                  </li>
-                ) : null}
-              </ul>
-            </TooltipProvider>
-          ) : null}
-          {!isBacksterosScope &&
-          !isSearchingThreads &&
-          visibleDraftSessionCount === 0 &&
-          pinnedThreads.length +
-            activeThreads.length +
-            snoozedThreads.length +
-            settledThreads.length ===
-            0 ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
-                <>
-                  <span>No projects yet</span>
-                  <button
-                    type="button"
-                    onClick={openAddProjectCommandPalette}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
-                  </button>
-                </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
+          <BacksterosContentCrossfade
+            contentKey={isBacksterosScope ? "log" : "vibe"}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            {(mode) =>
+              mode === "log" ? (
+                <BacksterosPanel searchQuery={threadSearchQuery} />
               ) : (
-                "No threads yet"
-              )}
-            </div>
-          ) : null}
+                <>
+                  {isSearchingThreads ? (
+                    threadSearchResults.length > 0 ? (
+                      <TooltipProvider
+                        key="sidebar-thread-search-tooltips-150"
+                        delay={150}
+                        closeDelay={0}
+                        timeout={400}
+                      >
+                        <ul
+                          id="sidebar-thread-search-results"
+                          role="listbox"
+                          aria-label="Thread search results"
+                          className="flex flex-col gap-px"
+                        >
+                          {threadSearchResults.map((thread, index) => {
+                            const threadKey = scopedThreadKey(
+                              scopeThreadRef(thread.environmentId, thread.id),
+                            );
+                            return (
+                              <SidebarSearchResultRow
+                                key={threadKey}
+                                thread={thread}
+                                projectCwd={
+                                  projectCwdByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectFaviconPath={
+                                  projectFaviconPathByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectIcon={
+                                  projectIconByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectTitle={
+                                  projectTitleByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectDisplayName={
+                                  projectDisplayNameByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                environmentLabel={
+                                  environmentLabelById.get(thread.environmentId) ?? null
+                                }
+                                environmentMachine={
+                                  environmentMachineById.get(thread.environmentId) ?? "server"
+                                }
+                                providerEntryByInstanceId={
+                                  providerEntriesByEnvironment.get(thread.environmentId) ??
+                                  EMPTY_PROVIDER_ENTRIES
+                                }
+                                isHighlighted={activeSearchResultIndex === index}
+                                isRouteActive={routeThreadKey === threadKey}
+                                resultId={`sidebar-thread-search-result-${index}`}
+                                onHighlight={() => setActiveSearchResultIndex(index)}
+                                onSelect={() => selectThreadSearchResult(thread)}
+                              />
+                            );
+                          })}
+                        </ul>
+                      </TooltipProvider>
+                    ) : (
+                      <p
+                        role="status"
+                        className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
+                      >
+                        No threads found
+                      </p>
+                    )
+                  ) : null}
+                  {!isSearchingThreads ? (
+                    <TooltipProvider
+                      key="sidebar-thread-tooltips-150"
+                      delay={150}
+                      closeDelay={0}
+                      timeout={400}
+                    >
+                      <ul
+                        ref={attachListAutoAnimateRef}
+                        role="list"
+                        className="flex flex-col gap-px"
+                      >
+                        {(() => {
+                          const renderThreadRow = (
+                            thread: EnvironmentThreadShell,
+                            section: "pinned" | "active" | "snoozed" | "settled",
+                            sortable?: SortablePinnedRowBag,
+                          ) => {
+                            const threadKey = scopedThreadKey(
+                              scopeThreadRef(thread.environmentId, thread.id),
+                            );
+                            // Settled and snoozed are the ONLY things that collapse a
+                            // row: every other thread is a full card. Density comes
+                            // from users (or the auto rules) actually parking work,
+                            // not from the sidebar second-guessing what still matters.
+                            const isCard = section === "active" || section === "pinned";
+                            const rowVariant = isCard ? "card" : "slim";
+                            return (
+                              <SidebarThreadRow
+                                // Keyed per variant on purpose: when a thread settles,
+                                // the card fades out in place and the slim row fades
+                                // in at its settled position instead of one element
+                                // FLIP-sliding through every row in between (rows here
+                                // are translucent, so a crossing row reads as text
+                                // painted over text).
+                                key={`${threadKey}:${rowVariant}`}
+                                thread={thread}
+                                variant={rowVariant}
+                                // Snoozed rows wake, settled rows un-settle, and cards settle.
+                                variantAction={
+                                  section === "snoozed"
+                                    ? "unsnooze"
+                                    : section === "settled"
+                                      ? "unsettle"
+                                      : "settle"
+                                }
+                                settlementSupported={
+                                  serverConfigs.get(thread.environmentId)?.environment.capabilities
+                                    .threadSettlement === true
+                                }
+                                snoozeSupported={
+                                  serverConfigs.get(thread.environmentId)?.environment.capabilities
+                                    .threadSnooze === true
+                                }
+                                pinningSupported={
+                                  serverConfigs.get(thread.environmentId)?.environment.capabilities
+                                    .threadPinning === true
+                                }
+                                isPinned={thread.pinnedAt != null}
+                                sortable={sortable}
+                                snoozeWakeLabelText={
+                                  section === "snoozed" && thread.snoozedUntil != null
+                                    ? snoozeWakeLabel(thread.snoozedUntil, {
+                                        now: new Date().toISOString(),
+                                      })
+                                    : null
+                                }
+                                // All sections: a woken thread can classify straight
+                                // into the settled tail (PR merged while snoozed), and
+                                // the wake signal must survive the trip. Still-snoozed
+                                // rows resolve to null on their own.
+                                wokeAt={threadWokeAt(thread, { now: snoozeNow })}
+                                isActive={routeThreadKey === threadKey}
+                                openPullRequestsInRightPanel={routeThreadRef !== null}
+                                jumpLabel={
+                                  showThreadJumpHints
+                                    ? (jumpLabelByKey.get(threadKey) ?? null)
+                                    : null
+                                }
+                                currentEnvironmentId={primaryEnvironmentId}
+                                environmentLabel={
+                                  environmentLabelById.get(thread.environmentId) ?? null
+                                }
+                                environmentMachine={
+                                  environmentMachineById.get(thread.environmentId) ?? "server"
+                                }
+                                projectCwd={
+                                  projectCwdByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectFaviconPath={
+                                  projectFaviconPathByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectIcon={
+                                  projectIconByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectTitle={
+                                  projectTitleByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                projectDisplayName={
+                                  projectDisplayNameByKey.get(
+                                    `${thread.environmentId}:${thread.projectId}`,
+                                  ) ?? null
+                                }
+                                providerEntryByInstanceId={
+                                  providerEntriesByEnvironment.get(thread.environmentId) ??
+                                  EMPTY_PROVIDER_ENTRIES
+                                }
+                                timestampFormat={timestampFormat}
+                                onThreadClick={handleThreadClick}
+                                onThreadActivate={navigateToThread}
+                                onStartRename={startThreadRename}
+                                onRenameTitleChange={setRenamingTitle}
+                                onCommitRename={commitThreadRename}
+                                onCancelRename={cancelThreadRename}
+                                isRenaming={renamingThreadKey === threadKey}
+                                renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
+                                onContextMenu={handleThreadContextMenu}
+                                onSettle={attemptSettle}
+                                onUnsettle={attemptUnsettle}
+                                onSnooze={attemptSnooze}
+                                onUnsnooze={attemptUnsnooze}
+                                onUnpin={attemptUnpin}
+                                onAcknowledgeWoke={acknowledgeWoke}
+                                changeRequestSnapshot={
+                                  changeRequestSnapshotByKey.get(threadKey) ?? null
+                                }
+                                onChangeRequestSnapshot={setThreadChangeRequestSnapshot}
+                              />
+                            );
+                          };
+                          // Draft block above everything, then the pinned block:
+                          // full cards above the inbox, closed by a thin divider (the
+                          // pin glyphs carry the meaning, so no header text). Both
+                          // vanish entirely at count 0.
+                          // Pinned rows render in the one shared pinned order; only
+                          // reorder-capable rows register as sortable (legacy-server
+                          // pins render in place as plain rows).
+                          const items: ReactNode[] = [
+                            <SidebarDraftBlock
+                              key="draft-sessions"
+                              projectTitleByKey={projectTitleByKey}
+                              projectDisplayNameByKey={projectDisplayNameByKey}
+                              projectCwdByKey={projectCwdByKey}
+                              projectFaviconPathByKey={projectFaviconPathByKey}
+                              projectIconByKey={projectIconByKey}
+                              scopedProjectKeys={scopedProjectKeys}
+                              hiddenDraftIds={vibeHiddenTaskChatKeys.draftIds}
+                              routeDraftId={routeDraftIdForRows}
+                              onNavigateToDraft={navigateToDraft}
+                            />,
+                            pinnedThreads.length > 0 ? (
+                              <li key="pinned-dnd" className="list-none">
+                                <DndContext
+                                  sensors={pinnedDndSensors}
+                                  collisionDetection={closestCenter}
+                                  modifiers={[
+                                    restrictToVerticalAxis,
+                                    restrictToFirstScrollableAncestor,
+                                  ]}
+                                  onDragEnd={handlePinnedDragEnd}
+                                >
+                                  <SortableContext
+                                    items={orderedPinnedThreads
+                                      .map((thread) =>
+                                        scopedThreadKey(
+                                          scopeThreadRef(thread.environmentId, thread.id),
+                                        ),
+                                      )
+                                      .filter((threadKey) => reorderablePinnedKeys.has(threadKey))}
+                                    strategy={verticalListSortingStrategy}
+                                  >
+                                    <ul
+                                      role="list"
+                                      aria-label="Pinned threads"
+                                      className="flex flex-col gap-px"
+                                    >
+                                      {orderedPinnedThreads.map((thread) => {
+                                        const threadKey = scopedThreadKey(
+                                          scopeThreadRef(thread.environmentId, thread.id),
+                                        );
+                                        if (!reorderablePinnedKeys.has(threadKey)) {
+                                          return renderThreadRow(thread, "pinned");
+                                        }
+                                        return (
+                                          <SortablePinnedThreadRow key={threadKey} id={threadKey}>
+                                            {(bag) => renderThreadRow(thread, "pinned", bag)}
+                                          </SortablePinnedThreadRow>
+                                        );
+                                      })}
+                                    </ul>
+                                  </SortableContext>
+                                </DndContext>
+                              </li>
+                            ) : null,
+                          ];
+                          if (pinnedThreads.length > 0) {
+                            items.push(
+                              <li
+                                key="pinned-divider"
+                                aria-hidden
+                                data-testid="sidebar-pinned-divider"
+                                className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+                              />,
+                            );
+                          }
+                          for (const thread of activeThreads) {
+                            items.push(renderThreadRow(thread, "active"));
+                          }
+                          // Snoozed shelf: between the inbox and Settled — out of the
+                          // way, never gone. The header always renders while anything
+                          // is snoozed (the count is the whole footprint when
+                          // collapsed); rows only when expanded. Vanishes entirely at
+                          // count 0.
+                          if (snoozedThreads.length > 0) {
+                            items.push(
+                              <li
+                                key="snoozed-shelf-header"
+                                data-thread-selection-safe
+                                className="list-none"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={toggleSnoozedShelf}
+                                  aria-expanded={snoozedShelfExpanded}
+                                  data-testid="sidebar-snoozed-shelf-toggle"
+                                  className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
+                                >
+                                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                                    {snoozedShelfExpanded
+                                      ? "Snoozed"
+                                      : `Snoozed (${snoozedThreads.length})`}
+                                  </span>
+                                  <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+                                  <ChevronDownIcon
+                                    aria-hidden
+                                    className={cn(
+                                      "size-3 text-blue-600 transition-transform dark:text-blue-400",
+                                      snoozedShelfExpanded && "rotate-180",
+                                    )}
+                                  />
+                                </button>
+                              </li>,
+                            );
+                            for (const thread of visibleSnoozedThreads) {
+                              items.push(renderThreadRow(thread, "snoozed"));
+                            }
+                          }
+                          if (settledThreads.length > 0) {
+                            items.push(
+                              <li
+                                key="settled-shelf-header"
+                                data-thread-selection-safe
+                                className="list-none"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={toggleSettledShelf}
+                                  aria-expanded={settledShelfExpanded}
+                                  data-testid="sidebar-settled-shelf-toggle"
+                                  className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
+                                >
+                                  <span className="text-xs font-medium text-muted-foreground/50">
+                                    {settledShelfExpanded
+                                      ? "Settled"
+                                      : `Settled (${settledThreads.length})`}
+                                  </span>
+                                  <span className="h-px flex-1 bg-sidebar-border/60" />
+                                  <ChevronDownIcon
+                                    aria-hidden
+                                    className={cn(
+                                      "size-3 text-muted-foreground/50 transition-transform",
+                                      settledShelfExpanded && "rotate-180",
+                                    )}
+                                  />
+                                </button>
+                              </li>,
+                            );
+                          }
+                          for (const thread of renderedSettledThreads) {
+                            items.push(renderThreadRow(thread, "settled"));
+                          }
+                          return items;
+                        })()}
+                        {settledShelfExpanded && hiddenSettledCount > 0 ? (
+                          <li className="list-none">
+                            <button
+                              type="button"
+                              onClick={showMoreSettled}
+                              className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                            >
+                              <PlusIcon aria-hidden className="size-4 shrink-0" />
+                              Show {Math.min(hiddenSettledCount, SETTLED_TAIL_PAGE_COUNT)} more
+                            </button>
+                          </li>
+                        ) : null}
+                      </ul>
+                    </TooltipProvider>
+                  ) : null}
+                  {!isSearchingThreads &&
+                  visibleDraftSessionCount === 0 &&
+                  pinnedThreads.length +
+                    activeThreads.length +
+                    snoozedThreads.length +
+                    settledThreads.length ===
+                    0 ? (
+                    <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+                      {projects.length === 0 ? (
+                        <>
+                          <span>No projects yet</span>
+                          <button
+                            type="button"
+                            onClick={openAddProjectCommandPalette}
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                          >
+                            <PlusIcon className="-mx-0.5 size-3" />
+                            Add project
+                          </button>
+                        </>
+                      ) : scopedProjectGroup ? (
+                        `No threads in ${scopedProjectGroup.displayName} yet`
+                      ) : (
+                        "No threads yet"
+                      )}
+                    </div>
+                  ) : null}
+                </>
+              )
+            }
+          </BacksterosContentCrossfade>
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

@@ -82,6 +82,25 @@ describe("shouldHandleTaskPropertyDropdownShortcut", () => {
     ).toBe(true);
   });
 
+  it("yields while description edit mode is active", () => {
+    const outside = fakeElement();
+    expect(
+      shouldHandleTaskPropertyDropdownShortcut(keyEvent({ target: outside }), {
+        activeElement: outside,
+        contentEditModeActive: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("yields while typing in CodeMirror", () => {
+    const editor = fakeElement([".cm-editor"]);
+    expect(
+      shouldHandleTaskPropertyDropdownShortcut(keyEvent({ target: editor }), {
+        activeElement: editor,
+      }),
+    ).toBe(false);
+  });
+
   it("yields while typing in an open property menu", () => {
     const input = fakeElement(['[data-slot="menu-popup"]']);
     expect(

@@ -12,7 +12,7 @@ import {
 } from "~/backsteros/markdown-editor";
 import { useContentViewModeShortcut } from "~/backsteros/markdown-editor/useContentViewModeShortcut";
 import { BacksterosOverviewNameEditor } from "~/backsteros/OverviewNameEditor";
-import { useTitleRenameShortcut } from "~/backsteros/useTitleRenameShortcut";
+import { isTitleRenameShortcut, useTitleRenameShortcut } from "~/backsteros/useTitleRenameShortcut";
 import { useTaskPropertyDropdownShortcuts } from "~/backsteros/useTaskPropertyDropdownShortcuts";
 import { BacksterosRelatedPropertyChips } from "~/backsteros/RelatedPropertyChips";
 import {
@@ -21,6 +21,7 @@ import {
 } from "~/backsteros/SearchablePropertyMenu";
 import { FloatingPillToggleDock, SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
 import { SidePanelToggleIcon } from "~/backsteros/SidePanelToggleIcon";
+import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { BacksterosTaskActivityTimeline } from "~/backsteros/TaskActivityTimeline";
 import { BacksterosTaskCommentsSection } from "~/backsteros/TaskCommentsSection";
 import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
@@ -105,6 +106,30 @@ function BacksterosTaskDescriptionSection(props: {
       setDescriptionEditing(taskId, false);
     };
   }, [mode, setDescriptionEditing, taskId]);
+
+  // Leaving the description editor (Escape / ⌘R title rename) always returns
+  // to Preview so property hotkeys and kickoff send stay unblocked.
+  useEffect(() => {
+    if (mode !== "edit") return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.repeat) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        setViewMode("preview");
+        return;
+      }
+
+      if (isTitleRenameShortcut(event)) {
+        setViewMode("preview");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [mode, setViewMode]);
 
   return (
     <div className="bos-task-description-section" ref={descriptionHostRef}>
@@ -218,11 +243,14 @@ export function BacksterosTaskDetailPanel() {
   );
 
   const [titleRenameFocusRequest, setTitleRenameFocusRequest] = useState(0);
+  const descriptionEditingTaskId = useBacksterosTaskDetailUiStore(
+    (state) => state.descriptionEditingTaskId,
+  );
   useTitleRenameShortcut(() => setTitleRenameFocusRequest((n) => n + 1), {
     enabled: selection?.taskId != null && state.status === "ready",
   });
   useTaskPropertyDropdownShortcuts({
-    enabled: selection != null,
+    enabled: selection != null && descriptionEditingTaskId == null,
   });
 
   const handleSaveDescription = useCallback(
@@ -373,207 +401,222 @@ export function BacksterosTaskDetailPanel() {
       style={{ width: DETAIL_PANEL_WIDTH_PX }}
       aria-label={isCreateMode ? "Create BacksterOS task" : "BacksterOS task details"}
     >
-      <div
-        className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1.5 px-2",
-          isElectron && "drag-region",
-          // When the main nav is offcanvas, this panel is flush left under the
-          // traffic lights + fixed SidebarTrigger — inset past both, then put
-          // the task id immediately after the nav toggle.
-          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        )}
+      <BacksterosContentCrossfade
+        contentKey={
+          selection.taskId != null ? `task:${selection.taskId}` : `create:${selection.project.id}`
+        }
+        className="flex min-h-0 flex-1 flex-col"
       >
-        {navCollapsed ? (
+        {() => (
           <>
-            {taskIdLabel}
-            <div className="ml-auto flex shrink-0">{hideTaskButton}</div>
-          </>
-        ) : (
-          <>
-            {hideTaskButton}
-            {taskIdLabel}
+            <div
+              className={cn(
+                "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1.5 px-2",
+                isElectron && "drag-region",
+                // When the main nav is offcanvas, this panel is flush left under the
+                // traffic lights + fixed SidebarTrigger — inset past both, then put
+                // the task id immediately after the nav toggle.
+                COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+              )}
+            >
+              {navCollapsed ? (
+                <>
+                  {taskIdLabel}
+                  <div className="ml-auto flex shrink-0">{hideTaskButton}</div>
+                </>
+              ) : (
+                <>
+                  {hideTaskButton}
+                  {taskIdLabel}
+                </>
+              )}
+            </div>
+
+            {isCreateMode ? <BacksterosCreateTaskForm project={selection.project} /> : null}
+
+            {!isCreateMode && (state.status === "loading" || state.status === "idle") ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-xs text-muted-foreground">
+                <RefreshCwIcon className="size-4 animate-spin" aria-hidden />
+                Loading task…
+              </div>
+            ) : null}
+
+            {!isCreateMode && state.status === "error" ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center text-xs text-muted-foreground">
+                <p className="max-w-[16rem] text-balance">{state.message}</p>
+                <Button type="button" size="xs" variant="outline" onClick={reload}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+
+            {!isCreateMode && state.status === "ready" ? (
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto px-3 -mt-3 pb-3">
+                  <BacksterosOverviewNameEditor
+                    value={state.task.title}
+                    entityLabel="Task"
+                    resetKey={state.task.id}
+                    renameFocusRequest={titleRenameFocusRequest}
+                    onSave={handleSaveTitle}
+                  />
+
+                  <div className="bos-task-detail-properties mt-6">
+                    <BacksterosSearchablePropertyMenu
+                      label={getBacksterosTaskStatusLabel(statusValue)}
+                      icon={
+                        <BacksterosTaskStatusIcon
+                          status={statusValue}
+                          size={12}
+                          className="shrink-0"
+                        />
+                      }
+                      value={statusValue}
+                      options={statusOptions}
+                      searchPlaceholder="Change status…"
+                      taskPropertyDropdownId="status"
+                      onChange={(value) => {
+                        void applyPatch({ status: value }, "Could not update status");
+                      }}
+                    />
+
+                    <BacksterosSearchablePropertyMenu
+                      label={getBacksterosTaskPriorityLabel(priorityValue)}
+                      icon={<BacksterosTaskPriorityIcon priority={priorityValue} size={12} />}
+                      value={String(priorityValue)}
+                      options={priorityOptions}
+                      searchPlaceholder="Change priority…"
+                      taskPropertyDropdownId="priority"
+                      onChange={(value) => {
+                        void applyPatch({ priority: Number(value) }, "Could not update priority");
+                      }}
+                    />
+
+                    <BacksterosDueDatePropertyMenu
+                      dueDate={state.task.dueDate}
+                      status={state.task.status}
+                      onChange={(dueDate) => {
+                        void applyPatch({ dueDate }, "Could not update due date");
+                      }}
+                    />
+
+                    <BacksterosSearchablePropertyMenu
+                      label={state.assignee?.name ?? "Unassigned"}
+                      muted={!state.assignee}
+                      icon={
+                        state.assignee ? (
+                          <BacksterosEntityAvatarIcon src={assigneeAvatarSrc} size={12} />
+                        ) : (
+                          <BacksterosContactPersonIcon size={12} className="opacity-70" />
+                        )
+                      }
+                      value={state.task.assigneeId ?? UNASSIGNED_VALUE}
+                      options={assigneeOptions}
+                      searchPlaceholder="Change assignee…"
+                      taskPropertyDropdownId="assignee"
+                      onChange={(value) => {
+                        void applyPatch(
+                          { assigneeId: value === UNASSIGNED_VALUE ? null : value },
+                          "Could not update assignee",
+                        );
+                      }}
+                    />
+
+                    <BacksterosRelatedPropertyChips
+                      contactIds={state.task.relatedContactIds}
+                      organizationIds={state.task.relatedOrganizationIds}
+                      contacts={contacts}
+                      organizations={organizations}
+                      contactAvatarSrcById={avatarSrcById}
+                      organizationAvatarSrcById={organizationAvatarSrcById}
+                      onChange={(related) => {
+                        void applyPatch(
+                          {
+                            relatedContactIds: related.contactIds,
+                            relatedOrganizationIds: related.organizationIds,
+                          },
+                          "Could not update related",
+                        );
+                      }}
+                    />
+
+                    <BacksterosSearchablePropertyMenu
+                      label={project?.name ?? "No project"}
+                      muted={!project}
+                      icon={
+                        project ? (
+                          <ProjectOcticon
+                            icon={project.icon}
+                            type={project.type}
+                            size={12}
+                            className="shrink-0 opacity-70"
+                          />
+                        ) : (
+                          <DefaultProjectIcon size={12} className="shrink-0 opacity-70" />
+                        )
+                      }
+                      value={project?.id ?? state.task.projectId ?? NO_PROJECT_VALUE}
+                      options={projectOptions}
+                      searchPlaceholder="Change project…"
+                      taskPropertyDropdownId="project"
+                      onChange={(value) => {
+                        void handleProjectChange(value === NO_PROJECT_VALUE ? null : value);
+                      }}
+                    />
+
+                    <BacksterosTrackedTimeField
+                      trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
+                      trackedMinutes={state.task.trackedMinutes ?? null}
+                      onTrackedDurationSecondsChange={(seconds) => {
+                        const trackedMinutes =
+                          seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
+                        void applyPatch(
+                          {
+                            trackedDurationSeconds: seconds,
+                            trackedMinutes,
+                          },
+                          "Could not update tracked time",
+                        );
+                      }}
+                      onTimerSessionChange={postTimerActivity}
+                    />
+                  </div>
+
+                  <BacksterosTaskDescriptionSection
+                    key={state.task.id}
+                    taskId={state.task.id}
+                    description={state.task.description}
+                    onSave={handleSaveDescription}
+                  />
+
+                  <div className="mt-5 border-t border-border/50 pt-3">
+                    <div className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                      Activity
+                    </div>
+                    <BacksterosTaskActivityTimeline
+                      activities={state.activities}
+                      avatarSrcByContactId={avatarSrcById}
+                      working={agentWorking}
+                    />
+                  </div>
+
+                  <div className="mt-5 border-t border-border/50 pt-3">
+                    <BacksterosTaskCommentsSection
+                      taskId={state.task.id}
+                      comments={state.comments}
+                      contacts={contacts}
+                      avatarSrcByContactId={avatarSrcById}
+                      onAdd={addComment}
+                      onEdit={editComment}
+                      onDelete={deleteComment}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : null}
           </>
         )}
-      </div>
-
-      {isCreateMode ? <BacksterosCreateTaskForm project={selection.project} /> : null}
-
-      {!isCreateMode && (state.status === "loading" || state.status === "idle") ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-xs text-muted-foreground">
-          <RefreshCwIcon className="size-4 animate-spin" aria-hidden />
-          Loading task…
-        </div>
-      ) : null}
-
-      {!isCreateMode && state.status === "error" ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center text-xs text-muted-foreground">
-          <p className="max-w-[16rem] text-balance">{state.message}</p>
-          <Button type="button" size="xs" variant="outline" onClick={reload}>
-            Retry
-          </Button>
-        </div>
-      ) : null}
-
-      {!isCreateMode && state.status === "ready" ? (
-        <>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 -mt-3 pb-3">
-            <BacksterosOverviewNameEditor
-              value={state.task.title}
-              entityLabel="Task"
-              resetKey={state.task.id}
-              renameFocusRequest={titleRenameFocusRequest}
-              onSave={handleSaveTitle}
-            />
-
-            <div className="bos-task-detail-properties mt-6">
-              <BacksterosSearchablePropertyMenu
-                label={getBacksterosTaskStatusLabel(statusValue)}
-                icon={
-                  <BacksterosTaskStatusIcon status={statusValue} size={12} className="shrink-0" />
-                }
-                value={statusValue}
-                options={statusOptions}
-                searchPlaceholder="Change status…"
-                taskPropertyDropdownId="status"
-                onChange={(value) => {
-                  void applyPatch({ status: value }, "Could not update status");
-                }}
-              />
-
-              <BacksterosSearchablePropertyMenu
-                label={getBacksterosTaskPriorityLabel(priorityValue)}
-                icon={<BacksterosTaskPriorityIcon priority={priorityValue} size={12} />}
-                value={String(priorityValue)}
-                options={priorityOptions}
-                searchPlaceholder="Change priority…"
-                taskPropertyDropdownId="priority"
-                onChange={(value) => {
-                  void applyPatch({ priority: Number(value) }, "Could not update priority");
-                }}
-              />
-
-              <BacksterosDueDatePropertyMenu
-                dueDate={state.task.dueDate}
-                status={state.task.status}
-                onChange={(dueDate) => {
-                  void applyPatch({ dueDate }, "Could not update due date");
-                }}
-              />
-
-              <BacksterosSearchablePropertyMenu
-                label={state.assignee?.name ?? "Unassigned"}
-                muted={!state.assignee}
-                icon={
-                  state.assignee ? (
-                    <BacksterosEntityAvatarIcon src={assigneeAvatarSrc} size={12} />
-                  ) : (
-                    <BacksterosContactPersonIcon size={12} className="opacity-70" />
-                  )
-                }
-                value={state.task.assigneeId ?? UNASSIGNED_VALUE}
-                options={assigneeOptions}
-                searchPlaceholder="Change assignee…"
-                taskPropertyDropdownId="assignee"
-                onChange={(value) => {
-                  void applyPatch(
-                    { assigneeId: value === UNASSIGNED_VALUE ? null : value },
-                    "Could not update assignee",
-                  );
-                }}
-              />
-
-              <BacksterosRelatedPropertyChips
-                contactIds={state.task.relatedContactIds}
-                organizationIds={state.task.relatedOrganizationIds}
-                contacts={contacts}
-                organizations={organizations}
-                contactAvatarSrcById={avatarSrcById}
-                organizationAvatarSrcById={organizationAvatarSrcById}
-                onChange={(related) => {
-                  void applyPatch(
-                    {
-                      relatedContactIds: related.contactIds,
-                      relatedOrganizationIds: related.organizationIds,
-                    },
-                    "Could not update related",
-                  );
-                }}
-              />
-
-              <BacksterosSearchablePropertyMenu
-                label={project?.name ?? "No project"}
-                muted={!project}
-                icon={
-                  project ? (
-                    <ProjectOcticon
-                      icon={project.icon}
-                      type={project.type}
-                      size={12}
-                      className="shrink-0 opacity-70"
-                    />
-                  ) : (
-                    <DefaultProjectIcon size={12} className="shrink-0 opacity-70" />
-                  )
-                }
-                value={project?.id ?? state.task.projectId ?? NO_PROJECT_VALUE}
-                options={projectOptions}
-                searchPlaceholder="Change project…"
-                taskPropertyDropdownId="project"
-                onChange={(value) => {
-                  void handleProjectChange(value === NO_PROJECT_VALUE ? null : value);
-                }}
-              />
-
-              <BacksterosTrackedTimeField
-                trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
-                trackedMinutes={state.task.trackedMinutes ?? null}
-                onTrackedDurationSecondsChange={(seconds) => {
-                  const trackedMinutes =
-                    seconds != null && seconds >= 60 ? Math.floor(seconds / 60) : null;
-                  void applyPatch(
-                    {
-                      trackedDurationSeconds: seconds,
-                      trackedMinutes,
-                    },
-                    "Could not update tracked time",
-                  );
-                }}
-                onTimerSessionChange={postTimerActivity}
-              />
-            </div>
-
-            <BacksterosTaskDescriptionSection
-              key={state.task.id}
-              taskId={state.task.id}
-              description={state.task.description}
-              onSave={handleSaveDescription}
-            />
-
-            <div className="mt-5 border-t border-border/50 pt-3">
-              <div className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                Activity
-              </div>
-              <BacksterosTaskActivityTimeline
-                activities={state.activities}
-                avatarSrcByContactId={avatarSrcById}
-                working={agentWorking}
-              />
-            </div>
-
-            <div className="mt-5 border-t border-border/50 pt-3">
-              <BacksterosTaskCommentsSection
-                taskId={state.task.id}
-                comments={state.comments}
-                contacts={contacts}
-                avatarSrcByContactId={avatarSrcById}
-                onAdd={addComment}
-                onEdit={editComment}
-                onDelete={deleteComment}
-              />
-            </div>
-          </div>
-        </>
-      ) : null}
+      </BacksterosContentCrossfade>
     </aside>
   );
 }

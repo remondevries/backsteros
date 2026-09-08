@@ -47,10 +47,20 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { toastManager } from "../ui/toast";
+import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { BacksterosProjectList } from "./BacksterosProjectList";
 import { BacksterosTaskList } from "./BacksterosTaskList";
 
 const INBOX_STATUS_FILTER = new Set<BacksterosTaskStatus>(BACKSTEROS_INBOX_ATTENTION_STATUSES);
+
+function backsterosRailContentKey(input: {
+  readonly railMode: BacksterosRailMode;
+  readonly taskListProjectId: string | null;
+}): string {
+  if (input.railMode === "inbox") return "inbox";
+  if (input.taskListProjectId) return `project-tasks:${input.taskListProjectId}`;
+  return "projects";
+}
 
 export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: string }) {
   const router = useRouter();
@@ -574,72 +584,91 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     return () => window.removeEventListener("keydown", onWindowKeyDown, true);
   }, [listMode.kind]);
 
-  if (railMode === "inbox") {
-    const projectsReady = projectsState.status === "ready";
-    const inboxListState = !projectsReady
-      ? ({ status: "loading" } as const)
-      : inboxState.status === "ready"
-        ? {
-            ...inboxState,
-            tasks: inboxState.tasks.filter(
-              (task) => task.projectId != null && projectById.has(task.projectId),
-            ),
-          }
-        : inboxState;
-    return (
-      <BacksterosTaskList
-        state={inboxListState}
-        searchQuery={searchQuery}
-        onRetry={reloadInbox}
-        activeTaskId={sidepanelActiveTaskId}
-        keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
-        statusFilter={INBOX_STATUS_FILTER}
-        showDueGroup
-        projectNameById={projectNameById}
-        emptyLabel="Nothing needs attention"
-        onSelectTask={handleSelectInboxTask}
-      />
-    );
-  }
+  const railContentKey = backsterosRailContentKey({
+    railMode,
+    taskListProjectId: taskListProject?.id ?? null,
+  });
 
-  if (taskListProject) {
-    return (
-      <div className="flex min-h-0 flex-col">
-        <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-sidebar-border/60 bg-sidebar px-1 pb-1.5 pt-0.5">
-          <button
-            type="button"
-            onClick={handleBackToProjects}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            aria-label="Back to BacksterOS projects"
-          >
-            <ArrowLeftIcon className="size-4" />
-          </button>
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground">
-            {taskListProject.name}
-          </span>
-        </div>
-        <BacksterosTaskList
-          state={tasksState}
-          searchQuery={searchQuery}
-          onRetry={reloadTasks}
-          activeTaskId={sidepanelActiveTaskId}
-          keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
-          onSelectTask={handleSelectProjectTask}
-        />
-      </div>
-    );
-  }
+  const projectsReady = projectsState.status === "ready";
+  const inboxListState = !projectsReady
+    ? ({ status: "loading" } as const)
+    : inboxState.status === "ready"
+      ? {
+          ...inboxState,
+          tasks: inboxState.tasks.filter(
+            (task) => task.projectId != null && projectById.has(task.projectId),
+          ),
+        }
+      : inboxState;
 
   return (
-    <BacksterosProjectList
-      state={projectsState}
-      searchQuery={searchQuery}
-      selectedProjectId={selectedProjectId}
-      keyboardFocusProjectId={sidepanelKeyboardFocusProjectId}
-      onRetry={reloadProjects}
-      onSelectProject={handleSelectProject}
-      onReorderProjects={handleReorderProjects}
-    />
+    <BacksterosContentCrossfade
+      contentKey={railContentKey}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      {(displayedKey) => {
+        if (displayedKey === "inbox") {
+          return (
+            <BacksterosTaskList
+              state={inboxListState}
+              searchQuery={searchQuery}
+              onRetry={reloadInbox}
+              activeTaskId={sidepanelActiveTaskId}
+              keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
+              statusFilter={INBOX_STATUS_FILTER}
+              showDueGroup
+              projectNameById={projectNameById}
+              emptyLabel="Nothing needs attention"
+              onSelectTask={handleSelectInboxTask}
+            />
+          );
+        }
+
+        if (displayedKey.startsWith("project-tasks:")) {
+          const displayedProjectId = displayedKey.slice("project-tasks:".length);
+          const displayedProject =
+            projectById.get(displayedProjectId) ??
+            (taskListProject?.id === displayedProjectId ? taskListProject : null);
+          return (
+            <div className="flex min-h-0 flex-col">
+              <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-sidebar-border/60 bg-sidebar px-1 pb-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleBackToProjects}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  aria-label="Back to BacksterOS projects"
+                >
+                  <ArrowLeftIcon className="size-4" />
+                </button>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground">
+                  {displayedProject?.name ?? "Project"}
+                </span>
+              </div>
+              <BacksterosTaskList
+                state={tasksState}
+                searchQuery={searchQuery}
+                onRetry={reloadTasks}
+                activeTaskId={sidepanelActiveTaskId}
+                keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
+                onSelectTask={handleSelectProjectTask}
+              />
+            </div>
+          );
+        }
+
+        return (
+          <BacksterosProjectList
+            state={projectsState}
+            searchQuery={searchQuery}
+            selectedProjectId={selectedProjectId}
+            keyboardFocusProjectId={sidepanelKeyboardFocusProjectId}
+            onRetry={reloadProjects}
+            onSelectProject={handleSelectProject}
+            onReorderProjects={handleReorderProjects}
+          />
+        );
+      }}
+    </BacksterosContentCrossfade>
   );
 }
 

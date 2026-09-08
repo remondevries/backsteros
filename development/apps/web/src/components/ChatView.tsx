@@ -3499,15 +3499,12 @@ export default function ChatView(props: ChatViewProps) {
     });
   }, [focusComposer]);
 
-  // Enter / click on a BacksterOS task focuses the chat composer once mounted.
+  // Enter / click on a BacksterOS task focuses the chat composer once mounted
+  // (skipped while the Start / Advanced kickoff gate is showing).
   useBacksterosComposerFocusRequest({
     composerRef,
     focusComposer,
     activeBacksterosTaskId,
-    draftId,
-    setComposerDraftPrompt,
-    setBacksterosKickoffMode,
-    promptRef,
   });
   const useArtifactTemplate = useCallback(
     (template: CodexArtifactTemplate) => {

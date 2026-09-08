@@ -73,7 +73,11 @@ export function BacksterosMarkdownDescription({
   );
 
   return (
-    <div className="content-markdown-view-layout bos-task-description" data-mode={mode}>
+    <div
+      className="content-markdown-view-layout bos-task-description"
+      data-mode={mode}
+      data-content-view-mode={mode}
+    >
       {mode === "edit" ? (
         <div className="content-markdown-view-layout__edit">{editor}</div>
       ) : (

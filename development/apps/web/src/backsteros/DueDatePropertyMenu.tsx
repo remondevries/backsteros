@@ -11,7 +11,10 @@ import {
   getTaskDueDateUrgency,
   toApiDueDateIso,
 } from "./taskDueDate";
-import { useFocusPropertyMenuSearch } from "./useFocusPropertyMenuSearch";
+import {
+  useFocusPropertyMenuSearch,
+  usePropertyMenuSearchTyping,
+} from "./useFocusPropertyMenuSearch";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 
@@ -55,6 +58,7 @@ export function BacksterosDueDatePropertyMenu(props: {
   const [pickingDate, setPickingDate] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useFocusPropertyMenuSearch(open && !pickingDate);
+  usePropertyMenuSearchTyping(open && !pickingDate, searchRef, setQuery);
   const dateInputRef = useFocusPropertyMenuSearch(open && pickingDate);
   const ymdValue = formatDueDateInputValue(props.dueDate);
   const hasDueDate = Boolean(ymdValue);
@@ -92,7 +96,14 @@ export function BacksterosDueDatePropertyMenu(props: {
   };
 
   return (
-    <Menu open={open} onOpenChange={setOpen}>
+    <Menu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen || pickingDate) return;
+        searchRef.current?.focus({ preventScroll: true });
+      }}
+    >
       <MenuTrigger
         disabled={props.disabled}
         className="bos-task-property-chip"
@@ -142,6 +153,7 @@ export function BacksterosDueDatePropertyMenu(props: {
             <div className="bos-task-property-menu__search">
               <input
                 ref={searchRef}
+                autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {

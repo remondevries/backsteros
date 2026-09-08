@@ -33,14 +33,49 @@ type NavigateFn = (opts: {
   replace?: boolean;
 }) => Promise<unknown>;
 
+function bindingIdentityKey(binding: BacksterosTaskChatBinding): string {
+  if (binding.kind === "draft") {
+    return `draft:${binding.draftId}:${binding.threadId}:${binding.environmentId}`;
+  }
+  return `thread:${binding.threadId}:${binding.environmentId}`;
+}
+
+/**
+ * Promote/clear stale task→chat bindings.
+ * Pass `{ persist: false }` from render-time resolvers — store writes are deferred
+ * so React does not see a setState during render (BacksterosPanel / ChatView).
+ */
 function healBinding(
   taskId: string,
   binding: BacksterosTaskChatBinding,
+  options?: { readonly persist?: boolean },
 ): BacksterosTaskChatBinding | null {
+  const persist = options?.persist !== false;
+
+  const commit = (next: BacksterosTaskChatBinding | null) => {
+    const apply = () => {
+      const store = useBacksterosTaskChatStore.getState();
+      if (next == null) {
+        store.clearBinding(taskId);
+        return;
+      }
+      const current = store.getBinding(taskId);
+      if (current && bindingIdentityKey(current) === bindingIdentityKey(next)) {
+        return;
+      }
+      store.setBinding(taskId, next);
+    };
+    if (persist) {
+      apply();
+      return;
+    }
+    queueMicrotask(apply);
+  };
+
   if (binding.kind === "draft") {
     const draft = useComposerDraftStore.getState().getDraftSession(binding.draftId as DraftId);
     if (!draft) {
-      useBacksterosTaskChatStore.getState().clearBinding(taskId);
+      commit(null);
       return null;
     }
     if (draft.promotedTo) {
@@ -54,7 +89,7 @@ function healBinding(
         title: binding.title,
         displayId: binding.displayId,
       };
-      useBacksterosTaskChatStore.getState().setBinding(taskId, next);
+      commit(next);
       return next;
     }
     const shell = readThreadShell(scopeThreadRef(draft.environmentId, draft.threadId));
@@ -69,7 +104,7 @@ function healBinding(
         title: binding.title,
         displayId: binding.displayId,
       };
-      useBacksterosTaskChatStore.getState().setBinding(taskId, next);
+      commit(next);
       return next;
     }
     return binding;
@@ -79,7 +114,7 @@ function healBinding(
     scopeThreadRef(binding.environmentId as EnvironmentId, binding.threadId as ThreadId),
   );
   if (!shell) {
-    useBacksterosTaskChatStore.getState().clearBinding(taskId);
+    commit(null);
     return null;
   }
   return binding;
@@ -200,7 +235,8 @@ export async function openBacksterosTaskChat(input: {
     projectRef,
     navigate: input.navigate,
   });
-  requestBacksterosComposerFocusSoon();
+  // Fresh drafts show the Start / Advanced kickoff gate — do not focus the
+  // composer (that would skip the polished first-chat page).
 }
 
 async function createBacksterosTaskDraft(input: {
@@ -251,9 +287,8 @@ async function createBacksterosTaskDraft(input: {
 }
 
 /**
- * Build the kickoff text and open the composer in advanced mode so the message
- * box is present and ready to edit/send (Start working remains one click away
- * via the send button with the prefilled kickoff).
+ * Build the kickoff text and show the Start / Advanced gate. Composer stays
+ * empty until the user starts working or opens Advanced to edit the message.
  */
 async function prepareBacksterosTaskKickoffGate(input: {
   readonly taskId: string;
@@ -287,10 +322,11 @@ async function prepareBacksterosTaskKickoffGate(input: {
   });
 
   useBacksterosTaskKickoffGateStore.getState().setGate(input.taskId, {
-    mode: "advanced",
+    mode: "gate",
     kickoffPrompt,
   });
-  useComposerDraftStore.getState().setPrompt(input.draftId as DraftId, kickoffPrompt);
+  // Gate owns the prompt until Start / Advanced — keep the composer empty.
+  useComposerDraftStore.getState().setPrompt(input.draftId as DraftId, "");
 }
 
 /** @deprecated Prefer prepareBacksterosTaskKickoffGate — kept for clear-session callers. */
@@ -390,7 +426,8 @@ export function resolveActiveBacksterosTaskId(input: {
 }): string | null {
   if (!input.route) return null;
   for (const [taskId, binding] of Object.entries(input.byTaskId)) {
-    const healed = healBinding(taskId, binding) ?? binding;
+    // Do not persist heals during render — callers often use this in useMemo.
+    const healed = healBinding(taskId, binding, { persist: false }) ?? binding;
     if (isBacksterosTaskChatActive(healed, input.route)) return taskId;
   }
   return null;
@@ -402,7 +439,7 @@ export function resolveActiveBacksterosTaskChatBinding(input: {
 }): BacksterosTaskChatBinding | null {
   if (!input.route) return null;
   for (const [taskId, binding] of Object.entries(input.byTaskId)) {
-    const healed = healBinding(taskId, binding) ?? binding;
+    const healed = healBinding(taskId, binding, { persist: false }) ?? binding;
     if (isBacksterosTaskChatActive(healed, input.route)) return healed;
   }
   return null;

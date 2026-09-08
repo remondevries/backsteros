@@ -1,5 +1,6 @@
 import { isBacksterosGoLeaderPending } from "./backsterosRailMode";
 import { isBacksterosPropertyMenuOpen } from "./isBacksterosPropertyMenuOpen";
+import { isBacksterosContentEditModeActive } from "./markdown-editor/contentViewMode";
 import { isTaskPropertyDropdownShortcutKey } from "./taskPropertyDropdownKeys";
 
 function asClosestElement(
@@ -38,6 +39,7 @@ export function isBacksterosMessageChatboxTarget(target: EventTarget | null): bo
 export function isTaskPropertyLocalTypingTarget(target: EventTarget | null): boolean {
   const el = asClosestElement(target);
   if (!el) return false;
+  if (el.closest(".cm-editor") != null) return true;
   if (el.closest(".bos-task-property-menu__search-input") != null) return true;
   if (el.closest(".bos-task-property-menu") != null) return true;
   if (el.closest('[data-slot="menu-popup"]') != null) return true;
@@ -55,12 +57,20 @@ export function shouldHandleTaskPropertyDropdownShortcut(
     readonly activeElement?: EventTarget | null;
     /** Test override for {@link isBacksterosPropertyMenuOpen}. */
     readonly propertyMenuOpen?: boolean;
+    /** Test override for {@link isBacksterosContentEditModeActive}. */
+    readonly contentEditModeActive?: boolean;
   },
 ): boolean {
   if (event.repeat) return false;
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
   if (!isTaskPropertyDropdownShortcutKey(event)) return false;
   if (isBacksterosGoLeaderPending()) return false;
+
+  // Description Edit mode owns typing even if focus briefly left CodeMirror
+  // (desktop `isContentEditModeActive` parity).
+  const contentEditModeActive =
+    options?.contentEditModeActive ?? isBacksterosContentEditModeActive();
+  if (contentEditModeActive) return false;
 
   // Any open property menu owns letter keys (search filter) — do not re-fire
   // S/P/A/… or the menu toggles closed / characters never reach the input.

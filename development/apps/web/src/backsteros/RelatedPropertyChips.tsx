@@ -10,7 +10,10 @@ import {
   type BacksterosTaskRelatedSelection,
 } from "./taskRelated";
 import type { BacksterosContact, BacksterosOrganization } from "./types";
-import { useFocusPropertyMenuSearch } from "./useFocusPropertyMenuSearch";
+import {
+  useFocusPropertyMenuSearch,
+  usePropertyMenuSearchTyping,
+} from "./useFocusPropertyMenuSearch";
 import { stopPropertyMenuSearchKeyPropagation } from "./stopPropertyMenuSearchKeyPropagation";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 
@@ -77,6 +80,7 @@ export function BacksterosRelatedPropertyChips(props: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useFocusPropertyMenuSearch(open);
+  usePropertyMenuSearchTyping(open, searchRef, setQuery);
 
   const values = useMemo(
     () => encodeBacksterosTaskRelatedValues(props.contactIds, props.organizationIds),
@@ -174,7 +178,14 @@ export function BacksterosRelatedPropertyChips(props: {
   };
 
   const addMenu = (
-    <Menu open={open} onOpenChange={setOpen}>
+    <Menu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) return;
+        searchRef.current?.focus({ preventScroll: true });
+      }}
+    >
       <MenuTrigger
         disabled={props.disabled}
         className={
@@ -201,6 +212,7 @@ export function BacksterosRelatedPropertyChips(props: {
         <div className="bos-task-property-menu__search">
           <input
             ref={searchRef}
+            autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={stopPropertyMenuSearchKeyPropagation}

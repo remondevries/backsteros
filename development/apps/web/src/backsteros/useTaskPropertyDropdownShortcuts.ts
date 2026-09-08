@@ -8,8 +8,8 @@ import { resolveTaskPropertyDropdownOpenCandidatesFromEvent } from "./taskProper
  * S / P / A / R and Shift+D / Shift+P open task property menus — same chords as
  * BacksterOS desktop (`useTaskPropertyDropdownShortcuts`).
  *
- * Fires whenever a task detail is open, except while the message chatbox (or an
- * open property/title field) owns focus.
+ * Fires whenever a task detail is open, except while description Edit mode is
+ * active or the message chatbox (or an open property/title field) owns focus.
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,
