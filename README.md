@@ -13,6 +13,8 @@ backsteros/
 ├── hub/            macOS menu-bar start/stop for local services
 ├── mobile/         Expo (iPhone + iPad)
 ├── desktop/        Tauri 2 + Vite/React (macOS)
+├── development/    T3 Code agent console (nested monorepo; own lockfile)
+├── tooling/development/  shim for `pnpm --filter @backsteros/development …`
 └── legacy/         v1 snapshot (reference only)
 ```
 
@@ -29,6 +31,7 @@ pnpm db:up && pnpm db:migrate && pnpm dev   # core API on :8788
 
 pnpm --filter @backsteros/mobile dev   # Expo
 pnpm --filter @backsteros/desktop dev  # Tauri product UI
+pnpm --filter @backsteros/development dev  # T3 Code agent console (nested monorepo)
 ```
 
 Or from each package directory: `cd mobile && pnpm dev`, `cd desktop && pnpm dev`, `cd hub && pnpm dev`.

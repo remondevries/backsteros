@@ -1,0 +1,17 @@
+{
+  "name": "@backsteros/development",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Root-workspace shim that proxies scripts into the nested T3 Code monorepo at development/",
+  "scripts": {
+    "dev": "pnpm --dir ../../development dev",
+    "dev:share": "pnpm --dir ../../development dev:share",
+    "dev:server": "pnpm --dir ../../development dev:server",
+    "dev:web": "pnpm --dir ../../development dev:web",
+    "dev:desktop": "pnpm --dir ../../development dev:desktop",
+    "build": "pnpm --dir ../../development build",
+    "typecheck": "pnpm --dir ../../development typecheck",
+    "lint": "pnpm --dir ../../development lint",
+    "test": "pnpm --dir ../../development test"
+  }
+}
