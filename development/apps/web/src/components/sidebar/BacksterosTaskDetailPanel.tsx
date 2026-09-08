@@ -60,7 +60,6 @@ import { Button } from "../ui/button";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { BacksterosCreateTaskForm } from "./BacksterosCreateTaskForm";
 import "~/backsteros/backsterosPropertyMenu.css";
 
 const DETAIL_PANEL_WIDTH_PX = 380;
@@ -246,11 +245,13 @@ export function BacksterosTaskDetailPanel() {
   const descriptionEditingTaskId = useBacksterosTaskDetailUiStore(
     (state) => state.descriptionEditingTaskId,
   );
+  const composeProject = useBacksterosTaskDetailUiStore((state) => state.composeProject);
   useTitleRenameShortcut(() => setTitleRenameFocusRequest((n) => n + 1), {
-    enabled: selection?.taskId != null && state.status === "ready",
+    enabled: selection?.taskId != null && state.status === "ready" && composeProject == null,
   });
+  // Compose modal owns S/P/A/… while open; re-bind to this task when it closes.
   useTaskPropertyDropdownShortcuts({
-    enabled: selection != null && descriptionEditingTaskId == null,
+    enabled: selection != null && descriptionEditingTaskId == null && composeProject == null,
   });
 
   const handleSaveDescription = useCallback(
@@ -364,13 +365,12 @@ export function BacksterosTaskDetailPanel() {
 
   if (!selection) return null;
 
-  const isCreateMode = selection.taskId === null;
   const statusValue: BacksterosTaskStatus =
     state.status === "ready" ? migrateBacksterosTaskStatus(state.task.status) : "triage";
   const priorityValue = state.status === "ready" ? (state.task.priority ?? 0) : 0;
 
-  const hideLabel = isCreateMode ? "Hide create task" : "Hide task details";
-  const titleLabel = isCreateMode ? "New task" : (displayId ?? "Task");
+  const hideLabel = "Hide task details";
+  const titleLabel = displayId ?? "Task";
   const hideTaskButton = (
     <Tooltip>
       <TooltipTrigger
@@ -399,12 +399,10 @@ export function BacksterosTaskDetailPanel() {
     <aside
       className="flex h-full min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
       style={{ width: DETAIL_PANEL_WIDTH_PX }}
-      aria-label={isCreateMode ? "Create BacksterOS task" : "BacksterOS task details"}
+      aria-label="BacksterOS task details"
     >
       <BacksterosContentCrossfade
-        contentKey={
-          selection.taskId != null ? `task:${selection.taskId}` : `create:${selection.project.id}`
-        }
+        contentKey={`task:${selection.taskId}`}
         className="flex min-h-0 flex-1 flex-col"
       >
         {() => (
@@ -432,16 +430,14 @@ export function BacksterosTaskDetailPanel() {
               )}
             </div>
 
-            {isCreateMode ? <BacksterosCreateTaskForm project={selection.project} /> : null}
-
-            {!isCreateMode && (state.status === "loading" || state.status === "idle") ? (
+            {state.status === "loading" || state.status === "idle" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-xs text-muted-foreground">
                 <RefreshCwIcon className="size-4 animate-spin" aria-hidden />
                 Loading task…
               </div>
             ) : null}
 
-            {!isCreateMode && state.status === "error" ? (
+            {state.status === "error" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center text-xs text-muted-foreground">
                 <p className="max-w-[16rem] text-balance">{state.message}</p>
                 <Button type="button" size="xs" variant="outline" onClick={reload}>
@@ -450,7 +446,7 @@ export function BacksterosTaskDetailPanel() {
               </div>
             ) : null}
 
-            {!isCreateMode && state.status === "ready" ? (
+            {state.status === "ready" ? (
               <>
                 <div className="min-h-0 flex-1 overflow-y-auto px-3 -mt-3 pb-3">
                   <BacksterosOverviewNameEditor

@@ -2,6 +2,7 @@ import {
   TASK_PROPERTY_DROPDOWN_ATTRIBUTE,
   type TaskPropertyDropdownId,
 } from "./taskPropertyDropdownKeys";
+import { resolveBacksterosComposeModalPropertyScope } from "./compose-modal-shortcut-target";
 
 function isInertSubtree(element: Element): boolean {
   return element.closest("[inert]") !== null;
@@ -31,15 +32,7 @@ export function getTaskPropertyDropdownTrigger(
   return null;
 }
 
-/**
- * Open the first available property dropdown for the given id candidates
- * (desktop `openTaskPropertyDropdown` parity — click the marked trigger).
- */
-export function openTaskPropertyDropdown(
-  id: TaskPropertyDropdownId | TaskPropertyDropdownId[],
-  scope?: ParentNode | null,
-): boolean {
-  const ids = Array.isArray(id) ? id : [id];
+function tryOpenInScope(scope: ParentNode, ids: readonly TaskPropertyDropdownId[]): boolean {
   for (const candidate of ids) {
     const trigger = getTaskPropertyDropdownTrigger(candidate, scope);
     if (!trigger) continue;
@@ -47,4 +40,28 @@ export function openTaskPropertyDropdown(
     return true;
   }
   return false;
+}
+
+/**
+ * Open the first available property dropdown for the given id candidates
+ * (desktop `openTaskPropertyDropdown` parity — compose modal wins while open).
+ */
+export function openTaskPropertyDropdown(
+  id: TaskPropertyDropdownId | TaskPropertyDropdownId[],
+  scope?: ParentNode | null,
+): boolean {
+  const ids = Array.isArray(id) ? id : [id];
+
+  // Explicit scope (tests / callers) always wins.
+  if (scope) {
+    return tryOpenInScope(scope, ids);
+  }
+
+  // Desktop: while create-task compose is open, only its chips receive S/P/A/….
+  const composeScope = resolveBacksterosComposeModalPropertyScope();
+  if (composeScope) {
+    return tryOpenInScope(composeScope, ids);
+  }
+
+  return tryOpenInScope(document, ids);
 }

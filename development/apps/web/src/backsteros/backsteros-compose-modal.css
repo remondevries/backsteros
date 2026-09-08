@@ -1,0 +1,89 @@
+/* Create-task compose modal — desktop create-task-modal parity (BacksterDEV). */
+
+.bos-compose-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+
+.bos-compose-modal-overlay {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgb(0 0 0 / 0.35);
+  cursor: default;
+}
+
+.bos-compose-modal-dialog {
+  position: fixed;
+  top: 128px;
+  left: 50%;
+  z-index: 301;
+  width: min(640px, calc(100vw - 48px));
+  margin: 0;
+  transform: translateX(-50%);
+}
+
+.bos-compose-modal-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 14px;
+  background: var(--popover, var(--background));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.42);
+}
+
+.bos-compose-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 8px;
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+}
+
+.bos-compose-modal-header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  padding-inline: 8px;
+}
+
+.bos-compose-modal-text-fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding-inline: 8px;
+}
+
+.bos-compose-modal-description {
+  min-height: 72px;
+}
+
+.bos-compose-modal-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-top: 0.5px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.bos-compose-modal-properties {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bos-compose-modal-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}

@@ -21,6 +21,7 @@ import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
+import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
 import { useProjects } from "../state/entities";
 import { useBacksterosTaskDetailUiStore } from "../backsteros/taskDetailUiStore";
 
@@ -214,9 +215,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     <SidebarProvider
       className="h-dvh! min-h-0!"
       data-panel-animations={panelAnimationsActive ? "true" : "false"}
-      {...(taskDetailSelection && taskDetailVisible
-        ? { "data-task-detail-open": "true" }
-        : {})}
+      {...(taskDetailSelection && taskDetailVisible ? { "data-task-detail-open": "true" } : {})}
       defaultOpen
       style={sidebarProviderStyle}
     >
@@ -251,6 +250,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       {!isOnSettings && taskDetailSelection && taskDetailVisible ? (
         <BacksterosTaskDetailPanel />
       ) : null}
+      {!isOnSettings ? <BacksterosComposeModal /> : null}
       {children}
       <SidebarControl />
     </SidebarProvider>

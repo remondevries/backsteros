@@ -121,6 +121,7 @@ export type BacksterosTaskUpdatePatch = {
   readonly description?: string | null;
   readonly status?: string;
   readonly priority?: number;
+  readonly sortOrder?: number;
   readonly dueDate?: string | null;
   readonly assigneeId?: string | null;
   readonly projectId?: string | null;

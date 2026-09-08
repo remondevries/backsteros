@@ -1,4 +1,13 @@
+import { useEffect } from "react";
+
 import { Button } from "~/components/ui/button";
+import { isMacPlatform } from "~/lib/utils";
+
+function isStartWorkingShortcut(event: KeyboardEvent): boolean {
+  return (
+    event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+  );
+}
 
 export function BacksterosTaskKickoffStart(props: {
   readonly displayId: string | null;
@@ -20,6 +29,22 @@ export function BacksterosTaskKickoffStart(props: {
     ? `${displayId} · ${title.trim() || "Untitled"}`
     : title.trim() || "Untitled task";
   const startDisabled = busy || startDisabledReason != null;
+  const startShortcutLabel = isMacPlatform(navigator.platform) ? "⌘↵" : "Ctrl+Enter";
+
+  useEffect(() => {
+    if (startDisabled) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat) return;
+      if (!isStartWorkingShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onStartWorking();
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [onStartWorking, startDisabled]);
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 px-2 py-2 text-center">
@@ -37,7 +62,7 @@ export function BacksterosTaskKickoffStart(props: {
           size="lg"
           className="w-full max-w-xs"
           disabled={startDisabled}
-          title={startDisabledReason ?? undefined}
+          title={startDisabledReason ?? `Start working (${startShortcutLabel})`}
           onClick={onStartWorking}
         >
           Start working

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
+import { updateBacksterosTask } from "~/backsteros/client";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { orderedBacksterosTaskIds } from "~/backsteros/listTraversal";
 import { useListKeyboardNavStore } from "~/backsteros/listKeyboardNavStore";
@@ -12,6 +13,7 @@ import {
 } from "~/backsteros/promoteWorkingTask";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
+import type { BacksterosTaskSortPatch } from "~/backsteros/task-reorder";
 import type { BacksterosCodebaseProject, BacksterosTask } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
 import { useBacksterosProjectTasks } from "~/backsteros/useBacksterosProjectTasks";
@@ -20,6 +22,7 @@ import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
 import { resolveThreadRouteTarget } from "~/threadRoutes";
+import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { Button } from "../ui/button";
@@ -51,7 +54,26 @@ export function BacksterosProjectOverviewPage({
     state: tasksState,
     reload: reloadTasks,
     patchLocalTask,
+    applySortOrderPatches,
   } = useBacksterosProjectTasks(projectId);
+
+  const handleReorderTasks = useCallback(
+    (patches: readonly BacksterosTaskSortPatch[]) => {
+      if (patches.length === 0) return;
+      applySortOrderPatches(patches);
+      void Promise.all(
+        patches.map((patch) => updateBacksterosTask(patch.id, { sortOrder: patch.sortOrder })),
+      ).catch((error: unknown) => {
+        reloadTasks();
+        toastManager.add({
+          type: "error",
+          title: "Could not reorder tasks",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      });
+    },
+    [applySortOrderPatches, reloadTasks],
+  );
   const byTaskId = useBacksterosTaskChatStore((state) => state.byTaskId);
   const routeTarget = useParams({
     strict: false,
@@ -156,10 +178,9 @@ export function BacksterosProjectOverviewPage({
 
   // Main-column task list so Tab / Enter from the projects rail can hand j/k here.
   // Keep the list registered while a task is open so Escape can return focus here
-  // without closing the task. Create-task (taskId null) still owns the sidepanel.
+  // without closing the task.
   // Use a ref for ids so loading→ready does not thrash register/unregister.
   useEffect(() => {
-    if (selection?.taskId === null) return;
     return registerListKeyboardNav({
       zone: "main",
       getItemIds: () => mainListItemIdsRef.current,
@@ -176,7 +197,7 @@ export function BacksterosProjectOverviewPage({
         handleSelectTaskRef.current(task);
       },
     });
-  }, [registerListKeyboardNav, selection?.taskId]);
+  }, [registerListKeyboardNav]);
 
   usePromoteWorkingBacksterosTasks();
   useEffect(() => {
@@ -218,6 +239,7 @@ export function BacksterosProjectOverviewPage({
         keyboardFocusTaskId={keyboardFocusTaskId}
         onRetry={reloadTasks}
         onSelectTask={handleSelectTask}
+        onReorderTasks={handleReorderTasks}
       />
     </div>
   );

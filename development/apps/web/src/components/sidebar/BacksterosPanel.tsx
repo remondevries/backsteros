@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
-import { BACKSTEROS_INBOX_ATTENTION_STATUSES, updateBacksterosProject } from "~/backsteros/client";
+import {
+  BACKSTEROS_INBOX_ATTENTION_STATUSES,
+  updateBacksterosProject,
+  updateBacksterosTask,
+} from "~/backsteros/client";
 import { isBacksterosInboxDueTask } from "~/backsteros/inboxDue";
 import {
   orderedBacksterosInboxTaskIds,
@@ -17,6 +21,7 @@ import {
   handleListKeyboardNavEvent,
 } from "~/backsteros/listKeyboardNavStore";
 import { isBacksterosGoEditableTarget } from "~/backsteros/backsterosRailMode";
+import { isBacksterosComposeModalOpen } from "~/backsteros/isBacksterosComposeModalOpen";
 import { isBacksterosPropertyMenuOpen } from "~/backsteros/isBacksterosPropertyMenuOpen";
 import { openBacksterosTaskChat, resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import {
@@ -24,6 +29,7 @@ import {
   subscribeBacksterosTaskStatusChanged,
 } from "~/backsteros/promoteWorkingTask";
 import type { BacksterosProjectSortPatch } from "~/backsteros/project-reorder";
+import type { BacksterosTaskSortPatch } from "~/backsteros/task-reorder";
 import { useSyncBacksterosAgentPresence } from "~/backsteros/useBacksterosAgentPresence";
 import { matchesBacksterosSearchQuery } from "~/backsteros/searchQuery";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
@@ -110,8 +116,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   }, [projectById]);
 
   /**
-   * Left rail drills into a project's tasks when a task is open or create-task
-   * is active for that project (Projects mode). Create uses `taskId: null`.
+   * Left rail drills into a project's tasks when a task is open for that
+   * project (Projects mode). Create-task uses the compose modal, not the rail.
    */
   const taskListProject = railMode === "projects" && selection != null ? selection.project : null;
 
@@ -119,12 +125,58 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     state: tasksState,
     reload: reloadTasks,
     patchLocalTask,
+    applySortOrderPatches: applyTaskSortOrderPatches,
   } = useBacksterosProjectTasks(taskListProject?.id ?? null);
   const {
     state: inboxState,
     reload: reloadInbox,
     patchLocalTask: patchInboxTask,
+    applySortOrderPatches: applyInboxSortOrderPatches,
   } = useBacksterosInboxAttentionTasks(railMode === "inbox");
+
+  const persistTaskSortOrderPatches = useCallback(
+    (
+      patches: readonly BacksterosTaskSortPatch[],
+      options: {
+        readonly applyLocal: (patches: readonly BacksterosTaskSortPatch[]) => void;
+        readonly onFailure: () => void;
+      },
+    ) => {
+      if (patches.length === 0) return;
+      options.applyLocal(patches);
+      void Promise.all(
+        patches.map((patch) => updateBacksterosTask(patch.id, { sortOrder: patch.sortOrder })),
+      ).catch((error: unknown) => {
+        options.onFailure();
+        toastManager.add({
+          type: "error",
+          title: "Could not reorder tasks",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      });
+    },
+    [],
+  );
+
+  const handleReorderProjectTasks = useCallback(
+    (patches: readonly BacksterosTaskSortPatch[]) => {
+      persistTaskSortOrderPatches(patches, {
+        applyLocal: applyTaskSortOrderPatches,
+        onFailure: reloadTasks,
+      });
+    },
+    [applyTaskSortOrderPatches, persistTaskSortOrderPatches, reloadTasks],
+  );
+
+  const handleReorderInboxTasks = useCallback(
+    (patches: readonly BacksterosTaskSortPatch[]) => {
+      persistTaskSortOrderPatches(patches, {
+        applyLocal: applyInboxSortOrderPatches,
+        onFailure: reloadInbox,
+      });
+    },
+    [applyInboxSortOrderPatches, persistTaskSortOrderPatches, reloadInbox],
+  );
 
   const byTaskId = useBacksterosTaskChatStore((state) => state.byTaskId);
   const selectedProjectId = useParams({
@@ -442,8 +494,6 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       ? (sidepanelHighlightId ?? selectedProjectId)
       : null;
 
-  const clearTaskDetailRef = useRef(clearTaskDetail);
-  clearTaskDetailRef.current = clearTaskDetail;
   const leaveOpenProjectRef = useRef(leaveOpenProject);
   leaveOpenProjectRef.current = leaveOpenProject;
   const keybindingsRef = useRef(keybindings);
@@ -462,8 +512,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       // 0) property dropdown open → close menu only (do not leave task/project)
       // 1) yield to composer / editable (blur first)
       // 2) open task → return focus to the task list (keep task open)
-      // 3) create-task sheet → dismiss
-      // 4) project page → projects rail root
+      // 3) project page → projects rail root
       // Tab switches sidepanel ↔ main without leaving.
       if (
         event.key === "Escape" &&
@@ -476,6 +525,11 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
       ) {
         // Let Base UI dismiss the open property menu; skip back-navigation.
         if (isBacksterosPropertyMenuOpen()) {
+          return;
+        }
+
+        // Create-task compose layover owns Escape (close modal / nested menus).
+        if (isBacksterosComposeModalOpen()) {
           return;
         }
 
@@ -509,17 +563,6 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
           }
           // Already on the sidepanel list — step up to the projects rail.
           leaveOpenProjectRef.current();
-          return;
-        }
-
-        if (currentSelection != null) {
-          // Create-task empty state — dismiss the sheet.
-          event.preventDefault();
-          event.stopPropagation();
-          clearTaskDetailRef.current();
-          if (currentSelectedProjectId) {
-            useListKeyboardNavStore.getState().setActiveZone("main");
-          }
           return;
         }
 
@@ -620,6 +663,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
               projectNameById={projectNameById}
               emptyLabel="Nothing needs attention"
               onSelectTask={handleSelectInboxTask}
+              onReorderTasks={handleReorderInboxTasks}
             />
           );
         }
@@ -651,6 +695,7 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
                 activeTaskId={sidepanelActiveTaskId}
                 keyboardFocusTaskId={sidepanelKeyboardFocusTaskId}
                 onSelectTask={handleSelectProjectTask}
+                onReorderTasks={handleReorderProjectTasks}
               />
             </div>
           );

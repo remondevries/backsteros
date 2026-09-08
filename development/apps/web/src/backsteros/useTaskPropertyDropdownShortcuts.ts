@@ -5,11 +5,12 @@ import { shouldHandleTaskPropertyDropdownShortcut } from "./taskPropertyDropdown
 import { resolveTaskPropertyDropdownOpenCandidatesFromEvent } from "./taskPropertyDropdownKeys";
 
 /**
- * S / P / A / R and Shift+D / Shift+P open task property menus — same chords as
+ * S / P / A / R and Shift+D / Shift+P open property menus — same chords as
  * BacksterOS desktop (`useTaskPropertyDropdownShortcuts`).
  *
- * Fires whenever a task detail is open, except while description Edit mode is
- * active or the message chatbox (or an open property/title field) owns focus.
+ * While the create-task compose modal is open, {@link openTaskPropertyDropdown}
+ * routes exclusively to that dialog's chips; when it closes, the same chords
+ * bind back to the open task detail (if any).
  */
 export function useTaskPropertyDropdownShortcuts({
   enabled = true,

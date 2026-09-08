@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { backsterosEntityListFingerprint } from "./backsterosEntityFingerprint";
 import { createBacksterosSharedQuery, type BacksterosSharedQuery } from "./backsterosQueryStore";
 import { fetchBacksterosProjectTasks } from "./client";
+import { applyTaskSortOrderPatches, type BacksterosTaskSortPatch } from "./task-reorder";
 import type { BacksterosTask } from "./types";
 
 export type BacksterosProjectTasksState =
@@ -35,13 +36,15 @@ function toTasksState(
   return snapshot;
 }
 
+type LocalTaskPatch = Partial<
+  Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate" | "sortOrder">
+>;
+
 export function useBacksterosProjectTasks(projectId: string | null): {
   readonly state: BacksterosProjectTasksState;
   readonly reload: () => void;
-  readonly patchLocalTask: (
-    taskId: string,
-    patch: Partial<Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate">>,
-  ) => void;
+  readonly patchLocalTask: (taskId: string, patch: LocalTaskPatch) => void;
+  readonly applySortOrderPatches: (patches: readonly BacksterosTaskSortPatch[]) => void;
 } {
   const [state, setState] = useState<BacksterosProjectTasksState>({ status: "idle" });
 
@@ -63,10 +66,7 @@ export function useBacksterosProjectTasks(projectId: string | null): {
   }, [projectId]);
 
   const patchLocalTask = useCallback(
-    (
-      taskId: string,
-      patch: Partial<Pick<BacksterosTask, "status" | "title" | "priority" | "dueDate">>,
-    ) => {
+    (taskId: string, patch: LocalTaskPatch) => {
       if (!projectId) return;
       getProjectTasksQuery(projectId).patchReadyData((tasks) => {
         let changed = false;
@@ -81,7 +81,17 @@ export function useBacksterosProjectTasks(projectId: string | null): {
     [projectId],
   );
 
-  return { state, reload, patchLocalTask };
+  const applySortOrderPatches = useCallback(
+    (patches: readonly BacksterosTaskSortPatch[]) => {
+      if (!projectId || patches.length === 0) return;
+      getProjectTasksQuery(projectId).patchReadyData((tasks) =>
+        applyTaskSortOrderPatches(tasks, patches),
+      );
+    },
+    [projectId],
+  );
+
+  return { state, reload, patchLocalTask, applySortOrderPatches };
 }
 
 /** Test helper. */

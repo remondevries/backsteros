@@ -105,18 +105,41 @@ export function useSyncBacksterosAgentPresence(enabled: boolean) {
     if (!enabled) return;
 
     const published = new Set<string>();
+    /** Skip further PUTs after a definitive "task missing" 404 (avoids console spam). */
+    const missingTasks = new Set<string>();
+    let inFlight: Promise<void> | null = null;
+
+    const heartbeat = async (taskId: string) => {
+      if (missingTasks.has(taskId)) return;
+      try {
+        await upsertBacksterosTaskAgentPresence(taskId, { source: "t3" });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("(404)")) {
+          missingTasks.add(taskId);
+        }
+      }
+    };
 
     const sync = () => {
-      for (const taskId of localWorkingTaskIds) {
-        published.add(taskId);
-        void upsertBacksterosTaskAgentPresence(taskId, { source: "t3" }).catch(() => {});
-      }
-      for (const taskId of [...published]) {
-        if (localWorkingTaskIds.has(taskId)) continue;
-        published.delete(taskId);
-        // Optimistic: stop the pulse now; DELETE may still be in flight.
-        clearBacksterosDisplayedAgentPresence(taskId);
-      }
+      // Serialize ticks so overlapping intervals cannot stampede the API.
+      if (inFlight) return;
+      inFlight = (async () => {
+        for (const taskId of localWorkingTaskIds) {
+          if (missingTasks.has(taskId)) continue;
+          published.add(taskId);
+          await heartbeat(taskId);
+        }
+        for (const taskId of [...published]) {
+          if (localWorkingTaskIds.has(taskId)) continue;
+          published.delete(taskId);
+          missingTasks.delete(taskId);
+          // Optimistic: stop the pulse now; DELETE may still be in flight.
+          clearBacksterosDisplayedAgentPresence(taskId);
+        }
+      })().finally(() => {
+        inFlight = null;
+      });
     };
 
     sync();

@@ -1,4 +1,8 @@
 import { isBacksterosGoLeaderPending } from "./backsterosRailMode";
+import {
+  isBacksterosComposeModalOpen,
+  isBacksterosComposeModalTitleOrDescriptionFocused,
+} from "./compose-modal-shortcut-target";
 import { isBacksterosPropertyMenuOpen } from "./isBacksterosPropertyMenuOpen";
 import { isBacksterosContentEditModeActive } from "./markdown-editor/contentViewMode";
 import { isTaskPropertyDropdownShortcutKey } from "./taskPropertyDropdownKeys";
@@ -59,6 +63,10 @@ export function shouldHandleTaskPropertyDropdownShortcut(
     readonly propertyMenuOpen?: boolean;
     /** Test override for {@link isBacksterosContentEditModeActive}. */
     readonly contentEditModeActive?: boolean;
+    /** Test override for compose modal open. */
+    readonly composeModalOpen?: boolean;
+    /** Test override for compose title/description focus. */
+    readonly composeTextFieldFocused?: boolean;
   },
 ): boolean {
   if (event.repeat) return false;
@@ -66,11 +74,15 @@ export function shouldHandleTaskPropertyDropdownShortcut(
   if (!isTaskPropertyDropdownShortcutKey(event)) return false;
   if (isBacksterosGoLeaderPending()) return false;
 
-  // Description Edit mode owns typing even if focus briefly left CodeMirror
-  // (desktop `isContentEditModeActive` parity).
+  const composeModalOpen = options?.composeModalOpen ?? isBacksterosComposeModalOpen();
+
+  // Description Edit mode owns typing on the task detail surface. Compose's
+  // description shell also uses data-content-view-mode="edit" by default — that
+  // must not blanket-block S/P/A while the layover owns the shortcuts (desktop
+  // compose has no content-view-mode gate).
   const contentEditModeActive =
     options?.contentEditModeActive ?? isBacksterosContentEditModeActive();
-  if (contentEditModeActive) return false;
+  if (contentEditModeActive && !composeModalOpen) return false;
 
   // Any open property menu owns letter keys (search filter) — do not re-fire
   // S/P/A/… or the menu toggles closed / characters never reach the input.
@@ -83,6 +95,18 @@ export function shouldHandleTaskPropertyDropdownShortcut(
   if (isBacksterosMessageChatboxTarget(event.target) || isBacksterosMessageChatboxTarget(active)) {
     return false;
   }
+
+  const composeTextFieldFocused =
+    options?.composeTextFieldFocused ?? isBacksterosComposeModalTitleOrDescriptionFocused();
+  if (composeModalOpen) {
+    // Title / description own typing; otherwise compose chips receive hotkeys.
+    if (composeTextFieldFocused) return false;
+    if (isTaskPropertyLocalTypingTarget(event.target) || isTaskPropertyLocalTypingTarget(active)) {
+      return false;
+    }
+    return true;
+  }
+
   if (isTaskPropertyLocalTypingTarget(event.target) || isTaskPropertyLocalTypingTarget(active)) {
     return false;
   }

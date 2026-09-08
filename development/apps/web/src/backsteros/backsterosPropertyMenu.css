@@ -105,6 +105,14 @@
   color: #f5f5f5;
 }
 
+/*
+ * Compose layover is z-index 300/301; default menu positioners are z-[130],
+ * so portaled property menus render underneath without this bump.
+ */
+[data-slot="menu-positioner"]:has(.bos-task-property-menu) {
+  z-index: 320;
+}
+
 .bos-task-property-menu--due {
   width: 17.5rem !important;
   min-width: 17.5rem !important;

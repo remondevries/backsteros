@@ -157,6 +157,7 @@ import {
 } from "~/backsteros/sidebarModeStore";
 import { resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
+import { useBacksterosComposeShortcut } from "~/backsteros/useBacksterosComposeShortcut";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -4079,6 +4080,11 @@ export default function Sidebar() {
     openCreateTaskDetail(backsterosCreateTaskProject, { reveal: true });
   }, [backsterosCreateTaskProject, isMobile, openCreateTaskDetail, setOpenMobile]);
 
+  useBacksterosComposeShortcut({
+    enabled: isBacksterosScope,
+    onCompose: handleNewBacksterosTaskClick,
+  });
+
   // The button mirrors chat.new: in multi-project setups both route through
   // the command palette's "New thread in..." picker, and in single-project
   // setups both create immediately. In multi-project setups the label is only
@@ -4224,7 +4230,7 @@ export default function Sidebar() {
                   </TooltipTrigger>
                   <TooltipPopup side="right">
                     {isBacksterosScope ? (
-                      "New task"
+                      "New task (C)"
                     ) : projectGroups.length > 1 ? (
                       <span className="flex flex-col gap-0.5">
                         <span>

@@ -1,5 +1,21 @@
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { getBacksterosTaskDisplayId, type BacksterosTask } from "~/backsteros/types";
 import { formatTaskDueMetaLabel, getTaskDueDateUrgency } from "~/backsteros/taskDueDate";
@@ -8,6 +24,10 @@ import { BacksterosTaskPriorityIcon } from "~/backsteros/TaskPriorityIcon";
 import { BacksterosTaskStatusIcon } from "~/backsteros/TaskStatusIcon";
 import { groupBacksterosTasksByStatus, type BacksterosTaskStatus } from "~/backsteros/taskStatus";
 import { getBacksterosTaskStatusHeaderGradientStyle } from "~/backsteros/taskStatusHeaderGradient";
+import {
+  taskSortOrderPatchesForGroup,
+  type BacksterosTaskSortPatch,
+} from "~/backsteros/task-reorder";
 import { useBacksterosDisplayedWorkingTaskIds } from "~/backsteros/useBacksterosAgentPresence";
 import type { BacksterosProjectTasksState } from "~/backsteros/useBacksterosProjectTasks";
 import { cn } from "~/lib/utils";
@@ -29,6 +49,35 @@ function computeTaskIdColumnCh(
   return max + TASK_ID_COLUMN_CH_SLACK;
 }
 
+type SortableRowBag = {
+  readonly setNodeRef: (node: HTMLElement | null) => void;
+  readonly style: CSSProperties;
+  readonly listeners: ReturnType<typeof useSortable>["listeners"];
+  readonly isDragging: boolean;
+};
+
+function SortableOverviewTaskRowShell(props: {
+  readonly id: string;
+  readonly disabled: boolean;
+  readonly children: (bag: SortableRowBag) => ReactNode;
+}) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.id,
+    disabled: props.disabled,
+  });
+  return props.children({
+    setNodeRef,
+    style: {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      zIndex: isDragging ? 1 : undefined,
+      position: isDragging ? ("relative" as const) : undefined,
+    },
+    listeners: props.disabled ? undefined : listeners,
+    isDragging,
+  });
+}
+
 function BacksterosOverviewTaskRow(props: {
   readonly task: BacksterosTask;
   readonly projectKey: string | null | undefined;
@@ -36,8 +85,9 @@ function BacksterosOverviewTaskRow(props: {
   readonly keyboardFocused: boolean;
   readonly working: boolean;
   readonly onSelect: (task: BacksterosTask) => void;
+  readonly sortable?: SortableRowBag;
 }) {
-  const { task, projectKey, selected, keyboardFocused, working, onSelect } = props;
+  const { task, projectKey, selected, keyboardFocused, working, onSelect, sortable } = props;
   const displayId = getBacksterosTaskDisplayId(task, projectKey);
   const dueLabel = formatTaskDueMetaLabel(task.dueDate);
   const urgency = getTaskDueDateUrgency(task.dueDate, new Date(), {
@@ -46,7 +96,7 @@ function BacksterosOverviewTaskRow(props: {
   const priority = task.priority ?? 0;
 
   return (
-    <li className="bos-task-row-item">
+    <li ref={sortable?.setNodeRef} style={sortable?.style} className="bos-task-row-item">
       <button
         type="button"
         onClick={() => onSelect(task)}
@@ -56,7 +106,10 @@ function BacksterosOverviewTaskRow(props: {
           "bos-task-row",
           selected && "is-selected",
           keyboardFocused && "is-keyboard-focus",
+          sortable?.listeners && "is-draggable",
+          sortable?.isDragging && "is-dragging",
         )}
+        {...(sortable?.listeners ?? {})}
       >
         <span className="bos-task-row__priority" title={getBacksterosTaskPriorityLabel(priority)}>
           <BacksterosTaskPriorityIcon priority={priority} size={14} />
@@ -89,11 +142,16 @@ function BacksterosOverviewStatusGroup(props: {
   readonly tasks: readonly BacksterosTask[];
   readonly projectKey: string | null | undefined;
   readonly collapsed: boolean;
+  readonly reorderEnabled: boolean;
   readonly selectedTaskId: string | null;
   readonly keyboardFocusTaskId: string | null;
   readonly workingTaskIds: ReadonlySet<string>;
   readonly onToggle: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
+  readonly onReorderWithinStatus: (
+    status: BacksterosTaskStatus,
+    orderedTasks: readonly BacksterosTask[],
+  ) => void;
 }) {
   const {
     status,
@@ -101,12 +159,32 @@ function BacksterosOverviewStatusGroup(props: {
     tasks,
     projectKey,
     collapsed,
+    reorderEnabled,
     selectedTaskId,
     keyboardFocusTaskId,
     workingTaskIds,
     onToggle,
     onSelectTask,
+    onReorderWithinStatus,
   } = props;
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const canReorder = reorderEnabled && tasks.length > 1;
+  const itemIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (!canReorder) return;
+      const activeId = String(event.active.id);
+      const overId = event.over == null ? null : String(event.over.id);
+      if (overId == null || activeId === overId) return;
+      const fromIndex = tasks.findIndex((task) => task.id === activeId);
+      const toIndex = tasks.findIndex((task) => task.id === overId);
+      if (fromIndex === -1 || toIndex === -1) return;
+      onReorderWithinStatus(status, arrayMove([...tasks], fromIndex, toIndex));
+    },
+    [canReorder, onReorderWithinStatus, status, tasks],
+  );
 
   return (
     <li className="bos-status-group">
@@ -135,7 +213,34 @@ function BacksterosOverviewStatusGroup(props: {
           <span className="bos-status-group__count">{tasks.length}</span>
         </button>
       </div>
-      {collapsed ? null : (
+      {collapsed ? null : canReorder ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            <ul role="list" className="bos-status-group__items" aria-label={`${label} tasks`}>
+              {tasks.map((task) => (
+                <SortableOverviewTaskRowShell key={task.id} id={task.id} disabled={false}>
+                  {(bag) => (
+                    <BacksterosOverviewTaskRow
+                      task={task}
+                      projectKey={projectKey}
+                      selected={selectedTaskId === task.id}
+                      keyboardFocused={keyboardFocusTaskId === task.id}
+                      working={workingTaskIds.has(task.id)}
+                      onSelect={onSelectTask}
+                      sortable={bag}
+                    />
+                  )}
+                </SortableOverviewTaskRowShell>
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      ) : (
         <ul role="list" className="bos-status-group__items">
           {tasks.map((task) => (
             <BacksterosOverviewTaskRow
@@ -162,6 +267,7 @@ export function BacksterosProjectTasksOverview(props: {
   readonly keyboardFocusTaskId?: string | null;
   readonly onRetry: () => void;
   readonly onSelectTask: (task: BacksterosTask) => void;
+  readonly onReorderTasks?: (patches: readonly BacksterosTaskSortPatch[]) => void;
 }) {
   const {
     state,
@@ -170,9 +276,11 @@ export function BacksterosProjectTasksOverview(props: {
     keyboardFocusTaskId = null,
     onRetry,
     onSelectTask,
+    onReorderTasks,
   } = props;
   const [collapsed, setCollapsed] = useState<ReadonlySet<BacksterosTaskStatus>>(() => new Set());
   const workingTaskIds = useBacksterosDisplayedWorkingTaskIds();
+  const reorderEnabled = Boolean(onReorderTasks);
 
   const groups = useMemo(
     () => (state.status === "ready" ? groupBacksterosTasksByStatus(state.tasks) : []),
@@ -185,6 +293,13 @@ export function BacksterosProjectTasksOverview(props: {
       ["--bos-task-id-column-ch" as string]: computeTaskIdColumnCh(state.tasks, projectKey),
     };
   }, [projectKey, state]);
+
+  const handleReorderWithinStatus = useCallback(
+    (_status: BacksterosTaskStatus, orderedTasks: readonly BacksterosTask[]) => {
+      onReorderTasks?.(taskSortOrderPatchesForGroup(orderedTasks));
+    },
+    [onReorderTasks],
+  );
 
   if (state.status === "idle" || state.status === "loading") {
     return (
@@ -230,10 +345,12 @@ export function BacksterosProjectTasksOverview(props: {
               tasks={group.tasks}
               projectKey={projectKey}
               collapsed={collapsed.has(group.status)}
+              reorderEnabled={reorderEnabled}
               selectedTaskId={selectedTaskId}
               keyboardFocusTaskId={keyboardFocusTaskId}
               workingTaskIds={workingTaskIds}
               onSelectTask={onSelectTask}
+              onReorderWithinStatus={handleReorderWithinStatus}
               onToggle={() =>
                 setCollapsed((current) => {
                   const next = new Set(current);

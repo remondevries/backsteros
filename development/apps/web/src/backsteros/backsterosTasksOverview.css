@@ -175,6 +175,19 @@
   cursor: pointer;
 }
 
+.bos-task-row.is-draggable {
+  cursor: grab;
+}
+
+.bos-task-row.is-draggable:active {
+  cursor: grabbing;
+}
+
+.bos-task-row.is-dragging {
+  opacity: 0.8;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
 .bos-task-row:hover {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }

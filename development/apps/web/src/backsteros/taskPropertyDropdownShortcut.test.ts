@@ -119,4 +119,27 @@ describe("shouldHandleTaskPropertyDropdownShortcut", () => {
       }),
     ).toBe(false);
   });
+
+  it("while compose is open, ignores detail content-edit mode and targets compose", () => {
+    const outside = fakeElement();
+    expect(
+      shouldHandleTaskPropertyDropdownShortcut(keyEvent({ target: outside }), {
+        activeElement: outside,
+        contentEditModeActive: true,
+        composeModalOpen: true,
+        composeTextFieldFocused: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("while compose is open, yields when title or description owns focus", () => {
+    const outside = fakeElement();
+    expect(
+      shouldHandleTaskPropertyDropdownShortcut(keyEvent({ target: outside }), {
+        activeElement: outside,
+        composeModalOpen: true,
+        composeTextFieldFocused: true,
+      }),
+    ).toBe(false);
+  });
 });

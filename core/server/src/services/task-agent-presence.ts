@@ -70,30 +70,13 @@ export async function upsertTaskAgentPresence(
       ),
     )
     .limit(1);
+  const wasLive = existing[0]
+    ? isTaskAgentPresenceLive(existing[0].lastHeartbeatAt, now)
+    : false;
 
-  if (existing[0]) {
-    const wasLive = isTaskAgentPresenceLive(existing[0].lastHeartbeatAt, now);
-    const [updated] = await db
-      .update(taskAgentPresence)
-      .set({
-        source,
-        lastHeartbeatAt: now,
-        ...(sessionId !== undefined ? { sessionId } : {}),
-      })
-      .where(
-        and(
-          eq(taskAgentPresence.workspaceId, workspaceId),
-          eq(taskAgentPresence.taskId, taskId),
-        ),
-      )
-      .returning();
-    if (!updated) return null;
-    // Heartbeats of already-live rows stay quiet; resume-from-stale fans out.
-    if (!wasLive) publishBecameLive(workspaceId, taskId);
-    return toPresence(updated);
-  }
-
-  const [inserted] = await db
+  // Single INSERT … ON CONFLICT so concurrent T3/desktop heartbeats cannot
+  // race into a unique-violation 500 on task_id PK.
+  const [row] = await db
     .insert(taskAgentPresence)
     .values({
       taskId,
@@ -103,10 +86,20 @@ export async function upsertTaskAgentPresence(
       startedAt: now,
       lastHeartbeatAt: now,
     })
+    .onConflictDoUpdate({
+      target: taskAgentPresence.taskId,
+      set: {
+        source,
+        lastHeartbeatAt: now,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+      },
+    })
     .returning();
-  if (!inserted) return null;
-  publishBecameLive(workspaceId, taskId);
-  return toPresence(inserted);
+  if (!row) return null;
+
+  // Heartbeats of already-live rows stay quiet; first insert / resume-from-stale fans out.
+  if (!wasLive) publishBecameLive(workspaceId, taskId);
+  return toPresence(row);
 }
 
 export async function clearTaskAgentPresence(
