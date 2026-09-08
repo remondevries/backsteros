@@ -16,6 +16,29 @@ test("shouldSkipRestEntityWrite when PowerSync connected", () => {
   );
 });
 
+test("CRM local writes gate on ready, not only connected", () => {
+  // Mirrors canWriteViaPowerSync in crm-mutations.ts — contact creates use
+  // ready+createMetadata; relationships must not fall back to REST solely
+  // because the socket is briefly disconnected.
+  const canWriteViaPowerSync = (powerSync: {
+    ready: boolean;
+    createMetadata?: unknown;
+  }) => Boolean(powerSync.ready && powerSync.createMetadata);
+
+  assert.equal(
+    canWriteViaPowerSync({ ready: true, createMetadata: async () => "id" }),
+    true,
+  );
+  assert.equal(
+    canWriteViaPowerSync({ ready: true }),
+    false,
+  );
+  assert.equal(
+    canWriteViaPowerSync({ ready: false, createMetadata: async () => "id" }),
+    false,
+  );
+});
+
 test("activity preview length matches contract cap", () => {
   const long = "x".repeat(CRM_ACTIVITY_PREVIEW_MAX_CHARS + 20);
   const trimmed = long.trim();

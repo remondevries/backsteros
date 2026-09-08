@@ -29,6 +29,7 @@ import {
 } from "@backsteros/ui";
 
 import { useDesktopApi } from "../api-context";
+import { sanitizeContactChannelPatch, sanitizeOrganizationChannelPatch } from "../contact-row-normalizers";
 import {
   apiFillSourceForColdStart,
   fillMissingAgentChatIdFromApi,
@@ -174,9 +175,7 @@ function useDesktopWorkspaceDataImpl(): {
 } {
   const { client } = useDesktopApi();
   const powerSync = useDesktopPowerSync();
-  const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
-  const authenticated =
-    Boolean(clerkKey) && powerSync.status !== "unauthenticated";
+  const authenticated = powerSync.status !== "unauthenticated";
 
   const localAllTasks = usePowerSyncQuery<Record<string, unknown>>(
     authenticated ? ALL_TASKS_LIST_SQL : null,
@@ -360,7 +359,10 @@ function useDesktopWorkspaceDataImpl(): {
     const fillFrom = apiFillSourceForColdStart(localMapped, apiOrganizations);
     return fillMissingLongTextFromApi(
       fillMissingMoneybirdContactIdFromApi(
-        resolveLocalOrApiRows(localMapped, apiOrganizations),
+        mergeLocalWithPendingApiCreates(
+          resolveLocalOrApiRows(localMapped, apiOrganizations),
+          apiOrganizations,
+        ),
         fillFrom,
       ),
       apiOrganizations,
@@ -490,7 +492,13 @@ function useDesktopWorkspaceDataImpl(): {
     const localMapped =
       localContacts.data?.map((row) => snakeRow(row) as ApiContact) ?? null;
     return fillMissingLongTextFromApi(
-      resolveLocalOrApiRows(localMapped, apiContacts),
+      // Same race as tasks: optimistic create lands in apiContacts before the
+      // PowerSync watch mirrors the INSERT — without this, the new contact is
+      // dropped from membership and open/create flashes "Not found".
+      mergeLocalWithPendingApiCreates(
+        resolveLocalOrApiRows(localMapped, apiContacts),
+        apiContacts,
+      ),
       apiContacts,
       // birthday / names / emails: fill when local SQLite is still missing new CRM columns
       ["summary", "notes", "birthday", "firstName", "lastName", "emails", "phones", "languages", "socialAccounts", "latitude", "longitude", "address", "city", "postalCode", "country", "region"],
@@ -1016,13 +1024,22 @@ function useDesktopWorkspaceDataImpl(): {
           }
         }
       }
+      // Empty / incomplete emails fail Zod on upload (INVALID_CONTACT, skippable)
+      // so the change appears locally then never lands on the server.
+      next = sanitizeContactChannelPatch(next);
       await patchViaPowerSyncOrApi("contacts", id, next);
     },
     [patchViaPowerSyncOrApi, rawContacts],
   );
   const patchOrganization = useCallback(
     async (id: string, values: Record<string, unknown>) => {
-      await patchViaPowerSyncOrApi("organizations", id, values);
+      // Empty / incomplete emails or websites fail Zod on upload
+      // (INVALID_ORGANIZATION, skippable) — same silent-drop as contacts.
+      await patchViaPowerSyncOrApi(
+        "organizations",
+        id,
+        sanitizeOrganizationChannelPatch(values),
+      );
     },
     [patchViaPowerSyncOrApi],
   );

@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { XIcon } from "@primer/octicons-react";
 
 import type { CrmRelationshipLabel } from "@backsteros/contracts";
@@ -145,7 +151,7 @@ export function ContactRelationshipsListView({
               ariaLabel: `Actions for ${option.label}`,
               icon: <KebabHorizontalIcon />,
               closeOnSelect: false,
-              onSelect: (event) => {
+              onSelect: (event: ReactMouseEvent<HTMLButtonElement>) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 setOverflowMenu({
                   labelId: option.labelId,
@@ -205,6 +211,8 @@ export function ContactRelationshipsListView({
       setToContactId("");
       setType("friend");
       setAdding(false);
+    } catch (err) {
+      console.warn("[contacts] add relationship failed", err);
     } finally {
       busyRef.current = false;
       setBusy(false);

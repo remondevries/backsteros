@@ -95,7 +95,10 @@ import {
   useCrmGroupOrganizationIds,
   useCrmGroupsCatalog,
   useCrmGroupsForSubject,
+  addCrmGroupMemberWithRetry,
+  notifyCrmGroupsChanged,
 } from "../lib/use-crm-data";
+import { useDesktopPowerSync } from "../lib/powersync-context";
 import {
   useKeepAliveActive,
   useKeepAliveFrozen,
@@ -177,6 +180,7 @@ export function OrganizationsPage() {
   const workspace = useDesktopWorkspaceData();
   const agentStatus = useDesktopAgentStatusOptional();
   const { client } = useDesktopApi();
+  const powerSync = useDesktopPowerSync();
   const { organizations, projects, letters, contacts } = workspace;
   const organizationAvatarSrc = useDesktopAvatarSrcMap(
     "organization",
@@ -1287,24 +1291,45 @@ export function OrganizationsPage() {
   const createAndOpenOrganization = useCallback(() => {
     void workspace
       .createOrganization({ name: "New organization" })
-      .then((created) => {
-        setPinnedOrganizationId(created.id);
-        const match =
-          organizations.find((entry) => entry.id === created.id) ??
-          overviewOrganizations.find((entry) => entry.id === created.id);
-        if (match) openOrganization(match);
-        else
-          navigate(
-            getOrganizationOverlayHref(created.key ?? created.id, {
+      .then(async (created) => {
+        if (selectedGroupId) {
+          try {
+            await addCrmGroupMemberWithRetry(client, powerSync, {
               groupId: selectedGroupId,
-            }),
-          );
+              subjectType: "organization",
+              subjectId: created.id,
+            });
+            notifyCrmGroupsChanged();
+          } catch (error) {
+            console.warn(
+              "[desktop] assign organization to group failed",
+              error,
+            );
+          }
+        }
+        setPinnedOrganizationId(created.id);
+        navigate(
+          getOrganizationOverlayHref(
+            getUniqueListItemRouteParam(created, [
+              ...organizations,
+              {
+                id: created.id,
+                key: created.key,
+                number: created.number,
+              },
+            ]),
+            { groupId: selectedGroupId },
+          ),
+        );
+      })
+      .catch((error) => {
+        console.warn("[desktop] create organization failed", error);
       });
   }, [
+    client,
     navigate,
-    openOrganization,
     organizations,
-    overviewOrganizations,
+    powerSync,
     selectedGroupId,
     workspace,
   ]);

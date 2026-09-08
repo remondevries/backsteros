@@ -28,8 +28,13 @@ function previewFromBody(body: string): string {
   return `${trimmed.slice(0, CRM_ACTIVITY_PREVIEW_MAX_CHARS - 1)}…`;
 }
 
+/**
+ * Prefer local SQLite when PowerSync is ready — same gate as contact/org
+ * creates. Requiring `connected` forced REST while a just-created contact was
+ * still local-only, so relationship/group writes 404'd.
+ */
 function canWriteViaPowerSync(powerSync: WorkspacePowerSync): boolean {
-  return Boolean(powerSync.ready && shouldSkipRestEntityWrite(powerSync));
+  return Boolean(powerSync.ready && powerSync.createMetadata);
 }
 
 async function softDeleteLocally(
@@ -77,12 +82,21 @@ export async function createContactRelationshipViaPowerSyncOrApi(
   },
 ): Promise<ContactRelationship> {
   if (canWriteViaPowerSync(powerSync)) {
-    const id = await powerSync.createMetadata("contact_relationships", {
+    const id = await powerSync.createMetadata!("contact_relationships", {
       from_contact_id: input.fromContactId,
       to_contact_id: input.toContactId,
       type: input.type,
       note: input.note ?? null,
     });
+    // Push contact + relationship CRUD together so the server does not skip
+    // the edge with CONTACT_NOT_FOUND while the contact create is still queued.
+    if (powerSync.flushCrudUpload && shouldSkipRestEntityWrite(powerSync)) {
+      try {
+        await powerSync.flushCrudUpload();
+      } catch (error) {
+        console.warn("[desktop] relationship upload flush deferred", error);
+      }
+    }
     const now = new Date().toISOString();
     return {
       id,
@@ -97,18 +111,46 @@ export async function createContactRelationshipViaPowerSyncOrApi(
     };
   }
 
-  return client.requestJson<ContactRelationship>(
-    `/api/v1/contacts/${encodeURIComponent(input.fromContactId)}/relationships`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        toContactId: input.toContactId,
-        type: input.type,
-        note: input.note,
-      }),
-    },
-  );
+  return createContactRelationshipViaApiWithRetry(client, input);
+}
+
+/** POST relationship, retrying while a just-created contact uploads (REST path). */
+async function createContactRelationshipViaApiWithRetry(
+  client: BacksterosApiClient,
+  input: {
+    fromContactId: string;
+    toContactId: string;
+    type: string;
+    note?: string | null;
+  },
+): Promise<ContactRelationship> {
+  const SUBJECT_SYNC_RETRY_DELAYS_MS = [0, 150, 300, 600, 1200] as const;
+  let lastError: unknown;
+  for (const delay of SUBJECT_SYNC_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    try {
+      return await client.requestJson<ContactRelationship>(
+        `/api/v1/contacts/${encodeURIComponent(input.fromContactId)}/relationships`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            toContactId: input.toContactId,
+            type: input.type,
+            note: input.note,
+          }),
+        },
+      );
+    } catch (error) {
+      lastError = error;
+      if (!isSubjectMissingError(error)) throw error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to create contact relationship");
 }
 
 export async function deleteContactRelationshipViaPowerSyncOrApi(
@@ -453,6 +495,7 @@ function isSubjectMissingError(error: unknown): boolean {
     const message = error.message.toLowerCase();
     return (
       message.includes("contact not found") ||
+      message.includes("related contact") ||
       message.includes("organization not found") ||
       message.includes("member subject not found")
     );
@@ -461,6 +504,7 @@ function isSubjectMissingError(error: unknown): boolean {
   const message = error.message.toLowerCase();
   return (
     message.includes("contact not found") ||
+    message.includes("related contact") ||
     message.includes("organization not found") ||
     message.includes("member subject not found")
   );

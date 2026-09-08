@@ -820,32 +820,24 @@ export function ContactsPage({
           }
         }
         setPinnedContactId(created.id);
-        const match =
-          contacts.find((entry) => entry.id === created.id) ??
-          overviewContacts.find((entry) => entry.id === created.id);
-        if (match) openContact(match);
-        else
-          navigate(
-            getContactOverlayHref(
-              getUniqueListItemRouteParam(created, [
-                ...contacts,
-                { id: created.id, key: created.key },
-              ]),
-              {
-                groupId: selectedGroupId,
-              },
-            ),
-          );
+        // Prefer id-based navigation so we do not depend on list membership
+        // catching up with the optimistic create (number may still be null).
+        navigate(
+          getContactOverlayHref(
+            getUniqueListItemRouteParam(created, [
+              ...contacts,
+              { id: created.id, key: created.key, number: created.number },
+            ]),
+            {
+              groupId: selectedGroupId,
+            },
+          ),
+        );
+      })
+      .catch((error) => {
+        console.warn("[desktop] create contact failed", error);
       });
-  }, [
-    client,
-    contacts,
-    navigate,
-    openContact,
-    overviewContacts,
-    selectedGroupId,
-    workspace,
-  ]);
+  }, [client, contacts, navigate, powerSync, selectedGroupId, workspace]);
 
   const expandOverlay = useCallback(() => {
     if (!selectedSlugValue) return;

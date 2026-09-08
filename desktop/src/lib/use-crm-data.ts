@@ -298,13 +298,21 @@ export function useContactRelationships(
   const add = useCallback(
     async (input: { toContactId: string; type: string }) => {
       if (!contactId) return;
-      await createContactRelationshipViaPowerSyncOrApi(client, powerSync, {
-        fromContactId: contactId,
-        toContactId: input.toContactId,
-        type: input.type,
-      });
-      if (!localEnabled) {
-        await reloadRest();
+      setError(null);
+      try {
+        await createContactRelationshipViaPowerSyncOrApi(client, powerSync, {
+          fromContactId: contactId,
+          toContactId: input.toContactId,
+          type: input.type,
+        });
+        if (!localEnabled) {
+          await reloadRest();
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to save relationship";
+        setError(message);
+        throw err instanceof Error ? err : new Error(message);
       }
     },
     [client, contactId, localEnabled, powerSync, reloadRest],
