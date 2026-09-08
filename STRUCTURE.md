@@ -22,6 +22,8 @@ Single workspace: **`~/code/backsteros/`** (branch `v2`)
 ├── mobile/                     ← Expo (iPhone + iPad, adaptive UI)
 ├── desktop/                    ← Tauri 2 + Vite/React (macOS)
 │   └── packages/ui/            ← desktop-owned UI (not shared with mobile)
+├── development/                ← nested T3 Code monorepo (@t3tools/monorepo; own lockfile)
+├── tooling/development/        ← @backsteros/development shim → proxies into development/
 │
 └── legacy/                     ← v1 snapshot — do not develop here
 ```
@@ -35,6 +37,8 @@ Single workspace: **`~/code/backsteros/`** (branch `v2`)
 | `hub/` | Menu-bar control to start/stop Docker, core API, PTY |
 | `mobile/` | Expo product shell |
 | `desktop/` | Tauri product shell |
+| `development/` | Nested T3 Code agent console (not a root workspace member) |
+| `tooling/development/` | Filter shim — `pnpm --filter @backsteros/development dev:desktop` (Electron); `dev` is browser-only |
 | `legacy/` | Frozen v1 apps (Next app/admin/development, sync-demo) |
 
 ## Runtime model
