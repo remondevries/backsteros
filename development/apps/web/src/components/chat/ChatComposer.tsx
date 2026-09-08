@@ -1299,6 +1299,8 @@ export interface ChatComposerProps {
   setThreadError: (threadId: ThreadId | null, error: string | null) => void;
   onExpandImage: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
+  /** When true, `/done` appears in the slash menu (BacksterOS task chat). */
+  backsterosDoneAvailable?: boolean;
 }
 
 // --------------------------------------------------------------------------
@@ -1390,6 +1392,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
     onFileOpen,
+    backsterosDoneAvailable = false,
   } = props;
   const activeTasksProgress = props.threadSyncPhase === null ? props.activeTasksProgress : null;
   const activeTaskSteps = props.threadSyncPhase === null ? props.activeTaskSteps : null;
@@ -1935,6 +1938,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/new",
           description: "Start a fresh chat session",
         },
+        // Whole-message command — only offer when `/` opens the prompt (same
+        // constraint as provider slash commands that must stand alone).
+        ...(backsterosDoneAvailable && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:done",
+                type: "slash-command",
+                command: "done",
+                label: "/done",
+                description: "Finish the BacksterOS task: commit, push, link, complete",
+              },
+            ] as const)
+          : []),
         ...(planModeUiEnabled
           ? ([
               {
@@ -2005,6 +2021,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    backsterosDoneAvailable,
     compactSlashCommandAvailable,
     composerTrigger,
     planModeUiEnabled,
@@ -2730,6 +2747,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           onClearChatSession();
           return;
         }
+        if (item.command === "done") {
+          // Replace the whole draft so leftover text cannot ride along and
+          // prevent standalone `/done` parsing in ChatView.
+          const applied = applyPromptReplacement(0, snapshot.value.length, "/done", {
+            expectedText: snapshot.value,
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            queueMicrotask(() => {
+              onSend(undefined, "foreground");
+            });
+          }
+          return;
+        }
         if (!planModeUiEnabled) return;
         void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
@@ -2781,6 +2813,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacement,
       handleInteractionModeChange,
       onClearChatSession,
+      onSend,
       planModeUiEnabled,
       resolveActiveComposerTrigger,
     ],

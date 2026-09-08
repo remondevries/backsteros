@@ -323,7 +323,10 @@ import { fetchBacksterosTask } from "~/backsteros/client";
 import { loadTaskDescriptionComposerImages } from "~/backsteros/taskDescriptionImages";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskKickoffGateStore } from "~/backsteros/taskKickoffGateStore";
-import { isBacksterosManagedKickoffPrompt } from "~/backsteros/taskKickoffPrompt";
+import {
+  buildBacksterosTaskDonePrompt,
+  isBacksterosManagedKickoffPrompt,
+} from "~/backsteros/taskKickoffPrompt";
 import { useBacksterosTaskDetailUiStore } from "~/backsteros/taskDetailUiStore";
 import { getBacksterosTaskDisplayId } from "~/backsteros/types";
 import { useBacksterosCodebaseProjects } from "~/backsteros/useBacksterosCodebaseProjects";
@@ -6661,6 +6664,27 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
       return;
     }
+    let promptForMessage = promptForSend;
+    if (standaloneSlashCommand === "done") {
+      if (!activeBacksterosTaskId || !activeBacksterosTaskChat) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "/done is for BacksterOS task chats",
+            description: "Open a task chat, then use /done to finish it.",
+          }),
+        );
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
+      const displayId = activeBacksterosTaskChat.displayId?.trim() || activeBacksterosTaskId;
+      promptForMessage = buildBacksterosTaskDonePrompt({
+        displayId,
+        title: activeBacksterosTaskChat.title,
+      });
+    }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
         const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -6711,7 +6735,7 @@ export default function ChatView(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
     const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      appendTerminalContextsToPrompt(promptForMessage, composerTerminalContextsSnapshot),
       composerElementContextsSnapshot,
     );
     const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
@@ -8405,6 +8429,7 @@ export default function ChatView(props: ChatViewProps) {
                               setThreadError={setThreadError}
                               onExpandImage={onExpandTimelineImage}
                               onFileOpen={openFileAttachment}
+                              backsterosDoneAvailable={Boolean(activeBacksterosTaskChat)}
                             />
                           </div>
                         </ComposerSurface.Host>

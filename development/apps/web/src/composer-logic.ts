@@ -10,8 +10,8 @@ import {
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "clear" | "new";
-export type ComposerStandaloneSlashCommand = "plan" | "default" | "clear";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "clear" | "new" | "done";
+export type ComposerStandaloneSlashCommand = "plan" | "default" | "clear" | "done";
 export type ComposerSubmissionIntent = "foreground" | "background";
 
 export interface ComposerTrigger {
@@ -265,13 +265,14 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 export function parseStandaloneComposerSlashCommand(
   text: string,
 ): ComposerStandaloneSlashCommand | null {
-  const match = /^\/(plan|default|clear|new|new-chat|newchat)\s*$/i.exec(text.trim());
+  const match = /^\/(plan|default|clear|new|new-chat|newchat|done)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
   }
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
   if (command === "default") return "default";
+  if (command === "done") return "done";
   // Cursor CLI aliases: /clear, /new, /new-chat, /newchat → fresh session.
   return "clear";
 }

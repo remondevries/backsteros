@@ -514,8 +514,14 @@ describe("parseStandaloneComposerSlashCommand", () => {
     expect(parseStandaloneComposerSlashCommand("/newchat")).toBe("clear");
   });
 
+  it("parses standalone /done command", () => {
+    expect(parseStandaloneComposerSlashCommand("/done")).toBe("done");
+    expect(parseStandaloneComposerSlashCommand(" /done ")).toBe("done");
+  });
+
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
     expect(parseStandaloneComposerSlashCommand("/clear history")).toBeNull();
+    expect(parseStandaloneComposerSlashCommand("/done now")).toBeNull();
   });
 });

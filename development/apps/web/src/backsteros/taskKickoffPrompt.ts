@@ -56,5 +56,40 @@ export function buildBacksterosTaskKickoffPrompt(task: BacksterosTaskKickoffInpu
     "- BacksterDEV auto-moves status to In Progress while you work and In Review when you go idle — do not fight that.",
     "- When you finish, leave a short `backsteros comment` on this task explaining what changed.",
     "- Only change status yourself when the user asks (e.g. completed) or you are blocked (`on_hold`).",
+    "- If the user sends `/done`, that is an explicit finish request: commit, push, link commit SHAs, comment, and mark completed.",
+  ].join("\n");
+}
+
+export type BacksterosTaskDonePromptInput = {
+  readonly displayId: string;
+  readonly title?: string | null;
+};
+
+/**
+ * Message sent when the user submits `/done` in a BacksterOS task chat.
+ * Instructs the agent to ship the work and close the task.
+ */
+export function buildBacksterosTaskDonePrompt(task: BacksterosTaskDonePromptInput): string {
+  const displayId = task.displayId.trim() || "UNKNOWN";
+  const title = task.title?.trim() || "Untitled";
+
+  return [
+    "Finish this BacksterOS task now. The user invoked `/done`.",
+    "",
+    `Task ID: ${displayId}`,
+    `Title: ${title}`,
+    "",
+    "Do all of the following (do not ask for confirmation):",
+    "1. Commit any remaining work in the linked repo (follow the project's git commit conventions). Include the task id in the commit message when it fits naturally.",
+    "2. Push the commit(s) to the remote.",
+    "3. Link the commit SHA(s) on the task. `linkedCommitShas` replaces the full list, so keep any existing SHAs and append the new ones:",
+    `   backsteros task get ${displayId} --json`,
+    `   backsteros task update ${displayId} --body '{"linkedCommitShas":["<sha>",...]}'`,
+    "4. Leave a short completion comment:",
+    `   backsteros comment create ${displayId} -m "…"`,
+    "5. Mark the task completed:",
+    `   backsteros task update ${displayId} --status completed`,
+    "",
+    "If there is nothing to commit, still link the relevant existing SHA(s) when possible, then comment and complete.",
   ].join("\n");
 }
