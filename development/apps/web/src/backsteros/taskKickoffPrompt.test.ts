@@ -56,6 +56,9 @@ describe("buildBacksterosTaskDonePrompt", () => {
     expect(prompt).toContain("backsteros comment create BDV-19");
     expect(prompt).toContain("/done");
     expect(prompt).toContain("--description");
+    expect(prompt).toContain("--title");
+    expect(prompt).toContain("grammar");
+    expect(prompt).toContain("formatting");
     expect(prompt).toContain("timeline sense");
     expect(prompt).toContain("resolution belongs in the comment");
   });

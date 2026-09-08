@@ -56,7 +56,7 @@ export function buildBacksterosTaskKickoffPrompt(task: BacksterosTaskKickoffInpu
     "- BacksterDEV auto-moves status to In Progress while you work and In Review when you go idle — do not fight that.",
     "- When you finish, leave a short `backsteros comment` on this task explaining what changed.",
     "- Only change status yourself when the user asks (e.g. completed) or you are blocked (`on_hold`).",
-    "- If the user sends `/done`, that is an explicit finish request: review/update the description (problem framing), commit, push, link commit SHAs, comment with the resolution, and mark completed.",
+    "- If the user sends `/done`, that is an explicit finish request: review/update the description (problem framing, grammar, formatting), commit, push, link commit SHAs, comment with the resolution, and mark completed.",
   ].join("\n");
 }
 
@@ -80,10 +80,11 @@ export function buildBacksterosTaskDonePrompt(task: BacksterosTaskDonePromptInpu
     `Title: ${title}`,
     "",
     "Do all of the following (do not ask for confirmation):",
-    "1. Review the task description (`backsteros task get`) and update it if needed so it accurately reflects the issue/task at hand — what was wrong, missing, or requested.",
+    "1. Review the task title and description (`backsteros task get`) and update them if needed so they accurately reflect the issue/task at hand — what was wrong, missing, or requested.",
+    "   Also polish grammar, spelling, punctuation, and formatting so the card reads cleanly for a later reader (complete sentences, consistent casing, no obvious typos).",
     '   Important (timeline sense): write the description as the problem or request as discovered, not as already fixed. Do not rewrite a bug as if it never existed or as a past-tense "we fixed X". The description is the work statement; resolution belongs in the comment.',
-    "   Only update the description when it would help a later reader understand the original issue/task. Skip the update if it is already accurate.",
-    `   backsteros task update ${displayId} --description "…"`,
+    "   Skip the update only when accuracy, grammar, and formatting are already good.",
+    `   backsteros task update ${displayId} --title "…" --description "…"`,
     "2. Commit any remaining work in the linked repo (follow the project's git commit conventions). Include the task id in the commit message when it fits naturally.",
     "3. Push the commit(s) to the remote.",
     "4. Link the commit SHA(s) on the task. `linkedCommitShas` replaces the full list, so keep any existing SHAs and append the new ones:",
