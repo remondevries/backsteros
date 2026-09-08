@@ -28,7 +28,6 @@
     "@backsteros/powersync-schema": "workspace:*",
     "@backsteros/ui": "workspace:*",
     "@briangaoo/totem": "git+https://github.com/briangaoo/totem.git#586ee89d0ec8f8ba4a142c824ecaeea7faaa200b",
-    "@clerk/clerk-react": "^5.31.4",
     "@journeyapps/wa-sqlite": "^1.7.2",
     "@legendapp/list": "3.2.0",
     "@powersync/web": "^1.39.0",

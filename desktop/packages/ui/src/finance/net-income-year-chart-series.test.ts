@@ -6,7 +6,7 @@ import {
   formatNetIncomeRangeLabel,
   netIncomeChangePercent,
   netIncomeYearChartHasData,
-} from "../../dist/finance/net-income-year-chart-series.js";
+} from "./net-income-year-chart-series.js";
 
 describe("netIncomeChangePercent", () => {
   test("uses absolute prior as denominator", () => {

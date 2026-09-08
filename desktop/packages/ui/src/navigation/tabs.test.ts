@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { clearPrimedTabTitles, primeTabTitle } from "../../dist/navigation/primed-tab-title.js";
+import { clearPrimedTabTitles, primeTabTitle } from "./primed-tab-title.js";
 import {
   createDefaultTabsState,
   createProductTab,
@@ -9,7 +9,7 @@ import {
   syncActiveTabTaskMeta,
   syncActiveTabToPath,
   buildProductTabHref,
-} from "../../dist/navigation/tabs.js";
+} from "./tabs.js";
 
 describe("syncActiveTabToPath", () => {
   test("clears task meta when the active tab navigates", () => {

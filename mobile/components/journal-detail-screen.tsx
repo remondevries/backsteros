@@ -1,3 +1,4 @@
+import type { Contact, Project, Task } from "@backsteros/contracts";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -19,13 +20,18 @@ import {
 import { ensureJournalDocumentViaApi } from "../lib/document-create";
 import { isPadDevice } from "../lib/device";
 import { taskDetailHref } from "../lib/detail-href";
+import { fillMissingDueDatesFromApi } from "../lib/fill-missing-due-dates";
 import { recordHabitDay } from "../lib/habits/api";
 import { formatJournalEntryTitle } from "../lib/journal";
 import {
   getJournalDisplayBody,
   mergeJournalContent,
 } from "../lib/journal-content";
-import { withDisplayId } from "../lib/map-task-row";
+import {
+  contactsByIdFromList,
+  mapApiTaskToRow,
+  withDisplayId,
+} from "../lib/map-task-row";
 import {
   formatMobileUserFacingError,
   isMobileApiNetworkError,
@@ -39,6 +45,8 @@ import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
+import { useRestListHydration } from "../lib/use-rest-list-hydration";
+import { useRestReloadFlags } from "../lib/use-rest-reload-flags";
 import { ContentPageTitle } from "./content-page-title";
 import { GroupedTaskList, type GroupedTaskRow } from "./grouped-task-list";
 import { collapseHabitItemsByHabitId } from "./tasks-today-habits-chips";
@@ -268,21 +276,69 @@ export function JournalDetailScreen({ dateSlug }: Props) {
 
   const tasksSql = `${TASK_LIST_SELECT}
      WHERE t.deleted_at IS NULL
-       AND t.due_date IS NOT NULL
      ORDER BY t.sort_order ASC, t.updated_at DESC`;
 
   const { data: syncedTasks } = useLocalQuery<SyncedTaskRow>(tasksSql);
   const { data: syncedHabits } = useLocalQuery<SyncedHabitRow>(HABITS_META_SQL);
 
-  const dueTasks = useMemo(
-    () =>
-      filterTasksDueOnJournalDate(
-        (syncedTasks ?? []).map((row) => withDisplayId(row)),
-        dateSlug,
-        calendarTimeZone,
-      ),
-    [calendarTimeZone, dateSlug, syncedTasks],
+  const [restTaskRows, setRestTaskRows] = useState<SyncedTaskRow[] | null>(
+    null,
   );
+  const { beginReload, endReload, markHydrated } = useRestReloadFlags();
+
+  const reloadRestTasks = useCallback(async (opts?: { userPull?: boolean }) => {
+    const userPull = beginReload(opts);
+    try {
+      const [tasksBody, projectsBody, contactsBody] = await Promise.all([
+        client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
+        client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
+        client
+          .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
+          .catch(() => ({ contacts: [] as Contact[] })),
+      ]);
+      const projectsById = new Map(
+        (projectsBody.projects ?? []).map((project) => [project.id, project]),
+      );
+      const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
+      setRestTaskRows(
+        (tasksBody.tasks ?? []).map((task) => ({
+          ...mapApiTaskToRow(task, projectsById, contactsById),
+          habit_id: task.habitId ?? null,
+          number: task.number,
+          project_id: task.projectId,
+          contact_id: task.contactId,
+        })),
+      );
+      markHydrated();
+    } catch {
+      // Keep last REST snapshot; journal still uses PowerSync rows.
+    } finally {
+      endReload(userPull);
+    }
+  }, [beginReload, client, endReload, markHydrated]);
+
+  useRestListHydration(
+    reloadRestTasks,
+    true,
+    (syncedTasks?.length ?? 0) > 0,
+  );
+
+  const dueTasks = useMemo(() => {
+    const filled = fillMissingDueDatesFromApi(
+      syncedTasks ?? [],
+      restTaskRows,
+    );
+    // Include API-only rows that local SQLite has not caught up with yet.
+    const localIds = new Set(filled.map((row) => row.id));
+    const apiExtras = (restTaskRows ?? []).filter(
+      (row) => !localIds.has(row.id) && Boolean(row.due_date),
+    );
+    return filterTasksDueOnJournalDate(
+      [...filled, ...apiExtras].map((row) => withDisplayId(row)),
+      dateSlug,
+      calendarTimeZone,
+    );
+  }, [calendarTimeZone, dateSlug, restTaskRows, syncedTasks]);
 
   const [listMode, setListMode] = useState<JournalDayListMode>("tasks");
   const [habitCheckedOverride, setHabitCheckedOverride] = useState<

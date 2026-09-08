@@ -15,8 +15,6 @@ import { DesktopProviders } from "../lib/desktop-providers";
 import { isDesktopOverlayPath } from "../lib/desktop-overlay";
 import { DesktopOverlayComposePage } from "../screens/desktop-overlay-compose-page";
 import { DesktopOverlayPalettePage } from "../screens/desktop-overlay-palette-page";
-import { OauthPopupDonePage } from "../screens/oauth-popup-done-page";
-import { SsoCallbackPage } from "../screens/sso-callback-page";
 import { validateTasksListSearch } from "./routes/tasks.route";
 import { validateCalendarSearch } from "./routes/calendar.route";
 import {
@@ -81,18 +79,6 @@ const overlayComposeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/desktop-overlay/compose",
   component: DesktopOverlayComposePage,
-});
-
-const ssoCallbackRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/sso-callback",
-  component: SsoCallbackPage,
-});
-
-const oauthPopupDoneRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/oauth/popup-done",
-  component: OauthPopupDonePage,
 });
 
 const shellRoute = createRoute({
@@ -793,8 +779,6 @@ const settingsTabRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   overlayPaletteRoute,
   overlayComposeRoute,
-  ssoCallbackRoute,
-  oauthPopupDoneRoute,
   shellRoute.addChildren([
     indexRoute,
     inboxRoute,

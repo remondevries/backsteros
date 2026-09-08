@@ -130,12 +130,15 @@ export function taskDueDateMatchesFilter(
   dueDate: Date | number | string | null | undefined,
   filter: TasksDueFilter,
   referenceDate: Date = new Date(),
+  timeZone?: string,
 ): boolean {
   if (filter === "all") return true;
 
-  const dueYmd = getTaskDueDateYmd(dueDate);
+  const dueYmd = getTaskDueDateYmd(dueDate, timeZone);
   if (!dueYmd) return false;
-  const todayYmd = formatLocalYmd(referenceDate);
+  const todayYmd = timeZone
+    ? (getTaskDueDateYmd(referenceDate, timeZone) ?? formatLocalYmd(referenceDate))
+    : formatLocalYmd(referenceDate);
 
   switch (filter) {
     case "today":
@@ -170,7 +173,12 @@ export function filterTasksByDueFilter<
     due_date?: Date | number | string | null;
     status?: string | null;
   },
->(tasks: readonly T[], filter: TasksDueFilter, referenceDate?: Date): T[] {
+>(
+  tasks: readonly T[],
+  filter: TasksDueFilter,
+  referenceDate?: Date,
+  timeZone?: string,
+): T[] {
   if (filter === "all") {
     return [...tasks];
   }
@@ -178,6 +186,11 @@ export function filterTasksByDueFilter<
     if (filter === "overdue" && isInactiveTaskStatus(task.status)) {
       return false;
     }
-    return taskDueDateMatchesFilter(task.due_date, filter, referenceDate);
+    return taskDueDateMatchesFilter(
+      task.due_date,
+      filter,
+      referenceDate,
+      timeZone,
+    );
   });
 }

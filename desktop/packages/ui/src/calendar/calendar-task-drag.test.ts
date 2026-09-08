@@ -8,7 +8,7 @@ import {
   calendarTaskDragEventData,
   fullCalendarDurationToMinutes,
   minutesToFullCalendarDuration,
-} from "../../dist/calendar/calendar-task-drag.js";
+} from "./calendar-task-drag.js";
 
 function mockDragElement(attrs: Record<string, string>): HTMLElement {
   return {

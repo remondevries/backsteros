@@ -43,6 +43,9 @@ export type GroupedTaskRow = {
   due_date?: string | null;
   due_end_date?: string | null;
   inbox?: boolean | number | null;
+  habit_id?: string | null;
+  inbox_updated_at?: string | null;
+  updated_at?: string | null;
   project_name?: string | null;
   project_key?: string | null;
   project_icon?: string | null;

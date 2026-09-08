@@ -27,8 +27,8 @@ export function getMobileEnvironment() {
   const cloudApiUrl = normalizeApiUrl(
     readPublicEnv("EXPO_PUBLIC_CLOUD_API_URL"),
   );
-  const clerkPublishableKey =
-    readPublicEnv("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY") ?? "";
+  const localShellToken =
+    readPublicEnv("EXPO_PUBLIC_LOCAL_SHELL_TOKEN") ?? "local";
 
   return {
     /** Preferred local-core URL (Tailscale / loopback). */
@@ -37,6 +37,7 @@ export function getMobileEnvironment() {
     cloudApiUrl,
     /** @deprecated Use `localApiUrl` or `useMobileCoreApiUrl().activeApiUrl`. */
     apiUrl: localApiUrl,
-    clerkPublishableKey,
+    /** Must match core `LOCAL_SHELL_TOKEN` when set (default `local`). */
+    localShellToken,
   };
 }

@@ -29,7 +29,7 @@ export function isRetryableEntityNumberLookupError(error: unknown): boolean {
     // Network / parse failures — keep polling.
     return true;
   }
-  // 404: upload not applied yet. 401/403: Clerk token race. 429/5xx: transient.
+  // 404: upload not applied yet. 401/403: auth race. 429/5xx: transient.
   return [401, 403, 404, 408, 429, 500, 502, 503, 504].includes(error.status);
 }
 

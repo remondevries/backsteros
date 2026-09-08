@@ -68,7 +68,7 @@ export function CashflowChartSummary({
   const change = netIncomeChangePercent(ytdCents, priorYtdCents);
   const changeUp = change == null ? ytdCents >= 0 : change >= 0;
 
-  let totalTone: "positive" | "negative" | "neutral" = "neutral";
+  let totalTone: "positive" | "negative" | "neutral";
   if (sense === "income") totalTone = "positive";
   else if (sense === "spend") totalTone = "neutral";
   else totalTone = ytdEuros >= 0 ? "positive" : "negative";

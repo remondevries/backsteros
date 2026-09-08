@@ -63,7 +63,7 @@ function unauthorized() {
 
 function canMintPowerSyncToken(auth: AuthContext | null): boolean {
   if (!auth) return false;
-  if (auth.kind === "clerk" || auth.kind === "local_shell") {
+  if (auth.kind === "local_shell") {
     return Boolean(auth.clerkUserId || auth.userId);
   }
   return false;
@@ -73,7 +73,7 @@ function powerSyncSubject(auth: AuthContext): string {
   return auth.clerkUserId || auth.userId || "local_shell";
 }
 
-async function withClerkAuth(c: Context, next: Next) {
+async function withOwnerShellAuth(c: Context, next: Next) {
   const authorization = c.req.header("Authorization");
   if (!authorization) {
     console.warn(
@@ -96,7 +96,7 @@ function getBearerToken(authorization: string | undefined): string | null {
   return authorization.slice("Bearer ".length).trim();
 }
 
-async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
+async function withOwnerShellOrPowerSyncAuth(c: Context, next: Next) {
   const header = c.req.header("Authorization");
   const token = getBearerToken(header);
   const secret = process.env.POWERSYNC_JWT_SECRET;
@@ -111,7 +111,7 @@ async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
         typeof verified.payload.workspace_id === "string"
       ) {
         c.set("auth", {
-          kind: "clerk",
+          kind: "powersync",
           userId: null,
           clerkUserId: verified.payload.sub,
           apiKeyId: null,
@@ -124,7 +124,7 @@ async function withClerkOrPowerSyncAuth(c: Context, next: Next) {
         return;
       }
     } catch {
-      // fall through to Clerk session auth
+      // fall through to local-shell auth
     }
   }
 
@@ -143,9 +143,9 @@ function getAuth(c: Context): AuthContext {
 }
 
 export function registerSyncRoutes(app: Hono) {
-  app.use("/api/v1/sync/*", withClerkAuth);
-  app.get("/api/v1/powersync/token", withClerkAuth);
-  app.post("/api/v1/powersync/write", withClerkOrPowerSyncAuth);
+  app.use("/api/v1/sync/*", withOwnerShellAuth);
+  app.get("/api/v1/powersync/token", withOwnerShellAuth);
+  app.post("/api/v1/powersync/write", withOwnerShellOrPowerSyncAuth);
 
   // ---------------------------------------------------------------------------
   // DEAD — legacy Linear-style cursor sync (bootstrap / pull / push).

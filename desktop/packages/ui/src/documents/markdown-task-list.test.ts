@@ -6,7 +6,7 @@ import {
   normalizeMarkdownTaskLists,
   parseMarkdownTaskCheckbox,
   toggleMarkdownTaskListItem,
-} from "../../dist/documents/markdown-task-list.js";
+} from "./markdown-task-list.js";
 
 describe("normalizeMarkdownTaskLists", () => {
   it("expands empty brackets to an unchecked GFM marker", () => {

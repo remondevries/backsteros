@@ -26,6 +26,7 @@ type InboxTaskRow = {
   agent_created_at: string | null;
   agent_inbox_approved_at: string | null;
   inbox_updated_at: string | null;
+  habit_id: string | null;
 };
 
 type TriageMeetingRow = {
@@ -96,7 +97,7 @@ export function useInboxTriageNotifications(): void {
   const { data: taskRows } = useLocalQuery<InboxTaskRow>(
     `SELECT t.id, t.title, t.status, t.number, t.project_id, p.key AS project_key,
             t.due_date, t.updated_at, t.inbox, t.agent_created_at, t.agent_inbox_approved_at,
-            t.inbox_updated_at
+            t.inbox_updated_at, t.habit_id
      FROM tasks t
      LEFT JOIN projects p ON p.id = t.project_id
      WHERE t.deleted_at IS NULL`,
@@ -118,6 +119,8 @@ export function useInboxTriageNotifications(): void {
           due_date: row.due_date,
           agent_created_at: row.agent_created_at,
           agent_inbox_approved_at: row.agent_inbox_approved_at,
+          inbox_updated_at: row.inbox_updated_at,
+          habit_id: row.habit_id,
         })
       ) {
         continue;
@@ -130,6 +133,7 @@ export function useInboxTriageNotifications(): void {
           due_date: row.due_date,
           agent_created_at: row.agent_created_at,
           agent_inbox_approved_at: row.agent_inbox_approved_at,
+          inbox_updated_at: row.inbox_updated_at,
         },
         build: () =>
           buildInboxTriageTaskNotification({

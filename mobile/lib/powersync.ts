@@ -30,16 +30,16 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
   }
 
   async fetchCredentials() {
-    let clerkToken: string | null = null;
+    let authToken: string | null = null;
     for (let attempt = 0; attempt < 5; attempt++) {
-      clerkToken = (await this.getAuthToken())?.trim() || null;
-      if (clerkToken) break;
+      authToken = (await this.getAuthToken())?.trim() || null;
+      if (authToken) break;
       await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
     }
-    if (!clerkToken) throw new Error("Sign in to connect");
+    if (!authToken) throw new Error("Missing local-shell token");
 
     const headers = new Headers();
-    headers.set("Authorization", `Bearer ${clerkToken}`);
+    headers.set("Authorization", `Bearer ${authToken}`);
     const response = await fetch(this.endpoint("powersync/token"), {
       method: "GET",
       headers,
@@ -84,8 +84,13 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
       }),
     });
     if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.warn(
+        `[mobile] PowerSync upload failed (${response.status}) mutation=${mutationId}`,
+        detail.slice(0, 240),
+      );
       throw new Error(
-        `PowerSync upload failed (${response.status}): ${await response.text()}`,
+        `PowerSync upload failed (${response.status}): ${detail}`,
       );
     }
     await batch.complete();
@@ -131,8 +136,9 @@ export function createPowerSyncDatabase(
       : new OPSqliteOpenFactory({
           dbFilename,
           sqliteOptions: {
-            // PowerSync RN defaults to ~50MB; keep explicit for tuning.
-            cacheSizeKb: 50 * 1024,
+            // PowerSync RN defaults to ~50MB; lower to reduce iOS jetsam risk
+            // on large workspaces with many concurrent watches.
+            cacheSizeKb: 12 * 1024,
           },
         }),
     // Avoid aggressive internal reconnect while native threads are scarce.

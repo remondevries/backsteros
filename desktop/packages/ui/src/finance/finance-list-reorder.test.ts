@@ -17,7 +17,7 @@ import {
   financeCategoryListingGroupKey,
   financeCategoryParentGroupKey,
   goalReorderPatches,
-} from "../../dist/finance/finance-list-reorder.js";
+} from "./finance-list-reorder.js";
 
 function goal(
   id: string,

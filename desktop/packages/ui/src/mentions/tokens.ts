@@ -9,7 +9,7 @@ import { getEmailItemHref } from "../email/email.js";
 import { encodeTaskSlug, getInboxTaskRouteHref } from "../inbox/inbox-items.js";
 import { parseLetterSlug } from "../letters/letters.js";
 import { resolveScopedLetterDetailHref } from "../letters/letter-route-scope.js";
-import { getScopedProjectLetterHref, getScopedProjectTaskHref } from "../projects/project-route-scope.js";
+import { getScopedProjectTaskHref } from "../projects/project-route-scope.js";
 import { getProjectDocumentHref } from "../projects/project-sections.js";
 import {
   formatContactDisplayId,

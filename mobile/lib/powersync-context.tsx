@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/clerk-expo";
 import { PowerSyncContext } from "@powersync/react-native";
 import type { PowerSyncDatabase } from "@powersync/react-native";
 import {
@@ -14,6 +13,10 @@ import {
 
 import { useMobileCoreApiUrl } from "./api-url-context";
 import { getOrCreateDeviceId } from "./device-id";
+import {
+  createMobileTokenProvider,
+  LOCAL_SHELL_USER_ID,
+} from "./local-shell-auth";
 import {
   BacksterPowerSyncConnector,
   createPowerSyncDatabase,
@@ -95,7 +98,8 @@ type SyncState = {
     values: Record<string, unknown>,
     id?: string,
   ) => Promise<string>;
-  flushCrudUpload: () => Promise<void>;
+  /** @returns true if at least one CRUD batch was uploaded */
+  flushCrudUpload: () => Promise<boolean>;
   retry: () => Promise<void>;
 };
 
@@ -167,15 +171,12 @@ async function closeDatabase(
 }
 
 function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
-  const { isLoaded, userId, sessionId, getToken } = useAuth();
+  const userId = LOCAL_SHELL_USER_ID;
   const { localApiUrl, coreMode } = useMobileCoreApiUrl();
   const preferRestWrites = coreMode === "cloud";
+  const getToken = useMemo(() => createMobileTokenProvider(), []);
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
-  // Clerk session id string can churn; only react to presence.
-  const hasSession = Boolean(sessionId);
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
 
   const [database, setDatabase] = useState<PowerSyncDatabase | null>(null);
   const [initError, setInitError] = useState<Error | null>(null);
@@ -195,6 +196,8 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   const transitionRef = useRef(Promise.resolve());
   const lastRetryAtRef = useRef(0);
   const generationRef = useRef(0);
+  /** Circuit breaker: limit full reconnect storms within a rolling window. */
+  const reconnectWindowRef = useRef({ startedAt: 0, count: 0 });
 
   function flagsFromStatus(nextStatus: {
     hasSynced?: boolean | null;
@@ -213,15 +216,16 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (!isLoaded || !userId || !hasSession) return;
-
     let cancelled = false;
     const generation = ++generationRef.current;
     const userChanged =
       identityRef.current !== null && identityRef.current !== userId;
 
+    // Always drop the React DB handle before closing native SQLite. Screens hold
+    // live `watch()` subscriptions via `useLocalQuery`; closing while they still
+    // see a truthy `database` is a use-after-close native crash path.
+    setDatabase(null);
     if (userChanged) {
-      setDatabase(null);
       setInitError(null);
       setRestFallbackAllowed(false);
       setSyncFlags({
@@ -230,6 +234,12 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
         connecting: false,
         lastSyncedAtMs: null,
       });
+    } else {
+      setSyncFlags((prev) => ({
+        ...prev,
+        connected: false,
+        connecting: true,
+      }));
     }
 
     console.info(
@@ -239,6 +249,13 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     transitionRef.current = transitionRef.current.then(async () => {
       if (cancelled || generation !== generationRef.current) return;
 
+      // Yield a frame so watch effects observe `database === null` and abort
+      // before OP-SQLite teardown.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      if (cancelled || generation !== generationRef.current) return;
+
       const previous = databaseRef.current;
       databaseRef.current = null;
       connectorRef.current = null;
@@ -246,13 +263,6 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
         await closeDatabase(previous, userChanged);
       }
       if (cancelled || generation !== generationRef.current) return;
-
-      if (!sessionIdRef.current) {
-        identityRef.current = null;
-        setDatabase(null);
-        setInitError(null);
-        return;
-      }
 
       identityRef.current = userId;
 
@@ -265,7 +275,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
           localApiUrl,
           async () => {
             try {
-              const token = await getTokenRef.current({ skipCache: true });
+              const token = await getTokenRef.current();
               if (typeof token === "string" && token.trim()) return token.trim();
             } catch {
               /* retry loop in connector */
@@ -321,6 +331,18 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
             console.info(
               `[mobile] PowerSync connected (${forceSqlJs ? "sqljs" : "op-sqlite"})`,
             );
+            try {
+              for (let i = 0; i < 50; i++) {
+                const pending = await next.getCrudBatch();
+                if (!pending) break;
+                await connector.uploadData(next);
+              }
+            } catch (flushReason) {
+              console.warn(
+                "[mobile] PowerSync post-connect CRUD flush failed",
+                flushReason,
+              );
+            }
             return next;
           } catch (connectReason) {
             // Keep the local DB (desktop parity). REST fallback is only needed
@@ -390,14 +412,35 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      // Drop the React handle immediately so watches abort; native close is
+      // serialized on the transition queue (next effect or idle close below).
+      setDatabase(null);
+      const closing = databaseRef.current;
+      databaseRef.current = null;
+      connectorRef.current = null;
+      if (closing) {
+        transitionRef.current = transitionRef.current.then(async () => {
+          await closeDatabase(closing, false);
+        });
+      }
     };
-    // sessionId string intentionally omitted — only hasSession (boolean).
-    // getToken omitted — Clerk often returns a new function identity each render.
-  }, [hasSession, isLoaded, localApiUrl, reconnectNonce, userId]);
+    // Token provider is stable (local-shell); do not depend on its identity.
+  }, [localApiUrl, reconnectNonce, userId]);
 
   const retry = useCallback(async () => {
     const now = Date.now();
     if (now - lastRetryAtRef.current < 4_000) return;
+    const window = reconnectWindowRef.current;
+    if (now - window.startedAt > 60_000) {
+      reconnectWindowRef.current = { startedAt: now, count: 0 };
+    }
+    if (reconnectWindowRef.current.count >= 4) {
+      console.warn(
+        "[mobile] PowerSync reconnect circuit open — serving cache / REST until window resets",
+      );
+      return;
+    }
+    reconnectWindowRef.current.count += 1;
     lastRetryAtRef.current = now;
     setInitError(null);
     setReconnectNonce((n) => n + 1);
@@ -525,7 +568,16 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     if (!db || !connector) {
       throw new Error("Offline database is not ready");
     }
-    await connector.uploadData(db);
+    // Drain the queue (SDK auto-upload also loops; one-shot flush is not enough
+    // when several CRUD rows are pending).
+    let uploaded = false;
+    for (let i = 0; i < 50; i++) {
+      const pending = await db.getCrudBatch();
+      if (!pending) return uploaded;
+      await connector.uploadData(db);
+      uploaded = true;
+    }
+    return uploaded;
   }, []);
 
   const sqliteReady = Boolean(database?.ready);
@@ -545,15 +597,11 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
       setRestFallbackAllowed(true);
       return;
     }
-    if (!isLoaded || !userId || !sessionId) {
-      setRestFallbackAllowed(false);
-      return;
-    }
     const timer = setTimeout(() => {
       setRestFallbackAllowed(true);
     }, REST_FALLBACK_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [initError, isLoaded, ready, sessionId, userId]);
+  }, [initError, ready]);
 
   const value = useMemo<SyncState>(() => {
     let syncStatus: PowerSyncStatus = "idle";
@@ -561,13 +609,7 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     const errorHint = initError
       ? initError.message.replace(/\s+/g, " ").slice(0, 120)
       : null;
-    if (!isLoaded) {
-      syncStatus = "connecting";
-      message = "Loading session…";
-    } else if (!userId || !sessionId) {
-      syncStatus = "unauthenticated";
-      message = "Sign in to sync";
-    } else if (!ready && initError) {
+    if (!ready && initError) {
       syncStatus = "error";
       message = errorHint
         ? `PowerSync unavailable (${errorHint})`
@@ -617,7 +659,6 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     database,
     flushCrudUpload,
     initError,
-    isLoaded,
     patchContact,
     patchDocument,
     patchHabit,
@@ -632,13 +673,11 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
     ready,
     restFallbackAllowed,
     retry,
-    sessionId,
     sqliteReady,
     syncFlags.connected,
     syncFlags.connecting,
     syncFlags.hasSynced,
     syncFlags.lastSyncedAtMs,
-    userId,
   ]);
 
   if (!database) {
@@ -659,20 +698,6 @@ function AuthenticatedPowerSyncProvider({ children }: { children: ReactNode }) {
 }
 
 export function PowerSyncProvider({ children }: { children: ReactNode }) {
-  const { isSignedIn } = useAuth();
-  if (!isSignedIn) {
-    return (
-      <MobileSyncContext.Provider
-        value={{
-          ...idleState,
-          status: "unauthenticated",
-          message: "Sign in to sync",
-        }}
-      >
-        {children}
-      </MobileSyncContext.Provider>
-    );
-  }
   return (
     <AuthenticatedPowerSyncProvider>{children}</AuthenticatedPowerSyncProvider>
   );

@@ -63,12 +63,26 @@ console.log(
   "[build-totem] Compiling @briangaoo/totem (GitHub source has no prebuilt dist)…",
 );
 
+/**
+ * Whoop is an optional integration (loaded lazily at runtime with a clear
+ * error when dist/ is missing). On CI the nested `npm install` is flaky under
+ * pnpm's layout, so fail soft there instead of breaking the whole install.
+ */
+function fail(message, status) {
+  if (process.env.CI) {
+    console.warn(`[build-totem] ${message} — skipping on CI (Whoop disabled)`);
+    process.exit(0);
+  }
+  console.error(`[build-totem] ${message}`);
+  process.exit(status ?? 1);
+}
+
 const install = spawnSync("npm", ["install"], {
   cwd: totemDir,
   stdio: "inherit",
 });
 if (install.status !== 0) {
-  process.exit(install.status ?? 1);
+  fail("npm install failed", install.status);
 }
 
 const compile = spawnSync("npx", ["tsc"], {
@@ -76,12 +90,11 @@ const compile = spawnSync("npx", ["tsc"], {
   stdio: "inherit",
 });
 if (compile.status !== 0) {
-  process.exit(compile.status ?? 1);
+  fail("tsc failed", compile.status);
 }
 
 if (!existsSync(cognitoDist)) {
-  console.error("[build-totem] compile finished but dist/whoop/cognito.js is missing");
-  process.exit(1);
+  fail("compile finished but dist/whoop/cognito.js is missing", 1);
 }
 
 console.log("[build-totem] done");

@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
 import { shouldHandleClearSelectionShortcut } from "./list-clear-selection-shortcut.js";
+
+// Editable-target guards use `instanceof HTMLElement`; node:test has no DOM.
+const previousHTMLElement = globalThis.HTMLElement;
+before(() => {
+  globalThis.HTMLElement = class HTMLElement {} as unknown as typeof HTMLElement;
+});
+after(() => {
+  globalThis.HTMLElement = previousHTMLElement;
+});
 
 function keyEvent(
   overrides: Partial<

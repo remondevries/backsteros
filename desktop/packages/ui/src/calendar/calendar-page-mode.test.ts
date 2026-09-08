@@ -7,7 +7,7 @@ import {
   parseCalendarPageModeParam,
   readCalendarPageModeFromSearch,
   resolveCalendarPageModeFromShortcutKey,
-} from "../../dist/calendar/calendar-page-mode.js";
+} from "./calendar-page-mode.js";
 
 test("DEFAULT_CALENDAR_PAGE_MODE is calendar grid", () => {
   assert.equal(DEFAULT_CALENDAR_PAGE_MODE, "calendar");

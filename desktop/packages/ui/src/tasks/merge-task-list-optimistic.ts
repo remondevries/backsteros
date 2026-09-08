@@ -5,6 +5,8 @@ export type TaskListOptimisticPatch = {
   status?: string;
   priority?: number;
   dueDate?: number | null;
+  number?: number | null;
+  projectId?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   assigneeId?: string | null;
@@ -17,6 +19,8 @@ type TaskListOptimisticRow = {
   status: string;
   priority?: number;
   dueDate?: number | Date | null;
+  number?: number | null;
+  projectId?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   assigneeId?: string | null;
@@ -86,6 +90,22 @@ export function pruneConfirmedTaskOptimisticPatches<
       dueDateMs(serverTask.dueDate) === kept.dueDate
     ) {
       delete kept.dueDate;
+      changed = true;
+    }
+
+    if (
+      kept.number !== undefined &&
+      (serverTask.number ?? null) === kept.number
+    ) {
+      delete kept.number;
+      changed = true;
+    }
+
+    if (
+      kept.projectId !== undefined &&
+      (serverTask.projectId ?? null) === kept.projectId
+    ) {
+      delete kept.projectId;
       changed = true;
     }
 

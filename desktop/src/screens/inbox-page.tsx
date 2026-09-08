@@ -5,6 +5,7 @@ import {
   RegisterEntityDeleteAction,
   RegisterEntityDuplicateAction,
   TaskDetailView,
+  TaskLinkedCommitSection,
   buildAssigneeDropdownOptions,
   buildInboxTaskListItem,
   buildOrganizationDropdownOptions,
@@ -30,6 +31,7 @@ import {
   useDesktopAvatarSrcMap,
   withAvatarSrc,
 } from "../lib/avatar-src";
+import { useDesktopApi } from "../lib/api-context";
 import { usePostTaskTimerActivity } from "../lib/use-post-task-timer-activity";
 import { useTaskDescriptionImages } from "../lib/task-description-images";
 import { useDesktopTaskDescription } from "../lib/use-task-description";
@@ -126,6 +128,11 @@ function InboxPageBody() {
   const { contacts, organizations } = useDesktopWorkspacePeople();
   const { projects, letters } = useDesktopWorkspaceProjects();
   const workspace = useDesktopWorkspaceActions();
+  const { client } = useDesktopApi();
+  const requestJson = useCallback(
+    <T,>(path: string, init?: RequestInit) => client.requestJson<T>(path, init),
+    [client],
+  );
   const agentMail = useAgentMail();
   const { unpinInboxListItem } = useInboxListSessionPin();
   const documentLinkOptions = useMemo(
@@ -145,6 +152,14 @@ function InboxPageBody() {
   const [movedNotice, setMovedNotice] = useState<MovedToProjectNotice | null>(
     null);
   const [activityFeedBump, setActivityFeedBump] = useState(0);
+  const [fetchedLinkedCommitShas, setFetchedLinkedCommitShas] = useState<
+    string[]
+  >([]);
+  const [linkedCommitShasOverride, setLinkedCommitShasOverride] = useState<
+    string[] | null
+  >(null);
+  const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
+  const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
 
   const firstInboxHref = getFirstInboxItemHref(inboxItems);
   const firstInboxItemId =
@@ -233,7 +248,43 @@ function InboxPageBody() {
 
   useEffect(() => {
     setMovedNotice(null);
+    setActiveCommitSha(null);
+    setLinkedCommitShasOverride(null);
   }, [itemId]);
+
+  // When PowerSync list lag drops `linkedCommitShas` (e.g. CLI link), hydrate
+  // from REST so Changes stay visible — same as task page.
+  useEffect(() => {
+    if (!selectedTask?.id) {
+      setFetchedLinkedCommitShas([]);
+      setLinkedCommitShasOverride(null);
+      return;
+    }
+    const taskId = selectedTask.id;
+    setLinkedCommitShasOverride(null);
+    let cancelled = false;
+    void client
+      .requestJson<{ linkedCommitShas?: string[] | null }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+      )
+      .then((row) => {
+        if (cancelled) return;
+        const shas = Array.isArray(row.linkedCommitShas)
+          ? row.linkedCommitShas.filter(
+              (sha): sha is string =>
+                typeof sha === "string" &&
+                /^[0-9a-fA-F]{7,64}$/.test(sha.trim()),
+            )
+          : [];
+        setFetchedLinkedCommitShas(shas);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedLinkedCommitShas([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, selectedTask?.id]);
 
   const contactAvatarSrc = useDesktopAvatarSrcMap(
     "contact",
@@ -327,19 +378,35 @@ function InboxPageBody() {
       const nextProject = next
         ? projects.find((entry) => entry.key === next) ?? null
         : null;
-      void workspace.patchTask(selectedTask.id, {
-        projectId: nextProject?.id ?? null,
-        inbox: !nextProject,
-        // Keep triage until the user explicitly changes status.
-        ...(nextProject ? {} : { status: "triage" }),
-      });
-      if (nextProject) {
-        setMovedNotice({
-          projectKey: nextProject.key,
-          projectName: nextProject.name,
-          taskNumber: selectedTask.number,
+      void workspace
+        .patchTask(selectedTask.id, {
+          projectId: nextProject?.id ?? null,
+          inbox: !nextProject,
+          // Keep triage until the user explicitly changes status.
+          ...(nextProject ? {} : { status: "triage" }),
+        })
+        .then((result) => {
+          if (!nextProject) {
+            setMovedNotice(null);
+            return;
+          }
+          const taskNumber =
+            typeof result?.number === "number" && result.number > 0
+              ? result.number
+              : selectedTask.number != null && selectedTask.number > 0
+                ? selectedTask.number
+                : null;
+          if (taskNumber == null) {
+            setMovedNotice(null);
+            return;
+          }
+          setMovedNotice({
+            projectKey: nextProject.key,
+            projectName: nextProject.name,
+            taskNumber,
+          });
         });
-      } else {
+      if (!nextProject) {
         setMovedNotice(null);
       }
     },
@@ -375,12 +442,81 @@ function InboxPageBody() {
   const workingDirectory = project?.localWorkingDirectory ?? null;
   const hasProject = Boolean(project?.id ?? selectedTask.projectId);
   const statusDisabled = !hasProject;
+  const canLinkCommit =
+    project?.type === "codebase" &&
+    Boolean(project.id) &&
+    Boolean(project.githubRepository?.trim());
+  const linkedCommitShas = (() => {
+    if (linkedCommitShasOverride != null) {
+      return linkedCommitShasOverride;
+    }
+    const fromRecord = Array.isArray(selectedTaskRecord?.linkedCommitShas)
+      ? selectedTaskRecord!.linkedCommitShas!
+      : [];
+    const fromDetails = Array.isArray(taskDetails[selectedTask.id]?.linkedCommitShas)
+      ? taskDetails[selectedTask.id]!.linkedCommitShas!
+      : [];
+    const normalize = (values: string[]) =>
+      values
+        .filter(
+          (sha): sha is string =>
+            typeof sha === "string" && /^[0-9a-fA-F]{7,64}$/.test(sha.trim()),
+        )
+        .map((sha) => sha.trim());
+    const recordShas = normalize(fromRecord);
+    const detailShas = normalize(fromDetails);
+    const fetchedShas = normalize(fetchedLinkedCommitShas);
+    if (recordShas.length > 0) return recordShas;
+    if (detailShas.length > 0) return detailShas;
+    return fetchedShas;
+  })();
   const projectTaskHref =
     movedNotice != null
       ? getProjectTaskHref(movedNotice.projectKey, movedNotice.taskNumber)
       : project
         ? getProjectTaskHref(project.key, selectedTask.number)
         : null;
+
+  const linkedCommitPanel =
+    canLinkCommit && project
+      ? ({ hide }: { hide: () => void }) => (
+          <TaskLinkedCommitSection
+            projectId={project.id}
+            defaultBranch={null}
+            linkedCommitShas={linkedCommitShas}
+            activeSha={activeCommitSha}
+            onActiveShaChange={setActiveCommitSha}
+            openPickerRequest={openCommitPickerRequest}
+            requestJson={requestJson}
+            onHidePanel={hide}
+            onLinkCommit={async (sha) => {
+              const next = [
+                ...linkedCommitShas.filter(
+                  (entry) => entry.toLowerCase() !== sha.toLowerCase(),
+                ),
+                sha,
+              ].slice(0, 20);
+              setLinkedCommitShasOverride(next);
+              setFetchedLinkedCommitShas(next);
+              await workspace.patchTask(selectedTask.id, {
+                linkedCommitShas: next,
+              });
+              setActiveCommitSha(sha);
+            }}
+            onUnlinkCommit={async (sha) => {
+              const next = linkedCommitShas.filter(
+                (entry) => entry.toLowerCase() !== sha.toLowerCase(),
+              );
+              setLinkedCommitShasOverride(next);
+              setFetchedLinkedCommitShas(next);
+              await workspace.patchTask(selectedTask.id, {
+                linkedCommitShas: next,
+              });
+              setActiveCommitSha(next[next.length - 1] ?? null);
+            }}
+          />
+        )
+      : null;
 
   return (
     <>
@@ -393,7 +529,22 @@ function InboxPageBody() {
           />
         </>
       ) : null}
-      <DesktopTaskLayout>
+      <DesktopTaskLayout
+        key={`inbox-task-layout-${selectedTask.id}`}
+        taskId={selectedTask.id}
+        preferWideTaskPanel={!canLinkCommit}
+        sidePanel={linkedCommitPanel}
+        sidePanelSurfaces={linkedCommitShas.map((sha) => ({
+          id: sha,
+          label: sha.slice(0, 7),
+        }))}
+        sidePanelActiveSurfaceId={activeCommitSha}
+        onActivateSidePanelSurface={setActiveCommitSha}
+        sidePanelCanAddSurface={linkedCommitShas.length < 20}
+        onAddSidePanelSurface={() => {
+          setOpenCommitPickerRequest((n) => n + 1);
+        }}
+      >
       <TaskDetailView
         sectionLabel="Inbox"
         headerMeta={

@@ -15,7 +15,6 @@ import { resolveHistoryEntryDisplay } from "@backsteros/ui/navigation";
 import { CursorCreditsUsageBar } from "../components/cursor-credits-usage-bar";
 import { DesktopStatusBar } from "../components/desktop-status-bar";
 import { navigateToHref } from "../router/navigate-href";
-import { DesktopClerkProfileBridge } from "./app-shell-clerk";
 import { RouterLink } from "./app-shell-links";
 import { renderAppShellTabIcon } from "./app-shell-tab-icon";
 import type { useShellTabs } from "./use-shell-tabs";
@@ -69,38 +68,32 @@ function ShellChromeInner({
       onBack={() => navigateToHref(navigate, "/inbox")}
     />
   ) : (
-    <DesktopClerkProfileBridge>
-      {({ onAccount, onSignOut }) => (
-        <ProductSidebar
-          pathname={pathname}
-          activePathname={sidebarActivePathname}
-          Link={RouterLink}
-          onBack={history.goBack}
-          onForward={history.goForward}
-          canGoBack={history.canGoBack}
-          canGoForward={history.canGoForward}
-          footer={<CursorCreditsUsageBar />}
-          inboxIndicatorTone={inboxSidebarIndicator}
-          recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
-            const display = resolveHistoryEntryDisplay(page.href, page.title);
-            return {
-              id: page.href,
-              href: page.href,
-              title: display.title,
-              badge: display.badgeLabel,
-              icon: createElement(HistoryEntryIcon, {
-                display,
-                icon: page.icon,
-              }),
-            };
-          })}
-          onSelectRecentPage={(href) => history.navigateToHistoryEntry(href)}
-          onCompose={onComposeOpen}
-          onAccount={onAccount}
-          onSignOut={onSignOut}
-        />
-      )}
-    </DesktopClerkProfileBridge>
+    <ProductSidebar
+      pathname={pathname}
+      activePathname={sidebarActivePathname}
+      Link={RouterLink}
+      onBack={history.goBack}
+      onForward={history.goForward}
+      canGoBack={history.canGoBack}
+      canGoForward={history.canGoForward}
+      footer={<CursorCreditsUsageBar />}
+      inboxIndicatorTone={inboxSidebarIndicator}
+      recentPages={history.recentPages.map((page): ProductSidebarRecentPage => {
+        const display = resolveHistoryEntryDisplay(page.href, page.title);
+        return {
+          id: page.href,
+          href: page.href,
+          title: display.title,
+          badge: display.badgeLabel,
+          icon: createElement(HistoryEntryIcon, {
+            display,
+            icon: page.icon,
+          }),
+        };
+      })}
+      onSelectRecentPage={(href) => history.navigateToHistoryEntry(href)}
+      onCompose={onComposeOpen}
+    />
   );
 
   return (

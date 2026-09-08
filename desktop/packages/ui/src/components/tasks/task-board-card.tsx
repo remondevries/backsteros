@@ -31,7 +31,8 @@ export type TaskBoardCardTask = {
   projectKey?: string | null;
   ownerInitials?: string | null;
   assigneeId?: string | null;
-  listKind?: "task" | "email";
+  /** Mirrors `TaskItemRowTask.listKind`; the card only styles `"email"`. */
+  listKind?: "task" | "email" | "meeting";
   emailPartyLabel?: string | null;
   emailMailboxLabel?: string | null;
   emailMailboxAvatarSrc?: string | null;
@@ -80,6 +81,7 @@ export function TaskBoardCardComponent({
     {
       number: task.number,
       projectId: task.projectId ?? null,
+      projectKey: task.projectKey,
     },
     task.projectKey,
   );

@@ -26,3 +26,15 @@ export function shouldSkipRestEntityWrite(
   if (powerSync.preferRestWrites) return false;
   return Boolean(powerSync.ready && powerSync.connected);
 }
+
+/**
+ * After a local write + {@link flushCrudUpload}, keep skipping REST only when
+ * at least one CRUD batch was uploaded (`true`). `false` means the queue was
+ * empty (UPDATE no-op or already drained) — fall through to REST.
+ * `void`/`undefined` keeps prior create-path callers that ignore the return.
+ */
+export function shouldSkipRestAfterCrudFlush(
+  uploaded: boolean | void,
+): boolean {
+  return uploaded !== false;
+}

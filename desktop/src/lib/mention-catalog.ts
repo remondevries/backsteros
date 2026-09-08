@@ -265,7 +265,7 @@ export function buildMentionCatalogFromWorkspace(
   );
 
   const contacts: MentionCatalogContact[] = workspace.contacts
-    .map((contact) => {
+    .map((contact): MentionCatalogContact | null => {
       // Prefer stable slug key; fall back to id so contacts without a key
       // still appear in @ mention results (href resolution accepts id).
       const key = (contact.key?.trim() || contact.id).trim();
@@ -317,7 +317,7 @@ export function buildMentionCatalogFromWorkspace(
     .filter((contact): contact is MentionCatalogContact => contact != null);
 
   const organizations: MentionCatalogOrganization[] = workspace.organizations
-    .map((organization) => {
+    .map((organization): MentionCatalogOrganization | null => {
       const key = (organization.key?.trim() || organization.id).trim();
       if (!key) return null;
       return {

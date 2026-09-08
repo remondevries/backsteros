@@ -18,6 +18,7 @@ import {
   TasksTodayHabitsChips,
   collapseHabitItemsByHabitId,
 } from "../../../components/tasks-today-habits-chips";
+import { useCalendarTimeZone } from "../../../lib/calendar-timezone";
 import { useAgentMail } from "../../../lib/agentmail-context";
 import { formatEmailDisplayId } from "../../../lib/email-display-id";
 import {
@@ -54,6 +55,7 @@ import { ui } from "../../../lib/ui";
 import { useLocalQuery } from "../../../lib/use-local-query";
 import { useMobileApiClient } from "../../../lib/use-mobile-api-client";
 import { resolveSyncedOrRestRows } from "../../../lib/resolve-synced-or-rest-rows";
+import { fillMissingDueDatesFromApi } from "../../../lib/fill-missing-due-dates";
 import { useRestListHydration } from "../../../lib/use-rest-list-hydration";
 import { useRestReloadFlags } from "../../../lib/use-rest-reload-flags";
 import { useSectionTabShortcuts } from "../../../lib/use-section-tab-shortcuts";
@@ -86,6 +88,7 @@ export default function TasksScreen() {
   const navigation = useNavigation();
   const { formatNetworkError, isNetworkError } = useMobileCoreApiUrl();
   const powerSync = useMobilePowerSync();
+  const calendarTimeZone = useCalendarTimeZone();
   const [dueFilter, setDueFilterState] = useState<TasksDueFilter>(
     getRememberedTasksDueFilter,
   );
@@ -171,10 +174,17 @@ export default function TasksScreen() {
     markHydrated,
   } = useRestReloadFlags();
 
-  const localRows = useMemo(
-    () => (syncedTasks ?? []).map((row) => withDisplayId(row)),
-    [syncedTasks],
-  );
+  const localRows = useMemo(() => {
+    const synced = (syncedTasks ?? []).map((row) => withDisplayId(row));
+    const filled = fillMissingDueDatesFromApi(synced, restRows);
+    if (!restRows?.length) return filled;
+    // Include API rows PowerSync has not caught up with yet.
+    const localIds = new Set(filled.map((row) => row.id));
+    return [
+      ...filled,
+      ...restRows.filter((row) => !localIds.has(row.id)),
+    ];
+  }, [restRows, syncedTasks]);
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
@@ -209,17 +219,22 @@ export default function TasksScreen() {
     }
   }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated, refreshHabitRollover]);
 
-  useRestListHydration(reloadRest, true, localRows.length > 0);
-
-  const allRows = useMemo(
-    () =>
-      resolveSyncedOrRestRows({
-        localRows,
-        restRows,
-        connected: powerSync.connected,
-      }),
-    [localRows, powerSync.connected, restRows],
+  useRestListHydration(
+    reloadRest,
+    true,
+    // Always allow one REST hydrate while connected so due_date (and missing
+    // rows) match the API — same reason as Inbox membership correction.
+    false,
   );
+
+  const allRows = useMemo(() => {
+    if (restRows != null) return localRows;
+    return resolveSyncedOrRestRows({
+      localRows,
+      restRows,
+      connected: powerSync.connected,
+    });
+  }, [localRows, powerSync.connected, restRows]);
 
   // Email thread rows alongside tasks — desktop Tasks page parity. The due
   // filter applies the same way (emails without a due date show under All).
@@ -246,8 +261,14 @@ export default function TasksScreen() {
   );
 
   const rows = useMemo(
-    () => filterTasksByDueFilter([...allRows, ...emailRows], dueFilter),
-    [allRows, dueFilter, emailRows],
+    () =>
+      filterTasksByDueFilter(
+        [...allRows, ...emailRows],
+        dueFilter,
+        undefined,
+        calendarTimeZone,
+      ),
+    [allRows, calendarTimeZone, dueFilter, emailRows],
   );
 
   const todayHabits = useMemo((): HabitCheckChipItem[] => {

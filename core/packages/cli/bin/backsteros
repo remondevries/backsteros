@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Launcher for @backsteros/cli — installed to ~/.local/bin/backsteros
+set -euo pipefail
+
+ROOT="${BACKSTEROS_ROOT:-$HOME/code/backsteros}"
+CLI="$ROOT/core/packages/cli/dist/index.js"
+
+if [[ ! -f "$CLI" ]]; then
+  echo "backsteros: missing built CLI at:" >&2
+  echo "  $CLI" >&2
+  echo "Build with:" >&2
+  echo "  pnpm --dir \"$ROOT\" --filter @backsteros/cli build" >&2
+  exit 1
+fi
+
+exec node "$CLI" "$@"

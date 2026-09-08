@@ -163,7 +163,7 @@ export function startEmailInboxEventsLoop(input: {
           onUpdated: input.onUpdated,
         });
         attempt = 0;
-      } catch (error) {
+      } catch {
         if (input.signal.aborted) return;
         attempt += 1;
         // Prefer quick retries after WebKit "Load failed" (core restart / dropped stream).

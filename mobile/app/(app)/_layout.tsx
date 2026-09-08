@@ -1,6 +1,5 @@
-import { Redirect, Tabs } from "expo-router";
-import { useAuth } from "@clerk/clerk-expo";
-import { ActivityIndicator, View } from "react-native";
+import { Tabs } from "expo-router";
+import { View } from "react-native";
 
 import {
   FloatingTabBar,
@@ -231,20 +230,6 @@ function SignedInTabs() {
 }
 
 export default function AppLayout() {
-  const { isLoaded, isSignedIn } = useAuth();
-
-  if (!isLoaded) {
-    return (
-      <View style={ui.centered}>
-        <ActivityIndicator color={colors.muted} />
-      </View>
-    );
-  }
-
-  if (!isSignedIn) {
-    return <Redirect href="/sign-in" />;
-  }
-
   return (
     <CommandPaletteProvider>
       <CommandPaletteShortcutListener />

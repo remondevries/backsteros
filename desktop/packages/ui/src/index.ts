@@ -62,6 +62,7 @@ export {
 
 export {
   INBOX_TASK_KEY,
+  coerceTaskDisplayNumber,
   formatTaskDisplayId,
   getTaskDisplayId,
   type TaskDisplayIdSource,
@@ -149,8 +150,6 @@ export {
   SidebarChevronIcon,
   SidebarHistoryClockIcon,
   SidebarComposeIcon,
-  SidebarAccountIcon,
-  SidebarLogoutIcon,
   SyncStatusIdleIcon,
   SearchNavIcon,
 } from "./components/shell/sidebar-nav-icons.js";

@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FocusEvent,
-} from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FocusEvent } from "react";
 
 import {
   formatTrackedTimeInput,
@@ -12,6 +6,17 @@ import {
   resolveTrackedDurationSeconds,
   trackedDurationSecondsFromElapsed,
 } from "./trackedTime";
+import {
+  bindTrackedTimerCallbacks,
+  checkpointTrackedTimers,
+  getTrackedTimerElapsedSeconds,
+  getTrackedTimerVersion,
+  isTrackedTimerRunning,
+  pauseTrackedTimer,
+  startTrackedTimer,
+  subscribeTrackedTimers,
+  syncTrackedTimerDuration,
+} from "./trackedTimerStore";
 
 function TrackedTimePlayIcon() {
   return (
@@ -61,10 +66,7 @@ function splitTrackedSeconds(totalSeconds: number): [string, string, string] {
   ];
 }
 
-function TrackedTimePillDigits(props: {
-  readonly totalSeconds: number;
-  readonly live?: boolean;
-}) {
+function TrackedTimePillDigits(props: { readonly totalSeconds: number; readonly live?: boolean }) {
   const [hours, mins, secs] = splitTrackedSeconds(props.totalSeconds);
   return (
     <span
@@ -96,21 +98,23 @@ function TrackedTimePillDigits(props: {
 
 /**
  * Inline tracked-time pill matching BacksterOS desktop `TrackedTimeField`
- * (pill / inline-chip variant) with a local play/pause session.
+ * (pill / inline-chip variant).
+ *
+ * Running sessions live in `trackedTimerStore` so closing the task rail or
+ * navigating away does not pause the timer.
  */
 export function BacksterosTrackedTimeField(props: {
+  readonly timerKey: string;
   readonly trackedDurationSeconds?: number | null;
   readonly trackedMinutes?: number | null;
   readonly disabled?: boolean;
   readonly label?: string;
   readonly onTrackedDurationSecondsChange?: (seconds: number | null) => void;
-  readonly onTimerSessionChange?: (
-    action: "start" | "pause",
-    seconds?: number | null,
-  ) => void;
+  readonly onTimerSessionChange?: (action: "start" | "pause", seconds?: number | null) => void;
 }) {
   const label = props.label ?? "Time tracked";
   const disabled = props.disabled ?? false;
+  const timerKey = props.timerKey;
   const trackedDurationSeconds = props.trackedDurationSeconds ?? null;
   const trackedMinutes = props.trackedMinutes ?? null;
 
@@ -123,14 +127,8 @@ export function BacksterosTrackedTimeField(props: {
     trackedDurationSeconds: effectiveTrackedDurationSeconds,
     trackedMinutes,
   });
-  const [draft, setDraft] = useState(() =>
-    formatTrackedTimeInput(displaySeconds),
-  );
+  const [draft, setDraft] = useState(() => formatTrackedTimeInput(displaySeconds));
   const [isEditingTime, setIsEditingTime] = useState(false);
-  const [localRunning, setLocalRunning] = useState(false);
-  const [, setLocalTick] = useState(0);
-  const baseSecondsRef = useRef(0);
-  const sessionStartRef = useRef<number | null>(null);
   const timeInputRef = useRef<HTMLInputElement>(null);
   const canEdit = Boolean(props.onTrackedDurationSecondsChange) && !disabled;
 
@@ -139,30 +137,45 @@ export function BacksterosTrackedTimeField(props: {
   const onTimerSessionChangeRef = useRef(props.onTimerSessionChange);
   onTimerSessionChangeRef.current = props.onTimerSessionChange;
 
+  useSyncExternalStore(subscribeTrackedTimers, getTrackedTimerVersion, getTrackedTimerVersion);
+
+  const isRunning = isTrackedTimerRunning(timerKey);
+  const timerElapsedSeconds = isRunning
+    ? getTrackedTimerElapsedSeconds(timerKey)
+    : getTrackedTimerElapsedSeconds(timerKey) || (displaySeconds ?? 0);
+  const elapsedSeconds = isRunning ? timerElapsedSeconds : 0;
+  const pausedSeconds = !isRunning && timerElapsedSeconds > 0 ? timerElapsedSeconds : null;
+  const settledSeconds = pendingSeconds ?? pausedSeconds ?? displaySeconds ?? 0;
+  const shownSeconds = isRunning ? elapsedSeconds : settledSeconds;
+
+  useEffect(() => {
+    const unbind = bindTrackedTimerCallbacks(timerKey, {
+      onPersist: (seconds) => {
+        if (seconds != null) setPendingSeconds(seconds);
+        onPersistRef.current?.(seconds);
+      },
+      onSessionChange: (action, seconds) => {
+        onTimerSessionChangeRef.current?.(action, seconds);
+      },
+    });
+    // Reattach after the rail remounts: soft-save elapsed without pausing.
+    if (isTrackedTimerRunning(timerKey)) {
+      checkpointTrackedTimers(true);
+    }
+    return unbind;
+  }, [timerKey]);
+
+  useEffect(() => {
+    if (isRunning) return;
+    syncTrackedTimerDuration(timerKey, effectiveTrackedDurationSeconds);
+  }, [effectiveTrackedDurationSeconds, isRunning, timerKey]);
+
   useEffect(() => {
     if (pendingSeconds == null) return;
-    if (
-      trackedDurationSeconds != null &&
-      trackedDurationSeconds >= pendingSeconds
-    ) {
+    if (trackedDurationSeconds != null && trackedDurationSeconds >= pendingSeconds) {
       setPendingSeconds(null);
     }
   }, [pendingSeconds, trackedDurationSeconds]);
-
-  const getLocalElapsedSeconds = useCallback(() => {
-    const base = baseSecondsRef.current;
-    if (!localRunning || sessionStartRef.current == null) return base;
-    return base + Math.floor((Date.now() - sessionStartRef.current) / 1000);
-  }, [localRunning]);
-
-  const timerElapsedSeconds = getLocalElapsedSeconds();
-  const isRunning = localRunning;
-  const elapsedSeconds = isRunning ? timerElapsedSeconds : 0;
-  const pausedSeconds =
-    !isRunning && timerElapsedSeconds > 0 ? timerElapsedSeconds : null;
-  const settledSeconds =
-    pendingSeconds ?? pausedSeconds ?? displaySeconds ?? 0;
-  const shownSeconds = isRunning ? elapsedSeconds : settledSeconds;
 
   useEffect(() => {
     if (isRunning) {
@@ -178,24 +191,6 @@ export function BacksterosTrackedTimeField(props: {
     timeInputRef.current?.select();
   }, [isEditingTime]);
 
-  useEffect(() => {
-    if (!localRunning) return;
-    const id = window.setInterval(() => setLocalTick((value) => value + 1), 1000);
-    return () => {
-      clearInterval(id);
-      if (sessionStartRef.current == null || !onPersistRef.current) {
-        return;
-      }
-      const elapsed = Math.floor((Date.now() - sessionStartRef.current) / 1000);
-      const totalSeconds = baseSecondsRef.current + elapsed;
-      const sessionSeconds = Math.max(0, elapsed);
-      sessionStartRef.current = null;
-      const seconds = trackedDurationSecondsFromElapsed(totalSeconds);
-      onPersistRef.current(seconds);
-      onTimerSessionChangeRef.current?.("pause", sessionSeconds);
-    };
-  }, [localRunning]);
-
   const commit = (raw: string) => {
     if (!props.onTrackedDurationSecondsChange || isRunning) return;
     const trimmed = raw.trim();
@@ -210,6 +205,7 @@ export function BacksterosTrackedTimeField(props: {
       return;
     }
     props.onTrackedDurationSecondsChange(parsed);
+    syncTrackedTimerDuration(timerKey, parsed);
     setDraft(formatTrackedTimeInput(parsed));
   };
 
@@ -221,19 +217,12 @@ export function BacksterosTrackedTimeField(props: {
   const handleToggleTimer = () => {
     if (!canEdit) return;
 
-    if (localRunning) {
-      const sessionSeconds =
-        sessionStartRef.current != null
-          ? Math.max(0, Math.floor((Date.now() - sessionStartRef.current) / 1000))
-          : 0;
-      const totalSeconds = getLocalElapsedSeconds();
-      sessionStartRef.current = null;
-      setLocalRunning(false);
-      const seconds = trackedDurationSecondsFromElapsed(totalSeconds);
+    if (isRunning) {
+      const paused = pauseTrackedTimer(timerKey);
+      if (!paused) return;
+      const seconds = trackedDurationSecondsFromElapsed(paused.totalSeconds);
       setPendingSeconds(seconds);
       setDraft(formatTrackedTimeInput(seconds));
-      props.onTrackedDurationSecondsChange?.(seconds);
-      onTimerSessionChangeRef.current?.("pause", sessionSeconds);
       return;
     }
 
@@ -242,15 +231,10 @@ export function BacksterosTrackedTimeField(props: {
       const parsed = parseTrackedTimeInput(draft);
       if (parsed != null) baseSeconds = parsed;
     }
-    baseSecondsRef.current = baseSeconds;
-    sessionStartRef.current = Date.now();
-    setLocalRunning(true);
-    onTimerSessionChangeRef.current?.("start");
+    startTrackedTimer(timerKey, baseSeconds);
   };
 
-  const inputValue = draft.trim()
-    ? draft
-    : formatTrackedTimeInput(settledSeconds);
+  const inputValue = draft.trim() ? draft : formatTrackedTimeInput(settledSeconds);
 
   const toggleButton = (
     <button

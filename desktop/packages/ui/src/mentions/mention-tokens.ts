@@ -110,7 +110,7 @@ function findNextTokenHit(markdown: string, from: number): TokenHit | null {
   const mentionMatch = MENTION_TOKEN_RE.exec(slice);
 
   // Rebuild named-link regex each call so lastIndex stays clean.
-  const namedLinkRe = /\[(?!@)([^\]\|\r\n]+)\|([^\]\r\n]+)\]/g;
+  const namedLinkRe = /\[(?!@)([^\]|\r\n]+)\|([^\]\r\n]+)\]/g;
   let namedHit: TokenHit | null = null;
   let namedMatch: RegExpExecArray | null;
   while ((namedMatch = namedLinkRe.exec(slice)) != null) {

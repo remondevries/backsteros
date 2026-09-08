@@ -8,7 +8,6 @@ import { DocumentIcon } from "../documents/document-icon.js";
 import { EntityAvatarIcon } from "../entity/entity-avatar-icon.js";
 import { EmailNavIcon } from "../shell/sidebar-nav-icons.js";
 import { LetterIcon } from "../letters/letter-icon.js";
-import { OrganizationIcon } from "../organizations/organization-icon.js";
 import { TaskStatusIcon } from "../tasks/task-status-icon.js";
 import type { TaskStatus } from "../../tasks/task-status.js";
 import type { MentionKind } from "../../mentions/mention-tokens.js";

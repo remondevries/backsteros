@@ -26,6 +26,7 @@ import {
 import { normalizePathname } from "../lib/use-escape-back-navigation";
 import { useMobilePowerSync } from "../lib/powersync-context";
 import { resolveSyncedOrRestRows } from "../lib/resolve-synced-or-rest-rows";
+import { fillMissingDueDatesFromApi } from "../lib/fill-missing-due-dates";
 import { INBOX_TASKS_WHERE_SQL } from "../lib/inbox-tasks-sql";
 import { TASK_LIST_SELECT } from "../lib/task-list-query";
 import { colors } from "../lib/theme";
@@ -117,6 +118,8 @@ type InboxSyncedRow = GroupedTaskRow & {
   contact_id?: string | null;
   project_key?: string | null;
   inbox?: boolean | number | null;
+  habit_id?: string | null;
+  inbox_updated_at?: string | null;
   agent_created_at?: string | null;
   agent_inbox_approved_at?: string | null;
 };
@@ -153,7 +156,11 @@ export function InboxListPane({
   const { data: syncedMeetings, isLoading: meetingsSyncLoading } =
     useLocalQuery<InboxMeetingSyncedRow>(INBOX_MEETINGS_SQL);
 
-  const [restRows, setRestRows] = useState<GroupedTaskRow[] | null>(null);
+  const [restRows, setRestRows] = useState<InboxSyncedRow[] | null>(null);
+  /** Full task snapshot — used to correct stale/missing local due dates. */
+  const [restDueSource, setRestDueSource] = useState<InboxSyncedRow[] | null>(
+    null,
+  );
   const [restError, setRestError] = useState<string | null>(null);
   const {
     restLoading,
@@ -163,28 +170,31 @@ export function InboxListPane({
     markHydrated,
   } = useRestReloadFlags();
 
-  const localRows = useMemo(
-    () =>
-      (syncedTasks ?? [])
-        .filter((row) =>
-          taskBelongsInInbox({
-            inbox: row.inbox,
-            status: row.status,
-            due_date: row.due_date,
-            agent_created_at: row.agent_created_at,
-            agent_inbox_approved_at: row.agent_inbox_approved_at,
-          }),
-        )
-        .map((row) => withDisplayId(row)),
-    [syncedTasks],
-  );
+  const localRows = useMemo(() => {
+    const filled = fillMissingDueDatesFromApi(syncedTasks ?? [], restDueSource);
+    return filled
+      .filter((row) =>
+        taskBelongsInInbox({
+          inbox: row.inbox,
+          status: row.status,
+          due_date: row.due_date,
+          agent_created_at: row.agent_created_at,
+          agent_inbox_approved_at: row.agent_inbox_approved_at,
+          inbox_updated_at: row.inbox_updated_at,
+          habit_id: row.habit_id,
+        }),
+      )
+      .map((row) => withDisplayId(row));
+  }, [restDueSource, syncedTasks]);
 
   const reloadRest = useCallback(async (opts?: { userPull?: boolean }) => {
     const userPull = beginReload(opts);
     setRestError(null);
     try {
+      // Full task list (not /inbox) so we can fill stale local due_date before
+      // membership filtering — desktop mergeLocalAndApi parity.
       const [tasksBody, projectsBody, contactsBody] = await Promise.all([
-        client.requestJson<{ tasks: Task[] }>("/api/v1/tasks/inbox"),
+        client.requestJson<{ tasks: Task[] }>("/api/v1/tasks"),
         client.requestJson<{ projects: Project[] }>("/api/v1/projects"),
         client
           .requestJson<{ contacts: Contact[] }>("/api/v1/contacts")
@@ -194,18 +204,28 @@ export function InboxListPane({
         (projectsBody.projects ?? []).map((project) => [project.id, project]),
       );
       const contactsById = contactsByIdFromList(contactsBody.contacts ?? []);
+      const mapped: InboxSyncedRow[] = (tasksBody.tasks ?? []).map((task) => ({
+        ...mapApiTaskToRow(task, projectsById, contactsById),
+        number: task.number,
+        project_id: task.projectId,
+        contact_id: task.contactId,
+        habit_id: task.habitId ?? null,
+        agent_created_at: task.agentCreatedAt ?? null,
+        agent_inbox_approved_at: task.agentInboxApprovedAt ?? null,
+      }));
+      setRestDueSource(mapped);
       setRestRows(
-        (tasksBody.tasks ?? [])
-          .filter((task) =>
-            taskBelongsInInbox({
-              inbox: task.inbox,
-              status: task.status,
-              dueDate: task.dueDate,
-              agentCreatedAt: task.agentCreatedAt,
-              agentInboxApprovedAt: task.agentInboxApprovedAt,
-            }),
-          )
-          .map((task) => mapApiTaskToRow(task, projectsById, contactsById)),
+        mapped.filter((row) =>
+          taskBelongsInInbox({
+            inbox: row.inbox,
+            status: row.status,
+            due_date: row.due_date,
+            agent_created_at: row.agent_created_at,
+            agent_inbox_approved_at: row.agent_inbox_approved_at,
+            habit_id: row.habit_id,
+            inbox_updated_at: row.inbox_updated_at,
+          }),
+        ),
       );
       markHydrated();
     } catch (reason) {
@@ -220,7 +240,13 @@ export function InboxListPane({
     }
   }, [beginReload, client, endReload, formatNetworkError, isNetworkError, markHydrated]);
 
-  useRestListHydration(reloadRest, true, localRows.length > 0);
+  useRestListHydration(
+    reloadRest,
+    true,
+    // Always allow one REST hydrate even while PowerSync is connected so
+    // due_date can be corrected before membership filtering (UTC/local skew).
+    false,
+  );
 
   const taskRows = useMemo(
     () =>

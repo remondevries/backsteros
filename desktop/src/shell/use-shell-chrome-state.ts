@@ -213,7 +213,9 @@ export function useShellBootEffects({
       void preloadShellRouteChunks();
       void preloadShellSidePanels();
     };
-    if ("requestIdleCallback" in window) {
+    // `"requestIdleCallback" in window` narrows `window` to `never` in the
+    // fallback branch (lib.dom always declares it) — use a typeof check.
+    if (typeof window.requestIdleCallback === "function") {
       const idleId = window.requestIdleCallback(preloadRest);
       return () => window.cancelIdleCallback(idleId);
     }

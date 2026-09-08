@@ -1143,7 +1143,7 @@ function renderParagraphWithMentions(
   while (index < segments.length) {
     const listItems: ReactNode[] = [];
     let listOrdered: boolean | null = null;
-    let listStart = index;
+    const listStart = index;
 
     while (index < segments.length) {
       const consumed = consumeListItem(segments, index, catalog, keyPrefix);

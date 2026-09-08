@@ -155,7 +155,7 @@ export function computeGoalSavedCents(
   if (startDay > today) return 0;
 
   const mode = normalizeSavingMode(goal.savingMode);
-  let periods = 0;
+  let periods: number;
   if (mode === "daily") {
     periods =
       Math.floor((today.getTime() - startDay.getTime()) / 86_400_000) + 1;

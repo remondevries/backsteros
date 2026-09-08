@@ -8,6 +8,8 @@
  * fill-missing helpers for detail / preview surfaces.
  */
 
+import { INBOX_TASKS_WHERE_SQL } from "./inbox-task-query";
+
 export const TASK_LIST_COLUMNS = [
   "id",
   "number",
@@ -28,7 +30,7 @@ export const TASK_LIST_COLUMNS = [
   "inbox",
   "links",
   "agent_chat_id",
-  "linked_commit_sha",
+  "linked_commit_shas",
   "habit_id",
   "agent_created_at",
   "agent_inbox_approved_at",
@@ -223,21 +225,7 @@ export const ALL_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE 
 
 export const TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (inbox = 0 OR inbox IS NULL) ORDER BY sort_order, updated_at DESC`;
 
-export const INBOX_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (
-           inbox = 1
-           OR (
-             status IN ('on_hold', 'in_review')
-             AND (
-               due_date IS NULL
-               OR date(due_date) <= date('now', 'localtime')
-             )
-           )
-           OR (
-             due_date IS NOT NULL
-             AND date(due_date) < date('now', 'localtime')
-             AND status NOT IN ('completed', 'canceled', 'duplicated')
-           )
-         ) ORDER BY sort_order, updated_at DESC`;
+export const INBOX_TASKS_LIST_SQL = `SELECT ${TASK_LIST_COLUMNS} FROM tasks WHERE deleted_at IS NULL AND (${INBOX_TASKS_WHERE_SQL}) ORDER BY sort_order, updated_at DESC`;
 
 export const PROJECTS_LIST_SQL = `SELECT ${PROJECT_LIST_COLUMNS} FROM projects WHERE deleted_at IS NULL ORDER BY sort_order, updated_at DESC`;
 

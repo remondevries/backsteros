@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { TaskLink } from "@backsteros/contracts";
 
 type TaskRowPatch = {
   title?: string | null;
@@ -16,6 +17,7 @@ type TaskRowPatch = {
   agent_created_at?: string | null;
   agent_inbox_approved_at?: string | null;
   tracked_duration_seconds?: number | null;
+  links?: TaskLink[] | string | null;
 };
 
 type Listener = () => void;
@@ -122,6 +124,8 @@ export function taskPatchToRowFields(
     } else if (key === "trackedDurationSeconds" || key === "tracked_duration_seconds") {
       patch.tracked_duration_seconds =
         typeof value === "number" ? value : value == null ? null : Number(value);
+    } else if (key === "links") {
+      patch.links = value as TaskLink[] | string | null;
     }
   }
   return patch;

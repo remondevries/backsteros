@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { groupTasksByStatus } from "../../dist/tasks/group-tasks-by-status.js";
+import { groupTasksByStatus } from "./group-tasks-by-status.js";
 
 describe("groupTasksByStatus", () => {
   it("sorts due-date columns newest-first", () => {

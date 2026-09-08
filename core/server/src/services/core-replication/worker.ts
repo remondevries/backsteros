@@ -31,41 +31,56 @@ async function pullTable(table: ReplicatedTable) {
 
   // Pull watermark is independent of push — advancing peer tip must not
   // skip local rows that are still older than the peer tip.
-  const cursor = await getReplicationCursor(table, "pull");
-  const url = new URL(`${config.peerUrl}/internal/core-replication/changes`);
-  url.searchParams.set("table", table);
-  url.searchParams.set("since", cursor.updatedAt);
-  url.searchParams.set("since_id", cursor.rowId);
+  let cursor = await getReplicationCursor(table, "pull");
+  let appliedTotal = 0;
+  let skippedTotal = 0;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  for (;;) {
+    const url = new URL(`${config.peerUrl}/internal/core-replication/changes`);
+    url.searchParams.set("table", table);
+    url.searchParams.set("since", cursor.updatedAt);
+    url.searchParams.set("since_id", cursor.rowId);
 
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: replicationHeaders(config.secret),
-      signal: controller.signal,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`pull ${table} failed (${response.status}): ${body}`);
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: replicationHeaders(config.secret),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`pull ${table} failed (${response.status}): ${body}`);
+      }
+
+      const payload = (await response.json()) as ReplicationChangesResponse;
+      if (payload.changes.length === 0) {
+        break;
+      }
+
+      const result = await applyRemoteChanges(table, payload.changes);
+      await setReplicationCursor(table, payload.cursor, "pull");
+      cursor = payload.cursor;
+      appliedTotal += result.applied;
+      skippedTotal += result.skipped;
+
+      if (payload.changes.length < PAGE_SIZE) {
+        break;
+      }
+    } finally {
+      clearTimeout(timeout);
     }
+  }
 
-    const payload = (await response.json()) as ReplicationChangesResponse;
-    if (payload.changes.length === 0) {
-      return;
-    }
-
-    const result = await applyRemoteChanges(table, payload.changes);
-    await setReplicationCursor(table, payload.cursor, "pull");
+  if (appliedTotal > 0 || skippedTotal > 0) {
     appendOpsLog(
       "info",
       `core replication pull ${table}`,
-      `${result.applied} applied, ${result.skipped} skipped (${config.role})`,
+      `${appliedTotal} applied, ${skippedTotal} skipped (${config.role})`,
     );
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -143,18 +158,31 @@ export async function runCoreReplicationTick(): Promise<void> {
   const tables = await listActiveReplicatedTables();
   const tableErrors: string[] = [];
   for (const table of tables) {
+    // Pull and push are independent: inbound soft-unique/FK conflicts must not
+    // block local→peer catch-up (and vice versa).
     try {
       await pullTable(table);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      tableErrors.push(`${table} pull: ${message}`);
+      appendOpsLog(
+        "error",
+        `core replication failed on table ${table} (pull)`,
+        message,
+      );
+      console.error(`core replication failed on table ${table} (pull)`, error);
+    }
+    try {
       await pushTable(table);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      tableErrors.push(`${table}: ${message}`);
+      tableErrors.push(`${table} push: ${message}`);
       appendOpsLog(
         "error",
-        `core replication failed on table ${table}`,
+        `core replication failed on table ${table} (push)`,
         message,
       );
-      console.error(`core replication failed on table ${table}`, error);
+      console.error(`core replication failed on table ${table} (push)`, error);
     }
   }
   if (tableErrors.length > 0) {

@@ -6,7 +6,7 @@ import {
   resolveAdjacentSectionTabHref,
   resolveDesktopSectionTabHrefs,
   resolveSectionTabCycleShortcut,
-} from "../../dist/navigation/section-tab-hrefs.js";
+} from "./section-tab-hrefs.js";
 
 test("project overview uses default section tabs when workbench is not mounted", () => {
   assert.deepEqual(resolveDesktopSectionTabHrefs("/projects/demo"), [
@@ -300,8 +300,10 @@ test("findActiveSectionTabIndex matches nested codebase routes", () => {
 
 test("resolveAdjacentSectionTabHref cycles tasks due pills", () => {
   const tabs = resolveDesktopSectionTabHrefs("/tasks")!;
+  // `buildTasksDueHref` always emits `due` (bare `/tasks` is the keep-alive
+  // "restore last" target), so the Today pill is `/tasks?due=today`.
   assert.deepEqual(tabs, [
-    "/tasks",
+    "/tasks?due=today",
     "/tasks?due=tomorrow",
     "/tasks?due=this-week",
     "/tasks?due=next-week",

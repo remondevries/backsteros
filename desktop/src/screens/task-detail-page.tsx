@@ -91,7 +91,7 @@ type TaskRouteRow = {
   contactKey?: string | null;
   assigneeId?: string | null;
   agentChatId?: string | null;
-  linkedCommitSha?: string | null;
+  linkedCommitShas?: string[] | null;
   projectName?: string | null;
   title: string;
   status: string;
@@ -262,6 +262,16 @@ export function TaskDetailPage({
   const [activityFeedBump, setActivityFeedBump] = useState(0);
   const [pendingCreateLookupExpired, setPendingCreateLookupExpired] =
     useState(false);
+  /** CLI/API-linked SHAs before PowerSync list catch-up. */
+  const [fetchedLinkedCommitShas, setFetchedLinkedCommitShas] = useState<
+    string[]
+  >([]);
+  /** Immediate UI after link/unlink — wins over stale SQLite/hydrate. */
+  const [linkedCommitShasOverride, setLinkedCommitShasOverride] = useState<
+    string[] | null
+  >(null);
+  const [activeCommitSha, setActiveCommitSha] = useState<string | null>(null);
+  const [openCommitPickerRequest, setOpenCommitPickerRequest] = useState(0);
   const spellcheckNonceRef = useRef(0);
   /** Keeps the open task stable while project-change URL rewrite catches up. */
   const pinnedTaskIdRef = useRef<string | null>(null);
@@ -489,6 +499,30 @@ export function TaskDetailPage({
     const resolvedAssigneeId = base.assigneeId ?? null;
     const assignee =
       contacts.find((entry) => entry.id === resolvedAssigneeId) ?? null;
+    const linkedCommitShas = (() => {
+      if (linkedCommitShasOverride != null) {
+        return linkedCommitShasOverride;
+      }
+      const fromBase = Array.isArray(base.linkedCommitShas)
+        ? base.linkedCommitShas
+        : [];
+      const fromDetails = Array.isArray(taskDetails[base.id]?.linkedCommitShas)
+        ? taskDetails[base.id]!.linkedCommitShas!
+        : [];
+      const normalize = (values: string[]) =>
+        values
+          .filter(
+            (sha): sha is string =>
+              typeof sha === "string" && /^[0-9a-fA-F]{7,64}$/.test(sha.trim()),
+          )
+          .map((sha) => sha.trim());
+      const baseShas = normalize(fromBase);
+      const detailShas = normalize(fromDetails);
+      const fetchedShas = normalize(fetchedLinkedCommitShas);
+      if (baseShas.length > 0) return baseShas;
+      if (detailShas.length > 0) return detailShas;
+      return fetchedShas;
+    })();
     return {
       ...base,
       assigneeId: resolvedAssigneeId,
@@ -497,6 +531,7 @@ export function TaskDetailPage({
       projectName: project?.name ?? base.projectName ?? null,
       description: fetchedDescription,
       links: parseTaskLinks(taskDetails[base.id]?.links),
+      linkedCommitShas,
       displayId: getTaskDisplayId(
         {
           number: base.number,
@@ -504,7 +539,53 @@ export function TaskDetailPage({
         },
         base.projectKey),
     };
-  }, [base, contacts, fetchedDescription, projects, taskDetails]);
+  }, [
+    base,
+    contacts,
+    fetchedDescription,
+    fetchedLinkedCommitShas,
+    linkedCommitShasOverride,
+    projects,
+    taskDetails,
+  ]);
+
+  // When PowerSync list lag drops `linkedCommitShas` (e.g. CLI link), hydrate
+  // from REST so Changes stay visible.
+  useEffect(() => {
+    if (!base?.id) {
+      setFetchedLinkedCommitShas([]);
+      setLinkedCommitShasOverride(null);
+      return;
+    }
+    const taskId = base.id;
+    setLinkedCommitShasOverride(null);
+    let cancelled = false;
+    void client
+      .requestJson<{ linkedCommitShas?: string[] | null }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}`,
+      )
+      .then((row) => {
+        if (cancelled) return;
+        const shas = Array.isArray(row.linkedCommitShas)
+          ? row.linkedCommitShas.filter(
+              (sha): sha is string =>
+                typeof sha === "string" &&
+                /^[0-9a-fA-F]{7,64}$/.test(sha.trim()),
+            )
+          : [];
+        setFetchedLinkedCommitShas(shas);
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedLinkedCommitShas([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [base?.id, client]);
+
+  useEffect(() => {
+    setActiveCommitSha(null);
+  }, [task?.id]);
 
   useEffect(() => {
     if (task || !isPendingCreatedTaskRouteParam(routeParam)) {
@@ -633,14 +714,9 @@ export function TaskDetailPage({
     project?.type === "codebase" &&
     Boolean(project.id) &&
     Boolean(project.githubRepository?.trim());
-  const linkedCommitSha =
-    (typeof base?.linkedCommitSha === "string"
-      ? base.linkedCommitSha.trim()
-      : "") ||
-    (typeof taskDetails[task.id]?.linkedCommitSha === "string"
-      ? String(taskDetails[task.id]?.linkedCommitSha).trim()
-      : "") ||
-    null;
+  const linkedCommitShas = Array.isArray(task.linkedCommitShas)
+    ? task.linkedCommitShas
+    : [];
 
   const patchStatus = (next: string) => {
     void workspace.patchTask(task.id, { status: next });
@@ -815,6 +891,43 @@ export function TaskDetailPage({
     />
   );
 
+  const linkedCommitPanel =
+    canLinkCommit && project
+      ? ({ hide }: { hide: () => void }) => (
+          <TaskLinkedCommitSection
+            projectId={project.id}
+            defaultBranch={null}
+            linkedCommitShas={linkedCommitShas}
+            activeSha={activeCommitSha}
+            onActiveShaChange={setActiveCommitSha}
+            openPickerRequest={openCommitPickerRequest}
+            requestJson={requestJson}
+            onHidePanel={hide}
+            onLinkCommit={async (sha) => {
+              const next = [
+                ...linkedCommitShas.filter(
+                  (entry) => entry.toLowerCase() !== sha.toLowerCase(),
+                ),
+                sha,
+              ].slice(0, 20);
+              setLinkedCommitShasOverride(next);
+              setFetchedLinkedCommitShas(next);
+              await workspace.patchTask(task.id, { linkedCommitShas: next });
+              setActiveCommitSha(sha);
+            }}
+            onUnlinkCommit={async (sha) => {
+              const next = linkedCommitShas.filter(
+                (entry) => entry.toLowerCase() !== sha.toLowerCase(),
+              );
+              setLinkedCommitShasOverride(next);
+              setFetchedLinkedCommitShas(next);
+              await workspace.patchTask(task.id, { linkedCommitShas: next });
+              setActiveCommitSha(next[next.length - 1] ?? null);
+            }}
+          />
+        )
+      : null;
+
   const detailView = (
         <TaskDetailView
           task={task}
@@ -872,24 +985,6 @@ export function TaskDetailPage({
           onAgentInboxApprove={() => {
             void workspace.patchTask(task.id, { agentInboxApproved: true });
           }}
-          afterAttachments={
-            canLinkCommit && project ? (
-              <TaskLinkedCommitSection
-                projectId={project.id}
-                defaultBranch={null}
-                linkedCommitSha={linkedCommitSha}
-                requestJson={requestJson}
-                onLinkCommit={async (sha) => {
-                  await workspace.patchTask(task.id, { linkedCommitSha: sha });
-                }}
-                onUnlinkCommit={async () => {
-                  await workspace.patchTask(task.id, {
-                    linkedCommitSha: null,
-                  });
-                }}
-              />
-            ) : null
-          }
           belowDescription={
             belowDescriptionReady
               ? ({ mode }) => activityPanel(mode === "preview")
@@ -919,7 +1014,22 @@ export function TaskDetailPage({
       {overlayMode ? (
         <div className="task-detail-page-overlay">{detailView}</div>
       ) : (
-        <DesktopTaskLayout key={`task-layout-${task.id}`}>
+        <DesktopTaskLayout
+          key={`task-layout-${task.id}`}
+          taskId={task.id}
+          preferWideTaskPanel={!canLinkCommit}
+          sidePanel={linkedCommitPanel}
+          sidePanelSurfaces={linkedCommitShas.map((sha) => ({
+            id: sha,
+            label: sha.slice(0, 7),
+          }))}
+          sidePanelActiveSurfaceId={activeCommitSha}
+          onActivateSidePanelSurface={setActiveCommitSha}
+          sidePanelCanAddSurface={linkedCommitShas.length < 20}
+          onAddSidePanelSurface={() => {
+            setOpenCommitPickerRequest((n) => n + 1);
+          }}
+        >
           {detailView}
         </DesktopTaskLayout>
       )}

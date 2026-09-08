@@ -169,6 +169,17 @@ function workingDirectoryLabel(path: string): string {
   return parts[parts.length - 1] ?? trimmed;
 }
 
+function withPickedWorkingDirectory(
+  project: ApiProject,
+  directory: string,
+): ApiProject {
+  return {
+    ...project,
+    localWorkingDirectory: directory,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function ProjectWorkingDirectoryField({
   project,
   onProjectUpdated,
@@ -181,6 +192,7 @@ function ProjectWorkingDirectoryField({
   fs: ProjectFsClient;
 }) {
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const directory = normalizeWorkingDirectory(project.localWorkingDirectory);
 
   const hasDirectory = Boolean(directory);
@@ -199,21 +211,31 @@ function ProjectWorkingDirectoryField({
         .filter(Boolean)
         .join(" ")}
       title={
+        error ??
         directory ??
         "Choose working directory (required before starting an agent)"
       }
       aria-label={
-        hasDirectory
-          ? `Working directory: ${directory}`
-          : "Choose working directory (required before starting an agent)"
+        error
+          ? error
+          : hasDirectory
+            ? `Working directory: ${directory}`
+            : "Choose working directory (required before starting an agent)"
       }
+      aria-invalid={error ? true : undefined}
       disabled={saving}
       onClick={() => {
         void (async () => {
           setSaving(true);
+          setError(null);
+          const previous = project;
           try {
             const next = await fs.pickDirectory(directory ?? undefined);
             if (!next) return;
+            // Apply the picked path immediately — leader-first PATCH can return
+            // a stale row before local replication catches up, which left the
+            // chip stuck on the previous value (or empty).
+            onProjectUpdated(withPickedWorkingDirectory(project, next));
             const updated = await requestJson<ApiProject>(
               `/api/v1/projects/${encodeURIComponent(project.id)}`,
               {
@@ -222,7 +244,12 @@ function ProjectWorkingDirectoryField({
                 body: JSON.stringify({ localWorkingDirectory: next }),
               },
             );
-            onProjectUpdated(updated);
+            onProjectUpdated(withPickedWorkingDirectory(updated, next));
+          } catch (err) {
+            onProjectUpdated(previous);
+            setError(
+              apiErrorMessage(err) || "Could not save working directory.",
+            );
           } finally {
             setSaving(false);
           }
@@ -1106,15 +1133,27 @@ function ProjectCommitHistory({
               fs={fs}
               message="Files are unavailable until a working directory is defined for this project."
               onSelectDirectory={async (directory) => {
-                const updated = await requestJson<ApiProject>(
-                  `/api/v1/projects/${encodeURIComponent(project.id)}`,
-                  {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ localWorkingDirectory: directory }),
-                  },
+                onProjectUpdated(
+                  withPickedWorkingDirectory(project, directory),
                 );
-                onProjectUpdated(updated);
+                try {
+                  const updated = await requestJson<ApiProject>(
+                    `/api/v1/projects/${encodeURIComponent(project.id)}`,
+                    {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        localWorkingDirectory: directory,
+                      }),
+                    },
+                  );
+                  onProjectUpdated(
+                    withPickedWorkingDirectory(updated, directory),
+                  );
+                } catch (err) {
+                  onProjectUpdated(project);
+                  throw err;
+                }
               }}
             />
           )}

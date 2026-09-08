@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   shouldAttemptLetterPdfFetch,
+  shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path.ts";
@@ -20,6 +21,12 @@ test("shouldSkipRestEntityWrite when PowerSync ready and connected", () => {
     shouldSkipRestEntityWrite({ ready: false, connected: true }),
     false,
   );
+});
+
+test("shouldSkipRestAfterCrudFlush only when upload drained work", () => {
+  assert.equal(shouldSkipRestAfterCrudFlush(true), true);
+  assert.equal(shouldSkipRestAfterCrudFlush(undefined), true);
+  assert.equal(shouldSkipRestAfterCrudFlush(false), false);
 });
 
 test("shouldAttemptLetterPdfFetch only when local-core is reachable", () => {

@@ -7,7 +7,7 @@ import {
   calendarSidePanelTaskItemId,
   getSelectedCalendarSidePanelItemId,
   parseCalendarSidePanelKeyboardItemId,
-} from "../../dist/calendar/calendar-side-panel-keyboard.js";
+} from "./calendar-side-panel-keyboard.js";
 
 test("calendar side panel keyboard ids are prefixed", () => {
   assert.equal(calendarSidePanelMeetingItemId("m1"), "meeting:m1");

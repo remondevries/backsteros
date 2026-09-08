@@ -48,17 +48,16 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
       };
     }
 
-    // Clerk can briefly return null right after OAuth / HMR; retry before failing.
-    let clerkToken: string | null = null;
+    let authToken: string | null = null;
     for (let attempt = 0; attempt < 5; attempt++) {
-      clerkToken = (await this.getAuthToken())?.trim() || null;
-      if (clerkToken) break;
+      authToken = (await this.getAuthToken())?.trim() || null;
+      if (authToken) break;
       await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
     }
-    if (!clerkToken) throw new Error("Sign in to connect");
+    if (!authToken) throw new Error("Missing local-shell token");
 
     const headers = new Headers();
-    headers.set("Authorization", `Bearer ${clerkToken}`);
+    headers.set("Authorization", `Bearer ${authToken}`);
     const response = await fetch(this.endpoint("powersync/token"), {
       method: "GET",
       headers,
@@ -104,8 +103,13 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
       }),
     });
     if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.warn(
+        `[desktop] PowerSync upload failed (${response.status}) mutation=${mutationId}`,
+        detail.slice(0, 240),
+      );
       throw new Error(
-        `PowerSync upload failed (${response.status}): ${await response.text()}`,
+        `PowerSync upload failed (${response.status}): ${detail}`,
       );
     }
     await batch.complete();
@@ -114,7 +118,7 @@ export class BacksterPowerSyncConnector implements PowerSyncBackendConnector {
 
 export function createPowerSyncDatabase(userId: string) {
   const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  // Tauri WKWebView: long `backsteros-desktop-…-{fullClerkId}.db` names fail
+  // Tauri WKWebView: long `backsteros-desktop-…-{userId}.db` names fail
   // sqlite3_open_v2 under PowerSync's IDBBatchAtomicVFS. Keep the filename short.
   // Main-thread IDB (no SharedWorker) matches PowerSync's Safari guidance.
   const flags = { enableMultiTabs: false, useWebWorker: false } as const;

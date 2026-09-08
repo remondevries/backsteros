@@ -260,7 +260,6 @@ export function CategoryDetailPanel({
   pending,
   error,
   onUpdate,
-  onDelete,
 }: {
   category: FinancialCategory | null;
   hasChildren: boolean;

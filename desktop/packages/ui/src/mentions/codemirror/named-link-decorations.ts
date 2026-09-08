@@ -135,7 +135,7 @@ function findNamedLinkRanges(
     to: number;
     token: ParsedNamedLinkToken;
   }> = [];
-  const re = /\[(?!@)([^\]\|\r\n]+)\|([^\]\r\n]+)\]/g;
+  const re = /\[(?!@)([^\]|\r\n]+)\|([^\]\r\n]+)\]/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) != null) {
     const raw = match[0];

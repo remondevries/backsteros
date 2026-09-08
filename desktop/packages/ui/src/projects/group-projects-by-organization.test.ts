@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { groupProjectsByOrganization } from "../../dist/projects/group-projects-by-organization.js";
+import { groupProjectsByOrganization } from "./group-projects-by-organization.js";
 
 test("groupProjectsByOrganization buckets by organizationId and leaves ungrouped first", () => {
   const groups = groupProjectsByOrganization(

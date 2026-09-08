@@ -224,7 +224,7 @@ export function startWorkspaceEventsLoop(input: {
           onUpdated: input.onUpdated,
         });
         attempt = 0;
-      } catch (error) {
+      } catch {
         if (input.signal.aborted) return;
         attempt += 1;
         const delay = Math.min(8_000, 500 * 2 ** Math.min(attempt, 4));

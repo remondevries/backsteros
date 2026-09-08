@@ -8,9 +8,9 @@ import {
   getSelectedCalendarGridEventId,
   parseCalendarMoreLinkItemId,
   resolveCalendarGridKeyboardNextItemId,
-} from "../../dist/calendar/calendar-grid-keyboard.js";
-import { stepBoardTaskId } from "../../dist/list-nav/board-keyboard-nav.js";
-import type { TaskCalendarEvent } from "../../dist/calendar/calendar-events.js";
+} from "./calendar-grid-keyboard.js";
+import { stepBoardTaskId } from "../list-nav/board-keyboard-nav.js";
+import type { TaskCalendarEvent } from "./calendar-events.js";
 
 const rangeStart = new Date(2026, 7, 18);
 const rangeEnd = new Date(2026, 7, 25);

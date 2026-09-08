@@ -158,6 +158,7 @@ import {
 import { resolveActiveBacksterosTaskId } from "~/backsteros/openTaskChat";
 import { SegmentedPillToggle } from "~/backsteros/SegmentedPillToggle";
 import { useBacksterosComposeShortcut } from "~/backsteros/useBacksterosComposeShortcut";
+import { resolveBacksterosComposeProject } from "~/backsteros/resolveBacksterosComposeProject";
 import { BacksterosPanel, BACKSTEROS_RAIL_MODE_OPTIONS } from "./sidebar/BacksterosPanel";
 import { BacksterosContentCrossfade } from "~/backsteros/BacksterosContentCrossfade";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -2163,6 +2164,8 @@ export default function Sidebar() {
   const savedVibeLocation = useSidebarModeStore((state) => state.vibeLocation);
   const savedLogLocation = useSidebarModeStore((state) => state.logLocation);
   const savedLogTaskDetail = useSidebarModeStore((state) => state.logTaskDetail);
+  const savedProjectsRailLocation = useSidebarModeStore((state) => state.projectsRailLocation);
+  const savedProjectsRailTaskDetail = useSidebarModeStore((state) => state.projectsRailTaskDetail);
   const savedInboxRailTaskDetail = useSidebarModeStore((state) => state.inboxRailTaskDetail);
   const isBacksterosScope = logModeEnabled;
   const backsterosTaskChatByTaskId = useBacksterosTaskChatStore((state) => state.byTaskId) ?? {};
@@ -2190,24 +2193,49 @@ export default function Sidebar() {
     select: (params) =>
       typeof params.projectId === "string" && params.projectId.trim() ? params.projectId : null,
   });
+  const backsterosRememberedComposeProjectIds = useMemo(() => {
+    const fromLocation = (location: SidebarModeResumeLocation | null): string | null =>
+      location?.kind === "backsteros-project" ? location.projectId : null;
+    return [
+      savedProjectsRailTaskDetail?.projectId,
+      fromLocation(savedProjectsRailLocation),
+      savedInboxRailTaskDetail?.projectId,
+      savedLogTaskDetail?.projectId,
+      fromLocation(savedLogLocation),
+    ];
+  }, [
+    savedInboxRailTaskDetail,
+    savedLogLocation,
+    savedLogTaskDetail,
+    savedProjectsRailLocation,
+    savedProjectsRailTaskDetail,
+  ]);
+  const backsterosProjectsReady =
+    backsterosProjectsState.status === "ready" ? backsterosProjectsState.projects : null;
   const backsterosCreateTaskProject = useMemo(() => {
-    if (backsterosTaskSelection?.project) return backsterosTaskSelection.project;
-    if (!routeBacksterosProjectId || backsterosProjectsState.status !== "ready") return null;
+    return resolveBacksterosComposeProject({
+      selectedProject: backsterosTaskSelection?.project ?? null,
+      routeProjectId: routeBacksterosProjectId,
+      rememberedProjectIds: backsterosRememberedComposeProjectIds,
+      projects: backsterosProjectsReady,
+    });
+  }, [
+    backsterosProjectsReady,
+    backsterosRememberedComposeProjectIds,
+    backsterosTaskSelection,
+    routeBacksterosProjectId,
+  ]);
+  // Resume title must follow the open task / route only — not the compose
+  // fallback (first project), or remembered locations pick up the wrong name.
+  const backsterosProjectTitleForResume = useMemo(() => {
+    const selectedName = backsterosTaskSelection?.project.name.trim();
+    if (selectedName) return selectedName;
+    if (!routeBacksterosProjectId || !backsterosProjectsReady) return null;
     return (
-      backsterosProjectsState.projects.find((project) => project.id === routeBacksterosProjectId) ??
+      backsterosProjectsReady.find((project) => project.id === routeBacksterosProjectId)?.name ??
       null
     );
-  }, [backsterosProjectsState, backsterosTaskSelection, routeBacksterosProjectId]);
-  const backsterosProjectTitleForResume = useMemo(() => {
-    if (backsterosCreateTaskProject?.name.trim()) return backsterosCreateTaskProject.name;
-    if (routeBacksterosProjectId && backsterosProjectsState.status === "ready") {
-      return (
-        backsterosProjectsState.projects.find((project) => project.id === routeBacksterosProjectId)
-          ?.name ?? null
-      );
-    }
-    return null;
-  }, [backsterosCreateTaskProject, backsterosProjectsState, routeBacksterosProjectId]);
+  }, [backsterosProjectsReady, backsterosTaskSelection, routeBacksterosProjectId]);
 
   const captureCurrentSidebarModeLocation = useCallback((): SidebarModeResumeLocation => {
     return captureSidebarModeResumeLocation({
@@ -2256,25 +2284,23 @@ export default function Sidebar() {
 
   const restoreLogTaskDetail = useCallback(
     (taskDetail: SidebarModeTaskDetailResume) => {
-      if (backsterosProjectsState.status !== "ready") {
+      if (!backsterosProjectsReady) {
         pendingLogTaskDetailRef.current = taskDetail;
         return;
       }
-      const project = backsterosProjectsState.projects.find(
-        (entry) => entry.id === taskDetail.projectId,
-      );
+      const project = backsterosProjectsReady.find((entry) => entry.id === taskDetail.projectId);
       if (!project) {
         pendingLogTaskDetailRef.current = null;
         return;
       }
       pendingLogTaskDetailRef.current = null;
+      // Pre-compose-modal creates used taskId:null; that no longer means "open
+      // create" — only restore real tasks so we do not force the modal on boot.
       if (taskDetail.taskId) {
         openTaskDetail({ taskId: taskDetail.taskId, project });
-        return;
       }
-      openCreateTaskDetail(project, { reveal: true });
     },
-    [backsterosProjectsState, openCreateTaskDetail, openTaskDetail],
+    [backsterosProjectsReady, openTaskDetail],
   );
 
   useEffect(() => {
@@ -2292,11 +2318,11 @@ export default function Sidebar() {
       didRestoreLogTaskDetailOnMountRef.current = true;
       return;
     }
-    if (backsterosProjectsState.status !== "ready") return;
+    if (!backsterosProjectsReady) return;
     didRestoreLogTaskDetailOnMountRef.current = true;
     restoreLogTaskDetail(savedLogTaskDetail);
   }, [
-    backsterosProjectsState.status,
+    backsterosProjectsReady,
     backsterosTaskSelection,
     logModeEnabled,
     restoreLogTaskDetail,
@@ -4071,14 +4097,24 @@ export default function Sidebar() {
     if (!backsterosCreateTaskProject) {
       toastManager.add({
         type: "warning",
-        title: "Select a project",
-        description: "Open a BacksterOS project before creating a task.",
+        title:
+          backsterosProjectsState.status === "ready" ? "No projects yet" : "Projects still loading",
+        description:
+          backsterosProjectsState.status === "ready"
+            ? "Create a BacksterOS project before adding a task."
+            : "Wait a moment and try again.",
       });
       return;
     }
     if (isMobile) setOpenMobile(false);
     openCreateTaskDetail(backsterosCreateTaskProject, { reveal: true });
-  }, [backsterosCreateTaskProject, isMobile, openCreateTaskDetail, setOpenMobile]);
+  }, [
+    backsterosCreateTaskProject,
+    backsterosProjectsState.status,
+    isMobile,
+    openCreateTaskDetail,
+    setOpenMobile,
+  ]);
 
   useBacksterosComposeShortcut({
     enabled: isBacksterosScope,

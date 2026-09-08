@@ -5,7 +5,7 @@ import {
   allocateUniqueProjectKey,
   buildProjectKeyRenameRedirectPath,
   buildTaskProjectChangeRedirectPath,
-} from "../../dist/projects/project-key.js";
+} from "./project-key.js";
 
 test("buildProjectKeyRenameRedirectPath rewrites standalone project + task slug", () => {
   assert.equal(

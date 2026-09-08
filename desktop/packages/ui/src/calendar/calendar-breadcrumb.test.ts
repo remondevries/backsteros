@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCalendarBreadcrumbItems } from "../../dist/calendar/calendar-breadcrumb.js";
+import { buildCalendarBreadcrumbItems } from "./calendar-breadcrumb.js";
 import {
   buildCalendarViewHref,
   getCalendarViewModeLabel,
   parseCalendarViewModeParam,
   readCalendarViewModeFromSearch,
   withCalendarViewSearch,
-} from "../../dist/calendar/calendar-view-modes.js";
+} from "./calendar-view-modes.js";
 
 test("getCalendarViewModeLabel returns view labels", () => {
   assert.equal(getCalendarViewModeLabel("month"), "Month");

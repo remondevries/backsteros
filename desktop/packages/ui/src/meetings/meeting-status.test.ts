@@ -6,7 +6,7 @@ import {
   isPastCompletedMeeting,
   meetingStatusNeedsReconcile,
   resolveMeetingEffectiveStatus,
-} from "../../dist/meetings/meeting-status.js";
+} from "./meeting-status.js";
 
 test("deriveMeetingStatusForSchedule returns on_hold before start", () => {
   const start = new Date("2026-08-23T14:00:00.000Z");

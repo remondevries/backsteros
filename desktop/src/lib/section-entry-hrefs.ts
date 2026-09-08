@@ -1,7 +1,6 @@
 import {
   getFirstInboxItemHref,
   getKnowledgeHref,
-  getLettersHref,
   getOrganizationsHref,
   getScopedContactSectionHref,
   getUniqueListItemRouteParam,
@@ -87,7 +86,7 @@ export function firstLetterHref(
 }
 
 export function firstLetterSlug(
-  letters: readonly { number?: number | null }[],
+  letters: readonly { id: string; number?: number | null }[],
 ): string | null {
   const href = firstLetterHref(letters);
   if (!href || href === "/letters") return null;
@@ -117,7 +116,7 @@ export function rememberWorkspaceSectionEntries(input: {
     number?: number | null;
     key?: string | null;
   }[];
-  letters: readonly { number?: number | null }[];
+  letters: readonly { id: string; number?: number | null }[];
   knowledgeDocuments: readonly KnowledgeListItem[];
 }): void {
   // Seed only — section roots always open these first items (never last-place).

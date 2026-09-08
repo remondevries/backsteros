@@ -84,7 +84,7 @@ export function ContentSidePanelShell({
     .filter(Boolean)
     .join(" ");
 
-  let body: ReactNode = null;
+  let body: ReactNode;
   if (showLoading) {
     body = wrapList ? (
       <div className="app-content-side-panel-body">{loadingSkeleton}</div>

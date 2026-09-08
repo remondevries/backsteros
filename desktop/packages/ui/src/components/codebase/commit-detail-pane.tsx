@@ -39,6 +39,11 @@ export type CommitDetailPaneProps = {
   parentPullRequest?: GithubPullRequest | null;
   /** When true, claim j/k on the changed-files list (Tab/Enter into detail). */
   hotkeysEnabled?: boolean;
+  /**
+   * `workbench` — file rail + split diff.
+   * `stacked` — unified multi-file scroll (task Changes rail / BacksterDEV-like).
+   */
+  filesPresentation?: "workbench" | "stacked";
 };
 
 export function CommitDetailPane({
@@ -47,6 +52,7 @@ export function CommitDetailPane({
   repository,
   requestJson,
   hotkeysEnabled = false,
+  filesPresentation = "workbench",
 }: CommitDetailPaneProps) {
   const subject = commitSubject(commit.message);
   const body = commitBody(commit.message);
@@ -126,7 +132,8 @@ export function CommitDetailPane({
               projectId={projectId}
               sha={commit.sha}
               requestJson={requestJson}
-              autoFocusList={hotkeysEnabled}
+              autoFocusList={hotkeysEnabled && filesPresentation === "workbench"}
+              presentation={filesPresentation}
             />
           </div>
         </div>

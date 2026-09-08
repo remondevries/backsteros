@@ -441,7 +441,7 @@ function ProjectsPageBody({
   useEffect(() => {
     if (!selected || activeSection !== "letters" || letterSlug) return;
     const first = getFirstLetterInListOrder(projectLetters);
-    if (!first) return;
+    if (!first || first.number == null) return;
     navigate(
       getScopedProjectLetterHref(selected.key, first.number, routeScope),
       { replace: true });
@@ -479,10 +479,16 @@ function ProjectsPageBody({
     return () => cancelAnimationFrame(frame);
   }, [pendingEditDocumentId, selectedDocument]);
 
+  // Letter number is null for optimistic rows until the server assigns one.
+  const selectedLetterDisplayId =
+    selectedLetter && selectedLetter.number != null
+      ? formatLetterDisplayId(selectedLetter.number)
+      : null;
+
   const letterBreadcrumbTitle = composingLetter
     ? "New"
     : selectedLetter
-      ? `${formatLetterDisplayId(selectedLetter.number)} ${letterTitleOverride ?? selectedLetter.title}`
+      ? `${selectedLetterDisplayId ? `${selectedLetterDisplayId} ` : ""}${letterTitleOverride ?? selectedLetter.title}`
       : null;
 
   const projectNavFrom: ProjectNavFrom =
@@ -1171,7 +1177,11 @@ function ProjectsPageBody({
           ) : selectedLetter ? (
             <>
               <RegisterEntityDeleteAction
-                entityLabel={`letter ${formatLetterDisplayId(selectedLetter.number)}`}
+                entityLabel={
+                  selectedLetterDisplayId
+                    ? `letter ${selectedLetterDisplayId}`
+                    : "letter"
+                }
                 onDelete={handleDeleteLetter}
               />
               <LetterDetailView
@@ -1198,7 +1208,7 @@ function ProjectsPageBody({
                   body:
                     workspace.letterBodies[selectedLetter.id] ??
                     "",
-                  displayId: formatLetterDisplayId(selectedLetter.number),
+                  displayId: selectedLetterDisplayId,
                 }}
                 showPdfDock
                 hasPdfDocument={pdfPanel.hasPdf}

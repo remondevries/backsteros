@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { groupProjectsByNestedArea } from "../../dist/projects/group-projects-by-area.js";
+import { groupProjectsByNestedArea } from "./group-projects-by-area.js";
 
 test("groupProjectsByNestedArea buckets by areaId and leaves ungrouped first", () => {
   const groups = groupProjectsByNestedArea(

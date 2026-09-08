@@ -15,6 +15,7 @@ import {
   orderedBacksterosProjectIds,
   orderedBacksterosTaskIds,
   resolveAdjacentListItemId,
+  resolveSidepanelHighlightSeed,
 } from "~/backsteros/listTraversal";
 import {
   useListKeyboardNavStore,
@@ -206,6 +207,13 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   // Fall back to the route binding when nothing is selected yet.
   const activeTaskId = selection?.taskId ?? routeFromBinding ?? null;
 
+  // j/k cursor on the left rail. Remember the last projects-rail row so Escape
+  // back from a project overview can restore highlight instead of jumping to top.
+  const [sidepanelHighlightId, setSidepanelHighlightId] = useState<string | null>(null);
+  const sidepanelHighlightIdRef = useRef(sidepanelHighlightId);
+  sidepanelHighlightIdRef.current = sidepanelHighlightId;
+  const lastProjectsRailHighlightRef = useRef<string | null>(null);
+
   usePromoteWorkingBacksterosTasks();
   useSyncBacksterosAgentPresence(true);
   useEffect(() => {
@@ -247,6 +255,8 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   /** Mouse / Enter confirmation — open project and hand j/k to its task list. */
   const handleSelectProject = useCallback(
     (project: BacksterosCodebaseProject) => {
+      lastProjectsRailHighlightRef.current = project.id;
+      setSidepanelHighlightId(project.id);
       openProject(project, { focusTasks: true });
     },
     [openProject],
@@ -255,17 +265,24 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   /** j/k preview — open project in the main pane but keep list focus on the rail. */
   const handlePreviewProject = useCallback(
     (project: BacksterosCodebaseProject) => {
+      lastProjectsRailHighlightRef.current = project.id;
+      setSidepanelHighlightId(project.id);
       openProject(project);
     },
     [openProject],
   );
 
   const leaveOpenProject = useCallback(() => {
+    const projectId = selectedProjectId ?? taskListProject?.id ?? selection?.project.id ?? null;
+    if (projectId) {
+      lastProjectsRailHighlightRef.current = projectId;
+      setSidepanelHighlightId(projectId);
+    }
     clearTaskDetail();
     useListKeyboardNavStore.getState().setActiveZone("sidepanel");
     void router.navigate({ to: "/backsteros/projects" });
     return true;
-  }, [clearTaskDetail, router]);
+  }, [clearTaskDetail, router, selectedProjectId, selection?.project.id, taskListProject?.id]);
 
   const handleBackToProjects = useCallback(() => {
     const project = taskListProject;
@@ -393,9 +410,6 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   );
 
   const registerListKeyboardNav = useListKeyboardNavStore((state) => state.register);
-  const [sidepanelHighlightId, setSidepanelHighlightId] = useState<string | null>(null);
-  const sidepanelHighlightIdRef = useRef(sidepanelHighlightId);
-  sidepanelHighlightIdRef.current = sidepanelHighlightId;
   const listModeRef = useRef(listMode);
   listModeRef.current = listMode;
   const selectionRef = useRef(selection);
@@ -404,17 +418,26 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
   selectedProjectIdRef.current = selectedProjectId;
   const listItemIdsKey = listMode.itemIds.join("\0");
 
+  useEffect(() => {
+    if (selectedProjectId) {
+      lastProjectsRailHighlightRef.current = selectedProjectId;
+    }
+  }, [selectedProjectId]);
+
   // Keep the j/k cursor on the open/selected row after Inbox ↔ Projects (and
   // other list-mode flips). Do not clear while item ids are still loading —
   // that used to drop the highlight and never put it back.
   useEffect(() => {
-    const seedId = listModeRef.current.currentItemId;
     const ids = listModeRef.current.itemIds;
-    if (seedId != null && (ids.length === 0 || ids.includes(seedId))) {
-      setSidepanelHighlightId(seedId);
-      return;
+    const nextHighlight = resolveSidepanelHighlightSeed({
+      currentItemId: listModeRef.current.currentItemId,
+      itemIds: ids,
+      rememberedId: listMode.kind === "projects" ? lastProjectsRailHighlightRef.current : null,
+    });
+    setSidepanelHighlightId(nextHighlight);
+    if (listMode.kind === "projects" && nextHighlight != null) {
+      lastProjectsRailHighlightRef.current = nextHighlight;
     }
-    setSidepanelHighlightId(null);
   }, [listMode.kind, listMode.currentItemId, railMode, taskListProject?.id]);
 
   useEffect(() => {
@@ -449,8 +472,15 @@ export function BacksterosPanel({ searchQuery = "" }: { readonly searchQuery?: s
     return registerListKeyboardNav({
       zone: "sidepanel",
       getItemIds: () => listModeRef.current.itemIds,
-      getSelectedId: () =>
-        isTaskList ? sidepanelHighlightIdRef.current : listModeRef.current.currentItemId,
+      getSelectedId: () => {
+        // Prefer the j/k cursor so Escape-back to the projects rail continues
+        // from the project we left (route selection is null on /projects).
+        if (sidepanelHighlightIdRef.current != null) {
+          return sidepanelHighlightIdRef.current;
+        }
+        return isTaskList ? null : listModeRef.current.currentItemId;
+      },
+      // Tasks: highlight-only while browsing. Projects: omit so j/k still previews.
       onHighlight: isTaskList ? (id) => setSidepanelHighlightId(id) : undefined,
       onActivate: (id) => listModeRef.current.activate(id),
       enterMovesToMain: listMode.kind === "projects",

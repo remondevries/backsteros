@@ -1,6 +1,5 @@
 import type { Task } from "@backsteros/contracts";
 import { trackedMinutesFromTaskSchedule } from "@backsteros/contracts";
-import { useUser } from "@clerk/clerk-expo";
 import { useNavigation } from "expo-router/react-navigation";
 import {
   Stack,
@@ -66,6 +65,7 @@ import { ui } from "../lib/ui";
 import { useEntityAvatarSrcMap } from "../lib/use-entity-avatar-src";
 import { useLocalQuery } from "../lib/use-local-query";
 import { useEntitySoftDelete } from "../lib/use-entity-soft-delete";
+import { LOCAL_SHELL_USER_ID } from "../lib/local-shell-auth";
 import { useMobileApiClient } from "../lib/use-mobile-api-client";
 import { useTaskDetail } from "../lib/use-task-detail";
 import { PhoneTaskSurfacesSlide } from "./agent/surfaces/phone-task-surfaces-slide";
@@ -94,6 +94,7 @@ import {
   PropertyOptionSheet,
   type PropertyOption,
 } from "./property-option-sheet";
+import { TaskLinkAttachments } from "./task-link-attachments";
 import { TaskActivityPanel } from "./task-activity-panel";
 import { TaskDueDateIcon } from "./task-due-date-icon";
 import { TaskPriorityIcon } from "./task-priority-icon";
@@ -132,6 +133,8 @@ type InboxNavRow = {
   status: string | null;
   inbox?: boolean | number | null;
   due_date?: string | null;
+  habit_id?: string | null;
+  inbox_updated_at?: string | null;
   agent_created_at?: string | null;
   agent_inbox_approved_at?: string | null;
 };
@@ -148,7 +151,6 @@ export function TaskDetailScreen({ taskId }: Props) {
   const router = useRouter();
   const navigation = useNavigation();
   const powerSync = useMobilePowerSync();
-  const { user } = useUser();
 
   const client = useMobileApiClient();
   const { confirmAndDelete, navigateBack } = useEntitySoftDelete();
@@ -162,12 +164,11 @@ export function TaskDetailScreen({ taskId }: Props) {
 
   const currentUser = useMemo(
     () => ({
-      userId: user?.id?.trim() || null,
-      email:
-        user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase() || null,
-      imageUrl: user?.imageUrl?.trim() || null,
+      userId: LOCAL_SHELL_USER_ID,
+      email: null as string | null,
+      imageUrl: null as string | null,
     }),
-    [user?.id, user?.imageUrl, user?.primaryEmailAddress?.emailAddress],
+    [],
   );
 
   const { task, loading, error, retry, isCodebaseTask } = useTaskDetail(taskId);
@@ -458,6 +459,10 @@ export function TaskDetailScreen({ taskId }: Props) {
       }       else if (key === "inbox") sqliteValues.inbox = value ? 1 : 0;
       else if (key === "trackedDurationSeconds") {
         sqliteValues.tracked_duration_seconds = value;
+      } else if (key === "links") {
+        sqliteValues.links = Array.isArray(value)
+          ? JSON.stringify(value)
+          : value;
       } else sqliteValues[key] = value;
     }
     applyTaskRowOverride(task.id, {
@@ -729,6 +734,8 @@ export function TaskDetailScreen({ taskId }: Props) {
             due_date: row.due_date,
             agent_created_at: row.agent_created_at,
             agent_inbox_approved_at: row.agent_inbox_approved_at,
+            inbox_updated_at: row.inbox_updated_at,
+            habit_id: row.habit_id,
           }),
         ),
       ).map((row) => row.id);
@@ -902,6 +909,8 @@ export function TaskDetailScreen({ taskId }: Props) {
           due_date: row.due_date,
           agent_created_at: row.agent_created_at,
           agent_inbox_approved_at: row.agent_inbox_approved_at,
+          inbox_updated_at: row.inbox_updated_at,
+          habit_id: row.habit_id,
         }),
       ),
     ).map((row) => row.id);
@@ -1206,6 +1215,14 @@ export function TaskDetailScreen({ taskId }: Props) {
         </Text>
       )}
       {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
+      {task ? (
+        <TaskLinkAttachments
+          links={task.links ?? []}
+          onChangeLinks={(next) => {
+            void patchProperty({ links: next });
+          }}
+        />
+      ) : null}
     </View>
   );
 

@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import {
   CONTACT_EMAIL_LABELS,
   contactEmailRowsForEditor,
+  normalizeContactEmailLabel,
   splitContactEmailRows,
   type ContactEmailEntry,
+  type ContactEmailInput,
   type ContactEmailLabel,
 } from "@backsteros/contracts";
 
@@ -21,28 +23,35 @@ export type ContactEmailEditorRow = {
   address: string;
 };
 
-export type ContactEmailsEditorProps = {
+/**
+ * `Row` is the caller's normalized entry type (contact vs organization
+ * labels); the editor itself works on loose `ContactEmailEditorRow`s and
+ * hands normalized rows back via `splitRows`.
+ */
+export type ContactEmailsEditorProps<
+  Row extends ContactEmailEditorRow = ContactEmailEntry,
+> = {
   email: string;
-  emails: ContactEmailEditorRow[];
+  emails: Row[];
   disabled?: boolean;
   /** Override Personal/Work/Other (e.g. org General/Support/Other). */
   labelOptions?: ReadonlyArray<{ value: string; label: string }>;
   defaultLabel?: string;
   rowsForEditor?: (input: {
     email: string;
-    emails: ContactEmailEditorRow[];
+    emails: Row[];
   }) => ContactEmailEditorRow[];
   splitRows?: (rows: ContactEmailEditorRow[]) => {
     email: string | null;
-    emails: ContactEmailEditorRow[];
+    emails: Row[];
   };
   onChange: (next: {
     email: string;
-    emails: ContactEmailEditorRow[];
+    emails: Row[];
   }) => void;
   onSave: (next: {
     email: string | null;
-    emails: ContactEmailEditorRow[];
+    emails: Row[];
   }) => void;
 };
 
@@ -52,6 +61,25 @@ const DEFAULT_LABEL_OPTIONS = CONTACT_EMAIL_LABELS.map((value) => ({
     value === "personal" ? "Personal" : value === "work" ? "Work" : "Other",
 }));
 
+function defaultRowsForEditor(input: {
+  email: string;
+  emails: readonly ContactEmailInput[];
+}): ContactEmailEditorRow[] {
+  return contactEmailRowsForEditor(input);
+}
+
+function defaultSplitRows(rows: ContactEmailEditorRow[]): {
+  email: string | null;
+  emails: ContactEmailEntry[];
+} {
+  return splitContactEmailRows(
+    rows.map((row) => ({
+      label: normalizeContactEmailLabel(row.label),
+      address: row.address,
+    })),
+  );
+}
+
 function rowsKey(rows: ContactEmailEditorRow[]): string {
   return JSON.stringify(rows);
 }
@@ -59,21 +87,23 @@ function rowsKey(rows: ContactEmailEditorRow[]): string {
 /**
  * Email addresses as split pills: category dropdown | address input.
  */
-export function ContactEmailsEditor({
+export function ContactEmailsEditor<
+  Row extends ContactEmailEditorRow = ContactEmailEntry,
+>({
   email,
   emails,
   disabled = false,
   labelOptions = DEFAULT_LABEL_OPTIONS,
   defaultLabel = "personal",
-  rowsForEditor = (input) =>
-    contactEmailRowsForEditor({
-      email: input.email,
-      emails: input.emails as ContactEmailEntry[],
-    }),
-  splitRows = (rows) => splitContactEmailRows(rows as ContactEmailEntry[]),
+  rowsForEditor = defaultRowsForEditor,
+  // Defaults produce contact labels; callers with another label set
+  // (organizations) pass their own `splitRows`.
+  splitRows = defaultSplitRows as NonNullable<
+    ContactEmailsEditorProps<Row>["splitRows"]
+  >,
   onChange,
   onSave,
-}: ContactEmailsEditorProps) {
+}: ContactEmailsEditorProps<Row>) {
   const remoteRows = rowsForEditor({ email, emails });
   const remoteKey = rowsKey(remoteRows);
   const [rows, setRows] = useState(remoteRows);

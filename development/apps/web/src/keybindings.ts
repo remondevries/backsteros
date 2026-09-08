@@ -116,6 +116,30 @@ function matchesShortcut(
   return resolveEventKeys(event).has(shortcut.key);
 }
 
+/**
+ * Bare / shift-only chords (e.g. `[`, `⇧[`, `]`) must yield to text fields;
+ * mod/ctrl/alt chords can still run from editors.
+ */
+export function shouldGuardShortcutForEditableTarget(
+  event: Pick<ShortcutEventLike, "metaKey" | "ctrlKey" | "altKey">,
+): boolean {
+  return !event.metaKey && !event.ctrlKey && !event.altKey;
+}
+
+/** True when focus is in an input that should receive typed characters. */
+export function isShortcutEditableTarget(target: EventTarget | null): boolean {
+  if (target == null || typeof HTMLElement === "undefined") return false;
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  if (target.closest("[role='textbox']") || target.closest(".cm-editor")) return true;
+  if (target.closest(".xterm") || target.classList.contains("xterm-helper-textarea")) {
+    return true;
+  }
+  return false;
+}
+
 function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
   return options?.platform ?? navigator.platform;
 }

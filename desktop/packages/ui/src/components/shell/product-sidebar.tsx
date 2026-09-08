@@ -28,10 +28,8 @@ import {
   type InboxSidebarIndicatorTone,
 } from "../../calendar/calendar-meeting-overlay.js";
 import {
-  SidebarAccountIcon,
   SidebarChevronIcon,
   SidebarComposeIcon,
-  SidebarLogoutIcon,
   SidebarSettingsIcon,
 } from "./sidebar-nav-icons.js";
 
@@ -58,10 +56,6 @@ export type ProductSidebarProps = {
   Link: ProductSidebarLinkComponent;
   displayName?: string;
   onCompose?: () => void;
-  /** Opens Clerk account / host account UI — matches Next.js profile menu. */
-  onAccount?: () => void;
-  /** Signs out — shown with Account + divider when provided. */
-  onSignOut?: () => void | Promise<void>;
   onBack?: () => void;
   onForward?: () => void;
   canGoBack?: boolean;
@@ -139,8 +133,6 @@ export function ProductSidebar({
   Link,
   displayName = "BacksterOS",
   onCompose,
-  onAccount,
-  onSignOut,
   onBack,
   onForward,
   canGoBack = false,
@@ -155,7 +147,6 @@ export function ProductSidebar({
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const settingsHref = getDefaultSettingsHref();
   const closeProfileMenu = () => setProfileMenuOpen(false);
-  const showAccountActions = Boolean(onAccount || onSignOut);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -251,45 +242,6 @@ export function ProductSidebar({
                   </span>
                   <span className="app-side-panel-item-label">Settings</span>
                 </Link>
-                {onAccount ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="app-side-panel-item app-side-panel-profile-menu-item"
-                    onClick={() => {
-                      closeProfileMenu();
-                      onAccount();
-                    }}
-                  >
-                    <span className="app-side-panel-item-icon" aria-hidden="true">
-                      <SidebarAccountIcon size={14} />
-                    </span>
-                    <span className="app-side-panel-item-label">Account</span>
-                  </button>
-                ) : null}
-                {showAccountActions && onSignOut ? (
-                  <div
-                    className="app-side-panel-profile-menu-divider"
-                    role="separator"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {onSignOut ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="app-side-panel-item app-side-panel-profile-menu-item"
-                    onClick={() => {
-                      closeProfileMenu();
-                      void onSignOut();
-                    }}
-                  >
-                    <span className="app-side-panel-item-icon" aria-hidden="true">
-                      <SidebarLogoutIcon />
-                    </span>
-                    <span className="app-side-panel-item-label">Log out</span>
-                  </button>
-                ) : null}
               </div>
             </div>
           ) : null}

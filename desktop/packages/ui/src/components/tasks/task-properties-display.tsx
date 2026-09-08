@@ -21,7 +21,6 @@ import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import { PropertyDropdownNavigateRow } from "../dropdowns/property-dropdown-navigate-row.js";
 import { PropertyFieldGroup } from "../content/property-field-group.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import {
   decodeTaskRelatedValues,

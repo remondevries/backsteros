@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   groupProjectsByType,
   projectTypeCollapseKey,
-} from "../../dist/projects/group-projects-by-type.js";
+} from "./group-projects-by-type.js";
 
 test("groupProjectsByType keeps general unlabeled and labels codebase", () => {
   const groups = groupProjectsByType([

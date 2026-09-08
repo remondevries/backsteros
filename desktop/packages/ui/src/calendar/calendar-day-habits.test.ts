@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCalendarDayHabitsByDate } from "../../dist/calendar/calendar-day-habits.js";
+import { buildCalendarDayHabitsByDate } from "./calendar-day-habits.js";
 
 test("buildCalendarDayHabitsByDate groups habit tasks by due date", () => {
   const map = buildCalendarDayHabitsByDate(

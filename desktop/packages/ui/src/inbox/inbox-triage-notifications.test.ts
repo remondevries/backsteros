@@ -90,7 +90,8 @@ test("buildInboxTriageNotification for meeting booking", () => {
   const notification = buildInboxTriageNotification(meeting);
   assert.equal(notification?.kind, "meeting");
   assert.equal(notification?.key, "triage:meeting:m1");
-  assert.equal(notification?.href, "/inbox/m-7");
+  // Meetings open in the calendar (`getCalendarMeetingHref`), not `/inbox/…`.
+  assert.equal(notification?.href, "/calendar/meetings/m1");
 });
 
 test("snapshotInboxTriageKeys tracks stable email ids", () => {

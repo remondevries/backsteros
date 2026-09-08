@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import type { PowerSyncDatabase } from "@powersync/web";
 
 import {
@@ -16,11 +15,11 @@ import {
   POWER_SYNC_CONNECT_TIMEOUT_MS,
   closePowerSyncDatabase,
   createPowerSyncDatabase,
-  disposePowerSyncGlobalSlot,
   getPowerSyncGlobalSlot,
   setPowerSyncGlobalSlot,
 } from "./powersync";
 import { useDesktopApi } from "./api-context";
+import { LOCAL_SHELL_USER_ID } from "./local-shell-auth";
 import type { PowerSyncRowComparator } from "./powersync-row-comparators";
 export type { PowerSyncRowComparator } from "./powersync-row-comparators";
 
@@ -100,8 +99,8 @@ type SyncState = {
     id: string,
     values: Record<string, unknown>,
   ) => Promise<void>;
-  /** Push pending CRUD to local-core so server can assign task numbers, etc. */
-  flushCrudUpload: () => Promise<void>;
+  /** Push pending CRUD to local-core. Returns true if at least one batch uploaded. */
+  flushCrudUpload: () => Promise<boolean>;
 };
 
 const idleState: SyncState = {
@@ -137,14 +136,6 @@ function deviceId(): string {
   return created;
 }
 
-function syncError(database: PowerSyncDatabase): Error | null {
-  return (
-    database.currentStatus.dataFlowStatus.downloadError ??
-    database.currentStatus.dataFlowStatus.uploadError ??
-    null
-  );
-}
-
 function UnauthenticatedPowerSyncProvider({
   children,
 }: {
@@ -154,7 +145,7 @@ function UnauthenticatedPowerSyncProvider({
     () => ({
       ...idleState,
       status: "unauthenticated",
-      message: "Sign in to enable PowerSync",
+      message: "PowerSync disabled",
     }),
     [],
   );
@@ -172,10 +163,9 @@ function AuthenticatedPowerSyncProvider({
   apiUrl: string;
   children: ReactNode;
 }) {
-  const { isLoaded, userId, sessionId, getToken } = useAuth();
+  // Single-owner local shell: stable SQLite key.
+  const userId = LOCAL_SHELL_USER_ID;
   const { client } = useDesktopApi();
-  const getTokenRef = useRef(getToken);
-  getTokenRef.current = getToken;
   const clientRef = useRef(client);
   clientRef.current = client;
 
@@ -184,9 +174,7 @@ function AuthenticatedPowerSyncProvider({
     database: PowerSyncDatabase;
   } | null>(null);
   const database =
-    sessionId && databaseState?.userId === userId
-      ? databaseState.database
-      : null;
+    databaseState?.userId === userId ? databaseState.database : null;
   const [offline, setOffline] = useState(false);
   const [initError, setInitError] = useState<Error | null>(null);
   const [reconnectNonce, setReconnectNonce] = useState(0);
@@ -209,7 +197,6 @@ function AuthenticatedPowerSyncProvider({
   }, []);
 
   useEffect(() => {
-    if (!isLoaded) return;
     let cancelled = false;
     const forceRecreate = reconnectNonceRef.current !== reconnectNonce;
     reconnectNonceRef.current = reconnectNonce;
@@ -225,20 +212,6 @@ function AuthenticatedPowerSyncProvider({
 
     transitionRef.current = transitionRef.current.then(async () => {
       if (cancelled) return;
-
-      // Sign-out / missing session: tear down singleton so IDB is unlocked.
-      if (!userId || !sessionId) {
-        databaseRef.current = null;
-        connectorRef.current = null;
-        disposeListenerRef.current?.();
-        disposeListenerRef.current = null;
-        await disposePowerSyncGlobalSlot({ clear: true });
-        if (!cancelled) {
-          setDatabaseState(null);
-          setInitError(null);
-        }
-        return;
-      }
 
       // HMR / StrictMode remount: reuse the global singleton for this user.
       const existing = getPowerSyncGlobalSlot();
@@ -264,7 +237,7 @@ function AuthenticatedPowerSyncProvider({
       setPowerSyncGlobalSlot(null);
       if (previous) {
         await closePowerSyncDatabase(previous, {
-          clear: switchingUser || !sessionId,
+          clear: switchingUser,
         });
       }
 
@@ -279,37 +252,20 @@ function AuthenticatedPowerSyncProvider({
 
         const connector = new BacksterPowerSyncConnector(
           apiUrl,
-          async () => {
-            try {
-              const token = await getTokenRef.current({ skipCache: true });
-              if (typeof token === "string" && token.trim().length > 0) {
-                return token.trim();
-              }
-            } catch (reason) {
-              console.warn("[desktop] Clerk getToken failed", reason);
-            }
-            return null;
-          },
+          async () => null,
           deviceId(),
           async () => {
-            // Wait until Clerk can mint a session JWT, then reuse the API client
-            // path that already works for REST (same Authorization wiring).
             for (let attempt = 0; attempt < 8; attempt++) {
               try {
-                const token = await getTokenRef.current({
-                  skipCache: attempt > 0,
-                });
-                if (typeof token === "string" && token.trim().length > 0) {
-                  return clientRef.current.getPowerSyncCredentials();
-                }
+                return await clientRef.current.getPowerSyncCredentials();
               } catch (reason) {
-                console.warn("[desktop] Clerk getToken failed", reason);
+                console.warn("[desktop] PowerSync credentials failed", reason);
               }
               await new Promise((resolve) =>
                 setTimeout(resolve, 120 * (attempt + 1)),
               );
             }
-            throw new Error("Sign in to connect");
+            throw new Error("Could not fetch PowerSync credentials");
           },
         );
         connectorRef.current = connector;
@@ -319,6 +275,20 @@ function AuthenticatedPowerSyncProvider({
         try {
           await connectWithTimeout(next, connector);
           if (!cancelled) setInitError(null);
+          // Prior sessions left due-date PATCHes queued when auto-upload stalled.
+          // Drain immediately on connect so local edits reach the leader.
+          try {
+            for (let i = 0; i < 50; i++) {
+              const pending = await next.getCrudBatch();
+              if (!pending) break;
+              await connector.uploadData(next);
+            }
+          } catch (flushReason) {
+            console.warn(
+              "[desktop] PowerSync post-connect CRUD flush failed",
+              flushReason,
+            );
+          }
         } catch (reason) {
           console.warn("[desktop] PowerSync connect failed", reason);
           if (!cancelled) {
@@ -359,13 +329,11 @@ function AuthenticatedPowerSyncProvider({
     return () => {
       cancelled = true;
       // Do not close the global singleton here — HMR / StrictMode remounts reuse
-      // it. Module hot.dispose and sign-out / retry paths close explicitly.
+      // it. Module hot dispose and retry paths close explicitly.
       disposeListenerRef.current?.();
       disposeListenerRef.current = null;
     };
-    // Intentionally omit getToken — Clerk often returns a new function identity
-    // every render, which would wipe/reconnect the DB in a loop.
-  }, [apiUrl, isLoaded, reconnectNonce, sessionId, userId]);
+  }, [apiUrl, reconnectNonce, userId]);
 
   const retry = useCallback(async () => {
     // Always full re-init — soft reconnect can no-op when the previous connect
@@ -403,7 +371,14 @@ function AuthenticatedPowerSyncProvider({
     if (!db || !connector) {
       throw new Error("Offline database is not ready");
     }
-    await connector.uploadData(db);
+    let uploaded = false;
+    for (let i = 0; i < 50; i++) {
+      const pending = await db.getCrudBatch();
+      if (!pending) return uploaded;
+      await connector.uploadData(db);
+      uploaded = true;
+    }
+    return uploaded;
   }, []);
 
   const createMetadata = useCallback(
@@ -456,15 +431,9 @@ function AuthenticatedPowerSyncProvider({
   const stableValueRef = useRef<SyncState | null>(null);
 
   const value = useMemo<SyncState>(() => {
-    let syncStatus: PowerSyncStatus = "idle";
-    let message = "PowerSync idle";
-    if (!isLoaded) {
-      syncStatus = "connecting";
-      message = "Loading session…";
-    } else if (!userId || !sessionId) {
-      syncStatus = "unauthenticated";
-      message = "Sign in to enable PowerSync";
-    } else if (initError) {
+    let syncStatus: PowerSyncStatus;
+    let message: string;
+    if (initError) {
       syncStatus = "error";
       message = `PowerSync unavailable (${initError.message})`;
     } else if (!database || connecting) {
@@ -522,14 +491,11 @@ function AuthenticatedPowerSyncProvider({
     downloadErrorMessage,
     flushCrudUpload,
     initError,
-    isLoaded,
     offline,
     patchMetadata,
     ready,
     retry,
-    sessionId,
     uploadErrorMessage,
-    userId,
     hasSynced,
   ]);
 
@@ -539,7 +505,7 @@ function AuthenticatedPowerSyncProvider({
 }
 
 /**
- * Real PowerSync web provider when Clerk session is present.
+ * PowerSync for the local-shell desktop.
  */
 export function PowerSyncProvider({
   children,
@@ -567,7 +533,10 @@ export function useDesktopPowerSync() {
   return useContext(PowerSyncContext);
 }
 
-function rowsUnchanged<T>(previous: readonly T[], next: readonly T[]): boolean {
+function rowsUnchanged(
+  previous: readonly unknown[],
+  next: readonly unknown[],
+): boolean {
   if (previous === next) return true;
   if (previous.length !== next.length) return false;
   for (let i = 0; i < previous.length; i += 1) {
@@ -601,7 +570,7 @@ export function usePowerSyncQuery<T>(
     rowComparator?: PowerSyncRowComparator<T>;
   },
 ) {
-  const { database, ready } = useDesktopPowerSync();
+  const { database } = useDesktopPowerSync();
   const parameterKey = JSON.stringify(parameters);
   const queryKey = `${sql ?? ""}\0${parameterKey}`;
   const [result, setResult] = useState<{

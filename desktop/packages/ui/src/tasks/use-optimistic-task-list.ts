@@ -14,6 +14,8 @@ type TaskListOptimisticRow = {
   status: string;
   priority?: number;
   dueDate?: number | Date | null;
+  number?: number | null;
+  projectId?: string | null;
   projectKey?: string | null;
   projectName?: string | null;
   assigneeId?: string | null;

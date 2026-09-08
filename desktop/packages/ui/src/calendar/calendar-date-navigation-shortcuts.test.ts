@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   resolveCalendarDateNavigationAction,
-} from "../../dist/calendar/calendar-date-navigation-shortcuts.js";
+} from "./calendar-date-navigation-shortcuts.js";
 
 test("resolveCalendarDateNavigationAction maps arrow keys to prev/next", () => {
   assert.equal(resolveCalendarDateNavigationAction("ArrowLeft"), "prev");

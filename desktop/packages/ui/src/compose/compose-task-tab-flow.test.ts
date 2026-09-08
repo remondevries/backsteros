@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { getNextComposeTaskTabField } from "../../dist/compose/compose-task-tab-flow.js";
+import { getNextComposeTaskTabField } from "./compose-task-tab-flow.js";
 
 test("getNextComposeTaskTabField includes priority between due date and assignee", () => {
   const context = { statusEnabled: true, assigneeEnabled: true };

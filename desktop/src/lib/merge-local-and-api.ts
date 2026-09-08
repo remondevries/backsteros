@@ -12,11 +12,16 @@ function updatedAtMs(value: string | number | Date | null | undefined): number {
 /**
  * When the same task appears in list + inbox snapshots, keep the newer row so
  * due dates (and other fields) stay consistent across side panel and detail.
+ *
+ * On equal `updatedAt`, prefer `current` (local / PowerSync). Optimistic API
+ * patches used to win ties via `>=`, which re-applied a stale API `status`
+ * (e.g. backlog) after a due-date-only edit that only bumped the API cache
+ * (BOD-62).
  */
 export function preferNewerByUpdatedAt<
   T extends { updatedAt?: string | number | Date | null },
 >(current: T, incoming: T): T {
-  return updatedAtMs(incoming.updatedAt) >= updatedAtMs(current.updatedAt)
+  return updatedAtMs(incoming.updatedAt) > updatedAtMs(current.updatedAt)
     ? incoming
     : current;
 }
@@ -40,11 +45,12 @@ function hasLinks(value: unknown): boolean {
  * Once SQLite/PowerSync has rows, keep that membership — REST is only a
  * cold-start rescue when local is empty.
  *
- * Still overlay an API row when its `updatedAt` is newer. Optimistic patches
- * bump the API cache immediately while the SQLite watch is still a tick
+ * Still overlay an API row when its `updatedAt` is strictly newer. Optimistic
+ * patches bump the API cache immediately while the SQLite watch is still a tick
  * behind; without this, a re-render snaps status (and other fields) back to
  * the stale local value until PowerSync catches up — or forever if sync
- * briefly re-delivers the pre-patch row.
+ * briefly re-delivers the pre-patch row. On equal timestamps, local wins so a
+ * due-date-only API bump cannot revive a stale REST status (BOD-62).
  */
 export function resolveLocalOrApiRows<
   T extends { id: string; updatedAt?: string | number | Date | null },

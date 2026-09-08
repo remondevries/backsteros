@@ -88,17 +88,6 @@ export type LetterComposeViewProps = {
   titleFocusRequest?: number;
 };
 
-function pickLocalPdfFile(): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/pdf,.pdf";
-    input.onchange = () => resolve(input.files?.[0] ?? null);
-    input.oncancel = () => resolve(null);
-    input.click();
-  });
-}
-
 /** Local object-URL preview for compose (bytes stay in-memory until create). */
 function LetterComposeLocalPdfPreview({ file }: { file: File }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -144,7 +133,6 @@ export function LetterComposeView({
   onCreateOrganizationFromQuery,
   onCreateContactFromQuery,
   onSubmit,
-  onPickPdf,
   selectedPdfFile: selectedPdfFileProp,
   pdfUploading = false,
   titleFocusRequest: titleFocusRequestProp = 0,
@@ -304,25 +292,6 @@ export function LetterComposeView({
     projectKey,
     projectName: null,
   };
-
-  async function handlePickPdf() {
-    if (onPickPdf) {
-      await onPickPdf();
-      return;
-    }
-    const file = await pickLocalPdfFile();
-    if (!file) return;
-    if (
-      file.type &&
-      file.type !== "application/pdf" &&
-      !file.name.toLowerCase().endsWith(".pdf")
-    ) {
-      return;
-    }
-    if (!pdfControlled) {
-      setUncontrolledPdfFile(file);
-    }
-  }
 
   return (
     <div

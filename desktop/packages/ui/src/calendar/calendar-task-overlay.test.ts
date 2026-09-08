@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   getCalendarTaskOverlayHref,
   parseCalendarTaskOverlayId,
-} from "../../dist/calendar/calendar-task-overlay.js";
+} from "./calendar-task-overlay.js";
 
 test("parseCalendarTaskOverlayId reads task overlay search param", () => {
   assert.equal(parseCalendarTaskOverlayId("?task=task-1"), "task-1");

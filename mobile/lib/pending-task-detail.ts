@@ -103,5 +103,6 @@ export function pendingTaskDetailFromCreateBody(
     agent_inbox_approved_at: null,
     tracked_minutes: null,
     tracked_duration_seconds: null,
+    links: [],
   };
 }

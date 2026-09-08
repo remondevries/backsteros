@@ -53,7 +53,6 @@ import {
 } from "../merge-local-and-api";
 import { useDesktopPowerSync, usePowerSyncQuery } from "../powersync-context";
 import { WORKSPACE_LIST_ROW_COMPARATOR } from "../powersync-row-comparators";
-import { getDesktopPublicEnvironment } from "../env";
 import { rememberProjectTypes } from "../project-type-cache";
 import { noteLocalTaskStatusPatch } from "../agent/agent-status-notifications";
 import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
@@ -648,6 +647,18 @@ function useDesktopWorkspaceDataImpl(): {
     });
     return sortInboxItemsByAttentionStatus(inboxTaskItems);
   }, [projectsById, rawInboxTasks, rawTasks]);
+  const getLocalTaskStatus = useCallback(
+    (id: string) => {
+      const fromList = localTasks?.find((task) => task.id === id);
+      if (typeof fromList?.status === "string" && fromList.status) {
+        return fromList.status;
+      }
+      const fromInbox = localInboxTasks?.find((task) => task.id === id);
+      return typeof fromInbox?.status === "string" ? fromInbox.status : null;
+    },
+    [localInboxTasks, localTasks],
+  );
+
   const {
     toSnakeFields,
     seedDocumentLocal,
@@ -668,6 +679,7 @@ function useDesktopWorkspaceDataImpl(): {
     setApiOrganizations,
     setApiMeetings,
     setApiDocuments,
+    getLocalTaskStatus,
   });
 
   const {

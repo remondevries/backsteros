@@ -1,5 +1,15 @@
 import { RefreshCwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
+import * as Schema from "effect/Schema";
 
 import { BacksterosContactPersonIcon } from "~/backsteros/ContactPersonIcon";
 import { DefaultProjectIcon } from "~/backsteros/DefaultProjectIcon";
@@ -32,6 +42,11 @@ import {
   getBacksterosTaskPriorityLabel,
 } from "~/backsteros/taskDetailFormat";
 import {
+  clampTaskDetailPanelWidth,
+  resolveInitialTaskDetailPanelWidth,
+  TASK_DETAIL_PANEL_WIDTH_STORAGE_KEY,
+} from "~/backsteros/taskDetailPanelWidth";
+import {
   useBacksterosAvatarSrcMap,
   useBacksterosContactAvatarSrcMap,
 } from "~/backsteros/useBacksterosContactAvatars";
@@ -54,6 +69,11 @@ import {
   type BacksterosTaskStatus,
 } from "~/backsteros/taskStatus";
 import { isElectron } from "~/env";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { Button } from "../ui/button";
@@ -62,9 +82,29 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import "~/backsteros/backsterosPropertyMenu.css";
 
-const DETAIL_PANEL_WIDTH_PX = 380;
 const UNASSIGNED_VALUE = "__unassigned__";
 const NO_PROJECT_VALUE = "__no_project__";
+
+function subscribeToViewportWidth(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+function readViewportWidth(): number {
+  return window.innerWidth;
+}
+
+function readInitialPanelWidth(): number {
+  try {
+    return resolveInitialTaskDetailPanelWidth(
+      getLocalStorageItem(TASK_DETAIL_PANEL_WIDTH_STORAGE_KEY, Schema.Finite),
+      window.innerWidth,
+    );
+  } catch (error) {
+    console.error("Could not read persisted task detail panel width.", error);
+    return resolveInitialTaskDetailPanelWidth(null, window.innerWidth);
+  }
+}
 
 function BacksterosTaskDescriptionSection(props: {
   readonly taskId: string;
@@ -158,6 +198,154 @@ function BacksterosTaskDescriptionSection(props: {
   );
 }
 
+function TaskDetailPanelResizeRail(props: {
+  readonly panelRef: RefObject<HTMLElement | null>;
+  readonly width: number;
+  readonly onWidthChange: (width: number) => void;
+  readonly onResetWidth: () => void;
+}) {
+  const { panelRef, width, onWidthChange, onResetWidth } = props;
+  const railRef = useRef<HTMLButtonElement | null>(null);
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const resizeStateRef = useRef<{
+    moved: boolean;
+    pointerId: number;
+    pendingWidth: number;
+    rafId: number | null;
+    reservedLeft: number;
+    startWidth: number;
+    startX: number;
+    width: number;
+  } | null>(null);
+
+  const stopResize = useCallback(
+    (pointerId: number) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState) return;
+      if (resizeState.rafId !== null) {
+        window.cancelAnimationFrame(resizeState.rafId);
+      }
+      try {
+        setLocalStorageItem(TASK_DETAIL_PANEL_WIDTH_STORAGE_KEY, resizeState.width, Schema.Finite);
+      } catch (error) {
+        console.error("Could not persist task detail panel width.", error);
+      }
+      onWidthChange(resizeState.width);
+      resizeStateRef.current = null;
+      const rail = railRef.current;
+      if (rail?.hasPointerCapture(pointerId)) {
+        rail.releasePointerCapture(pointerId);
+      }
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    },
+    [onWidthChange],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const reservedLeft = Math.max(0, Math.round(panel.getBoundingClientRect().left));
+      const startWidth = clampTaskDetailPanelWidth(
+        widthRef.current,
+        window.innerWidth,
+        reservedLeft,
+      );
+
+      event.preventDefault();
+      event.stopPropagation();
+      resizeStateRef.current = {
+        moved: false,
+        pointerId: event.pointerId,
+        pendingWidth: startWidth,
+        rafId: null,
+        reservedLeft,
+        startWidth,
+        startX: event.clientX,
+        width: startWidth,
+      };
+      panel.style.width = `${startWidth}px`;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelRef],
+  );
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState || resizeState.pointerId !== event.pointerId) return;
+
+      event.preventDefault();
+      const delta = event.clientX - resizeState.startX;
+      if (Math.abs(delta) > 2) resizeState.moved = true;
+      resizeState.pendingWidth = clampTaskDetailPanelWidth(
+        resizeState.startWidth + delta,
+        window.innerWidth,
+        resizeState.reservedLeft,
+      );
+      if (resizeState.rafId !== null) return;
+
+      resizeState.rafId = window.requestAnimationFrame(() => {
+        const active = resizeStateRef.current;
+        if (!active) return;
+        active.rafId = null;
+        const nextWidth = active.pendingWidth;
+        const panel = panelRef.current;
+        if (panel) panel.style.width = `${nextWidth}px`;
+        active.width = nextWidth;
+        onWidthChange(nextWidth);
+      });
+    },
+    [onWidthChange, panelRef],
+  );
+
+  const endResizeInteraction = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState || resizeState.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      stopResize(event.pointerId);
+    },
+    [stopResize],
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            ref={railRef}
+            type="button"
+            aria-label="Resize task details"
+            title="Drag to resize · double-click to reset"
+            className={cn(
+              "absolute inset-y-0 right-0 z-20 w-3 translate-x-1/2 cursor-col-resize",
+              "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2",
+              "after:bg-transparent hover:after:bg-sidebar-border",
+              "[[data-panel-animations=true]_&]:transition-colors",
+            )}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endResizeInteraction}
+            onPointerCancel={endResizeInteraction}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              onResetWidth();
+            }}
+          />
+        }
+      />
+      <TooltipPopup side="right">Drag to resize</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function BacksterosTaskDetailPanel() {
   const selection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const closeTaskDetail = useBacksterosTaskDetailUiStore((state) => state.closeTaskDetail);
@@ -166,9 +354,31 @@ export function BacksterosTaskDetailPanel() {
   );
   const { state: sidebarState } = useSidebar();
   const navCollapsed = sidebarState === "collapsed";
+  const panelRef = useRef<HTMLElement | null>(null);
+  const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
+  const [panelWidth, setPanelWidth] = useState(readInitialPanelWidth);
   const { state, reload, addComment, editComment, deleteComment, patchTask, postTimerActivity } =
     useBacksterosTaskDetail(selection?.taskId ?? null);
   const { state: projectsState } = useBacksterosCodebaseProjects(Boolean(selection));
+
+  const resetPanelWidth = useCallback(() => {
+    try {
+      removeLocalStorageItem(TASK_DETAIL_PANEL_WIDTH_STORAGE_KEY);
+    } catch (error) {
+      console.error("Could not clear persisted task detail panel width.", error);
+    }
+    const reservedLeft = panelRef.current
+      ? Math.max(0, Math.round(panelRef.current.getBoundingClientRect().left))
+      : 0;
+    const next = resolveInitialTaskDetailPanelWidth(null, window.innerWidth, reservedLeft);
+    setPanelWidth(next);
+  }, []);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    const reservedLeft = panel ? Math.max(0, Math.round(panel.getBoundingClientRect().left)) : 0;
+    setPanelWidth((current) => clampTaskDetailPanelWidth(current, viewportWidth, reservedLeft));
+  }, [viewportWidth]);
 
   // Keep the chat-header task id (BSH-11) fresh when the detail rail is open.
   useEffect(() => {
@@ -397,10 +607,18 @@ export function BacksterosTaskDetailPanel() {
 
   return (
     <aside
-      className="flex h-full min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-      style={{ width: DETAIL_PANEL_WIDTH_PX }}
+      ref={panelRef}
+      className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+      style={{ width: panelWidth }}
       aria-label="BacksterOS task details"
     >
+      {/* Resize handle mirrors the left nav rail (drag edge · double-click resets). */}
+      <TaskDetailPanelResizeRail
+        panelRef={panelRef}
+        width={panelWidth}
+        onWidthChange={setPanelWidth}
+        onResetWidth={resetPanelWidth}
+      />
       <BacksterosContentCrossfade
         contentKey={`task:${selection.taskId}`}
         className="flex min-h-0 flex-1 flex-col"
@@ -561,6 +779,7 @@ export function BacksterosTaskDetailPanel() {
                     />
 
                     <BacksterosTrackedTimeField
+                      timerKey={state.task.id}
                       trackedDurationSeconds={state.task.trackedDurationSeconds ?? null}
                       trackedMinutes={state.task.trackedMinutes ?? null}
                       onTrackedDurationSecondsChange={(seconds) => {

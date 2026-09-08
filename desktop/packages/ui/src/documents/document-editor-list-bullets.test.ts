@@ -7,7 +7,7 @@ import {
   isTaskListMarkAfter,
   isUnorderedListMark,
   listMarkReplaceTo,
-} from "../../dist/documents/document-editor-list-bullets.js";
+} from "./document-editor-list-bullets.js";
 
 test("isUnorderedListMark accepts -, *, +", () => {
   assert.equal(isUnorderedListMark("-"), true);

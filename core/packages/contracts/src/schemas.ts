@@ -387,10 +387,10 @@ export const taskSchema = z.object({
   /** Cursor Agent chat id bound to this task, if any. */
   agentChatId: z.string().nullable(),
   /**
-   * GitHub commit SHA for this task’s change record (desktop Diff view).
-   * Null when no commit is linked.
+   * GitHub commit SHAs for this task’s change records (desktop Diff view).
+   * Empty when none are linked.
    */
-  linkedCommitSha: z.string().nullable(),
+  linkedCommitShas: z.array(z.string()).default([]),
   /** Habit definition this daily instance belongs to, if any. */
   habitId: z.string().nullable().optional(),
   completedAt: z.string().datetime().nullable(),
@@ -429,9 +429,10 @@ export const createTaskSchema = z.object({
   inbox: z.boolean().optional(),
   links: z.array(taskLinkSchema).max(20).optional(),
   agentChatId: z.string().max(128).nullable().optional(),
-  /** GitHub commit SHA (7–64 hex chars) or null to clear. */
-  linkedCommitSha: z
-    .union([z.string().regex(/^[0-9a-fA-F]{7,64}$/), z.null()])
+  /** GitHub commit SHAs (7–64 hex chars each); replaces the full list when set. */
+  linkedCommitShas: z
+    .array(z.string().regex(/^[0-9a-fA-F]{7,64}$/))
+    .max(20)
     .optional(),
   habitId: z.string().nullable().optional(),
   trackedMinutes: z.number().int().nonnegative().nullable().optional(),
@@ -1522,6 +1523,7 @@ export const financialTransactionSchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+
 export const updateFinancialTransactionSchema = z.object({
   /** Move the transaction to another bank account in the same workspace. */
   bankAccountId: z.string().optional(),
@@ -1883,26 +1885,24 @@ export const mapboxTestConnectionResultSchema = z.object({
   error: z.string().nullable(),
 });
 
+/** GitHub integration (workspace PAT; optional Clerk OAuth still supported). */
 export const githubSettingsSchema = z.object({
   apiTokenConfigured: z.boolean(),
   apiTokenPreview: z.string().nullable(),
-  /** True when a workspace PAT or env fallback is configured (not Clerk OAuth). */
+  /** True when a workspace PAT or env fallback is configured. */
   connected: z.boolean(),
   /** Env `GITHUB_API_TOKEN` is set (shown so Settings can explain fallback). */
   envTokenConfigured: z.boolean(),
 });
-
 export const updateGithubSettingsSchema = z.object({
   /** Set to a new token, or empty string to clear. Omit to leave unchanged. */
   apiToken: z.string().optional(),
 });
-
 export const githubTestConnectionResultSchema = z.object({
   ok: z.boolean(),
   error: z.string().nullable(),
   login: z.string().nullable(),
 });
-
 
 /** Shared place/geocode result for contacts (and later meetings). */
 export const mapboxGeocodeResultSchema = z.object({
@@ -2983,15 +2983,15 @@ export type MoneybirdTestConnectionResult = z.infer<
   typeof moneybirdTestConnectionResultSchema
 >;
 export type MapboxSettings = z.infer<typeof mapboxSettingsSchema>;
+export type UpdateMapboxSettingsInput = z.infer<
+  typeof updateMapboxSettingsSchema
+>;
 export type GithubSettings = z.infer<typeof githubSettingsSchema>;
 export type UpdateGithubSettingsInput = z.infer<
   typeof updateGithubSettingsSchema
 >;
 export type GithubTestConnectionResult = z.infer<
   typeof githubTestConnectionResultSchema
->;
-export type UpdateMapboxSettingsInput = z.infer<
-  typeof updateMapboxSettingsSchema
 >;
 export type MapboxTestConnectionResult = z.infer<
   typeof mapboxTestConnectionResultSchema

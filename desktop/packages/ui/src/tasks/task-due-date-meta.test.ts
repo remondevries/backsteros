@@ -52,7 +52,14 @@ describe("shouldShowTaskDueDateUrgency", () => {
 describe("formatTaskDueMetaLabel", () => {
   it("formats today as Today", () => {
     const today = new Date();
-    const label = formatTaskDueMetaLabel(today, today);
-    assert.match(label, /Today/i);
+    const label = formatTaskDueMetaLabel(today);
+    assert.equal(label, "Today");
+  });
+
+  it("keeps bare YMD on the local calendar day (no UTC shift)", () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const ymd = formatLocalYmd(tomorrow);
+    assert.equal(formatTaskDueMetaLabel(ymd), "Tomorrow");
   });
 });

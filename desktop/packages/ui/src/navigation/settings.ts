@@ -58,7 +58,7 @@ export const SETTINGS_NAV_TABS: {
   {
     id: "github",
     label: "GitHub",
-    description: "Connect personal and organization repositories",
+    description: "Personal access token for commits and pull requests",
     group: "integration",
     href: "/settings/github",
   },

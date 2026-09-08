@@ -83,6 +83,18 @@ export function getTaskStatusHeaderGradient(
       to: "#ffffff05",
     };
   }
+  if (status === "updated") {
+    return {
+      from: "#626ac610",
+      to: "#ffffff05",
+    };
+  }
+  if (status === "agents") {
+    return {
+      from: "#8b7cf610",
+      to: "#ffffff05",
+    };
+  }
   return TASK_STATUS_HEADER_GRADIENTS[migrateLegacyTaskStatus(status)];
 }
 

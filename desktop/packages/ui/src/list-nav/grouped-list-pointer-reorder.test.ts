@@ -1,4 +1,5 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 
 import {
   LIST_REORDER_APPEND_ATTR,
@@ -9,103 +10,162 @@ import {
   resolveGroupedListPointerDropTarget,
 } from "./grouped-list-pointer-reorder.js";
 
+/**
+ * Minimal element tree: enough of `Element` for the module under test
+ * (`closest("[attr]")`, `getAttribute`, `contains`). Installed as the global
+ * `Element` so `instanceof Element` holds.
+ */
+class FakeElement {
+  parent: FakeElement | null = null;
+  readonly attrs: Map<string, string>;
+
+  constructor(attrs: Record<string, string>, children: FakeElement[] = []) {
+    this.attrs = new Map(Object.entries(attrs));
+    for (const child of children) child.parent = this;
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
+
+  closest(selector: string): FakeElement | null {
+    const match = /^\[([^\]]+)\]$/.exec(selector);
+    if (!match) throw new Error(`unsupported selector ${selector}`);
+    const attr = match[1]!;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- DOM-style walk from self
+    let node: FakeElement | null = this;
+    while (node) {
+      if (node.attrs.has(attr)) return node;
+      node = node.parent;
+    }
+    return null;
+  }
+
+  contains(other: FakeElement): boolean {
+    let node: FakeElement | null = other;
+    while (node) {
+      if (node === this) return true;
+      node = node.parent;
+    }
+    return false;
+  }
+}
+
+const previousElement = globalThis.Element;
+const previousDocument = globalThis.document;
+
+function stubPointerStack(stack: FakeElement[]) {
+  globalThis.Element = FakeElement as unknown as typeof Element;
+  globalThis.document = {
+    elementsFromPoint: () => stack,
+  } as unknown as Document;
+}
+
 afterEach(() => {
-  vi.restoreAllMocks();
-  document.body.innerHTML = "";
+  globalThis.Element = previousElement;
+  globalThis.document = previousDocument;
 });
 
 describe("groupedListPointerDropToRequest", () => {
   it("maps before-item targets", () => {
-    expect(
+    assert.deepEqual(
       groupedListPointerDropToRequest({
         itemId: "a",
         fromGroupKey: "todo",
         target: { kind: "before-item", itemId: "b", groupKey: "done" },
       }),
-    ).toEqual({
-      itemId: "a",
-      fromGroupKey: "todo",
-      toGroupKey: "done",
-      beforeItemId: "b",
-    });
+      {
+        itemId: "a",
+        fromGroupKey: "todo",
+        toGroupKey: "done",
+        beforeItemId: "b",
+      },
+    );
   });
 
   it("maps append-group targets", () => {
-    expect(
+    assert.deepEqual(
       groupedListPointerDropToRequest({
         itemId: "a",
         fromGroupKey: "todo",
         target: { kind: "append-group", groupKey: "done" },
       }),
-    ).toEqual({
-      itemId: "a",
-      fromGroupKey: "todo",
-      toGroupKey: "done",
-      beforeItemId: null,
-    });
+      {
+        itemId: "a",
+        fromGroupKey: "todo",
+        toGroupKey: "done",
+        beforeItemId: null,
+      },
+    );
   });
 });
 
 describe("insertBeforeKeyForPointerTarget", () => {
   it("uses item and append key helpers", () => {
-    expect(
+    assert.equal(
       insertBeforeKeyForPointerTarget(
         { kind: "before-item", itemId: "b", groupKey: "todo" },
         (id) => `item:${id}`,
         (group) => `append:${group}`,
       ),
-    ).toBe("item:b");
-    expect(
+      "item:b",
+    );
+    assert.equal(
       insertBeforeKeyForPointerTarget(
         { kind: "append-group", groupKey: "done" },
         (id) => `item:${id}`,
         (group) => `append:${group}`,
       ),
-    ).toBe("append:done");
+      "append:done",
+    );
   });
 });
 
 describe("resolveGroupedListPointerDropTarget", () => {
   it("resolves item and append hosts under the pointer", () => {
-    document.body.innerHTML = `
-      <div ${LIST_REORDER_APPEND_ATTR}="done" id="append"></div>
-      <div ${LIST_REORDER_ITEM_ATTR}="b" ${LIST_REORDER_GROUP_ATTR}="todo" id="item"></div>
-    `;
-    const item = document.getElementById("item")!;
-    const append = document.getElementById("append")!;
+    const append = new FakeElement({ [LIST_REORDER_APPEND_ATTR]: "done" });
+    const item = new FakeElement({
+      [LIST_REORDER_ITEM_ATTR]: "b",
+      [LIST_REORDER_GROUP_ATTR]: "todo",
+    });
 
-    vi.spyOn(document, "elementsFromPoint").mockReturnValue([item]);
-    expect(resolveGroupedListPointerDropTarget(1, 1, "a")).toEqual({
+    stubPointerStack([item]);
+    assert.deepEqual(resolveGroupedListPointerDropTarget(1, 1, "a"), {
       kind: "before-item",
       itemId: "b",
       groupKey: "todo",
     });
 
-    vi.spyOn(document, "elementsFromPoint").mockReturnValue([append]);
-    expect(resolveGroupedListPointerDropTarget(1, 1, "a")).toEqual({
+    stubPointerStack([append]);
+    assert.deepEqual(resolveGroupedListPointerDropTarget(1, 1, "a"), {
       kind: "append-group",
       groupKey: "done",
     });
   });
 
   it("ignores the dragging item itself", () => {
-    document.body.innerHTML = `
-      <div ${LIST_REORDER_ITEM_ATTR}="a" ${LIST_REORDER_GROUP_ATTR}="todo" id="item"></div>
-    `;
-    const item = document.getElementById("item")!;
-    vi.spyOn(document, "elementsFromPoint").mockReturnValue([item]);
-    expect(resolveGroupedListPointerDropTarget(1, 1, "a")).toBeNull();
+    const item = new FakeElement({
+      [LIST_REORDER_ITEM_ATTR]: "a",
+      [LIST_REORDER_GROUP_ATTR]: "todo",
+    });
+    stubPointerStack([item]);
+    assert.equal(resolveGroupedListPointerDropTarget(1, 1, "a"), null);
   });
 
   it("prefers nested child items over ancestor section items", () => {
-    document.body.innerHTML = `
-      <div ${LIST_REORDER_ITEM_ATTR}="parent" ${LIST_REORDER_GROUP_ATTR}="listing:regular" id="section">
-        <div id="child-wrap" ${LIST_REORDER_ITEM_ATTR}="child" ${LIST_REORDER_GROUP_ATTR}="parent:parent"></div>
-      </div>
-    `;
-    const child = document.getElementById("child-wrap")!;
-    vi.spyOn(document, "elementsFromPoint").mockReturnValue([child]);
-    expect(resolveGroupedListPointerDropTarget(1, 1, "other")).toEqual({
+    const child = new FakeElement({
+      [LIST_REORDER_ITEM_ATTR]: "child",
+      [LIST_REORDER_GROUP_ATTR]: "parent:parent",
+    });
+    new FakeElement(
+      {
+        [LIST_REORDER_ITEM_ATTR]: "parent",
+        [LIST_REORDER_GROUP_ATTR]: "listing:regular",
+      },
+      [child],
+    );
+    stubPointerStack([child]);
+    assert.deepEqual(resolveGroupedListPointerDropTarget(1, 1, "other"), {
       kind: "before-item",
       itemId: "child",
       groupKey: "parent:parent",
@@ -113,14 +173,18 @@ describe("resolveGroupedListPointerDropTarget", () => {
   });
 
   it("prefers append zones nested inside item hosts", () => {
-    document.body.innerHTML = `
-      <div ${LIST_REORDER_ITEM_ATTR}="parent" ${LIST_REORDER_GROUP_ATTR}="listing:regular" id="section">
-        <div ${LIST_REORDER_APPEND_ATTR}="parent:parent" id="append"></div>
-      </div>
-    `;
-    const append = document.getElementById("append")!;
-    vi.spyOn(document, "elementsFromPoint").mockReturnValue([append]);
-    expect(resolveGroupedListPointerDropTarget(1, 1, "other")).toEqual({
+    const append = new FakeElement({
+      [LIST_REORDER_APPEND_ATTR]: "parent:parent",
+    });
+    new FakeElement(
+      {
+        [LIST_REORDER_ITEM_ATTR]: "parent",
+        [LIST_REORDER_GROUP_ATTR]: "listing:regular",
+      },
+      [append],
+    );
+    stubPointerStack([append]);
+    assert.deepEqual(resolveGroupedListPointerDropTarget(1, 1, "other"), {
       kind: "append-group",
       groupKey: "parent:parent",
     });

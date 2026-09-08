@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window, compose overlay, and OAuth popups",
-  "windows": ["main", "overlay", "oauth-*"],
+  "description": "Capability for the main window and compose overlay",
+  "windows": ["main", "overlay"],
   "remote": {
     "urls": [
       "http://localhost:1420",
@@ -38,7 +38,6 @@
     "allow-desktop-overlay",
     "allow-whoop",
     "allow-system-stats",
-    "allow-cursor-usage",
-    "allow-oauth-windows"
+    "allow-cursor-usage"
   ]
 }

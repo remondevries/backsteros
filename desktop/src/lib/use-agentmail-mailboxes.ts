@@ -300,14 +300,13 @@ export function useAgentMailMailboxes(
         setMessages([]);
       }
     } finally {
-      if (generation !== reloadGenerationRef.current || !mountedRef.current) {
-        return;
-      }
-      hydratedRef.current = true;
-      setLoading(false);
-      setMessagesLoading(false);
-      if (!silent && reloadAbortRef.current === controller) {
-        reloadAbortRef.current = null;
+      if (generation === reloadGenerationRef.current && mountedRef.current) {
+        hydratedRef.current = true;
+        setLoading(false);
+        setMessagesLoading(false);
+        if (!silent && reloadAbortRef.current === controller) {
+          reloadAbortRef.current = null;
+        }
       }
     }
   }, [client]);

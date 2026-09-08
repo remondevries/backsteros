@@ -127,30 +127,33 @@ export function TaskDueDateDropdown({
     setYmdValue(formatDueDateInputValue(dueDate));
   }
 
+  // Committed due date from props — trigger label must not drift ahead of a
+  // slow/failed save (optimistic ymdValue alone used to show "Tomorrow").
+  const committedYmd = formatDueDateInputValue(dueDate);
   const options = useMemo(
     () =>
       buildTaskDueDateDropdownOptions(
-        ymdValue || null,
+        committedYmd || ymdValue || null,
         new Date(),
         noDueDateLabel,
         { allowClear },
       ),
-    [allowClear, noDueDateLabel, ymdValue],
+    [allowClear, committedYmd, noDueDateLabel, ymdValue],
   );
-  const selectedValue = taskDueDateDropdownValue(ymdValue || null);
-  const displayLabel = ymdValue
+  const selectedValue = taskDueDateDropdownValue(committedYmd || null);
+  const displayLabel = committedYmd
     ? labelFormat === "ymd-time"
-      ? formatDueDateTimeStamp(dueDate) || ymdValue
+      ? formatDueDateTimeStamp(dueDate) || committedYmd
       : labelFormat === "ymd"
-        ? ymdValue
+        ? committedYmd
         : labelFormat === "long"
-          ? (formatBirthdayLabel(ymdValue) ?? ymdValue)
-          : (formatTaskDueMetaLabel(ymdValue) ?? ymdValue)
+          ? (formatBirthdayLabel(committedYmd) ?? committedYmd)
+          : (formatTaskDueMetaLabel(committedYmd) ?? committedYmd)
     : noDueDateLabel;
-  const hasDueDate = Boolean(ymdValue);
+  const hasDueDate = Boolean(committedYmd);
   const dueDateUrgency = useMemo(
-    () => getTaskDueDateUrgency(ymdValue || null, new Date(), { status }),
-    [status, ymdValue],
+    () => getTaskDueDateUrgency(committedYmd || null, new Date(), { status }),
+    [committedYmd, status],
   );
   const colorScheme = useSyncExternalStore(
     subscribeToPreferredColorScheme,
@@ -242,6 +245,7 @@ export function TaskDueDateDropdown({
           defaultOpenPlacement={defaultOpenPlacement}
           fallbackIcon={dueDateIcon}
           fallbackLabel={displayLabel}
+          selectedDisplayLabel={displayLabel}
           mutedFallback={!hasDueDate}
           triggerVariant={triggerVariant}
           onQuerySubmit={handleQuerySubmit}

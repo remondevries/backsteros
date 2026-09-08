@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  CLERK_SECRET_KEY: sk_test_ci_placeholder
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -51,3 +48,33 @@ jobs:
       - run: pnpm --filter @backsteros/server exec tsx src/db/migrate.ts
       - run: pnpm test:integration
       - run: pnpm build
+
+  # Desktop shell + desktop-owned UI: typecheck, lint, unit tests.
+  # Kept separate from `verify` so it is a named, fast, required check.
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prefer HTTPS for GitHub git dependencies
+        run: |
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build shared packages
+        run: |
+          pnpm --filter @backsteros/contracts build
+          pnpm --filter @backsteros/api-client build
+          pnpm --filter @backsteros/powersync-schema build
+          pnpm --filter @backsteros/ui build
+      - run: pnpm --filter @backsteros/ui typecheck
+      - run: pnpm --filter @backsteros/desktop typecheck
+      - run: pnpm --filter @backsteros/desktop lint
+      - run: pnpm --filter @backsteros/ui test
+      - run: pnpm --filter @backsteros/desktop test

@@ -561,10 +561,13 @@ export const tasks = pgTable(
     /** Cursor Agent chat id (`agent --resume <id>`); one active session per task. */
     agentChatId: text("agent_chat_id"),
     /**
-     * GitHub commit SHA linked as this task’s change record (desktop Diff view).
-     * Full or abbreviated SHA as returned by the project’s GitHub API.
+     * GitHub commit SHAs linked as this task’s change records (desktop Diff view).
+     * Full or abbreviated SHAs as returned by the project’s GitHub API.
      */
-    linkedCommitSha: text("linked_commit_sha"),
+    linkedCommitShas: jsonb("linked_commit_shas")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     /** Habit definition this daily instance belongs to, if any. */
     habitId: text("habit_id").references(() => habits.id, {
       onDelete: "set null",
@@ -1481,6 +1484,7 @@ export const financialTransactions = pgTable(
      */
     settlementState: text("settlement_state"),
     raw: jsonb("raw").notNull().default(sql`'{}'::jsonb`),
+
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "set null",
     }),

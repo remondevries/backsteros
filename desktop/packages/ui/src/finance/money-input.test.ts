@@ -5,7 +5,7 @@ import {
   formatMoneyInput,
   moneyCentsToInput,
   parseMoneyInput,
-} from "../../dist/finance/money-input.js";
+} from "./money-input.js";
 
 describe("formatMoneyInput", () => {
   it("groups thousands with dots", () => {

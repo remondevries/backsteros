@@ -1,4 +1,4 @@
-import type { Contact, Project, Task } from "@backsteros/contracts";
+import type { Contact, Project, Task, TaskLink } from "@backsteros/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { migrateLegacyProjectType } from "./project-type";
@@ -9,6 +9,13 @@ import {
 } from "./pending-task-detail";
 import { getTaskDisplayId } from "./task-display-id";
 import { TASK_DETAIL_SELECT } from "./task-list-query";
+import { parseTaskLinks } from "./task-links";
+import {
+  reconcileTaskRowOverride,
+  applyTaskRowOverride,
+  useTaskRowOverridesVersion,
+  withTaskRowOverride,
+} from "./task-row-overrides";
 import { useLocalQuery } from "./use-local-query";
 import { useMobileApiClient } from "./use-mobile-api-client";
 import { shouldFetchTaskDetailViaRest } from "./should-fetch-task-detail-via-rest";
@@ -37,6 +44,7 @@ export type TaskDetailModel = {
   agent_inbox_approved_at: string | null;
   tracked_minutes: number | null;
   tracked_duration_seconds: number | null;
+  links: TaskLink[];
 };
 
 type SyncedDetailRow = {
@@ -63,6 +71,7 @@ type SyncedDetailRow = {
   agent_inbox_approved_at: string | null;
   tracked_minutes: number | null;
   tracked_duration_seconds: number | null;
+  links: string | null;
 };
 
 function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
@@ -100,6 +109,7 @@ function mapSyncedRow(row: SyncedDetailRow): TaskDetailModel {
     agent_inbox_approved_at: row.agent_inbox_approved_at ?? null,
     tracked_minutes: row.tracked_minutes ?? null,
     tracked_duration_seconds: row.tracked_duration_seconds ?? null,
+    links: parseTaskLinks(row.links),
   };
 }
 
@@ -144,6 +154,7 @@ function mapApiTask(
     agent_inbox_approved_at: task.agentInboxApprovedAt ?? null,
     tracked_minutes: task.trackedMinutes ?? null,
     tracked_duration_seconds: task.trackedDurationSeconds ?? null,
+    links: parseTaskLinks(task.links),
   };
 }
 
@@ -158,6 +169,7 @@ export function useTaskDetail(taskId: string | undefined) {
   const powerSync = useMobilePowerSync();
   const client = useMobileApiClient();
   const pendingTask = usePendingTaskDetail(taskId);
+  const overridesVersion = useTaskRowOverridesVersion();
 
   const { data: syncedRows, isLoading: syncLoading } =
     useLocalQuery<SyncedDetailRow>(
@@ -165,10 +177,19 @@ export function useTaskDetail(taskId: string | undefined) {
       taskId ? [taskId] : [],
     );
 
-  const syncedTask = useMemo(
-    () => (syncedRows?.[0] ? mapSyncedRow(syncedRows[0]) : null),
-    [syncedRows],
-  );
+  const syncedTask = useMemo(() => {
+    const row = syncedRows?.[0];
+    if (!row) return null;
+    return mapSyncedRow(withTaskRowOverride(row));
+    // overridesVersion: re-merge when optimistic patches land before SQLite.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overridesVersion, syncedRows]);
+
+  useEffect(() => {
+    const row = syncedRows?.[0];
+    if (!row) return;
+    reconcileTaskRowOverride(row.id, row as unknown as Record<string, unknown>);
+  }, [syncedRows]);
 
   useEffect(() => {
     if (taskId && syncedTask) clearPendingTaskDetail(taskId);
@@ -237,7 +258,35 @@ export function useTaskDetail(taskId: string | undefined) {
     if (useRest) void reloadRest();
   }, [reloadRest, useRest]);
 
-  const task = syncedTask ?? restTask ?? pendingTask;
+  // PowerSync list/detail can lag or omit `links`; soft-fill from REST so
+  // Spark / email attachments still appear on task detail.
+  useEffect(() => {
+    if (!taskId || !syncedTask) return;
+    if ((syncedTask.links?.length ?? 0) > 0) return;
+    let cancelled = false;
+    void client
+      .requestJson<Task>(`/api/v1/tasks/${encodeURIComponent(taskId)}`)
+      .then((remote) => {
+        if (cancelled) return;
+        const remoteLinks = parseTaskLinks(remote.links);
+        if (remoteLinks.length === 0) return;
+        applyTaskRowOverride(taskId, { links: remoteLinks });
+      })
+      .catch(() => {
+        /* offline */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, syncedTask, taskId]);
+
+  const taskBase = syncedTask ?? restTask ?? pendingTask;
+  const task = useMemo(() => {
+    if (!taskBase) return null;
+    // REST / pending paths also need optimistic status (and friends) until sync.
+    return withTaskRowOverride(taskBase);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overridesVersion, taskBase]);
 
   const waitingForSync =
     Boolean(taskId) &&

@@ -24,7 +24,7 @@ export function isComposeGlobalShortcut(
 
 /**
  * ⌘⌥C opens the in-app compose modal (main-window session).
- * Packaged Tauri used a separate overlay webview that did not share Clerk
+ * Packaged Tauri used a separate overlay webview that did not share app state
  * cookies, so compose rendered blank / unsigned-in.
  */
 export function useComposeGlobalShortcut({

@@ -2,8 +2,9 @@
 
 Expo SDK 55 + Expo Router product client.
 
-**Status:** Clerk sign-in, Inbox + Journal + Tasks + Projects with PowerSync and
-offline status edits. See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering and conventions.
+**Status:** Local-shell auth (no sign-in), Inbox + Journal + Tasks + Projects with
+PowerSync and offline status edits. See [ARCHITECTURE.md](./ARCHITECTURE.md)
+for layering and conventions.
 
 Tab chrome is two floating blurred pills (`components/floating-tab-bar.tsx` +
 `expo-blur`, hosted in `FullWindowOverlay` on iOS): main nav Inbox → Journal →
@@ -46,7 +47,7 @@ pnpm --filter @backsteros/mobile build        # physical device (= ios:device)
 
 ```bash
 cp mobile/.env.example mobile/.env
-# Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY (+ LAN API URL for devices)
+# Set EXPO_PUBLIC_API_URL (LAN / Tailscale for devices)
 pnpm install
 pnpm --filter @backsteros/mobile ios
 ```
@@ -54,7 +55,7 @@ pnpm --filter @backsteros/mobile ios
 Requires a running API. PowerSync (`GET /api/v1/powersync/token`) enables local
 SQLite for Tier A/B lists and metadata on **local-core only**.
 
-No demo fixtures when signed out or when the Clerk key is missing.
+No demo fixtures — the app uses local-shell auth against your workspace.
 
 ### Cloud REST fallback
 
@@ -91,8 +92,8 @@ iPhone agent TUI is deferred; phone keeps the single-column task screen.
 
 ## Foundation checklist — Journal on iOS Simulator
 
-1. **API** — local `core/server` on `http://127.0.0.1:8788` (or Tailscale) with Clerk.
-2. **Env** — `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` and `EXPO_PUBLIC_API_URL`.
+1. **API** — local `core/server` on `http://127.0.0.1:8788` (or Tailscale) with local-shell auth.
+2. **Env** — `EXPO_PUBLIC_API_URL`.
 3. **Seed** — at least one journal document.
 4. **Native build** (not Expo Go):
 
@@ -101,7 +102,7 @@ iPhone agent TUI is deferred; phone keeps the single-column task screen.
    pnpm --filter @backsteros/mobile ios
    ```
 
-5. **Verify** — sign in → **Journal** lists entry titles.
+5. **Verify** — open app → **Journal** lists entry titles.
 
 Physical device: point `EXPO_PUBLIC_API_URL` at Tailscale MagicDNS, not `127.0.0.1`.
 

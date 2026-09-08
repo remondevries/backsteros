@@ -9,6 +9,7 @@ import {
   workspaceSettings,
   workspaces,
 } from "../../db/schema.js";
+import { appendOpsLog } from "../../lib/ops-log-buffer.js";
 import type { CoreReplicationRole } from "./config.js";
 import { getCoreReplicationConfig } from "./config.js";
 import type { ReplicatedTable } from "./constants.js";
@@ -25,6 +26,11 @@ import {
   shouldApplyByUpdatedAt,
   shouldApplyDocumentRow,
 } from "./rules.js";
+import {
+  isForeignKeyViolation,
+  isHealableSoftUnique,
+  readPgError,
+} from "./soft-unique-conflicts.js";
 import { getTableSpec, rowIdFromPk, type KnownTable, type TableSpec } from "./tables.js";
 import type {
   ReplicationApplyResponse,
@@ -167,27 +173,7 @@ async function applyGenericRowUnchecked(
   // newer local pushing to an older peer after deploy lag) does not 500 the
   // whole apply — e.g. mapbox_access_token before migration 0081 on cloud.
   const knownColumns = await listTableColumns(spec.name);
-  const columns = Object.keys(row).filter(
-    (key) => row[key] !== undefined && knownColumns.has(key),
-  );
-  if (columns.length === 0) {
-    return "skipped";
-  }
-  const colList = columns.map((col) => `"${col}"`).join(", ");
-  // postgres.js cannot bind plain JS arrays/objects as query params (they
-  // come from row_to_json / JSON transport for jsonb columns). Serialize and
-  // cast; text[] columns use dedicated apply paths (e.g. api_keys).
-  const placeholders = columns
-    .map((col, index) =>
-      isJsonBindValue(row[col]) ? `$${index + 1}::jsonb` : `$${index + 1}`,
-    )
-    .join(", ");
-  const values = columns.map((col) => serializeBindValue(row[col]));
   const pkConflict = spec.pk.map((col) => `"${col}"`).join(", ");
-  const setClause = columns
-    .filter((col) => !spec.pk.includes(col))
-    .map((col) => `"${col}" = EXCLUDED."${col}"`)
-    .join(", ");
 
   // Generic tables keep an updated_at SQL gate. Documents already decided via
   // shouldApplyDocumentRow (content_version / empty-body) — do not let a
@@ -197,15 +183,180 @@ async function applyGenericRowUnchecked(
     ? `WHERE "${spec.name}"."${spec.updatedAtColumn}" <= EXCLUDED."${spec.updatedAtColumn}"`
     : "";
 
-  const query = `
-    INSERT INTO "${spec.name}" (${colList})
-    VALUES (${placeholders})
-    ON CONFLICT (${pkConflict}) DO UPDATE
-    SET ${setClause}
-    ${whereClause}
-  `;
-  const result = await sqlClient.unsafe(query, values as never[]);
-  const rowCount =
+  let attemptRow = row;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const columns = Object.keys(attemptRow).filter(
+      (key) => attemptRow[key] !== undefined && knownColumns.has(key),
+    );
+    if (columns.length === 0) {
+      return "skipped";
+    }
+    // postgres.js cannot bind plain JS arrays/objects as query params (they
+    // come from row_to_json / JSON transport for jsonb columns). Serialize and
+    // cast; text[] columns use dedicated apply paths (e.g. api_keys).
+    const colList = columns.map((col) => `"${col}"`).join(", ");
+    const placeholders = columns
+      .map((col, index) =>
+        isJsonBindValue(attemptRow[col])
+          ? `$${index + 1}::jsonb`
+          : `$${index + 1}`,
+      )
+      .join(", ");
+    const values = columns.map((col) => serializeBindValue(attemptRow[col]));
+    const setClause = columns
+      .filter((col) => !spec.pk.includes(col))
+      .map((col) => `"${col}" = EXCLUDED."${col}"`)
+      .join(", ");
+    const query = `
+      INSERT INTO "${spec.name}" (${colList})
+      VALUES (${placeholders})
+      ON CONFLICT (${pkConflict}) DO UPDATE
+      SET ${setClause}
+      ${whereClause}
+    `;
+
+    try {
+      const result = await sqlClient.unsafe(query, values as never[]);
+      const rowCount =
+        typeof result === "object" &&
+        result !== null &&
+        "count" in result &&
+        typeof (result as { count?: unknown }).count === "number"
+          ? (result as { count: number }).count
+          : Array.isArray(result)
+            ? result.length
+            : 0;
+      return rowCount > 0 ? "applied" : "skipped";
+    } catch (error) {
+      if (isHealableSoftUnique(error)) {
+        const healed = await softDeleteSoftUniqueLosers(spec, attemptRow, error);
+        if (healed) {
+          appendOpsLog(
+            "warn",
+            `core replication soft-unique heal ${spec.name}`,
+            readPgError(error)?.constraint ?? "unique",
+          );
+          continue;
+        }
+      }
+      if (isForeignKeyViolation(error)) {
+        const sanitized = await sanitizeForeignKeyRow(spec, attemptRow, error);
+        if (sanitized === "skip") {
+          appendOpsLog(
+            "warn",
+            `core replication skip FK ${spec.name}`,
+            readPgError(error)?.constraint ?? "fk",
+          );
+          return "skipped";
+        }
+        if (sanitized) {
+          attemptRow = sanitized;
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+
+  return "skipped";
+}
+
+/**
+ * Soft-delete live rows that block a soft-unique index for this incoming PK.
+ * Returns true when at least one loser was cleared (caller should retry).
+ */
+async function softDeleteSoftUniqueLosers(
+  spec: TableSpec,
+  row: ReplicationRow,
+  error: unknown,
+): Promise<boolean> {
+  const info = readPgError(error);
+  const constraint = info?.constraint;
+  if (!constraint) return false;
+
+  const nowIso = new Date().toISOString();
+  let sqlText: string | null = null;
+  let params: unknown[] = [];
+
+  if (constraint === "tasks_habit_due_unique" && spec.name === "tasks") {
+    const habitId = row.habit_id;
+    const dueDate = row.due_date;
+    const id = row.id;
+    if (!habitId || !dueDate || !id) return false;
+    sqlText = `
+      UPDATE tasks
+      SET deleted_at = $1::timestamptz, updated_at = $1::timestamptz
+      WHERE habit_id = $2
+        AND due_date = $3::timestamptz
+        AND deleted_at IS NULL
+        AND id <> $4
+    `;
+    params = [nowIso, habitId, dueDate, id];
+  } else if (
+    constraint === "tasks_workspace_scope_number_unique" &&
+    spec.name === "tasks"
+  ) {
+    const workspaceId = row.workspace_id;
+    const number = row.number;
+    const id = row.id;
+    if (!workspaceId || number == null || !id) return false;
+    sqlText = `
+      UPDATE tasks
+      SET deleted_at = $1::timestamptz, updated_at = $1::timestamptz
+      WHERE workspace_id = $2
+        AND number = $3
+        AND deleted_at IS NULL
+        AND id <> $4
+        AND coalesce('project:' || project_id, 'contact:' || contact_id, '__inbox__')
+          = coalesce('project:' || $5::text, 'contact:' || $6::text, '__inbox__')
+    `;
+    params = [
+      nowIso,
+      workspaceId,
+      number,
+      id,
+      row.project_id ?? null,
+      row.contact_id ?? null,
+    ];
+  } else if (
+    constraint === "organizations_workspace_number_unique" &&
+    spec.name === "organizations"
+  ) {
+    const workspaceId = row.workspace_id;
+    const number = row.number;
+    const id = row.id;
+    if (!workspaceId || number == null || !id) return false;
+    sqlText = `
+      UPDATE organizations
+      SET deleted_at = $1::timestamptz, updated_at = $1::timestamptz
+      WHERE workspace_id = $2
+        AND number = $3
+        AND deleted_at IS NULL
+        AND id <> $4
+    `;
+    params = [nowIso, workspaceId, number, id];
+  } else if (
+    constraint === "contacts_workspace_number_unique" &&
+    spec.name === "contacts"
+  ) {
+    const workspaceId = row.workspace_id;
+    const number = row.number;
+    const id = row.id;
+    if (!workspaceId || number == null || !id) return false;
+    sqlText = `
+      UPDATE contacts
+      SET deleted_at = $1::timestamptz, updated_at = $1::timestamptz
+      WHERE workspace_id = $2
+        AND number = $3
+        AND deleted_at IS NULL
+        AND id <> $4
+    `;
+    params = [nowIso, workspaceId, number, id];
+  }
+
+  if (!sqlText) return false;
+  const result = await sqlClient.unsafe(sqlText, params as never[]);
+  const count =
     typeof result === "object" &&
     result !== null &&
     "count" in result &&
@@ -214,7 +365,52 @@ async function applyGenericRowUnchecked(
       : Array.isArray(result)
         ? result.length
         : 0;
-  return rowCount > 0 ? "applied" : "skipped";
+  return count > 0;
+}
+
+/**
+ * Heal common FK apply failures without failing the whole twin page.
+ * - documents.parent_id → null when parent missing
+ * - task_activities.task_id → skip when task missing
+ */
+async function sanitizeForeignKeyRow(
+  spec: TableSpec,
+  row: ReplicationRow,
+  error: unknown,
+): Promise<ReplicationRow | "skip" | null> {
+  const constraint = readPgError(error)?.constraint ?? "";
+
+  if (
+    spec.name === "documents" &&
+    constraint.includes("parent_id") &&
+    row.parent_id
+  ) {
+    const parentId = String(row.parent_id);
+    const parents = (await sqlClient.unsafe(
+      `SELECT id FROM documents WHERE id = $1 LIMIT 1`,
+      [parentId],
+    )) as { id: string }[];
+    if (!parents[0]) {
+      return { ...row, parent_id: null };
+    }
+  }
+
+  if (
+    spec.name === "task_activities" &&
+    constraint.includes("task_id") &&
+    row.task_id
+  ) {
+    const taskId = String(row.task_id);
+    const found = (await sqlClient.unsafe(
+      `SELECT id FROM tasks WHERE id = $1 LIMIT 1`,
+      [taskId],
+    )) as { id: string }[];
+    if (!found[0]) {
+      return "skip";
+    }
+  }
+
+  return null;
 }
 
 function isJsonBindValue(value: unknown): boolean {
@@ -456,9 +652,26 @@ export async function applyRemoteChanges(
       skipped += 1;
       continue;
     }
-    const result = await applyRow(table, change.row);
-    if (result === "applied") applied += 1;
-    else skipped += 1;
+    try {
+      const result = await applyRow(table, change.row);
+      if (result === "applied") applied += 1;
+      else skipped += 1;
+    } catch (error) {
+      // Never stall an entire twin page on one unrecoverable row — log and
+      // continue so push/pull cursors can advance after soft-unique/FK heals.
+      const message = error instanceof Error ? error.message : String(error);
+      const spec = getTableSpec(table);
+      const rowId = spec
+        ? rowIdFromPk(change.row, spec.pk)
+        : String(change.row.id ?? "?");
+      appendOpsLog(
+        "error",
+        `core replication apply row failed ${table}`,
+        `${rowId}: ${message}`,
+      );
+      console.error(`core replication apply row failed ${table}`, error);
+      skipped += 1;
+    }
   }
 
   return { applied, skipped };

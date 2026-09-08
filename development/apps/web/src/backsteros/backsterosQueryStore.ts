@@ -65,7 +65,14 @@ export function createBacksterosSharedQuery<T>(options: {
       setState({ status: "ready", data });
     } catch (error: unknown) {
       if (generation !== loadGeneration) return;
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        // Aborted initial loads must not leave the query stuck on "loading"
+        // for the next subscriber (e.g. React Strict Mode remount races).
+        if (mode === "initial" && state.status === "loading") {
+          setState({ status: "idle" });
+        }
+        return;
+      }
       if (mode === "soft") throw error;
       const message = error instanceof Error ? error.message : options.errorMessage;
       setState({ status: "error", message });
@@ -98,6 +105,10 @@ export function createBacksterosSharedQuery<T>(options: {
       if (subscriberCount === 1) {
         void load(state.status === "ready" ? "reload" : "initial");
         startSoftPoll();
+      } else if (state.status === "loading" && inFlightLoad == null) {
+        // Recover from a stranded "loading" snapshot with no in-flight request
+        // (e.g. aborted fetch that never reset before a remount).
+        void load("initial");
       }
       return () => {
         listeners.delete(listener);
@@ -107,6 +118,12 @@ export function createBacksterosSharedQuery<T>(options: {
           loadGeneration += 1;
           inFlightLoad?.abort();
           inFlightLoad = null;
+          // Abort leaves the last in-flight "loading" flag set; clear it so the
+          // next mount starts from idle instead of looking permanently stuck.
+          if (state.status === "loading") {
+            state = { status: "idle" };
+            fingerprint = null;
+          }
         }
       };
     },

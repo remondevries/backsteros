@@ -4,7 +4,6 @@ import {
   TASK_STATUS_ORDER,
   type TaskStatus,
 } from "../tasks/task-status.js";
-import { formatEmailDisplayId } from "./email-display-id.js";
 import {
   isSubstantiveEmailHtml,
   plainTextEmailToHtml,

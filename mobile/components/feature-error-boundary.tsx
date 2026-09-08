@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Text, View } from "react-native";
 
+import { captureException } from "../lib/sentry";
 import { colors } from "../lib/theme";
 import { ui } from "../lib/ui";
 
@@ -24,6 +25,10 @@ export class FeatureErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.warn(`[mobile] ${this.props.title} crashed`, error, info.componentStack);
+    captureException(error, {
+      feature: this.props.title,
+      componentStack: info.componentStack,
+    });
   }
 
   private reset = () => {

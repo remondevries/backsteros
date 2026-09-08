@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveDuplicatedTaskHref } from "../../dist/tasks/duplicated-task-href.js";
+import { resolveDuplicatedTaskHref } from "./duplicated-task-href.js";
 
 test("project tasks use scoped project href", () => {
   assert.equal(

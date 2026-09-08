@@ -557,61 +557,6 @@ export function SearchNavIcon({ className }: SidebarNavIconProps) {
   );
 }
 
-export function SidebarAccountIcon({
-  className,
-  size = 14,
-}: SidebarNavIconProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-        stroke="currentColor"
-        strokeWidth="1.25"
-      />
-      <path
-        d="M2.5 13.25c.9-2.1 2.9-3.25 5.5-3.25s4.6 1.15 5.5 3.25"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-export function SidebarLogoutIcon({ className }: SidebarNavIconProps) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M6 2.5H4.75A1.75 1.75 0 0 0 3 4.25v7.5A1.75 1.75 0 0 0 4.75 13.5H6"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-      <path
-        d="M10.5 11.25 13 8.75 10.5 6.25M13 8.75H6.5"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /** Matches Primer SyncIcon used by the Next.js profile menu. */
 export function SyncStatusIdleIcon({
   className,

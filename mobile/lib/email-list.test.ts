@@ -72,9 +72,21 @@ describe("inbox rules", () => {
     assert.equal(isEmailIncomingStatus("in_progress"), false);
   });
 
-  it("emailBelongsInInbox keeps triage always, other statuses by task rules", () => {
+  it("emailBelongsInInbox keeps undated triage; excludes today-or-later due", () => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
     assert.equal(emailBelongsInInbox({ status: null }), true);
     assert.equal(emailBelongsInInbox({ status: "triage" }), true);
+    assert.equal(
+      emailBelongsInInbox({ status: "triage", dueDate: today.getTime() }),
+      false,
+    );
+    assert.equal(
+      emailBelongsInInbox({ status: "triage", dueDate: tomorrow.getTime() }),
+      false,
+    );
     assert.equal(emailBelongsInInbox({ status: "backlog" }), false);
     assert.equal(emailBelongsInInbox({ status: "on_hold" }), true);
   });

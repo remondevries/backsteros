@@ -3,8 +3,8 @@
 Tauri 2 + Vite + React product client for macOS/Windows/Linux.
 
 **Status:** Product UI via `@backsteros/ui` + local-core API/PowerSync.
-Opens without Clerk sign-in (local-shell bearer). Clerk is optional for
-GitHub connect / account profile.
+Opens with local-shell bearer auth (no sign-in). GitHub commits/PRs use a
+Settings PAT or `GITHUB_API_TOKEN` on local core.
 
 ## Intent
 
@@ -23,7 +23,7 @@ GitHub connect / account profile.
 | Shared UI | `@backsteros/ui` |
 | API | `VITE_API_URL` → `@backsteros/api-client` |
 | Offline | `@powersync/web` local SQLite (Tier A/B) |
-| Auth | Local-shell bearer by default; optional Clerk for GitHub / account |
+| Auth | Local-shell bearer (`local`) |
 | PDF | `react-pdf` + `pdfjs-dist` (workers copied to `public/`) |
 
 ## Develop
@@ -32,7 +32,7 @@ GitHub connect / account profile.
 pnpm install
 pnpm --filter @backsteros/ui build
 cp desktop/.env.example desktop/.env
-# Edit .env: VITE_API_URL=http://127.0.0.1:8788 (Clerk key optional)
+# Edit .env: VITE_API_URL=http://127.0.0.1:8788
 
 # Recommended — menu-bar hub starts Docker + core API + PTY
 pnpm --filter @backsteros/hub dev
@@ -105,8 +105,8 @@ Under **Settings → Storage**, choose a local Obsidian-style vault folder on th
 
 1. Start API locally (`8788`). Local-shell auth (`Bearer local`) is on by default
    for local-core — desktop opens straight into the workspace.
-2. Optional: set `VITE_CLERK_PUBLISHABLE_KEY` for Settings → GitHub / account.
-   Ensure Clerk allowed origins include Vite `:1420` / Tauri hosts.
+2. Optional: set `GITHUB_API_TOKEN` in `core/server/.env` (PAT with `repo`) or
+   paste a token under Settings → GitHub.
 3. Command palette (⌘K) uses live global search; lists use PowerSync local SQLite.
 
 ## Ship / package
@@ -129,7 +129,6 @@ Workflow: [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop
 
 | Secret | Purpose |
 | --- | --- |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Bundled Clerk key for release builds |
 | `APPLE_CERTIFICATE` | Base64 `.p12` (Developer ID Application) |
 | `APPLE_CERTIFICATE_PASSWORD` | `.p12` password |
 | `KEYCHAIN_PASSWORD` | Temporary CI keychain password |
@@ -165,7 +164,7 @@ Desktop always talks to local core via `VITE_API_URL` (default
 
 ### PowerSync
 
-Connects on Clerk session via `GET /api/v1/powersync/token`. Tier A/B metadata syncs into local SQLite; Tier C/D bodies load on demand via REST.
+Connects via local-shell bearer on `GET /api/v1/powersync/token`. Tier A/B metadata syncs into local SQLite; Tier C/D bodies load on demand via REST.
 
 ### IPC profiling
 

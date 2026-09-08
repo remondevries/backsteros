@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 
 import type {
   CreateProjectInput,
@@ -81,6 +81,7 @@ import * as circleService from "./circle-domain.js";
 import { sanitizeWorkspaceSettings } from "./cursor-settings.js";
 import * as financeService from "./finance/finance.js";
 import * as habitService from "./habits.js";
+import { isUniqueViolation } from "./core-replication/soft-unique-conflicts.js";
 import type { HabitTaskSyncChange } from "./habits.js";
 import * as meetingService from "./meetings.js";
 import * as emailThreadsService from "./email-threads.js";
@@ -175,7 +176,9 @@ function taskSnapshot(row: typeof tasks.$inferSelect) {
     inbox: row.inbox,
     links: JSON.stringify(row.links ?? []),
     agent_chat_id: row.agentChatId ?? null,
-    linked_commit_sha: row.linkedCommitSha ?? null,
+    linked_commit_shas: JSON.stringify(
+      Array.isArray(row.linkedCommitShas) ? row.linkedCommitShas : [],
+    ),
     habit_id: row.habitId ?? null,
     completed_at: row.completedAt?.toISOString() ?? null,
     agent_created_at: row.agentCreatedAt?.toISOString() ?? null,
@@ -1942,8 +1945,8 @@ function mapTaskUpsert(
     agentChatId: asNullableString(
       payload.agent_chat_id ?? payload.agentChatId,
     ),
-    linkedCommitSha: asNullableString(
-      payload.linked_commit_sha ?? payload.linkedCommitSha,
+    linkedCommitShas: parseStringIdArray(
+      payload.linked_commit_shas ?? payload.linkedCommitShas,
     ),
     habitId: asNullableString(payload.habit_id ?? payload.habitId),
     trackedMinutes: asNullableNumber(
@@ -2079,36 +2082,167 @@ export async function applySyncChange(
         throw new Error("TASK_TITLE_REQUIRED");
       }
 
-      const row = await taskProjectService.createTask(
-        workspaceId,
-        {
-          projectId: input.projectId,
-          contactId: input.contactId,
-          assigneeId: input.assigneeId,
-          relatedContactIds: input.relatedContactIds,
-          relatedOrganizationIds: input.relatedOrganizationIds,
-          title: input.title,
-          description: input.description,
-          status: input.status,
-          priority: input.priority,
-          sortOrder: input.sortOrder,
-          dueDate: input.dueDate,
-          dueEndDate: input.dueEndDate,
-          triagedAt: input.triagedAt,
-          inbox: input.inbox,
-          links: input.links,
-          agentChatId: input.agentChatId,
-          linkedCommitSha: input.linkedCommitSha,
-          habitId: input.habitId,
-          trackedMinutes: input.trackedMinutes,
-          trackedDurationSeconds: input.trackedDurationSeconds,
-          agentCreatedAt: input.agentCreatedAt,
-          inboxUpdatedAt: input.inboxUpdatedAt,
-        },
-        change.entity_id,
-        executor,
-      );
-      return taskSnapshot(row);
+      // Soft-unique habit+due forks (leader-first fallback vs twin) must not 500
+      // the cloud mutations endpoint — clear the other live row first.
+      if (input.habitId && input.dueDate) {
+        const conflicts = await executor
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.workspaceId, workspaceId),
+              eq(tasks.habitId, input.habitId),
+              eq(tasks.dueDate, new Date(input.dueDate)),
+              isNull(tasks.deletedAt),
+            ),
+          );
+        for (const conflict of conflicts) {
+          if (conflict.id === change.entity_id) continue;
+          await taskProjectService.deleteTask(
+            workspaceId,
+            conflict.id,
+            executor,
+          );
+        }
+      }
+
+      try {
+        const row = await taskProjectService.createTask(
+          workspaceId,
+          {
+            projectId: input.projectId,
+            contactId: input.contactId,
+            assigneeId: input.assigneeId,
+            relatedContactIds: input.relatedContactIds,
+            relatedOrganizationIds: input.relatedOrganizationIds,
+            title: input.title,
+            description: input.description,
+            status: input.status,
+            priority: input.priority,
+            sortOrder: input.sortOrder,
+            dueDate: input.dueDate,
+            dueEndDate: input.dueEndDate,
+            triagedAt: input.triagedAt,
+            inbox: input.inbox,
+            links: input.links,
+            agentChatId: input.agentChatId,
+            linkedCommitShas: input.linkedCommitShas,
+            habitId: input.habitId,
+            trackedMinutes: input.trackedMinutes,
+            trackedDurationSeconds: input.trackedDurationSeconds,
+            agentCreatedAt: input.agentCreatedAt,
+            inboxUpdatedAt: input.inboxUpdatedAt,
+          },
+          change.entity_id,
+          executor,
+        );
+        return taskSnapshot(row);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "PROJECT_NOT_FOUND"
+        ) {
+          // Stale/missing project refs must not 500 leader mutations. Prefer the
+          // habit's project when present; otherwise create as inbox.
+          let projectId: string | null | undefined = null;
+          if (input.habitId) {
+            const habitRow = await habitService.getHabitRow(
+              workspaceId,
+              input.habitId,
+              executor,
+            );
+            projectId = habitRow?.projectId ?? null;
+          }
+          if (projectId && projectId === input.projectId) {
+            projectId = null;
+          }
+          const row = await taskProjectService.createTask(
+            workspaceId,
+            {
+              projectId: projectId ?? undefined,
+              contactId: input.contactId,
+              assigneeId: input.assigneeId,
+              relatedContactIds: input.relatedContactIds,
+              relatedOrganizationIds: input.relatedOrganizationIds,
+              title: input.title,
+              description: input.description,
+              status: input.status,
+              priority: input.priority,
+              sortOrder: input.sortOrder,
+              dueDate: input.dueDate,
+              dueEndDate: input.dueEndDate,
+              triagedAt: input.triagedAt,
+              inbox: projectId ? input.inbox : true,
+              links: input.links,
+              agentChatId: input.agentChatId,
+              linkedCommitShas: input.linkedCommitShas,
+              habitId: input.habitId,
+              trackedMinutes: input.trackedMinutes,
+              trackedDurationSeconds: input.trackedDurationSeconds,
+              agentCreatedAt: input.agentCreatedAt,
+              inboxUpdatedAt: input.inboxUpdatedAt,
+            },
+            change.entity_id,
+            executor,
+          );
+          return taskSnapshot(row);
+        }
+        if (!isUniqueViolation(error)) throw error;
+        // Race: another writer won the soft-unique after our pre-check.
+        // Soft-delete losers once more and retry a single time.
+        if (input.habitId && input.dueDate) {
+          const conflicts = await executor
+            .select({ id: tasks.id })
+            .from(tasks)
+            .where(
+              and(
+                eq(tasks.workspaceId, workspaceId),
+                eq(tasks.habitId, input.habitId),
+                eq(tasks.dueDate, new Date(input.dueDate)),
+                isNull(tasks.deletedAt),
+              ),
+            );
+          for (const conflict of conflicts) {
+            if (conflict.id === change.entity_id) continue;
+            await taskProjectService.deleteTask(
+              workspaceId,
+              conflict.id,
+              executor,
+            );
+          }
+          const row = await taskProjectService.createTask(
+            workspaceId,
+            {
+              projectId: input.projectId,
+              contactId: input.contactId,
+              assigneeId: input.assigneeId,
+              relatedContactIds: input.relatedContactIds,
+              relatedOrganizationIds: input.relatedOrganizationIds,
+              title: input.title,
+              description: input.description,
+              status: input.status,
+              priority: input.priority,
+              sortOrder: input.sortOrder,
+              dueDate: input.dueDate,
+              dueEndDate: input.dueEndDate,
+              triagedAt: input.triagedAt,
+              inbox: input.inbox,
+              links: input.links,
+              agentChatId: input.agentChatId,
+              linkedCommitShas: input.linkedCommitShas,
+              habitId: input.habitId,
+              trackedMinutes: input.trackedMinutes,
+              trackedDurationSeconds: input.trackedDurationSeconds,
+              agentCreatedAt: input.agentCreatedAt,
+              inboxUpdatedAt: input.inboxUpdatedAt,
+            },
+            change.entity_id,
+            executor,
+          );
+          return taskSnapshot(row);
+        }
+        throw error;
+      }
     }
 
     case "document": {

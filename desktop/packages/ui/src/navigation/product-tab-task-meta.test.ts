@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { encodeTaskSlug } from "../../dist/inbox/inbox-items.js";
+import { encodeTaskSlug } from "../inbox/inbox-items.js";
 import {
   extractTaskRouteParamFromHref,
   findTaskForTabHref,
   resolveProductTabTaskMeta,
   taskMatchesTabRouteParam,
-} from "../../dist/navigation/product-tab-task-meta.js";
-import type { ProductTab } from "../../dist/navigation/tabs.js";
+} from "./product-tab-task-meta.js";
+import type { ProductTab } from "./tabs.js";
 
 const sampleTasks = [
   {

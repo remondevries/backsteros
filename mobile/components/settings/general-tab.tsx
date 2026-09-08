@@ -48,7 +48,7 @@ export function GeneralTab({
         : powerSync.status === "error"
           ? "Unavailable"
           : powerSync.status === "unauthenticated"
-            ? "Sign in required"
+            ? "Not connected"
             : "Idle";
 
   const coreLabel =

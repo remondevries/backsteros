@@ -131,14 +131,6 @@ type OpenMeetingPopoverState = {
   anchorRect: DOMRect;
 };
 
-function taskIdFromEvent(event: {
-  id: string;
-  extendedProps: Record<string, unknown>;
-}): string {
-  const entity = calendarEntityFromEvent(event);
-  return entity.entityId;
-}
-
 export function CalendarView({
   events,
   onTaskReschedule,

@@ -166,23 +166,24 @@ export function isEmailIncomingStatus(
 }
 
 /**
- * Whether an email thread belongs in the Inbox list:
- * - triage / empty → always
- * - any other status → same rules as tasks (overdue, on hold, in review)
+ * Whether an email thread belongs in the Inbox list.
+ * Same membership rules as tasks (including excluding due today or later);
+ * untriaged / empty status counts as triage capture.
  */
 export function emailBelongsInInbox(
   input: {
     status?: string | null;
     dueDate?: string | number | Date | null;
+    inboxUpdatedAt?: string | number | Date | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
-  if (isEmailIncomingStatus(input.status)) return true;
   return taskBelongsInInbox(
     {
-      inbox: false,
+      inbox: isEmailIncomingStatus(input.status),
       status: typeof input.status === "string" ? input.status : null,
       dueDate: input.dueDate,
+      inboxUpdatedAt: input.inboxUpdatedAt,
     },
     referenceDate,
   );

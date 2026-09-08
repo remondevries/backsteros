@@ -85,9 +85,40 @@ function compile(bindings: TestBinding[]): ResolvedKeybindingsConfig {
 }
 
 const DEFAULT_BINDINGS = compile([
-  { shortcut: modShortcut("b"), command: "sidebar.toggle" },
+  {
+    shortcut: {
+      key: "[",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    },
+    command: "sidebar.toggle",
+  },
+  {
+    shortcut: {
+      key: "[",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: true,
+      altKey: false,
+      modKey: false,
+    },
+    command: "taskDetail.toggle",
+  },
   { shortcut: modShortcut("j"), command: "terminal.toggle" },
-  { shortcut: modShortcut("b", { altKey: true }), command: "rightPanel.toggle" },
+  {
+    shortcut: {
+      key: "]",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    },
+    command: "rightPanel.toggle",
+  },
   {
     shortcut: modShortcut("d"),
     command: "terminal.split",
@@ -391,13 +422,17 @@ describe("shortcutLabelForCommand", () => {
   it("returns effective labels for non-terminal commands", () => {
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "sidebar.toggle", "MacIntel"),
-      "⌘B",
+      "[",
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "taskDetail.toggle", "MacIntel"),
+      "⇧[",
     );
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⇧⌘O");
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "diff.toggle", "Linux"), "Ctrl+D");
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "rightPanel.toggle", "MacIntel"),
-      "⌥⌘B",
+      "]",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "commandPalette.toggle", "MacIntel"),
@@ -814,12 +849,38 @@ describe("resolveShortcutCommand", () => {
   });
 
   it("matches Option-modified letters using the physical key code on macOS", () => {
+    const keybindings = compile([
+      { shortcut: modShortcut("b", { altKey: true }), command: "rightPanel.toggle" },
+    ]);
     assert.strictEqual(
       resolveShortcutCommand(
         event({ key: "∫", code: "KeyB", metaKey: true, altKey: true }),
+        keybindings,
+        { platform: "MacIntel" },
+      ),
+      "rightPanel.toggle",
+    );
+  });
+
+  it("matches bare bracket panel toggles via physical key codes", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "[", code: "BracketLeft" }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+      }),
+      "sidebar.toggle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "{", code: "BracketLeft", shiftKey: true }),
         DEFAULT_BINDINGS,
         { platform: "MacIntel" },
       ),
+      "taskDetail.toggle",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "]", code: "BracketRight" }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+      }),
       "rightPanel.toggle",
     );
   });

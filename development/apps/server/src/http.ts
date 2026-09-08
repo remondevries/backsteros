@@ -436,7 +436,7 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
       try: () => fetch(targetUrl, init),
       catch: (cause) => cause,
     }).pipe(
-      Effect.catchAll((cause) => {
+      Effect.catch((cause) => {
         const detail =
           cause instanceof Error
             ? cause.message
@@ -459,7 +459,49 @@ export const backsterosApiProxyRouteLayer = HttpRouter.add(
       }),
     );
 
-    return HttpServerResponse.fromWeb(response);
+    // Buffer the upstream body and rebuild headers. Streaming `fromWeb` can
+    // throw on some Helmet/CORS header sets and surface as an empty 500 to the
+    // desktop renderer, which leaves BacksterOS lists stuck on "loading".
+    const responseBytes = yield* Effect.tryPromise({
+      try: async () => new Uint8Array(await response.arrayBuffer()),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catch((cause) => {
+        const detail =
+          cause instanceof Error
+            ? cause.message
+            : typeof cause === "string"
+              ? cause
+              : "unknown error";
+        return Effect.succeed(
+          new TextEncoder().encode(
+            JSON.stringify({
+              error: "BacksterOS response could not be read",
+              detail,
+              origin: resolveBacksterosApiOrigin(),
+            }),
+          ),
+        );
+      }),
+    );
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, name) => {
+      if (
+        name === "content-encoding" ||
+        name === "transfer-encoding" ||
+        name === "content-length"
+      ) {
+        return;
+      }
+      responseHeaders[name] = value;
+    });
+    if (!responseHeaders["content-type"]) {
+      responseHeaders["content-type"] = "application/json";
+    }
+    return HttpServerResponse.uint8Array(responseBytes, {
+      status: response.status || 502,
+      headers: responseHeaders,
+    });
   }),
 );
 

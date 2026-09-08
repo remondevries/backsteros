@@ -23,7 +23,6 @@ import { ContactPersonIcon } from "../contacts/contact-person-icon.js";
 import { DefaultProjectIcon } from "../projects/default-project-icon.js";
 import { PropertyDropdown } from "../dropdowns/property-dropdown.js";
 import type { SearchableDropdownOption } from "../dropdowns/searchable-dropdown.js";
-import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
 import { getCreateEntityFromQueryLabel } from "../../dropdowns/searchable-dropdown-create-from-query.js";
 import {
   decodeTaskRelatedValues,

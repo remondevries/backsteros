@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   parseCalendarMeetingOverlayLayout,
   withCalendarMeetingSearch,
-} from "../../dist/calendar/calendar-meeting-overlay.js";
+} from "./calendar-meeting-overlay.js";
 
 test("withCalendarMeetingSearch preserves page layout when switching meetings", () => {
   const href = withCalendarMeetingSearch(

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { applyShiftRangeSelection } from "../../dist/list-nav/shift-range-selection.js";
+import { applyShiftRangeSelection } from "./shift-range-selection.js";
 
 describe("applyShiftRangeSelection", () => {
   const ordered = ["a", "b", "c", "d", "e"];

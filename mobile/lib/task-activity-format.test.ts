@@ -58,6 +58,47 @@ describe("task-activity-format", () => {
     );
   });
 
+  it("drops status ping-pong when agent_worked sits between turns", () => {
+    const now = Date.now();
+    const grouped = coalescePropertyActivities([
+      {
+        id: "1",
+        taskId: "t",
+        type: "status_changed",
+        actorUserId: null,
+        actorContactId: null,
+        actorEmail: null,
+        actorName: "Agent",
+        data: { from: "in_review", to: "in_progress" },
+        createdAt: new Date(now).toISOString(),
+      },
+      {
+        id: "w1",
+        taskId: "t",
+        type: "agent_worked",
+        actorUserId: null,
+        actorContactId: null,
+        actorEmail: null,
+        actorName: "Agent",
+        data: { durationMs: 120_000 },
+        createdAt: new Date(now + 60_000).toISOString(),
+      },
+      {
+        id: "2",
+        taskId: "t",
+        type: "status_changed",
+        actorUserId: null,
+        actorContactId: null,
+        actorEmail: null,
+        actorName: "Agent",
+        data: { from: "in_progress", to: "in_review" },
+        createdAt: new Date(now + 180_000).toISOString(),
+      },
+    ]);
+    assert.equal(grouped.length, 1);
+    assert.equal(grouped[0]!.activity.type, "agent_worked");
+  });
+
   it("detects agent comments", () => {
     assert.equal(
       isAgentComment({

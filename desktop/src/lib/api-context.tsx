@@ -28,8 +28,8 @@ export function ApiProvider({
   apiUrl: string;
   getToken?: TokenProvider;
 }) {
-  // Clerk often returns a new getToken identity each render. Keep the client
-  // stable so dependents (e.g. task comments) do not refetch and flash errors.
+  // Keep the client stable when the token provider identity churns each render
+  // so dependents (e.g. task comments) do not refetch and flash errors.
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
   const hasTokenProvider = getToken != null;

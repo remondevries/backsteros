@@ -5,7 +5,7 @@ import {
   buildTimetrackingSidePanelKeyboardItemIds,
   getSelectedTimetrackingSidePanelItemId,
   parseTimetrackingSidePanelItemId,
-} from "../../dist/calendar/calendar-timetracking-keyboard.js";
+} from "./calendar-timetracking-keyboard.js";
 
 test("buildTimetrackingSidePanelKeyboardItemIds skips days in collapsed weeks", () => {
   const ids = buildTimetrackingSidePanelKeyboardItemIds(

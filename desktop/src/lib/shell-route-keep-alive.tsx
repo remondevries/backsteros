@@ -54,22 +54,40 @@ type LocationStore = {
   get: () => { pathname: string; searchStr?: string; state?: unknown };
 };
 
+/**
+ * `RouterWritableStore` only declares `get`/`set`; on the client TanStack
+ * backs it with a react-store atom that also exposes `subscribe`.
+ */
+type RouterLocationStoreLike = {
+  get: LocationStore["get"];
+  subscribe?: LocationStore["subscribe"];
+};
+
+function isSubscribableStore(
+  store: RouterLocationStoreLike,
+): store is LocationStore {
+  return typeof store.subscribe === "function";
+}
+
 function routerLocationStore(router: {
-  stores?: { location?: LocationStore };
+  stores?: { location?: RouterLocationStoreLike };
 }): LocationStore | null {
-  return router.stores?.location ?? null;
+  const location = router.stores?.location;
+  return location && isSubscribableStore(location) ? location : null;
 }
 
 /** TanStack atom.subscribe returns `{ unsubscribe }`, not a function. */
 function unsubscribeFromStore(subscription: unknown): () => void {
-  if (typeof subscription === "function") return subscription;
+  if (typeof subscription === "function") return () => void subscription();
   if (
     subscription &&
     typeof subscription === "object" &&
-    "unsubscribe" in subscription &&
-    typeof subscription.unsubscribe === "function"
+    "unsubscribe" in subscription
   ) {
-    return () => subscription.unsubscribe();
+    const unsubscribe: unknown = subscription.unsubscribe;
+    if (typeof unsubscribe === "function") {
+      return () => void unsubscribe.call(subscription);
+    }
   }
   return () => {};
 }

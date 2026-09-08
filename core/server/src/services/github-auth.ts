@@ -11,17 +11,14 @@ export function isGithubServerTokenConfigured(): boolean {
 
 /**
  * Pure selection order for GitHub API access:
- * workspace Settings PAT → env `GITHUB_API_TOKEN` → optional Clerk OAuth.
- * Clerk is never required when a PAT is configured.
+ * workspace Settings PAT → env `GITHUB_API_TOKEN`.
  */
 export function selectGithubAccessToken(sources: {
   workspaceToken: string | null;
   envToken: string | null;
-  clerkOauthToken?: string | null;
 }): string | null {
   if (sources.workspaceToken) return sources.workspaceToken;
   if (sources.envToken) return sources.envToken;
-  if (sources.clerkOauthToken) return sources.clerkOauthToken;
   return null;
 }
 
@@ -37,9 +34,7 @@ async function githubServiceError(
 /**
  * Resolve a GitHub API token for the current auth.
  *
- * Prefer a workspace Settings PAT (or `GITHUB_API_TOKEN`) so commit/PR fetches
- * never require Clerk. Optional Clerk OAuth is only a fallback when no PAT is
- * configured and the request is authenticated as a Clerk user.
+ * Prefer a workspace Settings PAT (or `GITHUB_API_TOKEN`).
  */
 export async function resolveGithubAccessToken(
   auth: AuthContext,
@@ -55,22 +50,9 @@ export async function resolveGithubAccessToken(
     return fromPat;
   }
 
-  if (auth.kind === "clerk" && auth.clerkUserId) {
-    const { getGithubAccessToken } = await import("./github.js");
-    return getGithubAccessToken(auth.clerkUserId);
-  }
-
-  if (auth.kind === "api_key" || auth.kind === "local_shell") {
-    return githubServiceError(
-      "GitHub is not configured. Add a personal access token in Settings → GitHub (or set GITHUB_API_TOKEN).",
-      "github_token_missing",
-      403,
-    );
-  }
-
   return githubServiceError(
-    "GitHub integration requires a Settings → GitHub token, Clerk OAuth, or GITHUB_API_TOKEN",
-    "github_auth_required",
+    "GitHub is not configured. Add a personal access token in Settings → GitHub (or set GITHUB_API_TOKEN).",
+    "github_token_missing",
     403,
   );
 }

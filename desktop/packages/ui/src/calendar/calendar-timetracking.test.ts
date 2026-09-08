@@ -4,12 +4,12 @@ import { test } from "node:test";
 import {
   buildTimetrackingDayGroups,
   readTimetrackingPeriodFromSearch,
-} from "../../dist/calendar/calendar-timetracking-days.js";
+} from "./calendar-timetracking-days.js";
 import {
   collectTimetrackingEntries,
   formatTimetrackingLeadingStamp,
   withLiveTimetrackingEntries,
-} from "../../dist/calendar/calendar-timetracking-entries.js";
+} from "./calendar-timetracking-entries.js";
 
 test("buildTimetrackingDayGroups nests days under weeks and months", () => {
   const groups = buildTimetrackingDayGroups({

@@ -18,7 +18,10 @@ import type {
   ProjectOverviewRowProject,
   TaskItemRowTask,
 } from "@backsteros/ui";
-import { normalizeContactSocialAccounts } from "@backsteros/ui";
+import {
+  coerceTaskDisplayNumber,
+  normalizeContactSocialAccounts,
+} from "@backsteros/ui";
 
 export function parseStringIdArray(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -124,7 +127,7 @@ export function mapTask(
     : null;
   return {
     id: task.id,
-    number: task.number,
+    number: coerceTaskDisplayNumber(task.number),
     title: task.title,
     status: task.status,
     priority: task.priority,
@@ -140,7 +143,7 @@ export function mapTask(
     sortOrder: task.sortOrder,
     updatedAt: asEpoch(task.updatedAt) ?? undefined,
     agentChatId: task.agentChatId ?? null,
-    linkedCommitSha: task.linkedCommitSha ?? null,
+    linkedCommitShas: parseStringIdArray(task.linkedCommitShas),
     habitId: task.habitId ?? null,
     agentCreatedAt: asEpoch(task.agentCreatedAt),
     agentInboxApprovedAt: asEpoch(task.agentInboxApprovedAt),

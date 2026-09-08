@@ -13,6 +13,17 @@ export function shouldSkipRestEntityWrite(
   return Boolean(powerSync.ready && powerSync.connected);
 }
 
+/**
+ * After a local write + flushCrudUpload, keep skipping REST only when at least
+ * one CRUD batch was uploaded (`true`). `false` means the queue was empty —
+ * fall through to REST. `void` keeps create-path callers that ignore the return.
+ */
+export function shouldSkipRestAfterCrudFlush(
+  uploaded: boolean | void,
+): boolean {
+  return uploaded !== false;
+}
+
 /** Letter PDF bytes are Mac-only; skip fetch when local-core health is not OK. */
 export function shouldAttemptLetterPdfFetch(
   localCoreReachable: boolean | null,

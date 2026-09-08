@@ -182,3 +182,147 @@ export function groupConsecutiveAgentWorked(
 
   return out;
 }
+
+const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivity["type"]>([
+  "status_changed",
+  "assignee_changed",
+  "related_contacts_changed",
+  "related_organizations_changed",
+  "priority_changed",
+  "due_date_changed",
+  "project_changed",
+]);
+
+/** Skip agent/timer noise when looking back for a coalesce peer (matches API-by-type). */
+const COALESCE_LOOKBACK_SKIP_TYPES = new Set<TaskActivity["type"]>([
+  "agent_worked",
+  "timer_started",
+  "timer_stopped",
+]);
+
+/** Match API coalesce window — collapse rapid property edits in the feed. */
+export const ACTIVITY_COALESCE_WINDOW_MS = 30_000;
+
+function sameActivityActor(a: TaskActivity, b: TaskActivity): boolean {
+  return a.actorUserId === b.actorUserId && a.actorContactId === b.actorContactId;
+}
+
+/**
+ * Find a prior same-type/same-actor row to merge into.
+ * Skips agent_worked / timer rows so status ping-pong around agent turns collapses.
+ * Status changes have no time window (agent loops often exceed 30s); other
+ * property edits keep the API 30s window.
+ */
+function findPropertyCoalesceIndex(
+  out: GroupedActivity[],
+  activity: TaskActivity,
+  nextAt: number,
+): number | null {
+  if (!COALESCEABLE_ACTIVITY_TYPES.has(activity.type)) return null;
+  const windowMs =
+    activity.type === "status_changed"
+      ? Number.POSITIVE_INFINITY
+      : ACTIVITY_COALESCE_WINDOW_MS;
+
+  for (let i = out.length - 1; i >= 0; i -= 1) {
+    const entry = out[i]!;
+    const prevAt = new Date(entry.at).getTime();
+    if (
+      Number.isFinite(prevAt) &&
+      Number.isFinite(nextAt) &&
+      nextAt - prevAt > windowMs
+    ) {
+      return null;
+    }
+    if (COALESCE_LOOKBACK_SKIP_TYPES.has(entry.activity.type)) {
+      continue;
+    }
+    if (
+      entry.activity.type === activity.type &&
+      sameActivityActor(entry.activity, activity)
+    ) {
+      return i;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Collapse property edits for the activity feed.
+ * Expects chronological (oldest-first) activities.
+ * Reverts (`from === to` after merge) are dropped — including in_progress↔in_review
+ * ping-pong with agent_worked between them.
+ */
+export function coalescePropertyActivities(
+  activities: readonly TaskActivity[],
+): GroupedActivity[] {
+  const out: GroupedActivity[] = [];
+  for (const activity of activities) {
+    const nextAt = new Date(activity.createdAt).getTime();
+    const targetIndex = findPropertyCoalesceIndex(out, activity, nextAt);
+
+    if (targetIndex != null) {
+      const target = out[targetIndex]!;
+      const from =
+        "from" in target.activity.data
+          ? target.activity.data.from
+          : activity.data.from;
+      const fromName =
+        "fromName" in target.activity.data
+          ? target.activity.data.fromName
+          : activity.data.fromName;
+      const mergedData: Record<string, unknown> = {
+        ...activity.data,
+        from,
+        ...(fromName !== undefined ? { fromName } : {}),
+      };
+      // Reverted to the original value — drop the group.
+      if (mergedData.from === mergedData.to) {
+        out.splice(targetIndex, 1);
+        continue;
+      }
+      // Same transition repeated — keep one row with a count.
+      if (
+        target.activity.data.from === mergedData.from &&
+        target.activity.data.to === mergedData.to
+      ) {
+        target.count += 1;
+        target.at = activity.createdAt;
+        continue;
+      }
+      target.activity = {
+        ...activity,
+        data: mergedData,
+      };
+      target.at = activity.createdAt;
+      continue;
+    }
+
+    // Identical repeats (legacy status spam) still collapse — look past agent noise.
+    if (activity.type === "status_changed") {
+      let spamIndex: number | null = null;
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        const entry = out[i]!;
+        if (COALESCE_LOOKBACK_SKIP_TYPES.has(entry.activity.type)) continue;
+        if (
+          entry.activity.type === "status_changed" &&
+          sameActivityActor(entry.activity, activity) &&
+          entry.activity.data.from === activity.data.from &&
+          entry.activity.data.to === activity.data.to
+        ) {
+          spamIndex = i;
+        }
+        break;
+      }
+      if (spamIndex != null) {
+        out[spamIndex]!.count += 1;
+        out[spamIndex]!.at = activity.createdAt;
+        continue;
+      }
+    }
+
+    out.push({ activity, count: 1, at: activity.createdAt });
+  }
+  return out;
+}

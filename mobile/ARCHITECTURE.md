@@ -64,7 +64,7 @@ Journal and inbox use `PadSplitLayout` from `lib/layout/`.
 
 ## Release checklist
 
-1. Sign in (Clerk)
+1. App opens (local-shell bearer — no sign-in)
 2. Inbox/tasks list scroll (200+ rows if available)
 3. iPad split: auto-select first row, collapse list rail
 4. Local-core offline → cloud REST fallback (if `EXPO_PUBLIC_CLOUD_API_URL` set)

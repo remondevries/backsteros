@@ -103,6 +103,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
+  text-decoration: none;
   text-align: left;
   cursor: pointer;
   /* Needed so long labels ellipsis inside the flex trigger (WKWebView parity). */

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 
 import { formatResolvedAppHref, resolveAppHref } from "./resolve-app-href";
 import {
@@ -28,28 +29,31 @@ afterEach(() => {
 
 describe("section entry hrefs", () => {
   it("picks the alpha-first contact and organization", () => {
-    expect(
+    assert.equal(
       firstContactHref([
         { id: "2", name: "Zed", number: 2 },
         { id: "1", name: "Ann", number: 1 },
       ]),
-    ).toBe("/contacts/1");
-    expect(
+      "/contacts/1",
+    );
+    assert.equal(
       firstOrganizationHref([
         { id: "2", name: "Zeta", number: 2 },
         { id: "1", name: "Acme", number: 1 },
       ]),
-    ).toBe("/organizations/1");
+      "/organizations/1",
+    );
   });
 
   it("picks the first letter and non-folder document", () => {
-    expect(firstLetterHref([{ number: 12 }])).toBe("/letters/l-12");
-    expect(
+    assert.equal(firstLetterHref([{ number: 12 }]), "/letters/l-12");
+    assert.equal(
       firstKnowledgeHref([
         { id: "folder", title: "Folder", kind: "folder" },
         { id: "doc-1", title: "Note", path: "note", kind: "document" },
       ]),
-    ).toBe("/knowledge/note");
+      "/knowledge/note",
+    );
   });
 });
 
@@ -62,19 +66,23 @@ describe("resolveAppHref section roots", () => {
       letters: "/letters/l-3",
       knowledge: "/knowledge/note",
     });
-    expect(formatResolvedAppHref(resolveAppHref("/inbox"))).toBe("/inbox/in-1");
+    assert.equal(formatResolvedAppHref(resolveAppHref("/inbox")), "/inbox/in-1");
     // Contacts catalog is main-content (no last-contact redirect).
-    expect(formatResolvedAppHref(resolveAppHref("/contacts"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/contacts")),
       "/contacts",
     );
     // Organizations catalog is main-content (no first-org redirect).
-    expect(formatResolvedAppHref(resolveAppHref("/organizations"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/organizations")),
       "/organizations",
     );
-    expect(formatResolvedAppHref(resolveAppHref("/letters"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/letters")),
       "/letters/l-3",
     );
-    expect(formatResolvedAppHref(resolveAppHref("/knowledge"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/knowledge")),
       "/knowledge/note",
     );
   });
@@ -84,10 +92,12 @@ describe("resolveAppHref section roots", () => {
       inbox: "/inbox/in-1",
       contacts: "/contacts/1",
     });
-    expect(formatResolvedAppHref(resolveAppHref("/inbox/in-9"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/inbox/in-9")),
       "/inbox/in-9",
     );
-    expect(formatResolvedAppHref(resolveAppHref("/contacts/8"))).toBe(
+    assert.equal(
+      formatResolvedAppHref(resolveAppHref("/contacts/8")),
       "/contacts/8",
     );
   });
@@ -95,93 +105,108 @@ describe("resolveAppHref section roots", () => {
 
 describe("shouldKeepAliveSurface", () => {
   it("keeps list/calendar/inbox/knowledge/tasks/journal panes after first visit", () => {
-    expect(shouldKeepAliveSurface("calendar", "/calendar")).toBe(true);
-    expect(shouldKeepAliveSurface("inbox", "/inbox/in-1")).toBe(true);
-    expect(shouldKeepAliveSurface("knowledge", "/knowledge/note")).toBe(true);
-    expect(shouldKeepAliveSurface("tasks-list", "/tasks")).toBe(true);
-    expect(shouldKeepAliveSurface("journal-day", "/journal/2026-08-26")).toBe(
+    assert.equal(shouldKeepAliveSurface("calendar", "/calendar"), true);
+    assert.equal(shouldKeepAliveSurface("inbox", "/inbox/in-1"), true);
+    assert.equal(shouldKeepAliveSurface("knowledge", "/knowledge/note"), true);
+    assert.equal(shouldKeepAliveSurface("tasks-list", "/tasks"), true);
+    assert.equal(
+      shouldKeepAliveSurface("journal-day", "/journal/2026-08-26"),
       true,
     );
-    expect(shouldKeepAliveSurface("journal-habits", "/journal/habits")).toBe(
+    assert.equal(
+      shouldKeepAliveSurface("journal-habits", "/journal/habits"),
       true,
     );
-    expect(shouldKeepAliveSurface("projects", "/projects")).toBe(true);
-    expect(shouldKeepAliveSurface("contacts", "/contacts/1")).toBe(true);
-    expect(shouldKeepAliveSurface("organizations", "/organizations/1")).toBe(
+    assert.equal(shouldKeepAliveSurface("projects", "/projects"), true);
+    assert.equal(shouldKeepAliveSurface("contacts", "/contacts/1"), true);
+    assert.equal(
+      shouldKeepAliveSurface("organizations", "/organizations/1"),
       true,
     );
-    expect(shouldKeepAliveSurface("letters", "/letters/l-1")).toBe(true);
+    assert.equal(shouldKeepAliveSurface("letters", "/letters/l-1"), true);
   });
 
   it("does not keep-alive org-scoped lists or Outlet-only sections", () => {
-    expect(
+    assert.equal(
       shouldKeepAliveSurface("projects", "/organizations/1/projects"),
-    ).toBe(false);
-    expect(
+      false,
+    );
+    assert.equal(
       shouldKeepAliveSurface("contacts", "/organizations/1/contacts/2"),
-    ).toBe(false);
-    expect(shouldKeepAliveSurface("finance", "/finance")).toBe(false);
-    expect(shouldKeepAliveSurface("email", "/email")).toBe(false);
+      false,
+    );
+    assert.equal(shouldKeepAliveSurface("finance", "/finance"), false);
+    assert.equal(shouldKeepAliveSurface("email", "/email"), false);
   });
 });
 
 describe("shouldKeepAliveSidePanelSurface", () => {
   it("keeps calendar, inbox, knowledge, and journal panels", () => {
-    expect(shouldKeepAliveSidePanelSurface("calendar", "/calendar")).toBe(true);
-    expect(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1")).toBe(true);
-    expect(
+    assert.equal(shouldKeepAliveSidePanelSurface("calendar", "/calendar"), true);
+    assert.equal(shouldKeepAliveSidePanelSurface("inbox", "/inbox/in-1"), true);
+    assert.equal(
       shouldKeepAliveSidePanelSurface("knowledge", "/knowledge/note"),
-    ).toBe(true);
-    expect(
-      shouldKeepAliveSidePanelSurface("journal-day", "/journal/2026-08-26"),
-    ).toBe(true);
-    expect(
-      shouldKeepAliveSidePanelSurface("journal-habits", "/journal/habits"),
-    ).toBe(true);
-    expect(shouldKeepAliveSidePanelSurface("contacts", "/contacts/1")).toBe(
       true,
     );
-    expect(
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("journal-day", "/journal/2026-08-26"),
+      true,
+    );
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("journal-habits", "/journal/habits"),
+      true,
+    );
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("contacts", "/contacts/1"),
+      true,
+    );
+    assert.equal(
       shouldKeepAliveSidePanelSurface("organizations", "/organizations/1"),
-    ).toBe(true);
-    expect(shouldKeepAliveSidePanelSurface("letters", "/letters/l-1")).toBe(
+      true,
+    );
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("letters", "/letters/l-1"),
       true,
     );
   });
 
   it("keeps the tasks-list panel and the standalone projects list", () => {
-    expect(shouldKeepAliveSidePanelSurface("tasks-list", "/tasks")).toBe(true);
-    expect(shouldKeepAliveSidePanelSurface("projects", "/projects")).toBe(true);
-    expect(keepAliveSidePanelSurface("/tasks")).toBe("tasks-list");
-    expect(keepAliveSidePanelSurface("/projects")).toBe("projects");
+    assert.equal(shouldKeepAliveSidePanelSurface("tasks-list", "/tasks"), true);
+    assert.equal(shouldKeepAliveSidePanelSurface("projects", "/projects"), true);
+    assert.equal(keepAliveSidePanelSurface("/tasks"), "tasks-list");
+    assert.equal(keepAliveSidePanelSurface("/projects"), "projects");
   });
 
   it("keeps the project documents panel only on a standalone project slug", () => {
-    expect(shouldKeepAliveSidePanelSurface("projects", "/projects/CA")).toBe(
+    assert.equal(
+      shouldKeepAliveSidePanelSurface("projects", "/projects/CA"),
       true,
     );
-    expect(keepAliveSidePanelSurface("/projects/CA")).toBe("projects");
-    expect(
+    assert.equal(keepAliveSidePanelSurface("/projects/CA"), "projects");
+    assert.equal(
       shouldKeepAliveSidePanelSurface(
         "projects",
         "/organizations/1/projects/CA",
       ),
-    ).toBe(false);
-    expect(keepAliveSidePanelSurface("/organizations/1/projects/CA")).toBeNull();
+      false,
+    );
+    assert.equal(keepAliveSidePanelSurface("/organizations/1/projects/CA"), null);
   });
 });
 
 describe("isRoutePathActive", () => {
   it("matches the section root and nested paths only", () => {
-    expect(isRoutePathActive("/calendar", "/calendar")).toBe(true);
-    expect(isRoutePathActive("/calendar/tasks", "/calendar")).toBe(true);
-    expect(isRoutePathActive("/contacts/2", "/calendar")).toBe(false);
-    expect(isRoutePathActive("/journal/2026-08-26", "/calendar")).toBe(false);
-    expect(isRoutePathActive("/journal/habits", "/journal/habits")).toBe(true);
-    expect(isRoutePathActive("/journal/habits/habit-1", "/journal/habits")).toBe(
+    assert.equal(isRoutePathActive("/calendar", "/calendar"), true);
+    assert.equal(isRoutePathActive("/calendar/tasks", "/calendar"), true);
+    assert.equal(isRoutePathActive("/contacts/2", "/calendar"), false);
+    assert.equal(isRoutePathActive("/journal/2026-08-26", "/calendar"), false);
+    assert.equal(isRoutePathActive("/journal/habits", "/journal/habits"), true);
+    assert.equal(
+      isRoutePathActive("/journal/habits/habit-1", "/journal/habits"),
       true,
     );
-    expect(isRoutePathActive("/journal/2026-08-26", "/journal/habits")).toBe(
+    assert.equal(
+      isRoutePathActive("/journal/2026-08-26", "/journal/habits"),
       false,
     );
   });
@@ -189,9 +214,9 @@ describe("isRoutePathActive", () => {
 
 describe("isJournalDayPath", () => {
   it("matches journal day routes and not habits", () => {
-    expect(isJournalDayPath("/journal")).toBe(true);
-    expect(isJournalDayPath("/journal/2026-08-26")).toBe(true);
-    expect(isJournalDayPath("/journal/habits")).toBe(false);
-    expect(isJournalDayPath("/calendar")).toBe(false);
+    assert.equal(isJournalDayPath("/journal"), true);
+    assert.equal(isJournalDayPath("/journal/2026-08-26"), true);
+    assert.equal(isJournalDayPath("/journal/habits"), false);
+    assert.equal(isJournalDayPath("/calendar"), false);
   });
 });

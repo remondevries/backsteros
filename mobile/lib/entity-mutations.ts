@@ -9,6 +9,7 @@ import {
 } from "@backsteros/contracts";
 
 import {
+  shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   shouldWriteEntityViaPowerSync,
 } from "./powersync-write-path";
@@ -51,7 +52,7 @@ export type MobileEntityPowerSync = {
     values: Record<string, unknown>,
     id?: string,
   ) => Promise<string>;
-  flushCrudUpload?: () => Promise<void>;
+  flushCrudUpload?: () => Promise<boolean | void>;
 };
 
 export function toSnakeFields(
@@ -133,8 +134,13 @@ export function taskApiPatchToSqlite(
     } else if (key === "projectId") sqliteValues.project_id = value;
     else if (key === "contactId") sqliteValues.contact_id = value;
     else if (key === "agentChatId") sqliteValues.agent_chat_id = value;
-    else if (key === "linkedCommitSha") sqliteValues.linked_commit_sha = value;
-    else if (key === "agentInboxApproved") {
+    else if (key === "linkedCommitShas") {
+      sqliteValues.linked_commit_shas = Array.isArray(value)
+        ? JSON.stringify(value)
+        : value;
+    } else if (key === "links") {
+      sqliteValues.links = Array.isArray(value) ? JSON.stringify(value) : value;
+    } else if (key === "agentInboxApproved") {
       if (value === true) {
         sqliteValues.agent_inbox_approved_at = new Date().toISOString();
       }
@@ -269,12 +275,47 @@ export async function patchEntityViaPowerSyncOrApi(
     }
   }
 
-  // Skip REST while PowerSync uploads — except agentInboxApproved (sole exception).
+  // PowerSync-connected path: upload immediately. Auto-upload alone has left
+  // due-date / property patches stranded on device while desktop stays stale.
+  // Status always confirms via REST too — same stranded-upload class of bug.
+  // agentInboxApproved remains the contracts dual-write exception.
+  //
+  // If the CRUD queue is empty after the local write (UPDATE matched 0 rows, or
+  // the SDK already drained the queue), fall through to REST so the leader
+  // still receives the change.
+  const statusNeedsRestConfirm =
+    table === "tasks" && typeof apiValues.status === "string";
   if (
     shouldSkipRestEntityWrite(powerSync) &&
-    !taskPatchRequiresRestWrite(apiValues)
+    !taskPatchRequiresRestWrite(apiValues) &&
+    !statusNeedsRestConfirm
   ) {
-    return;
+    if (powerSync.flushCrudUpload) {
+      try {
+        const uploaded = await powerSync.flushCrudUpload();
+        if (shouldSkipRestAfterCrudFlush(uploaded)) return;
+      } catch (error) {
+        console.warn(
+          `[mobile] PowerSync upload flush failed for ${table}; falling back to REST`,
+          error,
+        );
+      }
+    } else {
+      return;
+    }
+  } else if (
+    shouldSkipRestEntityWrite(powerSync) &&
+    statusNeedsRestConfirm &&
+    powerSync.flushCrudUpload
+  ) {
+    try {
+      await powerSync.flushCrudUpload();
+    } catch (error) {
+      console.warn(
+        "[mobile] PowerSync upload flush failed for task status; confirming via REST",
+        error,
+      );
+    }
   }
 
   await client.requestJson(entityPatchPath(table, id), {
@@ -539,7 +580,19 @@ export async function softDeleteEntityViaPowerSyncOrApi(
   if (shouldWriteEntityViaPowerSync(powerSync)) {
     await softDeleteLocalEntity(powerSync, table, id, deletedAt);
     if (shouldSkipRestEntityWrite(powerSync)) {
-      return;
+      if (powerSync.flushCrudUpload) {
+        try {
+          const uploaded = await powerSync.flushCrudUpload();
+          if (shouldSkipRestAfterCrudFlush(uploaded)) return;
+        } catch (error) {
+          console.warn(
+            `[mobile] PowerSync delete upload flush failed for ${table}; falling back to REST`,
+            error,
+          );
+        }
+      } else {
+        return;
+      }
     }
     try {
       await client.requestJson(entityDeletePath(table, id), { method: "DELETE" });

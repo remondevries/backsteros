@@ -21,6 +21,18 @@ import {
   tryWarmKeepAliveFlip,
 } from "../lib/shell-warm-keep-alive";
 
+/**
+ * `to` / `search` / `hash` for a `<Link>` from an app href string. Typed via
+ * `NavigateOptions` (same as `navigateToHref`) — a raw `Record` search does
+ * not satisfy the per-route search reducer the registered router infers.
+ */
+function linkTargetFromHref(
+  destination: string,
+): Pick<NavigateOptions, "to" | "search" | "hash"> {
+  const { pathname, search, hash } = parseAppHref(destination);
+  return { to: pathname as NavigateOptions["to"], search, hash };
+}
+
 function isModifiedClick(
   event: KeyboardEvent | MouseEvent | PointerEvent<HTMLAnchorElement>,
 ): boolean {
@@ -69,12 +81,9 @@ export function RouterLink({
     | ((event: KeyboardEvent<HTMLAnchorElement>) => void)
     | undefined;
   const destination = formatResolvedAppHref(resolveAppHref(to));
-  const { pathname, search, hash } = parseAppHref(destination);
   return (
     <Link
-      to={pathname as NavigateOptions["to"]}
-      search={search}
-      hash={hash}
+      {...linkTargetFromHref(destination)}
       className={className}
       title={title}
       aria-current={rest["aria-current"] as "page" | undefined}
@@ -131,15 +140,12 @@ export const DesktopClientLink = forwardRef<HTMLAnchorElement, ClientLinkProps>(
     ref,
   ) {
     const destination = formatResolvedAppHref(resolveAppHref(href));
-    const { pathname, search, hash } = parseAppHref(destination);
     // Duplicate @types/react in the monorepo (Expo 19.0 vs desktop 19.1+) makes
     // React Router's Link props incompatible with AnchorHTMLAttributes — cast.
     return (
       <Link
         ref={ref}
-        to={pathname as NavigateOptions["to"]}
-        search={search}
-        hash={hash}
+        {...linkTargetFromHref(destination)}
         className={className}
         title={title}
         {...(rest as object)}

@@ -205,7 +205,7 @@ function FitContentEditable({
       data-placeholder={entityLabel}
       data-empty={draft.length === 0 ? "" : undefined}
           contentEditable={
-            isPending ? false : ("plaintext-only" as "plaintext-only")
+            isPending ? false : ("plaintext-only" as const)
           }
       suppressContentEditableWarning
       {...{ [ENTITY_TITLE_INPUT_ATTRIBUTE]: "" }}

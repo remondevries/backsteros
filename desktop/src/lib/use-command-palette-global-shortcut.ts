@@ -22,7 +22,7 @@ export function isCommandPaletteGlobalShortcut(
 
 /**
  * ⌘⌥K opens the in-app command palette (main-window session).
- * Packaged Tauri used a separate overlay webview that did not share Clerk
+ * Packaged Tauri used a separate overlay webview that did not share app state
  * cookies unless data stores matched — prefer the main-window palette.
  */
 export function useCommandPaletteGlobalShortcut({

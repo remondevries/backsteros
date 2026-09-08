@@ -113,55 +113,51 @@ export function useWorkspaceDocumentActions({
         updatedAt: now,
       } as ApiDocument;
       upsertOptimisticDocument(document);
-      try {
-        await optimisticLocalMetadataCreate({
-          id,
-          applyOptimistic: () => upsertOptimisticDocument(document),
-          rollback: () =>
-            setApiDocuments((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
-          createMetadata: () =>
-            powerSync.createMetadata!(
-              "documents",
-              toSnakeFields({
-                type: input.type,
-                projectId: input.projectId ?? null,
-                parentId: input.parentId ?? null,
-                kind: input.kind ?? "document",
-                icon: null,
-                sortOrder: 0,
-                journalDate: null,
-                path: input.path,
-                title: input.title,
-                storageKey: "",
-                contentType: "text/markdown",
-                byteSize: 0,
-                checksum: null,
-                snippet: null,
-                contentVersion: 1,
-                contentEtag: null,
-              }),
+      await optimisticLocalMetadataCreate({
+        id,
+        applyOptimistic: () => upsertOptimisticDocument(document),
+        rollback: () =>
+          setApiDocuments((rows) => rows?.filter((entry) => entry.id !== id) ?? null),
+        createMetadata: () =>
+          powerSync.createMetadata!(
+            "documents",
+            toSnakeFields({
+              type: input.type,
+              projectId: input.projectId ?? null,
+              parentId: input.parentId ?? null,
+              kind: input.kind ?? "document",
+              icon: null,
+              sortOrder: 0,
+              journalDate: null,
+              path: input.path,
+              title: input.title,
+              storageKey: "",
+              contentType: "text/markdown",
+              byteSize: 0,
+              checksum: null,
+              snippet: null,
+              contentVersion: 1,
+              contentEtag: null,
+            }),
+            id,
+          ),
+        errorLabel: "local document create",
+        afterCreate: async () => {
+          if (powerSync.connected) {
+            await powerSync.flushCrudUpload();
+          }
+          const content = input.content ?? "";
+          if (content.length > 0) {
+            const contentVersion = await commitInitialDocumentContent(
+              client,
               id,
-            ),
-          errorLabel: "local document create",
-          afterCreate: async () => {
-            if (powerSync.connected) {
-              await powerSync.flushCrudUpload();
-            }
-            const content = input.content ?? "";
-            if (content.length > 0) {
-              const contentVersion = await commitInitialDocumentContent(
-                client,
-                id,
-                content,
-                1,
-              );
-              upsertOptimisticDocument({ ...document, contentVersion });
-            }
-          },
-        });
-      } catch (error) {
-        throw error;
-      }
+              content,
+              1,
+            );
+            upsertOptimisticDocument({ ...document, contentVersion });
+          }
+        },
+      });
       return { id, path: input.path, contentVersion: 1 };
     },
     [client, powerSync, setApiDocuments, toSnakeFields, upsertOptimisticDocument],

@@ -5,7 +5,10 @@ import type {
 } from "@backsteros/contracts";
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import { optimisticLocalMetadataCreate } from "./optimistic-local-metadata-create";
+import {
+  PENDING_ENTITY_NUMBER,
+  optimisticLocalMetadataCreate,
+} from "./optimistic-local-metadata-create";
 import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 
 /** Letter and meeting creation flows. */
@@ -140,7 +143,7 @@ export function useWorkspaceLetterMeetingActions({
         const now = new Date().toISOString();
         const meeting = {
           id,
-          number: null,
+          number: PENDING_ENTITY_NUMBER,
           ...meetingBody,
           createdAt: now,
           updatedAt: now,

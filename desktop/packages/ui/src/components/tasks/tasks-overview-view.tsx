@@ -109,7 +109,14 @@ export type TasksOverviewViewProps = {
   onStatusChange?: (taskId: string, status: TaskStatus) => void;
   onPriorityChange?: (taskId: string, priority: number) => void;
   onDueDateChange?: (taskId: string, dueDate: Date | null) => void;
-  onProjectChange?: (taskId: string, projectKey: string | null) => void;
+  onProjectChange?: (
+    taskId: string,
+    projectKey: string | null,
+  ) =>
+    | void
+    | Promise<void>
+    | Promise<{ number?: number | null; projectId?: string | null } | void>
+    | { number?: number | null; projectId?: string | null };
   onAssigneeChange?: (taskId: string, assigneeId: string | null) => void;
   /** Soft-delete all currently selected tasks (bulk trash). */
   onBulkDelete?: (taskIds: string[]) => void | Promise<void>;
@@ -277,7 +284,32 @@ export function TasksOverviewView({
             : task,
         ),
       );
-      onProjectChange?.(taskId, projectKey);
+      void Promise.resolve(onProjectChange?.(taskId, projectKey)).then(
+        (result) => {
+          if (!result || typeof result !== "object") return;
+          const nextNumber =
+            "number" in result && result.number !== undefined
+              ? result.number
+              : undefined;
+          const nextProjectId =
+            "projectId" in result && result.projectId !== undefined
+              ? result.projectId
+              : undefined;
+          if (nextNumber === undefined && nextProjectId === undefined) return;
+          const patch = {
+            ...(nextNumber !== undefined ? { number: nextNumber } : {}),
+            ...(nextProjectId !== undefined
+              ? { projectId: nextProjectId }
+              : {}),
+          };
+          patchTask(taskId, patch);
+          setLocalTasks((current) =>
+            current.map((task) =>
+              task.id === taskId ? { ...task, ...patch } : task,
+            ),
+          );
+        },
+      );
     },
     [onProjectChange, patchTask, projectOptions],
   );

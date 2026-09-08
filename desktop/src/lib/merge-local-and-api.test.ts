@@ -160,6 +160,49 @@ test("resolveLocalOrApiRows keeps local membership but overlays newer API patche
   assert.equal(resolved[1]?.title, "local-only");
 });
 
+test("preferNewerByUpdatedAt prefers current on equal updatedAt (BOD-62)", () => {
+  const local = {
+    id: "1",
+    updatedAt: "2026-09-08T12:00:00.000Z",
+    status: "in_progress",
+    dueDate: "2026-09-08T21:59:59.999Z",
+  };
+  const staleApiOptimistic = {
+    id: "1",
+    updatedAt: "2026-09-08T12:00:00.000Z",
+    status: "backlog",
+    dueDate: "2026-09-08T21:59:59.999Z",
+  };
+  assert.equal(
+    preferNewerByUpdatedAt(local, staleApiOptimistic).status,
+    "in_progress",
+  );
+});
+
+test("resolveLocalOrApiRows keeps local in_progress when API tie has stale backlog (BOD-62)", () => {
+  const stamp = "2026-09-08T12:00:00.000Z";
+  const resolved = resolveLocalOrApiRows(
+    [
+      {
+        id: "1",
+        updatedAt: stamp,
+        status: "in_progress",
+        dueDate: "2026-09-08T21:59:59.999Z",
+      },
+    ],
+    [
+      {
+        id: "1",
+        updatedAt: stamp,
+        status: "backlog",
+        dueDate: "2026-09-08T21:59:59.999Z",
+      },
+    ],
+  );
+  assert.equal(resolved[0]?.status, "in_progress");
+  assert.equal(resolved[0]?.dueDate, "2026-09-08T21:59:59.999Z");
+});
+
 test("resolveLocalOrApiRows keeps newer local over stale API hydrate", () => {
   const resolved = resolveLocalOrApiRows(
     [

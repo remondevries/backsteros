@@ -390,7 +390,7 @@ function TaskListPageBody({
           dueDate: dueDate ? dueDate.toISOString() : null,
         });
       }}
-      onProjectChange={(taskId, projectKey) => {
+      onProjectChange={async (taskId, projectKey) => {
         const project = projectKey
           ? projects.find((entry) => entry.key === projectKey) ?? null
           : null;
@@ -405,12 +405,18 @@ function TaskListPageBody({
               projectKey: project?.key ?? null,
             },
           );
-          return;
+          return {
+            projectId: project?.id ?? null,
+          };
         }
-        void workspace.patchTask(taskId, {
+        const updated = await workspace.patchTask(taskId, {
           projectId: project?.id ?? null,
           ...(project ? { inbox: false } : {}),
         });
+        return {
+          number: updated?.number ?? null,
+          projectId: project?.id ?? null,
+        };
       }}
       onAssigneeChange={(taskId, assigneeId) => {
         const task = findListTask(taskId);

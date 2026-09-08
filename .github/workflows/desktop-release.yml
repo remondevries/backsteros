@@ -13,7 +13,6 @@ permissions:
 
 env:
   VITE_API_URL: http://127.0.0.1:8787
-  VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
 
 jobs:
   build-macos:

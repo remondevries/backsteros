@@ -23,15 +23,16 @@ function mergeItemMaps(
 
   for (const [itemId, pin] of pinnedItems) {
     const existing = byItemId.get(itemId);
-    byItemId.set(
-      itemId,
-      existing ? withoutInboxUpdatedFlag(existing) : withoutInboxUpdatedFlag(pin.item),
-    );
-  }
-
-  for (const pin of pinnedItems.values()) {
-    if (!byItemId.has(pin.item.id)) {
-      byItemId.set(pin.item.id, withoutInboxUpdatedFlag(pin.item));
+    if (existing) {
+      // Live row wins — keep pin only to strip the Updated flag for this visit.
+      byItemId.set(itemId, withoutInboxUpdatedFlag(existing));
+      continue;
+    }
+    // Pin-only rows are for acknowledging Updated without the row jumping.
+    // Do not resurrect tasks that left the inbox for other reasons (future due,
+    // completed, etc.) with a stale due date.
+    if (pin.attentionGroup === "updated") {
+      byItemId.set(itemId, withoutInboxUpdatedFlag(pin.item));
     }
   }
 
@@ -103,7 +104,7 @@ export function buildInboxSessionList(input: {
   if (input.displayOrder.length === 0) {
     const order = input.sortedItems.map((item) => item.id);
     for (const pin of input.pinnedItems.values()) {
-      if (!order.includes(pin.item.id)) {
+      if (!order.includes(pin.item.id) && byItemId.has(pin.item.id)) {
         order.push(pin.item.id);
       }
     }

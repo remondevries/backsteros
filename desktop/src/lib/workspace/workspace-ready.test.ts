@@ -45,12 +45,14 @@ function baseInput(
 }
 
 test("inbox ready when inbox tasks local load without letters", () => {
+  // Only inbox tasks are loaded: inbox becomes ready on its own, while the
+  // letters surface (which also accepts `projects` as a readiness proxy) does
+  // not — neither letters nor projects have landed yet.
   const ready = computeWorkspaceSurfaceReady(
     baseInput({
       localLoaded: {
         ...baseInput().localLoaded,
         inboxTasks: true,
-        projects: true,
       },
     }),
   );

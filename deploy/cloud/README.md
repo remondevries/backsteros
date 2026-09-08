@@ -91,7 +91,7 @@ docker compose -f deploy/cloud/docker-compose.yml exec backsteros sh
 | `CORE_REPLICATION_SECRET` | shared bearer for `/api/v1/internal/replication/*` |
 | `CORE_REPLICATION_WORKSPACE_IDS` | comma-separated workspace ids to sync |
 | `BACKSTEROS_VAULT_PATH` | `/data/vault` (markdown twin; no PDFs) |
-| `GITHUB_API_TOKEN` | Optional PAT for portal API-key GitHub routes (Commits/PRs) |
+| `GITHUB_API_TOKEN` | Optional PAT for GitHub routes (local-shell desktop + portal API keys) |
 | `PORT` | `8788` |
 
 PowerSync and Clerk are **not** required for portal meeting booking (API key auth only).

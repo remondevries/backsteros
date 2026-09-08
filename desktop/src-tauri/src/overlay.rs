@@ -194,7 +194,7 @@ fn overlay_url_with_context(
 }
 
 /// Ask the overlay SPA to switch route / ctx without a full webview reload
-/// (avoids remounting Clerk and flashing the loading screen).
+/// (avoids remounting React and flashing the loading screen).
 fn push_overlay_frontend_route(
     overlay: &WebviewWindow,
     path: &str,
@@ -234,7 +234,7 @@ fn show_desktop_overlay(app: &AppHandle, mode: OverlayMode, path: &str) -> Resul
         .is_some_and(|path| path.starts_with("/desktop-overlay"));
 
     if already_on_overlay {
-        // Client-side route change — keep the React/Clerk tree alive.
+        // Client-side route change — keep the React tree alive.
         push_overlay_frontend_route(&overlay, path, ctx)?;
     } else {
         // First show / cold navigate after lazy window create.
@@ -253,7 +253,7 @@ fn show_desktop_overlay(app: &AppHandle, mode: OverlayMode, path: &str) -> Resul
 }
 
 /// Must match `APP_WEBVIEW_DATA_STORE_ID` in `lib.rs` so the overlay shares
-/// Clerk cookies / localStorage with the main window.
+/// localStorage / IndexedDB with the main window.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 const APP_WEBVIEW_DATA_STORE_ID: [u8; 16] = [
     0xb4, 0xc7, 0x5e, 0x20, 0x05, 0xde, 0x4b, 0x0a, 0x9e, 0x11, 0x82, 0x3f,
@@ -320,7 +320,7 @@ pub fn register_desktop_global_shortcuts(
                 return;
             }
 
-            // Open in-app palette on the main window (shared Clerk session).
+            // Open in-app palette on the main window.
             let handle = app.clone();
             let _ = handle.clone().run_on_main_thread(move || {
                 let _ = focus_main_window(handle.clone());
@@ -338,7 +338,7 @@ pub fn register_desktop_global_shortcuts(
                 return;
             }
 
-            // Open in-app compose on the main window (shared Clerk session).
+            // Open in-app compose on the main window.
             // The separate overlay webview historically had its own WKWebView
             // data store and rendered unsigned-in / black.
             let handle = app.clone();

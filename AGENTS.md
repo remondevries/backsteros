@@ -64,6 +64,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `core/server/` | Hono + Postgres + OpenAPI |
 | `core/packages/contracts/` | Zod schemas + ts-rest contract |
 | `core/packages/api-client/` | Typed HTTP client |
+| `core/packages/cli/` | `backsteros` CLI — task/project/comment CRUD (`pnpm cli -- …`) |
 | `core/packages/powersync-schema/` | Shared PowerSync Tier A/B client schema |
 | `mobile/` | Expo — Clerk + PowerSync |
 | `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |

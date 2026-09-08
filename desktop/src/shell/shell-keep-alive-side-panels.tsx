@@ -11,6 +11,7 @@ import {
   emailBelongsInInbox,
   isInboxPath,
   sortInboxItemsByAttentionStatus,
+  taskBelongsInInbox,
   type InboxListItem,
 } from "@backsteros/ui/inbox";
 import {
@@ -230,16 +231,60 @@ function InboxKeepAliveSidePanelLive({ onNavigate }: { onNavigate: PanelNav }) {
   const inboxNotificationsActive = !frozen && isInboxPath(pathname);
 
   const workspaceInboxItems = useMemo(
-    () =>
-      inboxItems.map((item) => {
-        if (item.kind !== "meeting" || !item.organizationId) return item;
-        return {
-          ...item,
-          organizationAvatarSrc:
-            organizationAvatarSrc[item.organizationId] ?? null,
-        };
-      }),
-    [inboxItems, organizationAvatarSrc],
+    () => {
+      const liveTaskById = new Map(allTasks.map((task) => [task.id, task]));
+      const next: InboxListItem[] = [];
+      for (const item of inboxItems) {
+        if (item.kind === "meeting") {
+          if (!item.organizationId) {
+            next.push(item);
+            continue;
+          }
+          next.push({
+            ...item,
+            organizationAvatarSrc:
+              organizationAvatarSrc[item.organizationId] ?? null,
+          });
+          continue;
+        }
+        if (item.kind !== "task") {
+          next.push(item);
+          continue;
+        }
+        const live = liveTaskById.get(item.id);
+        const merged = live
+          ? {
+              ...item,
+              // Side panel + detail must show the same scheduling fields.
+              status: live.status ?? item.status,
+              priority: live.priority ?? item.priority,
+              dueDate:
+                typeof live.dueDate === "number"
+                  ? live.dueDate
+                  : live.dueDate
+                    ? live.dueDate.getTime()
+                    : item.dueDate,
+              assigneeId: live.assigneeId ?? item.assigneeId,
+            }
+          : item;
+        // Live due-date overlays can move a row onto today/tomorrow — drop it.
+        if (
+          !taskBelongsInInbox({
+            inbox: merged.inbox,
+            status: merged.status,
+            dueDate: merged.dueDate,
+            agentCreatedAt: merged.agentCreatedAt,
+            agentInboxApprovedAt: merged.agentInboxApprovedAt,
+            inboxUpdatedAt: merged.inboxUpdatedAt,
+          })
+        ) {
+          continue;
+        }
+        next.push(merged);
+      }
+      return next;
+    },
+    [allTasks, inboxItems, organizationAvatarSrc],
   );
 
   const agentMailListSignature = useMemo(

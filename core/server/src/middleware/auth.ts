@@ -1,31 +1,29 @@
 import type { Context, Next } from "hono";
-import { createClerkClient, verifyToken } from "@clerk/backend";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { ApiKeyScope } from "@backsteros/contracts";
 
 import { db } from "../db/index.js";
-import { apiKeys, users } from "../db/schema.js";
+import { apiKeys } from "../db/schema.js";
 import {
   apiKeyLookupPrefix,
   hashApiKey,
   hasAnyScope,
   hasScope,
-  newId,
 } from "../lib/crypto.js";
 import {
   isLocalShellAuthEnabled,
   isLocalShellBearerToken,
   resolveLocalShellOwner,
 } from "../services/local-shell-auth.js";
-import { resolveOrCreateWorkspace } from "../services/workspaces.js";
 import { warmVaultPathCache } from "../services/vault-settings.js";
 
-export type AuthKind = "api_key" | "clerk" | "local_shell";
+export type AuthKind = "api_key" | "local_shell" | "powersync";
 
 export type AuthContext = {
   kind: AuthKind;
   userId: string | null;
+  /** Legacy users.clerk_id sentinel (e.g. local_shell); not a Clerk session. */
   clerkUserId: string | null;
   apiKeyId: string | null;
   contactId: string | null;
@@ -34,10 +32,10 @@ export type AuthContext = {
   scopes: ApiKeyScope[];
 };
 
-/** Clerk session or local-shell bearer — owner UI on local-core. */
+/** Local-shell bearer — owner UI on local-core. */
 export function isOwnerShellAuth(auth: AuthContext | undefined | null): boolean {
   if (!auth?.userId) return false;
-  return auth.kind === "clerk" || auth.kind === "local_shell";
+  return auth.kind === "local_shell";
 }
 
 declare module "hono" {
@@ -55,22 +53,6 @@ function getBearerToken(authorization: string | undefined): string | null {
     return null;
   }
   return authorization.slice("Bearer ".length).trim();
-}
-
-function clerkDisplayName(input: {
-  fullName?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  username?: string | null;
-}): string | null {
-  const full = input.fullName?.trim();
-  if (full) return full;
-  const parts = [input.firstName, input.lastName]
-    .map((part) => part?.trim())
-    .filter(Boolean);
-  if (parts.length > 0) return parts.join(" ");
-  const username = input.username?.trim();
-  return username || null;
 }
 
 export async function authenticateApiKey(secret: string): Promise<AuthContext | null> {
@@ -105,108 +87,6 @@ export async function authenticateApiKey(secret: string): Promise<AuthContext | 
   };
 }
 
-export async function authenticateClerk(
-  token: string,
-): Promise<AuthContext | null> {
-  const secretKey = process.env.CLERK_SECRET_KEY;
-  if (!secretKey) {
-    throw new Error("CLERK_SECRET_KEY is required for Clerk authentication");
-  }
-
-  const verified = await verifyToken(token, { secretKey });
-  const clerkUserId = verified.sub;
-
-  const [existing] = await db
-    .select()
-    .from(users)
-    .where(eq(users.clerkId, clerkUserId))
-    .limit(1);
-
-  let userId = existing?.id ?? null;
-  const verifiedRecord = verified as Record<string, unknown>;
-  let email =
-    (typeof verifiedRecord.email === "string" && verifiedRecord.email) ||
-    (typeof verifiedRecord.email_address === "string" &&
-      verifiedRecord.email_address) ||
-    existing?.email ||
-    null;
-  let displayName = existing?.displayName ?? null;
-
-  try {
-    const clerk = createClerkClient({ secretKey });
-    const clerkUser = await clerk.users.getUser(clerkUserId);
-    email =
-      clerkUser.emailAddresses.find(
-        (entry) => entry.id === clerkUser.primaryEmailAddressId,
-      )?.emailAddress ??
-      clerkUser.emailAddresses[0]?.emailAddress ??
-      email;
-    displayName =
-      clerkDisplayName({
-        fullName: clerkUser.fullName,
-        firstName: clerkUser.firstName,
-        lastName: clerkUser.lastName,
-        username: clerkUser.username,
-      }) ?? displayName;
-  } catch {
-    /* keep whatever we already resolved */
-  }
-
-  if (!userId) {
-    const proposedUserId = newId();
-    await db
-      .insert(users)
-      .values({
-        id: proposedUserId,
-        clerkId: clerkUserId,
-        email,
-        displayName,
-        role: "owner",
-      })
-      .onConflictDoNothing();
-    const [createdOrRaced] = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        displayName: users.displayName,
-      })
-      .from(users)
-      .where(eq(users.clerkId, clerkUserId))
-      .limit(1);
-    userId = createdOrRaced?.id ?? null;
-    email = createdOrRaced?.email ?? email;
-    displayName = createdOrRaced?.displayName ?? displayName;
-  } else if (
-    (email && email !== existing?.email) ||
-    (displayName && displayName !== existing?.displayName)
-  ) {
-    await db
-      .update(users)
-      .set({
-        email: email ?? existing?.email ?? null,
-        displayName: displayName ?? existing?.displayName ?? null,
-      })
-      .where(eq(users.id, userId));
-  }
-
-  if (!userId) {
-    throw new Error("Failed to resolve Clerk user");
-  }
-
-  const membership = await resolveOrCreateWorkspace(userId);
-
-  return {
-    kind: "clerk",
-    userId,
-    clerkUserId,
-    apiKeyId: null,
-    contactId: null,
-    workspaceId: membership.workspaceId,
-    membershipRole: membership.role,
-    scopes: [],
-  };
-}
-
 export async function authenticateLocalShell(
   token: string,
 ): Promise<AuthContext | null> {
@@ -238,12 +118,6 @@ export async function resolveAuth(authorization: string | undefined): Promise<Au
     auth = await authenticateApiKey(token);
   } else if (isLocalShellBearerToken(token)) {
     auth = await authenticateLocalShell(token);
-  } else {
-    try {
-      auth = await authenticateClerk(token);
-    } catch {
-      auth = null;
-    }
   }
 
   if (auth) {
@@ -275,42 +149,14 @@ export function requireApiKeyScope(...requiredScopes: ApiKeyScope[]) {
   };
 }
 
-export function requireClerkSession() {
-  return async (c: Context, next: Next) => {
-    const auth = c.get("auth");
-
-    if (!auth || auth.kind !== "clerk") {
-      return c.json(unauthorized("Clerk session required"), 401);
-    }
-
-    await next();
-  };
-}
-
 export function requireScope(scope: ApiKeyScope) {
   return (auth: AuthContext | undefined): boolean => {
     if (!auth) {
       return false;
     }
-    if (auth.kind === "clerk" || auth.kind === "local_shell") {
+    if (auth.kind === "local_shell") {
       return Boolean(auth.membershipRole);
     }
     return hasScope(auth.scopes, scope);
   };
 }
-
-/** Fresh Clerk client each call so we never freeze an empty secret at import time. */
-export function getClerkClient() {
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
-  if (!secretKey) {
-    throw new Error("CLERK_SECRET_KEY is required for Clerk authentication");
-  }
-  return createClerkClient({ secretKey });
-}
-
-/** @deprecated Prefer getClerkClient() — kept for older call sites. */
-export const clerkClient = {
-  get users() {
-    return getClerkClient().users;
-  },
-};

@@ -10,7 +10,6 @@ import {
 
 import {
   formatLetterDisplayId,
-  getLettersHref,
   getSelectedLetterSlugFromPathname,
   groupLettersByStatus,
   letterMatchesSlug,

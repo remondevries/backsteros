@@ -2,6 +2,7 @@ export {
   buildInboxEmailListItem,
   emailBelongsInInbox,
   sortInboxItemsByAttentionStatus,
+  taskBelongsInInbox,
   type InboxListItem,
 } from "../inbox/inbox-items.js";
 

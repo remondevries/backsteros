@@ -683,7 +683,7 @@ async function createTaskWithExecutor(
   id: string,
   executor: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "clerk" | "local_shell" },
+  options?: { authKind?: "api_key" | "local_shell" },
 ) {
   if (input.projectId) {
     const project = await getProjectById(workspaceId, input.projectId, executor);
@@ -769,7 +769,7 @@ async function createTaskWithExecutor(
       inbox: input.inbox ?? (!input.projectId && !input.contactId),
       links: input.links ?? [],
       agentChatId: input.agentChatId ?? null,
-      linkedCommitSha: input.linkedCommitSha ?? null,
+      linkedCommitShas: input.linkedCommitShas ?? [],
       habitId: input.habitId ?? null,
       trackedMinutes: input.trackedMinutes ?? null,
       trackedDurationSeconds: input.trackedDurationSeconds ?? null,
@@ -844,7 +844,7 @@ export async function createTask(
   id = newId(),
   executor?: DbExecutor,
   actor?: TaskWriteActor | null,
-  options?: { authKind?: "api_key" | "clerk" | "local_shell" },
+  options?: { authKind?: "api_key" | "local_shell" },
 ) {
   if (executor) {
     return createTaskWithExecutor(
@@ -1013,7 +1013,7 @@ export async function updateTask(
           : undefined),
       links: input.links,
       agentChatId: input.agentChatId,
-      linkedCommitSha: input.linkedCommitSha,
+      linkedCommitShas: input.linkedCommitShas,
       habitId: input.habitId,
       trackedMinutes: input.trackedMinutes,
       trackedDurationSeconds: input.trackedDurationSeconds,
@@ -1220,15 +1220,14 @@ export async function listDueTasks(
 
 /**
  * Expanded inbox: triage capture (`inbox`), On Hold / In Review from any
- * project when not due in the future, and overdue open tasks (due before
- * local today, not completed / canceled / duplicated). Matching is refined
- * on clients by calendar day.
+ * project, and overdue open tasks (due before local today, not completed /
+ * canceled / duplicated). Matching is refined on clients by calendar day.
+ * Habit day instances and tasks due today or later are excluded
+ * (only overdue / undated inbox candidates remain).
  */
 export async function listInboxTasks(workspaceId: string, executor: DbExecutor = db) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const startOfTomorrow = new Date(startOfToday);
-  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
 
   return executor
     .select()
@@ -1237,12 +1236,11 @@ export async function listInboxTasks(workspaceId: string, executor: DbExecutor =
       and(
         eq(tasks.workspaceId, workspaceId),
         isNull(tasks.deletedAt),
+        isNull(tasks.habitId),
+        or(isNull(tasks.dueDate), lt(tasks.dueDate, startOfToday)),
         or(
           eq(tasks.inbox, true),
-          and(
-            inArray(tasks.status, ["on_hold", "in_review"]),
-            or(isNull(tasks.dueDate), lt(tasks.dueDate, startOfTomorrow)),
-          ),
+          inArray(tasks.status, ["on_hold", "in_review"]),
           and(
             isNotNull(tasks.dueDate),
             lt(tasks.dueDate, startOfToday),

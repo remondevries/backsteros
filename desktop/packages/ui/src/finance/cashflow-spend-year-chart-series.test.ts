@@ -7,7 +7,7 @@ import {
   buildCashflowSpendYearSeries,
   CASHFLOW_SPEND_OTHER_KEY,
   cashflowSpendYearChartHasData,
-} from "../../dist/finance/cashflow-spend-year-chart-series.js";
+} from "./cashflow-spend-year-chart-series.js";
 
 function category(
   partial: Partial<FinancialCategory> & Pick<FinancialCategory, "id" | "name">,

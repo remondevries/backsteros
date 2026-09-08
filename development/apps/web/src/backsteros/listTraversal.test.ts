@@ -6,6 +6,7 @@ import {
   orderedBacksterosProjectIds,
   orderedBacksterosTaskIds,
   resolveAdjacentListItemId,
+  resolveSidepanelHighlightSeed,
 } from "./listTraversal";
 
 function addDaysYmd(days: number): string {
@@ -128,5 +129,39 @@ describe("resolveAdjacentListItemId", () => {
         direction: "previous",
       }),
     ).toBe("c");
+  });
+});
+
+describe("resolveSidepanelHighlightSeed", () => {
+  const ids = ["p1", "p2", "p3"];
+
+  it("prefers the current route/open selection", () => {
+    expect(
+      resolveSidepanelHighlightSeed({
+        currentItemId: "p2",
+        itemIds: ids,
+        rememberedId: "p3",
+      }),
+    ).toBe("p2");
+  });
+
+  it("falls back to the remembered project when escaping back to the rail", () => {
+    expect(
+      resolveSidepanelHighlightSeed({
+        currentItemId: null,
+        itemIds: ids,
+        rememberedId: "p3",
+      }),
+    ).toBe("p3");
+  });
+
+  it("ignores a remembered id that is no longer visible", () => {
+    expect(
+      resolveSidepanelHighlightSeed({
+        currentItemId: null,
+        itemIds: ids,
+        rememberedId: "gone",
+      }),
+    ).toBeNull();
   });
 });

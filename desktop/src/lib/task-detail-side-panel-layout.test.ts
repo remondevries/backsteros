@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import {
   TASK_DETAIL_AGENT_STRIP_WIDTH,
-  TASK_DETAIL_PROPERTIES_RAIL_BREAKPOINT,
   TASK_LAYOUT_COLUMN_MIN_WIDTH,
   clampTaskDetailSidePanelWidth,
   defaultTaskDetailSidePanelWidth,

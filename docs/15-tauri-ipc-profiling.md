@@ -30,7 +30,6 @@ exceeds **~10 invokes/sec sustained** during idle or light UI work.
 | `whoop_status` / `whoop_fetch_day` | Whoop settings / status | On demand / rare poll | bursty |
 | Overlay toggles (`toggle_desktop_overlay_*`, `hide_desktop_overlay`, `resize_desktop_overlay`, `focus_main_window`) | `desktop-overlay.ts` | User gesture | bursty |
 | `agent_browser_*` | `agent-browser-webview.ts` | Tab create / navigate / bounds | bursty |
-| `close_oauth_windows` | Auth recovery | After OAuth | rare |
 
 Events (push, not invoke): `agent-browser:load`, `agent-browser:title`,
 overlay toggle events, external open-href.

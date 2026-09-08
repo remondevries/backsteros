@@ -6,7 +6,7 @@ import {
   computeNetThisMonthStats,
   previousMonthKey,
   resolveNetThisMonthAsOfDay,
-} from "../../dist/finance/net-this-month.js";
+} from "./net-this-month.js";
 
 describe("previousMonthKey", () => {
   it("rolls across year boundaries", () => {

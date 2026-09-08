@@ -1,24 +1,32 @@
 import type { BacksterosApiClient } from "@backsteros/api-client";
 
-import type { WorkspacePowerSync } from "./workspace-data-types";
+import type { ApiRowsSetter, WorkspacePowerSync } from "./workspace-data-types";
 import { resolveEntityNumberAfterLocalCreate } from "./resolve-entity-number-after-local-create";
 
-type ApiRowsSetter<T> = (
-  updater: (rows: T[] | null) => T[] | null,
-) => void;
+type NumberedRow = { id: string; number?: number | null };
 
-export type OptimisticLocalMetadataCreateInput = {
+/**
+ * Server assigns entity `number` on upload; optimistic local rows carry `null`
+ * until `resolveEntityNumberAfterLocalCreate` reads it back. Typed as
+ * `number | null` so the optimistic row can be narrowed to the API row type.
+ */
+export const PENDING_ENTITY_NUMBER: number | null = null;
+
+export type OptimisticLocalMetadataCreateInput<
+  T extends NumberedRow = NumberedRow,
+> = {
   id: string;
   applyOptimistic: () => void;
   rollback: () => void;
-  createMetadata: () => Promise<void>;
+  /** Result (e.g. created row id) is ignored; `input.id` is authoritative. */
+  createMetadata: () => Promise<unknown>;
   errorLabel: string;
   afterCreate?: () => Promise<void>;
   resolveNumberAfterUpload?: {
     client: BacksterosApiClient;
     powerSync: WorkspacePowerSync;
     fetchPath: string;
-    setters: Array<ApiRowsSetter<{ id: string; number?: number | null }>>;
+    setters: Array<ApiRowsSetter<T>>;
   };
 };
 
@@ -26,8 +34,8 @@ export type OptimisticLocalMetadataCreateInput = {
  * Shared local-first create: optimistic API cache → PowerSync insert → optional
  * flush + number resolution. Rolls back cache on insert failure.
  */
-export async function optimisticLocalMetadataCreate(
-  input: OptimisticLocalMetadataCreateInput,
+export async function optimisticLocalMetadataCreate<T extends NumberedRow>(
+  input: OptimisticLocalMetadataCreateInput<T>,
 ): Promise<{ id: string; number: number | null }> {
   input.applyOptimistic();
   try {

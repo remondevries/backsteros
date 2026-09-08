@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { filterTasksByDueFilter } from "../../dist/tasks/tasks-due-filters.js";
+import { filterTasksByDueFilter } from "../tasks/tasks-due-filters.js";
 import {
   buildTaskListMeetingItem,
   getMeetingTaskListHref,
   isMeetingTaskListItem,
-} from "../../dist/meetings/meeting-list-tasks.js";
+} from "./meeting-list-tasks.js";
 
 test("buildTaskListMeetingItem maps schedule and display metadata", () => {
   const row = buildTaskListMeetingItem({

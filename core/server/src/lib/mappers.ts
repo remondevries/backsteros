@@ -101,7 +101,7 @@ export function toTask(row: DbTask): Task {
     inbox: row.inbox,
     links: row.links ?? [],
     agentChatId: row.agentChatId ?? null,
-    linkedCommitSha: row.linkedCommitSha ?? null,
+    linkedCommitShas: row.linkedCommitShas ?? [],
     habitId: row.habitId ?? null,
     completedAt: toIso(row.completedAt),
     agentCreatedAt: toIso(row.agentCreatedAt),

@@ -67,7 +67,7 @@ const buttonSecondaryStyle: CSSProperties = {
 };
 
 /**
- * Escape hatch when Clerk/`isLoaded` never resolves after a bad HMR pass —
+ * Escape hatch when boot never clears after a bad HMR pass —
  * the HTML splash would otherwise spin forever with no way out except killing
  * the Tauri process. Children stay mounted so Continue does not remount auth.
  */
@@ -76,7 +76,7 @@ export function BootSplashWatchdog({
   cleared = false,
 }: {
   children: ReactNode;
-  /** When true (e.g. Clerk `isLoaded`), hide the stuck overlay. */
+  /** When true, hide the stuck overlay. */
   cleared?: boolean;
 }) {
   const [stuck, setStuck] = useState(false);

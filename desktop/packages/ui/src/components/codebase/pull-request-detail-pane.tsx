@@ -163,9 +163,8 @@ export function PullRequestDetailPane({
     }
     const order: PullDetailTab[] = ["conversation", "commits", "files"];
     const index = order.indexOf(nextTab);
-    root
-      .querySelectorAll<HTMLButtonElement>(".app-pill-nav-item")
-      [index]?.focus({ preventScroll: true });
+    const items = root.querySelectorAll<HTMLButtonElement>(".app-pill-nav-item");
+    items[index]?.focus({ preventScroll: true });
   }, []);
 
   const blurSidepanelGithubListFocus = useCallback(() => {

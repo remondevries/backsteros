@@ -5,7 +5,6 @@ import {
   DEFAULT_CALENDAR_PAGE_MODE,
 } from "./calendar-page-mode.js";
 import {
-  buildCalendarViewHref,
   getCalendarViewModeLabel,
   type CalendarViewMode,
 } from "./calendar-view-modes.js";

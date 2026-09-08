@@ -162,7 +162,23 @@ export function CodebaseProjectWorkbench({
 
   const [apiProject, setApiProject] = useState(() => toApiProject(project));
   useEffect(() => {
-    setApiProject(toApiProject(project));
+    setApiProject((current) => {
+      const mapped = toApiProject(project);
+      if (mapped.id !== current.id) return mapped;
+      // Keep an optimistic working directory while the parent/PowerSync row
+      // still lags (empty) after a successful folder pick.
+      const mappedCwd = normalizeWorkingDirectory(mapped.localWorkingDirectory);
+      const currentCwd = normalizeWorkingDirectory(
+        current.localWorkingDirectory,
+      );
+      if (currentCwd && !mappedCwd) {
+        return {
+          ...mapped,
+          localWorkingDirectory: current.localWorkingDirectory,
+        };
+      }
+      return mapped;
+    });
   }, [project]);
 
   const apiProjects = useMemo(() => projects.map(toApiProject), [projects]);

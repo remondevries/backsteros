@@ -37,6 +37,17 @@ test("getTaskDueDateYmd formats Date / epoch / ISO with local calendar", () => {
   assert.equal(getTaskDueDateYmd("not-a-date"), null);
 });
 
+test("getTaskDueDateYmd accepts PowerSync/Postgres timestamp text", () => {
+  assert.equal(
+    getTaskDueDateYmd("2026-09-05 22:00:00+00", "Europe/Amsterdam"),
+    "2026-09-06",
+  );
+  assert.equal(
+    getTaskDueDateYmd("2026-09-05 22:00:00+00:00", "Europe/Amsterdam"),
+    "2026-09-06",
+  );
+});
+
 test("getTaskDueDateYmd respects optional timeZone", () => {
   // 2026-08-26T22:00:00Z is still 26 Aug in UTC, but 27 Aug in Tokyo.
   const utcEvening = new Date("2026-08-26T22:00:00.000Z");

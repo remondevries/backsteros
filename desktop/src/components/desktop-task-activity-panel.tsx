@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/clerk-react";
 import type {
   CursorSettings,
   ResearchResponse,
@@ -80,7 +79,6 @@ export function DesktopTaskActivityPanel({
   taskSummary,
 }: DesktopTaskActivityPanelProps) {
   const { client } = useDesktopApi();
-  const { user } = useUser();
   const powerSync = useDesktopPowerSync();
   const agentStatus = useDesktopAgentStatus();
   const { setTaskResearchWorking } = agentStatus;
@@ -121,11 +119,10 @@ export function DesktopTaskActivityPanel({
 
   const currentUser = useMemo(
     () => ({
-      email:
-        user?.primaryEmailAddress?.emailAddress?.trim().toLowerCase() || null,
-      imageUrl: user?.imageUrl?.trim() || null,
+      email: null as string | null,
+      imageUrl: null as string | null,
     }),
-    [user?.imageUrl, user?.primaryEmailAddress?.emailAddress],
+    [],
   );
 
   const assigneeAvatarById = useMemo(() => {
@@ -149,7 +146,7 @@ export function DesktopTaskActivityPanel({
 
   const commentMutations = useMemo((): TaskActivityCommentMutations => {
     const author = {
-      userId: user?.id ?? null,
+      userId: null,
       email: currentUser.email,
     };
     return {
@@ -174,7 +171,7 @@ export function DesktopTaskActivityPanel({
           replyIds,
         }),
     };
-  }, [client, currentUser.email, powerSync, taskId, user?.id]);
+  }, [client, currentUser.email, powerSync, taskId]);
 
   const patchTask = useCallback(
     async (values: Record<string, unknown>) => {

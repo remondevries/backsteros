@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { test } from "node:test";
 
 import {
   DOCUMENT_VERSION_ROW_COMPARATOR,

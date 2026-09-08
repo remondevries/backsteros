@@ -1,5 +1,7 @@
 /** Mirrors `@backsteros/ui` inbox attention grouping for mobile lists. */
 
+import { inboxUpdatedAtRequiresInboxListing } from "@backsteros/contracts";
+
 import {
   getTaskDueDateYmd,
   formatLocalYmd,
@@ -11,6 +13,7 @@ import {
 } from "./task-status";
 
 export const INBOX_ATTENTION_STATUS_ORDER = [
+  "updated",
   "agents",
   "overdue",
   "triage",
@@ -69,6 +72,18 @@ export function isInboxOverdueTask(
   return dueYmd < formatLocalYmd(referenceDate);
 }
 
+/**
+ * Whether a task belongs in the expanded inbox — same rules as desktop
+ * `@backsteros/ui` `taskBelongsInInbox`:
+ * - classic triage capture (`inbox` / status triage)
+ * - On Hold / In Review from any project
+ * - overdue open tasks
+ * - agent-created tasks pending sign-off
+ * - external `inboxUpdatedAt` updates
+ *
+ * Habit day instances stay on Journal / Habits — never in the Inbox list.
+ * Tasks due today or later wait until they are overdue (past due).
+ */
 export function taskBelongsInInbox(
   input: {
     inbox?: boolean | number | null;
@@ -79,9 +94,28 @@ export function taskBelongsInInbox(
     agentCreatedAt?: string | number | null;
     agent_inbox_approved_at?: string | null;
     agentInboxApprovedAt?: string | number | null;
+    inbox_updated_at?: string | null;
+    inboxUpdatedAt?: string | number | Date | null;
+    habit_id?: string | null;
+    habitId?: string | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  const habitId = input.habit_id ?? input.habitId;
+  if (habitId != null && String(habitId).trim() !== "") {
+    return false;
+  }
+  const dueYmd = getTaskDueDateYmd(input.due_date ?? input.dueDate ?? null);
+  if (dueYmd && dueYmd >= formatLocalYmd(referenceDate)) {
+    return false;
+  }
+  if (
+    inboxUpdatedAtRequiresInboxListing(
+      input.inbox_updated_at ?? input.inboxUpdatedAt ?? null,
+    )
+  ) {
+    return true;
+  }
   if (isAgentInboxPending(input)) return true;
   if (input.inbox === true || input.inbox === 1) return true;
   const status = migrateLegacyTaskStatus(input.status);
@@ -90,10 +124,6 @@ export function taskBelongsInInbox(
   if (
     (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
   ) {
-    const dueYmd = getTaskDueDateYmd(input.due_date ?? input.dueDate ?? null);
-    if (dueYmd && dueYmd > formatLocalYmd(referenceDate)) {
-      return false;
-    }
     return true;
   }
   return isInboxOverdueTask(input, referenceDate);
@@ -109,9 +139,18 @@ export function getInboxAttentionGroupKey(
     agentCreatedAt?: string | number | null;
     agent_inbox_approved_at?: string | null;
     agentInboxApprovedAt?: string | number | null;
+    inbox_updated_at?: string | null;
+    inboxUpdatedAt?: string | number | Date | null;
   },
   referenceDate: Date = new Date(),
 ): InboxAttentionStatus | "other" {
+  if (
+    inboxUpdatedAtRequiresInboxListing(
+      input.inbox_updated_at ?? input.inboxUpdatedAt ?? null,
+    )
+  ) {
+    return "updated";
+  }
   if (isAgentInboxPending(input)) return "agents";
   if (isInboxOverdueTask(input, referenceDate)) return "overdue";
   const status = migrateLegacyTaskStatus(input.status);
@@ -124,6 +163,7 @@ export function getInboxAttentionGroupKey(
 }
 
 export function getInboxAttentionGroupLabel(status: string): string {
+  if (status === "updated") return "Updated";
   if (status === "agents") return "Agents";
   if (status === "overdue") return "Overdue";
   return getTaskStatusLabel(status);
@@ -144,6 +184,8 @@ export function groupInboxRowsByAttentionStatus<
     agentCreatedAt?: string | number | null;
     agent_inbox_approved_at?: string | null;
     agentInboxApprovedAt?: string | number | null;
+    inbox_updated_at?: string | null;
+    inboxUpdatedAt?: string | number | Date | null;
   },
 >(rows: readonly T[], referenceDate: Date = new Date()): InboxAttentionGroup<T>[] {
   const buckets = new Map<string, T[]>();
@@ -207,6 +249,8 @@ export function flattenInboxAttentionOrder<
     agentCreatedAt?: string | number | null;
     agent_inbox_approved_at?: string | null;
     agentInboxApprovedAt?: string | number | null;
+    inbox_updated_at?: string | null;
+    inboxUpdatedAt?: string | number | Date | null;
   },
 >(rows: readonly T[], referenceDate: Date = new Date()): T[] {
   return groupInboxRowsByAttentionStatus(rows, referenceDate).flatMap(

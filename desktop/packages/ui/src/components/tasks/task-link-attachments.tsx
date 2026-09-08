@@ -263,7 +263,7 @@ function createTaskLinkId(): string {
 
 function TaskLinkFavicon({ url }: { url: string }) {
   const [failed, setFailed] = useState(false);
-  let host = "";
+  let host: string;
   try {
     host = new URL(url).hostname;
   } catch {

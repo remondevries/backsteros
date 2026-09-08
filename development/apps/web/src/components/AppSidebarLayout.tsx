@@ -69,6 +69,7 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
+  const toggleTaskDetail = useBacksterosTaskDetailUiStore((state) => state.toggleTaskDetail);
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   useEffect(() => {
@@ -80,17 +81,26 @@ function SidebarControl() {
       ) {
         return;
       }
-      if (resolveShortcutCommand(event, keybindings) !== "sidebar.toggle") return;
 
-      event.preventDefault();
-      event.stopPropagation();
-      toggleSidebar();
+      const command = resolveShortcutCommand(event, keybindings);
+      if (command === "sidebar.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSidebar();
+        return;
+      }
+      if (command === "taskDetail.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleTaskDetail();
+      }
     };
 
-    // Capture before focused editors consume commands such as Mod+B for rich-text formatting.
+    // Capture so bracket chords win before the composer treats them as text
+    // (same approach as the old Mod+B sidebar toggle).
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [keybindings, toggleSidebar]);
+  }, [keybindings, toggleSidebar, toggleTaskDetail]);
 
   return (
     // The right-side layout controls carry mr-px (border compensation inside

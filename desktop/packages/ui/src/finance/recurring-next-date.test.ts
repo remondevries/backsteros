@@ -4,7 +4,7 @@ import { describe, test } from "node:test";
 import {
   advanceMonthlyNextDate,
   upcomingMonthlyPaymentDate,
-} from "../../dist/finance/recurring-next-date.js";
+} from "./recurring-next-date.js";
 
 describe("advanceMonthlyNextDate", () => {
   test("returns null for empty", () => {

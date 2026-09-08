@@ -1134,6 +1134,146 @@
   background: color-mix(in srgb, var(--foreground) 1.5%, transparent);
 }
 
+/* BacksterDEV-like: stacked unified diffs (task Changes rail). */
+.console-pull-files--stacked {
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.console-pull-files-stacked-scroll {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pierre-commit-diff {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  /* Host tokens Pierre's shadow styles read via unsafeCSS */
+  --code-background: var(--background);
+  --code-foreground: var(--foreground);
+  --success: #3fb950;
+  --destructive: #f85149;
+  --diffs-addition-base: #3fb950;
+  --diffs-deletion-base: #f85149;
+  --diffs-modified-base: #d29922;
+}
+
+/* Match BacksterDEV DiffPanel: constrained height + overflow so CodeView scrolls. */
+.pierre-commit-diff__view {
+  display: block;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  overflow: auto;
+  outline: none;
+}
+
+.pierre-commit-diff__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-inline-start: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pierre-commit-diff__collapse:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.pierre-commit-diff__collapse.is-added {
+  color: var(--diffs-addition-base);
+}
+
+.pierre-commit-diff__collapse.is-removed {
+  color: var(--diffs-deletion-base);
+}
+
+.pierre-commit-diff__collapse.is-modified {
+  color: var(--diffs-modified-base);
+}
+
+.console-pull-files-stacked-file {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.console-pull-files-stacked-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 12px;
+  background: var(--background);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.console-pull-files-stacked-header .console-pull-files-item-status {
+  width: auto;
+  min-width: 12px;
+}
+
+.console-pull-files-stacked-header .console-pull-files-item-status.is-added {
+  color: #3fb950;
+}
+
+.console-pull-files-stacked-header .console-pull-files-item-status.is-removed {
+  color: #f85149;
+}
+
+.console-pull-files-stacked-header .console-pull-files-item-status.is-modified,
+.console-pull-files-stacked-header .console-pull-files-item-status.is-changed {
+  color: #d29922;
+}
+
+.console-pull-files-stacked-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: color-mix(in srgb, var(--foreground) 82%, transparent);
+}
+
+.console-pull-files-stacked-header .console-pull-files-diff-stat {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.console-pull-files-diff-empty--inline {
+  min-height: 48px;
+  padding: 12px 14px;
+  justify-content: flex-start;
+}
+
 /* Commit / PR content: flush diff panel — no rounded card chrome. */
 .console-pane--commit-detail .console-pull-files,
 .console-pane--pull-detail .console-pull-files {

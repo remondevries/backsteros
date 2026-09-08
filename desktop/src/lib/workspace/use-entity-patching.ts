@@ -15,6 +15,7 @@ import { nudgeDynamicIslandTasksRefresh } from "../dynamic-island-nudge";
 import { preservePendingApiRows } from "../merge-local-and-api";
 import { normalizeTaskPatchForLocalState } from "./inbox-acknowledge-patch";
 import {
+  shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   taskPatchRequiresRestWrite,
 } from "./powersync-write-path";
@@ -93,6 +94,7 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations,
   setApiMeetings,
   setApiDocuments,
+  getLocalTaskStatus,
 }: {
   authenticated: boolean;
   client: BacksterosApiClient;
@@ -106,10 +108,17 @@ export function useWorkspaceEntityPatching({
   setApiOrganizations: ApiRowsSetter<ApiOrganization>;
   setApiMeetings: ApiRowsSetter<ApiMeeting>;
   setApiDocuments: ApiRowsSetter<ApiDocument>;
+  /**
+   * PowerSync-local status for optimistic API cache merges. Due-date (and
+   * other non-status) patches must not re-base onto a stale REST row that
+   * still says `backlog` while SQLite already has `in_progress` (BOD-62).
+   */
+  getLocalTaskStatus?: (id: string) => string | null | undefined;
 }) {
   const toSnakeFields = useCallback((values: Record<string, unknown>) => {
     const snake: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) continue;
       const snakeKey = key.replace(
         /[A-Z]/g,
         (letter) => `_${letter.toLowerCase()}`,
@@ -568,7 +577,37 @@ export function useWorkspaceEntityPatching({
             }
             return;
           }
-          return;
+          let uploaded: boolean | void = false;
+          try {
+            uploaded = await powerSync.flushCrudUpload();
+          } catch (error) {
+            console.warn(
+              `[desktop] PowerSync upload flush failed for ${table}; falling back to REST`,
+              error,
+            );
+          }
+          // Status patches have stranded on PowerSync-only upload (UI snaps
+          // back after sync). Always confirm on the leader via REST.
+          if (table === "tasks" && typeof values.status === "string") {
+            try {
+              const updated = await client.requestJson<ApiTask>(path, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(apiValues),
+              });
+              await applyTaskServerRow(updated);
+              return typeof updated?.number === "number"
+                ? { number: updated.number }
+                : undefined;
+            } catch (error) {
+              console.warn("[desktop] task status REST confirm failed", error);
+              if (shouldSkipRestAfterCrudFlush(uploaded)) return;
+              throw error instanceof Error
+                ? error
+                : new Error("Could not update task status.");
+            }
+          }
+          if (shouldSkipRestAfterCrudFlush(uploaded)) return;
         }
         try {
           const updated =
@@ -606,10 +645,10 @@ export function useWorkspaceEntityPatching({
               ? error
               : new Error("Could not persist agent chat on the task.");
           }
-          if ("linkedCommitSha" in values) {
+          if ("linkedCommitShas" in values) {
             throw error instanceof Error
               ? error
-              : new Error("Could not persist linked commit on the task.");
+              : new Error("Could not persist linked commits on the task.");
           }
           if (taskPatchRequiresRestWrite(values)) {
             throw error instanceof Error
@@ -624,19 +663,40 @@ export function useWorkspaceEntityPatching({
         }
       };
 
-      // Match Next.js: optimistic local SQLite + REST so other clients see
-      // changes even when the PowerSync upload queue is slow or stalled.
+      // Optimistic cache + local SQLite. Status patches await persistence so
+      // a failed upload cannot leave the UI on a value Postgres never got.
       if (powerSync.ready) {
-        applyOptimisticEntityPatch(table, id, values);
+        // Non-status task patches (due date, priority, …) must not re-base the
+        // API cache onto a stale REST row whose status still says backlog while
+        // PowerSync already has in_progress — that made due-date edits flip the
+        // status label (BOD-62). Inject local status into the optimistic cache
+        // only; SQLite / upload still use `values` without a status write.
+        let optimisticValues = values;
+        if (
+          table === "tasks" &&
+          values.status === undefined &&
+          getLocalTaskStatus
+        ) {
+          const localStatus = getLocalTaskStatus(id);
+          if (typeof localStatus === "string" && localStatus.trim()) {
+            optimisticValues = { ...values, status: localStatus };
+          }
+        }
+        applyOptimisticEntityPatch(table, id, optimisticValues);
         const mustAwaitRest =
           authenticated &&
           ("agentChatId" in values ||
-            "linkedCommitSha" in values ||
+            "linkedCommitShas" in values ||
             "moneybirdContactId" in values ||
+            (table === "tasks" && typeof values.status === "string") ||
             (table === "tasks" && taskPatchChangesTaskScope(values)) ||
             (table === "letters" && letterPatchRequiresVaultRelocate(values)));
         if (mustAwaitRest) {
-          return persistLocalAndMaybeRest();
+          const result = await persistLocalAndMaybeRest();
+          if ("linkedCommitShas" in values) {
+            void softRefreshApiTasks();
+          }
+          return result;
         }
         void persistLocalAndMaybeRest();
         return;
@@ -649,7 +709,7 @@ export function useWorkspaceEntityPatching({
           body: JSON.stringify(apiValues),
         });
         await applyTaskServerRow(updated);
-        if ("links" in apiValues || "agentChatId" in apiValues || "linkedCommitSha" in apiValues) {
+        if ("links" in apiValues || "agentChatId" in apiValues || "linkedCommitShas" in apiValues) {
           void softRefreshApiTasks();
         }
         return typeof updated?.number === "number"
@@ -704,6 +764,7 @@ export function useWorkspaceEntityPatching({
       authenticated,
       client,
       entityPatchPath,
+      getLocalTaskStatus,
       powerSync,
       softRefreshApiProjects,
       softRefreshApiMeetings,
@@ -767,7 +828,15 @@ export function useWorkspaceEntityPatching({
           throw new Error("Sign in to delete.");
         }
         if (shouldSkipRestEntityWrite(powerSync)) {
-          return;
+          try {
+            const uploaded = await powerSync.flushCrudUpload();
+            if (shouldSkipRestAfterCrudFlush(uploaded)) return;
+          } catch (error) {
+            console.warn(
+              `[desktop] PowerSync delete upload flush failed for ${table}; falling back to REST`,
+              error,
+            );
+          }
         }
         try {
           await client.requestJson(path, { method: "DELETE" });

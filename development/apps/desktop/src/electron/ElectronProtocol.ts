@@ -1,6 +1,8 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as NodeFs from "node:fs";
+import * as NodePath from "node:path";
 import * as NodeTimersPromises from "node:timers/promises";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -154,7 +156,29 @@ export function resolveBacksterosApiOrigin(env: NodeJS.ProcessEnv = process.env)
 }
 
 function resolveBacksterosApiKey(env: NodeJS.ProcessEnv = process.env): string {
-  return env.BACKSTEROS_API_KEY?.trim() || "";
+  const fromEnv = env.BACKSTEROS_API_KEY?.trim() || "";
+  if (fromEnv) return fromEnv;
+
+  // Desktop Dev often inherits a shell without `.env.local`; load it once so
+  // `/backsteros-api` proxy can authorize against local-core.
+  if (env.T3CODE_DESKTOP_DEV !== "1") return "";
+  try {
+    const candidates = [
+      NodePath.resolve(process.cwd(), ".env.local"),
+      NodePath.resolve(process.cwd(), "../../.env.local"),
+      NodePath.resolve(process.cwd(), "../.env.local"),
+    ];
+    for (const filePath of candidates) {
+      if (!NodeFs.existsSync(filePath)) continue;
+      const text = NodeFs.readFileSync(filePath, "utf8");
+      const match = /^BACKSTEROS_API_KEY=(.+)$/m.exec(text);
+      const value = match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
+      if (value) return value;
+    }
+  } catch {
+    // Ignore — caller falls through to unauthenticated proxy.
+  }
+  return "";
 }
 
 function stripHopByHopHeaders(headers: Headers): Headers {

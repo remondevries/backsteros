@@ -15,8 +15,10 @@ import {
   useListKeyboardNavigationContainerProps,
   useListKeyboardNavigationZone,
 } from "../list-nav/list-keyboard-navigation-provider.js";
+import { toUnifiedDiff } from "../../codebase/pierre-diff-rendering.js";
 import { ProjectOcticon } from "../projects/project-octicon.js";
 import { apiErrorMessage } from "./api-error-message.js";
+import { PierreCommitFilesDiff } from "./pierre-commit-files-diff.js";
 import type { CodebaseRequestJson } from "./project-fs-types.js";
 
 import "@git-diff-view/react/styles/diff-view.css";
@@ -114,33 +116,6 @@ function dirname(path: string): string {
   return idx > 0 ? path.slice(0, idx) : "";
 }
 
-/**
- * GitHub's `patch` field is hunk-only (`@@ ...`). `@git-diff-view` expects a
- * unified diff with `---` / `+++` headers, otherwise it reports "No hunks found".
- */
-function toUnifiedDiff(
-  filename: string,
-  previousFilename: string | null,
-  patch: string,
-  status: GithubPullRequestFileStatus,
-): string {
-  const trimmed = patch.replace(/^\uFEFF/, "").trimStart();
-  if (
-    trimmed.startsWith("diff ") ||
-    trimmed.startsWith("--- ") ||
-    trimmed.startsWith("+++ ")
-  ) {
-    return trimmed.endsWith("\n") ? trimmed : `${trimmed}\n`;
-  }
-
-  const oldPath =
-    status === "added" ? "/dev/null" : `a/${previousFilename ?? filename}`;
-  const newPath = status === "removed" ? "/dev/null" : `b/${filename}`;
-
-  const body = trimmed.endsWith("\n") ? trimmed : `${trimmed}\n`;
-  return `--- ${oldPath}\n+++ ${newPath}\n${body}`;
-}
-
 type FilesPage = {
   files: GithubPullRequestFile[];
   page: number;
@@ -152,12 +127,18 @@ export function GithubFilesDiffPane({
   fetchPage,
   autoFocusList = false,
   onSelectedFilenameChange,
+  /**
+   * `workbench` — file rail + split diff (project console).
+   * `stacked` — unified multi-file scroll (BacksterDEV DiffPanel-style).
+   */
+  presentation = "workbench",
 }: {
   cacheKey: string;
   fetchPage: (page: number) => Promise<FilesPage>;
   /** When true, claim j/k on the file list once files load (commit detail). */
   autoFocusList?: boolean;
   onSelectedFilenameChange?: (filename: string | null) => void;
+  presentation?: "workbench" | "stacked";
 }) {
   const [files, setFiles] = useState<GithubPullRequestFile[]>([]);
   const [page, setPage] = useState(1);
@@ -294,6 +275,46 @@ export function GithubFilesDiffPane({
       hunks: [unified],
     };
   }, [selected]);
+
+  if (presentation === "stacked") {
+    return (
+      <section
+        className="console-pull-files console-pull-files--stacked"
+        aria-label="Changed files"
+      >
+        {error ? (
+          <p className="console-github-pane-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {loading && files.length === 0 ? (
+          <p className="console-github-pane-status">Loading files…</p>
+        ) : null}
+        {!loading && !error && files.length === 0 ? (
+          <p className="console-github-pane-status">No files changed.</p>
+        ) : null}
+        {files.length > 0 ? (
+          <div className="console-pull-files-stacked-scroll">
+            <PierreCommitFilesDiff files={files} cacheKey={cacheKey} theme="dark" />
+            {hasMore ? (
+              <div className="console-github-pane-more">
+                <button
+                  type="button"
+                  className="console-btn"
+                  disabled={loadingMore}
+                  onClick={() => {
+                    void loadPage(page + 1, true);
+                  }}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    );
+  }
 
   return (
     <section className="console-pull-files" aria-label="Changed files">
@@ -458,11 +479,13 @@ export function CommitFilesPane({
   sha,
   requestJson,
   autoFocusList = false,
+  presentation = "workbench",
 }: {
   projectId: string;
   sha: string;
   requestJson: CodebaseRequestJson;
   autoFocusList?: boolean;
+  presentation?: "workbench" | "stacked";
 }) {
   const fetchPage = useCallback(async () => {
     const result = await requestJson<{
@@ -482,6 +505,7 @@ export function CommitFilesPane({
       cacheKey={`commit:${projectId}:${sha}`}
       fetchPage={fetchPage}
       autoFocusList={autoFocusList}
+      presentation={presentation}
     />
   );
 }

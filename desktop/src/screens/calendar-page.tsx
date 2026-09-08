@@ -296,7 +296,7 @@ function CalendarPageBody() {
         disabled={!calendarNavReady}
         onPrev={() => calendarApiRef.current?.prev()}
         onNext={() => calendarApiRef.current?.next()}
-        onToday={() => calendarApiRef.current?.today()}
+        onToday={() => calendarApiRef.current?.today?.()}
       />
     ),
     [calendarNavReady],
@@ -390,7 +390,7 @@ function CalendarPageBody() {
       const contact = workspace.contacts.find((entry) => entry.id === contactId);
       if (!contact) return;
       const slug = getUniqueListItemRouteParam(contact, workspace.contacts);
-      navigate(getContactsHref(slug));
+      navigateToHref(navigate, getContactsHref(slug));
     },
     [navigate, workspace.contacts],
   );
@@ -446,7 +446,8 @@ function CalendarPageBody() {
       const contact = workspace.contacts.find((entry) => entry.id === contactId);
       if (!contact) return;
       const slug = getUniqueListItemRouteParam(contact, workspace.contacts);
-      navigate(
+      navigateToHref(
+        navigate,
         section === "overview"
           ? getContactsHref(slug)
           : getContactSectionHref(slug, section),
@@ -487,7 +488,10 @@ function CalendarPageBody() {
           endAt: end.toISOString(),
         })
         .then((created) => {
-          navigate(`/calendar/meetings/${encodeURIComponent(created.id)}`);
+          navigateToHref(
+            navigate,
+            `/calendar/meetings/${encodeURIComponent(created.id)}`,
+          );
         });
     },
     [navigate, workspace],
@@ -523,7 +527,7 @@ function CalendarPageBody() {
         inboxId: null,
         prefill: to ? { to } : null,
       });
-      navigate(getEmailComposeHref());
+      navigateToHref(navigate, getEmailComposeHref());
     },
     [navigate, workspace.contactDetails, workspace.contacts],
   );
@@ -673,7 +677,6 @@ function CalendarPageBody() {
         title: meeting.title,
         number: meeting.number,
         summary: meeting.summary ?? null,
-        status: meeting.status ?? null,
         startAt: meeting.startAt,
         endAt: meeting.endAt,
       };
@@ -1034,10 +1037,6 @@ function CalendarPageBody() {
         onTranscriptionChange={(transcription) =>
           patchMeeting({ transcription })
         }
-        trackedTimerHref={
-          meeting ? `${pathname}?${searchParams.toString()}` : null
-        }
-        timerEntityId={meeting?.id ?? null}
         {...meetingDetailProps}
       />
       <CalendarTaskDetailOverlay
@@ -1050,12 +1049,7 @@ function CalendarPageBody() {
         }
       >
         {openTaskId && openTask ? (
-          <TaskDetailPage
-            taskRouteParam={openTask.id}
-            overlayMode
-            onOverlayClose={() => setOpenTaskId(null)}
-            onOverlayTaskReplace={setOpenTaskId}
-          />
+          <TaskDetailPage taskRouteParam={openTask.id} overlayMode />
         ) : null}
       </CalendarTaskDetailOverlay>
     </div>

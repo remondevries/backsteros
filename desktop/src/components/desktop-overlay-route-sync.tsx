@@ -12,7 +12,7 @@ type DesktopOverlayShowDetail = {
 
 /**
  * Keeps the overlay SPA on the right route/ctx when Rust shows the panel,
- * without a full webview reload (which would remount Clerk and flash loading).
+ * without a full webview reload (which would remount React and flash loading).
  */
 export function DesktopOverlayRouteSync() {
   const navigate = useNavigate();

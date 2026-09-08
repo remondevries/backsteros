@@ -16,7 +16,7 @@ import {
   mergeCalendarGridEvents,
   birthdaysToCalendarEvents,
   unscheduledCalendarTasks,
-} from "../../dist/calendar/calendar-events.js";
+} from "./calendar-events.js";
 
 const baseTask = {
   id: "task-1",

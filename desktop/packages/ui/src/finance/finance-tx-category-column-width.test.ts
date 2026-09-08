@@ -6,7 +6,7 @@ import {
   TX_CATEGORY_CHIP_CHROME_PX,
   TX_CATEGORY_COLUMN_SLACK_PX,
   computeTxCategoryColumnWidthPx,
-} from "../../dist/finance/finance-tx-category-column-width.js";
+} from "./finance-tx-category-column-width.js";
 
 describe("computeTxCategoryColumnWidthPx", () => {
   it("returns at least the default minimum without DOM measurement", () => {

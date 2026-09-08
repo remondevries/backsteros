@@ -2,16 +2,17 @@ import type {
   ApiKey,
   CreateApiKeyResponse,
   CursorSettings,
-  GithubConnectionStatus,
+  GithubSettings,
+  GithubTestConnectionResult,
   WhoopDayResult,
   WhoopSettingsStatus,
 } from "@backsteros/contracts";
-import { useAuth, useUser } from "@clerk/clerk-expo";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -33,12 +34,6 @@ import {
   setDefaultAssigneeId,
   syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
-import { getMobileEnvironment } from "../lib/env";
-import {
-  fetchGithubConnectionStatus,
-  GITHUB_OAUTH_SCOPES,
-  startGithubOauthConnect,
-} from "../lib/github-oauth";
 import {
   DEFAULT_SETTINGS_TAB,
   getSettingsTabMeta,
@@ -98,10 +93,6 @@ function AccountTab({
   settings: Record<string, unknown> | undefined;
   onSettingsSaved?: () => void;
 }) {
-  const { signOut } = useAuth();
-  const { user } = useUser();
-  const router = useRouter();
-  const { clerkPublishableKey } = getMobileEnvironment();
   const client = useMobileApiClient();
 
   const { data: syncedContacts, isLoading: contactsSyncLoading } =
@@ -122,7 +113,7 @@ function AccountTab({
       setAssigneeId(synced);
 
       const fromServer = parseDefaultAssigneeIdFromSettings(settings);
-      if (fromServer !== undefined || !synced || !clerkPublishableKey) return;
+      if (fromServer !== undefined || !synced) return;
       try {
         await client.requestJson("/api/v1/settings", {
           method: "PATCH",
@@ -137,27 +128,14 @@ function AccountTab({
     return () => {
       cancelled = true;
     };
-  }, [clerkPublishableKey, client, onSettingsSaved, settings]);
+  }, [client, onSettingsSaved, settings]);
 
   const contacts = syncedContacts ?? [];
   const contactsLoading = contactsSyncLoading;
   const selected = contacts.find((entry) => entry.id === assigneeId);
-  const email =
-    user?.primaryEmailAddress?.emailAddress ??
-    user?.emailAddresses?.[0]?.emailAddress ??
-    "—";
 
   return (
     <>
-      {clerkPublishableKey ? (
-        <SettingsCard
-          title="Email"
-          description="The email address associated with your account."
-        >
-          <Text style={styles.staticValue}>{email}</Text>
-        </SettingsCard>
-      ) : null}
-
       <SettingsCard
         title="Default assignee"
         description="This contact is the default assignee for newly created tasks. You can still change the assignee on individual tasks."
@@ -176,24 +154,6 @@ function AccountTab({
         )}
       </SettingsCard>
 
-      <SettingsCard title="Session">
-        <Pressable
-          onPress={() => {
-            void signOut().then(() => {
-              if (router.canGoBack()) router.back();
-            });
-          }}
-          style={({ pressed }) => [
-            styles.dangerButton,
-            pressed ? { opacity: 0.85 } : null,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Sign out"
-        >
-          <Text style={styles.dangerButtonLabel}>Sign out</Text>
-        </Pressable>
-      </SettingsCard>
-
       <PropertyOptionSheet
         visible={pickerOpen}
         title="Default assignee"
@@ -208,7 +168,6 @@ function AccountTab({
         onSelect={(value) => {
           setAssigneeId(value);
           void setDefaultAssigneeId(value);
-          if (!clerkPublishableKey) return;
           void client
             .requestJson("/api/v1/settings", {
               method: "PATCH",
@@ -323,22 +282,16 @@ function ApiKeyRow({
 }
 
 function ApiTab() {
-  const { clerkPublishableKey } = getMobileEnvironment();
   const client = useMobileApiClient();
 
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(Boolean(clerkPublishableKey));
+  const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
 
   const loadKeys = useCallback(async () => {
-    if (!clerkPublishableKey) {
-      setLoading(false);
-      setApiKeys([]);
-      return;
-    }
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -353,22 +306,11 @@ function ApiTab() {
     } finally {
       setLoading(false);
     }
-  }, [client, clerkPublishableKey]);
+  }, [client]);
 
   useEffect(() => {
     void loadKeys();
   }, [loadKeys]);
-
-  if (!clerkPublishableKey) {
-    return (
-      <SettingsCard
-        title="API keys"
-        description="Sign in to create and manage revocable bearer tokens for the external REST API."
-      >
-        <Text style={styles.hint}>Requires Clerk authentication.</Text>
-      </SettingsCard>
-    );
-  }
 
   return (
     <SettingsCard
@@ -969,203 +911,241 @@ function CursorTab() {
 }
 
 function GithubTab() {
-  const { user, isLoaded } = useUser();
   const client = useMobileApiClient();
-  const [status, setStatus] = useState<GithubConnectionStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [connecting, setConnecting] = useState(false);
+  const [settings, setSettings] = useState<GithubSettings | null>(null);
+  const [apiTokenDraft, setApiTokenDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const loadSettings = useCallback(async () => {
     try {
-      const next = await fetchGithubConnectionStatus(client);
-      setStatus(next);
-      return next;
-    } catch (reason) {
-      setStatus(null);
-      throw reason;
-    } finally {
-      setLoading(false);
+      const body = await client.requestJson<GithubSettings>(
+        "/api/v1/settings/github",
+      );
+      setSettings(body);
+      setSettingsError(null);
+      return body;
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error
+          ? error.message
+          : "Could not load GitHub settings.",
+      );
+      return null;
     }
   }, [client]);
 
   useEffect(() => {
-    void refresh().catch(() => {
-      // status card shows empty / not connected
-    });
-  }, [refresh]);
+    void loadSettings();
+  }, [loadSettings]);
 
-  async function onConnect() {
-    if (!user || connecting) return;
-    setConnecting(true);
-    setActionError(null);
+  const patchSettings = async (patch: {
+    apiToken?: string;
+  }): Promise<GithubSettings | null> => {
+    setSaving(true);
+    setSettingsError(null);
     try {
-      const result = await startGithubOauthConnect(user);
-      if (result === "success") {
-        await user.reload();
-        await refresh();
-      }
-    } catch (reason) {
-      setActionError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not start GitHub connection.",
+      const body = await client.requestJson<GithubSettings>(
+        "/api/v1/settings/github",
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        },
       );
+      setSettings(body);
+      return body;
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error
+          ? error.message
+          : "Could not save GitHub settings.",
+      );
+      return null;
     } finally {
-      setConnecting(false);
+      setSaving(false);
     }
-  }
+  };
 
-  const connected = Boolean(status?.connected);
-  const missingScopes = status?.missingScopes ?? [];
-  const needsScopes = missingScopes.length > 0;
-  const scopes = status?.scopes ?? [];
-  const organizations = status?.organizations ?? [];
-  const connectLabel =
-    connected ||
-    user?.externalAccounts.some((account) => {
-      const provider = String(account.provider);
-      return provider === "github" || provider === "oauth_github";
-    })
-      ? needsScopes
-        ? "Grant missing scopes"
-        : "Reconnect GitHub"
-      : "Connect GitHub";
-
-  const statusLabel = loading || !isLoaded
-    ? "Loading…"
-    : connected
-      ? needsScopes
-        ? "Connected — needs more access"
-        : "Connected"
-      : "Not connected";
+  const connected = settings?.connected ?? false;
+  const tokenConfigured = settings?.apiTokenConfigured ?? false;
+  const statusLabel =
+    settings === null
+      ? "Loading…"
+      : connected
+        ? "Connected"
+        : "Not connected";
+  const tokenLabel = tokenConfigured
+    ? (settings?.apiTokenPreview ?? "Configured")
+    : settings?.envTokenConfigured
+      ? "Env fallback only"
+      : "—";
 
   return (
-    <SettingsCard
-      title="Connection"
-      description="Link GitHub so project panels can browse your personal repositories and repositories in organizations you belong to. Grant repo and read:org when prompted. Org owners may also need to approve the OAuth app under GitHub → Settings → Third-party access."
-    >
-      <SettingsFieldRow label="Status" value={statusLabel} muted={!connected} />
-      <SettingsFieldRow
-        label="Account"
-        value={status?.login ?? "—"}
-        muted={!status?.login}
-      />
-      <SettingsFieldRow
-        label="Scopes"
-        value={scopes.length > 0 ? scopes.join(", ") : "—"}
-        muted={scopes.length === 0}
-      />
-      <SettingsFieldRow
-        label="Organizations"
-        value={
-          organizations.length > 0
-            ? organizations.map((org) => org.login).join(", ")
-            : "—"
-        }
-        muted={organizations.length === 0}
-      />
-      <SettingsFieldRow
-        label="Repositories"
-        value={
-          status?.repositoryCount == null
-            ? "—"
-            : String(status.repositoryCount)
-        }
-        muted={status?.repositoryCount == null}
-      />
-      {needsScopes ? (
-        <Text style={styles.hint}>
-          Missing scopes: {missingScopes.join(", ")}. Reconnect to grant{" "}
-          {GITHUB_OAUTH_SCOPES.join(", ")}.
-        </Text>
-      ) : null}
-      {actionError || (status?.reason && !connected) ? (
-        <Text style={styles.hint}>{actionError ?? status?.reason}</Text>
-      ) : null}
-      {testMessage ? (
-        <Text style={testOk ? styles.okText : styles.errorText}>
-          {testMessage}
-        </Text>
-      ) : null}
-
-      <Pressable
-        onPress={() => {
-          void onConnect();
-        }}
-        disabled={connecting || !user || loading}
-        style={({ pressed }) => [
-          styles.primaryButton,
-          connecting || !user || loading ? { opacity: 0.5 } : null,
-          pressed && !connecting ? { opacity: 0.9 } : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={connectLabel}
+    <>
+      <SettingsCard
+        title="Connection"
+        description="Paste a GitHub personal access token with repo access (and read:org if you use organization repos). Stored in core like Mapbox/Moneybird — not synced via PowerSync. Env GITHUB_API_TOKEN remains a fallback when no Settings token is saved."
       >
-        <Text style={styles.primaryButtonLabel}>
-          {connecting ? "Opening GitHub…" : connectLabel}
-        </Text>
-      </Pressable>
+        <SettingsFieldRow
+          label="Status"
+          value={statusLabel}
+          muted={!connected}
+        />
+        <SettingsFieldRow label="Token" value={tokenLabel} muted={!tokenConfigured} />
+        {tokenConfigured ? (
+          <Text style={styles.hint}>
+            Codebase projects can load commits and pull requests.
+          </Text>
+        ) : settings?.envTokenConfigured ? (
+          <Text style={styles.hint}>
+            Using GITHUB_API_TOKEN from the server environment until you save a
+            Settings token.
+          </Text>
+        ) : null}
+        {testMessage ? (
+          <Text style={testOk ? styles.okText : styles.errorText}>
+            {testMessage}
+          </Text>
+        ) : null}
+        {settingsError ? (
+          <Text style={styles.errorText}>{settingsError}</Text>
+        ) : null}
 
-      <Pressable
-        onPress={() => {
-          void (async () => {
-            setTesting(true);
-            setTestMessage(null);
-            setTestOk(null);
-            setActionError(null);
-            try {
-              const next = await refresh();
-              if (!next.connected) {
-                setTestOk(false);
-                setTestMessage(next.reason ?? "GitHub is not connected.");
-                return;
-              }
-              if (next.missingScopes.length > 0) {
+        <Pressable
+          onPress={() => {
+            void (async () => {
+              setTesting(true);
+              setTestMessage(null);
+              setTestOk(null);
+              try {
+                const result =
+                  await client.requestJson<GithubTestConnectionResult>(
+                    "/api/v1/settings/github/test",
+                  );
+                await loadSettings();
+                setTestOk(result.ok);
+                setTestMessage(
+                  result.ok
+                    ? result.login
+                      ? `Connected as ${result.login}.`
+                      : "Connected to GitHub."
+                    : (result.error ?? "GitHub connection test failed."),
+                );
+              } catch (error) {
                 setTestOk(false);
                 setTestMessage(
-                  `Connected as ${next.login}, but missing scopes: ${next.missingScopes.join(", ")}.`,
+                  error instanceof Error
+                    ? error.message
+                    : "GitHub connection test failed.",
                 );
-                return;
+              } finally {
+                setTesting(false);
               }
-              const orgLabel =
-                next.organizations.length > 0
-                  ? `${next.organizations.length} organization${next.organizations.length === 1 ? "" : "s"}`
-                  : "no organizations";
-              setTestOk(true);
-              setTestMessage(
-                `Connected as ${next.login} with ${orgLabel} visible.`,
-              );
-            } catch (error) {
-              setTestOk(false);
-              setTestMessage(
-                error instanceof Error
-                  ? error.message
-                  : "GitHub connection test failed",
-              );
-            } finally {
-              setTesting(false);
-            }
-          })();
-        }}
-        disabled={testing || loading}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          testing || loading ? { opacity: 0.5 } : null,
-          pressed ? { opacity: 0.85 } : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Test GitHub connection"
+            })();
+          }}
+          disabled={testing || settings === null || !connected}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            testing || settings === null || !connected
+              ? { opacity: 0.5 }
+              : null,
+            pressed ? { opacity: 0.85 } : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Test GitHub connection"
+        >
+          <Text style={styles.secondaryButtonLabel}>
+            {testing ? "Testing…" : "Test connection"}
+          </Text>
+        </Pressable>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Personal access token"
+        description="Classic or fine-grained PAT with repository read access. Prefer scoping the token to the repos you use in BacksterOS."
       >
-        <Text style={styles.secondaryButtonLabel}>
-          {testing ? "Testing…" : "Test connection"}
-        </Text>
-      </Pressable>
-    </SettingsCard>
+        <Pressable
+          onPress={() => {
+            void Linking.openURL("https://github.com/settings/tokens");
+          }}
+          accessibilityRole="link"
+          accessibilityLabel="Open GitHub token settings"
+        >
+          <Text style={styles.linkLabel}>github.com/settings/tokens</Text>
+        </Pressable>
+        <TextInput
+          value={apiTokenDraft}
+          onChangeText={setApiTokenDraft}
+          placeholder={
+            tokenConfigured
+              ? `Configured (${settings?.apiTokenPreview ?? "••••"})`
+              : "Paste ghp_… or github_pat_… token…"
+          }
+          placeholderTextColor={colors.muted}
+          style={[ui.input, { marginTop: 12 }]}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          editable={!saving}
+        />
+        <View style={styles.createRow}>
+          <Pressable
+            onPress={() => {
+              const value = apiTokenDraft.trim();
+              if (!value) return;
+              void patchSettings({ apiToken: value }).then((body) => {
+                if (body) setApiTokenDraft("");
+              });
+            }}
+            disabled={saving || !apiTokenDraft.trim()}
+            style={({ pressed }) => [
+              styles.primaryButtonCompact,
+              saving || !apiTokenDraft.trim() ? { opacity: 0.45 } : null,
+              pressed ? { opacity: 0.9 } : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Save GitHub token"
+          >
+            <Text style={styles.primaryButtonLabel}>
+              {saving ? "Saving…" : "Save token"}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              void patchSettings({ apiToken: "" }).then(() => {
+                setApiTokenDraft("");
+              });
+            }}
+            disabled={saving || !tokenConfigured}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              saving || !tokenConfigured ? { opacity: 0.45 } : null,
+              pressed ? { opacity: 0.85 } : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Clear GitHub token"
+          >
+            <Text style={styles.secondaryButtonLabel}>Clear token</Text>
+          </Pressable>
+        </View>
+        {tokenConfigured ? (
+          <Text style={styles.hint}>
+            Token on file: {settings?.apiTokenPreview}
+          </Text>
+        ) : (
+          <Text style={styles.hint}>
+            No Settings token stored
+            {settings?.envTokenConfigured
+              ? " (env GITHUB_API_TOKEN is still available)."
+              : "."}
+          </Text>
+        )}
+      </SettingsCard>
+    </>
   );
 }
 
@@ -1443,7 +1423,6 @@ function ServerSectionHeader({
 }
 
 export function SettingsScreen() {
-  const { clerkPublishableKey } = getMobileEnvironment();
   const client = useMobileApiClient();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -1493,7 +1472,6 @@ export function SettingsScreen() {
   >(undefined);
 
   const reloadSettings = useCallback(async () => {
-    if (!clerkPublishableKey) return;
     try {
       const body = await client.requestJson<{
         settings: Record<string, unknown>;
@@ -1511,7 +1489,7 @@ export function SettingsScreen() {
     } catch {
       // keep local defaults
     }
-  }, [client, clerkPublishableKey]);
+  }, [client]);
 
   useEffect(() => {
     void reloadSettings();
@@ -1585,7 +1563,6 @@ export function SettingsScreen() {
                 saving={savingTimezone}
                 onTimezoneChange={(next) => {
                   setTimezone(next);
-                  if (!clerkPublishableKey) return;
                   setSavingTimezone(true);
                   void (async () => {
                     try {

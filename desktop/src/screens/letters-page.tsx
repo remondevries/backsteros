@@ -10,7 +10,6 @@ import {
   buildOrganizationDropdownOptions,
   buildProjectDropdownOptions,
   formatLetterDisplayId,
-  getLettersHref,
   letterMatchesSlug,
   letterPdfSubjectFromFilename,
   migrateLegacyTaskStatus,
@@ -264,7 +263,10 @@ function LettersPageBody({
       body:
         letterBodies[selected.id] ??
         "",
-      displayId: formatLetterDisplayId(selected.number),
+      displayId:
+        selected.number != null
+          ? formatLetterDisplayId(selected.number)
+          : null,
     };
   }, [
     contactId,

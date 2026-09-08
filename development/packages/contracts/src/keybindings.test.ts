@@ -31,13 +31,19 @@ it.effect("parses keybinding rules", () =>
     assert.strictEqual(parsed.command, "terminal.toggle");
 
     const parsedSidebarToggle = yield* decode(KeybindingRule, {
-      key: "mod+b",
+      key: "[",
       command: "sidebar.toggle",
     });
     assert.strictEqual(parsedSidebarToggle.command, "sidebar.toggle");
 
+    const parsedTaskDetailToggle = yield* decode(KeybindingRule, {
+      key: "shift+[",
+      command: "taskDetail.toggle",
+    });
+    assert.strictEqual(parsedTaskDetailToggle.command, "taskDetail.toggle");
+
     const parsedRightPanelToggle = yield* decode(KeybindingRule, {
-      key: "mod+alt+b",
+      key: "]",
       command: "rightPanel.toggle",
     });
     assert.strictEqual(parsedRightPanelToggle.command, "rightPanel.toggle");

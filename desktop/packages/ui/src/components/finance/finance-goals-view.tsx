@@ -91,19 +91,6 @@ function goalProgressTone(savedCents: number, goalAmountCents: number) {
   return "low";
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-      <path
-        d="M8 3.5V12.5M3.5 8H12.5"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function buildListingGroups(goals: FinancialGoal[]): ListingGroup[] {
   const sorted = [...goals].sort(
     (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),

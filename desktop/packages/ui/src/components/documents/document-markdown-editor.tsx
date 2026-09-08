@@ -116,7 +116,7 @@ function ensureDocumentEditorInsertMode(view: EditorView) {
     return;
   }
 
-  Vim.handleKey(cm as Parameters<typeof Vim.handleKey>[0], "i");
+  Vim.handleKey(cm as Parameters<typeof Vim.handleKey>[0], "i", "user");
 }
 
 function focusEditorView(view: EditorView, vimEnabled: boolean): void {

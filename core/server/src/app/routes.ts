@@ -729,7 +729,15 @@ export function registerApiRoutes(app: Hono) {
             auth.workspaceId,
             projectId,
           );
-          return c.json(toProject(row!));
+          // Echo request fields onto the response so clients do not briefly
+          // see a pre-replication row (notably localWorkingDirectory).
+          const body = toProject(row!);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value !== undefined && Object.prototype.hasOwnProperty.call(body, key)) {
+              (body as Record<string, unknown>)[key] = value;
+            }
+          }
+          return c.json(body);
         }
         const row = await taskProjectService.updateProject(
           auth.workspaceId,
@@ -2020,7 +2028,12 @@ export function registerApiRoutes(app: Hono) {
           preferredId,
           undefined,
           writeActorFromAuth(auth, activityActor),
-          { authKind: auth.kind },
+          {
+            authKind:
+              auth.kind === "api_key" || auth.kind === "local_shell"
+                ? auth.kind
+                : undefined,
+          },
         );
         await recordTaskRestSyncEvent(auth.workspaceId, row, "upsert");
         return c.json(toTask(row), 201);

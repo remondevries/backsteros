@@ -128,14 +128,15 @@ async function backsterosFetchJson<T>(
 
 async function backsterosFetchBlob(pathWithQuery: string, signal?: AbortSignal): Promise<Blob> {
   const request = resolveBacksterosRequest(pathWithQuery);
+  const headers: Record<string, string> = { ...request.headers, Accept: "*/*" };
   const response = await fetch(request.url, {
     method: "GET",
-    headers: request.headers,
+    headers,
     cache: "no-store",
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
-    throw new Error(`BacksterOS avatar request failed (${response.status})`);
+    throw new Error(`BacksterOS binary request failed (${response.status})`);
   }
   return response.blob();
 }
@@ -419,6 +420,18 @@ export async function fetchBacksterosAvatar(
 ): Promise<Blob> {
   return backsterosFetchBlob(
     `/api/v1/avatars/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`,
+    signal,
+  );
+}
+
+/** Download an inline task-description image (`GET /api/v1/tasks/:id/images/:imageId`). */
+export async function downloadBacksterosTaskImage(
+  taskId: string,
+  imageId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return backsterosFetchBlob(
+    `/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`,
     signal,
   );
 }

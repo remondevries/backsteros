@@ -1,17 +1,14 @@
 import "@azure/core-asynciterator-polyfill";
 import "react-native-gesture-handler";
 
-import { ClerkProvider, ClerkLoaded } from "@clerk/clerk-expo";
-import { tokenCache } from "@clerk/clerk-expo/token-cache";
 import { ThemeProvider } from "expo-router/react-navigation";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 import { AppErrorBoundary } from "../components/app-error-boundary";
 import { AgentMailProvider } from "../lib/agentmail-context";
 import { MobileCoreApiUrlProvider } from "../lib/api-url-context";
-import { getMobileEnvironment } from "../lib/env";
 import { PowerSyncProvider } from "../lib/powersync-context";
 import { initSentry, wrapRoot } from "../lib/sentry";
 import { NavigationShortcutGateProvider } from "../lib/navigation-shortcut-gate";
@@ -23,8 +20,6 @@ import { ui } from "../lib/ui";
 import { useEscapeBackNavigation } from "../lib/use-escape-back-navigation";
 
 initSentry();
-
-const publishableKey = getMobileEnvironment().clerkPublishableKey;
 
 const stackScreenOptions = {
   headerStyle: { backgroundColor: colors.background },
@@ -49,111 +44,89 @@ function EscapeBackNavigation() {
 }
 
 function RootLayout() {
-  if (!publishableKey) {
-    return (
-      <View style={[ui.screen, { justifyContent: "center", padding: 24 }]}>
-        <Text style={[ui.title, { marginBottom: 8 }]}>BacksterOS</Text>
-        <Text style={ui.body}>
-          Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in backsteros-mobile/.env and
-          restart Expo. No demo workspace is shipped on mobile.
-        </Text>
-        <StatusBar style="light" />
-      </View>
-    );
-  }
-
   return (
     <AppErrorBoundary>
       <View style={ui.screen}>
         <ThemeProvider value={navigationTheme}>
-          <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-            <MobileCoreApiUrlProvider>
-            <ClerkLoaded>
-              <PowerSyncProvider>
-                <AgentMailProvider>
+          <MobileCoreApiUrlProvider>
+            <PowerSyncProvider>
+              <AgentMailProvider>
                 <TrackedTimerProvider>
-                <TabBarVisibilityProvider>
-                  <TabBarDetailRouteHider />
-                  <NavigationShortcutGateProvider>
-                    <EscapeBackNavigation />
-                    <Stack screenOptions={stackScreenOptions}>
-                    <Stack.Screen name="index" options={{ title: "BacksterOS" }} />
-                    <Stack.Screen name="(app)" options={{ headerShown: false }} />
-                    <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
-                    <Stack.Screen
-                      name="sso-callback"
-                      options={{ headerShown: false }}
-                    />
-                    <Stack.Screen
-                      name="settings"
-                      options={{
-                        title: "Settings",
-                        headerBackButtonDisplayMode: "minimal",
-                        ...iosStackGestureOptions,
-                      }}
-                    />
-                    <Stack.Screen name="task/[id]" options={rootDetailOptions} />
-                    <Stack.Screen
-                      name="project/[id]/index"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="project/[id]/commit/[sha]"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="project/[id]/file"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="project/[id]/pull/[number]"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="contact/[id]"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="organization/[id]"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="document/[id]"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen name="letter/[id]" options={rootDetailOptions} />
-                    <Stack.Screen name="meeting/[id]" options={rootDetailOptions} />
-                    <Stack.Screen name="create/task" options={rootDetailOptions} />
-                    <Stack.Screen
-                      name="create/document"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="create/folder"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="create/letter"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="create/contact"
-                      options={rootDetailOptions}
-                    />
-                    <Stack.Screen
-                      name="create/organization"
-                      options={rootDetailOptions}
-                    />
-                    </Stack>
-                    <StatusBar style="light" />
-                  </NavigationShortcutGateProvider>
-                </TabBarVisibilityProvider>
+                  <TabBarVisibilityProvider>
+                    <TabBarDetailRouteHider />
+                    <NavigationShortcutGateProvider>
+                      <EscapeBackNavigation />
+                      <Stack screenOptions={stackScreenOptions}>
+                        <Stack.Screen name="index" options={{ title: "BacksterOS" }} />
+                        <Stack.Screen name="(app)" options={{ headerShown: false }} />
+                        <Stack.Screen
+                          name="settings"
+                          options={{
+                            title: "Settings",
+                            headerBackButtonDisplayMode: "minimal",
+                            ...iosStackGestureOptions,
+                          }}
+                        />
+                        <Stack.Screen name="task/[id]" options={rootDetailOptions} />
+                        <Stack.Screen
+                          name="project/[id]/index"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="project/[id]/commit/[sha]"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="project/[id]/file"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="project/[id]/pull/[number]"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="contact/[id]"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="organization/[id]"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="document/[id]"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen name="letter/[id]" options={rootDetailOptions} />
+                        <Stack.Screen name="meeting/[id]" options={rootDetailOptions} />
+                        <Stack.Screen name="create/task" options={rootDetailOptions} />
+                        <Stack.Screen
+                          name="create/document"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="create/folder"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="create/letter"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="create/contact"
+                          options={rootDetailOptions}
+                        />
+                        <Stack.Screen
+                          name="create/organization"
+                          options={rootDetailOptions}
+                        />
+                      </Stack>
+                      <StatusBar style="light" />
+                    </NavigationShortcutGateProvider>
+                  </TabBarVisibilityProvider>
                 </TrackedTimerProvider>
-                </AgentMailProvider>
-              </PowerSyncProvider>
-            </ClerkLoaded>
-            </MobileCoreApiUrlProvider>
-          </ClerkProvider>
+              </AgentMailProvider>
+            </PowerSyncProvider>
+          </MobileCoreApiUrlProvider>
         </ThemeProvider>
       </View>
     </AppErrorBoundary>

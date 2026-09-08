@@ -2,6 +2,8 @@ import type { Habit } from "@backsteros/contracts";
 import {
   getTaskDueDateYmd,
   getTodayJournalDateSlug,
+  isTaskStatus,
+  migrateLegacyTaskStatus,
   type HabitListItem,
 } from "@backsteros/ui";
 
@@ -15,8 +17,13 @@ export type HabitTodayTaskSource = {
 };
 
 export type HabitWithTodayTask = HabitListItem & {
-  todayTaskStatus: string | null;
+  todayTaskStatus: Habit["todayTaskStatus"];
 };
+
+function toTodayTaskStatus(status: string | undefined): Habit["todayTaskStatus"] {
+  if (status == null) return null;
+  return isTaskStatus(status) ? status : migrateLegacyTaskStatus(status);
+}
 
 /**
  * Attach each habit's task due today (O(habits×tasks)).
@@ -49,7 +56,7 @@ export function habitsWithTodayTasks(
     return {
       ...habit,
       todayTaskId: todayTask?.id ?? null,
-      todayTaskStatus: todayTask?.status ?? null,
+      todayTaskStatus: toTodayTaskStatus(todayTask?.status),
       checked: todayTask?.status === "completed",
     };
   });

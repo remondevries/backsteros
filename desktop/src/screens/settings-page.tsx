@@ -1,4 +1,3 @@
-import { useUser } from "@clerk/clerk-react";
 import { ApiClientError } from "@backsteros/api-client";
 import type {
   ApiKey,
@@ -35,7 +34,6 @@ import {
   setDefaultAssigneeId,
   syncDefaultAssigneeIdFromSettings,
 } from "../lib/default-assignee";
-import { getDesktopPublicEnvironment } from "../lib/env";
 import { useDesktopSectionBreadcrumb } from "../lib/use-desktop-breadcrumb";
 import {
   fetchWhoopDaySnapshot,
@@ -51,21 +49,6 @@ import { SettingsMapboxTab } from "../components/settings-mapbox-tab";
 import { SettingsGithubTab } from "../components/settings-github-tab";
 import { SettingsEmailTab } from "../components/settings-email-tab";
 
-function ClerkAccountEmailCard() {
-  const { user } = useUser();
-  return (
-    <section className="settings-card">
-      <h2>Email</h2>
-      <p>The email address associated with your account.</p>
-      <div className="settings-field">
-        <span className="settings-static-value">
-          {user?.primaryEmailAddress?.emailAddress ?? "—"}
-        </span>
-      </div>
-    </section>
-  );
-}
-
 function SettingsAccountTab({
   settings,
   onSettingsSaved,
@@ -74,7 +57,6 @@ function SettingsAccountTab({
   onSettingsSaved?: () => void;
 }) {
   const { client } = useDesktopApi();
-  const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
@@ -89,7 +71,7 @@ function SettingsAccountTab({
     setAssigneeId(synced);
 
     const fromServer = parseDefaultAssigneeIdFromSettings(settings);
-    if (fromServer !== undefined || !synced || !clerkKey) return;
+    if (fromServer !== undefined || !synced) return;
     void client
       .requestJson("/api/v1/settings", {
         method: "PATCH",
@@ -100,7 +82,7 @@ function SettingsAccountTab({
       .catch(() => {
         // keep local value if migrate fails
       });
-  }, [clerkKey, client, onSettingsSaved, settings]);
+  }, [client, onSettingsSaved, settings]);
 
   const options = useMemo(
     () =>
@@ -121,7 +103,6 @@ function SettingsAccountTab({
             const value = next === "__none__" ? null : next;
             setAssigneeId(value);
             setDefaultAssigneeId(value);
-            if (!clerkKey) return;
             setSaving(true);
             void client
               .requestJson("/api/v1/settings", {
@@ -145,32 +126,23 @@ function SettingsAccountTab({
     );
 
   return (
-    <>
-      {clerkKey ? <ClerkAccountEmailCard /> : null}
-      <AccountSettingsSectionView
-        showEmail={false}
-        assigneeField={assigneeField}
-      />
-    </>
+    <AccountSettingsSectionView
+      showEmail={false}
+      assigneeField={assigneeField}
+    />
   );
 }
 
 function SettingsApiTab() {
   const { client } = useDesktopApi();
-  const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const workspace = useDesktopWorkspaceData();
   const contacts = workspace.contacts;
   const contactAvatarSrc = useDesktopAvatarSrcMap("contact", contacts);
   const [apiKeys, setApiKeys] = useState<SettingsApiKeyItem[]>([]);
-  const [loading, setLoading] = useState(Boolean(clerkKey));
+  const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadKeys = useCallback(async () => {
-    if (!clerkKey) {
-      setLoading(false);
-      setApiKeys([]);
-      return;
-    }
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -194,24 +166,11 @@ function SettingsApiTab() {
     } finally {
       setLoading(false);
     }
-  }, [client, clerkKey]);
+  }, [client]);
 
   useEffect(() => {
     void loadKeys();
   }, [loadKeys]);
-
-  if (!clerkKey) {
-    return (
-      <section className="settings-card">
-        <h2>API keys</h2>
-        <p>
-          Sign in to create and manage revocable bearer tokens for the external
-          REST API.
-        </p>
-        <p className="settings-hint">Requires Clerk authentication.</p>
-      </section>
-    );
-  }
 
   return (
     <ApiKeysSettingsSectionView
@@ -629,7 +588,6 @@ function SettingsWhoopTab({
 export function SettingsPage() {
   const { tab } = useParams({ strict: false }) as { tab?: string };
   const { client } = useDesktopApi();
-  const clerkKey = getDesktopPublicEnvironment().clerkPublishableKey;
   const activeTab: SettingsTabId =
     tab && isSettingsTabId(tab) ? tab : "general";
   const meta = getSettingsTabMeta(activeTab);
@@ -648,7 +606,6 @@ export function SettingsPage() {
   ]);
 
   const reloadSettings = useCallback(async () => {
-    if (!clerkKey) return;
     try {
       const body = await client.requestJson<{
         settings: Record<string, unknown>;
@@ -666,7 +623,7 @@ export function SettingsPage() {
     } catch {
       // keep local defaults
     }
-  }, [client, clerkKey]);
+  }, [client]);
 
   useEffect(() => {
     void reloadSettings();

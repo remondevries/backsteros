@@ -158,6 +158,23 @@
   background: transparent;
 }
 
+.content-markdown-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0;
+  border-radius: 0.375rem;
+}
+
+.content-markdown-preview-image--expandable {
+  cursor: zoom-in;
+}
+
+.content-markdown-preview-image--expandable:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 55%, transparent);
+  outline-offset: 3px;
+}
+
 .content-markdown-preview-body--rendered a,
 .content-markdown-preview-link {
   color: color-mix(in srgb, var(--foreground) 88%, #60a5fa);

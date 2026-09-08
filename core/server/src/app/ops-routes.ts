@@ -7,7 +7,7 @@ import {
 } from "@backsteros/contracts";
 
 import type { AuthContext } from "../middleware/auth.js";
-import { resolveAuth } from "../middleware/auth.js";
+import { isOwnerShellAuth, resolveAuth } from "../middleware/auth.js";
 import { isSpacesConfigured } from "../lib/storage.js";
 import { newId } from "../lib/crypto.js";
 import { appendOpsLog } from "../lib/ops-log-buffer.js";
@@ -29,16 +29,16 @@ async function requireOwner(c: Context): Promise<Response | null> {
   if (!auth) {
     return c.json({ error: "Unauthorized", code: "unauthorized" as const }, 401);
   }
-  if (auth.kind !== "clerk" || !auth.userId) {
+  if (!isOwnerShellAuth(auth)) {
     return c.json(
-      { error: "Clerk session required", code: "unauthorized" as const },
+      { error: "Owner shell session required", code: "unauthorized" as const },
       401,
     );
   }
 
   const isOwner = await opsService.assertWorkspaceOwner(
     auth.workspaceId,
-    auth.userId,
+    auth.userId!,
     auth.membershipRole,
   );
   if (!isOwner) {

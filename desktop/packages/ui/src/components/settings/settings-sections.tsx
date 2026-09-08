@@ -265,10 +265,8 @@ export function GithubSettingsSectionView({
         <div className="settings-card-body-copy">
           <p>
             Use a GitHub personal access token (Settings or{" "}
-            <code>GITHUB_API_TOKEN</code>) so commits and pull requests load
-            without Clerk. Optional Connect GitHub OAuth remains available when
-            you want per-user access. Token needs <code>repo</code> (and usually{" "}
-            <code>read:org</code>).
+            <code>GITHUB_API_TOKEN</code>) so commits and pull requests load.
+            Token needs <code>repo</code> (and usually <code>read:org</code>).
           </p>
         </div>
 

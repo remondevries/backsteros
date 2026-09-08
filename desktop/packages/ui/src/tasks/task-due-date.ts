@@ -151,18 +151,24 @@ export function formatTaskDueMetaLabel(
 ): string | null {
   if (dueDate == null) return null;
 
-  const date =
-    dueDate instanceof Date
-      ? dueDate
-      : typeof dueDate === "number"
-        ? new Date(dueDate)
-        : new Date(dueDate);
+  let ymd: string;
+  if (typeof dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())) {
+    ymd = dueDate.trim();
+  } else {
+    const date =
+      dueDate instanceof Date
+        ? dueDate
+        : typeof dueDate === "number"
+          ? new Date(dueDate)
+          : new Date(dueDate);
+    if (Number.isNaN(date.getTime())) return null;
+    ymd = formatLocalYmd(date);
+  }
 
-  if (Number.isNaN(date.getTime())) return null;
+  const parsed = parseYmdLocal(ymd);
+  if (!parsed) return null;
 
-  const ymd = formatLocalYmd(date);
   const today = formatLocalYmd(new Date());
-
   if (ymd === today) return "Today";
 
   const tomorrow = new Date();
@@ -173,5 +179,5 @@ export function formatTaskDueMetaLabel(
   yesterday.setDate(yesterday.getDate() - 1);
   if (ymd === formatLocalYmd(yesterday)) return "Yesterday";
 
-  return `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
+  return `${MONTH_NAMES[parsed.getMonth()]} ${parsed.getDate()}`;
 }

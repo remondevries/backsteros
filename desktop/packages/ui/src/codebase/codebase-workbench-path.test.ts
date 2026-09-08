@@ -5,7 +5,7 @@ import {
   getCodebaseWorkbenchHref,
   isCodebaseWorkbenchPath,
   parseCodebaseWorkbenchPath,
-} from "../../dist/codebase/codebase-workbench-path.js";
+} from "./codebase-workbench-path.js";
 
 test("parseCodebaseWorkbenchPath maps documents to Docs tab", () => {
   assert.deepEqual(parseCodebaseWorkbenchPath("/projects/demo/documents", "demo"), {

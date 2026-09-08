@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveTabCycleShortcut } from "../../dist/navigation/use-tab-shortcuts.js";
+import { resolveTabCycleShortcut } from "./use-tab-shortcuts.js";
 
 test("⌘⇧[ / ⌘⇧] cycle top product tabs", () => {
   assert.equal(

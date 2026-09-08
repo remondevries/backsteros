@@ -5,13 +5,13 @@ import {
   clearPrimedTabTitles,
   getPrimedTabTitle,
   primeTabTitle,
-} from "../../dist/navigation/primed-tab-title.js";
+} from "./primed-tab-title.js";
 import {
   createDefaultTabsState,
   createProductTab,
   getTabTitleForHref,
   syncActiveTabToPath,
-} from "../../dist/navigation/tabs.js";
+} from "./tabs.js";
 
 describe("primed tab titles", () => {
   test("getTabTitleForHref prefers a primed entity name", () => {

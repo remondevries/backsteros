@@ -4,37 +4,8 @@ import {
   type GithubConnectionStatus,
   type GithubRepository,
 } from "@backsteros/contracts";
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 
 export const GITHUB_OAUTH_SCOPES = [...GITHUB_INTEGRATION_SCOPES];
-
-WebBrowser.maybeCompleteAuthSession();
-
-type GithubExternalAccountLike = {
-  provider: string;
-  reauthorize: (params: {
-    additionalScopes: string[];
-    redirectUrl: string;
-  }) => Promise<{
-    verification?: {
-      externalVerificationRedirectURL?: URL | null;
-    } | null;
-  }>;
-};
-
-type GithubUserLike = {
-  externalAccounts: GithubExternalAccountLike[];
-  createExternalAccount: (params: {
-    strategy: "oauth_github";
-    redirectUrl: string;
-    additionalScopes: string[];
-  }) => Promise<{
-    verification?: {
-      externalVerificationRedirectURL?: URL | null;
-    } | null;
-  }>;
-};
 
 type GithubStatusClient = {
   requestJson: <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -99,49 +70,9 @@ export async function fetchGithubConnectionStatus(
     ) {
       return disconnectedStatus(
         error.message ||
-          "GitHub is not connected. Connect GitHub and grant repo + organization access.",
+          "GitHub is not connected. Add a personal access token in Settings → GitHub.",
       );
     }
     throw error;
   }
-}
-
-/** Deep-link redirect Clerk returns to after GitHub OAuth on mobile. */
-export function githubOauthRedirectUrl(): string {
-  return Linking.createURL("sso-callback");
-}
-
-/**
- * Connect or reauthorize GitHub with integration scopes (repo + read:org).
- * Opens an in-app auth session and returns when Clerk redirects back.
- */
-export async function startGithubOauthConnect(
-  user: GithubUserLike,
-): Promise<"success" | "cancel"> {
-  const redirectUrl = githubOauthRedirectUrl();
-
-  const existing = user.externalAccounts.find(
-    (account) =>
-      account.provider === "github" || account.provider === "oauth_github",
-  );
-
-  const account = existing
-    ? await existing.reauthorize({
-        additionalScopes: GITHUB_OAUTH_SCOPES,
-        redirectUrl,
-      })
-    : await user.createExternalAccount({
-        strategy: "oauth_github",
-        redirectUrl,
-        additionalScopes: GITHUB_OAUTH_SCOPES,
-      });
-
-  const url = account.verification?.externalVerificationRedirectURL;
-  if (!url) {
-    throw new Error("Clerk did not return a GitHub authorization URL.");
-  }
-
-  const result = await WebBrowser.openAuthSessionAsync(url.href, redirectUrl);
-  if (result.type === "success") return "success";
-  return "cancel";
 }

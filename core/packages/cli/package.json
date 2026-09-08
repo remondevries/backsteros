@@ -1,0 +1,33 @@
+{
+  "name": "@backsteros/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin CLI for BacksterOS tasks and projects (agent-friendly)",
+  "bin": {
+    "backsteros": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@backsteros/api-client": "workspace:*",
+    "@backsteros/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

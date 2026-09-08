@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { filterTasksByDueFilter } from "../../dist/tasks/tasks-due-filters.js";
+import { filterTasksByDueFilter } from "./tasks-due-filters.js";
 
 test("filterTasksByDueFilter keeps completed, canceled, and duplicated in today", () => {
   const wednesday = new Date(2026, 6, 22, 12, 0, 0); // Wed Jul 22, 2026

@@ -83,8 +83,8 @@ export type TaskItemRowTask = {
   updatedAt?: number;
   /** Cursor Agent chat id bound to this task (core), if any. */
   agentChatId?: string | null;
-  /** GitHub commit SHA linked as this task’s change record. */
-  linkedCommitSha?: string | null;
+  /** GitHub commit SHAs linked as this task’s change records. */
+  linkedCommitShas?: string[] | null;
   /** Habit definition this daily instance belongs to, if any. */
   habitId?: string | null;
   /** Set when created via API key or agent actor. */
@@ -264,6 +264,7 @@ function TaskItemRowComponent({
       number: task.number,
       projectId: task.projectId,
       contactId: task.contactId,
+      projectKey: task.projectKey,
     },
     task.projectKey,
   );

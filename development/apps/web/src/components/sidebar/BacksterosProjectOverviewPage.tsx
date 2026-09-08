@@ -1,4 +1,3 @@
-import { PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -25,12 +24,11 @@ import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
-import { Button } from "../ui/button";
 import { BacksterosProjectTasksOverview } from "./BacksterosProjectTasksOverview";
 
 /**
- * BacksterOS project home: desktop-style task list in the main pane;
- * create/detail lives in the shared task side panel.
+ * BacksterOS project home: desktop-style task list in the main pane.
+ * Create/detail lives in the shared task side panel (left-rail New task / C).
  */
 export function BacksterosProjectOverviewPage({
   projectId,
@@ -47,9 +45,6 @@ export function BacksterosProjectOverviewPage({
   const { state: projectsState } = useBacksterosCodebaseProjects(true);
   const selection = useBacksterosTaskDetailUiStore((store) => store.selection);
   const openTaskDetail = useBacksterosTaskDetailUiStore((store) => store.openTaskDetail);
-  const openCreateTaskDetail = useBacksterosTaskDetailUiStore(
-    (store) => store.openCreateTaskDetail,
-  );
   const {
     state: tasksState,
     reload: reloadTasks,
@@ -112,11 +107,6 @@ export function BacksterosProjectOverviewPage({
   const selectedTaskId =
     activeTaskId ??
     (selection?.taskId && selection.project.id === projectId ? selection.taskId : null);
-
-  const handleNewTask = useCallback(() => {
-    if (!project) return;
-    openCreateTaskDetail(project, { reveal: true });
-  }, [openCreateTaskDetail, project]);
 
   const handleSelectTask = useCallback(
     (task: BacksterosTask) => {
@@ -219,18 +209,6 @@ export function BacksterosProjectOverviewPage({
             <h2 className="min-w-0 truncate text-sm font-medium text-foreground">{projectName}</h2>
           </WorkspaceBreadcrumbItem>
         </WorkspaceBreadcrumb>
-        {project ? (
-          <Button
-            type="button"
-            size="compact"
-            variant="outline"
-            onClick={handleNewTask}
-            className={cn("shrink-0", isElectron && "no-drag")}
-          >
-            <PlusIcon />
-            New task
-          </Button>
-        ) : null}
       </WorkspacePageHeader>
       <BacksterosProjectTasksOverview
         state={tasksState}

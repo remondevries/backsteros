@@ -88,4 +88,36 @@ describe("createBacksterosSharedQuery", () => {
 
     vi.useRealTimers();
   });
+
+  it("resets aborted initial loads to idle so the next mount is not stuck loading", async () => {
+    const fetchFn = vi.fn(() => new Promise<{ id: string; updatedAt: string }[]>(() => {}));
+    const query = createBacksterosSharedQuery({
+      fetch: fetchFn,
+      fingerprint: backsterosEntityListFingerprint,
+      errorMessage: "fail",
+      softPollIntervalMs: 60_000,
+    });
+
+    const unsub = query.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(query.getSnapshot().status).toBe("loading");
+    });
+
+    unsub();
+    expect(query.getSnapshot().status).toBe("idle");
+
+    let resolveFetch: ((value: { id: string; updatedAt: string }[]) => void) | undefined;
+    fetchFn.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    const unsub2 = query.subscribe(() => {});
+    resolveFetch?.([{ id: "1", updatedAt: "t1" }]);
+    await vi.waitFor(() => {
+      expect(query.getSnapshot().status).toBe("ready");
+    });
+    unsub2();
+  });
 });

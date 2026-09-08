@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { shouldApplyPageTitleToChrome } from "../../dist/navigation-history/register-page-title.js";
+import { shouldApplyPageTitleToChrome } from "./register-page-title.js";
 import {
   clearPrimedTabTitles,
   getPrimedTabTitle,
   primeTabTitle,
-} from "../../dist/navigation/primed-tab-title.js";
-import { getTabTitleForHref } from "../../dist/navigation/tabs.js";
+} from "../navigation/primed-tab-title.js";
+import { getTabTitleForHref } from "../navigation/tabs.js";
 
 describe("shouldApplyPageTitleToChrome", () => {
   test("blocks inactive keep-alive registrars", () => {

@@ -54,10 +54,13 @@ export function useBacksterosProjectTasks(projectId: string | null): {
       return;
     }
     const query = getProjectTasksQuery(projectId);
-    setState(toTasksState(query.getSnapshot()));
-    return query.subscribe(() => {
+    // Subscribe before reading the snapshot so we cannot miss the synchronous
+    // "loading" emit when this is the first subscriber.
+    const unsubscribe = query.subscribe(() => {
       setState(toTasksState(query.getSnapshot()));
     });
+    setState(toTasksState(query.getSnapshot()));
+    return unsubscribe;
   }, [projectId]);
 
   const reload = useCallback(() => {

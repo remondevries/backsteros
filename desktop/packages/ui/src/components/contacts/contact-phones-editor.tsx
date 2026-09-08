@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import {
   CONTACT_PHONE_LABELS,
   contactPhoneRowsForEditor,
+  normalizeContactPhoneLabel,
   splitContactPhoneRows,
   type ContactPhoneEntry,
+  type ContactPhoneInput,
   type ContactPhoneLabel,
 } from "@backsteros/contracts";
 
@@ -21,28 +23,35 @@ export type ContactPhoneEditorRow = {
   number: string;
 };
 
-export type ContactPhonesEditorProps = {
+/**
+ * `Row` is the caller's normalized entry type (contact vs organization
+ * labels); the editor itself works on loose `ContactPhoneEditorRow`s and
+ * hands normalized rows back via `splitRows`.
+ */
+export type ContactPhonesEditorProps<
+  Row extends ContactPhoneEditorRow = ContactPhoneEntry,
+> = {
   phone: string;
-  phones: ContactPhoneEditorRow[];
+  phones: Row[];
   disabled?: boolean;
   /** Override Personal/Work/Other (e.g. org General/Support/Other). */
   labelOptions?: ReadonlyArray<{ value: string; label: string }>;
   defaultLabel?: string;
   rowsForEditor?: (input: {
     phone: string;
-    phones: ContactPhoneEditorRow[];
+    phones: Row[];
   }) => ContactPhoneEditorRow[];
   splitRows?: (rows: ContactPhoneEditorRow[]) => {
     phone: string | null;
-    phones: ContactPhoneEditorRow[];
+    phones: Row[];
   };
   onChange: (next: {
     phone: string;
-    phones: ContactPhoneEditorRow[];
+    phones: Row[];
   }) => void;
   onSave: (next: {
     phone: string | null;
-    phones: ContactPhoneEditorRow[];
+    phones: Row[];
   }) => void;
 };
 
@@ -52,6 +61,25 @@ const DEFAULT_LABEL_OPTIONS = CONTACT_PHONE_LABELS.map((value) => ({
     value === "personal" ? "Personal" : value === "work" ? "Work" : "Other",
 }));
 
+function defaultRowsForEditor(input: {
+  phone: string;
+  phones: readonly ContactPhoneInput[];
+}): ContactPhoneEditorRow[] {
+  return contactPhoneRowsForEditor(input);
+}
+
+function defaultSplitRows(rows: ContactPhoneEditorRow[]): {
+  phone: string | null;
+  phones: ContactPhoneEntry[];
+} {
+  return splitContactPhoneRows(
+    rows.map((row) => ({
+      label: normalizeContactPhoneLabel(row.label),
+      number: row.number,
+    })),
+  );
+}
+
 function rowsKey(rows: ContactPhoneEditorRow[]): string {
   return JSON.stringify(rows);
 }
@@ -59,21 +87,23 @@ function rowsKey(rows: ContactPhoneEditorRow[]): string {
 /**
  * Phone numbers as split pills: category dropdown | number input.
  */
-export function ContactPhonesEditor({
+export function ContactPhonesEditor<
+  Row extends ContactPhoneEditorRow = ContactPhoneEntry,
+>({
   phone,
   phones,
   disabled = false,
   labelOptions = DEFAULT_LABEL_OPTIONS,
   defaultLabel = "personal",
-  rowsForEditor = (input) =>
-    contactPhoneRowsForEditor({
-      phone: input.phone,
-      phones: input.phones as ContactPhoneEntry[],
-    }),
-  splitRows = (rows) => splitContactPhoneRows(rows as ContactPhoneEntry[]),
+  rowsForEditor = defaultRowsForEditor,
+  // Defaults produce contact labels; callers with another label set
+  // (organizations) pass their own `splitRows`.
+  splitRows = defaultSplitRows as NonNullable<
+    ContactPhonesEditorProps<Row>["splitRows"]
+  >,
   onChange,
   onSave,
-}: ContactPhonesEditorProps) {
+}: ContactPhonesEditorProps<Row>) {
   const remoteRows = rowsForEditor({ phone, phones });
   const remoteKey = rowsKey(remoteRows);
   const [rows, setRows] = useState(remoteRows);

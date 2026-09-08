@@ -16,6 +16,7 @@ Single workspace: **`~/code/backsteros/`** (branch `v2`)
 │   └── packages/
 │       ├── contracts/          ← Zod / OpenAPI shapes
 │       ├── api-client/         ← typed HTTP client (shells only)
+│       ├── cli/                ← `backsteros` CLI (tasks & projects)
 │       └── powersync-schema/   ← client SQLite schema
 │
 ├── hub/                        ← macOS menu-bar start/stop for local services
@@ -33,7 +34,7 @@ Single workspace: **`~/code/backsteros/`** (branch `v2`)
 | Path | Role |
 | --- | --- |
 | `core/server` | Business logic, Postgres, sync upload, OpenAPI |
-| `core/packages/*` | Shared **non-UI** contracts between core and shells |
+| `core/packages/*` | Shared **non-UI** contracts between core and shells; `cli` is the agent/shell `backsteros` binary |
 | `hub/` | Menu-bar control to start/stop Docker, core API, PTY |
 | `mobile/` | Expo product shell |
 | `desktop/` | Tauri product shell |

@@ -10,7 +10,10 @@ import {
   DROPDOWN_NONE_VALUE,
   resolveDropdownNone,
 } from "../dropdowns/dropdown-options.js";
-import { SearchableDropdown } from "../dropdowns/searchable-dropdown.js";
+import {
+  SearchableDropdown,
+  type SearchableDropdownOption,
+} from "../dropdowns/searchable-dropdown.js";
 import {
   countryHasRegions,
   formatCountryLabel,
@@ -34,6 +37,7 @@ import {
   ORGANIZATION_CONTACT_LABEL_OPTIONS,
   coerceOrganizationEmailEntries,
   coerceOrganizationPhoneEntries,
+  normalizeOrganizationContactLabel,
   normalizeOrganizationEmailsInput,
   normalizeOrganizationPhonesInput,
   organizationEmailRowsForEditor,
@@ -43,6 +47,27 @@ import {
   type OrganizationEmailEntry,
   type OrganizationPhoneEntry,
 } from "@backsteros/contracts";
+import type { ContactEmailEditorRow } from "../contacts/contact-emails-editor.js";
+import type { ContactPhoneEditorRow } from "../contacts/contact-phones-editor.js";
+
+/** Editor rows carry free-form labels; narrow to org labels before splitting. */
+function splitOrganizationEmailEditorRows(rows: ContactEmailEditorRow[]) {
+  return splitOrganizationEmailRows(
+    rows.map((row) => ({
+      label: normalizeOrganizationContactLabel(row.label),
+      address: row.address,
+    })),
+  );
+}
+
+function splitOrganizationPhoneEditorRows(rows: ContactPhoneEditorRow[]) {
+  return splitOrganizationPhoneRows(
+    rows.map((row) => ({
+      label: normalizeOrganizationContactLabel(row.label),
+      number: row.number,
+    })),
+  );
+}
 
 /** Canonical company-size buckets stored on `organizations.size`. */
 export const ORGANIZATION_SIZE_OPTIONS = [
@@ -625,7 +650,7 @@ export function OrganizationOverviewView({
   const sizeOptions = useMemo(() => {
     const known = new Set<string>(ORGANIZATION_SIZE_OPTIONS);
     const trimmed = size.trim();
-    const options = [
+    const options: SearchableDropdownOption[] = [
       { value: DROPDOWN_NONE_VALUE, label: "No size" },
       ...ORGANIZATION_SIZE_OPTIONS.map((value) => ({
         value,
@@ -767,7 +792,7 @@ export function OrganizationOverviewView({
                     selected?.label ??
                     (size.trim() || "Add size");
                   const hasValue =
-                    Boolean(selected) &&
+                    selected != null &&
                     selected.value !== DROPDOWN_NONE_VALUE;
                   return (
                     <button
@@ -821,7 +846,7 @@ export function OrganizationOverviewView({
             labelOptions={ORGANIZATION_CONTACT_LABEL_OPTIONS}
             defaultLabel="general"
             rowsForEditor={organizationEmailRowsForEditor}
-            splitRows={splitOrganizationEmailRows}
+            splitRows={splitOrganizationEmailEditorRows}
             onChange={({ email: nextEmail, emails: nextEmails }) => {
               setEmail(nextEmail);
               setEmails(
@@ -851,7 +876,7 @@ export function OrganizationOverviewView({
             labelOptions={ORGANIZATION_CONTACT_LABEL_OPTIONS}
             defaultLabel="general"
             rowsForEditor={organizationPhoneRowsForEditor}
-            splitRows={splitOrganizationPhoneRows}
+            splitRows={splitOrganizationPhoneEditorRows}
             onChange={({ phone: nextPhone, phones: nextPhones }) => {
               setPhone(nextPhone);
               setPhones(coerceOrganizationPhoneEntries(nextPhones));

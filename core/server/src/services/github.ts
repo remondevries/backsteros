@@ -9,14 +9,11 @@ import type {
 } from "@backsteros/contracts";
 import { GITHUB_INTEGRATION_SCOPES } from "@backsteros/contracts";
 
-import { getClerkClient } from "../middleware/auth.js";
-
 const GITHUB_API = "https://api.github.com";
 const COMMITS_PER_PAGE = 30;
 const PULLS_PER_PAGE = 30;
 const FILES_PER_PAGE = 100;
 const REQUIRED_SCOPES = [...GITHUB_INTEGRATION_SCOPES];
-const OAUTH_TOKEN_ATTEMPTS = 3;
 
 export class GithubServiceError extends Error {
   constructor(
@@ -42,56 +39,6 @@ export function parseGithubRepositoryFullName(fullName: string): {
     );
   }
   return { owner, repo };
-}
-
-function clerkErrorDetail(error: unknown): string {
-  if (!(error instanceof Error)) return "";
-  const message = error.message.trim();
-  if (!message) return "";
-  return ` (${message})`;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export async function getGithubAccessToken(
-  clerkUserId: string,
-): Promise<string> {
-  const clerk = getClerkClient();
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= OAUTH_TOKEN_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await clerk.users.getUserOauthAccessToken(
-        clerkUserId,
-        "github",
-      );
-      const token = response.data[0]?.token?.trim();
-      if (!token) {
-        throw new GithubServiceError(
-          "No GitHub OAuth token. Connect GitHub in Settings → Integrations → GitHub and grant repo + organization access.",
-          "github_oauth_missing",
-          403,
-        );
-      }
-      return token;
-    } catch (error) {
-      if (error instanceof GithubServiceError) {
-        throw error;
-      }
-      lastError = error;
-      if (attempt < OAUTH_TOKEN_ATTEMPTS) {
-        await sleep(150 * attempt);
-      }
-    }
-  }
-
-  throw new GithubServiceError(
-    `Could not load GitHub access from Clerk. Connect GitHub in Settings → Integrations → GitHub.${clerkErrorDetail(lastError)}`,
-    "github_oauth_unavailable",
-    403,
-  );
 }
 
 type GithubFetchResult<T> = {

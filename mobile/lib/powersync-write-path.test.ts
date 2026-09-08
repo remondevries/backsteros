@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  shouldSkipRestAfterCrudFlush,
   shouldSkipRestEntityWrite,
   shouldWriteEntityViaPowerSync,
 } from "./powersync-write-path.ts";
@@ -23,5 +24,14 @@ describe("powersync-write-path", () => {
     const gate = { ready: true, connected: false, preferRestWrites: false };
     assert.equal(shouldWriteEntityViaPowerSync(gate), true);
     assert.equal(shouldSkipRestEntityWrite(gate), false);
+  });
+
+  it("skips REST after a successful CRUD flush", () => {
+    assert.equal(shouldSkipRestAfterCrudFlush(true), true);
+    assert.equal(shouldSkipRestAfterCrudFlush(undefined), true);
+  });
+
+  it("falls through to REST when CRUD flush uploaded nothing", () => {
+    assert.equal(shouldSkipRestAfterCrudFlush(false), false);
   });
 });

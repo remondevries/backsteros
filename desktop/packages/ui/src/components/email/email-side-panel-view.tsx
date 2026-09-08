@@ -121,7 +121,7 @@ function EmailMessageRow({
   const hasLinkedContact = Boolean(item.contactId && contactName);
   const hasTitleStack = Boolean(projectLabel || organizationLabel);
 
-  let personChip: ReactNode = null;
+  let personChip: ReactNode;
   if (hasLinkedContact) {
     personChip = item.contactAvatarSrc ? (
       <span className="inbox-list-item-assignee-avatar">

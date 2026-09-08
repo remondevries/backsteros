@@ -14,7 +14,7 @@ pnpm db:up
 
 # 2. Configure env — DATABASE_URL must target Docker Postgres (:5433)
 cp core/server/.env.example core/server/.env
-# Edit CLERK_SECRET_KEY when you have Clerk set up
+# Edit `.env` for DATABASE_URL / PowerSync / vault as needed
 
 # 3. Migrate + PowerSync publication + bootstrap API key
 pnpm db:migrate

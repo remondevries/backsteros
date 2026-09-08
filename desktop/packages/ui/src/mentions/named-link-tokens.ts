@@ -18,10 +18,10 @@ export type ParsedNamedLinkToken = {
 
 /** Bracketed `[url|label]` — excludes `@` mentions (`[@task:…]`). */
 export const NAMED_LINK_TOKEN_RE =
-  /\[(?!@)([^\]\|\r\n]+)\|([^\]\r\n]+)\]/g;
+  /\[(?!@)([^\]|\r\n]+)\|([^\]\r\n]+)\]/g;
 
 const NAMED_LINK_TOKEN_SINGLE_RE =
-  /^\[(?!@)([^\]\|\r\n]+)\|([^\]\r\n]+)\]$/;
+  /^\[(?!@)([^\]|\r\n]+)\|([^\]\r\n]+)\]$/;
 
 const MAX_NAMED_LINK_URL_LENGTH = 2000;
 

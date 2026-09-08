@@ -7,7 +7,7 @@ import {
   getCalendarMeetingOverlayHref,
   parseCalendarMeetingOverlayId,
   parseMeetingDisplayId,
-} from "../../dist/meetings/meetings.js";
+} from "./meetings.js";
 
 test("formatMeetingDisplayId uses M prefix", () => {
   assert.equal(formatMeetingDisplayId(1), "M-1");

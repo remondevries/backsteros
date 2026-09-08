@@ -3,6 +3,7 @@ import {
   inboxUpdatedAtRequiresInboxListing,
 } from "@backsteros/contracts";
 
+import { formatCalendarTaskScheduleLabel } from "../calendar/calendar-events.js";
 import { INBOX_TASK_KEY, formatTaskDisplayId } from "../tasks/task-display-id.js";
 import { formatEmailDisplayId } from "../email/email-display-id.js";
 import { formatMeetingDisplayId, getCalendarMeetingHref } from "../meetings/meetings.js";
@@ -340,6 +341,50 @@ export function buildInboxEmailListItem(input: {
   };
 }
 
+/** Inbox row for a meeting booking (`meetings`, not a Postgres task). */
+export function buildInboxMeetingListItem(input: {
+  id: string;
+  title: string;
+  number: number;
+  status?: string | null;
+  priority?: number | null;
+  startAt: number | Date | string;
+  endAt: number | Date | string;
+  updatedAt?: number;
+  projectId?: string | null;
+  projectKey?: string | null;
+  projectName?: string | null;
+  projectIcon?: string | null;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  organizationAvatarSrc?: string | null;
+  scheduleLabel?: string | null;
+  inboxUpdatedAt?: number | Date | string | null;
+}): InboxMeetingListItem {
+  return {
+    kind: "meeting",
+    id: input.id,
+    title: input.title.trim() || "Untitled meeting",
+    number: input.number,
+    status: migrateLegacyTaskStatus(input.status?.trim() || "triage"),
+    priority: input.priority ?? 0,
+    startAt: input.startAt,
+    endAt: input.endAt,
+    projectId: input.projectId ?? null,
+    projectKey: input.projectKey ?? null,
+    projectName: input.projectName ?? null,
+    projectIcon: input.projectIcon ?? null,
+    organizationId: input.organizationId ?? null,
+    organizationName: input.organizationName ?? null,
+    organizationAvatarSrc: input.organizationAvatarSrc ?? null,
+    scheduleLabel:
+      input.scheduleLabel?.trim() ||
+      formatCalendarTaskScheduleLabel(input.startAt, input.endAt),
+    inboxUpdatedAt: input.inboxUpdatedAt ?? null,
+    updatedAt: input.updatedAt ?? Date.now(),
+  };
+}
+
 /** Map an email thread into a Tasks / project list row (not a Postgres task). */
 export function buildTaskListEmailItem(input: {
   inboxId: string;
@@ -599,6 +644,9 @@ export function getInboxItemDisplayId(item: InboxListItem): string {
   if (item.kind === "meeting") {
     return formatMeetingDisplayId(item.number);
   }
+  if (item.number == null || !Number.isFinite(item.number) || item.number <= 0) {
+    return item.projectKey?.trim() || "Task";
+  }
   const key = item.projectKey || item.contactKey || INBOX_TASK_KEY;
   return formatTaskDisplayId(key, item.number);
 }
@@ -646,9 +694,12 @@ export function isInboxOverdueTask(
 /**
  * Whether a task belongs in the expanded inbox:
  * - classic triage capture (`inbox === true`)
- * - On Hold / In Review from any project (hidden when due date is in the future)
+ * - On Hold / In Review from any project
  * - overdue open tasks (fake group)
  * - agent-created tasks pending sign-off (Agents group)
+ *
+ * Habit day instances stay on Journal / Habits — never in the Inbox list.
+ * Tasks due today or later wait until they are overdue (past due).
  */
 export function taskBelongsInInbox(
   input: {
@@ -658,9 +709,17 @@ export function taskBelongsInInbox(
     agentCreatedAt?: number | Date | string | null;
     agentInboxApprovedAt?: number | Date | string | null;
     inboxUpdatedAt?: number | Date | string | null;
+    habitId?: string | null;
   },
   referenceDate: Date = new Date(),
 ): boolean {
+  if (input.habitId != null && String(input.habitId).trim() !== "") {
+    return false;
+  }
+  const dueYmd = getTaskDueDateYmd(input.dueDate);
+  if (dueYmd && dueYmd >= formatLocalYmd(referenceDate)) {
+    return false;
+  }
   if (inboxUpdatedAtRequiresInboxListing(input.inboxUpdatedAt)) return true;
   if (isAgentInboxPending(input)) return true;
   if (input.inbox === true) return true;
@@ -668,10 +727,6 @@ export function taskBelongsInInbox(
   if (
     (INBOX_ATTENTION_REAL_STATUSES as readonly string[]).includes(status)
   ) {
-    const dueYmd = getTaskDueDateYmd(input.dueDate);
-    if (dueYmd && dueYmd > formatLocalYmd(referenceDate)) {
-      return false;
-    }
     return true;
   }
   return isInboxOverdueTask(input, referenceDate);
@@ -689,9 +744,9 @@ export function isEmailIncomingStatus(
 }
 
 /**
- * Whether an email thread belongs in the Inbox list:
- * - triage / empty → always
- * - any other status → same rules as tasks (overdue, in progress, on hold, in review)
+ * Whether an email thread belongs in the Inbox list.
+ * Same membership rules as tasks (including excluding due today or later);
+ * untriaged / empty status counts as triage capture.
  */
 export function emailBelongsInInbox(
   input: {
@@ -701,13 +756,12 @@ export function emailBelongsInInbox(
   },
   referenceDate: Date = new Date(),
 ): boolean {
-  if (inboxUpdatedAtRequiresInboxListing(input.inboxUpdatedAt)) return true;
-  if (isEmailIncomingStatus(input.status)) return true;
   return taskBelongsInInbox(
     {
-      inbox: false,
+      inbox: isEmailIncomingStatus(input.status),
       status: input.status,
       dueDate: input.dueDate,
+      inboxUpdatedAt: input.inboxUpdatedAt,
     },
     referenceDate,
   );

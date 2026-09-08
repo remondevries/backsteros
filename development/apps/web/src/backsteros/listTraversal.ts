@@ -71,3 +71,23 @@ export function resolveAdjacentListItemId<T>(input: {
 
   return currentIndex < itemIds.length - 1 ? (itemIds[currentIndex + 1] ?? null) : null;
 }
+
+/**
+ * Seed the left-rail j/k highlight after a list-mode flip.
+ * Prefer the route/open selection; when returning to the projects rail (no
+ * route selection), fall back to the project the user just left.
+ */
+export function resolveSidepanelHighlightSeed(input: {
+  readonly currentItemId: string | null;
+  readonly itemIds: readonly string[];
+  readonly rememberedId?: string | null;
+}): string | null {
+  const { currentItemId, itemIds, rememberedId = null } = input;
+  if (currentItemId != null && (itemIds.length === 0 || itemIds.includes(currentItemId))) {
+    return currentItemId;
+  }
+  if (rememberedId != null && (itemIds.length === 0 || itemIds.includes(rememberedId))) {
+    return rememberedId;
+  }
+  return null;
+}

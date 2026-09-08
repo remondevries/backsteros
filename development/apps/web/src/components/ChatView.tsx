@@ -320,6 +320,7 @@ import {
 } from "~/backsteros/openTaskChat";
 import { useBacksterosComposerFocusRequest } from "~/backsteros/useBacksterosComposerFocusRequest";
 import { fetchBacksterosTask } from "~/backsteros/client";
+import { loadTaskDescriptionComposerImages } from "~/backsteros/taskDescriptionImages";
 import { useBacksterosTaskChatStore } from "~/backsteros/taskChatStore";
 import { useBacksterosTaskKickoffGateStore } from "~/backsteros/taskKickoffGateStore";
 import { isBacksterosManagedKickoffPrompt } from "~/backsteros/taskKickoffPrompt";
@@ -3177,14 +3178,35 @@ export default function ChatView(props: ChatViewProps) {
     (backsterosKickoffGate.mode === "gate" || backsterosKickoffGate.mode === "pending-send") &&
     isDraftHeroState,
   );
+
+  // Kickoff hides the composer with aria-hidden/inert — blur so focus is not
+  // trapped inside an inaccessible subtree (Chrome aria-hidden warning).
+  useEffect(() => {
+    if (!hideComposerForBacksterosKickoff) return;
+    composerRef.current?.blur();
+  }, [composerRef, hideComposerForBacksterosKickoff]);
+  const attachKickoffDescriptionImages = useCallback(
+    async (kickoffPrompt: string) => {
+      if (!draftId) return;
+      const images = await loadTaskDescriptionComposerImages(kickoffPrompt);
+      if (images.length === 0) return;
+      addComposerDraftImages(draftId, images);
+    },
+    [addComposerDraftImages, draftId],
+  );
   const handleBacksterosStartWorking = useCallback(() => {
     if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
     const text = backsterosKickoffGate.kickoffPrompt;
-    setComposerDraftPrompt(draftId, text);
-    promptRef.current = text;
-    setBacksterosKickoffMode(activeBacksterosTaskId, "pending-send");
+    const taskId = activeBacksterosTaskId;
+    void (async () => {
+      await attachKickoffDescriptionImages(text);
+      setComposerDraftPrompt(draftId, text);
+      promptRef.current = text;
+      setBacksterosKickoffMode(taskId, "pending-send");
+    })();
   }, [
     activeBacksterosTaskId,
+    attachKickoffDescriptionImages,
     backsterosKickoffGate,
     draftId,
     setBacksterosKickoffMode,
@@ -3193,15 +3215,20 @@ export default function ChatView(props: ChatViewProps) {
   const handleBacksterosKickoffAdvanced = useCallback(() => {
     if (!activeBacksterosTaskId || !backsterosKickoffGate || !draftId) return;
     const text = backsterosKickoffGate.kickoffPrompt;
-    setComposerDraftPrompt(draftId, text);
-    promptRef.current = text;
-    setBacksterosKickoffMode(activeBacksterosTaskId, "advanced");
-    queueMicrotask(() => {
-      composerRef.current?.resetCursorState({ prompt: text, cursor: text.length });
-      composerRef.current?.focusAtEnd();
-    });
+    const taskId = activeBacksterosTaskId;
+    void (async () => {
+      await attachKickoffDescriptionImages(text);
+      setComposerDraftPrompt(draftId, text);
+      promptRef.current = text;
+      setBacksterosKickoffMode(taskId, "advanced");
+      queueMicrotask(() => {
+        composerRef.current?.resetCursorState({ prompt: text, cursor: text.length });
+        composerRef.current?.focusAtEnd();
+      });
+    })();
   }, [
     activeBacksterosTaskId,
+    attachKickoffDescriptionImages,
     backsterosKickoffGate,
     composerRef,
     draftId,
@@ -8257,6 +8284,7 @@ export default function ChatView(props: ChatViewProps) {
                           : "relative z-10"
                       }
                       aria-hidden={hideComposerForBacksterosKickoff || undefined}
+                      inert={hideComposerForBacksterosKickoff || undefined}
                     >
                       <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
                         <ComposerSurface.Host>

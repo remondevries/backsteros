@@ -134,7 +134,6 @@ export function ProjectPanelDetailView({
   organizationNavigateHref = null,
   onCreateOrganizationFromQuery,
   section: controlledSection,
-  onSectionChange,
   initialSection = "overview",
   renderSection,
   propertiesExtra,
@@ -142,15 +141,8 @@ export function ProjectPanelDetailView({
   showHeader = false,
 }: ProjectPanelDetailViewProps) {
   const renderHeader = showHeader;
-  const [uncontrolledSection, setUncontrolledSection] =
-    useState<ProjectSectionId>(initialSection);
+  const [uncontrolledSection] = useState<ProjectSectionId>(initialSection);
   const section = controlledSection ?? uncontrolledSection;
-  const setSection = (next: ProjectSectionId) => {
-    onSectionChange?.(next);
-    if (controlledSection === undefined) {
-      setUncontrolledSection(next);
-    }
-  };
 
   const [name, setName] = useState(project.name);
   const [nameSource, setNameSource] = useState(project.name);

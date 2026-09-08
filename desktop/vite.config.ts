@@ -133,7 +133,7 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    // Do not set COEP/COOP here — Clerk loads cross-origin scripts/iframes and
+    // Do not set COEP/COOP here — cross-origin workers/scripts and
     // `require-corp` breaks session tokens (PowerSync then gets 401).
     hmr: host
       ? {

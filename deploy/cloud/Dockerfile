@@ -6,6 +6,7 @@ RUN apk add --no-cache git
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY patches ./patches
 COPY core/packages/contracts ./core/packages/contracts
 COPY core/server ./core/server
 

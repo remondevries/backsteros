@@ -35,37 +35,27 @@ test("isGithubServerTokenConfigured reflects env", () => {
   else delete process.env.GITHUB_API_TOKEN;
 });
 
-test("selectGithubAccessToken prefers workspace PAT over env and Clerk", () => {
+test("selectGithubAccessToken prefers workspace PAT over env", () => {
   assert.equal(
     selectGithubAccessToken({
       workspaceToken: "ghp_workspace",
       envToken: "ghp_env",
-      clerkOauthToken: "gho_clerk",
     }),
     "ghp_workspace",
   );
 });
 
-test("selectGithubAccessToken prefers env PAT over Clerk OAuth", () => {
+test("selectGithubAccessToken uses env PAT when workspace unset", () => {
   assert.equal(
     selectGithubAccessToken({
       workspaceToken: null,
       envToken: "ghp_env",
-      clerkOauthToken: "gho_clerk",
     }),
     "ghp_env",
   );
 });
 
-test("selectGithubAccessToken uses Clerk OAuth only when no PAT is set", () => {
-  assert.equal(
-    selectGithubAccessToken({
-      workspaceToken: null,
-      envToken: null,
-      clerkOauthToken: "gho_clerk",
-    }),
-    "gho_clerk",
-  );
+test("selectGithubAccessToken returns null when no PAT is set", () => {
   assert.equal(
     selectGithubAccessToken({
       workspaceToken: null,

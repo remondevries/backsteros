@@ -20,10 +20,10 @@ import { isAgentHoldCommentBody } from "../../tasks/agent-hold-comment.js";
 import { shouldHandleGlobalShortcut } from "../../shortcuts/shortcut-guards.js";
 import {
   agentWorkTotals,
+  coalescePropertyActivities,
   formatActivityDurationMs,
   formatActivityTokenCount,
   groupConsecutiveAgentWorked,
-  type GroupedActivity,
 } from "../../tasks/task-activity-format.js";
 import {
   formatTaskDueMetaLabel,
@@ -139,13 +139,6 @@ function statusLabel(value: unknown): string {
 function asTaskStatus(value: unknown): TaskStatus | null {
   if (typeof value !== "string" || !value.trim()) return null;
   return isTaskStatus(value) ? value : migrateLegacyTaskStatus(value);
-}
-
-function asNonNegativeInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return Math.round(value);
-  }
-  return null;
 }
 
 function asOptionalString(value: unknown): string | null {
@@ -449,84 +442,6 @@ function ActivityLeadingIcon({
       <EntityAvatarIcon src={actorAvatarSrc} size={12} kind="contact" />
     </span>
   );
-}
-
-const COALESCEABLE_ACTIVITY_TYPES = new Set<TaskActivity["type"]>([
-  "status_changed",
-  "assignee_changed",
-  "related_contacts_changed",
-  "related_organizations_changed",
-  "priority_changed",
-  "due_date_changed",
-  "project_changed",
-]);
-
-/** Match API coalesce window — collapse rapid property edits in the feed. */
-const ACTIVITY_COALESCE_WINDOW_MS = 30_000;
-
-function coalescePropertyActivities(
-  activities: TaskActivity[],
-): GroupedActivity[] {
-  const out: GroupedActivity[] = [];
-  for (const activity of activities) {
-    const prev = out[out.length - 1];
-    const prevAt = prev ? new Date(prev.at).getTime() : NaN;
-    const nextAt = new Date(activity.createdAt).getTime();
-    const withinWindow =
-      Number.isFinite(prevAt) &&
-      Number.isFinite(nextAt) &&
-      nextAt - prevAt <= ACTIVITY_COALESCE_WINDOW_MS;
-
-    if (
-      prev &&
-      withinWindow &&
-      COALESCEABLE_ACTIVITY_TYPES.has(activity.type) &&
-      prev.activity.type === activity.type &&
-      prev.activity.actorUserId === activity.actorUserId
-    ) {
-      const from =
-        "from" in prev.activity.data
-          ? prev.activity.data.from
-          : activity.data.from;
-      const fromName =
-        "fromName" in prev.activity.data
-          ? prev.activity.data.fromName
-          : activity.data.fromName;
-      const mergedData: Record<string, unknown> = {
-        ...activity.data,
-        from,
-        ...(fromName !== undefined ? { fromName } : {}),
-      };
-      // Reverted to the original value — drop the group.
-      if (mergedData.from === mergedData.to) {
-        out.pop();
-        continue;
-      }
-      prev.activity = {
-        ...activity,
-        data: mergedData,
-      };
-      prev.at = activity.createdAt;
-      continue;
-    }
-
-    // Identical repeats (legacy status spam) still collapse.
-    if (
-      prev &&
-      activity.type === "status_changed" &&
-      prev.activity.type === "status_changed" &&
-      prev.activity.actorUserId === activity.actorUserId &&
-      prev.activity.data.from === activity.data.from &&
-      prev.activity.data.to === activity.data.to
-    ) {
-      prev.count += 1;
-      prev.at = activity.createdAt;
-      continue;
-    }
-
-    out.push({ activity, count: 1, at: activity.createdAt });
-  }
-  return out;
 }
 
 type ActivityTimelineItem = {
@@ -1746,7 +1661,6 @@ export function TaskActivityPanel({
           const replyDraft = replyDrafts[comment.id] ?? "";
           const replyPending = postingReplyTo === comment.id;
           const isEditing = editingCommentId === comment.id;
-          const isSaving = savingCommentId === comment.id;
           const isResolved = comment.resolvedAt != null;
           const isResolvedCollapsed =
             isResolved && !expandedResolvedIds[comment.id] && !isEditing;

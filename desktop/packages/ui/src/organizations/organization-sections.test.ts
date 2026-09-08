@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   resolveVisibleOrganizationSections,
-} from "../../dist/organizations/organization-sections.js";
+} from "./organization-sections.js";
 
 describe("resolveVisibleOrganizationSections", () => {
   it("hides finance tabs by default", () => {

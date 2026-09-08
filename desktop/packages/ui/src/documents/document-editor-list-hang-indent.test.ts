@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { listHangIndentColumns } from "../../dist/documents/document-editor-list-hang-indent.js";
+import { listHangIndentColumns } from "./document-editor-list-hang-indent.js";
 
 test("listHangIndentColumns measures unordered markers", () => {
   assert.equal(listHangIndentColumns("- item"), 2);

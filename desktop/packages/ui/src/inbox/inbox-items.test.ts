@@ -8,6 +8,7 @@ import {
   getInboxAttentionGroupKey,
   getInboxAttentionKeyboardItemIds,
   getInboxHrefAfterRemovingItem,
+  getInboxItemDisplayId,
   getInboxItemHref,
   groupInboxItemsByAttentionStatus,
   isAgentInboxPending,
@@ -41,7 +42,7 @@ function task(input: {
   });
 }
 
-test("taskBelongsInInbox includes triage, hold, review, overdue; skips future-due hold/review", () => {
+test("taskBelongsInInbox includes triage, hold, review, overdue; skips today-or-later due", () => {
   assert.equal(
     taskBelongsInInbox({ inbox: true, status: "triage" }, wednesday),
     true,
@@ -63,7 +64,7 @@ test("taskBelongsInInbox includes triage, hold, review, overdue; skips future-du
       },
       wednesday,
     ),
-    true,
+    false,
   );
   assert.equal(
     taskBelongsInInbox(
@@ -146,6 +147,115 @@ test("taskBelongsInInbox includes pending agent-created tasks", () => {
       agentCreatedAt: Date.now(),
       agentInboxApprovedAt: Date.now(),
     }),
+    false,
+  );
+});
+
+test("taskBelongsInInbox excludes habit-linked day instances", () => {
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "ready_to_start",
+        dueDate: new Date(2026, 6, 10).getTime(),
+        habitId: "habit-run",
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: true,
+        status: "triage",
+        habitId: "habit-run",
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "on_hold",
+        habitId: "  ",
+      },
+      wednesday,
+    ),
+    true,
+  );
+});
+
+test("taskBelongsInInbox excludes tasks due today or later", () => {
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: true,
+        status: "triage",
+        dueDate: new Date(2026, 6, 16).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: true,
+        status: "triage",
+        dueDate: new Date(2026, 6, 15).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: true,
+        status: "triage",
+        dueDate: new Date(2026, 6, 14).getTime(),
+      },
+      wednesday,
+    ),
+    true,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "on_hold",
+        dueDate: new Date(2026, 6, 15).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "ready_to_start",
+        agentCreatedAt: Date.now(),
+        agentInboxApprovedAt: null,
+        dueDate: new Date(2026, 6, 20).getTime(),
+      },
+      wednesday,
+    ),
+    false,
+  );
+  assert.equal(
+    taskBelongsInInbox(
+      {
+        inbox: false,
+        status: "in_progress",
+        inboxUpdatedAt: Date.now(),
+        dueDate: new Date(2026, 6, 20).getTime(),
+      },
+      wednesday,
+    ),
     false,
   );
 });
@@ -344,11 +454,21 @@ test("email inbox items group by status and link to email routes", () => {
   assert.equal(groups[1]?.status, "in_progress");
 });
 
-test("emailBelongsInInbox keeps untriaged mail visible; applies task rules otherwise", () => {
+test("emailBelongsInInbox keeps undated untriaged mail; excludes today-or-later due", () => {
   const past = new Date(2026, 6, 10).getTime();
+  const today = new Date(2026, 6, 15).getTime();
+  const tomorrow = new Date(2026, 6, 16).getTime();
   const future = new Date(2026, 6, 20).getTime();
   assert.equal(emailBelongsInInbox({ status: null }, wednesday), true);
   assert.equal(emailBelongsInInbox({ status: "triage" }, wednesday), true);
+  assert.equal(
+    emailBelongsInInbox({ status: "triage", dueDate: today }, wednesday),
+    false,
+  );
+  assert.equal(
+    emailBelongsInInbox({ status: "triage", dueDate: tomorrow }, wednesday),
+    false,
+  );
   assert.equal(
     emailBelongsInInbox({ status: "in_progress" }, wednesday),
     true,
@@ -392,4 +512,26 @@ test("untriaged email with past due groups in Overdue like tasks", () => {
     updatedAt: 10,
   });
   assert.equal(getInboxAttentionGroupKey(email, wednesday), "overdue");
+});
+
+test("getInboxItemDisplayId uses project key once numbered", () => {
+  const item = buildInboxTaskListItem({
+    id: "t1",
+    title: "Hello",
+    number: 53,
+    status: "triage",
+    projectKey: "BOD",
+  });
+  assert.equal(getInboxItemDisplayId(item), "BOD-53");
+});
+
+test("getInboxItemDisplayId omits fake zero numbers pending server assign", () => {
+  const item = buildInboxTaskListItem({
+    id: "t1",
+    title: "Hello",
+    number: 0,
+    status: "triage",
+    projectKey: "BOD",
+  });
+  assert.equal(getInboxItemDisplayId(item), "BOD");
 });

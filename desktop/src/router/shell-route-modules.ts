@@ -1,19 +1,31 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 
-type ScreenModule = Record<string, ComponentType<any>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous component map; `LazyExoticComponent` is invariant in props
+type ScreenModule<K extends string> = Record<K, ComponentType<any>>;
 
-export type ShellLazyPage = {
-  load: () => Promise<{ default: ComponentType<object> }>;
-  Page: LazyExoticComponent<ComponentType<object>>;
+type ScreenProps<M, K extends keyof M> = M[K] extends ComponentType<infer P>
+  ? P
+  : never;
+
+/**
+ * `P` defaults to `any` so heterogeneous pages can be stored in one collection
+ * (e.g. surface → page maps); call sites get the exact props via inference.
+ * `never` does not work here because `LazyExoticComponent` is invariant.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
+export type ShellLazyPage<P = any> = {
+  load: () => Promise<{ default: ComponentType<P> }>;
+  Page: LazyExoticComponent<ComponentType<P>>;
   isReady: () => boolean;
   subscribeReady: (listener: () => void) => () => void;
 };
 
-function createSharedLazyPage<K extends string>(
-  importFn: () => Promise<ScreenModule>,
+function createSharedLazyPage<M extends ScreenModule<K>, K extends string>(
+  importFn: () => Promise<M>,
   exportName: K,
-): ShellLazyPage {
-  let modulePromise: Promise<{ default: ComponentType<object> }> | null = null;
+): ShellLazyPage<ScreenProps<M, K>> {
+  type Props = ScreenProps<M, K>;
+  let modulePromise: Promise<{ default: ComponentType<Props> }> | null = null;
   let ready = false;
   const readyListeners = new Set<() => void>();
   const load = () => {
@@ -21,7 +33,7 @@ function createSharedLazyPage<K extends string>(
       ready = true;
       for (const listener of readyListeners) listener();
       return {
-        default: module[exportName] as ComponentType<object>,
+        default: module[exportName] as ComponentType<Props>,
       };
     });
     return modulePromise;
