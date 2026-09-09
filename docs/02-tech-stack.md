@@ -8,7 +8,7 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 | --- | --- | --- |
 | Mobile | **Expo (SDK 57) + Expo Router** | Flutter + PowerSync |
 | Desktop client | **Tauri 2 + Vite + React** (ADR-019) | Electron; Next sidecar |
-| Product web UI | **Next.js 16 + React 19 + Tailwind CSS 4** | Vite + React |
+| Product UI (active) | **Tauri desktop + Expo mobile** | Next.js web (retired → `~/code/archive/backsteros-legacy/`) |
 | Markdown editor | **CodeMirror 6** | — |
 | Server metadata DB | **PostgreSQL 17** | — |
 | Blob storage | **Backblaze B2** or **Cloudflare R2** | DO Spaces |
@@ -24,20 +24,17 @@ Greenfield choices — not constrained by Circle’s current stack. See [10-deci
 - PowerSync official React Native SDK
 - Avoid: Tauri iOS, WebView-wrapped Next.js
 
-## Product web — Next.js
+## Product web — Next.js (retired)
 
-- Standalone server deployment at `backsteros.com/app`
-- Production `basePath: /app` (`NEXT_PUBLIC_BASE_PATH`); local `next dev` may omit it
-- Clerk Next.js middleware and sign-in
-- Server components only for web concerns; all business rules remain in the API
+v1 shipped Next.js at `backsteros.com/app` / `/admin`. Those hosts return **410 Gone**.
+Frozen code: `~/code/archive/backsteros-legacy/` (`backsteros-app/`, `backsteros-admin/`). Do not extend.
 
 ## Desktop — Tauri 2 + Vite/React
 
-- Folder: `backsteros-desktop/` (see ADR-019)
-- Tauri 2 loads a **Vite + React** SPA — remote `backsteros-api` only
-- **Does not** package or run the Next.js web build / Node sidecar
-- Product UI should stay **near-identical** to `backsteros-app`; share packages /
-  ports rather than inventing a second design language
+- Folder: `desktop/` (see ADR-019)
+- Tauri 2 loads a **Vite + React** SPA against **local-core** (`127.0.0.1:8788`)
+- **Does not** package or run a Next.js build / Node sidecar
+- Share non-UI packages with mobile; no shared visual UI
 - **Separate from Expo** (`backsteros-mobile`) — different framework, shared API
 - PowerSync web SDK; Clerk SPA auth; M1-friendly memory target
 

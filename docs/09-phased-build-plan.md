@@ -74,7 +74,8 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 **Depends on:** Phase 1 API + Phase 3 sync metrics to display.
 
-**Exit criteria:** Owner sees sync cursor and API health at `backsteros.com/admin`.
+**Exit criteria (v1):** Owner sees sync cursor and API health in admin UI.
+**v2 note:** Cloud `/admin` is retired (410). Ops health is local-core / Hub / desktop.
 
 ---
 
@@ -94,11 +95,10 @@ Do not skip phases without explicit user approval. Each phase should be demoable
 
 ## Phase 5 — Product app (web + Tauri)
 
-**Folders:** `backsteros-app/` (Next.js web — largely in progress), `backsteros-desktop/` (Tauri)
+**Folders (historical):** Next product web → `~/code/archive/backsteros-legacy/`; active UI is `desktop/` (Tauri).
 
-Web product stack is **Next.js** at `backsteros.com/app` (ADR-018), not Vite.
-Desktop is a **separate** Tauri 2 + Vite/React client (ADR-019) whose UI should
-match the web app closely — not a Next sidecar and not Expo.
+**v2:** Next.js at `backsteros.com/app` is **retired** (410 Gone, ADR-020). Desktop
+is the product shell (ADR-019) — not a Next sidecar and not Expo.
 
 | Task | Output |
 | --- | --- |

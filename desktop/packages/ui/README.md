@@ -6,7 +6,8 @@ v2 does **not** share visual components with Expo mobile. This package lives und
 `desktop/packages/ui/` so the desktop shell can keep iterating without a
 cross-platform UI monorepo.
 
-Legacy Next apps that once imported this package are frozen under `legacy/`.
+Legacy Next apps that once imported this package are archived at
+`~/code/archive/backsteros-legacy/` (outside this workspace).
 
 ## Styling (Tailwind)
 

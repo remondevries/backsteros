@@ -13,11 +13,12 @@ backsteros/
 ├── hub/            macOS menu-bar start/stop for local services
 ├── mobile/         Expo (iPhone + iPad)
 ├── desktop/        Tauri 2 + Vite/React (macOS)
+├── agents/         Public HTTPS door (agent.backsteros.com)
 ├── development/    T3 Code agent console (nested monorepo; own lockfile)
-├── tooling/development/  shim for `pnpm --filter @backsteros/development …`
-└── legacy/         v1 snapshot (reference only)
+└── tooling/development/  shim for `pnpm --filter @backsteros/development …`
 ```
 
+v1 Next apps are archived at `~/code/archive/backsteros-legacy/` (not in this workspace).
 [STRUCTURE.md](STRUCTURE.md) · [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md)
 
 ## Quick start

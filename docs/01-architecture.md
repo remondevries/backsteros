@@ -51,23 +51,23 @@ All paths write to the same Postgres rows and object storage keys.
 
 ## Repository layout
 
-Single workspace: **`~/code/backsteros/`**
+Single workspace: **`~/code/backsteros/`** (see [STRUCTURE.md](../STRUCTURE.md))
 
 ```text
 backsteros/
-├── docs/                      ← specs (this documentation)
-├── backsteros-api/            ← backend service
-├── backsteros-app/            ← Next.js product UI (backsteros.com/app)
-├── backsteros-admin/          ← ops dashboard (admin.backsteros.com)
-├── backsteros-mobile/         ← Expo
-├── backsteros-desktop/        ← Tauri 2 + Vite/React (UI ≈ web; ADR-019)
-└── backsteros-packages/
-    ├── api-client/            ← OpenAPI-generated client
-    └── contracts/             ← Zod schemas
+├── docs/                 ← specs
+├── core/
+│   ├── server/           ← Hono API (local-core + same image as cloud-core)
+│   └── packages/         ← contracts, api-client, powersync-schema, cli
+├── desktop/              ← Tauri 2 + Vite/React
+├── mobile/               ← Expo
+├── hub/                  ← macOS menu-bar service control
+└── agents/               ← public HTTPS door (agent.backsteros.com)
 ```
 
-The product web app (Next.js) is separate from the API and from native clients.
-Desktop mirrors the web product UX in a Vite SPA; it does not run the Next build.
+There is **no** public product web at `backsteros.com/app` anymore (410 Gone).
+Day-to-day UI is desktop + mobile against local-core. v1 Next code is archived at
+`~/code/archive/backsteros-legacy/`.
 
 ## What does NOT live in clients
 

@@ -1,11 +1,13 @@
 # cloud-core — Phase A (meeting booking)
 
 Runs `core/server` + Postgres on the **backsteros** server (`100.117.142.79` Tailscale,
-`161.35.86.25` public) alongside the client portal and Appwrite.
-Portal containers reach the API at `http://127.0.0.1:8788` on the same host.
+`161.35.86.25` public) alongside the client portal and agents door.
+Portal containers reach the API at `http://backsteros:8788` on the Docker network
+(or `http://127.0.0.1:8788` from the host).
 
 > **Legacy:** cloud-core was first deployed on the Kamal VPS (`209.38.44.246`). Consolidated
 > to backsteros in Aug 2026 — see [../backsteros-server/README.md](../backsteros-server/README.md).
+> Public product hosts (`backsteros.com/app`, `service.`, `sync.`) are 410 Gone (2026-09).
 
 ## Prerequisites
 

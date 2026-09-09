@@ -2,7 +2,7 @@
 # Workspace: ~/code/backsteros/
 # For AI agents: load AGENTS.md first, then fetch only the docs relevant to your task.
 
-> Code: core/, mobile/, desktop/, legacy/
+> Code: core/, mobile/, desktop/, hub/, agents/
 
 ## Entry points
 
@@ -20,8 +20,8 @@
 - [docs/16-linear-shaped-sync.md](16-linear-shaped-sync.md): Target Linear-style sync — cloud leader, desktop as cache, kill dual-hydrate
 - [docs/14-client-logic-inventory.md](14-client-logic-inventory.md): Mobile ↔ desktop pure-logic mirrors (contracts extraction backlog)
 - [docs/15-tauri-ipc-profiling.md](15-tauri-ipc-profiling.md): Desktop invoke/event inventory, batching gate, system-stats watch
-- [docs/05-clients.md](05-clients.md): Clients (v1-oriented; see also 12)
-- [docs/11-urls-and-routing.md](11-urls-and-routing.md): /app vs /admin, reverse proxy
+- [docs/05-clients.md](05-clients.md): Desktop, mobile, agents door, portal
+- [docs/11-urls-and-routing.md](11-urls-and-routing.md): Local-core, agent.backsteros.com, retired 410 hosts
 - [docs/06-storage-and-search.md](06-storage-and-search.md): B2/R2, Meilisearch, PDF/markdown layout
 - [docs/07-performance.md](07-performance.md): iPhone 16, M1 MacBook, lightweight rules
 - [docs/08-legacy-circle.md](08-legacy-circle.md): Circle monolith reference, migration notes
@@ -44,7 +44,7 @@
 
 ## Conventions
 
-- Do not develop in `legacy/`
+- Do not revive archived v1 Next apps (`~/code/archive/backsteros-legacy/`)
 - Never bulk-sync Tier C/D content to clients
 - Business logic in `core/server/` only
 - No shared visual UI between mobile and desktop

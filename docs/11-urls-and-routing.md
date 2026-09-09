@@ -16,15 +16,36 @@
 | `http://100.117.142.79:8788` | Cloud-core on Tailscale (same data twin) |
 
 Always-on agents must use `https://agent.backsteros.com` (or VPS Tailscale
-`:8788`). Do **not** point them at the Mac (`100.94.74.107` / MagicDNS) — that
-dies when the laptop sleeps. Same `sk_live_…` keys work on cloud (replicated).
-Desktop / PTY stay on local-core `127.0.0.1:8788`.
+`:8788`). Do **not** point them at the Mac — that dies when the laptop sleeps.
+Same `sk_live_…` keys work on cloud (replicated). Desktop / PTY stay on
+local-core `127.0.0.1:8788`.
 
 On the VPS, `backsteros-agents` must set `CORE_UPSTREAM_URL=http://127.0.0.1:8788`
 (cloud-core loopback), **not** the Mac Tailscale URL.
 
-Cloud product hosts (`backsteros.com/app`, `service.backsteros.com`) belonged to
-v1 / early hosting experiments and are **not** part of active v2.
+## Other live hosts on the backsteros VPS
+
+| URL | Purpose | In this repo? |
+| --- | --- | --- |
+| `https://automation.backsteros.com` | n8n | No |
+| `https://client.lemo-design.com` | Client portal | No (separate repo) |
+
+## Retired public hosts (410 Gone)
+
+Cleaned up 2026-09-09. nginx keeps TLS certs and returns **410** so old bookmarks
+fail clearly instead of 502:
+
+| Host | Was |
+| --- | --- |
+| `https://backsteros.com` (+ `/app`, `/admin`) | Kamal Next product + admin |
+| `https://app.backsteros.com` | Old product subdomain |
+| `https://service.backsteros.com` | Cloud Kamal API |
+| `https://sync.backsteros.com` | Cloud PowerSync |
+
+`api.backsteros.com` DNS may still exist at Cloudflare but is **not** served from
+this VPS. Do not revive cloud product/API hosts without an explicit ADR.
+
+v1 Next apps were moved to `~/code/archive/backsteros-legacy/` (2026-09-09) — not part of this workspace.
 
 ## Why separate shell codebases
 
@@ -35,21 +56,6 @@ v1 / early hosting experiments and are **not** part of active v2.
 | **Offline** | Required | Required |
 | **Share** | Contracts / api-client / schema only — **no** shared visual UI |
 
-## Historical note (v1 Next.js paths)
-
-Earlier docs described `backsteros.com/app` and `backsteros.com/admin` Next.js
-apps. Those live under `legacy/` for reference only — do not extend them.
-
-## Cross-linking
-
-Both apps may share:
-
-- Same Clerk identity (host/session configuration permitting)
-- Header link: App → `backsteros.com/admin` (owner only); Admin → `backsteros.com/app`
-- Design tokens optional in `backsteros-packages/` — not a shared component library requirement
-
-Do **not** merge into one SPA with heavy route guards — keeps bundles small and AI agent context clear.
-
 ## Deployment (v2)
 
 ```text
@@ -57,44 +63,12 @@ local computer
   core/server     → http://127.0.0.1:8788
   PowerSync       → http://127.0.0.1:8080  (Docker)
   desktop/ / mobile/ → shells against local core (+ Tailscale when needed)
+
+VPS (backsteros.com host)
+  cloud-core      → :8788 (Docker; Tailscale peer for replication)
+  agents door     → https://agent.backsteros.com → :3080 → cloud-core
+  portal / n8n    → separate stacks on same box
 ```
-
-Cloud Kamal / nginx / Neon deployments are retired.
-
-## Desktop and mobile
-
-| Surface | Maps to |
-| --- | --- |
-| **Desktop** (`backsteros-desktop`) | Tauri 2 + Vite/React SPA (ADR-019); near-identical product UX to web; **not** the Next.js build |
-| **Expo** (`backsteros-mobile`) | Native product UI — same API/sync, **not** the desktop framework, not admin |
-| **Browser** | `backsteros.com/app` and `backsteros.com/admin` |
-
-Desktop routing uses **TanStack Router** (`@tanstack/react-router`). Typed search params cover tasks (`due` / `view`) and calendar page mode. Product URLs are unchanged from this doc; only the router implementation moved off `react-router-dom`.
-
-**Shared logic (not shared UI):** Pure helpers shared by desktop and mobile live under `@backsteros/contracts` (e.g. `client-logic/task-due-date.ts`). Inventory and extraction backlog: [`docs/14-client-logic-inventory.md`](14-client-logic-inventory.md). Do not share React components or CSS between `mobile/` and `desktop/`.
-
-Optional: Tauri could open `/admin` (or the web app) in the system browser for
-ops — not embedded in the product shell v1.
-
-## Admin dashboard contents (planned)
-
-Not task CRUD. Examples:
-
-- API health, version, uptime
-- Sync: cursor lag, failed pushes, devices online
-- PowerSync / Postgres connection status
-- Recent API errors (from structured logs)
-- Storage: bucket size, object count
-- Meilisearch index stats
-- API keys management (may duplicate Settings in app later — admin is source for ops)
-- Link to OpenAPI `/docs` on API host
-
-## Product app contents (`backsteros.com/app`)
-
-- Inbox, tasks, projects, journal, knowledge, letters
-- Markdown editing (CodeMirror), PDF viewing
-- PowerSync offline
-- User settings (vault path N/A on cloud; sync preferences)
 
 ## Desktop Finance routes (v2)
 
@@ -105,16 +79,12 @@ Not task CRUD. Examples:
 | `/finance/:accountSlug/transactions` | Same (default section) |
 | `/finance/:accountSlug/imports` | Recent CSV import batches |
 
-No content side panel on Finance — switch/create accounts from the in-page dropdown. Transactions load via REST (`GET /api/v1/bank-accounts/:id/transactions`); bank accounts/categories may also appear via PowerSync Tier A.
+No content side panel on Finance — switch/create accounts from the in-page dropdown.
+Transactions load via REST (`GET /api/v1/bank-accounts/:id/transactions`); bank
+accounts/categories may also appear via PowerSync Tier A.
 
-## Auth
+## Auth (shells)
 
-- Same identity provider for `/app` and `/admin`
-- Clerk allowed origins use the **apex** (`https://backsteros.com`); paths are under `/app`
-- **Admin routes:** restrict to owner role (or allowlist) in API + admin SPA
-- API keys created in admin may be listed there; agents use keys outside browser
-
-## CORS
-
-Browser `Origin` for the product UI is `https://backsteros.com` (origins omit the
-path). API `CORS_ORIGINS` must include that apex origin (and local dev origins).
+- Desktop / mobile: Clerk against local-core as configured in each shell
+- API agents: `Authorization: Bearer sk_live_…` on cloud-core via the agents door
+- Portal: its own session; server-side calls use a scoped API key to cloud-core

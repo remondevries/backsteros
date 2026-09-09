@@ -264,10 +264,11 @@ fork of the Next deployment pipeline.
 - **Shells:** `mobile/` (Expo, iPhone + iPad adaptive) and `desktop/` (Tauri + React)
 - **Shared packages** under `core/packages/` (contracts, api-client, powersync-schema only)
 - **No shared UI** between mobile and desktop; desktop-owned UI may live under `desktop/packages/ui/`
-- **Archive** v1 apps into `legacy/` (Next app/admin/development, sync-demo) — reference only
+- **Archive** v1 apps out of the active tree (Next app/admin/development, sync-demo) — reference only  
+  *(moved to `~/code/archive/backsteros-legacy/`, 2026-09-09)*
 - **Naming:** use “local computer” in docs — not a specific hardware model
 
-**Consequences:** Cleaner root (`core`, `mobile`, `desktop`, `legacy`). Client hosting portals / Next product web are out of active v2 scope. Package `@backsteros/api` renamed to `@backsteros/server`.
+**Consequences:** Cleaner root (`core`, `mobile`, `desktop`, `agents`). Client hosting portals / Next product web are out of active v2 scope. Package `@backsteros/api` renamed to `@backsteros/server`.
 
 ---
 

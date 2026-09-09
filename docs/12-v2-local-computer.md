@@ -40,7 +40,7 @@ See [STRUCTURE.md](../STRUCTURE.md). Shared non-UI packages live under `core/pac
 - Hetzner / Sevalla-style client hosting dashboard
 - Next.js product web as a BacksterOS shell
 - Shared visual component library across Expo and Tauri
-- Developing inside `legacy/`
+- Developing / reviving archived v1 Next apps (`~/code/archive/backsteros-legacy/`)
 - Agent terminals on **public** internet hosts (PTY stays on the local computer)
 - Storing PTY process ids in core — only the Cursor `agentChatId` is synced on the task
 

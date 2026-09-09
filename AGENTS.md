@@ -13,10 +13,11 @@ Read this file first when working in **`~/code/backsteros/`**. Specs live at the
 ├── hub/                  ← macOS menu-bar local service start/stop
 ├── mobile/               ← Expo (iPhone + iPad)
 ├── desktop/              ← Tauri 2 + Vite/React
-└── legacy/               ← v1 snapshot (reference only)
+└── agents/               ← public HTTPS door (agent.backsteros.com)
 ```
 
 See [STRUCTURE.md](STRUCTURE.md) and [docs/12-v2-local-computer.md](docs/12-v2-local-computer.md).
+v1 Next apps live outside this repo at `~/code/archive/backsteros-legacy/`.
 
 ## Quick context
 
@@ -31,7 +32,8 @@ BacksterOS is a personal / company ops system:
   nudge + workspace SSE (see `docs/13-hybrid-cloud-local-core.md`,
   `docs/04-api-and-sync.md` live documents)
 
-Public Next.js product/admin and hosting portals are **out of scope** for active v2 work (see `legacy/`).
+Public Next.js product/admin and hosting portals are **out of scope** for active v2 work
+(archived at `~/code/archive/backsteros-legacy/`).
 
 ## Documentation map
 
@@ -53,7 +55,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 2. **One source of truth** — Postgres (metadata) + object/file storage (blobs). Not two parallel sync systems.
 3. **Business logic lives in `core/server/`** — not in shell apps or `docs/`.
 4. **All writes pipeline** — storage → version bump → sync event → realtime push to open editors.
-5. **Do not develop in `legacy/`** — copy into v2 paths when porting.
+5. **Do not revive** archived v1 Next apps (`~/code/archive/backsteros-legacy/`) — port into v2 paths if needed.
 6. **No shared visual UI** between `mobile/` and `desktop/` — share contracts/api-client/schema only.
 7. **Do not extend** `circle.remondevries.com` for new platform features.
 
@@ -68,7 +70,7 @@ Use [docs/llms.txt](docs/llms.txt) for the full index. Load **only** the files r
 | `core/packages/powersync-schema/` | Shared PowerSync Tier A/B client schema |
 | `mobile/` | Expo — Clerk + PowerSync |
 | `desktop/` | Tauri 2 + Vite/React; desktop-owned UI under `desktop/packages/ui/` |
-| `legacy/` | v1 Next apps, admin, development console, sync-demo |
+| `agents/` | Public HTTPS door for always-on API agents |
 
 ## Phase gate
 

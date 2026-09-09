@@ -1,21 +1,27 @@
 # backsteros server — consolidated hosting
 
 Single always-on Linux host on your Tailscale tailnet (`backsteros`, `100.117.142.79`,
-public `161.35.86.25`). Runs Appwrite, PowerSync, **cloud-core**, and the **client portal**.
+public `161.35.86.25`). Runs **cloud-core**, the **agents door**, the **client portal**,
+and **n8n**. (Appwrite and cloud PowerSync were removed.)
 
 ## Services
 
-| Service | Host port | Notes |
+| Service | Host / port | Notes |
 | --- | --- | --- |
-| cloud-core API | `8788` (all interfaces) | `/root/backsteros/deploy/cloud` — `docker compose` |
+| cloud-core API | `:8788` | `deploy/cloud` — Docker; Tailscale peer for replication |
 | cloud Postgres | `127.0.0.1:5434` | internal only |
-| client portal | `127.0.0.1:3010` | `/root/client-lemo-design-portal` |
+| agents door | `127.0.0.1:3080` | `backsteros-agents.service` → `https://agent.backsteros.com` |
+| client portal | `127.0.0.1:3010` | `client.lemo-design.com` |
+| n8n | `127.0.0.1:5678` | `automation.backsteros.com` (+ lemo/remon aliases) |
 
 **Portal → cloud-core:** `client-portal.env` must use `BACKSTEROS_API_URL=http://backsteros:8788`
 (not `127.0.0.1` — the portal container is isolated from host loopback). The portal compose file
 joins the `cloud_default` Docker network so the `backsteros` hostname resolves.
 
-| nginx | `80` / `443` | `client.lemo-design.com` → portal |
+| nginx | Hosts |
+| --- | --- |
+| Live | `agent.backsteros.com`, `automation.*`, `client.lemo-design.com` |
+| 410 Gone | `backsteros.com`, `app.`, `service.`, `sync.` (certs kept) |
 
 ## Replication (instant cloud ↔ Mac)
 
