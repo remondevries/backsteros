@@ -54,7 +54,6 @@ import {
   PlusIcon,
   SearchIcon,
   SettingsIcon,
-  SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
   XIcon,
@@ -221,7 +220,6 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Switch } from "./ui/switch";
 import {
   Combobox,
   ComboboxEmpty,
@@ -233,7 +231,7 @@ import {
   useComboboxFilter,
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
-import { SidebarChromeFooter, SidebarChromeHeader, SidebarBrand } from "./sidebar/SidebarChrome";
+import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -526,9 +524,9 @@ function SortablePinnedThreadRow(props: {
 }
 
 // Unsent work shares one look: the new-thread draft rows and thread rows
-// with unsent composer text both use this tint and pen so they read alike.
+// with unsent composer text both use this tint and amber dot so they read alike.
 const draftSurfaceClassName = "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]";
-const draftPenClassName = "size-3 shrink-0 text-amber-600 dark:text-amber-300/80";
+const draftDotClassName = "size-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400";
 
 // One unsent draft session the user has invested content in. Two lines,
 // nothing else: project name, then the typed prompt. All the draft's
@@ -602,7 +600,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
       >
         <div className="relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <SquarePenIcon aria-hidden className={draftPenClassName} />
+            <span aria-hidden className={draftDotClassName} />
             <ProjectFavicon
               environmentId={session.environmentId}
               cwd={props.projectCwd ?? ""}
@@ -1313,7 +1311,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       <TerminalIcon className={cn("size-3.5", terminalStatus.pulse && "animate-status-pulse")} />
     </span>
   ) : null;
-  // Same pen the new-thread draft rows lead with, so both kinds of unsent
+  // Same amber dot the new-thread draft rows lead with, so both kinds of unsent
   // work read the same way in the list.
   const draftIndicator = hasUnsentDraft ? (
     <Tooltip>
@@ -1327,7 +1325,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           />
         }
       >
-        <SquarePenIcon aria-hidden className={draftPenClassName} />
+        <span aria-hidden className={draftDotClassName} />
       </TooltipTrigger>
       <TooltipPopup side="top">Unsent draft</TooltipPopup>
     </Tooltip>
@@ -4159,24 +4157,50 @@ export default function Sidebar() {
     <>
       <SidebarChromeHeader
         isElectron={isElectron}
-        brand={
-          <div
-            className={cn(
-              "relative z-20 ml-[var(--workspace-titlebar-content-left)] flex items-center gap-2 pr-3 pointer-events-auto no-drag",
-              isElectron && "[-webkit-app-region:no-drag]",
-            )}
-          >
-            <Switch
-              size="sm"
-              checked={logModeEnabled}
-              onCheckedChange={(checked) => handleLogModeChange(Boolean(checked))}
-              aria-label={logModeEnabled ? "Log mode" : "Vibe mode"}
-              className="shrink-0 no-drag [-webkit-app-region:no-drag]"
-            />
-            <span className="whitespace-nowrap text-xs font-medium tracking-wide text-white/90">
-              {logModeEnabled ? "log mode" : "vibe mode"}
-            </span>
-          </div>
+        logModeEnabled={logModeEnabled}
+        onLogModeChange={handleLogModeChange}
+        brandAction={
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SidebarMenuButton
+                  size="icon"
+                  type="button"
+                  className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                  onClick={isBacksterosScope ? handleNewBacksterosTaskClick : handleNewThreadClick}
+                  disabled={isBacksterosScope ? false : projects.length === 0}
+                  aria-label={isBacksterosScope ? "New task" : "New thread"}
+                />
+              }
+            >
+              <BacksterosComposeIcon />
+              <span
+                className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
+                aria-hidden="true"
+              />
+            </TooltipTrigger>
+            <TooltipPopup side="right">
+              {isBacksterosScope ? (
+                "New task (C)"
+              ) : projectGroups.length > 1 ? (
+                <span className="flex flex-col gap-0.5">
+                  <span>
+                    {newThreadShortcutLabel
+                      ? `New thread (${newThreadShortcutLabel})`
+                      : "New thread"}
+                  </span>
+                  <span className="text-muted-foreground">
+                    New thread in current project: Shift+click
+                    {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
+                  </span>
+                </span>
+              ) : newThreadShortcutLabel ? (
+                `New thread (${newThreadShortcutLabel})`
+              ) : (
+                "New thread"
+              )}
+            </TooltipPopup>
+          </Tooltip>
         }
       />
       <SidebarContent
@@ -4185,7 +4209,6 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
-            <SidebarBrand tone="default" className="ml-0 ps-2" />
             {isBacksterosScope ? (
               <SegmentedPillToggle
                 value={backsterosRailMode}
@@ -4247,53 +4270,6 @@ export default function Sidebar() {
                     <XIcon className="size-3" />
                   </Button>
                 ) : null}
-              </div>
-              <div className="shrink-0">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={
-                          isBacksterosScope ? handleNewBacksterosTaskClick : handleNewThreadClick
-                        }
-                        disabled={isBacksterosScope ? false : projects.length === 0}
-                        aria-label={isBacksterosScope ? "New task" : "New thread"}
-                      />
-                    }
-                  >
-                    {isBacksterosScope ? <BacksterosComposeIcon /> : <SquarePenIcon />}
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">
-                    {isBacksterosScope ? (
-                      "New task (C)"
-                    ) : projectGroups.length > 1 ? (
-                      <span className="flex flex-col gap-0.5">
-                        <span>
-                          {newThreadShortcutLabel
-                            ? `New thread (${newThreadShortcutLabel})`
-                            : "New thread"}
-                        </span>
-                        <span className="text-muted-foreground">
-                          New thread in current project: Shift+click
-                          {newThreadInProjectShortcutLabel
-                            ? ` (${newThreadInProjectShortcutLabel})`
-                            : ""}
-                        </span>
-                      </span>
-                    ) : newThreadShortcutLabel ? (
-                      `New thread (${newThreadShortcutLabel})`
-                    ) : (
-                      "New thread"
-                    )}
-                  </TooltipPopup>
-                </Tooltip>
               </div>
             </div>
             {projectGroups.length > 0 && !isBacksterosScope ? (

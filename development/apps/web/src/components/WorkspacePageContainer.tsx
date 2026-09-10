@@ -10,6 +10,20 @@ const WIDTH_CLASS: Record<WorkspacePageWidth, string> = {
   expanded: "max-w-6xl",
 };
 
+/**
+ * Shared horizontal frame (max-width + gutters) for page chrome and body.
+ * Keep header / tabs / content on the same vertical edge.
+ */
+export function WorkspacePageFrame({
+  width = "readable",
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"div"> & { readonly width?: WorkspacePageWidth }) {
+  return (
+    <div className={cn("mx-auto w-full px-5 sm:px-6", WIDTH_CLASS[width], className)} {...props} />
+  );
+}
+
 /** Shared content frame for workspace pages. */
 export function WorkspacePageContainer({
   width = "readable",
@@ -17,12 +31,9 @@ export function WorkspacePageContainer({
   ...props
 }: ComponentPropsWithoutRef<"div"> & { readonly width?: WorkspacePageWidth }) {
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full flex-col gap-6 px-5 pt-6 pb-12 sm:px-6",
-        WIDTH_CLASS[width],
-        className,
-      )}
+    <WorkspacePageFrame
+      width={width}
+      className={cn("flex flex-col gap-6 pt-6 pb-12", className)}
       {...props}
     />
   );

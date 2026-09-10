@@ -14,6 +14,8 @@ import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import {
   otlpTracesProxyRouteLayer,
+  cursorPlanUsageRouteLayer,
+  cursorPrepaidUsageRouteLayer,
   backsterosApiProxyRouteLayer,
   assetRouteLayer,
   attachmentUploadRouteLayer,
@@ -22,6 +24,7 @@ import {
   browserApiCorsLayer,
   httpCompressionLayer,
 } from "./http.ts";
+import { hetznerRouteLayer } from "./hetzner/http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -541,6 +544,9 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
+    cursorPlanUsageRouteLayer,
+    cursorPrepaidUsageRouteLayer,
+    hetznerRouteLayer,
     backsterosApiProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,

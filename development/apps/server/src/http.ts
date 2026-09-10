@@ -38,6 +38,15 @@ import {
 } from "./assets/AttachmentUpload.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import { fetchCursorUsage } from "./cursorUsage.ts";
+import {
+  fetchCursorPrepaidEvents,
+  fetchCursorPrepaidSummary,
+  fetchCursorPrepaidUsage,
+  EVENTS_PAGE_SIZE,
+  isPrepaidRangeId,
+  type PrepaidRangeId,
+} from "./cursorPrepaidUsage.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
 import {
   annotateEnvironmentRequest,
@@ -52,7 +61,15 @@ const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const BACKSTEROS_API_PATH_PREFIX = "/backsteros-api";
 const DEFAULT_BACKSTEROS_API_URL = "http://127.0.0.1:8788";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
-const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
+const DESKTOP_RENDERER_ORIGINS = [
+  "t3code://app",
+  "t3code-dev://app",
+  // BacksterOS desktop (Vite / Tauri) reads /api/hetzner for Development side panel.
+  "http://localhost:1420",
+  "http://127.0.0.1:1420",
+  "tauri://localhost",
+  "http://tauri.localhost",
+];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
@@ -325,6 +342,87 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
   readonly cause: unknown;
   readonly bodyJson: OtlpTracer.TraceData;
 }> {}
+
+const CURSOR_PLAN_USAGE_PATH = "/api/cursor-plan-usage";
+const CURSOR_PREPAID_USAGE_PATH = "/api/cursor-prepaid-usage";
+
+/** Local Cursor subscription usage (Auto / API / Grok Bot) for the sidebar. */
+export const cursorPlanUsageRouteLayer = HttpRouter.add(
+  "GET",
+  CURSOR_PLAN_USAGE_PATH,
+  Effect.gen(function* () {
+    const usage = yield* Effect.tryPromise({
+      try: () => fetchCursorUsage(),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catch(() =>
+        Effect.succeed({
+          available: false,
+          autoPercentUsed: 0,
+          apiPercentUsed: 0,
+          totalPercentUsed: 0,
+          error: "Cursor credits unavailable",
+          sampledAt: Date.now(),
+        }),
+      ),
+    );
+    return HttpServerResponse.jsonUnsafe({ ok: usage.available, usage });
+  }),
+);
+
+/** Cursor prepaid / included token events for Usage → Prepaid.
+ *  `part=summary` → KPIs/chart only; `part=events` → one 50-row page;
+ *  omit → combined (parallel). Page flips should use `part=events`.
+ */
+export const cursorPrepaidUsageRouteLayer = HttpRouter.add(
+  "GET",
+  CURSOR_PREPAID_USAGE_PATH,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    const rangeParam = Option.isSome(url) ? url.value.searchParams.get("range")?.trim() : undefined;
+    const range: PrepaidRangeId = isPrepaidRangeId(rangeParam) ? rangeParam : "7d";
+    const pageRaw = Option.isSome(url) ? url.value.searchParams.get("page") : null;
+    const pageParsed = pageRaw ? Number(pageRaw) : 1;
+    const page = Number.isFinite(pageParsed) && pageParsed >= 1 ? Math.floor(pageParsed) : 1;
+    const bustCache = Option.isSome(url) && url.value.searchParams.get("refresh") === "1";
+    const partRaw = Option.isSome(url) ? url.value.searchParams.get("part")?.trim() : null;
+    const part = partRaw === "summary" || partRaw === "events" ? partRaw : "combined";
+
+    const usage = yield* Effect.tryPromise({
+      try: () => {
+        if (part === "summary") return fetchCursorPrepaidSummary(range, { bustCache });
+        if (part === "events") return fetchCursorPrepaidEvents(range, page);
+        return fetchCursorPrepaidUsage(range, page, { bustCache });
+      },
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catch(() =>
+        Effect.succeed({
+          available: false,
+          range,
+          startMs: Date.now(),
+          endMs: Date.now(),
+          totalTokens: 0,
+          includedTokens: 0,
+          onDemandTokens: 0,
+          models: [],
+          days: [],
+          cumulativeByDay: [],
+          events: [],
+          eventCount: 0,
+          page: 1,
+          pageSize: EVENTS_PAGE_SIZE,
+          pageCount: 1,
+          truncated: false,
+          error: "Cursor prepaid usage unavailable",
+          sampledAt: Date.now(),
+        }),
+      ),
+    );
+    return HttpServerResponse.jsonUnsafe({ ok: usage.available, usage });
+  }),
+);
 
 export const otlpTracesProxyRouteLayer = HttpRouter.add(
   "POST",

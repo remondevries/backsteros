@@ -16,7 +16,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
-import { cn, isMacPlatform } from "../lib/utils";
+import { isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useLegacySidebarEnabled } from "../hooks/useSettings";
 import { usePanelAnimationSettings } from "../panelAnimations";
@@ -24,6 +24,9 @@ import LegacyThreadSidebar from "./LegacySidebar";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { ServersPageSidebar } from "./servers/ServersPageSidebar";
+import { PullRequestsPageSidebar } from "./pullRequest/PullRequestsPageSidebar";
+import { UsagePageSidebar } from "./usage/UsagePageSidebar";
 import { BacksterosTaskDetailPanel } from "./sidebar/BacksterosTaskDetailPanel";
 import { BacksterosComposeModal } from "./sidebar/BacksterosCreateTaskForm";
 import { useProjects } from "../state/entities";
@@ -109,31 +112,25 @@ function SidebarControl() {
   }, [keybindings, toggleSidebar, toggleTaskDetail]);
 
   return (
-    // The right-side layout controls carry mr-px (border compensation inside
-    // the panel), so the trigger mirrors it: both clusters sit one extra pixel
-    // off their edge and the titlebar reads symmetric.
-    <div
-      className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
-      data-sidebar-control=""
-    >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarTrigger
-              className={cn(
-                "pointer-events-auto",
-                isSidebarVisible &&
-                  "text-white/90 hover:text-white focus-visible:ring-white/90 [&_svg]:opacity-100! [:hover,[data-pressed]]:bg-white/15",
-              )}
-              aria-label="Toggle main sidebar"
-            />
-          }
-        />
-        <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </TooltipPopup>
-      </Tooltip>
-    </div>
+    // Shown only while the sidebar is collapsed — when open, the trigger lives
+    // in the sidebar titlebar (right side, clear of traffic lights).
+    !isSidebarVisible ? (
+      <div
+        className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
+        data-sidebar-control=""
+      >
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <SidebarTrigger className="pointer-events-auto" aria-label="Toggle main sidebar" />
+            }
+          />
+          <TooltipPopup side="bottom">
+            Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
+          </TooltipPopup>
+        </Tooltip>
+      </div>
+    ) : null
   );
 }
 
@@ -150,10 +147,15 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
-  // Settings routes show the settings nav in place of whichever thread
-  // sidebar is active.
+  // Settings / Usage / Pull Requests / Servers swap the thread sidebar out of the tree.
   const pathname = useLocation({ select: (location) => location.pathname });
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const isOnServersPage = pathname === "/servers" || pathname.startsWith("/servers/");
+  const isOnPullRequestsPage =
+    pathname === "/pull-requests" || pathname.startsWith("/pull-requests/");
+  const isOnUsagePage = pathname === "/usage" || pathname.startsWith("/usage/");
+  const replacesThreadSidebar =
+    isOnSettings || isOnUsagePage || isOnServersPage || isOnPullRequestsPage;
   const taskDetailSelection = useBacksterosTaskDetailUiStore((state) => state.selection);
   const taskDetailVisible = useBacksterosTaskDetailUiStore((state) => state.visible);
   const clearTaskDetail = useBacksterosTaskDetailUiStore((state) => state.clearTaskDetail);
@@ -224,8 +226,9 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate, pathname]);
 
   useEffect(() => {
-    if (isOnSettings) clearTaskDetail();
-  }, [clearTaskDetail, isOnSettings]);
+    // Keep compose available on Servers; only clear open task detail when leaving threads.
+    if (replacesThreadSidebar) clearTaskDetail();
+  }, [clearTaskDetail, replacesThreadSidebar]);
 
   return (
     <SidebarProvider
@@ -251,7 +254,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           onResize: setSidebarWidth,
         }}
       >
-        {isOnSettings ? (
+        {isOnServersPage ? (
+          <ServersPageSidebar />
+        ) : isOnPullRequestsPage ? (
+          <PullRequestsPageSidebar />
+        ) : isOnUsagePage ? (
+          <UsagePageSidebar />
+        ) : isOnSettings ? (
           <>
             <SidebarChromeHeader isElectron={isElectron} />
             <SettingsSidebarNav pathname={pathname} />
@@ -263,10 +272,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         )}
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
-      {!isOnSettings && taskDetailSelection && taskDetailVisible ? (
+      {!replacesThreadSidebar && taskDetailSelection && taskDetailVisible ? (
         <BacksterosTaskDetailPanel />
       ) : null}
-      {!isOnSettings ? <BacksterosComposeModal /> : null}
+      {!replacesThreadSidebar || isOnServersPage ? <BacksterosComposeModal /> : null}
       {children}
       <SidebarControl />
     </SidebarProvider>

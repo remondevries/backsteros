@@ -92,177 +92,179 @@ export function PullRequestDetailGhost({ seed }: { seed?: PullRequestListEntry |
         !seed && "motion-safe:animate-skeleton",
       )}
     >
-      <div className="shrink-0 border-b border-border/60">
-        <div className="flex h-7 items-center justify-between gap-3 px-4">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            {seed && statePresentation ? (
-              <>
-                <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
-                  {seed.repository}
-                </span>
-                <span
-                  className={cn("shrink-0 text-xs font-medium", statePresentation.toneClassName)}
-                >
-                  #{seed.number}
-                </span>
-              </>
-            ) : (
-              <>
-                <GhostBar className="w-24" />
-                <GhostBar className="w-9" />
-              </>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <GhostBar className="h-5 w-16 rounded-md" />
-            <GhostBar className="size-5 rounded-md" />
-          </div>
-        </div>
-
-        <div className="px-4 pb-4 pt-1">
-          {seed ? (
-            <h1 className="truncate text-base font-semibold leading-snug">{seed.title}</h1>
-          ) : (
-            <GhostBar className="h-5 w-4/5 max-w-md" />
-          )}
-          <div className="mt-2 flex items-center gap-1.5">
-            {seed ? (
-              <>
-                <PullRequestActorLabel
-                  actor={seed.author}
-                  className="font-medium"
-                  tooltip={false}
-                />
-                <span className="text-xs text-muted-foreground">
-                  updated {formatRelativeTimeLabel(seed.updatedAt)}
-                </span>
-              </>
-            ) : (
-              <>
-                <GhostBar className="size-4 rounded-full" />
-                <GhostBar className="w-24" />
-              </>
-            )}
-          </div>
-          <div className="mt-4 flex min-w-0 items-center gap-2">
-            {seed ? (
-              <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
-                <code className="min-w-0 max-w-[40%] shrink-0 truncate">{seed.baseBranch}</code>
-                <ArrowLeftIcon
-                  aria-label="receives changes from"
-                  className="size-3.5 shrink-0 opacity-60"
-                />
-                <code className="min-w-0 flex-1 truncate">{seed.headBranch}</code>
-              </span>
-            ) : (
-              <>
-                <GhostBar className="h-6 w-24 rounded-md" />
-                <GhostBar className="size-3 rounded-full" />
-                <GhostBar className="h-6 w-32 rounded-md" />
-              </>
-            )}
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <GhostBar className="w-10" />
-              {seed ? (
-                <PullRequestDiffStat
-                  additions={seed.additions}
-                  deletions={seed.deletions}
-                  className="font-mono text-xs"
-                />
-              ) : (
-                <GhostBar className="w-20" />
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex min-h-10 items-center justify-between gap-3 border-t border-border/60 px-4 py-2">
-          <div className="flex items-center gap-1 p-0.5">
-            <GhostBar className="h-6 w-16 rounded-md" />
-            <GhostBar className="h-6 w-16 rounded-md" />
-            <GhostBar className="h-6 w-12 rounded-md" />
-          </div>
-          {checksPresentation ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 text-xs",
-                checksPresentation.toneClassName,
-              )}
-            >
-              <checksPresentation.Icon aria-hidden className="size-3.5" />
-              {checksPresentation.label}
-            </span>
-          ) : (
-            <GhostBar className="w-20" />
-          )}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <section className="px-4 py-3">
-          <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <GhostBar className="size-3.5 rounded-full" />
-              <GhostBar className="w-14" />
-            </div>
-            <div className="flex items-center gap-1">
-              <GhostBar className="size-4 rounded-full" />
-              <GhostBar className="size-4 rounded-full" />
-              <GhostBar className="ml-1 size-5 rounded-md" />
-            </div>
-          </div>
-          <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <GhostBar className="size-3.5 rounded-full" />
-              <GhostBar className="w-10" />
-            </div>
-            <div className="flex items-center gap-1">
-              {seed ? (
-                seed.labels.slice(0, 3).map((label) => {
-                  const color = pullRequestLabelColor(label.color);
-                  return (
-                    <span
-                      key={label.name}
-                      className="inline-flex h-5 max-w-32 items-center gap-1 truncate rounded-full border border-border/70 bg-muted/40 px-2 text-[10px] text-muted-foreground"
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full bg-muted-foreground"
-                        {...(color ? { style: { backgroundColor: color } } : {})}
-                      />
-                      <span className="truncate">{label.name}</span>
-                    </span>
-                  );
-                })
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col">
+        <div className="shrink-0 border-b border-border/60">
+          <div className="flex h-7 items-center justify-between gap-3 px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              {seed && statePresentation ? (
+                <>
+                  <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                    {seed.repository}
+                  </span>
+                  <span
+                    className={cn("shrink-0 text-xs font-medium", statePresentation.toneClassName)}
+                  >
+                    #{seed.number}
+                  </span>
+                </>
               ) : (
                 <>
-                  <GhostBar className="h-5 w-24 rounded-full" />
-                  <GhostBar className="h-5 w-20 rounded-full" />
+                  <GhostBar className="w-24" />
+                  <GhostBar className="w-9" />
                 </>
               )}
             </div>
-          </div>
-          <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <GhostBar className="size-3.5 rounded-full" />
-              <GhostBar className="w-14" />
+            <div className="flex shrink-0 items-center gap-1">
+              <GhostBar className="h-5 w-16 rounded-md" />
+              <GhostBar className="size-5 rounded-md" />
             </div>
-            <GhostBar className="w-20" />
           </div>
-        </section>
 
-        <section className="border-t border-border/60">
-          <div className="flex min-h-11 items-center gap-1.5 px-4 py-3">
-            <GhostBar className="h-4 w-24" />
-            <GhostBar className="size-3.5 rounded-full" />
+          <div className="px-4 pb-4 pt-1">
+            {seed ? (
+              <h1 className="truncate text-base font-semibold leading-snug">{seed.title}</h1>
+            ) : (
+              <GhostBar className="h-5 w-4/5 max-w-md" />
+            )}
+            <div className="mt-2 flex items-center gap-1.5">
+              {seed ? (
+                <>
+                  <PullRequestActorLabel
+                    actor={seed.author}
+                    className="font-medium"
+                    tooltip={false}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    updated {formatRelativeTimeLabel(seed.updatedAt)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <GhostBar className="size-4 rounded-full" />
+                  <GhostBar className="w-24" />
+                </>
+              )}
+            </div>
+            <div className="mt-4 flex min-w-0 items-center gap-2">
+              {seed ? (
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
+                  <code className="min-w-0 max-w-[40%] shrink-0 truncate">{seed.baseBranch}</code>
+                  <ArrowLeftIcon
+                    aria-label="receives changes from"
+                    className="size-3.5 shrink-0 opacity-60"
+                  />
+                  <code className="min-w-0 flex-1 truncate">{seed.headBranch}</code>
+                </span>
+              ) : (
+                <>
+                  <GhostBar className="h-6 w-24 rounded-md" />
+                  <GhostBar className="size-3 rounded-full" />
+                  <GhostBar className="h-6 w-32 rounded-md" />
+                </>
+              )}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <GhostBar className="w-10" />
+                {seed ? (
+                  <PullRequestDiffStat
+                    additions={seed.additions}
+                    deletions={seed.deletions}
+                    className="font-mono text-xs"
+                  />
+                ) : (
+                  <GhostBar className="w-20" />
+                )}
+              </div>
+            </div>
           </div>
-          <div className="space-y-2 px-4 pb-4">
-            <GhostBar className="w-full" />
-            <GhostBar className="w-11/12" />
-            <GhostBar className="w-4/5" />
-            <GhostBar className="w-2/3" />
+
+          <div className="flex min-h-10 items-center justify-between gap-3 border-t border-border/60 px-4 py-2">
+            <div className="flex items-center gap-1 p-0.5">
+              <GhostBar className="h-6 w-16 rounded-md" />
+              <GhostBar className="h-6 w-16 rounded-md" />
+              <GhostBar className="h-6 w-12 rounded-md" />
+            </div>
+            {checksPresentation ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-xs",
+                  checksPresentation.toneClassName,
+                )}
+              >
+                <checksPresentation.Icon aria-hidden className="size-3.5" />
+                {checksPresentation.label}
+              </span>
+            ) : (
+              <GhostBar className="w-20" />
+            )}
           </div>
-        </section>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <section className="px-4 py-3">
+            <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <GhostBar className="size-3.5 rounded-full" />
+                <GhostBar className="w-14" />
+              </div>
+              <div className="flex items-center gap-1">
+                <GhostBar className="size-4 rounded-full" />
+                <GhostBar className="size-4 rounded-full" />
+                <GhostBar className="ml-1 size-5 rounded-md" />
+              </div>
+            </div>
+            <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <GhostBar className="size-3.5 rounded-full" />
+                <GhostBar className="w-10" />
+              </div>
+              <div className="flex items-center gap-1">
+                {seed ? (
+                  seed.labels.slice(0, 3).map((label) => {
+                    const color = pullRequestLabelColor(label.color);
+                    return (
+                      <span
+                        key={label.name}
+                        className="inline-flex h-5 max-w-32 items-center gap-1 truncate rounded-full border border-border/70 bg-muted/40 px-2 text-[10px] text-muted-foreground"
+                      >
+                        <span
+                          aria-hidden
+                          className="size-2 shrink-0 rounded-full bg-muted-foreground"
+                          {...(color ? { style: { backgroundColor: color } } : {})}
+                        />
+                        <span className="truncate">{label.name}</span>
+                      </span>
+                    );
+                  })
+                ) : (
+                  <>
+                    <GhostBar className="h-5 w-24 rounded-full" />
+                    <GhostBar className="h-5 w-20 rounded-full" />
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="grid min-h-8 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <GhostBar className="size-3.5 rounded-full" />
+                <GhostBar className="w-14" />
+              </div>
+              <GhostBar className="w-20" />
+            </div>
+          </section>
+
+          <section className="border-t border-border/60">
+            <div className="flex min-h-11 items-center gap-1.5 px-4 py-3">
+              <GhostBar className="h-4 w-24" />
+              <GhostBar className="size-3.5 rounded-full" />
+            </div>
+            <div className="space-y-2 px-4 pb-4">
+              <GhostBar className="w-full" />
+              <GhostBar className="w-11/12" />
+              <GhostBar className="w-4/5" />
+              <GhostBar className="w-2/3" />
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

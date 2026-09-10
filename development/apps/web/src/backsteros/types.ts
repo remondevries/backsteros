@@ -105,14 +105,19 @@ export interface BacksterosOrganization {
 /** Fields accepted by `POST /api/v1/tasks`. */
 export type BacksterosCreateTaskInput = {
   readonly title: string;
-  readonly projectId: string;
+  readonly projectId?: string | null;
   readonly description?: string | null;
   readonly status?: string;
   readonly priority?: number;
   readonly dueDate?: string | null;
   readonly assigneeId?: string | null;
+  readonly contactId?: string | null;
   readonly relatedContactIds?: readonly string[];
   readonly relatedOrganizationIds?: readonly string[];
+  readonly support?: boolean;
+  readonly notification?: boolean;
+  readonly inbox?: boolean;
+  readonly activityActor?: "user" | "agent";
 };
 
 /** Fields accepted by `PATCH /api/v1/tasks/:id`. */

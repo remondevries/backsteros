@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { UsageProviderKind } from "@t3tools/contracts";
 import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -6,6 +7,13 @@ import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
+import {
+  isPrepaidRangeId,
+  PREPAID_RANGE_OPTIONS,
+  prepaidWindowLabel,
+  type PrepaidRangeId,
+} from "~/backsteros/cursorPrepaidUsage";
+import { Route as UsageRoute } from "../../routes/usage";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -36,8 +44,10 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
+import { UsagePrepaidSection } from "./UsagePrepaidSection";
 import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
+import { USAGE_SECTION_ITEMS } from "./UsageSidebarNav";
 
 type UsageMetric = UsageChartMetric | "limits";
 const METRIC_OPTIONS = [
@@ -58,15 +68,21 @@ const WINDOW_OPTIONS = [
 ] as const;
 
 export function UsagePage() {
+  const { section } = UsageRoute.useSearch();
+  const sectionLabel = USAGE_SECTION_ITEMS.find((item) => item.id === section)?.label ?? "Premium";
+  const showingPrepaid = section === "prepaid";
+  const [prepaidRange, setPrepaidRange] = useState<PrepaidRangeId>("7d");
+  const [prepaidRefreshNonce, setPrepaidRefreshNonce] = useState(0);
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: 30,
     window: makeWindow(30),
   }));
   const [metric, setMetric] = useState<UsageMetric>("cost");
-  const showingLimits = metric === "limits";
+  const showingLimits = !showingPrepaid && metric === "limits";
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
+  const prepaidLabel = prepaidWindowLabel(prepaidRange);
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -142,118 +158,201 @@ export function UsagePage() {
   const topbarContent = (
     <div className="flex w-full min-w-0 items-center gap-3">
       <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-        <WorkspaceBreadcrumbItem current>
-          <h1>Usage</h1>
+        <WorkspaceBreadcrumbItem>
+          <Link
+            to="/usage"
+            search={{ section: "premium" }}
+            className="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Usage
+          </Link>
         </WorkspaceBreadcrumbItem>
-        {showingLimits ? null : (
+        <WorkspaceBreadcrumbSeparator />
+        <WorkspaceBreadcrumbItem current>
+          <h1 className="truncate">{sectionLabel}</h1>
+        </WorkspaceBreadcrumbItem>
+        {showingPrepaid ? (
+          <>
+            <WorkspaceBreadcrumbSeparator className="hidden md:flex" />
+            <WorkspaceBreadcrumbItem className="hidden min-w-0 shrink md:flex">
+              <span className="truncate">{prepaidLabel}</span>
+            </WorkspaceBreadcrumbItem>
+          </>
+        ) : !showingLimits ? (
           <>
             <WorkspaceBreadcrumbSeparator className="hidden md:flex" />
             <WorkspaceBreadcrumbItem className="hidden min-w-0 shrink md:flex">
               <span className="truncate">{windowLabel}</span>
             </WorkspaceBreadcrumbItem>
           </>
-        )}
+        ) : null}
       </WorkspaceBreadcrumb>
-      <div className="ms-auto hidden min-w-0 items-center justify-end gap-2 lg:flex">
-        <ToggleGroup
-          aria-label="Usage metric"
-          variant="segmented"
-          value={[metric]}
-          onValueChange={(next) => {
-            const value = next[0];
-            if (isUsageMetric(value)) setMetric(value);
-          }}
-        >
-          {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value}>
-              {option.label}
-            </Toggle>
-          ))}
-        </ToggleGroup>
-        {/* The period does not apply to Limits, so it stays in place but
-            disabled; unmounting it shifted the metric toggle ~300px. */}
-        <ToggleGroup
-          aria-label="Usage period"
-          variant="segmented"
-          value={[String(windowDays)]}
-          disabled={showingLimits}
-          onValueChange={(next) => {
-            const value = next[0];
-            if (value) selectWindow(Number(value));
-          }}
-        >
-          {WINDOW_OPTIONS.map((option) => (
-            <Toggle key={option.days} value={String(option.days)}>
-              {option.label}
-            </Toggle>
-          ))}
-        </ToggleGroup>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshCwIcon className="size-3.5" />
-        </Button>
-      </div>
-      <div className="ms-auto flex min-w-0 items-center justify-end gap-1 lg:hidden">
-        <Select
-          value={metric}
-          onValueChange={(value) => {
-            if (isUsageMetric(value)) setMetric(value);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Usage metric"
-            size="compact"
-            variant="ghost"
-            className="w-auto min-w-0"
-          >
-            <SelectValue>
-              {METRIC_OPTIONS.find((option) => option.value === metric)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {METRIC_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <Select
-          value={String(windowDays)}
-          disabled={showingLimits}
-          onValueChange={(value) => selectWindow(Number(value))}
-        >
-          <SelectTrigger
-            aria-label="Usage period"
-            size="compact"
-            variant="ghost"
-            className="w-auto min-w-0"
-          >
-            <SelectValue>
-              {WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {WINDOW_OPTIONS.map((option) => (
-              <SelectItem key={option.days} value={String(option.days)}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshCwIcon className="size-3.5" />
-        </Button>
-      </div>
+      {showingPrepaid ? (
+        <>
+          <div className="ms-auto hidden min-w-0 items-center justify-end gap-2 lg:flex">
+            <ToggleGroup
+              aria-label="Prepaid usage period"
+              variant="segmented"
+              value={[prepaidRange]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (isPrepaidRangeId(value)) setPrepaidRange(value);
+              }}
+            >
+              {PREPAID_RANGE_OPTIONS.map((option) => (
+                <Toggle key={option.id} value={option.id}>
+                  {option.label}
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            <Button
+              onClick={() => setPrepaidRefreshNonce((nonce) => nonce + 1)}
+              aria-label="Refresh prepaid usage"
+              size="icon-sm"
+              variant="ghost"
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </Button>
+          </div>
+          <div className="ms-auto flex min-w-0 items-center justify-end gap-1 lg:hidden">
+            <Select
+              value={prepaidRange}
+              onValueChange={(value) => {
+                if (isPrepaidRangeId(value)) setPrepaidRange(value);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Prepaid usage period"
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>
+                  {PREPAID_RANGE_OPTIONS.find((option) => option.id === prepaidRange)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {PREPAID_RANGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <Button
+              onClick={() => setPrepaidRefreshNonce((nonce) => nonce + 1)}
+              aria-label="Refresh prepaid usage"
+              size="icon-sm"
+              variant="ghost"
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="ms-auto hidden min-w-0 items-center justify-end gap-2 lg:flex">
+            <ToggleGroup
+              aria-label="Usage metric"
+              variant="segmented"
+              value={[metric]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (isUsageMetric(value)) setMetric(value);
+              }}
+            >
+              {METRIC_OPTIONS.map((option) => (
+                <Toggle key={option.value} value={option.value}>
+                  {option.label}
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            {/* The period does not apply to Limits, so it stays in place but
+                disabled; unmounting it shifted the metric toggle ~300px. */}
+            <ToggleGroup
+              aria-label="Usage period"
+              variant="segmented"
+              value={[String(windowDays)]}
+              disabled={showingLimits}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (value) selectWindow(Number(value));
+              }}
+            >
+              {WINDOW_OPTIONS.map((option) => (
+                <Toggle key={option.days} value={String(option.days)}>
+                  {option.label}
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            <Button
+              onClick={refreshWindow}
+              aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </Button>
+          </div>
+          <div className="ms-auto flex min-w-0 items-center justify-end gap-1 lg:hidden">
+            <Select
+              value={metric}
+              onValueChange={(value) => {
+                if (isUsageMetric(value)) setMetric(value);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Usage metric"
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>
+                  {METRIC_OPTIONS.find((option) => option.value === metric)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {METRIC_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <Select
+              value={String(windowDays)}
+              disabled={showingLimits}
+              onValueChange={(value) => selectWindow(Number(value))}
+            >
+              <SelectTrigger
+                aria-label="Usage period"
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>
+                  {WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {WINDOW_OPTIONS.map((option) => (
+                  <SelectItem key={option.days} value={String(option.days)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            <Button
+              onClick={refreshWindow}
+              aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <RefreshCwIcon className="size-3.5" />
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -264,7 +363,9 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
-            {showingLimits ? (
+            {showingPrepaid ? (
+              <UsagePrepaidSection range={prepaidRange} refreshNonce={prepaidRefreshNonce} />
+            ) : showingLimits ? (
               <UsageLimitsSection />
             ) : settling ? (
               <>
@@ -350,7 +451,7 @@ export function UsagePage() {
                       daily={merged.daily}
                       hours={hours}
                       hourly={merged.hourly}
-                      metric={metric}
+                      metric={metric === "tokens" ? "tokens" : "cost"}
                       referenceTime={window.untilTime}
                       resolution={isPast24Hours ? "hour" : "day"}
                       timeZone={window.timeZone}

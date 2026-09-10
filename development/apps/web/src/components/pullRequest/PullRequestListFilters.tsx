@@ -22,7 +22,7 @@ import {
   TagIcon,
   UserRoundIcon,
 } from "lucide-react";
-import { type ElementType, useState } from "react";
+import { type ElementType, type ReactNode, useState } from "react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -110,11 +110,14 @@ export function PullRequestSearchInput({
   value,
   busy,
   onChange,
+  endAction,
 }: {
   value: string;
   /** A search is on its way to the hosts, said where the typing is rather than over the list. */
   busy?: boolean;
   onChange: (value: string) => void;
+  /** Optional trailing control inside the field (e.g. refresh in the sidebar). */
+  endAction?: ReactNode;
 }) {
   return (
     <InputGroup className="min-w-0 flex-1 **:[input]:h-9 sm:**:[input]:h-8">
@@ -128,6 +131,7 @@ export function PullRequestSearchInput({
         placeholder="Search pull requests, or label:bug"
         aria-label="Search pull requests"
       />
+      {endAction ? <InputGroupAddon align="inline-end">{endAction}</InputGroupAddon> : null}
     </InputGroup>
   );
 }

@@ -51,13 +51,10 @@ function Host({ className, ...props }: ComponentProps<"div">) {
         "relative z-10 w-full rounded-[22px] shadow-[0_12px_28px_-18px_rgb(0_0_0/40%)] after:z-1 dark:shadow-none",
         outlineClasses,
         contextSeamClasses,
-        // Primary outline when the composer text box (or any control inside) is focused.
         "transition-[box-shadow] duration-200 ease-out",
-        "focus-within:[--chat-composer-outline:color-mix(in_srgb,var(--primary)_58%,transparent)]",
-        "focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_40%,transparent),0_12px_28px_-18px_rgb(0_0_0/40%)]",
-        "dark:focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_45%,transparent)]",
+        // Focus ring lives on Main (textbox) only — Host also wraps banners, so
+        // focus-within here would paint primary around settled/context chrome.
         "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none group-has-data-[composer-banner-surface=attached]/composer-surface:after:hidden",
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:focus-within:shadow-none",
         className,
       )}
       {...props}
@@ -78,9 +75,11 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         "group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-[0_12px_28px_-18px_rgb(0_0_0/40%)] dark:group-has-data-[composer-banner-surface=attached]/composer-surface:shadow-none",
         "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:group-has-data-[composer-banner-surface=attached]/composer-surface:bg-(--chat-composer-glass-surface)",
         "group-has-data-[composer-banner-surface=attached]/composer-surface:**:data-[chat-composer-mobile-collapsed=true]:min-h-[calc(1rem+1px)]",
-        // When the banner owns the outline, keep a primary focus ring on Main.
-        "group-has-data-[composer-banner-surface=attached]/composer-surface:focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_40%,transparent),0_12px_28px_-18px_rgb(0_0_0/40%)]",
-        "dark:group-has-data-[composer-banner-surface=attached]/composer-surface:focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_45%,transparent)]",
+        // Primary outline around the textbox surface only (not banners / context strip).
+        "transition-[box-shadow] duration-200 ease-out",
+        "focus-within:[--chat-composer-outline:color-mix(in_srgb,var(--primary)_58%,transparent)]",
+        "focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_40%,transparent),0_12px_28px_-18px_rgb(0_0_0/40%)]",
+        "dark:focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_45%,transparent)]",
         className,
       )}
       {...props}

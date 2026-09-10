@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ServersRouteImport } from './routes/servers'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
+import { Route as ServersIndexRouteImport } from './routes/servers.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
@@ -24,12 +26,15 @@ import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagn
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as ServersServersRouteImport } from './routes/servers.servers'
+import { Route as ServersServerIdRouteImport } from './routes/servers.$serverId'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatBacksterosProjectsRouteImport } from './routes/_chat.backsteros.projects'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as ServersServerIdAppsServiceRouteImport } from './routes/servers.$serverId_.apps.$service'
 import { Route as ChatBacksterosProjectProjectIdRouteImport } from './routes/_chat.backsteros.project.$projectId'
 
 const UsageRoute = UsageRouteImport.update({
@@ -40,6 +45,11 @@ const UsageRoute = UsageRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServersRoute = ServersRouteImport.update({
+  id: '/servers',
+  path: '/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PairRoute = PairRouteImport.update({
@@ -55,6 +65,11 @@ const ConnectRoute = ConnectRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ServersIndexRoute = ServersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ServersRoute,
 } as any)
 const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
@@ -106,6 +121,16 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const ServersServersRoute = ServersServersRouteImport.update({
+  id: '/servers',
+  path: '/servers',
+  getParentRoute: () => ServersRoute,
+} as any)
+const ServersServerIdRoute = ServersServerIdRouteImport.update({
+  id: '/$serverId',
+  path: '/$serverId',
+  getParentRoute: () => ServersRoute,
+} as any)
 const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   id: '/projects/$projectKey',
   path: '/projects/$projectKey',
@@ -137,6 +162,12 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
+const ServersServerIdAppsServiceRoute =
+  ServersServerIdAppsServiceRouteImport.update({
+    id: '/$serverId_/apps/$service',
+    path: '/$serverId/apps/$service',
+    getParentRoute: () => ServersRoute,
+  } as any)
 const ChatBacksterosProjectProjectIdRoute =
   ChatBacksterosProjectProjectIdRouteImport.update({
     id: '/backsteros/project/$projectId',
@@ -148,11 +179,14 @@ export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
   '/pair': typeof PairRoute
+  '/servers': typeof ServersRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/servers/$serverId': typeof ServersServerIdRoute
+  '/servers/servers': typeof ServersServersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -162,10 +196,12 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/servers/': typeof ServersIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
+  '/servers/$serverId/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -175,6 +211,8 @@ export interface FileRoutesByTo {
   '/pull-requests': typeof ChatPullRequestsRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/servers/$serverId': typeof ServersServerIdRoute
+  '/servers/servers': typeof ServersServersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -185,21 +223,26 @@ export interface FileRoutesByTo {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/': typeof ChatIndexRoute
+  '/servers': typeof ServersIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
+  '/servers/$serverId/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
   '/pair': typeof PairRoute
+  '/servers': typeof ServersRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/connect_/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/servers/$serverId': typeof ServersServerIdRoute
+  '/servers/servers': typeof ServersServersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -210,10 +253,12 @@ export interface FileRoutesById {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/_chat/': typeof ChatIndexRoute
+  '/servers/': typeof ServersIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/backsteros/projects': typeof ChatBacksterosProjectsRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/_chat/backsteros/project/$projectId': typeof ChatBacksterosProjectProjectIdRoute
+  '/servers/$serverId_/apps/$service': typeof ServersServerIdAppsServiceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,11 +266,14 @@ export interface FileRouteTypes {
     | '/'
     | '/connect'
     | '/pair'
+    | '/servers'
     | '/settings'
     | '/usage'
     | '/pull-requests'
     | '/connect/callback'
     | '/projects/$projectKey'
+    | '/servers/$serverId'
+    | '/servers/servers'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -235,10 +283,12 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
+    | '/servers/'
     | '/$environmentId/$threadId'
     | '/backsteros/projects'
     | '/draft/$draftId'
     | '/backsteros/project/$projectId'
+    | '/servers/$serverId/apps/$service'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -248,6 +298,8 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/connect/callback'
     | '/projects/$projectKey'
+    | '/servers/$serverId'
+    | '/servers/servers'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -258,20 +310,25 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/source-control'
     | '/'
+    | '/servers'
     | '/$environmentId/$threadId'
     | '/backsteros/projects'
     | '/draft/$draftId'
     | '/backsteros/project/$projectId'
+    | '/servers/$serverId/apps/$service'
   id:
     | '__root__'
     | '/_chat'
     | '/connect'
     | '/pair'
+    | '/servers'
     | '/settings'
     | '/usage'
     | '/_chat/pull-requests'
     | '/connect_/callback'
     | '/projects/$projectKey'
+    | '/servers/$serverId'
+    | '/servers/servers'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -282,16 +339,19 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/source-control'
     | '/_chat/'
+    | '/servers/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/backsteros/projects'
     | '/_chat/draft/$draftId'
     | '/_chat/backsteros/project/$projectId'
+    | '/servers/$serverId_/apps/$service'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
   PairRoute: typeof PairRoute
+  ServersRoute: typeof ServersRouteWithChildren
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
   ConnectCallbackRoute: typeof ConnectCallbackRoute
@@ -314,6 +374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/servers': {
+      id: '/servers'
+      path: '/servers'
+      fullPath: '/servers'
+      preLoaderRoute: typeof ServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pair': {
       id: '/pair'
       path: '/pair'
@@ -334,6 +401,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/servers/': {
+      id: '/servers/'
+      path: '/'
+      fullPath: '/servers/'
+      preLoaderRoute: typeof ServersIndexRouteImport
+      parentRoute: typeof ServersRoute
     }
     '/_chat/': {
       id: '/_chat/'
@@ -405,6 +479,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/servers/servers': {
+      id: '/servers/servers'
+      path: '/servers'
+      fullPath: '/servers/servers'
+      preLoaderRoute: typeof ServersServersRouteImport
+      parentRoute: typeof ServersRoute
+    }
+    '/servers/$serverId': {
+      id: '/servers/$serverId'
+      path: '/$serverId'
+      fullPath: '/servers/$serverId'
+      preLoaderRoute: typeof ServersServerIdRouteImport
+      parentRoute: typeof ServersRoute
+    }
     '/projects/$projectKey': {
       id: '/projects/$projectKey'
       path: '/projects/$projectKey'
@@ -447,6 +535,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/servers/$serverId_/apps/$service': {
+      id: '/servers/$serverId_/apps/$service'
+      path: '/$serverId/apps/$service'
+      fullPath: '/servers/$serverId/apps/$service'
+      preLoaderRoute: typeof ServersServerIdAppsServiceRouteImport
+      parentRoute: typeof ServersRoute
+    }
     '/_chat/backsteros/project/$projectId': {
       id: '/_chat/backsteros/project/$projectId'
       path: '/backsteros/project/$projectId'
@@ -476,6 +571,23 @@ const ChatRouteChildren: ChatRouteChildren = {
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
+interface ServersRouteChildren {
+  ServersServerIdRoute: typeof ServersServerIdRoute
+  ServersServersRoute: typeof ServersServersRoute
+  ServersIndexRoute: typeof ServersIndexRoute
+  ServersServerIdAppsServiceRoute: typeof ServersServerIdAppsServiceRoute
+}
+
+const ServersRouteChildren: ServersRouteChildren = {
+  ServersServerIdRoute: ServersServerIdRoute,
+  ServersServersRoute: ServersServersRoute,
+  ServersIndexRoute: ServersIndexRoute,
+  ServersServerIdAppsServiceRoute: ServersServerIdAppsServiceRoute,
+}
+
+const ServersRouteWithChildren =
+  ServersRoute._addFileChildren(ServersRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -509,6 +621,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
   PairRoute: PairRoute,
+  ServersRoute: ServersRouteWithChildren,
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
   ConnectCallbackRoute: ConnectCallbackRoute,

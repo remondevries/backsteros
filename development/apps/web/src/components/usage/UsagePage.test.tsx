@@ -37,7 +37,15 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("../../env", () => ({ isElectron: false }));
+vi.mock("../../routes/usage", () => ({
+  Route: {
+    useSearch: () => ({ section: "premium" as const }),
+  },
+}));
 vi.mock("../../state/usage", () => ({ useUsage: testState.useUsage }));
+vi.mock("@tanstack/react-router", () => ({
+  Link: "a",
+}));
 vi.mock("../ui/button", () => ({ Button: "button" }));
 vi.mock("../ui/scroll-area", () => ({ ScrollArea: "div" }));
 vi.mock("../ui/select", () => ({
